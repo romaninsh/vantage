@@ -300,6 +300,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlformat",
+ "sqlx",
  "testcontainers-modules",
  "tokio",
  "tokio-postgres",
@@ -2728,6 +2729,8 @@ dependencies = [
  "smallvec",
  "sqlformat",
  "thiserror",
+ "tokio",
+ "tokio-stream",
  "tracing",
  "url",
 ]
@@ -2767,6 +2770,7 @@ dependencies = [
  "sqlx-sqlite",
  "syn 2.0.87",
  "tempfile",
+ "tokio",
  "url",
 ]
 

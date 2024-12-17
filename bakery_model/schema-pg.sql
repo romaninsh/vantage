@@ -66,14 +66,27 @@ VALUES
 INSERT INTO
     client (
         name,
+        email,
         contact_details,
         is_paying_client,
         bakery_id
     )
 VALUES
-    ('Marty McFly', '555-1955', true, 1),
-    ('Doc Brown', '555-1885', true, 1),
-    ('Biff Tannen', '555-1955', false, 1);
+    (
+        'Marty McFly',
+        'marty@gmail.com',
+        '555-1955',
+        true,
+        1
+    ),
+    ('Doc Brown', 'doc@brown.com', '555-1885', true, 1),
+    (
+        'Biff Tannen',
+        'biff-3293@hotmail.com',
+        '555-1955',
+        false,
+        1
+    );
 
 INSERT INTO
     product (name, calories, bakery_id, price)

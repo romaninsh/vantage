@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{anyhow, Context, Result};
 use serde_json::{Map, Value};
-use sqlx::postgres::PgArguments;
-use sqlx::{Column, Row};
+use sqlx::{postgres::PgArguments, Execute};
 
 use crate::{
     prelude::Query,
@@ -33,9 +32,29 @@ impl Postgres {
         expression: &'a Expression,
     ) -> sqlx::query::Query<'a, sqlx::Postgres, PgArguments> {
         for param in expression.params() {
-            query = query.bind(param);
+            query = match param {
+                Value::String(v) => query.bind(v),
+                Value::Null => query.bind(Option::<String>::None),
+                Value::Bool(v) => query.bind(v),
+                Value::Number(v) => {
+                    if let Some(v) = v.as_i64() {
+                        query.bind(v)
+                    } else if let Some(v) = v.as_f64() {
+                        query.bind(v)
+                    } else {
+                        query.bind(param)
+                    }
+                }
+                _ => todo!("Not implemented for {:?}", param),
+                // Value::Array(v) => query.bind(v),
+                // Value::Object(_) => query.bind(param),
+            };
         }
         query
+    }
+
+    pub fn client(&self) -> &sqlx::PgPool {
+        &*self.pool
     }
 }
 
@@ -53,7 +72,10 @@ impl DataSource for Postgres {
         let query = sqlx::query(&sql_final);
         let query = self.bind(query, &expression);
 
-        let rows = query.fetch_all(&*self.pool).await?;
+        let rows = query
+            .fetch_all(&*self.pool)
+            .await
+            .with_context(|| anyhow!("Error in query {:?}", expression))?;
 
         Ok(rows.iter().map(row_to_json).collect())
     }
@@ -73,7 +95,10 @@ impl DataSource for Postgres {
         let query = sqlx::query(&sql_final);
         let query = self.bind(query, &expression);
 
-        let row = query.fetch_one(&*self.pool).await?;
+        let row = query
+            .fetch_one(&*self.pool)
+            .await
+            .with_context(|| anyhow!("Error in query {:?}", expression))?;
 
         let row = row_to_json(&row);
         if row.is_empty() {
