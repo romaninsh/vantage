@@ -7,6 +7,8 @@ use crate::prelude::Column;
 use crate::sql::expression::{Expression, ExpressionArc};
 use crate::sql::Chunk;
 
+use super::table::column::SqlColumn;
+
 #[derive(Debug, Clone)]
 enum ConditionOperand {
     Column(Arc<Column>),

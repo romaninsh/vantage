@@ -1,6 +1,8 @@
 # v0.2 (eta January 2025)
 
-- [ ] Swap to sqlx
+- [x] Swap to sqlx
+- [ ] Allow use of custom columns
+- [ ] "returning `id` should properly choose ID column"
 - [ ] Add thread safety (currently tests in bakery_api fail)
 - [ ] Implement transaction support
 - [ ] Add MySQL support

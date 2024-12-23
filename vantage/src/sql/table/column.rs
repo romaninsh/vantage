@@ -8,6 +8,11 @@ use crate::sql::Operations;
 use crate::sql::WrapArc;
 use crate::traits::column::SqlField;
 
+mod chrono;
+mod sqlcolumn;
+
+pub use sqlcolumn::SqlColumn;
+
 #[derive(Debug, Clone)]
 pub struct Column {
     name: String,
@@ -23,7 +28,10 @@ impl Column {
             column_alias: None,
         }
     }
-    pub fn name(&self) -> String {
+}
+
+impl SqlColumn for Column {
+    fn name(&self) -> String {
         self.name.clone()
     }
     fn name_with_table(&self) -> String {
@@ -32,14 +40,17 @@ impl Column {
             None => self.name.clone(),
         }
     }
-    pub fn set_table_alias(&mut self, alias: String) {
+    fn set_name(&mut self, name: String) {
+        self.name = name;
+    }
+    fn set_table_alias(&mut self, alias: String) {
         self.table_alias = Some(alias);
     }
-    pub fn set_column_alias(&mut self, alias: String) {
+    fn set_column_alias(&mut self, alias: String) {
         self.column_alias = Some(alias);
     }
 
-    pub fn get_column_alias(&self) -> Option<String> {
+    fn get_column_alias(&self) -> Option<String> {
         self.column_alias.clone()
     }
 }
@@ -86,6 +97,22 @@ impl SqlField for Arc<Column> {
     }
     fn calculated(&self) -> bool {
         false
+    }
+}
+
+impl From<String> for Column {
+    fn from(name: String) -> Self {
+        Column {
+            name,
+            table_alias: None,
+            column_alias: None,
+        }
+    }
+}
+
+impl From<&str> for Column {
+    fn from(name: &str) -> Self {
+        name.to_string().into()
     }
 }
 

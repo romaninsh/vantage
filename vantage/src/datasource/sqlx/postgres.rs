@@ -45,9 +45,9 @@ impl Postgres {
                         query.bind(param)
                     }
                 }
+                Value::Object(_) => query.bind(param),
                 _ => todo!("Not implemented for {:?}", param),
                 // Value::Array(v) => query.bind(v),
-                // Value::Object(_) => query.bind(param),
             };
         }
         query
@@ -81,7 +81,23 @@ impl DataSource for Postgres {
     }
 
     async fn query_exec(&self, query: &Query) -> Result<Option<Value>> {
-        todo!()
+        let expression = query.render_chunk();
+        let sql_final = expression.sql_final();
+
+        let query = sqlx::query(&sql_final);
+        let query = self.bind(query, &expression);
+
+        let row = query
+            .fetch_one(&*self.pool)
+            .await
+            .with_context(|| anyhow!("Error in query {:?}", expression))?;
+
+        let row = row_to_json(&row);
+        if row.is_empty() {
+            Ok(None)
+        } else {
+            Ok(row.values().next().cloned())
+        }
     }
 
     async fn query_insert(&self, query: &Query, rows: Vec<Vec<Value>>) -> Result<()> {

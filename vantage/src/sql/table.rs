@@ -27,10 +27,11 @@ use std::fmt::{Debug, Display};
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 
-mod column;
+pub mod column;
 mod join;
 
 pub use column::Column;
+use column::SqlColumn;
 pub use extensions::{Hooks, SoftDelete, TableExtension};
 pub use join::Join;
 
