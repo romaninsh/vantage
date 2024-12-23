@@ -4,6 +4,7 @@ use serde_json::Value;
 use std::ops::Deref;
 use std::sync::Arc;
 
+use super::column::SqlColumn;
 use super::{Column, RelatedTable};
 use crate::lazy_expression::LazyExpression;
 use crate::prelude::Operations;
@@ -206,11 +207,12 @@ impl<T: DataSource, E: Entity> TableWithColumns for Table<T, E> {
 
 impl<T: DataSource, E: Entity> Table<T, E> {
     /// When building a table - a way to chain column declarations.
-    pub fn with_column(mut self, column: &str) -> Self {
-        self.add_column(
-            column.to_string(),
-            Column::new(column.to_string(), self.table_alias.clone()),
-        );
+    pub fn with_column(mut self, column: impl Into<Column>) -> Self {
+        let mut column: Column = column.into();
+        if self.table_alias.is_some() {
+            column.set_table_alias(self.table_alias.clone().unwrap());
+        }
+        self.add_column(column.name(), column);
         self
     }
 
@@ -250,6 +252,18 @@ mod tests {
         let roles = Table::new("roles", db.clone())
             .with_column("id")
             .with_column("name");
+
+        assert!(roles.get_column("qq").is_none());
+        assert!(roles.get_column("name").is_some());
+    }
+
+    #[test]
+    fn test_add_column() {
+        let data = json!([]);
+        let db = MockDataSource::new(&data);
+
+        let roles = Table::new("roles", db.clone())
+            .with_column(Column::new("name".to_string(), Some("id".to_string())));
 
         assert!(roles.get_column("qq").is_none());
         assert!(roles.get_column("name").is_some());

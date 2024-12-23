@@ -11,10 +11,8 @@ async fn create_bootstrap_db() -> Result<()> {
     // Get the postgres client for batch execution
     let vantage_client = bakery_model::postgres();
     let client = vantage_client.client();
-
-    // Read the schema from the file and execute it
     let schema = tokio::fs::read_to_string("bakery_model/schema-pg.sql").await?;
-    client.batch_execute(&schema).await?;
+    sqlx::raw_sql(&schema).execute(client).await?;
 
     Ok(())
 }

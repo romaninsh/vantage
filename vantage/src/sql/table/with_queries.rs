@@ -3,6 +3,7 @@ use serde::Serialize;
 use serde_json::{to_value, Value};
 use std::sync::Arc;
 
+use super::column::SqlColumn;
 use super::{AnyTable, Column, TableWithColumns};
 use crate::prelude::AssociatedQuery;
 use crate::sql::query::{QueryType, SqlQuery};
