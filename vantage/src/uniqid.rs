@@ -77,12 +77,12 @@ impl UniqueIdVendor {
         false
     }
 
-    pub fn merge(&mut self, other: UniqueIdVendor) {
-        for (key, value) in other.map {
-            self.map.insert(key, value);
+    pub fn merge(&mut self, other: &mut UniqueIdVendor) {
+        for (key, value) in &other.map {
+            self.map.insert(key.clone(), value.clone());
         }
-        for key in other.avoid {
-            self.avoid.insert(key);
+        for key in &other.avoid {
+            self.avoid.insert(key.clone());
         }
     }
 }

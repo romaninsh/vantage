@@ -1,14 +1,15 @@
 use anyhow::{anyhow, Context};
 use indexmap::IndexMap;
 use serde_json::Value;
-use std::ops::Deref;
 use std::sync::Arc;
 
 use super::column::SqlColumn;
-use super::{Column, RelatedTable};
+use super::{PgValueColumn, SqlTable};
+use crate::expr;
 use crate::lazy_expression::LazyExpression;
 use crate::prelude::Operations;
 use crate::sql::table::Table;
+use crate::sql::Expression;
 use crate::traits::column::SqlField;
 use crate::traits::datasource::DataSource;
 use crate::traits::entity::Entity;
@@ -113,11 +114,11 @@ use super::AnyTable;
 /// [`columns()`]: Table::columns()
 
 pub trait TableWithColumns: AnyTable {
-    fn add_column(&mut self, column_name: String, column: Column);
-    fn columns(&self) -> &IndexMap<String, Arc<Column>>;
-    fn get_column_with_table_alias(&self, name: &str) -> Option<Arc<Column>>;
-    fn id(&self) -> Arc<Column>;
-    fn id_with_table_alias(&self) -> Arc<Column>;
+    fn add_column(&mut self, column_name: String, column: PgValueColumn);
+    fn columns(&self) -> &IndexMap<String, Arc<PgValueColumn>>;
+    // fn get_column_with_table_alias(&self, name: &str) -> Option<Arc<PgValueColumn>>;
+    fn id(&self) -> Arc<PgValueColumn>;
+    // fn id_with_table_alias(&self) -> Arc<PgValueColumn>;
     fn search_for_field(&self, field_name: &str) -> Option<Box<dyn SqlField>>;
 }
 
@@ -127,28 +128,26 @@ impl<T: DataSource, E: Entity> TableWithColumns for Table<T, E> {
     /// Adds a new column to the table. Note, that Column may use an alias. Additional
     /// features may be added into [`Column`] in the future, so better use [`with_column()`]
     /// to keep your code portable.
-    fn add_column(&mut self, column_name: String, column: Column) {
+    fn add_column(&mut self, column_name: String, mut column: PgValueColumn) {
+        column.set_table_alias(&self.alias);
         self.columns.insert(column_name, Arc::new(column));
     }
 
     /// Return all columns. See also: [`Table::get_column`].
-    fn columns(&self) -> &IndexMap<String, Arc<Column>> {
+    fn columns(&self) -> &IndexMap<String, Arc<PgValueColumn>> {
         &self.columns
     }
 
-    fn get_column_with_table_alias(&self, name: &str) -> Option<Arc<Column>> {
-        let mut f = self.get_column(name)?.deref().clone();
-        f.set_table_alias(
-            self.get_alias()
-                .unwrap_or_else(|| self.get_table_name().unwrap())
-                .clone(),
-        );
-        Some(Arc::new(f))
-    }
+    // fn get_column_with_table_alias(&self, name: &str) -> Option<Arc<PgValueColumn>> {
+    //     Some(Arc::new(self.get_column(name)?.with_table_alias()))
+    // }
+    // fn id_with_table_alias(&self) -> Arc<PgValueColumn> {
+    //     Arc::new(self.id().with_table_alias())
+    // }
 
     /// Returns the id column. If `with_id_column` was not called, will try to find
     /// column called `"id"`. If not found, will panic.
-    fn id(&self) -> Arc<Column> {
+    fn id(&self) -> Arc<PgValueColumn> {
         let id_column = if self.id_column.is_some() {
             let x = self.id_column.clone().unwrap();
             x.clone()
@@ -160,15 +159,15 @@ impl<T: DataSource, E: Entity> TableWithColumns for Table<T, E> {
             .unwrap()
     }
 
-    fn id_with_table_alias(&self) -> Arc<Column> {
-        let id_column = if self.id_column.is_some() {
-            let x = self.id_column.clone().unwrap();
-            x.clone()
-        } else {
-            "id".to_string()
-        };
-        self.get_column_with_table_alias(&id_column).unwrap()
-    }
+    // fn id_with_table_alias(&self) -> Arc<PgValueColumn> {
+    //     let id_column = if self.id_column.is_some() {
+    //         let x = self.id_column.clone().unwrap();
+    //         x.clone()
+    //     } else {
+    //         "id".to_string()
+    //     };
+    //     self.get_column_with_table_alias(&id_column).unwrap()
+    // }
 
     /// In addition to `self.columns` the columns can also be defined for a joined
     /// table. (See [`Table::with_join()`]) or through a lazy expression (See
@@ -207,11 +206,11 @@ impl<T: DataSource, E: Entity> TableWithColumns for Table<T, E> {
 
 impl<T: DataSource, E: Entity> Table<T, E> {
     /// When building a table - a way to chain column declarations.
-    pub fn with_column(mut self, column: impl Into<Column>) -> Self {
-        let mut column: Column = column.into();
-        if self.table_alias.is_some() {
-            column.set_table_alias(self.table_alias.clone().unwrap());
-        }
+    pub fn with_column(mut self, column: impl Into<PgValueColumn>) -> Self {
+        let column: PgValueColumn = column.into();
+        // if self.table_alias.is_some() {
+        //     column.set_table_alias(self.table_alias.clone().unwrap());
+        // }
         self.add_column(column.name(), column);
         self
     }
@@ -263,7 +262,7 @@ mod tests {
         let db = MockDataSource::new(&data);
 
         let roles = Table::new("roles", db.clone())
-            .with_column(Column::new("name".to_string(), Some("id".to_string())));
+            .with_column(PgValueColumn::new("name").with_alias("id"));
 
         assert!(roles.get_column("qq").is_none());
         assert!(roles.get_column("name").is_some());

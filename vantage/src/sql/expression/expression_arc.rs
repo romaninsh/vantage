@@ -64,6 +64,12 @@ impl ExpressionArc {
         let parameters = Expression::from_vec(parameters, ", ");
         expr_arc!(format!("{}({{}})", function_name), parameters)
     }
+
+    /// Places values into the template and returns a String.
+    /// Useful for debugging, but not for SQL execution.
+    pub fn preview(&self) -> String {
+        self.render_chunk().preview()
+    }
 }
 
 impl Chunk for ExpressionArc {

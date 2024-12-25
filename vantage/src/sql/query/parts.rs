@@ -154,8 +154,8 @@ mod tests {
     use serde_json::Value;
 
     use crate::{
-        prelude::{Column, Operations},
-        sql::Condition,
+        prelude::PgValueColumn,
+        sql::{Condition, Operations},
     };
 
     use super::*;
@@ -198,18 +198,15 @@ mod tests {
 
     #[test]
     fn test_conditions_expressions() {
-        let name = Arc::new(Column::new("name".to_string(), None));
-        let surname = Arc::new(Column::new("surname".to_string(), Some("sur".to_string())));
+        let name = Arc::new(PgValueColumn::new("name"));
+        let surname = Arc::new(PgValueColumn::new("surname"));
 
         let conditions = QueryConditions::having().with_condition(
             Condition::or(name.eq(&surname), surname.eq(&Value::Null)).render_chunk(),
         );
         let result = conditions.render_chunk().split();
 
-        assert_eq!(
-            result.0,
-            " HAVING ((name = sur.surname) OR (sur.surname = {}))"
-        );
+        assert_eq!(result.0, " HAVING ((name = surname) OR (surname = {}))");
         assert_eq!(result.1.len(), 1);
         assert_eq!(result.1[0], Value::Null);
     }

@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use super::{RelatedSqlTable, RelatedTableFx};
-use crate::{prelude::SqlTable, sql::Operations};
+use crate::{
+    prelude::SqlTable,
+    sql::{Chunk, Operations},
+};
 
 #[derive(Clone)]
 pub struct ReferenceMany {
@@ -41,9 +44,11 @@ impl RelatedSqlTable for ReferenceMany {
     fn get_linked_set(&self, table: &dyn SqlTable) -> Box<dyn SqlTable> {
         let mut target = (self.get_table)();
         let target_field = target
-            .get_column_with_table_alias(&self.target_foreign_key)
-            .unwrap();
-        target.add_condition(target_field.eq(&table.id_with_table_alias()));
+            .get_column(&self.target_foreign_key)
+            .unwrap()
+            .with_table_alias();
+        dbg!(&table.id().with_table_alias().render_chunk().preview());
+        target.add_condition(target_field.eq(&table.id().with_table_alias()));
         target
     }
 }

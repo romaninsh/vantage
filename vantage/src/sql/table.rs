@@ -25,11 +25,13 @@
 use std::any::{type_name, Any};
 use std::fmt::{Debug, Display};
 use std::ops::Deref;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
+mod alias;
 pub mod column;
 mod join;
 
+pub use alias::TableAlias;
 pub use column::Column;
 use column::SqlColumn;
 pub use extensions::{Hooks, SoftDelete, TableExtension};
@@ -37,7 +39,7 @@ pub use join::Join;
 
 use crate::expr_arc;
 use crate::lazy_expression::LazyExpression;
-use crate::prelude::{AssociatedQuery, Expression};
+use crate::prelude::{AssociatedQuery, Expression, PgValueColumn, SqlField};
 use crate::sql::Condition;
 use crate::sql::ExpressionArc;
 use crate::sql::Query;
@@ -69,7 +71,8 @@ pub trait AnyTable: Any + Send + Sync {
 
     fn as_any_ref(&self) -> &dyn Any;
 
-    fn get_column(&self, name: &str) -> Option<Arc<Column>>;
+    fn get_column(&self, name: &str) -> Option<Arc<PgValueColumn>>;
+    fn get_column_box(&self, name: &str) -> Option<Arc<Box<dyn SqlColumn>>>;
 
     fn add_condition(&mut self, condition: Condition);
     fn hooks(&self) -> &Hooks;
@@ -82,16 +85,13 @@ pub trait AnyTable: Any + Send + Sync {
 ///
 ///
 pub trait RelatedTable<T: DataSource>: SqlTable {
-    fn column_query(&self, column: Arc<Column>) -> AssociatedQuery<T, EmptyEntity>;
+    fn column_query(&self, column: Arc<PgValueColumn>) -> AssociatedQuery<T, EmptyEntity>;
     fn add_columns_into_query(&self, query: Query, alias_prefix: Option<&str>) -> Query;
     fn get_join(&self, table_alias: &str) -> Option<Arc<Join<T>>>;
 
-    fn get_alias(&self) -> Option<&String>;
     fn get_table_name(&self) -> Option<&String>;
 
-    fn set_alias(&mut self, alias: &str);
-
-    fn get_columns(&self) -> &IndexMap<String, Arc<Column>>;
+    fn get_columns(&self) -> &IndexMap<String, Arc<PgValueColumn>>;
     fn get_title_column(&self) -> Option<String>;
 }
 
@@ -121,16 +121,15 @@ pub struct Table<T: DataSource, E: Entity> {
     _phantom: std::marker::PhantomData<E>,
 
     table_name: String,
-    table_alias: Option<String>,
+    alias: TableAlias,
     id_column: Option<String>,
     title_column: Option<String>,
 
     conditions: Vec<Condition>,
-    columns: IndexMap<String, Arc<Column>>,
+    columns: IndexMap<String, Arc<PgValueColumn>>,
     joins: IndexMap<String, Arc<Join<T>>>,
     lazy_expressions: IndexMap<String, LazyExpression<T, E>>,
     refs: IndexMap<String, Arc<Box<dyn RelatedSqlTable>>>,
-    table_aliases: Arc<Mutex<UniqueIdVendor>>,
 
     hooks: Hooks,
 }
@@ -153,9 +152,19 @@ mod with_fetching;
 
 mod extensions;
 
-pub trait SqlTable: TableWithColumns + TableWithQueries {}
+pub trait SqlTable: TableWithColumns + TableWithQueries {
+    fn get_alias(&self) -> &TableAlias;
+    fn set_alias(&mut self, alias: &str);
+}
 
-impl<T: DataSource, E: Entity> SqlTable for Table<T, E> {}
+impl<T: DataSource, E: Entity> SqlTable for Table<T, E> {
+    fn get_alias(&self) -> &TableAlias {
+        &self.alias
+    }
+    fn set_alias(&mut self, alias: &str) {
+        self.alias.set(alias);
+    }
+}
 
 impl<T: DataSource + Clone, E: Entity> Clone for Table<T, E> {
     fn clone(&self) -> Self {
@@ -164,7 +173,7 @@ impl<T: DataSource + Clone, E: Entity> Clone for Table<T, E> {
             _phantom: self._phantom.clone(),
 
             table_name: self.table_name.clone(),
-            table_alias: self.table_alias.clone(),
+            alias: self.alias.deep_clone(),
             id_column: self.id_column.clone(),
             title_column: self.title_column.clone(),
 
@@ -175,8 +184,7 @@ impl<T: DataSource + Clone, E: Entity> Clone for Table<T, E> {
             refs: self.refs.clone(),
 
             // Perform a deep clone of the UniqueIdVendor
-            table_aliases: Arc::new(Mutex::new((*self.table_aliases.lock().unwrap()).clone())),
-
+            // table_aliases: Arc::new(Mutex::new((*self.table_aliases.lock().unwrap()).clone())),
             hooks: self.hooks.clone(),
         }
     }
@@ -199,8 +207,13 @@ impl<T: DataSource, E: Entity> AnyTable for Table<T, E> {
     /// Handy way to reference column by name, for example to use with [`Operations`].
     ///
     /// [`Operations`]: super::super::operations::Operations
-    fn get_column(&self, name: &str) -> Option<Arc<Column>> {
+    fn get_column(&self, name: &str) -> Option<Arc<PgValueColumn>> {
         self.columns.get(name).cloned()
+    }
+    fn get_column_box(&self, name: &str) -> Option<Arc<Box<dyn SqlColumn>>> {
+        let c = (**self.columns.get(name)?).clone();
+        let c = Box::new(c) as Box<dyn SqlColumn>;
+        Some(Arc::new(c))
     }
     fn add_condition(&mut self, condition: Condition) {
         self.conditions.push(condition);
@@ -211,7 +224,7 @@ impl<T: DataSource, E: Entity> AnyTable for Table<T, E> {
 }
 
 impl<T: DataSource, E: Entity> RelatedTable<T> for Table<T, E> {
-    fn column_query(&self, column: Arc<Column>) -> AssociatedQuery<T, EmptyEntity> {
+    fn column_query(&self, column: Arc<PgValueColumn>) -> AssociatedQuery<T, EmptyEntity> {
         let query = self.get_empty_query().with_field(column.name(), column);
         AssociatedQuery::new(query, self.data_source.clone())
     }
@@ -222,7 +235,7 @@ impl<T: DataSource, E: Entity> RelatedTable<T> for Table<T, E> {
             let column_val = if let Some(alias_prefix) = &alias_prefix {
                 let alias = format!("{}_{}", alias_prefix, column_key);
                 let mut column_val = column_val.deref().clone();
-                column_val.set_column_alias(alias);
+                column_val.set_alias(alias);
                 Arc::new(column_val)
             } else {
                 column_val.clone()
@@ -230,7 +243,7 @@ impl<T: DataSource, E: Entity> RelatedTable<T> for Table<T, E> {
             query = query.with_field(
                 column_val
                     .deref()
-                    .get_column_alias()
+                    .get_alias()
                     .unwrap_or_else(|| column_key.clone()),
                 column_val,
             );
@@ -242,29 +255,10 @@ impl<T: DataSource, E: Entity> RelatedTable<T> for Table<T, E> {
 
         query
     }
-
-    fn get_alias(&self) -> Option<&String> {
-        self.table_alias.as_ref()
-    }
-    fn set_alias(&mut self, alias: &str) {
-        if let Some(alias) = &self.table_alias {
-            self.table_aliases.lock().unwrap().dont_avoid(alias);
-        }
-        self.table_alias = Some(alias.to_string());
-        self.table_aliases.lock().unwrap().avoid(alias);
-        for column in self.columns.values_mut() {
-            let mut new_column = column.deref().deref().clone();
-            new_column.set_table_alias(alias.to_string());
-            *column = Arc::new(new_column);
-        }
-        for condition in &mut self.conditions {
-            condition.set_table_alias(alias);
-        }
-    }
     fn get_table_name(&self) -> Option<&String> {
         Some(&self.table_name)
     }
-    fn get_columns(&self) -> &IndexMap<String, Arc<Column>> {
+    fn get_columns(&self) -> &IndexMap<String, Arc<PgValueColumn>> {
         &self.columns
     }
     fn get_join(&self, table_alias: &str) -> Option<Arc<Join<T>>> {
@@ -282,7 +276,7 @@ impl<T: DataSource, E: Entity> Table<T, E> {
             _phantom: std::marker::PhantomData,
 
             table_name: table_name.to_string(),
-            table_alias: None,
+            alias: TableAlias::new(table_name),
             id_column: None,
             title_column: None,
 
@@ -291,7 +285,6 @@ impl<T: DataSource, E: Entity> Table<T, E> {
             joins: IndexMap::new(),
             lazy_expressions: IndexMap::new(),
             refs: IndexMap::new(),
-            table_aliases: Arc::new(Mutex::new(UniqueIdVendor::new())),
 
             hooks: Hooks::new(),
         }
@@ -305,7 +298,7 @@ impl<T: DataSource> Table<T, EmptyEntity> {
             _phantom: std::marker::PhantomData,
 
             table_name: table_name.to_string(),
-            table_alias: None,
+            alias: TableAlias::new(table_name),
             id_column: None,
             title_column: None,
 
@@ -314,7 +307,6 @@ impl<T: DataSource> Table<T, EmptyEntity> {
             joins: IndexMap::new(),
             lazy_expressions: IndexMap::new(),
             refs: IndexMap::new(),
-            table_aliases: Arc::new(Mutex::new(UniqueIdVendor::new())),
 
             hooks: Hooks::new(),
         }
@@ -345,7 +337,7 @@ impl<T: DataSource, E: Entity> Table<T, E> {
             _phantom: std::marker::PhantomData,
 
             table_name: self.table_name,
-            table_alias: self.table_alias,
+            alias: self.alias,
             id_column: self.id_column,
             title_column: self.title_column,
 
@@ -354,9 +346,6 @@ impl<T: DataSource, E: Entity> Table<T, E> {
             joins: self.joins,
             lazy_expressions: IndexMap::new(), // TODO: cast proprely
             refs: IndexMap::new(),             // TODO: cast proprely
-
-            // Perform a deep clone of the UniqueIdVendor
-            table_aliases: Arc::new(Mutex::new((*self.table_aliases.lock().unwrap()).clone())),
 
             hooks: self.hooks,
         }
@@ -449,13 +438,13 @@ impl<T: DataSource, E: Entity> Table<T, E> {
 pub trait TableDelegate<T: DataSource, E: Entity>: TableWithColumns {
     fn table(&self) -> &Table<T, E>;
 
-    fn id(&self) -> Arc<Column> {
+    fn id(&self) -> Arc<PgValueColumn> {
         self.table().id()
     }
     fn add_condition(&self, condition: Condition) -> Table<T, E> {
         self.table().clone().with_condition(condition)
     }
-    fn sum(&self, column: Arc<Column>) -> AssociatedQuery<T, EmptyEntity> {
+    fn sum(&self, column: Arc<PgValueColumn>) -> AssociatedQuery<T, EmptyEntity> {
         self.table().sum(column)
     }
 }
@@ -494,8 +483,8 @@ mod tests {
         let data_source = MockDataSource::new(&data);
         let books = Table::new("book", data_source)
             .with(|b| {
-                b.add_column("title".to_string(), Column::new("title".to_string(), None));
-                b.add_column("price".to_string(), Column::new("price".to_string(), None));
+                b.add_column("title".to_string(), PgValueColumn::new("title"));
+                b.add_column("price".to_string(), PgValueColumn::new("price"));
             })
             .with(|b| {
                 b.add_condition(b.get_column("title").unwrap().gt(100));

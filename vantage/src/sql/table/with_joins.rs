@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use std::ptr::eq;
 use std::sync::Arc;
 
-use super::{Join, TableWithColumns};
+use super::{Join, SqlTable, TableWithColumns};
 use crate::prelude::Chunk;
 use crate::sql::query::{JoinQuery, JoinType, QueryConditions};
 use crate::sql::table::Table;
@@ -186,6 +186,8 @@ impl<T: DataSource, E: Entity> Table<T, E> {
         self.into_entity::<E3>()
     }
 
+    pub fn link<E2: Entity>(&mut self, their_table: &mut Table<T, E2>) {}
+
     pub fn add_join<E2: Entity>(
         &mut self,
         mut their_table: Table<T, E2>,
@@ -197,6 +199,9 @@ impl<T: DataSource, E: Entity> Table<T, E> {
         //! but we still have to specify foreign key in our own table. For more complex
         //! joins use `join_table` method.
         //! before joining, make sure there are no alias clashes
+        todo!();
+
+        /*
         if eq(&*self.table_aliases, &*their_table.table_aliases) {
             panic!(
                 "Tables are already joined: {}, {}",
@@ -223,7 +228,7 @@ impl<T: DataSource, E: Entity> Table<T, E> {
 
         // Get information about their_table
         let their_table_name = their_table.table_name.clone();
-        if their_table.table_alias.is_none() {
+        if their_table.get_table_alias().is_none() {
             let their_table_alias = self
                 .table_aliases
                 .lock()
@@ -234,7 +239,7 @@ impl<T: DataSource, E: Entity> Table<T, E> {
         let their_table_id = their_table.id();
 
         // Give alias to our table as well
-        if self.table_alias.is_none() {
+        if self.get_table_alias().is_none() {
             let our_table_alias = self
                 .table_aliases
                 .lock()
@@ -242,7 +247,7 @@ impl<T: DataSource, E: Entity> Table<T, E> {
                 .get_one_of_uniq_id(UniqueIdVendor::all_prefixes(&self.table_name));
             self.set_alias(&our_table_alias);
         }
-        let their_table_alias = their_table.table_alias.as_ref().unwrap().clone();
+        let their_table_alias = their_table.get_table_alias().as_ref().unwrap().clone();
 
         let mut on_condition = QueryConditions::on();
         on_condition.add_condition(
@@ -274,6 +279,7 @@ impl<T: DataSource, E: Entity> Table<T, E> {
         );
 
         self.get_join(&their_table_alias).unwrap()
+        */
     }
 }
 
