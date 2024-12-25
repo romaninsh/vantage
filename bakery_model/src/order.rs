@@ -55,10 +55,10 @@ impl Order {
 }
 
 pub trait OrderTable: SqlTable {
-    fn client_id(&self) -> Arc<Column> {
+    fn client_id(&self) -> Arc<PgValueColumn> {
         Order::table().get_column("client_id").unwrap()
     }
-    fn product_id(&self) -> Arc<Column> {
+    fn product_id(&self) -> Arc<PgValueColumn> {
         Order::table().get_column("product_id").unwrap()
     }
 

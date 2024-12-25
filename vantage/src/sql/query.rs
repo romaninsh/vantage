@@ -7,10 +7,10 @@ pub use with_traits::SqlQuery;
 
 use crate::{
     expr, expr_arc,
+    prelude::PgValueColumn,
     sql::{
         chunk::Chunk,
         expression::{Expression, ExpressionArc},
-        table::Column,
     },
     traits::column::SqlField,
 };
@@ -123,10 +123,7 @@ impl Query {
     }
     // Simplified ways to define a field with a string
     pub fn with_column_field(self, name: &str) -> Self {
-        self.with_field(
-            name.to_string(),
-            Arc::new(Column::new(name.to_string(), None)),
-        )
+        self.with_field(name.to_string(), Arc::new(PgValueColumn::new(name)))
     }
 
     pub fn with_field_arc(mut self, name: String, field: Arc<Box<dyn SqlField>>) -> Self {

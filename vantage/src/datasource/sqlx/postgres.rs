@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
 use serde_json::{Map, Value};
-use sqlx::{postgres::PgArguments, Execute};
+use sqlx::postgres::PgArguments;
 
 use crate::{
     prelude::Query,
@@ -11,6 +11,12 @@ use crate::{
 };
 
 use super::sql_to_json::row_to_json;
+
+mod value_column;
+pub use value_column::PgValueColumn;
+
+// mod uuid_column;
+// pub use uuid_column::PgUuidColumn;
 
 #[derive(Debug, Clone)]
 pub struct Postgres {

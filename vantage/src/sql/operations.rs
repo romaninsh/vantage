@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn test_upper() {
-        let a = Arc::new(Column::new("name".to_string(), None));
+        let a = Arc::new(PgValueColumn::new("name"));
         let b = a.upper();
 
         assert_eq!(b.render_chunk().sql(), "UPPER(name)");

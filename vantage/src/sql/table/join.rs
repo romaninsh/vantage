@@ -44,9 +44,6 @@ impl<T: DataSource> Join<T> {
 
         Join { table, join_query }
     }
-    pub fn alias(&self) -> &str {
-        self.table.get_alias().unwrap()
-    }
     pub fn join_query(&self) -> &JoinQuery {
         &self.join_query
     }

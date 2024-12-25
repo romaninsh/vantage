@@ -6,7 +6,6 @@ pub use crate::datasource::sqlx::postgres::*;
 pub use crate::expr;
 pub use crate::expr_arc;
 pub use crate::mocks::MockDataSource;
-pub use crate::sql::table::Column;
 pub use crate::traits::column::SqlField;
 pub use crate::traits::DataSource;
 pub use crate::{
