@@ -18,7 +18,7 @@ extensibility and safety.
 
 ## Quick Start
 
-To get started with Vantage, you first need to define your business models. For example, take a look
+To get started with Vantage, you first need to define your business model. For example, take a look
 at the provided [bakery_model](bakery_model/src/). This model represents a real-world domain that
 you can interact with using Vantage. You'll also need a Postgres database with sample data preloaded
 from [schema-pg.sql](bakery_model/schema-pg.sql) and a `postgres` role configured.
