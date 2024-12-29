@@ -1,20 +1,25 @@
-use std::sync::Arc;
-
 use serde_json::Value;
+use std::sync::Arc;
+use std::sync::RwLock;
 
 use crate::expr;
-use crate::prelude::Column;
 use crate::sql::expression::{Expression, ExpressionArc};
 use crate::sql::Chunk;
 
-use super::table::column::SqlColumn;
+use super::table::Column;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 enum ConditionOperand {
     Column(Arc<Column>),
     Expression(Box<Expression>),
     Condition(Box<Condition>),
     Value(Value),
+}
+
+impl std::fmt::Debug for ConditionOperand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -27,12 +32,12 @@ pub struct Condition {
 #[allow(dead_code)]
 impl Condition {
     pub fn from_field(
-        field: Arc<Column>,
+        column: Arc<Column>,
         operation: &str,
         value: Arc<Box<dyn Chunk>>,
     ) -> Condition {
         Condition {
-            field: ConditionOperand::Column(field),
+            field: ConditionOperand::Column(column),
             operation: operation.to_string(),
             value,
         }
@@ -60,17 +65,15 @@ impl Condition {
         }
     }
 
-    pub fn set_table_alias(&mut self, alias: &str) {
-        match &mut self.field {
-            ConditionOperand::Column(field) => {
-                let mut f = field.as_ref().clone();
-                f.set_table_alias(alias.to_string());
-                *field = Arc::new(f);
-            }
-            ConditionOperand::Condition(condition) => condition.set_table_alias(alias),
-            _ => {}
-        }
-    }
+    // pub fn set_table_alias(&mut self, alias: &str) {
+    //     match &mut self.field {
+    //         ConditionOperand::Column(field) => {
+    //             field.set_table_alias(alias.to_string());
+    //         }
+    //         ConditionOperand::Condition(condition) => condition.set_table_alias(alias),
+    //         _ => {}
+    //     }
+    // }
 
     pub fn from_value(operand: Value, operation: &str, value: Arc<Box<dyn Chunk>>) -> Condition {
         Condition {
@@ -82,7 +85,7 @@ impl Condition {
 
     fn render_operand(&self) -> Expression {
         match self.field.clone() {
-            ConditionOperand::Column(field) => field.render_chunk(),
+            ConditionOperand::Column(field) => expr!(field.name_with_table()),
             ConditionOperand::Expression(expression) => expression.render_chunk(),
             ConditionOperand::Condition(condition) => condition.render_chunk(),
             ConditionOperand::Value(value) => expr!("{}", value.clone()).render_chunk(),
@@ -113,13 +116,27 @@ impl Chunk for Condition {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
+    use crate::{
+        mocks::MockDataSource,
+        prelude::{AnyTable, SqlTable},
+        sql::Table,
+    };
+
     use super::*;
 
     #[test]
     fn test_condition() {
-        let field = Arc::new(Column::new("id".to_string(), None));
+        let ds = MockDataSource::new(&json!([]));
 
-        let condition = Condition::from_field(field, "=", Arc::new(Box::new("1".to_string())));
+        let table = Table::new("test", ds).with_column("id");
+
+        let condition = Condition::from_field(
+            table.get_column_box("id").unwrap(),
+            "=",
+            Arc::new(Box::new("1".to_string())),
+        );
         let (sql, params) = condition.render_chunk().split();
 
         assert_eq!(sql, "(id = {})");
@@ -142,13 +159,22 @@ mod tests {
 
     #[test]
     fn test_and() {
-        let f_married = Arc::new(Column::new("married".to_string(), None));
-        let f_divorced = Arc::new(Column::new("divorced".to_string(), None));
+        let ds = MockDataSource::new(&json!([]));
 
-        let condition =
-            Condition::from_field(f_married, "=", Arc::new(Box::new("yes".to_string()))).and(
-                Condition::from_field(f_divorced, "=", Arc::new(Box::new("yes".to_string()))),
-            );
+        let table = Table::new("test", ds)
+            .with_column("married")
+            .with_column("divorced");
+
+        let condition = Condition::from_field(
+            table.get_column_box("married").unwrap(),
+            "=",
+            Arc::new(Box::new("yes".to_string())),
+        )
+        .and(Condition::from_field(
+            table.get_column_box("divorced").unwrap(),
+            "=",
+            Arc::new(Box::new("yes".to_string())),
+        ));
 
         let (sql, params) = condition.render_chunk().split();
 

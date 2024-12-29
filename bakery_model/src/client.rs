@@ -34,19 +34,19 @@ impl Client {
 }
 
 pub trait ClientTable: SqlTable {
-    fn name(&self) -> Arc<Column> {
+    fn name(&self) -> Arc<PgValueColumn> {
         self.get_column("name").unwrap()
     }
-    fn email(&self) -> Arc<Column> {
+    fn email(&self) -> Arc<PgValueColumn> {
         self.get_column("email").unwrap()
     }
-    fn contact_details(&self) -> Arc<Column> {
+    fn contact_details(&self) -> Arc<PgValueColumn> {
         self.get_column("contact_details").unwrap()
     }
-    fn bakery_id(&self) -> Arc<Column> {
+    fn bakery_id(&self) -> Arc<PgValueColumn> {
         self.get_column("bakery_id").unwrap()
     }
-    fn is_paying_client(&self) -> Arc<Column> {
+    fn is_paying_client(&self) -> Arc<PgValueColumn> {
         self.get_column("is_paying_client").unwrap()
     }
 

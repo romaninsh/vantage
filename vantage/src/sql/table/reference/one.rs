@@ -42,11 +42,12 @@ impl RelatedSqlTable for ReferenceOne {
 
     fn get_linked_set(&self, table: &dyn SqlTable) -> Box<dyn SqlTable> {
         let mut target = (self.get_table)();
-        let target_field = target.id_with_table_alias();
+        let target_field = target.id().with_table_alias();
         target.add_condition(
             target_field.eq(&table
-                .get_column_with_table_alias(self.our_foreign_key.as_str())
-                .unwrap()),
+                .get_column(self.our_foreign_key.as_str())
+                .unwrap()
+                .with_table_alias()),
         );
         target
     }
@@ -61,7 +62,7 @@ mod tests {
     use crate::sql::Table;
 
     #[test]
-    fn test_related_reference() {
+    fn test_related_one_reference() {
         let data =
             json!([{ "name": "John", "surname": "Doe"}, { "name": "Jane", "surname": "Doe"}]);
         let data_source = MockDataSource::new(&data);

@@ -43,13 +43,13 @@ impl Product {
 pub trait ProductTable: AnyTable {
     fn with_inventory(self) -> Table<Postgres, ProductInventory>;
 
-    fn name(&self) -> Arc<Column> {
+    fn name(&self) -> Arc<PgValueColumn> {
         self.get_column("name").unwrap()
     }
-    fn price(&self) -> Arc<Column> {
+    fn price(&self) -> Arc<PgValueColumn> {
         self.get_column("price").unwrap()
     }
-    fn bakery_id(&self) -> Arc<Column> {
+    fn bakery_id(&self) -> Arc<PgValueColumn> {
         self.get_column("bakery_id").unwrap()
     }
 
@@ -77,7 +77,7 @@ pub trait ProductInventoryTable: RelatedTable<Postgres> {
         j.table().clone()
     }
 
-    fn stock(&self) -> Arc<Column> {
+    fn stock(&self) -> Arc<PgValueColumn> {
         let j = self.j_stock();
         j.get_column("stock").unwrap()
     }

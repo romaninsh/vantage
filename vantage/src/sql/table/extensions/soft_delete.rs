@@ -4,8 +4,8 @@ use anyhow::Result;
 use serde_json::json;
 
 use crate::{
-    prelude::SqlTable,
-    sql::{query::SqlQuery, Chunk, Column, Operations, Query},
+    prelude::{PgValueColumn, SqlTable},
+    sql::{query::SqlQuery, Chunk, Operations, Query},
 };
 
 use super::TableExtension;
@@ -21,7 +21,7 @@ impl SoftDelete {
             soft_delete_field: soft_delete_field.to_string(),
         }
     }
-    fn is_deleted(&self, table: &dyn SqlTable) -> Arc<Column> {
+    fn is_deleted(&self, table: &dyn SqlTable) -> Arc<PgValueColumn> {
         table.get_column(&self.soft_delete_field).unwrap()
     }
 }
@@ -30,7 +30,7 @@ impl TableExtension for SoftDelete {
     fn init(&self, table: &mut dyn SqlTable) {
         table.add_column(
             self.soft_delete_field.clone(),
-            Column::new(self.soft_delete_field.clone(), None),
+            PgValueColumn::new(&self.soft_delete_field),
         );
     }
 
