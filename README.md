@@ -2,25 +2,30 @@
 
 [![Book](https://github.com/romaninsh/vantage/actions/workflows/book.yaml/badge.svg)](https://romaninsh.github.io/vantage/)
 
-Vantage is a type-safe, easy to use database toolkit for Rust that focuses on developer productivity
-without compromising performance. It allows you to work with your database using Rust's strong type
-system while abstracting away the complexity of SQL queries.
+Vantage is a modern, enterprise-grade framework written in Rust, designed to revolutionize how
+developers build and manage business applications. By leveraging Rust's unmatched performance and
+type safety, Vantage provides data interaction and business logic abstraction.
 
-Vantage enables use of Model Driven Architecture (DSL/DDD) patterns in your Rust applications. This
-approach separates business and application logic from underlying platform technology. Vantage uses
-native Rust syntax to define Entities, Attributes, Validations, Relations, Actions and mapping them
-to one or several persistence layers - such as SQL, NoSQL or APIs.
+Vantage combines core features like an Object Relationship Manager, Query Builder, and Entity
+Framework with enterprise-grade enhancements such as soft-delete, aggregation, event hooks, disjoint
+subtypes, and high-performance data mocking. Vantage empowers teams to create efficient ERP
+applications or custom SaaS solutions.
 
-The long-term goal for Vantage is to be a building block for configurable ERP/CRM/HR/Supply business
-management system rivaling Odoo or Salesforce written entirely in Rust.
+As a part of a broader ecosystem, Vantage enables creation of reusable HR, CRM, Payment and Supply
+Chain management solutions rivaling the likes of [Odoo](https://odoo.com/),
+[Salesforce](https://www.salesforce.com/) and SAP, while retaining Rust values - open source, performance,
+extensibility and safety.
 
 ## Quick Start
 
-Your application would typically require a model definition. Here is example:
-[bakery_model](bakery_model/src/). You would also need a Postgres database populated with sample data
-from [schema-pg.sql](bakery_model/schema-pg.sql) and create role `postgres`.
+To get started with Vantage, you first need to define your business models. For example, take a look
+at the provided [bakery_model](bakery_model/src/). This model represents a real-world domain that
+you can interact with using Vantage. You'll also need a Postgres database with sample data preloaded
+from [schema-pg.sql](bakery_model/schema-pg.sql) and a `postgres` role configured.
 
-Once this is in place, you can use Vantage to interract with your data like this:
+Once your environment is ready, Vantage enables you to interact with your data through its intuitive
+interface, allowing you to focus on business logic without worrying about SQL intricacies. Here’s a
+quick example:
 
 ```rust
 use vantage::prelude::*;
