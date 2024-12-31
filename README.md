@@ -2,9 +2,17 @@
 
 [![Book](https://github.com/romaninsh/vantage/actions/workflows/book.yaml/badge.svg)](https://romaninsh.github.io/vantage/)
 
-Vantage is a type-safe, ergonomic database toolkit for Rust that focuses on developer productivity
+Vantage is a type-safe, easy to use database toolkit for Rust that focuses on developer productivity
 without compromising performance. It allows you to work with your database using Rust's strong type
-system while abstracting away the complexity of SQL queries. (Support for NoSQL databases is coming soon)
+system while abstracting away the complexity of SQL queries.
+
+Vantage enables use of Model Driven Architecture (DSL/DDD) patterns in your Rust applications. This
+approach separates business and application logic from underlying platform technology. Vantage uses
+native Rust syntax to define Entities, Attributes, Validations, Relations, Actions and mapping them
+to one or several persistence layers - such as SQL, NoSQL or APIs.
+
+The long-term goal for Vantage is to be a building block for configurable ERP/CRM/HR/Supply business
+management system rivaling Odoo or Salesforce written entirely in Rust.
 
 ## Quick Start
 
