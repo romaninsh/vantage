@@ -2,14 +2,13 @@
 
 [![Book](https://github.com/romaninsh/vantage/actions/workflows/book.yaml/badge.svg)](https://romaninsh.github.io/vantage/)
 
-Vantage is a modern, enterprise-grade framework written in Rust, designed to revolutionize how
-developers build and manage business applications. By leveraging Rust's unmatched performance and
-type safety, Vantage provides data interaction and business logic abstraction.
+Vantage is a type-safe, easy to use database toolkit for Rust that focuses on developer productivity
+without compromising performance. It allows you to work with your database using Rust's strong type
+system while abstracting away the complexity of SQL queries.
 
-Vantage combines core features like an Object Relationship Manager, Query Builder, and Entity
-Framework with enterprise-grade enhancements such as soft-delete, aggregation, event hooks, disjoint
-subtypes, and high-performance data mocking. Vantage empowers teams to create efficient ERP
-applications or custom SaaS solutions.
+Vantage enables use of Model Driven Architecture, implementing Object Relationship Manager, Query
+Builder, and Entity Framework with enterprise-grade enhancements such as soft-delete, aggregation,
+event hooks, disjoint subtypes, and high-performance data mocking for your application.
 
 As a part of a broader ecosystem, Vantage enables creation of reusable HR, CRM, Payment and Supply
 Chain management solutions rivaling the likes of [Odoo](https://odoo.com/),
