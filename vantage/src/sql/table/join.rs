@@ -44,9 +44,6 @@ impl<T: DataSource> Join<T> {
 
         Join { table, join_query }
     }
-    pub fn alias(&self) -> &str {
-        self.table.get_alias().unwrap()
-    }
     pub fn join_query(&self) -> &JoinQuery {
         &self.join_query
     }
@@ -55,6 +52,9 @@ impl<T: DataSource> Join<T> {
     }
     pub fn table_mut(&mut self) -> &mut Table<T, EmptyEntity> {
         &mut self.table
+    }
+    pub fn split(&self) -> (Table<T, EmptyEntity>, JoinQuery) {
+        (self.table.clone(), self.join_query.clone())
     }
 }
 

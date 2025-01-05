@@ -4,7 +4,7 @@ use serde_json::{to_value, Value};
 use std::sync::Arc;
 
 use super::column::SqlColumn;
-use super::{AnyTable, Column, TableWithColumns};
+use super::{AnyTable, PgValueColumn, SqlTable, TableWithColumns};
 use crate::prelude::AssociatedQuery;
 use crate::sql::query::{QueryType, SqlQuery};
 use crate::sql::table::Table;
@@ -28,7 +28,8 @@ pub trait TableWithQueries: AnyTable {
 
 impl<T: DataSource, E: Entity> TableWithQueries for Table<T, E> {
     fn get_empty_query(&self) -> Query {
-        let mut query = Query::new().with_table(&self.table_name, self.table_alias.clone());
+        let mut query =
+            Query::new().with_table(&self.table_name, self.get_alias().try_get_for_from());
         for condition in self.conditions.iter() {
             query = query.with_condition(condition.clone());
         }
@@ -75,7 +76,7 @@ impl<T: DataSource, E: Entity> TableWithQueries for Table<T, E> {
 }
 
 impl<D: DataSource, E: Entity> Table<D, E> {
-    pub fn field_query(&self, field: Arc<Column>) -> AssociatedQuery<D, E> {
+    pub fn field_query(&self, field: Arc<PgValueColumn>) -> AssociatedQuery<D, E> {
         // let query = self.get_select_query_for_field(field);
         let query = self.get_empty_query().with_field(field.name(), field);
         AssociatedQuery::new(query, self.data_source.clone())
@@ -140,7 +141,7 @@ impl<D: DataSource, E: Entity> Table<D, E> {
         };
 
         for (field, _) in &self.columns {
-            let field_object = Arc::new(Column::new(field.clone(), self.table_alias.clone()));
+            let field_object = Arc::new(PgValueColumn::new(&field));
 
             if field_object.calculated() {
                 continue;
@@ -168,7 +169,7 @@ impl<D: DataSource, E: Entity> Table<D, E> {
         };
 
         for (field, _) in &self.columns {
-            let field_object = Arc::new(Column::new(field.clone(), self.table_alias.clone()));
+            let field_object = Arc::new(PgValueColumn::new(&field.clone()));
 
             if field_object.calculated() {
                 continue;

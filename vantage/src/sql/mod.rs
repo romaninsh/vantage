@@ -25,6 +25,5 @@ pub use operations::Operations;
 
 pub use condition::Condition;
 
-pub use table::Column;
 pub use table::Join;
 pub use table::Table;

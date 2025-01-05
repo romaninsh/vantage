@@ -30,13 +30,13 @@ impl Bakery {
 
 pub trait BakeryTable: AnyTable {
     // fields
-    fn id(&self) -> Arc<Column> {
+    fn id(&self) -> Arc<PgValueColumn> {
         self.get_column("id").unwrap()
     }
-    fn name(&self) -> Arc<Column> {
+    fn name(&self) -> Arc<PgValueColumn> {
         self.get_column("name").unwrap()
     }
-    fn profit_margin(&self) -> Arc<Column> {
+    fn profit_margin(&self) -> Arc<PgValueColumn> {
         self.get_column("profit_margin").unwrap()
     }
 

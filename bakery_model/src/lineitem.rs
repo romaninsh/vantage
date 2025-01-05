@@ -44,13 +44,13 @@ pub trait LineItemTable: AnyTable {
     fn as_table(&self) -> &Table<Postgres, LineItem> {
         self.as_any_ref().downcast_ref().unwrap()
     }
-    fn quantity(&self) -> Arc<Column> {
+    fn quantity(&self) -> Arc<PgValueColumn> {
         self.get_column("quantity").unwrap()
     }
-    fn order_id(&self) -> Arc<Column> {
+    fn order_id(&self) -> Arc<PgValueColumn> {
         self.get_column("order_id").unwrap()
     }
-    fn product_id(&self) -> Arc<Column> {
+    fn product_id(&self) -> Arc<PgValueColumn> {
         self.get_column("product_id").unwrap()
     }
     fn total(&self) -> Box<dyn SqlField> {
