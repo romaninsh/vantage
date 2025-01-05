@@ -28,7 +28,8 @@ pub trait TableWithQueries: AnyTable {
 
 impl<T: DataSource, E: Entity> TableWithQueries for Table<T, E> {
     fn get_empty_query(&self) -> Query {
-        let mut query = Query::new().with_table(&self.table_name, self.get_alias().try_get());
+        let mut query =
+            Query::new().with_table(&self.table_name, self.get_alias().try_get_for_from());
         for condition in self.conditions.iter() {
             query = query.with_condition(condition.clone());
         }

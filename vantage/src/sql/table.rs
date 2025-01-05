@@ -155,6 +155,7 @@ mod extensions;
 pub trait SqlTable: TableWithColumns + TableWithQueries {
     fn get_alias(&self) -> &TableAlias;
     fn set_alias(&mut self, alias: &str);
+    fn mut_alias(&mut self) -> &mut TableAlias;
 }
 
 impl<T: DataSource, E: Entity> SqlTable for Table<T, E> {
@@ -163,6 +164,9 @@ impl<T: DataSource, E: Entity> SqlTable for Table<T, E> {
     }
     fn set_alias(&mut self, alias: &str) {
         self.alias.set(alias);
+    }
+    fn mut_alias(&mut self) -> &mut TableAlias {
+        &mut self.alias
     }
 }
 

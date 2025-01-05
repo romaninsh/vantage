@@ -19,6 +19,8 @@ mod parts;
 
 pub use parts::*;
 
+use super::table::TableAlias;
+
 #[derive(Debug, Clone)]
 pub struct Query {
     table: QuerySource,

@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
-use crate::{expr, expr_arc, prelude::Expression, prelude::ExpressionArc, sql::chunk::Chunk};
+use crate::{
+    expr, expr_arc,
+    prelude::{Expression, ExpressionArc, TableAlias},
+    sql::chunk::Chunk,
+};
 
 use super::Query;
 
@@ -18,6 +22,7 @@ pub enum QueryType {
 pub enum QuerySource {
     None,
     Table(String, Option<String>),
+    TableWithAlias(String, Arc<TableAlias>),
     Query(Arc<Box<Query>>, Option<String>),
     Expression(Expression, Option<String>),
 }
@@ -33,9 +38,18 @@ impl QuerySource {
                 query.render_chunk()
             )
             .render_chunk(),
-            QuerySource::Table(table, None) => expr!(format!("{}{}", prefix, table)),
-            QuerySource::Table(table, Some(alias)) => {
-                expr!(format!("{}{} AS {}", prefix, table, alias))
+            QuerySource::TableWithAlias(table, a) => {
+                if a.alias_is_some() {
+                    expr!(format!("{}{} AS {}", prefix, table, a.get()))
+                } else {
+                    expr!(format!("{}{}", prefix, table))
+                }
+            }
+            QuerySource::Table(table, None) => {
+                expr!(format!("{}{}", prefix, table))
+            }
+            QuerySource::Table(table, Some(a)) => {
+                expr!(format!("{}{} AS {}", prefix, table, a))
             }
             QuerySource::Expression(expression, None) => {
                 expr_arc!(format!("{}{{}}", prefix), expression.render_chunk()).render_chunk()
@@ -162,7 +176,8 @@ mod tests {
 
     #[test]
     fn test_query_source_render() {
-        let query = QuerySource::Table("user".to_string(), None);
+        let query =
+            QuerySource::TableWithAlias("user".to_string(), Arc::new(TableAlias::new("user")));
         let result = query.render_chunk().split();
 
         assert_eq!(result.0, "FROM user");
@@ -232,6 +247,24 @@ mod tests {
         let join_query = JoinQuery {
             join_type: JoinType::Inner,
             source: QuerySource::Table("user".to_string(), Some("u".to_string())),
+            on_conditions: QueryConditions {
+                condition_type: ConditionType::On,
+                conditions: vec![expr!("u.id = address.user_id")],
+            },
+        };
+        let result = join_query.render_chunk().split();
+
+        assert_eq!(result.0, " JOIN user AS u ON u.id = address.user_id");
+        assert_eq!(result.1.len(), 0);
+    }
+
+    #[test]
+    fn test_join_with_alias_render2() {
+        let a = Arc::new(TableAlias::new("user"));
+        a.set("u");
+        let join_query = JoinQuery {
+            join_type: JoinType::Inner,
+            source: QuerySource::TableWithAlias("user".to_string(), a),
             on_conditions: QueryConditions {
                 condition_type: ConditionType::On,
                 conditions: vec![expr!("u.id = address.user_id")],

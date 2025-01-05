@@ -1,9 +1,11 @@
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
+use std::borrow::BorrowMut;
+use std::mem::take;
 use std::ptr::eq;
 use std::sync::Arc;
 
 use super::{Join, SqlTable, TableWithColumns};
-use crate::prelude::Chunk;
+use crate::prelude::{Chunk, EmptyEntity};
 use crate::sql::query::{JoinQuery, JoinType, QueryConditions};
 use crate::sql::table::Table;
 use crate::sql::Operations;
@@ -186,11 +188,24 @@ impl<T: DataSource, E: Entity> Table<T, E> {
         self.into_entity::<E3>()
     }
 
-    pub fn link<E2: Entity>(&mut self, their_table: &mut Table<T, E2>) {}
+    /// Given 2 tables, where each may be having some kind of joins - this will merge
+    /// all the joins into self, emptying their_table.joins. Also re-assigns aliases
+    /// for all the tables involved.
+    pub fn link<E2: Entity>(&mut self, their_table: &mut Table<T, E2>) {
+        let i1 = take(&mut self.joins);
+        let i2 = take(&mut their_table.joins);
+
+        self.alias.enforce_table_in_field_queries();
+        their_table.alias.enforce_table_in_field_queries();
+
+        self.joins = self.alias._reassign_alias(i1, i2).unwrap();
+
+        their_table.alias.set_short_alias();
+    }
 
     pub fn add_join<E2: Entity>(
         &mut self,
-        mut their_table: Table<T, E2>,
+        their_table: Table<T, E2>,
         our_foreign_id: &str,
     ) -> Arc<Join<T>> {
         //! Combine two tables with 1 to 1 relationship into a single table.
@@ -199,61 +214,28 @@ impl<T: DataSource, E: Entity> Table<T, E> {
         //! but we still have to specify foreign key in our own table. For more complex
         //! joins use `join_table` method.
         //! before joining, make sure there are no alias clashes
-        todo!();
 
-        /*
-        if eq(&*self.table_aliases, &*their_table.table_aliases) {
+        if self.alias.is_same_id_vendor(&their_table.alias) {
             panic!(
                 "Tables are already joined: {}, {}",
                 self.table_name, their_table.table_name
             )
         }
 
-        if their_table
-            .table_aliases
-            .lock()
-            .unwrap()
-            .has_conflict(&self.table_aliases.lock().unwrap())
-        {
-            panic!(
-                "Table alias conflict while joining: {}, {}",
-                self.table_name, their_table.table_name
-            )
-        }
-
-        self.table_aliases
-            .lock()
-            .unwrap()
-            .merge(their_table.table_aliases.lock().unwrap().to_owned());
+        let mut their_table: Table<T, EmptyEntity> = their_table.into_entity();
 
         // Get information about their_table
         let their_table_name = their_table.table_name.clone();
-        if their_table.get_table_alias().is_none() {
-            let their_table_alias = self
-                .table_aliases
-                .lock()
-                .unwrap()
-                .get_one_of_uniq_id(UniqueIdVendor::all_prefixes(&their_table_name));
-            their_table.set_alias(&their_table_alias);
-        };
-        let their_table_id = their_table.id();
+        let their_table_id = their_table.id().with_table_alias();
 
-        // Give alias to our table as well
-        if self.get_table_alias().is_none() {
-            let our_table_alias = self
-                .table_aliases
-                .lock()
-                .unwrap()
-                .get_one_of_uniq_id(UniqueIdVendor::all_prefixes(&self.table_name));
-            self.set_alias(&our_table_alias);
-        }
-        let their_table_alias = their_table.get_table_alias().as_ref().unwrap().clone();
+        self.link(&mut their_table);
 
         let mut on_condition = QueryConditions::on();
         on_condition.add_condition(
             self.get_column(our_foreign_id)
                 .ok_or_else(|| anyhow!("Table '{}' has no field '{}'", &self, &our_foreign_id))
                 .unwrap()
+                .with_table_alias()
                 .eq(&their_table_id)
                 .render_chunk(),
         );
@@ -267,19 +249,21 @@ impl<T: DataSource, E: Entity> Table<T, E> {
         // Create a join
         let join = JoinQuery::new(
             JoinType::Left,
-            crate::sql::query::QuerySource::Table(
+            crate::sql::query::QuerySource::TableWithAlias(
                 their_table_name,
-                Some(their_table_alias.clone()),
+                Arc::new(their_table.alias.clone()),
             ),
             on_condition,
         );
+        let their_table_alias = their_table.alias.get();
         self.joins.insert(
-            their_table_alias.clone(),
-            Arc::new(Join::new(their_table.into_entity(), join)),
+            their_table.alias.get(),
+            Arc::new(Join::new(their_table, join)),
         );
 
-        self.get_join(&their_table_alias).unwrap()
-        */
+        self.get_join(&their_table_alias)
+            .context(anyhow!("Join canot be re-fetched"))
+            .unwrap()
     }
 }
 
@@ -441,7 +425,7 @@ mod tests {
             query.0,
             "SELECT u.name, u.role_id, r.id AS r_id, r.role_type AS r_role_type FROM users AS u \
             LEFT JOIN roles AS r ON (u.role_id = r.id) AND \
-            ((r.role_type = {}) OR (role_type = {}))"
+            ((r.role_type = {}) OR (r.role_type = {}))"
         );
         assert_eq!(query.1[0], json!("admin"));
     }
@@ -457,5 +441,33 @@ mod tests {
 
         // will panic, both tables want "u" alias
         user_table.with_join::<EmptyEntity, _>(role_table, "role_id");
+    }
+
+    #[test]
+    fn test_table_joins() {
+        let data = json!([]);
+        let data_source = MockDataSource::new(&data);
+        let mut users = Table::new("users", data_source.clone())
+            .with_column("name")
+            .with_column("role_id");
+        let roles = Table::new("roles", data_source.clone())
+            .with_id_column("id")
+            .with_column("name");
+
+        assert_eq!(
+            &users
+                .field_query(users.get_column("name").unwrap())
+                .preview(),
+            "SELECT name FROM users"
+        );
+
+        users.add_join(roles, "role_id");
+
+        assert_eq!(
+            &users
+                .field_query(users.get_column("name").unwrap())
+                .preview(),
+            "SELECT u.name FROM users AS u LEFT JOIN roles AS r ON (u.role_id = r.id)"
+        );
     }
 }
