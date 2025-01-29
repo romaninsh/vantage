@@ -60,6 +60,8 @@ Fields `client_name`, `total` and `product_code` are behind joins and subqueries
 This is fully supported by Vantage - you can have several Rust structs for interfacing
 with your business entities, depending on use-case.
 
+See [bakery_model](bakery_model/src/) for more examples.
+
 ```rust
 let invoice: Invoice = Invoice::table().with_id(123).get_one().await?;
 println!("Invoice: {:?}", invoice); // calculates total, client_name etc.
