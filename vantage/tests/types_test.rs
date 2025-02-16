@@ -56,6 +56,7 @@ struct TestStruct {
 impl Entity for TestStruct {}
 
 #[tokio::test]
+#[ignore]
 async fn my_test() -> Result<()> {
     let p = postgres();
 
