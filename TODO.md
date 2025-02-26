@@ -1,7 +1,11 @@
 # v0.2 (eta January 2025)
 
 - [x] Swap to sqlx
-- [x] Allow use of custom columns
+
+# v0.3 (Eta February 2025)
+
+- [-] Allow use of custom `dyn` columns
+- [ ] Add a sample CSV table implementation
 - [ ] "returning `id` should properly choose ID column"
 - [ ] Add thread safety (currently tests in bakery_api fail)
 - [ ] Implement transaction support
