@@ -2,7 +2,7 @@ use std::future::Future;
 
 use crate::sql::Query;
 use anyhow::Result;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
 
 /// Represents a [`dataset`] that may be used to fetch data.

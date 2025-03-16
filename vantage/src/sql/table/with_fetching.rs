@@ -1,10 +1,10 @@
 use crate::dataset::ReadableDataSet;
-use crate::sql::table::Table;
 use crate::sql::Query;
+use crate::sql::table::Table;
 use crate::traits::datasource::DataSource;
 use crate::traits::entity::Entity;
 use anyhow::Result;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
 
 use super::TableWithQueries;
