@@ -37,7 +37,6 @@ macro_rules! expr2 {
 pub struct Expression2<DB: Database> {
     expression: String,
     parameters: Vec<Box<dyn ExpressionChunk<DB>>>,
-    // phantom: PhantomData<&'q ()>,
 }
 
 pub trait RenderSqlx<DB: Database> {
