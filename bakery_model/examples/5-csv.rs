@@ -11,13 +11,13 @@ mod csv {
     use vantage::prelude::{Entity, ReadableDataSet};
 
     pub struct Persistence {
-        files: Map<String, Vec<String>>,
+        pub files: Map<String, Vec<String>>,
     }
 
     impl Persistence {
         pub fn from_files(files: &[&str]) -> Persistence {
             // read from files, store
-            Persistence {}
+            Persistence { files: todo!() }
         }
 
         pub async fn read_records(&self) -> Vec<Value> {
@@ -126,7 +126,6 @@ mod tests {
     use super::*;
 
     fn test_one() {
-        let p = csv::Persistence::
-
+        let p = csv::Persistence { files: todo!() };
     }
 }
