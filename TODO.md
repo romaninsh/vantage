@@ -2,8 +2,13 @@
 
 - [x] Swap to sqlx
 
-# v0.3 (Eta February 2025)
+# v0.3 (Eta 2025)
 
+- [-] Refactor Expressions and separate it into a module
+  - [ ] Split out "Owned" and "Lazy" expressions
+  - [ ] Implement vendor-specific expressions
+  - [ ] Initial implementation of SurrealDB SQL syntax
+  - [ ] Use dyn/into patterns for cleaner syntax
 - [-] Allow use of custom `dyn` columns
 - [ ] Add a sample CSV table implementation
 - [ ] "returning `id` should properly choose ID column"
