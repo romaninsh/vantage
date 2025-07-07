@@ -1,3 +1,3 @@
 [workspace]
-members = ["vantage", "bakery_model", "bakery_api"]
+members = ["vantage", "vantage-expressions", "bakery_model", "bakery_api"]
 resolver = "2"

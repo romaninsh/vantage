@@ -11,6 +11,7 @@
 //!
 //! [`SqlChunk`]: super::chunk::SqlChunk
 pub mod expression;
+pub mod expression2;
 pub mod expression_arc;
 
 pub use expression::Expression;

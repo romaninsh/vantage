@@ -1,7 +1,16 @@
 # v0.2 (eta January 2025)
 
 - [x] Swap to sqlx
-- [x] Allow use of custom columns
+
+# v0.3 (Eta 2025)
+
+- [-] Refactor Expressions and separate it into a module
+  - [ ] Split out "Owned" and "Lazy" expressions
+  - [ ] Implement vendor-specific expressions
+  - [ ] Initial implementation of SurrealDB SQL syntax
+  - [ ] Use dyn/into patterns for cleaner syntax
+- [-] Allow use of custom `dyn` columns
+- [ ] Add a sample CSV table implementation
 - [ ] "returning `id` should properly choose ID column"
 - [ ] Add thread safety (currently tests in bakery_api fail)
 - [ ] Implement transaction support

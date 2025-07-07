@@ -18,3 +18,6 @@ pub use readable::ReadableDataSet;
 
 mod writable;
 pub use writable::WritableDataSet;
+
+mod scalar;
+pub use scalar::ScalarDataSet;

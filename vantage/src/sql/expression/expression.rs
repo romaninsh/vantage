@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::{sql::chunk::Chunk, sql::Operations, traits::column::SqlField};
+use crate::{sql::Operations, sql::chunk::Chunk, traits::column::SqlField};
 
 /// Constructs [`Expression`] from a format scring and several parameters by passing those
 /// into [`json!`]
