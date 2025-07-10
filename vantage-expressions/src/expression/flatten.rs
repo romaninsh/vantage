@@ -42,10 +42,6 @@ impl DataSourceFlatten for Arc<dyn DataSource> {
                     param_out.push(OwnedParameter::Value(value.clone()));
                     sql_out.push_str("{}");
                 }
-                LazyParameter::Identifier(i) => {
-                    param_out.push(OwnedParameter::Identifier(i.clone()));
-                    sql_out.push_str("{}");
-                }
                 LazyParameter::Expression(_expr) => {
                     todo!();
                 }
@@ -78,6 +74,25 @@ mod tests {
     use crate::{expr, lazy_expr, value::IntoValueAsync};
     use serde_json::{Value, json};
 
+    #[derive(Debug)]
+    struct Identifier {
+        identifier: String,
+    }
+
+    impl Identifier {
+        pub fn new(identifier: impl Into<String>) -> Self {
+            Self {
+                identifier: identifier.into(),
+            }
+        }
+    }
+
+    impl Into<OwnedExpression> for Identifier {
+        fn into(self) -> OwnedExpression {
+            expr!(format!("`{}`", self.identifier))
+        }
+    }
+
     struct MockDataSource;
     #[async_trait]
     impl DataSource for MockDataSource {}
@@ -98,7 +113,7 @@ mod tests {
 
         let expr = lazy_expr!(
             "SELECT * FROM {} WHERE name={} AND age>{} AND {} AND gender in ({}, {})",
-            LazyParameter::Identifier("users".to_string()),
+            Identifier::new("users"),
             "sue",
             18,
             into_value,
@@ -110,7 +125,7 @@ mod tests {
 
         assert_eq!(
             flattened.template,
-            "SELECT * FROM {} WHERE name={} AND age>{} AND {} AND gender in (now(), lazy_now())"
+            "SELECT * FROM `users` WHERE name={} AND age>{} AND {} AND gender in (now(), lazy_now())"
         );
         assert_eq!(
             flattened.preview(),
