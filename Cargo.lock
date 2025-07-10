@@ -3330,6 +3330,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "vantage-sql"
+version = "0.3.0"
+dependencies = [
+ "async-trait",
+ "indexmap 2.10.0",
+ "serde_json",
+ "vantage-expressions",
+]
+
+[[package]]
+name = "vantage-surrealdb"
+version = "0.3.0"
+dependencies = [
+ "async-trait",
+ "indexmap 2.10.0",
+ "serde_json",
+ "vantage-expressions",
+]
+
+[[package]]
 name = "vcpkg"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"

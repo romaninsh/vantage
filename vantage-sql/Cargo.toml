@@ -1,0 +1,22 @@
+[package]
+edition = "2024"
+name = "vantage-sql"
+version = "0.3.0"
+license = "MIT OR Apache-2.0"
+authors = ["Romans Malinovskis <me@nearly.guru>"]
+description = "Vendor agnostic SQL query builder"
+documentation = "https://docs.rs/vantage"
+homepage = "https://romaninsh.github.io/vantage"
+repository = "https://github.com/romaninsh/vantage"
+readme = "../README.md"
+
+
+[dependencies]
+async-trait = "0.1"
+vantage-expressions = { path = "../vantage-expressions" }
+indexmap = { version = "2.10.0", features = ["serde"] }
+serde_json = { version = "1", features = [
+    "preserve_order",
+    "raw_value",
+    "arbitrary_precision",
+] }

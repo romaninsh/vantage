@@ -5,30 +5,84 @@
 use async_trait::async_trait;
 use serde_json::Value;
 
-use crate::{protocol::Expression, value::IntoValue};
+use crate::protocol::{DataSource, Expressive};
 
 #[derive(Debug, Clone)]
 pub enum OwnedParameter {
     /// Owned scalar value
     Value(Value),
-    Identifier(String),
+    OwnedExpression(OwnedExpression),
 }
 
-/// Trait for types that can be passed as parameters
-pub trait IntoOwnedParameter {
-    fn into_owned_parameter(self) -> OwnedParameter;
-}
-
-/// Implement for all variants of IntoValue
-impl<T: IntoValue + 'static> IntoOwnedParameter for T {
-    fn into_owned_parameter(self) -> OwnedParameter {
-        OwnedParameter::Value(Box::new(self).into_value())
+// Direct implementations
+impl From<Value> for OwnedParameter {
+    fn from(value: Value) -> Self {
+        OwnedParameter::Value(value)
     }
 }
 
-impl IntoOwnedParameter for OwnedParameter {
-    fn into_owned_parameter(self) -> OwnedParameter {
-        self
+// Specific implementations for basic types that should convert to Value
+impl From<String> for OwnedParameter {
+    fn from(value: String) -> Self {
+        OwnedParameter::Value(Value::String(value))
+    }
+}
+
+impl From<&str> for OwnedParameter {
+    fn from(value: &str) -> Self {
+        OwnedParameter::Value(Value::String(value.to_string()))
+    }
+}
+
+impl From<i32> for OwnedParameter {
+    fn from(value: i32) -> Self {
+        OwnedParameter::Value(Value::Number(value.into()))
+    }
+}
+
+impl From<i64> for OwnedParameter {
+    fn from(value: i64) -> Self {
+        OwnedParameter::Value(Value::Number(value.into()))
+    }
+}
+
+impl From<f64> for OwnedParameter {
+    fn from(value: f64) -> Self {
+        OwnedParameter::Value(Value::Number(
+            serde_json::Number::from_f64(value).unwrap_or_else(|| 0.into()),
+        ))
+    }
+}
+
+impl From<bool> for OwnedParameter {
+    fn from(value: bool) -> Self {
+        OwnedParameter::Value(Value::Bool(value))
+    }
+}
+
+impl<T: Into<OwnedParameter>> From<Vec<T>> for OwnedParameter {
+    fn from(vec: Vec<T>) -> Self {
+        let values: Vec<Value> = vec
+            .into_iter()
+            .map(|item| match item.into() {
+                OwnedParameter::Value(v) => v,
+                OwnedParameter::OwnedExpression(expr) => Value::String(expr.preview()),
+            })
+            .collect();
+        OwnedParameter::Value(Value::Array(values))
+    }
+}
+
+impl<T: Into<OwnedParameter> + Clone, const N: usize> From<[T; N]> for OwnedParameter {
+    fn from(arr: [T; N]) -> Self {
+        arr.to_vec().into()
+    }
+}
+
+// For types that implement Into<OwnedExpression>
+impl<T: Into<OwnedExpression>> From<T> for OwnedParameter {
+    fn from(expr: T) -> Self {
+        OwnedParameter::OwnedExpression(expr.into())
     }
 }
 
@@ -53,7 +107,7 @@ macro_rules! expr {
             $template.to_string(),
             vec![
                 $(
-                    $crate::expression::owned::IntoOwnedParameter::into_owned_parameter($param)
+                    $param.into()
                 ),*
             ]
         )
@@ -61,7 +115,11 @@ macro_rules! expr {
 }
 
 #[async_trait]
-impl Expression for OwnedExpression {}
+impl Expressive for OwnedExpression {
+    async fn prepare(&self, _data_source: &dyn DataSource) -> OwnedExpression {
+        self.clone()
+    }
+}
 
 impl OwnedExpression {
     /// Create a new owned expression with template and parameters
@@ -73,11 +131,8 @@ impl OwnedExpression {
     }
 
     /// Create expression with parameters that implement IntoOwnedParameter
-    pub fn from_params<T: IntoOwnedParameter>(template: String, parameters: Vec<T>) -> Self {
-        let converted_params = parameters
-            .into_iter()
-            .map(|p| p.into_owned_parameter())
-            .collect();
+    pub fn from_params<T: Into<OwnedParameter>>(template: String, parameters: Vec<T>) -> Self {
+        let converted_params = parameters.into_iter().map(|p| p.into()).collect();
 
         Self {
             template,
@@ -85,15 +140,18 @@ impl OwnedExpression {
         }
     }
 
-    /// Create expression from vector of values and a delimeter
-    pub fn from_vec(vec: Vec<Value>, delimeter: &str) -> Self {
+    /// Create expression from vector of expressions and a delimeter
+    pub fn from_vec(vec: Vec<OwnedExpression>, delimeter: &str) -> Self {
         let template = vec
             .iter()
             .map(|_| "{}")
             .collect::<Vec<&str>>()
             .join(delimeter);
 
-        let parameters = vec.into_iter().map(|v| OwnedParameter::Value(v)).collect();
+        let parameters = vec
+            .into_iter()
+            .map(|expr| OwnedParameter::OwnedExpression(expr))
+            .collect();
 
         Self {
             template,
@@ -109,7 +167,7 @@ impl OwnedExpression {
                     Value::String(s) => format!("{:?}", s),
                     other => format!("{}", other),
                 },
-                OwnedParameter::Identifier(id) => format!("`{}`", id),
+                OwnedParameter::OwnedExpression(expr) => expr.preview(),
             };
             preview = preview.replacen("{}", &param_str, 1);
         }
@@ -121,6 +179,24 @@ impl OwnedExpression {
 mod tests {
     use serde_json::json;
 
+    #[derive(Debug)]
+    struct Identifier {
+        identifier: String,
+    }
+    impl Identifier {
+        pub fn new(identifier: impl Into<String>) -> Self {
+            Self {
+                identifier: identifier.into(),
+            }
+        }
+    }
+
+    impl Into<OwnedExpression> for Identifier {
+        fn into(self) -> OwnedExpression {
+            expr!(format!("`{}`", self.identifier))
+        }
+    }
+
     use super::*;
 
     #[test]
@@ -128,7 +204,7 @@ mod tests {
         let expr = OwnedExpression::new(
             "SELECT * FROM {} WHERE name={} AND age>{} AND {} AND gender in {}".to_string(),
             vec![
-                OwnedParameter::Identifier("users".to_string()),
+                OwnedParameter::OwnedExpression(Identifier::new("users").into()),
                 OwnedParameter::Value(json!("sue")),
                 OwnedParameter::Value(json!(18)),
                 OwnedParameter::Value(json!(true)),
@@ -147,7 +223,7 @@ mod tests {
     fn test_expr() {
         let expr = expr!(
             "SELECT * FROM {} WHERE name={} AND age>{} AND {} AND gender in {}",
-            OwnedParameter::Identifier("users".to_string()),
+            Identifier::new("users"),
             "sue",
             18,
             true,

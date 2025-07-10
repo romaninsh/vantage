@@ -8,78 +8,63 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use crate::{
-    expression::owned::OwnedExpression,
-    protocol::Expression,
-    value::{IntoValue, IntoValueAsync},
+    expression::owned::{OwnedExpression, OwnedParameter},
+    protocol::{DataSource, Expressive},
+    value::IntoValueAsync,
 };
 
 #[derive(Debug, Clone)]
 pub enum LazyParameter {
     /// Scalar value
     Value(Value),
-    /// Identifiers are also allowed
-    Identifier(String),
     /// Anything convertable into a value
     IntoValueAsync(Arc<Box<dyn IntoValueAsync>>),
     /// Any expression can be used
-    Expression(Arc<Box<dyn Expression>>),
+    Expression(Arc<Box<dyn Expressive>>),
     /// Embed OwnedExpression directly
     OwnedExpression(OwnedExpression),
     /// Lazy expressions can be embedded
     LazyExpression(Arc<LazyExpression>),
 }
 
-/// Trait for types that can be passed as parameters
-pub trait IntoLazyParameter {
-    fn into_lazy_parameter(self) -> LazyParameter;
-}
-
-/// Implement for all variants of IntoValue
-impl<T: IntoValue + 'static> IntoLazyParameter for T {
-    fn into_lazy_parameter(self) -> LazyParameter {
-        LazyParameter::Value(Box::new(self).into_value())
+// LazyParameter-specific implementations
+impl From<LazyExpression> for LazyParameter {
+    fn from(expr: LazyExpression) -> Self {
+        LazyParameter::LazyExpression(Arc::new(expr))
     }
 }
 
-impl IntoLazyParameter for Box<dyn Expression> {
-    fn into_lazy_parameter(self) -> LazyParameter {
-        LazyParameter::Expression(Arc::new(self))
+impl From<Box<dyn Expressive>> for LazyParameter {
+    fn from(expr: Box<dyn Expressive>) -> Self {
+        LazyParameter::Expression(Arc::new(expr))
     }
 }
 
-impl IntoLazyParameter for Arc<Box<dyn Expression>> {
-    fn into_lazy_parameter(self) -> LazyParameter {
-        LazyParameter::Expression(self)
+impl From<Arc<Box<dyn Expressive>>> for LazyParameter {
+    fn from(expr: Arc<Box<dyn Expressive>>) -> Self {
+        LazyParameter::Expression(expr)
     }
 }
 
-impl IntoLazyParameter for Arc<Box<dyn IntoValueAsync>> {
-    fn into_lazy_parameter(self) -> LazyParameter {
-        LazyParameter::IntoValueAsync(self)
+impl From<Box<dyn IntoValueAsync>> for LazyParameter {
+    fn from(value: Box<dyn IntoValueAsync>) -> Self {
+        LazyParameter::IntoValueAsync(Arc::new(value))
     }
 }
 
-impl IntoLazyParameter for Box<dyn IntoValueAsync> {
-    fn into_lazy_parameter(self) -> LazyParameter {
-        LazyParameter::IntoValueAsync(Arc::new(self))
+impl From<Arc<Box<dyn IntoValueAsync>>> for LazyParameter {
+    fn from(value: Arc<Box<dyn IntoValueAsync>>) -> Self {
+        LazyParameter::IntoValueAsync(value)
     }
 }
 
-impl IntoLazyParameter for LazyExpression {
-    fn into_lazy_parameter(self) -> LazyParameter {
-        LazyParameter::LazyExpression(Arc::new(self))
-    }
-}
-
-impl IntoLazyParameter for OwnedExpression {
-    fn into_lazy_parameter(self) -> LazyParameter {
-        LazyParameter::OwnedExpression(self)
-    }
-}
-
-impl IntoLazyParameter for LazyParameter {
-    fn into_lazy_parameter(self) -> LazyParameter {
-        self
+// Generic implementation: anything that can convert to OwnedParameter can also convert to LazyParameter
+impl<T: Into<OwnedParameter>> From<T> for LazyParameter {
+    fn from(value: T) -> Self {
+        match value.into() {
+            OwnedParameter::Value(v) => LazyParameter::Value(v),
+            OwnedParameter::OwnedExpression(expr) => LazyParameter::OwnedExpression(expr),
+        }
     }
 }
 
@@ -104,7 +89,7 @@ macro_rules! lazy_expr {
             $template.to_string(),
             vec![
                 $(
-                    $crate::expression::lazy::IntoLazyParameter::into_lazy_parameter($param)
+                    $param.into()
                 ),*
             ]
         )
@@ -112,7 +97,51 @@ macro_rules! lazy_expr {
 }
 
 #[async_trait]
-impl Expression for LazyExpression {}
+impl Expressive for LazyExpression {
+    async fn prepare(&self, data_source: &dyn DataSource) -> OwnedExpression {
+        let token = "{}";
+
+        let mut param_iter = self.parameters.iter();
+        let mut sql = self.template.split(token);
+
+        let mut param_out = Vec::new();
+        let mut sql_out: String = String::from(sql.next().unwrap());
+
+        while let Some(param) = param_iter.next() {
+            match param {
+                LazyParameter::Value(value) => {
+                    // Keep as is - convert to OwnedParameter and preserve placeholder
+                    param_out.push(OwnedParameter::Value(value.clone()));
+                    sql_out.push_str("{}");
+                }
+                LazyParameter::IntoValueAsync(into_value) => {
+                    let value = into_value.into_value_async().await;
+                    param_out.push(OwnedParameter::Value(value.clone()));
+                    sql_out.push_str("{}");
+                }
+                LazyParameter::OwnedExpression(expr) => {
+                    sql_out.push_str(&expr.template);
+                    param_out.extend(expr.parameters.clone());
+                }
+                LazyParameter::Expression(expr) => {
+                    // Recursively flatten and replace placeholder with flattened template
+                    let flattened = expr.prepare(data_source).await;
+                    sql_out.push_str(&flattened.template);
+                    param_out.extend(flattened.parameters);
+                }
+                LazyParameter::LazyExpression(lazy_expr) => {
+                    // Recursively flatten and replace placeholder with flattened template
+                    let flattened = lazy_expr.prepare(data_source).await;
+                    sql_out.push_str(&flattened.template);
+                    param_out.extend(flattened.parameters);
+                }
+            }
+            sql_out.push_str(sql.next().unwrap());
+        }
+
+        OwnedExpression::new(sql_out, param_out)
+    }
+}
 
 impl LazyExpression {
     /// Create a new Lazy expression with template and parameters
@@ -147,7 +176,6 @@ impl LazyExpression {
                     Value::String(s) => format!("{:?}", s),
                     other => format!("{}", other),
                 },
-                LazyParameter::Identifier(id) => format!("`{}`", id),
                 LazyParameter::IntoValueAsync(_) => "**async()".to_string(),
                 LazyParameter::Expression(_) => "**async()".to_string(),
 
@@ -168,12 +196,31 @@ mod tests {
 
     use super::*;
 
+    #[derive(Debug)]
+    struct Identifier {
+        identifier: String,
+    }
+
+    impl Identifier {
+        pub fn new(identifier: impl Into<String>) -> Self {
+            Self {
+                identifier: identifier.into(),
+            }
+        }
+    }
+
+    impl Into<OwnedExpression> for Identifier {
+        fn into(self) -> OwnedExpression {
+            expr!(format!("`{}`", self.identifier))
+        }
+    }
+
     #[test]
     fn test_basic() {
         let expr = LazyExpression::new(
             "SELECT * FROM {} WHERE name={} AND age>{} AND {} AND gender in {}".to_string(),
             vec![
-                LazyParameter::Identifier("users".to_string()),
+                Identifier::new("users").into(),
                 LazyParameter::Value(json!("sue")),
                 LazyParameter::Value(json!(18)),
                 LazyParameter::Value(json!(true)),
@@ -192,11 +239,11 @@ mod tests {
     fn test_expr() {
         let expr = lazy_expr!(
             "SELECT * FROM {} WHERE name={} AND age>{} AND {} AND gender in {}",
-            LazyParameter::Identifier("users".to_string()),
+            Identifier::new("users"),
             "sue",
             18,
             true,
-            Box::new(lazy_expr!("subquery")) as Box<dyn Expression>
+            Box::new(lazy_expr!("subquery")) as Box<dyn Expressive>
         );
 
         let preview = expr.preview();
@@ -208,11 +255,11 @@ mod tests {
 
     #[test]
     fn test_arc() {
-        let other_expr: Arc<Box<dyn Expression>> = Arc::new(Box::new(expr!("now()")));
+        let other_expr: Arc<Box<dyn Expressive>> = Arc::new(Box::new(expr!("now()")));
 
         let expr = lazy_expr!(
             "SELECT * FROM {} WHERE gender in ({}, {}, {})",
-            LazyParameter::Identifier("users".to_string()),
+            Identifier::new("users"),
             other_expr,
             expr!("now()"),
             lazy_expr!("lazy_now()")
