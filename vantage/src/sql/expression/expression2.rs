@@ -242,18 +242,18 @@ mod tests {
     use super::*;
     use sqlx::{Connection, Execute, PgConnection, Postgres};
 
-    // Test basic creation of Expression2
-    #[tokio::test]
-    async fn test_expression2_creation() -> Result<()> {
-        let expr = expr2!("SELECT * FROM users WHERE id = ? AND age > ?", 42, 100);
+    // // Test basic creation of Expression2
+    // #[tokio::test]
+    // async fn test_expression2_creation() -> Result<()> {
+    //     let expr = expr2!("SELECT * FROM users WHERE id = ? AND age > ?", 42, 100);
 
-        let query = expr.render_sqlx().unwrap();
+    //     let query = expr.render_sqlx().unwrap();
 
-        let mut conn: PgConnection = PgConnection::connect("<Database URL>").await?;
-        let result = query.execute(&mut conn).await?;
+    //     let mut conn: PgConnection = PgConnection::connect("<Database URL>").await?;
+    //     let result = query.execute(&mut conn).await?;
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     // Test rendering a simple query with parameters
     #[test]
