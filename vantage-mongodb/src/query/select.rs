@@ -1,7 +1,7 @@
 use crate::field::Field;
 use async_trait::async_trait;
 use std::fmt::Debug;
-use vantage_expressions::{OwnedExpression, expr, protocol::select::Select};
+use vantage_expressions::{OwnedExpression, expr, protocol::selectable::Selectable};
 
 #[derive(Debug, Clone)]
 pub struct MongoSelect {
@@ -11,7 +11,6 @@ pub struct MongoSelect {
     where_conditions: Vec<OwnedExpression>,
     order_by: Vec<(OwnedExpression, bool)>,
     group_by: Vec<OwnedExpression>,
-    having_conditions: Vec<OwnedExpression>,
     distinct: bool,
     limit: Option<i64>,
     skip: Option<i64>,
@@ -26,7 +25,6 @@ impl MongoSelect {
             where_conditions: Vec::new(),
             order_by: Vec::new(),
             group_by: Vec::new(),
-            having_conditions: Vec::new(),
             distinct: false,
             limit: None,
             skip: None,
@@ -179,7 +177,7 @@ impl MongoSelect {
 }
 
 #[async_trait]
-impl Select for MongoSelect {
+impl Selectable for MongoSelect {
     fn set_source(&mut self, source: OwnedExpression, alias: Option<String>) {
         self.source = Some(source);
         self.source_alias = alias;
@@ -209,10 +207,6 @@ impl Select for MongoSelect {
         self.group_by.push(expression);
     }
 
-    fn add_having_condition(&mut self, condition: OwnedExpression) {
-        self.having_conditions.push(condition);
-    }
-
     fn set_limit(&mut self, limit: Option<i64>, skip: Option<i64>) {
         self.limit = limit;
         self.skip = skip;
@@ -234,10 +228,6 @@ impl Select for MongoSelect {
         self.group_by.clear();
     }
 
-    fn clear_having_conditions(&mut self) {
-        self.having_conditions.clear();
-    }
-
     fn has_fields(&self) -> bool {
         !self.fields.is_empty()
     }
@@ -252,10 +242,6 @@ impl Select for MongoSelect {
 
     fn has_group_by(&self) -> bool {
         !self.group_by.is_empty()
-    }
-
-    fn has_having_conditions(&self) -> bool {
-        !self.having_conditions.is_empty()
     }
 
     fn is_distinct(&self) -> bool {

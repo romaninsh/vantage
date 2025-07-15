@@ -3,7 +3,7 @@ pub mod protocol;
 pub mod query;
 
 use serde_json::Value;
-use vantage_expressions::{OwnedExpression, expr, protocol::select::Select};
+use vantage_expressions::{OwnedExpression, expr, protocol::selectable::Selectable};
 
 pub use field::Field;
 pub use query::{MongoCount, MongoDelete, MongoInsert, MongoSelect, MongoUpdate};

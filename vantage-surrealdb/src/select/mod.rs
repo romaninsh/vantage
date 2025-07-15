@@ -3,11 +3,12 @@ pub mod field;
 pub mod select_field;
 pub mod target;
 
+use async_trait::async_trait;
 use field::Field;
 use select_field::SelectField;
 use target::Target;
 
-use vantage_expressions::{OwnedExpression, expr};
+use vantage_expressions::{OwnedExpression, expr, protocol::selectable::Selectable};
 
 #[derive(Debug, Clone)]
 pub struct Select {
@@ -15,17 +16,13 @@ pub struct Select {
     pub fields_omit: Vec<Field>,
     pub from: Vec<Target>, // FROM clause targets
     pub from_omit: bool,
-    // pub with: Vec<Index>,
-
-    // pub where_conditions: Option<Expression>,
-    // pub split: Vec<Field>,
-    // pub group_by: Vec<Field>,
-    // pub order_by: Vec<OrderField>,
-    // pub limit: Option<u64>,
-    // pub start: Option<u64>,
-    // pub fetch: Vec<Field>,
-    // pub timeout: Option<Duration>,
-    // pub version: Option<DateTime>,
+    pub where_conditions: Vec<OwnedExpression>,
+    pub order_by: Vec<(OwnedExpression, bool)>,
+    pub group_by: Vec<OwnedExpression>,
+    pub having_conditions: Vec<OwnedExpression>,
+    pub distinct: bool,
+    pub limit: Option<i64>,
+    pub skip: Option<i64>,
 }
 
 impl Select {
@@ -35,6 +32,13 @@ impl Select {
             fields_omit: Vec::new(),
             from: Vec::new(),
             from_omit: false,
+            where_conditions: Vec::new(),
+            order_by: Vec::new(),
+            group_by: Vec::new(),
+            having_conditions: Vec::new(),
+            distinct: false,
+            limit: None,
+            skip: None,
         }
     }
 
@@ -76,11 +80,198 @@ impl Select {
             )
         }
     }
+
+    fn render_where(&self) -> OwnedExpression {
+        if self.where_conditions.is_empty() {
+            expr!("")
+        } else if self.where_conditions.len() == 1 {
+            expr!(" WHERE {}", self.where_conditions[0].clone())
+        } else {
+            // Combine multiple conditions with AND
+            let conditions: Vec<OwnedExpression> = self
+                .where_conditions
+                .iter()
+                .map(|c| expr!("({})", c.clone()))
+                .collect();
+            let combined = OwnedExpression::from_vec(conditions, " AND ");
+            expr!(" WHERE {}", combined)
+        }
+    }
+
+    fn render_group_by(&self) -> OwnedExpression {
+        if self.group_by.is_empty() {
+            expr!("")
+        } else {
+            let group_expressions: Vec<OwnedExpression> = self.group_by.iter().cloned().collect();
+            expr!(
+                " GROUP BY {}",
+                OwnedExpression::from_vec(group_expressions, ", ")
+            )
+        }
+    }
+
+    fn render_having(&self) -> OwnedExpression {
+        if self.having_conditions.is_empty() {
+            expr!("")
+        } else if self.having_conditions.len() == 1 {
+            expr!(" HAVING {}", self.having_conditions[0].clone())
+        } else {
+            // Combine multiple conditions with AND
+            let conditions: Vec<OwnedExpression> = self
+                .having_conditions
+                .iter()
+                .map(|c| expr!("({})", c.clone()))
+                .collect();
+            let combined = OwnedExpression::from_vec(conditions, " AND ");
+            expr!(" HAVING {}", combined)
+        }
+    }
+
+    fn render_order_by(&self) -> OwnedExpression {
+        if self.order_by.is_empty() {
+            expr!("")
+        } else {
+            let order_expressions: Vec<OwnedExpression> = self
+                .order_by
+                .iter()
+                .map(|(expression, ascending)| {
+                    if *ascending {
+                        expr!("{} ASC", expression.clone())
+                    } else {
+                        expr!("{} DESC", expression.clone())
+                    }
+                })
+                .collect();
+            let combined = OwnedExpression::from_vec(order_expressions, ", ");
+            expr!(" ORDER BY {}", combined)
+        }
+    }
+
+    fn render_limit(&self) -> OwnedExpression {
+        match (self.limit, self.skip) {
+            (Some(limit), Some(skip)) => expr!(" LIMIT {} START {}", limit, skip),
+            (Some(limit), None) => expr!(" LIMIT {}", limit),
+            (None, Some(skip)) => expr!(" START {}", skip),
+            (None, None) => expr!(""),
+        }
+    }
 }
 
 impl Into<OwnedExpression> for Select {
     fn into(self) -> OwnedExpression {
-        expr!("SELECT {}{}", self.render_fields(), self.render_from())
+        // SurrealDB doesn't have DISTINCT keyword, ignore it for now
+        let mut query = expr!("SELECT {}{}", self.render_fields(), self.render_from());
+
+        let where_clause = self.render_where();
+        if !where_clause.preview().is_empty() {
+            query = expr!("{}{}", query, where_clause);
+        }
+
+        let group_by_clause = self.render_group_by();
+        if !group_by_clause.preview().is_empty() {
+            query = expr!("{}{}", query, group_by_clause);
+        }
+
+        let having_clause = self.render_having();
+        if !having_clause.preview().is_empty() {
+            query = expr!("{}{}", query, having_clause);
+        }
+
+        let order_by_clause = self.render_order_by();
+        if !order_by_clause.preview().is_empty() {
+            query = expr!("{}{}", query, order_by_clause);
+        }
+
+        let limit_clause = self.render_limit();
+        if !limit_clause.preview().is_empty() {
+            query = expr!("{}{}", query, limit_clause);
+        }
+
+        query
+    }
+}
+
+#[async_trait]
+impl Selectable for Select {
+    fn set_source(&mut self, source: OwnedExpression, _alias: Option<String>) {
+        self.from = vec![Target::new(source)];
+    }
+
+    fn add_field(&mut self, field: String) {
+        self.fields.push(SelectField::new(Field::new(field)));
+    }
+
+    fn add_expression(&mut self, expression: OwnedExpression, alias: Option<String>) {
+        let mut field = SelectField::new(expression);
+        if let Some(alias) = alias {
+            field = field.with_alias(alias);
+        }
+        self.fields.push(field);
+    }
+
+    fn add_where_condition(&mut self, condition: OwnedExpression) {
+        self.where_conditions.push(condition);
+    }
+
+    fn set_distinct(&mut self, distinct: bool) {
+        self.distinct = distinct;
+    }
+
+    fn add_order_by(&mut self, expression: OwnedExpression, ascending: bool) {
+        self.order_by.push((expression, ascending));
+    }
+
+    fn add_group_by(&mut self, expression: OwnedExpression) {
+        self.group_by.push(expression);
+    }
+
+    fn set_limit(&mut self, limit: Option<i64>, skip: Option<i64>) {
+        self.limit = limit;
+        self.skip = skip;
+    }
+
+    fn clear_fields(&mut self) {
+        self.fields.clear();
+    }
+
+    fn clear_where_conditions(&mut self) {
+        self.where_conditions.clear();
+    }
+
+    fn clear_order_by(&mut self) {
+        self.order_by.clear();
+    }
+
+    fn clear_group_by(&mut self) {
+        self.group_by.clear();
+    }
+
+    fn has_fields(&self) -> bool {
+        !self.fields.is_empty()
+    }
+
+    fn has_where_conditions(&self) -> bool {
+        !self.where_conditions.is_empty()
+    }
+
+    fn has_order_by(&self) -> bool {
+        !self.order_by.is_empty()
+    }
+
+    fn has_group_by(&self) -> bool {
+        !self.group_by.is_empty()
+    }
+
+    fn is_distinct(&self) -> bool {
+        self.distinct
+    }
+
+    fn get_limit(&self) -> Option<i64> {
+        self.limit
+    }
+
+    fn get_skip(&self) -> Option<i64> {
+        self.skip
     }
 }
 
@@ -114,5 +305,160 @@ mod tests {
         let sql = expr.preview();
 
         assert_eq!(sql, "SELECT * FROM users");
+    }
+
+    #[test]
+    fn test_select_with_where_condition() {
+        let mut select = Select::new();
+        select.set_source(expr!("users"), None);
+        select.add_field("name".to_string());
+        select.add_where_condition(expr!("age > 18"));
+
+        let expr: OwnedExpression = select.into();
+        let sql = expr.preview();
+
+        assert_eq!(sql, "SELECT name FROM users WHERE age > 18");
+    }
+
+    #[test]
+    fn test_select_with_multiple_where_conditions() {
+        let mut select = Select::new();
+        select.set_source(expr!("users"), None);
+        select.add_field("name".to_string());
+        select.add_where_condition(expr!("age > 18"));
+        select.add_where_condition(expr!("active = true"));
+
+        let expr: OwnedExpression = select.into();
+        let sql = expr.preview();
+
+        assert_eq!(
+            sql,
+            "SELECT name FROM users WHERE (age > 18) AND (active = true)"
+        );
+    }
+
+    #[test]
+    fn test_select_with_order_by() {
+        let mut select = Select::new();
+        select.set_source(expr!("users"), None);
+        select.add_field("name".to_string());
+        select.add_order_by(expr!("name"), true);
+
+        let expr: OwnedExpression = select.into();
+        let sql = expr.preview();
+
+        assert_eq!(sql, "SELECT name FROM users ORDER BY name ASC");
+    }
+
+    #[test]
+    fn test_select_with_order_by_desc() {
+        let mut select = Select::new();
+        select.set_source(expr!("users"), None);
+        select.add_field("name".to_string());
+        select.add_order_by(expr!("created_at"), false);
+
+        let expr: OwnedExpression = select.into();
+        let sql = expr.preview();
+
+        assert_eq!(sql, "SELECT name FROM users ORDER BY created_at DESC");
+    }
+
+    #[test]
+    fn test_select_with_group_by() {
+        let mut select = Select::new();
+        select.set_source(expr!("users"), None);
+        select.add_field("department".to_string());
+        select.add_expression(expr!("count()"), Some("count".to_string()));
+        select.add_group_by(expr!("department"));
+
+        let expr: OwnedExpression = select.into();
+        let sql = expr.preview();
+
+        assert_eq!(
+            sql,
+            "SELECT department, count() AS count FROM users GROUP BY department"
+        );
+    }
+
+    #[test]
+    fn test_select_with_limit() {
+        let mut select = Select::new();
+        select.set_source(expr!("users"), None);
+        select.add_field("name".to_string());
+        select.set_limit(Some(10), None);
+
+        let expr: OwnedExpression = select.into();
+        let sql = expr.preview();
+
+        assert_eq!(sql, "SELECT name FROM users LIMIT 10");
+    }
+
+    #[test]
+    fn test_select_with_limit_and_start() {
+        let mut select = Select::new();
+        select.set_source(expr!("users"), None);
+        select.add_field("name".to_string());
+        select.set_limit(Some(10), Some(20));
+
+        let expr: OwnedExpression = select.into();
+        let sql = expr.preview();
+
+        assert_eq!(sql, "SELECT name FROM users LIMIT 10 START 20");
+    }
+
+    #[test]
+    fn test_complex_select_query() {
+        let mut select = Select::new();
+        select.set_source(expr!("orders"), None);
+        select.add_field("customer_id".to_string());
+        select.add_expression(expr!("SUM(total)"), Some("total_amount".to_string()));
+        select.add_where_condition(expr!("status = 'completed'"));
+        select.add_group_by(expr!("customer_id"));
+        select.add_order_by(expr!("total_amount"), false);
+        select.set_limit(Some(5), None);
+
+        let expr: OwnedExpression = select.into();
+        let sql = expr.preview();
+
+        assert_eq!(
+            sql,
+            "SELECT customer_id, SUM(total) AS total_amount FROM orders WHERE status = 'completed' GROUP BY customer_id ORDER BY total_amount DESC LIMIT 5"
+        );
+    }
+
+    #[test]
+    fn test_selectable_trait_methods() {
+        let mut select = Select::new();
+
+        // Test Selectable trait methods
+        select.set_source(expr!("users"), None);
+        select.add_field("name".to_string());
+        select.add_field("email".to_string());
+        select.add_expression(expr!("age * 2"), Some("double_age".to_string()));
+        select.add_where_condition(expr!("age > 18"));
+        select.add_order_by(expr!("name"), true);
+        select.add_group_by(expr!("department"));
+        select.set_limit(Some(10), Some(5));
+        select.set_distinct(true);
+
+        // Test trait query methods
+        assert!(select.has_fields());
+        assert!(select.has_where_conditions());
+        assert!(select.has_order_by());
+        assert!(select.has_group_by());
+        assert!(select.is_distinct());
+        assert_eq!(select.get_limit(), Some(10));
+        assert_eq!(select.get_skip(), Some(5));
+
+        // Test clear methods
+        select.clear_fields();
+        select.clear_where_conditions();
+        select.clear_order_by();
+        select.clear_group_by();
+
+        assert!(!select.has_fields());
+        assert!(!select.has_where_conditions());
+        assert!(!select.has_order_by());
+        assert!(!select.has_group_by());
     }
 }

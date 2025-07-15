@@ -1,5 +1,5 @@
 use serde_json::Value;
-use vantage_expressions::protocol::select::Select;
+use vantage_expressions::protocol::selectable::Selectable;
 use vantage_mongodb::{Document, count, delete, insert, select, update};
 
 fn main() {
