@@ -1,7 +1,9 @@
 pub mod protocol;
-pub mod query;
+pub mod select;
 
 use vantage_expressions::{OwnedExpression, expr};
+
+pub use select::Select;
 
 #[derive(Debug, Clone)]
 pub struct Identifier {
