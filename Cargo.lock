@@ -3330,6 +3330,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "vantage-mongodb"
+version = "0.3.0"
+dependencies = [
+ "async-trait",
+ "indexmap 2.10.0",
+ "serde_json",
+ "vantage-expressions",
+]
+
+[[package]]
 name = "vantage-sql"
 version = "0.3.0"
 dependencies = [
