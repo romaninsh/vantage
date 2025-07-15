@@ -40,6 +40,22 @@ impl QueryConditions {
             expr!(" WHERE {}", combined)
         }
     }
+
+    pub fn render_conditions(&self) -> OwnedExpression {
+        if self.conditions.is_empty() {
+            expr!("")
+        } else if self.conditions.len() == 1 {
+            self.conditions[0].clone()
+        } else {
+            // Combine multiple conditions with AND
+            let conditions: Vec<OwnedExpression> = self
+                .conditions
+                .iter()
+                .map(|c| expr!("({})", c.clone()))
+                .collect();
+            OwnedExpression::from_vec(conditions, " AND ")
+        }
+    }
 }
 
 impl Default for QueryConditions {
