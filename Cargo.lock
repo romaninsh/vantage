@@ -287,6 +287,8 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "vantage",
+ "vantage-expressions",
+ "vantage-sql",
 ]
 
 [[package]]
