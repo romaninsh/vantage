@@ -1,4 +1,4 @@
-pub mod select;
+pub mod selectable;
 
 use std::fmt::Debug;
 

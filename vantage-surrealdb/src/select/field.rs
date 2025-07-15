@@ -1,4 +1,4 @@
-use vantage_expressions::{OwnedExpression, expr};
+use vantage_expressions::OwnedExpression;
 
 use crate::identifier::Identifier;
 
