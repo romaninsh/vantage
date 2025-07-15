@@ -24,7 +24,7 @@ pub fn format_query(q: &Query) -> String {
     let formatted_sql = sqlformat::format(
         &qs.0.replace("{}", "?"),
         &QueryParams::Indexed(qs.1.iter().map(|x| x.to_string()).collect::<Vec<String>>()),
-        FormatOptions::default(),
+        &FormatOptions::default(),
     );
 
     formatted_sql
