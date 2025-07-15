@@ -3,7 +3,6 @@ pub mod field;
 pub mod select_field;
 pub mod target;
 
-use async_trait::async_trait;
 use field::Field;
 use select_field::SelectField;
 use target::Target;
@@ -191,7 +190,6 @@ impl Into<OwnedExpression> for Select {
     }
 }
 
-#[async_trait]
 impl Selectable for Select {
     fn set_source(&mut self, source: OwnedExpression, _alias: Option<String>) {
         self.from = vec![Target::new(source)];

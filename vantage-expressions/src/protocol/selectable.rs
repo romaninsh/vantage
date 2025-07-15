@@ -1,10 +1,7 @@
 use std::fmt::Debug;
 
-use async_trait::async_trait;
-
 use crate::OwnedExpression;
 
-#[async_trait]
 pub trait Selectable: Send + Sync + Debug {
     fn set_source(&mut self, source: OwnedExpression, alias: Option<String>);
     fn add_field(&mut self, field: String);
