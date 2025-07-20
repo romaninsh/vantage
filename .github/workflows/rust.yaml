@@ -35,6 +35,6 @@ jobs:
       - name: Build
         run: cargo build
       - name: Run tests
-        run: cd vantage && cargo test
+        run: cargo test --workspace --exclude bakery_model --exclude bakery_api
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
