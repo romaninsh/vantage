@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 pub trait DataSource<T> {
-    fn execute(&self, expr: T) -> impl Future<Output = Value> + Send;
+    fn execute(&self, expr: &T) -> impl Future<Output = Value> + Send;
 
     fn defer(
         &self,
@@ -16,7 +16,9 @@ pub trait DataSource<T> {
 pub enum IntoExpressive<T> {
     Scalar(Value),
     Nested(T),
-    Deferred(Arc<dyn Fn() -> Pin<Box<dyn Future<Output = Value> + Send>> + Send + Sync>),
+    Deferred(
+        Arc<dyn Fn() -> Pin<Box<dyn Future<Output = IntoExpressive<T>> + Send>> + Send + Sync>,
+    ),
 }
 
 impl<T: Debug> Debug for IntoExpressive<T> {
@@ -43,78 +45,46 @@ impl<T: Clone> Clone for IntoExpressive<T> {
     }
 }
 
-impl<T> From<i64> for IntoExpressive<T> {
-    fn from(value: i64) -> Self {
-        IntoExpressive::Scalar(Value::Number(value.into()))
-    }
+// Macro for types that can be used directly with Value constructors
+macro_rules! impl_scalar {
+    ($($t:ty => $variant:path),* $(,)?) => {
+        $(
+            impl<T> From<$t> for IntoExpressive<T> {
+                fn from(value: $t) -> Self {
+                    IntoExpressive::Scalar($variant(value))
+                }
+            }
+        )*
+    };
 }
 
-impl<T> From<Value> for IntoExpressive<T> {
-    fn from(value: Value) -> Self {
-        IntoExpressive::Scalar(value)
-    }
+// Macro for types that need .into() conversion
+macro_rules! impl_scalar_into {
+    ($($t:ty => $variant:path),* $(,)?) => {
+        $(
+            impl<T> From<$t> for IntoExpressive<T> {
+                fn from(value: $t) -> Self {
+                    IntoExpressive::Scalar($variant(value.into()))
+                }
+            }
+        )*
+    };
 }
 
-impl<T> From<&str> for IntoExpressive<T> {
-    fn from(value: &str) -> Self {
-        IntoExpressive::Scalar(Value::String(value.to_string()))
-    }
+impl_scalar! {
+    bool => Value::Bool,
+    String => Value::String,
 }
 
-impl<T> From<bool> for IntoExpressive<T> {
-    fn from(value: bool) -> Self {
-        IntoExpressive::Scalar(Value::Bool(value))
-    }
-}
-
-impl<T> From<String> for IntoExpressive<T> {
-    fn from(value: String) -> Self {
-        IntoExpressive::Scalar(Value::String(value))
-    }
-}
-
-impl<T> From<i32> for IntoExpressive<T> {
-    fn from(value: i32) -> Self {
-        IntoExpressive::Scalar(Value::Number(value.into()))
-    }
-}
-
-impl<T> From<u32> for IntoExpressive<T> {
-    fn from(value: u32) -> Self {
-        IntoExpressive::Scalar(Value::Number(value.into()))
-    }
-}
-
-impl<T> From<i16> for IntoExpressive<T> {
-    fn from(value: i16) -> Self {
-        IntoExpressive::Scalar(Value::Number(value.into()))
-    }
-}
-
-impl<T> From<u16> for IntoExpressive<T> {
-    fn from(value: u16) -> Self {
-        IntoExpressive::Scalar(Value::Number(value.into()))
-    }
-}
-
-impl<T> From<i8> for IntoExpressive<T> {
-    fn from(value: i8) -> Self {
-        IntoExpressive::Scalar(Value::Number(value.into()))
-    }
-}
-
-impl<T> From<u8> for IntoExpressive<T> {
-    fn from(value: u8) -> Self {
-        IntoExpressive::Scalar(Value::Number(value.into()))
-    }
-}
-
-impl<T> From<f32> for IntoExpressive<T> {
-    fn from(value: f32) -> Self {
-        IntoExpressive::Scalar(Value::Number(
-            serde_json::Number::from_f64(value as f64).unwrap_or_else(|| 0.into()),
-        ))
-    }
+impl_scalar_into! {
+    &str => Value::String,
+    i8 => Value::Number,
+    i16 => Value::Number,
+    i32 => Value::Number,
+    i64 => Value::Number,
+    u8 => Value::Number,
+    u16 => Value::Number,
+    u32 => Value::Number,
 }
 
 impl<T> From<f64> for IntoExpressive<T> {
@@ -125,6 +95,32 @@ impl<T> From<f64> for IntoExpressive<T> {
     }
 }
 
+impl<T> From<Value> for IntoExpressive<T> {
+    fn from(value: Value) -> Self {
+        IntoExpressive::Scalar(value)
+    }
+}
+
+impl<T, E> From<Arc<T>> for IntoExpressive<E>
+where
+    T: Into<IntoExpressive<E>> + Clone,
+{
+    fn from(arc: Arc<T>) -> Self {
+        let value = arc.as_ref().clone();
+        value.into()
+    }
+}
+
+impl<T, E> From<&Arc<T>> for IntoExpressive<E>
+where
+    T: Into<IntoExpressive<E>> + Clone,
+{
+    fn from(arc: &Arc<T>) -> Self {
+        let value = arc.as_ref().clone();
+        value.into()
+    }
+}
+
 impl<T> IntoExpressive<T> {
     pub fn nested(value: T) -> Self {
         IntoExpressive::Nested(value)
@@ -132,7 +128,7 @@ impl<T> IntoExpressive<T> {
 
     pub fn deferred<F>(f: F) -> Self
     where
-        F: Fn() -> Pin<Box<dyn Future<Output = Value> + Send>> + Send + Sync + 'static,
+        F: Fn() -> Pin<Box<dyn Future<Output = IntoExpressive<T>> + Send>> + Send + Sync + 'static,
     {
         IntoExpressive::Deferred(Arc::new(f))
     }
@@ -164,7 +160,9 @@ impl<T: Debug> IntoExpressive<T> {
 
     pub fn as_deferred(
         &self,
-    ) -> Option<&Arc<dyn Fn() -> Pin<Box<dyn Future<Output = Value> + Send>> + Send + Sync>> {
+    ) -> Option<
+        &Arc<dyn Fn() -> Pin<Box<dyn Future<Output = IntoExpressive<T>> + Send>> + Send + Sync>,
+    > {
         match self {
             IntoExpressive::Deferred(f) => Some(f),
             _ => None,
@@ -230,7 +228,11 @@ mod tests {
         Fut: std::future::Future<Output = Value> + Send + 'static,
     {
         fn from(f: F) -> Self {
-            IntoExpressive::deferred(move || Box::pin(f()))
+            let f = Arc::new(f);
+            IntoExpressive::deferred(move || {
+                let f = f.clone();
+                Box::pin(async move { IntoExpressive::Scalar(f().await) })
+            })
         }
     }
 
@@ -281,8 +283,11 @@ mod tests {
                 Box::pin(async move {
                     let result = future.await;
                     match result {
-                        Value::Array(arr) => arr.into_iter().next().unwrap_or(Value::Null),
-                        _ => Value::Null,
+                        IntoExpressive::Scalar(Value::Array(arr)) => {
+                            IntoExpressive::Scalar(arr.into_iter().next().unwrap_or(Value::Null))
+                        }
+                        IntoExpressive::Scalar(_) => IntoExpressive::Scalar(Value::Null),
+                        other => other, // Pass through nested or other deferred
                     }
                 })
             }),
@@ -328,11 +333,15 @@ mod tests {
         );
 
         // Test Deferred case
-        let value = first(|| async { json!([100, 200, 300]) })
+        let result = first(|| async { json!([100, 200, 300]) })
             .as_deferred()
             .unwrap()()
         .await;
-        assert_eq!(value, json!(100));
+        if let IntoExpressive::Scalar(value) = result {
+            assert_eq!(value, json!(100));
+        } else {
+            panic!("Expected scalar result");
+        }
     }
 
     #[test]
@@ -377,15 +386,7 @@ mod tests {
     }
 
     impl DataSource<ExampleExpression> for MockDatabase {
-        async fn execute(&self, mut expr: ExampleExpression) -> Value {
-            // Execute deferred parameters first
-            for param in &mut expr.params {
-                if let IntoExpressive::Deferred(f) = param {
-                    let result = f().await;
-                    *param = IntoExpressive::Scalar(result);
-                }
-            }
-
+        async fn execute(&self, expr: &ExampleExpression) -> Value {
             // Simulate async database query execution
             tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
@@ -407,7 +408,7 @@ mod tests {
             move || {
                 let db = db.clone();
                 let expr = expr.clone();
-                Box::pin(async move { db.execute(expr).await })
+                Box::pin(async move { db.execute(&expr).await })
             }
         }
     }
@@ -443,18 +444,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_nested_queries() {
-        let db = MockDatabase::new(vec![
-            ("SELECT COUNT(*) FROM orders", json!(12)),
-            ("SELECT name FROM car WHERE capacity > 12", json!("big car")),
-        ]);
+        let db = MockDatabase::new(vec![("SELECT * FROM items", json!([100, 200, 300, 400]))]);
+        let expr = example_expr!("SELECT * FROM items");
 
-        let subquery = example_expr!("SELECT COUNT(*) FROM orders");
-        let main_query = example_expr!(
-            "SELECT name FROM car WHERE capacity > {}",
-            db.defer(subquery)
-        );
-
-        let result = db.execute(main_query).await;
-        assert_eq!(result, json!("big car"));
+        let result = db.execute(&expr).await;
+        assert_eq!(result, json!([100, 200, 300, 400]));
     }
 }

@@ -2,6 +2,7 @@
 //! Owned expressions implement Expressive trait
 
 use serde_json::Value;
+use std::sync::Arc;
 
 use crate::protocol::expressive::{Expressive, IntoExpressive};
 
@@ -60,7 +61,11 @@ where
     Fut: std::future::Future<Output = Value> + Send + 'static,
 {
     fn from(f: F) -> Self {
-        IntoExpressive::deferred(move || Box::pin(f()))
+        let f = Arc::new(f);
+        IntoExpressive::deferred(move || {
+            let f = f.clone();
+            Box::pin(async move { IntoExpressive::Scalar(f().await) })
+        })
     }
 }
 

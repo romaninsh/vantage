@@ -20,3 +20,4 @@ thiserror = "2.0.12"
 
 [dev-dependencies]
 tokio = { version = "1.46", features = ["full"] }
+tokio-test = "0.4"
