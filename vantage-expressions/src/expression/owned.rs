@@ -1,6 +1,5 @@
 //! Owned expressions will greedily own all the parameters.
 //! Owned expressions implement Expressive trait
-//! Owned expressions can be converted into Lazy expression.
 
 use serde_json::Value;
 
@@ -14,10 +13,6 @@ pub struct OwnedExpression {
 }
 
 impl Expressive<OwnedExpression> for OwnedExpression {
-    fn into_expressive(self) -> IntoExpressive<OwnedExpression> {
-        IntoExpressive::nested(self)
-    }
-
     fn expr(&self, template: &str, args: Vec<IntoExpressive<OwnedExpression>>) -> OwnedExpression {
         OwnedExpression::new(template, args)
     }
@@ -35,26 +30,7 @@ impl std::fmt::Debug for OwnedExpression {
     }
 }
 
-// From implementations for basic types that aren't already in expressive.rs
-impl From<String> for IntoExpressive<OwnedExpression> {
-    fn from(value: String) -> Self {
-        IntoExpressive::Scalar(Value::String(value))
-    }
-}
-
-impl From<i32> for IntoExpressive<OwnedExpression> {
-    fn from(value: i32) -> Self {
-        IntoExpressive::Scalar(Value::Number(value.into()))
-    }
-}
-
-impl From<f64> for IntoExpressive<OwnedExpression> {
-    fn from(value: f64) -> Self {
-        IntoExpressive::Scalar(Value::Number(
-            serde_json::Number::from_f64(value).unwrap_or_else(|| 0.into()),
-        ))
-    }
-}
+// Specialized implementations for OwnedExpression
 
 impl<T: Into<IntoExpressive<OwnedExpression>>> From<Vec<T>> for IntoExpressive<OwnedExpression> {
     fn from(vec: Vec<T>) -> Self {

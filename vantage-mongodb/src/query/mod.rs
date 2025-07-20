@@ -1,6 +1,5 @@
 pub mod count;
 pub mod delete;
-pub mod expressive;
 pub mod insert;
 pub mod select;
 pub mod update;

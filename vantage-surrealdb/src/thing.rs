@@ -1,5 +1,4 @@
-use async_trait::async_trait;
-use vantage_expressions::{Expressive, OwnedExpression, expr, protocol::DataSource};
+use vantage_expressions::{OwnedExpression, expr};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Thing {
@@ -24,9 +23,8 @@ impl Thing {
     }
 }
 
-#[async_trait]
-impl Expressive for Thing {
-    async fn prepare(&self, _data_source: &dyn DataSource) -> OwnedExpression {
+impl Into<OwnedExpression> for Thing {
+    fn into(self) -> OwnedExpression {
         expr!(format!("{}:{}", self.table, self.id))
     }
 }
