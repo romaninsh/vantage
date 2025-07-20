@@ -1,7 +1,7 @@
 pub mod protocol;
 pub mod select;
 
-use vantage_expressions::{OwnedExpression, expr};
+use vantage_expressions::{IntoExpressive, OwnedExpression, expr};
 
 pub use select::Select;
 
@@ -21,5 +21,11 @@ impl Identifier {
 impl Into<OwnedExpression> for Identifier {
     fn into(self) -> OwnedExpression {
         expr!(format!("`{}`", self.identifier))
+    }
+}
+
+impl From<Identifier> for IntoExpressive<OwnedExpression> {
+    fn from(id: Identifier) -> Self {
+        IntoExpressive::nested(id.into())
     }
 }

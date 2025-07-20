@@ -1,5 +1,5 @@
 use serde_json::Value;
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter, Result};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -19,8 +19,8 @@ pub enum IntoExpressive<T> {
     Deferred(Arc<dyn Fn() -> Pin<Box<dyn Future<Output = Value> + Send>> + Send + Sync>),
 }
 
-impl<T: Debug> std::fmt::Debug for IntoExpressive<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<T: Debug> Debug for IntoExpressive<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             IntoExpressive::Scalar(val) => f.debug_tuple("Scalar").field(val).finish(),
             IntoExpressive::Nested(val) => f.debug_tuple("Nested").field(val).finish(),
@@ -30,7 +30,6 @@ impl<T: Debug> std::fmt::Debug for IntoExpressive<T> {
 }
 
 pub trait Expressive<T>: Debug {
-    fn into_expressive(self) -> IntoExpressive<T>;
     fn expr(&self, template: &str, args: Vec<IntoExpressive<T>>) -> T;
 }
 
@@ -68,6 +67,64 @@ impl<T> From<bool> for IntoExpressive<T> {
     }
 }
 
+impl<T> From<String> for IntoExpressive<T> {
+    fn from(value: String) -> Self {
+        IntoExpressive::Scalar(Value::String(value))
+    }
+}
+
+impl<T> From<i32> for IntoExpressive<T> {
+    fn from(value: i32) -> Self {
+        IntoExpressive::Scalar(Value::Number(value.into()))
+    }
+}
+
+impl<T> From<u32> for IntoExpressive<T> {
+    fn from(value: u32) -> Self {
+        IntoExpressive::Scalar(Value::Number(value.into()))
+    }
+}
+
+impl<T> From<i16> for IntoExpressive<T> {
+    fn from(value: i16) -> Self {
+        IntoExpressive::Scalar(Value::Number(value.into()))
+    }
+}
+
+impl<T> From<u16> for IntoExpressive<T> {
+    fn from(value: u16) -> Self {
+        IntoExpressive::Scalar(Value::Number(value.into()))
+    }
+}
+
+impl<T> From<i8> for IntoExpressive<T> {
+    fn from(value: i8) -> Self {
+        IntoExpressive::Scalar(Value::Number(value.into()))
+    }
+}
+
+impl<T> From<u8> for IntoExpressive<T> {
+    fn from(value: u8) -> Self {
+        IntoExpressive::Scalar(Value::Number(value.into()))
+    }
+}
+
+impl<T> From<f32> for IntoExpressive<T> {
+    fn from(value: f32) -> Self {
+        IntoExpressive::Scalar(Value::Number(
+            serde_json::Number::from_f64(value as f64).unwrap_or_else(|| 0.into()),
+        ))
+    }
+}
+
+impl<T> From<f64> for IntoExpressive<T> {
+    fn from(value: f64) -> Self {
+        IntoExpressive::Scalar(Value::Number(
+            serde_json::Number::from_f64(value).unwrap_or_else(|| 0.into()),
+        ))
+    }
+}
+
 impl<T> IntoExpressive<T> {
     pub fn nested(value: T) -> Self {
         IntoExpressive::Nested(value)
@@ -81,7 +138,7 @@ impl<T> IntoExpressive<T> {
     }
 }
 
-impl<T: std::fmt::Debug> IntoExpressive<T> {
+impl<T: Debug> IntoExpressive<T> {
     pub fn preview(&self) -> String {
         match self {
             IntoExpressive::Scalar(Value::String(s)) => format!("{:?}", s),
@@ -151,10 +208,6 @@ mod tests {
     }
 
     impl Expressive<ExampleExpression> for ExampleExpression {
-        fn into_expressive(self) -> IntoExpressive<ExampleExpression> {
-            IntoExpressive::nested(self)
-        }
-
         fn expr(
             &self,
             template: &str,
@@ -239,7 +292,7 @@ mod tests {
     #[test]
     fn test_example_expression() {
         let expr = example_expr!("SELECT * FROM users");
-        let expressive = expr.into_expressive();
+        let expressive = IntoExpressive::nested(expr);
         assert_eq!(
             format!("{:?}", expressive.as_nested().unwrap()),
             "SELECT * FROM users"

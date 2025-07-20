@@ -1,4 +1,4 @@
-use vantage_expressions::{OwnedExpression, expr};
+use vantage_expressions::{IntoExpressive, OwnedExpression, expr};
 
 #[derive(Debug, Clone)]
 pub struct Identifier {
@@ -32,5 +32,11 @@ impl Into<OwnedExpression> for Identifier {
         } else {
             expr!(self.identifier)
         }
+    }
+}
+
+impl From<Identifier> for IntoExpressive<OwnedExpression> {
+    fn from(id: Identifier) -> Self {
+        IntoExpressive::nested(id.into())
     }
 }
