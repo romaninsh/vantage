@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use indexmap::IndexMap;
 use serde_json::Value;
-use vantage_expressions::{Expressive, LazyExpression};
+use vantage_expressions::{Expressive, OwnedExpression};
 
 use join_query::JoinQuery;
 use query_conditions::QueryConditions;
@@ -31,6 +31,6 @@ pub struct Query {
     skip_items: Option<i64>,
     limit_items: Option<i64>,
 
-    group_by: Vec<LazyExpression>,
-    order_by: Vec<LazyExpression>,
+    group_by: Vec<OwnedExpression>,
+    order_by: Vec<OwnedExpression>,
 }
