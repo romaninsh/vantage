@@ -1,0 +1,54 @@
+[
+  [
+    {
+      "calories": 250,
+      "id": "product:delorean_donut",
+      "inventory": {
+        "stock": 30
+      },
+      "is_deleted": false,
+      "name": "DeLorean Doughnut",
+      "price": 135
+    },
+    {
+      "calories": 350,
+      "id": "product:sea_pie",
+      "inventory": {
+        "stock": 15
+      },
+      "is_deleted": false,
+      "name": "Enchantment Under the Sea Pie",
+      "price": 299
+    },
+    {
+      "calories": 300,
+      "id": "product:flux_cupcake",
+      "inventory": {
+        "stock": 50
+      },
+      "is_deleted": false,
+      "name": "Flux Capacitor Cupcake",
+      "price": 120
+    },
+    {
+      "calories": 150,
+      "id": "product:hover_cookies",
+      "inventory": {
+        "stock": 40
+      },
+      "is_deleted": false,
+      "name": "Hoverboard Cookies",
+      "price": 199
+    },
+    {
+      "calories": 200,
+      "id": "product:time_tart",
+      "inventory": {
+        "stock": 20
+      },
+      "is_deleted": false,
+      "name": "Time Traveler Tart",
+      "price": 220
+    }
+  ]
+]

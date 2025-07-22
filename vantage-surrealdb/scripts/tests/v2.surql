@@ -2,25 +2,25 @@
 -- EXAMPLE QUERIES
 -- =====================================================
 
--- Get all products for a specific bakery
-SELECT * FROM product WHERE bakery = bakery:hill_valley AND is_deleted = false;
+-- Query 01: Get all products for a specific bakery
+SELECT * FROM product WHERE bakery = bakery:hill_valley AND is_deleted = false order by name;
 
--- Get all clients for a bakery
-SELECT * FROM client WHERE bakery = bakery:hill_valley;
+-- Query 02: Get all clients for a bakery
+SELECT * FROM client WHERE bakery = bakery:hill_valley order by name;
 
--- Get all products with their current stock
+-- Query 03: Get all products with their current stock
 SELECT name, price, inventory.stock AS stock FROM product WHERE is_deleted = false;
 
--- Alternative: Select the entire inventory object
+-- Query 04: Alternative: Select the entire inventory object
 SELECT name, price, inventory FROM product WHERE is_deleted = false;
 
--- Get client orders with embedded line items (with bakery boundary check)
+-- Query 05: Get client orders with embedded line items (with bakery boundary check)
 SELECT * FROM client:marty->placed->order WHERE bakery = bakery:hill_valley;
 
--- Get all products from a bakery (using direct bakery reference)
-SELECT * FROM product WHERE bakery = bakery:hill_valley AND is_deleted = false;
+-- Query 06: Get all products from a bakery (using direct bakery reference)
+SELECT * FROM product WHERE bakery = bakery:hill_valley AND is_deleted = false order by name;
 
--- Get order details with product info (filtered by bakery)
+-- Query 07: Get order details with product info (filtered by bakery)
 SELECT
     id,
     created_at,
@@ -33,26 +33,26 @@ SELECT
 FROM order
 WHERE bakery = bakery:hill_valley;
 
--- Find which clients ordered a specific product (with bakery boundary check)
+-- Query 08: Find which clients ordered a specific product (with bakery boundary check)
 SELECT DISTINCT <-placed<-client AS customers
 FROM order
 WHERE lines.product CONTAINS product:flux_cupcake
 AND bakery = bakery:hill_valley;
 
--- Alternative: Find clients who ordered a specific product (more explicit, with bakery boundary check)
+-- Query 09: Alternative: Find clients who ordered a specific product (more explicit, with bakery boundary check)
 SELECT DISTINCT <-placed<-client AS customers
 FROM order
 WHERE array::len(lines[WHERE product = product:flux_cupcake]) > 0
 AND bakery = bakery:hill_valley;
 
--- Get low stock products for a specific bakery
+-- Query 10: Get low stock products for a specific bakery
 SELECT name, inventory.stock
 FROM product
 WHERE bakery = bakery:hill_valley
 AND inventory.stock < 20
 AND is_deleted = false;
 
--- Inventory vs Demand Analytics: Show products and order statistics for a specific bakery
+-- Query 11: Inventory vs Demand Analytics: Show products and order statistics for a specific bakery
 SELECT * FROM (
     SELECT
         name AS product_name,
@@ -70,7 +70,7 @@ SELECT * FROM (
 ) WHERE total_items_ordered > current_inventory
 ORDER BY product_name;
 
--- Client Calorie Consumption Analytics: Show total calories ordered by each Hill Valley Bakery client
+-- Query 12: Client Calorie Consumption Analytics: Show total calories ordered by each Hill Valley Bakery client
 SELECT
     name AS client_name,
     math::sum(

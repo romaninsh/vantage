@@ -1,0 +1,39 @@
+[
+  [
+    {
+      "inventory": {
+        "stock": 30
+      },
+      "name": "DeLorean Doughnut",
+      "price": 135
+    },
+    {
+      "inventory": {
+        "stock": 50
+      },
+      "name": "Flux Capacitor Cupcake",
+      "price": 120
+    },
+    {
+      "inventory": {
+        "stock": 40
+      },
+      "name": "Hoverboard Cookies",
+      "price": 199
+    },
+    {
+      "inventory": {
+        "stock": 15
+      },
+      "name": "Enchantment Under the Sea Pie",
+      "price": 299
+    },
+    {
+      "inventory": {
+        "stock": 20
+      },
+      "name": "Time Traveler Tart",
+      "price": 220
+    }
+  ]
+]

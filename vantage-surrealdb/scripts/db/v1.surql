@@ -25,7 +25,6 @@ DEFINE FIELD is_deleted ON product TYPE bool DEFAULT false;
 -- Embedded inventory data
 DEFINE FIELD inventory ON product TYPE object;
 DEFINE FIELD inventory.stock ON product TYPE int DEFAULT 0;
-DEFINE FIELD inventory.last_updated ON product TYPE datetime DEFAULT time::now();
 
 -- Order table (schema-full with embedded line items)
 DEFINE TABLE order SCHEMAFULL;
