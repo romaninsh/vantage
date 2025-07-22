@@ -13,3 +13,6 @@ pub use expression::flatten::{Flatten, OwnedExpressionFlattener};
 pub use expression::owned::OwnedExpression;
 pub use protocol::expressive::{DataSource, IntoExpressive};
 pub use protocol::selectable::Selectable;
+
+/// Short type alias for `IntoExpressive<OwnedExpression>`
+pub type Expr = IntoExpressive<OwnedExpression>;

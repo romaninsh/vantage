@@ -1,3 +1,7 @@
+//! # SurrealDB Select Query Builder
+//!
+//! Builds SELECT query for SurrealDB. Implements [`Selectable`] protocol.
+
 // pub mod expressive;
 pub mod field;
 pub mod select_field;
@@ -7,10 +11,26 @@ use field::Field;
 use select_field::SelectField;
 use target::Target;
 
-use vantage_expressions::{OwnedExpression, expr, protocol::selectable::Selectable};
+use crate::identifier::Identifier;
+use vantage_expressions::{Expr, OwnedExpression, expr, protocol::selectable::Selectable};
 
+/// SurrealDB SELECT query builder
+///
+/// doc wip
+///
+/// # Examples
+///
+/// ```rust
+/// use vantage_expressions::{expr, protocol::selectable::Selectable};
+/// use vantage_surrealdb::select::SurrealSelect;
+///
+/// // doc wip
+/// let mut select = SurrealSelect::new();
+/// select.set_source("users", None);
+/// select.add_field("name".to_string());
+/// ```
 #[derive(Debug, Clone)]
-pub struct Select {
+pub struct SurrealSelect {
     pub fields: Vec<SelectField>, // SELECT clause fields
     pub fields_omit: Vec<Field>,
     pub from: Vec<Target>, // FROM clause targets
@@ -24,7 +44,10 @@ pub struct Select {
     pub skip: Option<i64>,
 }
 
-impl Select {
+impl SurrealSelect {
+    /// Creates a new SELECT query builder
+    ///
+    /// doc wip
     pub fn new() -> Self {
         Self {
             fields: Vec::new(),
@@ -41,16 +64,25 @@ impl Select {
         }
     }
 
+    /// Sets the fields for the SELECT clause
+    ///
+    /// doc wip
     pub fn fields(mut self, fields: Vec<SelectField>) -> Self {
         self.fields = fields;
         self
     }
 
+    /// Sets the FROM clause targets
+    ///
+    /// doc wip
     pub fn from(mut self, targets: Vec<Target>) -> Self {
         self.from = targets;
         self
     }
 
+    /// Renders the SELECT fields clause
+    ///
+    /// doc wip
     fn render_fields(&self) -> OwnedExpression {
         if self.fields.is_empty() {
             expr!("*")
@@ -64,6 +96,9 @@ impl Select {
         }
     }
 
+    /// Renders the FROM clause
+    ///
+    /// doc wip
     fn render_from(&self) -> OwnedExpression {
         if self.from.is_empty() {
             expr!("")
@@ -80,23 +115,22 @@ impl Select {
         }
     }
 
+    /// Renders the WHERE clause
+    ///
+    /// doc wip
     fn render_where(&self) -> OwnedExpression {
         if self.where_conditions.is_empty() {
             expr!("")
-        } else if self.where_conditions.len() == 1 {
-            expr!(" WHERE {}", self.where_conditions[0].clone())
         } else {
             // Combine multiple conditions with AND
-            let conditions: Vec<OwnedExpression> = self
-                .where_conditions
-                .iter()
-                .map(|c| expr!("({})", c.clone()))
-                .collect();
-            let combined = OwnedExpression::from_vec(conditions, " AND ");
+            let combined = OwnedExpression::from_vec(self.where_conditions.clone(), " AND ");
             expr!(" WHERE {}", combined)
         }
     }
 
+    /// Renders the GROUP BY clause
+    ///
+    /// doc wip
     fn render_group_by(&self) -> OwnedExpression {
         if self.group_by.is_empty() {
             expr!("")
@@ -109,6 +143,9 @@ impl Select {
         }
     }
 
+    /// Renders the HAVING clause
+    ///
+    /// doc wip
     fn render_having(&self) -> OwnedExpression {
         if self.having_conditions.is_empty() {
             expr!("")
@@ -126,6 +163,9 @@ impl Select {
         }
     }
 
+    /// Renders the ORDER BY clause
+    ///
+    /// doc wip
     fn render_order_by(&self) -> OwnedExpression {
         if self.order_by.is_empty() {
             expr!("")
@@ -135,7 +175,7 @@ impl Select {
                 .iter()
                 .map(|(expression, ascending)| {
                     if *ascending {
-                        expr!("{} ASC", expression.clone())
+                        expr!("{}", expression.clone())
                     } else {
                         expr!("{} DESC", expression.clone())
                     }
@@ -146,6 +186,9 @@ impl Select {
         }
     }
 
+    /// Renders the LIMIT and START clauses
+    ///
+    /// doc wip
     fn render_limit(&self) -> OwnedExpression {
         match (self.limit, self.skip) {
             (Some(limit), Some(skip)) => expr!(" LIMIT {} START {}", limit, skip),
@@ -154,45 +197,47 @@ impl Select {
             (None, None) => expr!(""),
         }
     }
-}
 
-impl Into<OwnedExpression> for Select {
-    fn into(self) -> OwnedExpression {
-        // SurrealDB doesn't have DISTINCT keyword, ignore it for now
-        let mut query = expr!("SELECT {}{}", self.render_fields(), self.render_from());
+    /// Renders entire statement into an expression
+    fn render(&self) -> OwnedExpression {
+        expr!(
+            "SELECT {}{}{}{}{}{}{}",
+            self.render_fields(),
+            self.render_from(),
+            self.render_where(),
+            self.render_group_by(),
+            self.render_having(),
+            self.render_order_by(),
+            self.render_limit()
+        )
+    }
 
-        let where_clause = self.render_where();
-        if !where_clause.preview().is_empty() {
-            query = expr!("{}{}", query, where_clause);
-        }
-
-        let group_by_clause = self.render_group_by();
-        if !group_by_clause.preview().is_empty() {
-            query = expr!("{}{}", query, group_by_clause);
-        }
-
-        let having_clause = self.render_having();
-        if !having_clause.preview().is_empty() {
-            query = expr!("{}{}", query, having_clause);
-        }
-
-        let order_by_clause = self.render_order_by();
-        if !order_by_clause.preview().is_empty() {
-            query = expr!("{}{}", query, order_by_clause);
-        }
-
-        let limit_clause = self.render_limit();
-        if !limit_clause.preview().is_empty() {
-            query = expr!("{}{}", query, limit_clause);
-        }
-
-        query
+    /// Renders everything into a string. Use for
+    /// debug only. Never or use as part of another query!!
+    pub fn preview(&self) -> String {
+        self.render().preview()
     }
 }
 
-impl Selectable for Select {
-    fn set_source(&mut self, source: OwnedExpression, _alias: Option<String>) {
-        self.from = vec![Target::new(source)];
+impl Into<OwnedExpression> for &SurrealSelect {
+    fn into(self) -> OwnedExpression {
+        self.render()
+    }
+}
+
+impl Into<OwnedExpression> for SurrealSelect {
+    fn into(self) -> OwnedExpression {
+        self.render()
+    }
+}
+
+impl Selectable for SurrealSelect {
+    fn set_source(&mut self, source: impl Into<Expr>, _alias: Option<String>) {
+        let source_expr = match source.into() {
+            Expr::Scalar(serde_json::Value::String(s)) => Identifier::new(s).into(),
+            other => expr!("{}", other),
+        };
+        self.from = vec![Target::new(source_expr)];
     }
 
     fn add_field(&mut self, field: String) {
@@ -282,7 +327,7 @@ mod tests {
 
     #[test]
     fn test_basic_select() {
-        let select = Select::new()
+        let select = SurrealSelect::new()
             .fields(vec![
                 SelectField::new(Field::new("name")),
                 SelectField::new(Field::new("set")),
@@ -297,7 +342,7 @@ mod tests {
 
     #[test]
     fn test_select_all() {
-        let select = Select::new().from(vec![Target::new(expr!("users"))]);
+        let select = SurrealSelect::new().from(vec![Target::new(expr!("users"))]);
 
         let expr: OwnedExpression = select.into();
         let sql = expr.preview();
@@ -307,7 +352,7 @@ mod tests {
 
     #[test]
     fn test_select_with_where_condition() {
-        let mut select = Select::new();
+        let mut select = SurrealSelect::new();
         select.set_source(expr!("users"), None);
         select.add_field("name".to_string());
         select.add_where_condition(expr!("age > 18"));
@@ -320,7 +365,7 @@ mod tests {
 
     #[test]
     fn test_select_with_multiple_where_conditions() {
-        let mut select = Select::new();
+        let mut select = SurrealSelect::new();
         select.set_source(expr!("users"), None);
         select.add_field("name".to_string());
         select.add_where_condition(expr!("age > 18"));
@@ -331,13 +376,13 @@ mod tests {
 
         assert_eq!(
             sql,
-            "SELECT name FROM users WHERE (age > 18) AND (active = true)"
+            "SELECT name FROM users WHERE age > 18 AND active = true"
         );
     }
 
     #[test]
     fn test_select_with_order_by() {
-        let mut select = Select::new();
+        let mut select = SurrealSelect::new();
         select.set_source(expr!("users"), None);
         select.add_field("name".to_string());
         select.add_order_by(expr!("name"), true);
@@ -345,12 +390,12 @@ mod tests {
         let expr: OwnedExpression = select.into();
         let sql = expr.preview();
 
-        assert_eq!(sql, "SELECT name FROM users ORDER BY name ASC");
+        assert_eq!(sql, "SELECT name FROM users ORDER BY name");
     }
 
     #[test]
     fn test_select_with_order_by_desc() {
-        let mut select = Select::new();
+        let mut select = SurrealSelect::new();
         select.set_source(expr!("users"), None);
         select.add_field("name".to_string());
         select.add_order_by(expr!("created_at"), false);
@@ -363,7 +408,7 @@ mod tests {
 
     #[test]
     fn test_select_with_group_by() {
-        let mut select = Select::new();
+        let mut select = SurrealSelect::new();
         select.set_source(expr!("users"), None);
         select.add_field("department".to_string());
         select.add_expression(expr!("count()"), Some("count".to_string()));
@@ -380,7 +425,7 @@ mod tests {
 
     #[test]
     fn test_select_with_limit() {
-        let mut select = Select::new();
+        let mut select = SurrealSelect::new();
         select.set_source(expr!("users"), None);
         select.add_field("name".to_string());
         select.set_limit(Some(10), None);
@@ -393,7 +438,7 @@ mod tests {
 
     #[test]
     fn test_select_with_limit_and_start() {
-        let mut select = Select::new();
+        let mut select = SurrealSelect::new();
         select.set_source(expr!("users"), None);
         select.add_field("name".to_string());
         select.set_limit(Some(10), Some(20));
@@ -406,7 +451,7 @@ mod tests {
 
     #[test]
     fn test_complex_select_query() {
-        let mut select = Select::new();
+        let mut select = SurrealSelect::new();
         select.set_source(expr!("orders"), None);
         select.add_field("customer_id".to_string());
         select.add_expression(expr!("SUM(total)"), Some("total_amount".to_string()));
@@ -426,7 +471,7 @@ mod tests {
 
     #[test]
     fn test_selectable_trait_methods() {
-        let mut select = Select::new();
+        let mut select = SurrealSelect::new();
 
         // Test Selectable trait methods
         select.set_source(expr!("users"), None);

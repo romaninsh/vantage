@@ -1,17 +1,44 @@
+//! # SurrealDB Identifiers
+//!
+//! doc wip
+
 use vantage_expressions::{IntoExpressive, OwnedExpression, expr};
 
+/// SurrealDB identifier with automatic escaping
+///
+/// doc wip
+///
+/// # Examples
+///
+/// ```rust
+/// use vantage_surrealdb::identifier::Identifier;
+///
+/// // doc wip
+/// let id = Identifier::new("user_name");
+/// let escaped = Identifier::new("SELECT"); // Reserved keyword
+/// ```
 #[derive(Debug, Clone)]
 pub struct Identifier {
     identifier: String,
 }
 
 impl Identifier {
+    /// Creates a new identifier
+    ///
+    /// doc wip
+    ///
+    /// # Arguments
+    ///
+    /// * `identifier` - doc wip
     pub fn new(identifier: impl Into<String>) -> Self {
         Self {
             identifier: identifier.into(),
         }
     }
 
+    /// Determines if identifier needs escaping
+    ///
+    /// doc wip
     fn needs_escaping(&self) -> bool {
         let reserved_keywords = [
             "DEFINE", "CREATE", "SELECT", "UPDATE", "DELETE", "FROM", "WHERE", "SET", "ONLY",

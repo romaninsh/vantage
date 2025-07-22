@@ -91,7 +91,7 @@ impl Expression {
         &self.parameters
     }
 
-    /// Given a Vec<Expression> and a delimeter, will construct a new expression,
+    /// Given a `Vec<Expression>` and a delimeter, will construct a new expression,
     /// by combining all nested templates together:
     /// ```
     /// let e1 = expr!("hello {}", "world");

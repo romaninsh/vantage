@@ -1,7 +1,7 @@
 use crate::field::Field;
 use async_trait::async_trait;
 use std::fmt::Debug;
-use vantage_expressions::{OwnedExpression, expr, protocol::selectable::Selectable};
+use vantage_expressions::{Expr, OwnedExpression, expr, protocol::selectable::Selectable};
 
 #[derive(Debug, Clone)]
 pub struct MongoSelect {
@@ -178,8 +178,8 @@ impl MongoSelect {
 
 #[async_trait]
 impl Selectable for MongoSelect {
-    fn set_source(&mut self, source: OwnedExpression, alias: Option<String>) {
-        self.source = Some(source);
+    fn set_source(&mut self, source: impl Into<Expr>, alias: Option<String>) {
+        self.source = Some(expr!("{}", source.into()));
         self.source_alias = alias;
     }
 

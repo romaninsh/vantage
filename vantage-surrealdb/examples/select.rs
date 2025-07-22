@@ -1,9 +1,9 @@
 use vantage_expressions::{expr, protocol::selectable::Selectable};
-use vantage_surrealdb::select::Select;
+use vantage_surrealdb::select::SurrealSelect;
 
 fn main() {
     // Create a new Select instance
-    let mut select = Select::new();
+    let mut select = SurrealSelect::new();
 
     // Use Selectable trait methods
     select.set_source(expr!("users"), None);
@@ -15,11 +15,6 @@ fn main() {
     select.add_where_condition(expr!("count() > 5"));
     select.set_limit(Some(10), Some(5));
     select.set_distinct(true);
-
-    println!("SurrealDB Select with Selectable trait:");
-    let expr: vantage_expressions::OwnedExpression = select.clone().into();
-    println!("{}", expr.preview());
-    println!();
 
     // Test trait query methods
     println!("Trait query methods:");
@@ -46,7 +41,7 @@ fn main() {
     println!();
 
     // Basic select example
-    let mut basic_select = Select::new();
+    let mut basic_select = SurrealSelect::new();
     basic_select.set_source(expr!("products"), None);
     basic_select.add_field("name".to_string());
     basic_select.add_field("price".to_string());

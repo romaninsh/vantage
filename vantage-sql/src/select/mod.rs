@@ -5,7 +5,7 @@ pub mod query_type;
 
 use indexmap::IndexMap;
 use serde_json::Value;
-use vantage_expressions::{OwnedExpression, expr, protocol::selectable::Selectable};
+use vantage_expressions::{Expr, OwnedExpression, expr, protocol::selectable::Selectable};
 
 use crate::Identifier;
 use join_query::JoinQuery;
@@ -350,11 +350,12 @@ impl Into<OwnedExpression> for Select {
 }
 
 impl Selectable for Select {
-    fn set_source(&mut self, source: OwnedExpression, alias: Option<String>) {
-        let mut query_source = QuerySource::new(source);
-        if let Some(alias) = alias {
-            query_source = query_source.with_alias(alias);
-        }
+    fn set_source(&mut self, source: impl Into<Expr>, alias: Option<String>) {
+        let query_source = match source.into() {
+            Expr::Scalar(serde_json::Value::String(s)) => QuerySource::Table(s, alias),
+            other => QuerySource::Expression(expr!("{}", other), alias),
+        };
+
         self.from = vec![query_source];
     }
 
