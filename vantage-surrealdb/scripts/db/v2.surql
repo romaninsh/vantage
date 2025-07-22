@@ -32,10 +32,8 @@ DEFINE FIELD price ON product TYPE int ASSERT $value > 0;
 DEFINE FIELD bakery ON product TYPE record<bakery>; -- Direct link to bakery
 DEFINE FIELD is_deleted ON product TYPE bool DEFAULT false;
 -- Embedded inventory data
-DEFINE FIELD inventory ON product TYPE object DEFAULT {
-    stock: 0,
-    last_updated: time::now()
-};
+DEFINE FIELD inventory ON product TYPE object;
+DEFINE FIELD inventory.stock ON product TYPE int DEFAULT 0;
 
 -- Order table (schema-full with embedded line items)
 DEFINE TABLE order SCHEMAFULL;
@@ -96,50 +94,35 @@ CREATE product:flux_cupcake SET
     calories = 300,
     price = 120,
     bakery = bakery:hill_valley,
-    inventory = {
-        stock: 50,
-        last_updated: time::now()
-    };
+    inventory = { stock: 50 };
 
 CREATE product:delorean_donut SET
     name = 'DeLorean Doughnut',
     calories = 250,
     price = 135,
     bakery = bakery:hill_valley,
-    inventory = {
-        stock: 30,
-        last_updated: time::now()
-    };
+    inventory = { stock: 30 };
 
 CREATE product:time_tart SET
     name = 'Time Traveler Tart',
     calories = 200,
     price = 220,
     bakery = bakery:hill_valley,
-    inventory = {
-        stock: 20,
-        last_updated: time::now()
-    };
+    inventory = { stock: 20 };
 
 CREATE product:sea_pie SET
     name = 'Enchantment Under the Sea Pie',
     calories = 350,
     price = 299,
     bakery = bakery:hill_valley,
-    inventory = {
-        stock: 15,
-        last_updated: time::now()
-    };
+    inventory = { stock: 15 };
 
 CREATE product:hover_cookies SET
     name = 'Hoverboard Cookies',
     calories = 150,
     price = 199,
     bakery = bakery:hill_valley,
-    inventory = {
-        stock: 40,
-        last_updated: time::now()
-    };
+    inventory = { stock: 40 };
 
 
 -- Create orders with embedded line items
