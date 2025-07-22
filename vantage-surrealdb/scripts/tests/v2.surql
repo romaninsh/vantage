@@ -53,12 +53,22 @@ AND inventory.stock < 20
 AND is_deleted = false;
 
 -- Inventory vs Demand Analytics: Show products and order statistics for a specific bakery
-SELECT
-    name AS product_name,
-    inventory.stock AS current_inventory,
-    array::first((SELECT count() FROM order WHERE bakery = bakery:hill_valley GROUP ALL)).count AS total_orders
-FROM product
-WHERE bakery = bakery:hill_valley AND is_deleted = false;
+SELECT * FROM (
+    SELECT
+        name AS product_name,
+        inventory.stock AS current_inventory,
+        math::sum(
+            SELECT VALUE math::sum(
+                lines[WHERE product = $parent.id].quantity
+            )
+            FROM order
+            WHERE lines.product CONTAINS $parent.id
+        ) AS total_items_ordered
+    FROM product
+    WHERE bakery = bakery:hill_valley
+        AND is_deleted = false
+) WHERE total_items_ordered > current_inventory
+ORDER BY product_name;
 
 -- Client Calorie Consumption Analytics: Show total calories ordered by each Hill Valley Bakery client
 SELECT

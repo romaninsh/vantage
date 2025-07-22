@@ -23,10 +23,9 @@ DEFINE FIELD calories ON product TYPE int ASSERT $value >= 0;
 DEFINE FIELD price ON product TYPE int ASSERT $value > 0;
 DEFINE FIELD is_deleted ON product TYPE bool DEFAULT false;
 -- Embedded inventory data
-DEFINE FIELD inventory ON product TYPE object DEFAULT {
-    stock: 0,
-    last_updated: time::now()
-};
+DEFINE FIELD inventory ON product TYPE object;
+DEFINE FIELD inventory.stock ON product TYPE int DEFAULT 0;
+DEFINE FIELD inventory.last_updated ON product TYPE datetime DEFAULT time::now();
 
 -- Order table (schema-full with embedded line items)
 DEFINE TABLE order SCHEMAFULL;
@@ -82,46 +81,31 @@ CREATE product:flux_cupcake SET
     name = 'Flux Capacitor Cupcake',
     calories = 300,
     price = 120,
-    inventory = {
-        stock: 50,
-        last_updated: time::now()
-    };
+    inventory = { stock: 50 };
 
 CREATE product:delorean_donut SET
     name = 'DeLorean Doughnut',
     calories = 250,
     price = 135,
-    inventory = {
-        stock: 30,
-        last_updated: time::now()
-    };
+    inventory = { stock: 30 };
 
 CREATE product:time_tart SET
     name = 'Time Traveler Tart',
     calories = 200,
     price = 220,
-    inventory = {
-        stock: 20,
-        last_updated: time::now()
-    };
+    inventory = { stock: 20 };
 
 CREATE product:sea_pie SET
     name = 'Enchantment Under the Sea Pie',
     calories = 350,
     price = 299,
-    inventory = {
-        stock: 15,
-        last_updated: time::now()
-    };
+    inventory = { stock: 15 };
 
 CREATE product:hover_cookies SET
     name = 'Hoverboard Cookies',
     calories = 150,
     price = 199,
-    inventory = {
-        stock: 40,
-        last_updated: time::now()
-    };
+    inventory = { stock: 40 };
 
 -- Create bakery->product relationships
 RELATE bakery:hill_valley->owns->product:flux_cupcake;
@@ -166,7 +150,7 @@ CREATE order:order3 SET
     lines = [
         {
             product: product:hover_cookies,
-            quantity: 5,
+            quantity: 500,
             price: 199
         }
     ];

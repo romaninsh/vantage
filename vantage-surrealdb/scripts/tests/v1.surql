@@ -27,3 +27,34 @@ WHERE lines[*].product CONTAINS product:flux_cupcake;
 SELECT name, inventory.stock
 FROM product
 WHERE inventory.stock < 20 AND is_deleted = false;
+
+-- Inventory vs Demand Analytics: Show products where demand exceeds inventory (v1 schema)
+SELECT * FROM (
+    SELECT
+        name AS product_name,
+        inventory.stock AS current_inventory,
+        math::sum(
+            SELECT VALUE math::sum(
+                lines[WHERE product = $parent.id].quantity
+            )
+            FROM order
+            WHERE lines.product CONTAINS $parent.id
+        ) AS total_items_ordered
+    FROM product
+    WHERE bakery:hill_valley IN <-owns<-bakery
+        AND is_deleted = false
+) WHERE total_items_ordered > current_inventory
+ORDER BY product_name;
+
+-- Client Calorie Consumption Analytics: Show total calories ordered by each client
+SELECT
+    name AS client_name,
+    email AS client_email,
+    math::sum(
+        SELECT VALUE math::sum(
+            array::map(lines, |$line| $line.quantity * $line.product.calories)
+        )
+        FROM ->placed->order
+    ) AS total_calories_ordered
+FROM client
+ORDER BY name;

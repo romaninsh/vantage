@@ -164,7 +164,7 @@ CREATE order:order3 SET
     lines = [
         {
             product: product:hover_cookies,
-            quantity: 5,
+            quantity: 500,
             price: 199
         }
     ];
