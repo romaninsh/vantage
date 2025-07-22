@@ -1,14 +1,16 @@
 use std::fmt::Debug;
 
-use crate::OwnedExpression;
+use crate::{Expr, OwnedExpression};
 
 pub trait Selectable: Send + Sync + Debug {
-    fn set_source(&mut self, source: OwnedExpression, alias: Option<String>);
+    /// Specifies a source for a query. Depending on implementation, can be executed
+    /// multiple times. If `source` is expression you might need to use alias.
+    fn set_source(&mut self, source: impl Into<Expr>, alias: Option<String>);
     fn add_field(&mut self, field: String);
     fn add_expression(&mut self, expression: OwnedExpression, alias: Option<String>);
     fn add_where_condition(&mut self, condition: OwnedExpression);
     fn set_distinct(&mut self, distinct: bool);
-    fn add_order_by(&mut self, expression: OwnedExpression, ascending: bool);
+    fn add_order_by(&mut self, field_or_expr: impl Into<Expr>, ascending: bool);
     fn add_group_by(&mut self, expression: OwnedExpression);
     fn set_limit(&mut self, limit: Option<i64>, skip: Option<i64>);
     fn clear_fields(&mut self);

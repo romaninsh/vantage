@@ -1,5 +1,5 @@
 //! Mutable expressions allow multiple expressions to reference the same mutable value.
-//! The value is stored in an Arc<Mutex<T>> and evaluated at render time.
+//! The value is stored in an `Arc<Mutex<T>>` and evaluated at render time.
 
 use crate::expression::owned::OwnedExpression;
 use crate::protocol::expressive::IntoExpressive;

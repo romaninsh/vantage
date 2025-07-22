@@ -1,5 +1,26 @@
+//! # Conditional Expressions
+//!
+//! doc wip
+
 use vantage_expressions::{OwnedExpression, expr};
 
+/// SurrealDB conditional expression (IF-THEN-ELSE)
+///
+/// doc wip
+///
+/// # Examples
+///
+/// ```rust
+/// use vantage_expressions::expr;
+/// use vantage_surrealdb::conditional::Conditional;
+///
+/// // doc wip
+/// let conditional = Conditional::new(
+///     expr!("age >= 18"),
+///     expr!("'adult'"),
+///     expr!("'minor'")
+/// );
+/// ```
 #[derive(Debug, Clone)]
 pub struct Conditional {
     condition: OwnedExpression,
@@ -8,6 +29,15 @@ pub struct Conditional {
 }
 
 impl Conditional {
+    /// Creates a new conditional expression
+    ///
+    /// doc wip
+    ///
+    /// # Arguments
+    ///
+    /// * `condition` - doc wip
+    /// * `then_expr` - doc wip
+    /// * `else_expr` - doc wip
     pub fn new(
         condition: impl Into<OwnedExpression>,
         then_expr: impl Into<OwnedExpression>,
