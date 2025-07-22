@@ -59,3 +59,17 @@ SELECT
     array::first((SELECT count() FROM order WHERE bakery = bakery:hill_valley GROUP ALL)).count AS total_orders
 FROM product
 WHERE bakery = bakery:hill_valley AND is_deleted = false;
+
+-- Client Calorie Consumption Analytics: Show total calories ordered by each Hill Valley Bakery client
+SELECT
+    name AS client_name,
+    math::sum(
+        SELECT VALUE math::sum(
+            array::map(lines, |$line| $line.quantity * $line.product.calories)
+        )
+        FROM ->placed->order
+        WHERE bakery = bakery:hill_valley
+    ) AS total_calories_ordered
+FROM client
+WHERE bakery = bakery:hill_valley
+ORDER BY name;
