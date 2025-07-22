@@ -1,19 +1,15 @@
 use vantage_expressions::{expr, protocol::selectable::Selectable};
-use vantage_surrealdb::select::SurrealSelect;
+use vantage_surrealdb::{select::SurrealSelect, thing::Thing};
 
 #[test]
 fn query01() {
     let mut select = SurrealSelect::new();
 
     // Set the source table
-    select.set_source(expr!("product"), None);
-
-    // Add WHERE conditions
-    select.add_where_condition(expr!("bakery = bakery:hill_valley"));
-    select.add_where_condition(expr!("is_deleted = false"));
-
-    // Add ORDER BY
-    select.add_order_by(expr!("name"), true);
+    select.set_source("product", None);
+    select.add_where_condition(expr!("bakery = {}", Thing::new("bakery", "hill_valley")));
+    select.add_where_condition(expr!("is_deleted = {}", false));
+    select.add_order_by("name", true);
 
     let result = select.preview();
 

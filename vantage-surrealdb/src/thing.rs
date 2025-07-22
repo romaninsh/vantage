@@ -2,7 +2,7 @@
 //!
 //! doc wip
 
-use vantage_expressions::{OwnedExpression, expr};
+use vantage_expressions::{OwnedExpression, expr, protocol::expressive::IntoExpressive};
 
 /// SurrealDB Thing (record ID) representation
 ///
@@ -32,8 +32,11 @@ impl Thing {
     ///
     /// * `table` - doc wip
     /// * `id` - doc wip
-    pub fn new(table: String, id: String) -> Self {
-        Self { table, id }
+    pub fn new(table: impl Into<String>, id: impl Into<String>) -> Self {
+        Self {
+            table: table.into(),
+            id: id.into(),
+        }
     }
 
     /// Parses a Thing from string format "table:id"
@@ -62,5 +65,11 @@ impl Thing {
 impl Into<OwnedExpression> for Thing {
     fn into(self) -> OwnedExpression {
         expr!(format!("{}:{}", self.table, self.id))
+    }
+}
+
+impl From<Thing> for IntoExpressive<OwnedExpression> {
+    fn from(thing: Thing) -> Self {
+        IntoExpressive::nested(thing.into())
     }
 }
