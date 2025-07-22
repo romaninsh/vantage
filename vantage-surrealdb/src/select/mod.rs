@@ -235,7 +235,7 @@ impl Selectable for SurrealSelect {
     fn set_source(&mut self, source: impl Into<Expr>, _alias: Option<String>) {
         let source_expr = match source.into() {
             Expr::Scalar(serde_json::Value::String(s)) => Identifier::new(s).into(),
-            other => expr!("{}", other),
+            other => expr!("({})", other),
         };
         self.from = vec![Target::new(source_expr)];
     }
@@ -358,7 +358,7 @@ mod tests {
     #[test]
     fn test_select_with_where_condition() {
         let mut select = SurrealSelect::new();
-        select.set_source(expr!("users"), None);
+        select.set_source("users", None);
         select.add_field("name".to_string());
         select.add_where_condition(expr!("age > 18"));
 
@@ -371,7 +371,7 @@ mod tests {
     #[test]
     fn test_select_with_multiple_where_conditions() {
         let mut select = SurrealSelect::new();
-        select.set_source(expr!("users"), None);
+        select.set_source("users", None);
         select.add_field("name".to_string());
         select.add_where_condition(expr!("age > 18"));
         select.add_where_condition(expr!("active = true"));
@@ -388,7 +388,7 @@ mod tests {
     #[test]
     fn test_select_with_order_by() {
         let mut select = SurrealSelect::new();
-        select.set_source(expr!("users"), None);
+        select.set_source("users", None);
         select.add_field("name".to_string());
         select.add_order_by(expr!("name"), true);
 
@@ -401,7 +401,7 @@ mod tests {
     #[test]
     fn test_select_with_order_by_desc() {
         let mut select = SurrealSelect::new();
-        select.set_source(expr!("users"), None);
+        select.set_source("users", None);
         select.add_field("name".to_string());
         select.add_order_by(expr!("created_at"), false);
 
@@ -414,7 +414,7 @@ mod tests {
     #[test]
     fn test_select_with_group_by() {
         let mut select = SurrealSelect::new();
-        select.set_source(expr!("users"), None);
+        select.set_source("users", None);
         select.add_field("department".to_string());
         select.add_expression(expr!("count()"), Some("count".to_string()));
         select.add_group_by(expr!("department"));
@@ -431,7 +431,7 @@ mod tests {
     #[test]
     fn test_select_with_limit() {
         let mut select = SurrealSelect::new();
-        select.set_source(expr!("users"), None);
+        select.set_source("users", None);
         select.add_field("name".to_string());
         select.set_limit(Some(10), None);
 
@@ -444,7 +444,7 @@ mod tests {
     #[test]
     fn test_select_with_limit_and_start() {
         let mut select = SurrealSelect::new();
-        select.set_source(expr!("users"), None);
+        select.set_source("users", None);
         select.add_field("name".to_string());
         select.set_limit(Some(10), Some(20));
 
@@ -457,7 +457,7 @@ mod tests {
     #[test]
     fn test_complex_select_query() {
         let mut select = SurrealSelect::new();
-        select.set_source(expr!("orders"), None);
+        select.set_source("orders", None);
         select.add_field("customer_id".to_string());
         select.add_expression(expr!("SUM(total)"), Some("total_amount".to_string()));
         select.add_where_condition(expr!("status = 'completed'"));

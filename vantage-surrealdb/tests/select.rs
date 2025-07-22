@@ -35,7 +35,7 @@ fn test_set_source_accepts_string_and_expression() {
     assert_eq!(result2, "SELECT * FROM products");
 
     // Test with expression
-    let table_expr = expr!("product_table");
+    let table_expr = "product_table";
     let mut select3 = SurrealSelect::new();
     select3.set_source(table_expr, None);
     let result3 = select3.preview();
