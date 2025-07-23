@@ -1,5 +1,6 @@
 use crate::field::Field;
 use async_trait::async_trait;
+use serde_json::Value;
 use std::fmt::Debug;
 use vantage_expressions::{Expr, OwnedExpression, expr, protocol::selectable::Selectable};
 
@@ -183,8 +184,8 @@ impl Selectable for MongoSelect {
         self.source_alias = alias;
     }
 
-    fn add_field(&mut self, field: String) {
-        self.fields.push(Field::new_simple(field));
+    fn add_field(&mut self, field: impl Into<String>) {
+        self.fields.push(Field::new_simple(field.into()));
     }
 
     fn add_expression(&mut self, expression: OwnedExpression, alias: Option<String>) {

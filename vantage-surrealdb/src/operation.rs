@@ -2,7 +2,9 @@
 //!
 //! This module provides operations that extend expressions with SurrealDB-specific functionality.
 
-use vantage_expressions::{OwnedExpression, expr};
+use vantage_expressions::{Expr, OwnedExpression, expr};
+
+use crate::identifier::Identifier;
 
 /// Trait for types that can be converted to OwnedExpression
 pub trait Expressive: Into<OwnedExpression> {
@@ -35,6 +37,8 @@ pub trait RefOperation: Expressive {
     ///
     /// An expression that renders as "self<-reference<-table"
     fn lref(&self, reference: impl Into<String>, table: impl Into<String>) -> OwnedExpression;
+    fn alias(&self, alias: impl Into<String>) -> OwnedExpression;
+    fn eq(&self, other: impl Into<Expr>) -> OwnedExpression;
 }
 
 // Default implementations for RefOperation
@@ -58,6 +62,14 @@ where
             OwnedExpression::new(reference.into(), vec![]),
             OwnedExpression::new(table.into(), vec![])
         )
+    }
+
+    fn alias(&self, alias: impl Into<String>) -> OwnedExpression {
+        expr!("{} AS {}", self.expr(), Identifier::new(alias.into()))
+    }
+
+    fn eq(&self, other: impl Into<Expr>) -> OwnedExpression {
+        expr!("{} = {}", self.expr(), other.into())
     }
 }
 
