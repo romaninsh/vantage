@@ -38,7 +38,6 @@ pub struct SurrealSelect {
     pub where_conditions: Vec<OwnedExpression>,
     pub order_by: Vec<(OwnedExpression, bool)>,
     pub group_by: Vec<OwnedExpression>,
-    pub having_conditions: Vec<OwnedExpression>,
     pub distinct: bool,
     pub limit: Option<i64>,
     pub skip: Option<i64>,
@@ -57,7 +56,6 @@ impl SurrealSelect {
             where_conditions: Vec::new(),
             order_by: Vec::new(),
             group_by: Vec::new(),
-            having_conditions: Vec::new(),
             distinct: false,
             limit: None,
             skip: None,
@@ -143,26 +141,6 @@ impl SurrealSelect {
         }
     }
 
-    /// Renders the HAVING clause
-    ///
-    /// doc wip
-    fn render_having(&self) -> OwnedExpression {
-        if self.having_conditions.is_empty() {
-            expr!("")
-        } else if self.having_conditions.len() == 1 {
-            expr!(" HAVING {}", self.having_conditions[0].clone())
-        } else {
-            // Combine multiple conditions with AND
-            let conditions: Vec<OwnedExpression> = self
-                .having_conditions
-                .iter()
-                .map(|c| expr!("({})", c.clone()))
-                .collect();
-            let combined = OwnedExpression::from_vec(conditions, " AND ");
-            expr!(" HAVING {}", combined)
-        }
-    }
-
     /// Renders the ORDER BY clause
     ///
     /// doc wip
@@ -201,12 +179,11 @@ impl SurrealSelect {
     /// Renders entire statement into an expression
     fn render(&self) -> OwnedExpression {
         expr!(
-            "SELECT {}{}{}{}{}{}{}",
+            "SELECT {}{}{}{}{}{}",
             self.render_fields(),
             self.render_from(),
             self.render_where(),
             self.render_group_by(),
-            self.render_having(),
             self.render_order_by(),
             self.render_limit()
         )
