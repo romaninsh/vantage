@@ -1,5 +1,5 @@
 use vantage_expressions::{expr, protocol::selectable::Selectable};
-use vantage_surrealdb::{select::SurrealSelect, thing::Thing};
+use vantage_surrealdb::{operation::RefOperation, select::SurrealSelect, thing::Thing};
 
 #[test]
 fn query01() {
@@ -17,7 +17,26 @@ fn query01() {
         result,
         "SELECT * FROM product WHERE bakery = bakery:hill_valley AND is_deleted = false ORDER BY name"
     );
+
+    let mut select = SurrealSelect::new();
+
+    select.set_source(
+        Thing::new("bakery", "hill_valley").rref("owns", "product"),
+        None,
+    );
+    select.add_where_condition(expr!("is_deleted = {}", false));
+    select.add_order_by("name", true);
+
+    let result2 = select.preview();
+
+    assert_eq!(
+        result2,
+        "SELECT * FROM (bakery:hill_valley->owns->product) WHERE is_deleted = false ORDER BY name"
+    );
 }
+
+#[test]
+fn query02() {}
 
 #[test]
 fn test_set_source_accepts_string_and_expression() {
