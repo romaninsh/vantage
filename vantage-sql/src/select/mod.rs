@@ -359,7 +359,7 @@ impl Selectable for Select {
         self.from = vec![query_source];
     }
 
-    fn add_field(&mut self, field: String) {
+    fn add_field(&mut self, field: impl Into<String>) {
         self.fields.insert(None, Identifier::new(field).into());
     }
 

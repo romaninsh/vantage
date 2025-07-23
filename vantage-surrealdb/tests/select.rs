@@ -1,5 +1,10 @@
 use vantage_expressions::{expr, protocol::selectable::Selectable};
-use vantage_surrealdb::{operation::RefOperation, select::SurrealSelect, thing::Thing};
+use vantage_surrealdb::{
+    identifier::Identifier,
+    operation::RefOperation,
+    select::{SurrealSelect, field::Field},
+    thing::Thing,
+};
 
 #[test]
 fn query01() {
@@ -37,6 +42,27 @@ fn query01() {
 
 #[test]
 fn query02() {}
+
+#[test]
+fn query03() {
+    let mut select = SurrealSelect::new();
+
+    select.add_field("name");
+    select.add_field("price");
+    select.add_expression(
+        Identifier::new("inventory").dot("stock"),
+        Some("stock".to_string()),
+    );
+
+    select.set_source("product", None);
+    select.add_where_condition(Field::new("is_deleted").eq(false));
+
+    let result = select.preview();
+    assert_eq!(
+        result,
+        "SELECT name, price, inventory.stock AS stock FROM product WHERE is_deleted = false"
+    );
+}
 
 #[test]
 fn test_set_source_accepts_string_and_expression() {

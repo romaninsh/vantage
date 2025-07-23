@@ -4,7 +4,7 @@
 
 use vantage_expressions::OwnedExpression;
 
-use crate::identifier::Identifier;
+use crate::{identifier::Identifier, operation::Expressive};
 
 /// Represents a database field
 ///
@@ -19,7 +19,7 @@ use crate::identifier::Identifier;
 /// let field = Field::new("user_name");
 /// ```
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Hash)]
 pub struct Field {
     field: String,
 }
@@ -41,6 +41,12 @@ impl Field {
 
 impl Into<OwnedExpression> for Field {
     fn into(self) -> OwnedExpression {
-        Identifier::new(self.field).into()
+        self.expr()
+    }
+}
+
+impl Expressive for Field {
+    fn expr(&self) -> OwnedExpression {
+        Identifier::new(self.field.clone()).into()
     }
 }

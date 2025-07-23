@@ -36,6 +36,10 @@ impl Identifier {
         }
     }
 
+    pub fn dot(self, other: impl Into<String>) -> OwnedExpression {
+        expr!("{}.{}", self, Identifier::new(other.into()))
+    }
+
     /// Determines if identifier needs escaping
     ///
     /// doc wip

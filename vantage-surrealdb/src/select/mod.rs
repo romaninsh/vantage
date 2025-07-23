@@ -9,6 +9,7 @@ pub mod target;
 
 use field::Field;
 use select_field::SelectField;
+use serde_json::Value;
 use target::Target;
 
 use crate::identifier::Identifier;
@@ -211,14 +212,14 @@ impl Into<OwnedExpression> for SurrealSelect {
 impl Selectable for SurrealSelect {
     fn set_source(&mut self, source: impl Into<Expr>, _alias: Option<String>) {
         let source_expr = match source.into() {
-            Expr::Scalar(serde_json::Value::String(s)) => Identifier::new(s).into(),
+            Expr::Scalar(Value::String(s)) => Identifier::new(s).into(),
             other => expr!("({})", other),
         };
         self.from = vec![Target::new(source_expr)];
     }
 
-    fn add_field(&mut self, field: String) {
-        self.fields.push(SelectField::new(Field::new(field)));
+    fn add_field(&mut self, field: impl Into<String>) {
+        self.fields.push(SelectField::new(Identifier::new(field)));
     }
 
     fn add_expression(&mut self, expression: OwnedExpression, alias: Option<String>) {
@@ -239,7 +240,7 @@ impl Selectable for SurrealSelect {
 
     fn add_order_by(&mut self, field_or_expr: impl Into<Expr>, ascending: bool) {
         let expression = match field_or_expr.into() {
-            Expr::Scalar(serde_json::Value::String(s)) => Identifier::new(s).into(),
+            Expr::Scalar(Value::String(s)) => Identifier::new(s).into(),
             other => expr!("{}", other),
         };
 

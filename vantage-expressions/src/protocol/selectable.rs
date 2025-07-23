@@ -6,7 +6,7 @@ pub trait Selectable: Send + Sync + Debug {
     /// Specifies a source for a query. Depending on implementation, can be executed
     /// multiple times. If `source` is expression you might need to use alias.
     fn set_source(&mut self, source: impl Into<Expr>, alias: Option<String>);
-    fn add_field(&mut self, field: String);
+    fn add_field(&mut self, field: impl Into<String>);
     fn add_expression(&mut self, expression: OwnedExpression, alias: Option<String>);
     fn add_where_condition(&mut self, condition: OwnedExpression);
     fn set_distinct(&mut self, distinct: bool);
