@@ -33,6 +33,7 @@
 
 pub mod conditional;
 pub mod identifier;
+pub mod operation;
 pub mod protocol;
 // pub mod query;
 pub mod select;
