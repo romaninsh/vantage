@@ -1,5 +1,6 @@
 use vantage_expressions::{expr, protocol::selectable::Selectable};
 use vantage_surrealdb::{
+    field_projection::FieldProjection,
     identifier::Identifier,
     operation::{Expressive, RefOperation},
     select::{SurrealSelect, field::Field},
@@ -117,6 +118,25 @@ fn query04() {
         select.preview(),
         "RETURN math::sum(SELECT VALUE inventory.stock FROM product WHERE is_deleted = false) - count(SELECT * FROM product)"
     );
+}
+
+#[test]
+fn query07() {
+    let projection = FieldProjection::new(expr!("lines[*]"))
+        .with_expression(expr!("product.name"), "product_name")
+        .with_field("quantity")
+        .with_field("price")
+        .with_expression(expr!("quantity * price"), "subtotal");
+
+    let select = SurrealSelect::new()
+        .with_source("order")
+        .with_field("id")
+        .with_field("created_at")
+        .with_expression(projection.into(), Some("items".to_string()));
+    assert_eq!(
+        select.preview(),
+        "SELECT id, created_at, lines[*].{product_name: product.name, quantity: quantity, price: price, subtotal: quantity * price} AS items FROM order"
+    )
 }
 
 #[test]
