@@ -4,6 +4,8 @@
 
 use vantage_expressions::{IntoExpressive, OwnedExpression, expr};
 
+use crate::operation::Expressive;
+
 /// SurrealDB identifier with automatic escaping
 ///
 /// doc wip
@@ -58,16 +60,29 @@ impl Identifier {
 
 impl Into<OwnedExpression> for Identifier {
     fn into(self) -> OwnedExpression {
-        if self.needs_escaping() {
-            expr!(format!("⟨{}⟩", self.identifier))
-        } else {
-            expr!(self.identifier)
-        }
+        self.expr()
     }
 }
 
 impl From<Identifier> for IntoExpressive<OwnedExpression> {
     fn from(id: Identifier) -> Self {
         IntoExpressive::nested(id.into())
+    }
+}
+
+impl Expressive for Identifier {
+    fn expr(&self) -> OwnedExpression {
+        if self.needs_escaping() {
+            expr!(format!("⟨{}⟩", self.identifier))
+        } else {
+            expr!(self.identifier.clone())
+        }
+    }
+}
+
+pub struct Parent {}
+impl Parent {
+    pub fn new() -> Identifier {
+        Identifier::new("$parent")
     }
 }

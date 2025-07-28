@@ -1,13 +1,23 @@
 use vantage_expressions::{expr, protocol::selectable::Selectable};
 use vantage_surrealdb::{
     field_projection::FieldProjection,
-    identifier::Identifier,
+    identifier::{Identifier, Parent},
     operation::{Expressive, RefOperation},
     select::{SurrealSelect, field::Field},
     sum::{Fx, Sum},
     surreal_return::SurrealReturn,
     thing::Thing,
 };
+
+fn snip(str: &str) -> String {
+    str.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .replace("( ", "(")
+        .replace(" )", ")")
+        .replace("{ ", "{")
+        .replace(" }", "}")
+}
 
 #[test]
 fn query01() {
@@ -121,6 +131,20 @@ fn query04() {
 }
 
 #[test]
+fn sniptest() {
+    assert_eq!(
+        "RETURN math::sum(SELECT VALUE inventory.stock FROM product WHERE is_deleted = false) - count(SELECT * FROM product)",
+        snip(
+            "RETURN math::sum(
+                SELECT VALUE inventory.stock
+                FROM product
+                WHERE is_deleted = false
+            ) - count(SELECT * FROM product)"
+        )
+    )
+}
+
+#[test]
 fn query07() {
     let projection = FieldProjection::new(expr!("lines[*]"))
         .with_expression(expr!("product.name"), "product_name")
@@ -135,7 +159,80 @@ fn query07() {
         .with_expression(projection.into(), Some("items".to_string()));
     assert_eq!(
         select.preview(),
-        "SELECT id, created_at, lines[*].{product_name: product.name, quantity: quantity, price: price, subtotal: quantity * price} AS items FROM order"
+        snip(
+            "SELECT id, created_at, lines[*].{
+                product_name: product.name,
+                quantity: quantity,
+                price: price,
+                subtotal: quantity * price
+            } AS items FROM order"
+        )
+    )
+}
+
+#[test]
+fn query11() {
+    let select = SurrealSelect::new()
+        .with_order("product_name", true)
+        .with_condition(expr!("total_items_ordered > current_inventory"))
+        .with_source(
+            SurrealSelect::new()
+                .with_expression(
+                    Identifier::new("name").into(),
+                    Some("product_name".to_string()),
+                )
+                .with_expression(
+                    Identifier::new("inventory").dot("stock"),
+                    Some("current_inventory".to_string()),
+                )
+                .with_expression(
+                    Sum::new(
+                        SurrealSelect::new()
+                            .with_value()
+                            .with_expression(
+                                Sum::new(expr!("lines[WHERE product = $parent.id].quantity"))
+                                    .into(),
+                                None,
+                            )
+                            .with_source("order")
+                            .with_condition(
+                                Identifier::new("lines")
+                                    .dot("product")
+                                    .contains(Parent::new().dot("id")),
+                            )
+                            .expr(),
+                    )
+                    .into(),
+                    Some("total_items_ordered".to_string()),
+                )
+                .with_source("product")
+                .with_condition(
+                    Thing::new("bakery", "hill_valley").in_(expr!("").lref("owns", "bakery")),
+                )
+                .with_condition(Identifier::new("is_deleted").eq(false))
+                .expr(),
+        );
+
+    assert_eq!(
+        select.preview(),
+        snip(
+            "SELECT * FROM (
+            SELECT
+                name AS product_name,
+                inventory.stock AS current_inventory,
+                math::sum(
+                    SELECT VALUE math::sum(
+                        lines[WHERE product = $parent.id].quantity
+                    )
+                    FROM order
+                    WHERE lines.product CONTAINS $parent.id
+                ) AS total_items_ordered
+            FROM product
+            WHERE bakery:hill_valley IN <-owns<-bakery
+                AND is_deleted = false
+        ) WHERE total_items_ordered > current_inventory
+        ORDER BY product_name"
+        )
     )
 }
 

@@ -121,6 +121,15 @@ impl SurrealSelect {
         self.add_where_condition(condition);
         self
     }
+
+    pub fn with_order(mut self, field_or_expr: impl Into<Expr>, ascending: bool) -> Self {
+        self.add_order_by(field_or_expr, ascending);
+        self
+    }
+    pub fn with_value(mut self) -> Self {
+        self.single_value = true;
+        self
+    }
 }
 
 impl<T> SurrealSelect<T> {
