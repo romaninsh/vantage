@@ -67,20 +67,10 @@ impl SelectField {
 
 impl Into<OwnedExpression> for SelectField {
     fn into(self) -> OwnedExpression {
-        let base_expr = self.expression.preview();
-
         match (&self.alias, self.is_value) {
-            (Some(alias), true) => expr!(
-                "VALUE {} AS {}",
-                Identifier::new(base_expr),
-                Identifier::new(alias)
-            ),
-            (Some(alias), false) => expr!(
-                "{} AS {}",
-                Identifier::new(base_expr),
-                Identifier::new(alias)
-            ),
-            (None, true) => expr!("VALUE {}", Identifier::new(base_expr)),
+            (Some(alias), true) => expr!("VALUE {} AS {}", self.expression, Identifier::new(alias)),
+            (Some(alias), false) => expr!("{} AS {}", self.expression, Identifier::new(alias)),
+            (None, true) => expr!("VALUE {}", self.expression),
             (None, false) => self.expression,
         }
     }
