@@ -39,6 +39,7 @@ pub trait RefOperation: Expressive {
     fn lref(&self, reference: impl Into<String>, table: impl Into<String>) -> OwnedExpression;
     fn alias(&self, alias: impl Into<String>) -> OwnedExpression;
     fn eq(&self, other: impl Into<Expr>) -> OwnedExpression;
+    fn sub(&self, other: impl Into<Expr>) -> OwnedExpression;
 }
 
 // Default implementations for RefOperation
@@ -70,6 +71,10 @@ where
 
     fn eq(&self, other: impl Into<Expr>) -> OwnedExpression {
         expr!("{} = {}", self.expr(), other.into())
+    }
+
+    fn sub(&self, other: impl Into<Expr>) -> OwnedExpression {
+        expr!("{} - {}", self.expr(), other.into())
     }
 }
 

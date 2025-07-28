@@ -31,10 +31,14 @@
 //! - [`variable`] - doc wip
 //! - [`protocol`] - doc wip
 
+pub mod associated_query;
 pub mod conditional;
 pub mod identifier;
 pub mod operation;
 pub mod protocol;
+pub mod sum;
+pub mod surreal_return;
+pub mod surrealdb;
 // pub mod query;
 pub mod select;
 pub mod thing;

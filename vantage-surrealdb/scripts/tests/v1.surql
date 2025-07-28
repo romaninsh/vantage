@@ -12,7 +12,9 @@ SELECT * FROM bakery:hill_valley<-belongs_to<-client order by name;
 SELECT name, price, inventory.stock AS stock FROM product WHERE is_deleted = false;
 
 -- Query 04: Alternative: Select the entire inventory object
-SELECT name, price, inventory FROM product WHERE is_deleted = false;
+RETURN math::sum(
+    (SELECT VALUE inventory.stock FROM product WHERE is_deleted = false)
+)-count(SELECT id FROM product);
 
 -- Query 05: Get client orders with embedded line items
 SELECT * FROM client:marty->placed->order;

@@ -11,8 +11,10 @@ SELECT * FROM client WHERE bakery = bakery:hill_valley order by name;
 -- Query 03: Get all products with their current stock
 SELECT name, price, inventory.stock AS stock FROM product WHERE is_deleted = false;
 
--- Query 04: Alternative: Select the entire inventory object
-SELECT name, price, inventory FROM product WHERE is_deleted = false;
+-- Query 04: Count expression
+RETURN math::sum(
+    (SELECT VALUE inventory.stock FROM product WHERE is_deleted = false)
+)-count(SELECT id FROM product);
 
 -- Query 05: Get client orders with embedded line items (with bakery boundary check)
 SELECT * FROM client:marty->placed->order WHERE bakery = bakery:hill_valley;
