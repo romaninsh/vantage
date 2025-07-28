@@ -40,6 +40,8 @@ pub trait RefOperation: Expressive {
     fn alias(&self, alias: impl Into<String>) -> OwnedExpression;
     fn eq(&self, other: impl Into<Expr>) -> OwnedExpression;
     fn sub(&self, other: impl Into<Expr>) -> OwnedExpression;
+    fn contains(&self, other: impl Into<Expr>) -> OwnedExpression;
+    fn in_(&self, other: impl Into<Expr>) -> OwnedExpression;
 }
 
 // Default implementations for RefOperation
@@ -75,6 +77,14 @@ where
 
     fn sub(&self, other: impl Into<Expr>) -> OwnedExpression {
         expr!("{} - {}", self.expr(), other.into())
+    }
+
+    fn contains(&self, other: impl Into<Expr>) -> OwnedExpression {
+        expr!("{} CONTAINS {}", self.expr(), other.into())
+    }
+
+    fn in_(&self, other: impl Into<Expr>) -> OwnedExpression {
+        expr!("{} IN {}", self.expr(), other.into())
     }
 }
 
