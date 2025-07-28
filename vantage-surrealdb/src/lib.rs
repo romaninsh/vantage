@@ -33,6 +33,7 @@
 
 pub mod associated_query;
 pub mod conditional;
+pub mod field_projection;
 pub mod identifier;
 pub mod operation;
 pub mod protocol;

@@ -108,6 +108,14 @@ impl SurrealSelect {
         self.set_source(source, Some(alias.into()));
         self
     }
+    pub fn with_field(mut self, field: impl Into<String>) -> Self {
+        self.add_field(field);
+        self
+    }
+    pub fn with_expression(mut self, expression: OwnedExpression, alias: Option<String>) -> Self {
+        self.add_expression(expression, alias);
+        self
+    }
 
     pub fn with_condition(mut self, condition: OwnedExpression) -> Self {
         self.add_where_condition(condition);
