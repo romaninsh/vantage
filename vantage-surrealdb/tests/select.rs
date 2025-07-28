@@ -1,8 +1,10 @@
 use vantage_expressions::{expr, protocol::selectable::Selectable};
 use vantage_surrealdb::{
     identifier::Identifier,
-    operation::RefOperation,
+    operation::{Expressive, RefOperation},
     select::{SurrealSelect, field::Field},
+    sum::{Fx, Sum},
+    surreal_return::SurrealReturn,
     thing::Thing,
 };
 
@@ -41,7 +43,35 @@ fn query01() {
 }
 
 #[test]
-fn query02() {}
+fn query02() {
+    let mut select = SurrealSelect::new();
+
+    // First query: SELECT * FROM bakery:hill_valley<-belongs_to<-client order by name
+    select.set_source(
+        Thing::new("bakery", "hill_valley").lref("belongs_to", "client"),
+        None,
+    );
+    select.add_order_by("name", true);
+
+    let result = select.preview();
+    assert_eq!(
+        result,
+        "SELECT * FROM (bakery:hill_valley<-belongs_to<-client) ORDER BY name"
+    );
+
+    let mut select = SurrealSelect::new();
+
+    // Second query: SELECT * FROM client WHERE bakery = bakery:hill_valley order by name
+    select.set_source("client", None);
+    select.add_where_condition(expr!("bakery = {}", Thing::new("bakery", "hill_valley")));
+    select.add_order_by("name", true);
+
+    let result = select.preview();
+    assert_eq!(
+        result,
+        "SELECT * FROM client WHERE bakery = bakery:hill_valley ORDER BY name"
+    );
+}
 
 #[test]
 fn query03() {
@@ -61,6 +91,31 @@ fn query03() {
     assert_eq!(
         result,
         "SELECT name, price, inventory.stock AS stock FROM product WHERE is_deleted = false"
+    );
+}
+
+#[test]
+fn query04() {
+    let select = SurrealReturn::new(
+        Sum::new(
+            SurrealSelect::new()
+                .with_source("product")
+                .with_condition(Field::new("is_deleted").eq(false))
+                .as_list(Field::new("inventory").dot("stock"))
+                .into(),
+        )
+        .expr()
+        .sub(
+            Fx::new(
+                "count",
+                vec![SurrealSelect::new().with_source("product").expr()],
+            )
+            .expr(),
+        ),
+    );
+    assert_eq!(
+        select.preview(),
+        "RETURN math::sum(SELECT VALUE inventory.stock FROM product WHERE is_deleted = false) - count(SELECT * FROM product)"
     );
 }
 

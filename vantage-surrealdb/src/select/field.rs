@@ -37,6 +37,10 @@ impl Field {
             field: field.into(),
         }
     }
+
+    pub fn dot(&self, field: impl Into<String>) -> OwnedExpression {
+        Identifier::new(self.field.clone()).dot(field.into())
+    }
 }
 
 impl Into<OwnedExpression> for Field {

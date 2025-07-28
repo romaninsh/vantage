@@ -13,4 +13,4 @@
 ///
 /// // doc wip
 /// ```
-pub trait Query {}
+pub trait SurrealQueriable {}

@@ -7,13 +7,24 @@ pub mod field;
 pub mod select_field;
 pub mod target;
 
+use std::marker::PhantomData;
+
 use field::Field;
 use select_field::SelectField;
 use serde_json::Value;
 use target::Target;
 
-use crate::identifier::Identifier;
-use vantage_expressions::{Expr, OwnedExpression, expr, protocol::selectable::Selectable};
+use crate::{
+    identifier::Identifier,
+    operation::Expressive,
+    sum::{Fx, Sum},
+    surreal_return::SurrealReturn,
+};
+use vantage_expressions::{
+    Expr, OwnedExpression, expr,
+    protocol::selectable::Selectable,
+    result::{self, QueryResult},
+};
 
 /// SurrealDB SELECT query builder
 ///
@@ -31,9 +42,10 @@ use vantage_expressions::{Expr, OwnedExpression, expr, protocol::selectable::Sel
 /// select.add_field("name".to_string());
 /// ```
 #[derive(Debug, Clone)]
-pub struct SurrealSelect {
+pub struct SurrealSelect<T = result::Rows> {
     pub fields: Vec<SelectField>, // SELECT clause fields
     pub fields_omit: Vec<Field>,
+    single_value: bool,
     pub from: Vec<Target>, // FROM clause targets
     pub from_omit: bool,
     pub where_conditions: Vec<OwnedExpression>,
@@ -42,16 +54,15 @@ pub struct SurrealSelect {
     pub distinct: bool,
     pub limit: Option<i64>,
     pub skip: Option<i64>,
+    _phantom: PhantomData<T>,
 }
 
-impl SurrealSelect {
-    /// Creates a new SELECT query builder
-    ///
-    /// doc wip
-    pub fn new() -> Self {
+impl<T> Default for SurrealSelect<T> {
+    fn default() -> Self {
         Self {
             fields: Vec::new(),
             fields_omit: Vec::new(),
+            single_value: false,
             from: Vec::new(),
             from_omit: false,
             where_conditions: Vec::new(),
@@ -60,7 +71,17 @@ impl SurrealSelect {
             distinct: false,
             limit: None,
             skip: None,
+            _phantom: PhantomData,
         }
+    }
+}
+
+impl SurrealSelect {
+    /// Creates a new SELECT query builder
+    ///
+    /// doc wip
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Sets the fields for the SELECT clause
@@ -79,6 +100,22 @@ impl SurrealSelect {
         self
     }
 
+    pub fn with_source(mut self, source: impl Into<Expr>) -> Self {
+        self.set_source(source, None);
+        self
+    }
+    pub fn with_source_as(mut self, source: impl Into<Expr>, alias: impl Into<String>) -> Self {
+        self.set_source(source, Some(alias.into()));
+        self
+    }
+
+    pub fn with_condition(mut self, condition: OwnedExpression) -> Self {
+        self.add_where_condition(condition);
+        self
+    }
+}
+
+impl<T> SurrealSelect<T> {
     /// Renders the SELECT fields clause
     ///
     /// doc wip
@@ -180,7 +217,12 @@ impl SurrealSelect {
     /// Renders entire statement into an expression
     fn render(&self) -> OwnedExpression {
         expr!(
-            "SELECT {}{}{}{}{}{}",
+            "SELECT {}{}{}{}{}{}{}",
+            if self.single_value {
+                expr!("VALUE ")
+            } else {
+                expr!("")
+            },
             self.render_fields(),
             self.render_from(),
             self.render_where(),
@@ -197,19 +239,25 @@ impl SurrealSelect {
     }
 }
 
-impl Into<OwnedExpression> for &SurrealSelect {
+impl<T: QueryResult> Expressive for SurrealSelect<T> {
+    fn expr(&self) -> OwnedExpression {
+        self.render()
+    }
+}
+
+// impl<T: QueryResult> Into<OwnedExpression> for SurrealSelect<T> {
+//     fn into(self) -> OwnedExpression {
+//         self.render()
+//     }
+// }
+
+impl<T: QueryResult> Into<OwnedExpression> for SurrealSelect<T> {
     fn into(self) -> OwnedExpression {
         self.render()
     }
 }
 
-impl Into<OwnedExpression> for SurrealSelect {
-    fn into(self) -> OwnedExpression {
-        self.render()
-    }
-}
-
-impl Selectable for SurrealSelect {
+impl<T: QueryResult> Selectable for SurrealSelect<T> {
     fn set_source(&mut self, source: impl Into<Expr>, _alias: Option<String>) {
         let source_expr = match source.into() {
             Expr::Scalar(Value::String(s)) => Identifier::new(s).into(),
@@ -298,6 +346,41 @@ impl Selectable for SurrealSelect {
 
     fn get_skip(&self) -> Option<i64> {
         self.skip
+    }
+}
+
+impl SurrealSelect<result::Rows> {
+    pub fn as_sum(self, field_or_expr: impl Into<Expr>) -> SurrealReturn {
+        let result = self.as_list(field_or_expr);
+        SurrealReturn::new(Sum::new(result.expr()).into()).into()
+    }
+    pub fn as_count(self) -> SurrealReturn {
+        let result = self.as_list(expr!("*"));
+        SurrealReturn::new(Fx::new("count", vec![result.expr()]).into()).into()
+    }
+    pub fn as_list(self, field_or_expr: impl Into<Expr>) -> SurrealSelect<result::List> {
+        let mut result = SurrealSelect {
+            fields: vec![],
+            fields_omit: self.fields_omit,
+            from: self.from,
+            from_omit: self.from_omit,
+            where_conditions: self.where_conditions,
+            order_by: self.order_by,
+            group_by: self.group_by,
+            distinct: self.distinct,
+            limit: self.limit,
+            skip: self.skip,
+            _phantom: PhantomData,
+
+            // Use "VALUE" for column
+            single_value: true,
+        };
+        match field_or_expr.into() {
+            Expr::Scalar(Value::String(s)) => result.add_field(s),
+            Expr::Nested(e) => result.add_expression(e, None),
+            other => result.add_expression(expr!("{}", other), None),
+        };
+        result
     }
 }
 
