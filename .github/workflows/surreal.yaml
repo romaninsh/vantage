@@ -50,7 +50,7 @@ jobs:
         run: |
           # Install SurrealDB CLI
           curl -sSf https://install.surrealdb.com | sh
-          sudo mv $HOME/.surrealdb/surreal /usr/local/bin/
+          # sudo mv $HOME/.surrealdb/surreal /usr/local/bin/
 
           # Verify installation
           surreal --version
