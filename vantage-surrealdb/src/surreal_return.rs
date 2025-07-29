@@ -2,7 +2,7 @@
 //!
 //! doc wip
 
-use std::{marker::PhantomData, ops::Deref, path::Path, thread::ScopedJoinHandle};
+use std::{marker::PhantomData, ops::Deref};
 
 use vantage_expressions::{OwnedExpression, expr, result};
 

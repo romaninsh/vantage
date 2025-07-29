@@ -217,21 +217,21 @@ fn query11() {
         select.preview(),
         snip(
             "SELECT * FROM (
-            SELECT
-                name AS product_name,
-                inventory.stock AS current_inventory,
-                math::sum(
-                    SELECT VALUE math::sum(
-                        lines[WHERE product = $parent.id].quantity
-                    )
-                    FROM order
-                    WHERE lines.product CONTAINS $parent.id
-                ) AS total_items_ordered
-            FROM product
-            WHERE bakery:hill_valley IN <-owns<-bakery
-                AND is_deleted = false
-        ) WHERE total_items_ordered > current_inventory
-        ORDER BY product_name"
+    SELECT
+        name AS product_name,
+        inventory.stock AS current_inventory,
+        math::sum(
+            SELECT VALUE math::sum(
+                lines[WHERE product = $parent.id].quantity
+            )
+            FROM order
+            WHERE lines.product CONTAINS $parent.id
+        ) AS total_items_ordered
+    FROM product
+    WHERE bakery:hill_valley IN <-owns<-bakery
+        AND is_deleted = false
+) WHERE total_items_ordered > current_inventory
+ORDER BY product_name"
         )
     )
 }
