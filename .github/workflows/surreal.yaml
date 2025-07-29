@@ -20,17 +20,13 @@ jobs:
           - 8000:8000
         env:
           SURREAL_CAPS_ALLOW_EXPERIMENTAL: graphql
-        cmd:
-          [
-            "start",
-            "--log",
-            "debug",
-            "--user",
-            "root",
-            "--pass",
-            "root",
-            "memory",
-          ]
+          SURREAL_USER: root
+          SURREAL_PASS: root
+        options: >-
+          --health-cmd "curl -f http://localhost:8000/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
