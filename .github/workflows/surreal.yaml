@@ -1,0 +1,75 @@
+name: SurrealDB Tests
+
+on:
+  # push:
+  #   branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      surrealdb:
+        image: surrealdb/surrealdb:latest
+        ports:
+          - 8000:8000
+        env:
+          SURREAL_CAPS_ALLOW_EXPERIMENTAL: graphql
+        options: >-
+          start --log debug --user root --pass root memory
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Wait for SurrealDB to be ready
+        run: sleep 3
+
+      - name: Setup environment variables
+        run: |
+          cd vantage-surrealdb/scripts
+          cat > .env << EOF
+          DB_ENDPOINT=ws://localhost:8000
+          DB_USER=root
+          DB_PASS=root
+          DB_AUTH_LEVEL=root
+          DB_NS=bakery
+          EOF
+
+      - name: Install SurrealDB CLI and difft
+        run: |
+          curl -sSf https://install.surrealdb.com | sh
+          echo "$HOME/.surrealdb" >> $GITHUB_PATH
+
+          # Install difft for test comparisons
+          curl -L https://github.com/Wilfred/difftastic/releases/download/0.58.0/difft-x86_64-unknown-linux-gnu.tar.gz | tar xz
+          sudo mv difft /usr/local/bin/
+
+      - name: Populate database
+        run: |
+          cd vantage-surrealdb/scripts
+          chmod +x ingress.sh
+          ./ingress.sh
+
+      - name: Run database tests
+        run: |
+          cd vantage-surrealdb/scripts
+          chmod +x test.sh
+          ./test.sh
+
+      - name: Build vantage-surrealdb crate
+        run: cargo build -p vantage-surrealdb
+
+      - name: Run vantage-surrealdb tests
+        run: cargo test -p vantage-surrealdb
+        env:
+          DB_ENDPOINT: ws://localhost:8000
+          DB_USER: root
+          DB_PASS: root
+          DB_AUTH_LEVEL: root
+          DB_NS: bakery
