@@ -2,7 +2,7 @@
 //!
 //! doc wip
 
-use vantage_expressions::{IntoExpressive, OwnedExpression, expr};
+use vantage_expressions::{OwnedExpression, expr};
 
 use crate::{identifier::Identifier, operation::Expressive};
 

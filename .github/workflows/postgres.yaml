@@ -1,4 +1,4 @@
-name: Rust
+name: Postgres Tests
 
 on:
   # push:
@@ -35,6 +35,6 @@ jobs:
       - name: Build
         run: cargo build
       - name: Run tests
-        run: cargo test --workspace --exclude bakery_model --exclude bakery_api
+        run: cargo test --workspace --exclude bakery_model --exclude bakery_api --exclude vantage-surrealdb
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
