@@ -1,8 +1,6 @@
 name: SurrealDB Tests
 
 on:
-  # push:
-  #   branches: ["main"]
   pull_request:
     branches: ["main"]
 
@@ -13,30 +11,32 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    services:
-      surrealdb:
-        image: surrealdb/surrealdb:latest
-        ports:
-          - 8000:8000
-        env:
-          SURREAL_CAPS_ALLOW_EXPERIMENTAL: graphql
-          SURREAL_USER: root
-          SURREAL_PASS: root
-        options: >-
-          --health-cmd "curl -f http://localhost:8000/health || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
 
+      - name: Start SurrealDB
+        run: |
+          docker run -d \
+            --name surrealdb \
+            -p 8000:8000 \
+            -e SURREAL_CAPS_ALLOW_EXPERIMENTAL=graphql \
+            surrealdb/surrealdb:latest \
+            start \
+            --log debug \
+            --user root \
+            --pass root \
+            memory
+
       - name: Wait for SurrealDB to be ready
-        run: sleep 3
+        run: |
+          echo "Waiting for SurrealDB to start..."
+          timeout 60 bash -c 'until curl -f http://localhost:8000/health 2>/dev/null; do sleep 1; done'
+          echo "SurrealDB is ready!"
 
       - name: Setup environment variables
         run: |
+          mkdir -p vantage-surrealdb/scripts
           cd vantage-surrealdb/scripts
           cat > .env << EOF
           DB_ENDPOINT=ws://localhost:8000
@@ -48,12 +48,17 @@ jobs:
 
       - name: Install SurrealDB CLI and difft
         run: |
+          # Install SurrealDB CLI
           curl -sSf https://install.surrealdb.com | sh
-          echo "$HOME/.surrealdb" >> $GITHUB_PATH
+          sudo mv $HOME/.surrealdb/surreal /usr/local/bin/
 
-          # Install difft for test comparisons
+          # Verify installation
+          surreal --version
+
+          # Install difft
           curl -L https://github.com/Wilfred/difftastic/releases/download/0.58.0/difft-x86_64-unknown-linux-gnu.tar.gz | tar xz
           sudo mv difft /usr/local/bin/
+          difft --version
 
       - name: Populate database
         run: |
@@ -78,3 +83,9 @@ jobs:
           DB_PASS: root
           DB_AUTH_LEVEL: root
           DB_NS: bakery
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop surrealdb || true
+          docker rm surrealdb || true
