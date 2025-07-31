@@ -32,14 +32,12 @@
 //! - [`protocol`] - doc wip
 
 pub mod associated_query;
-pub mod client;
 pub mod conditional;
 pub mod field_projection;
 pub mod identifier;
 pub mod operation;
 pub mod protocol;
 pub mod sum;
-pub mod surreal_client;
 pub mod surreal_return;
 pub mod surrealdb;
 // pub mod query;
@@ -48,5 +46,3 @@ pub mod thing;
 pub mod variable;
 
 // Re-export main SurrealDB types for convenience
-pub use client::SurrealClient;
-pub use surreal_client::{ConnectParams, SigninParams, SignupParams};
