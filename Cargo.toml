@@ -7,5 +7,6 @@ members = [
     "vantage-mongodb",
     "bakery_model",
     "bakery_api",
+    "surreal-client",
 ]
 resolver = "2"

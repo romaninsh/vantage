@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 use url::Url;
 
-use crate::surreal_client::{
+use crate::{
     engine::Engine,
     error::{Result, SurrealError},
     rpc::{RpcMessage, RpcResponse},
