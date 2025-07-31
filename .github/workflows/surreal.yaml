@@ -72,11 +72,11 @@ jobs:
           chmod +x test.sh
           ./test.sh
 
-      - name: Build vantage-surrealdb crate
-        run: cargo build -p vantage-surrealdb
+      - name: Build vantage-surrealdb and surreal-client crates
+        run: cargo build -p vantage-surrealdb -p surreal-client
 
-      - name: Run vantage-surrealdb tests
-        run: cargo test -p vantage-surrealdb
+      - name: Run vantage-surrealdb and surreal-client tests
+        run: cargo test -p vantage-surrealdb -p surreal-client
         env:
           DB_ENDPOINT: ws://localhost:8000
           DB_USER: root
