@@ -6,7 +6,8 @@ use vantage_expressions::{
     Flatten, OwnedExpression, OwnedExpressionFlattener, protocol::DataSource,
 };
 
-use crate::{SurrealClient, surreal_client::error::Result};
+use surreal_client::SurrealClient;
+use surreal_client::error::Result;
 
 // Create a wrapper for shared SurrealDB state
 #[derive(Clone)]
@@ -130,52 +131,29 @@ impl DataSource<OwnedExpression> for SurrealDB {
 mod tests {
     use super::*;
     use crate::{
-        SurrealClient,
         operation::{Expressive, RefOperation},
         select::SurrealSelect,
         thing::Thing,
     };
     use serde_json::json;
+    use surreal_client::Engine;
     use vantage_expressions::{
         expr,
         protocol::{expressive::IntoExpressive, selectable::Selectable},
     };
 
+    struct MockEngine;
+
+    #[async_trait::async_trait]
+    impl Engine for MockEngine {
+        async fn send_message(&mut self, method: &str, params: Value) -> Result<Value> {
+            Ok(serde_json::Value::Null)
+        }
+    }
+
     async fn setup_test_db() -> SurrealDB {
         // This is a placeholder - in real usage, create via Connection::connect()
         // For now, we'll create a mock client for testing
-        use crate::surreal_client::Engine;
-
-        struct MockEngine;
-
-        #[async_trait::async_trait]
-        impl Engine for MockEngine {
-            async fn connect(&mut self) -> crate::surreal_client::Result<()> {
-                Ok(())
-            }
-            async fn close(&mut self) -> crate::surreal_client::Result<()> {
-                Ok(())
-            }
-            async fn rpc(
-                &self,
-                _message: crate::surreal_client::RpcMessage,
-            ) -> crate::surreal_client::Result<serde_json::Value> {
-                Ok(serde_json::Value::Null)
-            }
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
-            }
-            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-                self
-            }
-            fn set_timeout(&mut self, _seconds: u64) {}
-            fn get_timeout(&self) -> u64 {
-                30
-            }
-            async fn ping(&self) -> crate::surreal_client::Result<()> {
-                Ok(())
-            }
-        }
 
         let db = SurrealClient::new(
             Box::new(MockEngine),
@@ -266,38 +244,6 @@ mod tests {
     #[test]
     fn test_prepare_query_conversion() {
         // Create mock client for testing
-        use crate::surreal_client::Engine;
-
-        struct MockEngine;
-
-        #[async_trait::async_trait]
-        impl Engine for MockEngine {
-            async fn connect(&mut self) -> crate::surreal_client::Result<()> {
-                Ok(())
-            }
-            async fn close(&mut self) -> crate::surreal_client::Result<()> {
-                Ok(())
-            }
-            async fn rpc(
-                &self,
-                _message: crate::surreal_client::RpcMessage,
-            ) -> crate::surreal_client::Result<serde_json::Value> {
-                Ok(serde_json::Value::Null)
-            }
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
-            }
-            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-                self
-            }
-            fn set_timeout(&mut self, _seconds: u64) {}
-            fn get_timeout(&self) -> u64 {
-                30
-            }
-            async fn ping(&self) -> crate::surreal_client::Result<()> {
-                Ok(())
-            }
-        }
 
         let db = SurrealDB::new(SurrealClient::new(Box::new(MockEngine), None, None));
 
@@ -323,38 +269,6 @@ mod tests {
     #[test]
     fn test_prepare_query_with_nested_expression() {
         // Create mock client for testing
-        use crate::surreal_client::Engine;
-
-        struct MockEngine;
-
-        #[async_trait::async_trait]
-        impl Engine for MockEngine {
-            async fn connect(&mut self) -> crate::surreal_client::Result<()> {
-                Ok(())
-            }
-            async fn close(&mut self) -> crate::surreal_client::Result<()> {
-                Ok(())
-            }
-            async fn rpc(
-                &self,
-                _message: crate::surreal_client::RpcMessage,
-            ) -> crate::surreal_client::Result<serde_json::Value> {
-                Ok(serde_json::Value::Null)
-            }
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
-            }
-            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-                self
-            }
-            fn set_timeout(&mut self, _seconds: u64) {}
-            fn get_timeout(&self) -> u64 {
-                30
-            }
-            async fn ping(&self) -> crate::surreal_client::Result<()> {
-                Ok(())
-            }
-        }
 
         let db = SurrealDB::new(SurrealClient::new(Box::new(MockEngine), None, None));
 

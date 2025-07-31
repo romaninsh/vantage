@@ -5,7 +5,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use vantage_expressions::result::QueryResult;
 
-use crate::{SurrealClient, protocol::SurrealQueriable, surrealdb::SurrealDB};
+use crate::{protocol::SurrealQueriable, surrealdb::SurrealDB};
 
 // SurrealQuery contains Queryable and returns a specific result
 struct AssociatedQuery<Q: SurrealQueriable, R: QueryResult> {
