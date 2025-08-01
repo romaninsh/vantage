@@ -51,7 +51,8 @@ impl RpcMessage {
 /// RPC response structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcResponse {
-    pub id: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -77,9 +78,9 @@ impl RpcResponse {
     }
 
     /// Get the result or return an error
-    pub fn into_result(self) -> Result<Value, crate::surreal_client::error::SurrealError> {
+    pub fn into_result(self) -> Result<Value, crate::error::SurrealError> {
         match self.error {
-            Some(err) => Err(crate::surreal_client::error::SurrealError::Rpc(err.message)),
+            Some(err) => Err(crate::error::SurrealError::Rpc(err.message)),
             None => Ok(self.result.unwrap_or(Value::Null)),
         }
     }
