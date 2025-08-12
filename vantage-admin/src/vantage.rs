@@ -26,5 +26,5 @@ pub fn get_batches() -> SurrealSelect {
 pub async fn get_batches_query() {
     let db = surreal_connect().await.unwrap();
 
-    let batches = db.execute(get_batches().expr()).await;
+    let batches = db.execute(&get_batches().expr()).await;
 }

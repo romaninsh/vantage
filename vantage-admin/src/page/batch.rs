@@ -91,7 +91,6 @@ impl TableDelegate for BatchTableDelegate {
         _: &mut Window,
         cx: &mut Context<Table<Self>>,
     ) -> impl IntoElement {
-        info!("Rendering header for column {}", col_ix);
         let col = &self.columns[col_ix];
         div()
             .px_2()
