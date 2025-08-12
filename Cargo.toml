@@ -8,5 +8,6 @@ members = [
     "bakery_model",
     "bakery_api",
     "surreal-client",
+    "vantage-admin",
 ]
 resolver = "2"
