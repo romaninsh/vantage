@@ -45,4 +45,6 @@ pub mod select;
 pub mod thing;
 pub mod variable;
 
+pub use surrealdb::SurrealDB;
+
 // Re-export main SurrealDB types for convenience
