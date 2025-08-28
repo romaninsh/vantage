@@ -129,6 +129,7 @@ impl TableDelegate for BatchTableDelegate {
             .child(content)
     }
 
+    /*
     fn visible_rows_changed(
         &mut self,
         range: Range<usize>,
@@ -146,6 +147,7 @@ impl TableDelegate for BatchTableDelegate {
     ) {
         self.visible_cols = range;
     }
+    */
 
     fn perform_sort(
         &mut self,

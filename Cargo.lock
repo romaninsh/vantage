@@ -8649,6 +8649,7 @@ name = "vantage-expressions"
 version = "0.3.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "serde_json",
  "thiserror 2.0.12",
  "tokio",
