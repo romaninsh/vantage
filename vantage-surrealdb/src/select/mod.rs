@@ -15,13 +15,14 @@ use serde_json::Value;
 use target::Target;
 
 use crate::{
+    SurrealDB,
     identifier::Identifier,
     operation::Expressive,
     sum::{Fx, Sum},
     surreal_return::SurrealReturn,
 };
 use vantage_expressions::{
-    Expr, OwnedExpression, expr,
+    DataSource, Expr, OwnedExpression, expr,
     protocol::selectable::Selectable,
     result::{self, QueryResult},
 };
@@ -55,6 +56,36 @@ pub struct SurrealSelect<T = result::Rows> {
     pub limit: Option<i64>,
     pub skip: Option<i64>,
     _phantom: PhantomData<T>,
+}
+
+impl SurrealSelect<result::Single> {
+    pub async fn get(&self, db: &SurrealDB) -> Value {
+        db.execute(&self.expr()).await
+    }
+}
+
+impl SurrealSelect<result::List> {
+    pub async fn get(&self, db: &SurrealDB) -> Vec<Value> {
+        match db.execute(&self.expr()).await {
+            Value::Array(list) => list,
+            _ => panic!("Expected array from database query"),
+        }
+    }
+}
+
+impl SurrealSelect<result::Rows> {
+    pub async fn get(&self, db: &SurrealDB) -> Vec<serde_json::Map<String, Value>> {
+        match db.execute(&self.expr()).await {
+            Value::Array(rows) => rows
+                .into_iter()
+                .map(|item| match item {
+                    Value::Object(map) => map,
+                    _ => panic!("Expected object in result set"),
+                })
+                .collect(),
+            _ => panic!("Expected array from database query"),
+        }
+    }
 }
 
 impl<T> Default for SurrealSelect<T> {
@@ -106,6 +137,10 @@ impl SurrealSelect {
     }
     pub fn with_source_as(mut self, source: impl Into<Expr>, alias: impl Into<String>) -> Self {
         self.set_source(source, Some(alias.into()));
+        self
+    }
+    pub fn without_fields(mut self) -> Self {
+        self.fields = vec![];
         self
     }
     pub fn with_field(mut self, field: impl Into<String>) -> Self {
@@ -368,16 +403,30 @@ impl<T: QueryResult> Selectable for SurrealSelect<T> {
 
 impl SurrealSelect<result::Rows> {
     pub fn as_sum(self, field_or_expr: impl Into<Expr>) -> SurrealReturn {
-        let result = self.as_list(field_or_expr);
-        SurrealReturn::new(Sum::new(result.expr()).into()).into()
+        let self = self.without_fields();
+        let self = match field_or_expr.into() {
+            Expr::Scalar(Value::String(s)) => self.only_field(s),
+            Expr::Nested(e) => self.only_expression(e),
+            other => self.only_expression(expr!("{}", other), None),
+        };
+
+        SurrealReturn::new(Sum::new(self.expr()).into()).into()
     }
     pub fn as_count(self) -> SurrealReturn {
-        let result = self.as_list(expr!("*"));
+        let result = self.only_expression(expr!("*"));
         SurrealReturn::new(Fx::new("count", vec![result.expr()]).into()).into()
     }
-    pub fn as_list(self, field_or_expr: impl Into<Expr>) -> SurrealSelect<result::List> {
-        let mut result = SurrealSelect {
-            fields: vec![],
+    pub fn only_expression(self, expr: OwnedExpression) -> SurrealSelect<result::List> {
+        self.without_fields()
+            .with_expression(expr, None)
+            .into_list()
+    }
+    pub fn only_column(self, column: impl Into<String>) -> SurrealSelect<result::List> {
+        self.without_fields().with_field(column).into_list()
+    }
+    pub fn into_list(self) -> SurrealSelect<result::List> {
+        SurrealSelect {
+            fields: self.fields,
             fields_omit: self.fields_omit,
             from: self.from,
             from_omit: self.from_omit,
@@ -390,15 +439,18 @@ impl SurrealSelect<result::Rows> {
             _phantom: PhantomData,
 
             // Use "VALUE" for column
-            single_value: true,
-        };
-        match field_or_expr.into() {
-            Expr::Scalar(Value::String(s)) => result.add_field(s),
-            Expr::Nested(e) => result.add_expression(e, None),
-            other => result.add_expression(expr!("{}", other), None),
-        };
-        result
+            single_value: self.single_value,
+        }
     }
+    // pub fn as_list(self, field_or_expr: impl Into<Expr>) -> SurrealSelect<result::List> {
+    //     let mut result = self.into_list();
+    //     match field_or_expr.into() {
+    //         Expr::Scalar(Value::String(s)) => result.add_field(s),
+    //         Expr::Nested(e) => result.add_expression(e, None),
+    //         other => result.add_expression(expr!("{}", other), None),
+    //     };
+    //     result
+    // }
 }
 
 #[cfg(test)]

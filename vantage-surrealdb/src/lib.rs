@@ -31,7 +31,8 @@
 //! - [`variable`] - doc wip
 //! - [`protocol`] - doc wip
 
-pub mod associated_query;
+// TODO: will implement associated queries later
+// pub mod associated_query;
 pub mod conditional;
 pub mod field_projection;
 pub mod identifier;
@@ -41,10 +42,12 @@ pub mod sum;
 pub mod surreal_return;
 pub mod surrealdb;
 // pub mod query;
+pub mod prelude;
 pub mod select;
 pub mod thing;
 pub mod variable;
 
+pub use select::SurrealSelect;
 pub use surrealdb::SurrealDB;
 
 // Re-export main SurrealDB types for convenience
