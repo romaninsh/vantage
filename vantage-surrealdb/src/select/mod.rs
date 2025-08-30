@@ -525,6 +525,15 @@ impl SurrealSelect<result::SingleRow> {
             single_value: true,
         }
     }
+    // pub fn as_list(self, field_or_expr: impl Into<Expr>) -> SurrealSelect<result::List> {
+    //     let mut result = self.into_list();
+    //     match field_or_expr.into() {
+    //         Expr::Scalar(Value::String(s)) => result.add_field(s),
+    //         Expr::Nested(e) => result.add_expression(e, None),
+    //         other => result.add_expression(expr!("{}", other), None),
+    //     };
+    //     result
+    // }
 }
 
 #[cfg(test)]
