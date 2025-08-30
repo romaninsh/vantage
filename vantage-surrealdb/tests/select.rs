@@ -1,5 +1,7 @@
+use serde_json::Value;
 use vantage_expressions::{expr, protocol::selectable::Selectable};
 use vantage_surrealdb::{
+    SurrealDB,
     field_projection::FieldProjection,
     identifier::{Identifier, Parent},
     operation::{Expressive, RefOperation},
@@ -112,7 +114,7 @@ fn query04() {
             SurrealSelect::new()
                 .with_source("product")
                 .with_condition(Field::new("is_deleted").eq(false))
-                .as_list(Field::new("inventory").dot("stock"))
+                .only_expression(Field::new("inventory").dot("stock"))
                 .into(),
         )
         .expr()
@@ -257,4 +259,207 @@ fn test_set_source_accepts_string_and_expression() {
     select3.set_source(table_expr, None);
     let result3 = select3.preview();
     assert_eq!(result3, "SELECT * FROM product_table");
+}
+
+async fn setup_test_db_with_data(mock_data: Value) -> SurrealDB {
+    use surreal_client::{Engine, SurrealClient};
+
+    struct MockEngine {
+        data: Value,
+    }
+
+    impl MockEngine {
+        fn new(data: Value) -> Self {
+            Self { data }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Engine for MockEngine {
+        async fn send_message(
+            &mut self,
+            _method: &str,
+            _params: Value,
+        ) -> surreal_client::error::Result<Value> {
+            Ok(self.data.clone())
+        }
+    }
+
+    let client = SurrealClient::new(
+        Box::new(MockEngine::new(mock_data)),
+        Some("test".to_string()),
+        Some("v1".to_string()),
+    );
+
+    SurrealDB::new(client)
+}
+
+#[tokio::test]
+async fn test_get_rows() {
+    let mock_data = serde_json::json!([
+        {"name": "John Doe", "email": "john@example.com"},
+        {"name": "Jane Smith", "email": "jane@example.com"}
+    ]);
+    let db = setup_test_db_with_data(mock_data).await;
+
+    // Test SurrealSelect<result::Rows> -> Vec<Map<String, Value>>
+    let select = SurrealSelect::new()
+        .with_source("users")
+        .with_field("name")
+        .with_field("email");
+
+    // Test the query structure
+    assert_eq!(select.preview(), "SELECT name, email FROM users");
+
+    // Test actual execution (with mock data)
+    let rows = select.get(&db).await;
+    assert_eq!(rows.len(), 2);
+    assert!(rows[0].contains_key("name"));
+    assert!(rows[0].contains_key("email"));
+}
+
+#[tokio::test]
+async fn test_get_list() {
+    let mock_data = serde_json::json!(["Product A", "Product B"]);
+    let db = setup_test_db_with_data(mock_data).await;
+
+    // Test SurrealSelect<result::List> -> Vec<Value>
+    let select = SurrealSelect::new()
+        .with_source("products")
+        .with_condition(Field::new("active").eq(true))
+        .only_column("name");
+
+    assert_eq!(
+        select.preview(),
+        "SELECT VALUE name FROM products WHERE active = true"
+    );
+
+    // Test actual execution
+    let values = select.get(&db).await;
+    assert_eq!(values.len(), 2);
+    assert!(values[0].is_string());
+    assert!(values[1].is_string());
+}
+
+#[tokio::test]
+async fn test_get_single() {
+    let mock_data = serde_json::json!("John Doe");
+    let db = setup_test_db_with_data(mock_data).await;
+
+    // Test SurrealSelect<result::Single> -> Value
+    let select_rows = SurrealSelect::new()
+        .with_source("users")
+        .with_condition(Field::new("id").eq("user123"))
+        .only_first_row();
+
+    let select_single = select_rows.only_column("name");
+
+    assert_eq!(
+        select_single.preview(),
+        "SELECT VALUE name FROM ONLY users WHERE id = \"user123\""
+    );
+
+    // Test actual execution
+    let name = select_single.get(&db).await;
+    assert!(name.is_string());
+    assert_eq!(name.as_str().unwrap(), "John Doe");
+}
+
+#[tokio::test]
+async fn test_single_row() {
+    let mock_data = serde_json::json!([
+        {"theme": "dark", "language": "en"}
+    ]);
+    let db = setup_test_db_with_data(mock_data).await;
+
+    // Test SurrealSelect<result::SingleRow>
+    let select = SurrealSelect::new()
+        .with_source("settings")
+        .with_field("theme")
+        .with_field("language")
+        .only_first_row();
+
+    assert_eq!(
+        select.preview(),
+        "SELECT theme, language FROM ONLY settings"
+    );
+
+    // Test actual execution
+    let row = select.get(&db).await;
+    assert!(!row.is_empty());
+    assert!(row.get("theme").unwrap().is_string());
+    assert!(row.get("language").unwrap().is_string());
+    assert_eq!(row.get("theme").unwrap().as_str().unwrap(), "dark");
+    assert_eq!(row.get("language").unwrap().as_str().unwrap(), "en");
+}
+
+#[test]
+fn test_type_conversions() {
+    // Test Rows -> List conversion
+    let rows_query = SurrealSelect::new()
+        .with_source("products")
+        .with_condition(Field::new("category").eq("electronics"));
+
+    let list_query = rows_query.only_column("price");
+    assert_eq!(
+        list_query.preview(),
+        "SELECT VALUE price FROM products WHERE category = \"electronics\""
+    );
+
+    // Test Rows -> SingleRow conversion
+    let rows_query2 = SurrealSelect::new()
+        .with_source("users")
+        .with_condition(Field::new("email").eq("test@example.com"));
+
+    let single_row_query = rows_query2.only_first_row();
+    assert_eq!(
+        single_row_query.preview(),
+        "SELECT * FROM ONLY users WHERE email = \"test@example.com\""
+    );
+
+    // Test SingleRow -> Single conversion
+    let single_query = single_row_query.only_column("id");
+    assert_eq!(
+        single_query.preview(),
+        "SELECT VALUE id FROM ONLY users WHERE email = \"test@example.com\""
+    );
+}
+
+#[test]
+fn test_aggregation_methods() {
+    // Test as_sum
+    let sum_query = SurrealSelect::new()
+        .with_source("orders")
+        .with_condition(Field::new("status").eq("completed"))
+        .as_sum("total");
+
+    assert_eq!(
+        sum_query.preview(),
+        "RETURN math::sum(SELECT VALUE total FROM orders WHERE status = \"completed\")"
+    );
+
+    // Test as_count
+    let count_query = SurrealSelect::new()
+        .with_source("products")
+        .with_condition(Field::new("active").eq(true))
+        .as_count();
+
+    assert_eq!(
+        count_query.preview(),
+        "RETURN count(SELECT VALUE * FROM products WHERE active = true)"
+    );
+}
+
+#[test]
+fn test_value_select() {
+    // Test SELECT VALUE with expression
+    let select = SurrealSelect::new()
+        .with_source("inventory")
+        .with_condition(Field::new("product_id").eq("prod123"))
+        .only_expression(expr!("stock * price"));
+
+    assert_eq!(
+        select.preview(),
+        "SELECT VALUE stock * price FROM inventory WHERE product_id = \"prod123\""
+    );
 }

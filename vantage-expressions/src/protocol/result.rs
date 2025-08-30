@@ -16,7 +16,12 @@ pub struct Rows;
 pub struct List;
 #[derive(Debug, Clone, Copy)]
 pub struct Single;
+#[derive(Debug, Clone, Copy)]
+pub struct SingleRow;
 
+impl QueryResult for SingleRow {
+    type Output = Map<String, Value>;
+}
 impl QueryResult for Rows {
     type Output = Vec<Map<String, Value>>;
 }
