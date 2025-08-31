@@ -27,14 +27,16 @@ jobs:
         with:
           cache-on-failure: true
           key: "ui-examples-${{ matrix.example }}"
+          cache-workspace-crates: true
+          cache-all-crates: true
           workspaces: |
             example_${{ matrix.example }} -> target
             example_tauri/src-tauri -> target
 
       - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get update -qq
+          sudo apt-get install -qq -y \
             pkg-config \
             libfontconfig1-dev \
             libfreetype6-dev \
@@ -58,10 +60,6 @@ jobs:
             libssl-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev
-
-      - name: Install Tauri CLI (if needed)
-        if: matrix.example == 'tauri'
-        run: cargo install tauri-cli
 
       - name: Build example_${{ matrix.example }}
         working-directory: example_${{ matrix.example }}

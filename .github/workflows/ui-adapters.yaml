@@ -21,11 +21,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+          cache-workspace-crates: true
+          cache-all-crates: true
 
       - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get update -qq
+          sudo apt-get install -qq -y \
             pkg-config \
             libfontconfig1-dev \
             libfreetype6-dev \
