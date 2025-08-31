@@ -23,6 +23,8 @@ jobs:
           cache-on-failure: true
           cache-workspace-crates: true
           cache-all-crates: true
+          workspaces: |
+            vantage-ui-adapters -> target
 
       - name: Install system dependencies
         run: |

@@ -44,13 +44,14 @@ jobs:
             libxcb-shape0-dev \
             libxcb-xfixes0-dev \
             libxkbcommon-dev \
-            libfontconfig-dev \
-            libwebkit2gtk-4.1-dev
+            libxkbcommon-x11-dev \
+            libfontconfig-dev
 
       - name: Build example_${{ matrix.example }}
         working-directory: example_${{ matrix.example }}
         run: |
           if [ "${{ matrix.example }}" = "tauri" ]; then
+            sudo apt-get install -qq -y --no-install-recommends libwebkit2gtk-4.1-dev
             cd src-tauri
             cargo build
           else
