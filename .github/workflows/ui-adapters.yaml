@@ -30,14 +30,7 @@ jobs:
             libfontconfig1-dev \
             libfreetype6-dev \
             libx11-dev \
-            libxcursor-dev \
-            libxrandr-dev \
-            libxi-dev \
-            libxinerama-dev \
-            libxxf86vm-dev \
-            libgl1-mesa-dev \
-            libasound2-dev \
-            libpulse-dev
+            libgl1-mesa-dev
 
       - name: Build UI adapters
         run: cargo build -p vantage-ui-adapters --all-features

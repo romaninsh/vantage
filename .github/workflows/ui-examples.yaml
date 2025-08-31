@@ -28,7 +28,7 @@ jobs:
           cache-on-failure: true
           key: "ui-examples-${{ matrix.example }}"
 
-      - name: Install system dependencies
+      - name: Install basic system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -36,17 +36,19 @@ jobs:
             libfontconfig1-dev \
             libfreetype6-dev \
             libx11-dev \
-            libxcursor-dev \
-            libxrandr-dev \
-            libxi-dev \
-            libxinerama-dev \
-            libxxf86vm-dev \
-            libgl1-mesa-dev \
-            libasound2-dev \
-            libpulse-dev \
+            libgl1-mesa-dev
+
+      - name: Install Tauri-specific dependencies
+        if: matrix.example == 'tauri'
+        run: |
+          sudo apt-get install -y \
             libgtk-3-dev \
-            libwebkit2gtk-4.0-dev \
-            libssl-dev
+            libssl-dev \
+            libayatana-appindicator3-dev
+
+          # Try to install WebKit for Tauri
+          sudo apt-get install -y libwebkit2gtk-4.1-dev || \
+          sudo apt-get install -y libwebkit2gtk-4.0-dev
 
       - name: Install Tauri CLI (if needed)
         if: matrix.example == 'tauri'
