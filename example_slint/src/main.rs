@@ -1,5 +1,5 @@
 use dataset_ui_adapters::{slint_adapter::SlintTable, MockProductDataSet, TableStore};
-use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use std::rc::Rc;
 
 slint::include_modules!();

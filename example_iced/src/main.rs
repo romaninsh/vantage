@@ -49,7 +49,7 @@ impl Application for TableApp {
         }
     }
 
-    fn view(&self) -> Element<Self::Message> {
+    fn view(&self) -> Element<'_, Self::Message> {
         let header = Text::new("Dataset UI Adapters - Iced Table Example").size(24);
 
         let table_view = self.table.view().map(Message::Table);

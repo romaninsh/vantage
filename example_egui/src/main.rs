@@ -1,7 +1,4 @@
-use dataset_ui_adapters::{
-    egui_adapter::EguiTable,
-    MockProductDataSet, TableStore,
-};
+use dataset_ui_adapters::{egui_adapter::EguiTable, MockProductDataSet, TableStore};
 use eframe::egui;
 
 struct TableApp {

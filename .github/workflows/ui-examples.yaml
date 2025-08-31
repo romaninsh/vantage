@@ -36,7 +36,10 @@ jobs:
             libfontconfig1-dev \
             libfreetype6-dev \
             libx11-dev \
-            libgl1-mesa-dev
+            libgl1-mesa-dev \
+            libglib2.0-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev
 
       - name: Install Tauri-specific dependencies
         if: matrix.example == 'tauri'
@@ -56,12 +59,30 @@ jobs:
 
       - name: Build example_${{ matrix.example }}
         working-directory: example_${{ matrix.example }}
-        run: cargo build --release
+        run: |
+          if [ "${{ matrix.example }}" = "tauri" ]; then
+            cd src-tauri
+            cargo build --release
+          else
+            cargo build --release
+          fi
 
       - name: Check example_${{ matrix.example }} formatting
         working-directory: example_${{ matrix.example }}
-        run: cargo fmt -- --check
+        run: |
+          if [ "${{ matrix.example }}" = "tauri" ]; then
+            cd src-tauri
+            cargo fmt -- --check
+          else
+            cargo fmt -- --check
+          fi
 
       - name: Run clippy on example_${{ matrix.example }}
         working-directory: example_${{ matrix.example }}
-        run: cargo clippy --release -- -D warnings
+        run: |
+          if [ "${{ matrix.example }}" = "tauri" ]; then
+            cd src-tauri
+            cargo clippy --release -- -D warnings
+          else
+            cargo clippy --release -- -D warnings
+          fi

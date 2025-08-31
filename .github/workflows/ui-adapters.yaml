@@ -30,7 +30,10 @@ jobs:
             libfontconfig1-dev \
             libfreetype6-dev \
             libx11-dev \
-            libgl1-mesa-dev
+            libgl1-mesa-dev \
+            libglib2.0-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev
 
       - name: Build UI adapters
         working-directory: vantage-ui-adapters
