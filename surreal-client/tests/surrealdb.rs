@@ -184,6 +184,9 @@ async fn test_crud_operations() {
 }
 
 #[tokio::test]
+#[ignore]
+// Often fails in a pipeline with error:
+// Failed to create product: Protocol("Server error: {\"code\":-32000,\"message\":\"There was a problem with the database: The query was not executed due to a failed transaction. Failed to commit transaction due to a read or write conflict. This transaction can be retried\"}")
 async fn test_bulk_operations() {
     let client = get_client().await;
 

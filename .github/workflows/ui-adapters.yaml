@@ -64,4 +64,4 @@ jobs:
 
       - name: Run clippy
         working-directory: vantage-ui-adapters
-        run: cargo clippy --all-features -- -D warnings
+        run: cargo clippy --all-features --no-deps -- -D warnings
