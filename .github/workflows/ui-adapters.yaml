@@ -37,6 +37,7 @@ jobs:
             libxcb-shape0-dev \
             libxcb-xfixes0-dev \
             libxkbcommon-dev \
+            libxkbcommon-x11-dev \
             libfontconfig-dev \
             libwebkit2gtk-4.1-dev
 
