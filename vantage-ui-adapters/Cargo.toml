@@ -5,10 +5,10 @@ edition = "2021"
 
 [dependencies]
 # Core dependencies always included
-tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.47", features = ["macros", "rt-multi-thread"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-thiserror = "1.0"
+thiserror = "2.0"
 async-trait = "0.1"
 
 # Framework-specific dependencies (all optional)
@@ -17,9 +17,9 @@ egui-data-table = { version = "0.8", optional = true }
 egui_extras = { version = "0.32", optional = true }
 gpui = { git = "https://github.com/zed-industries/zed.git", optional = true }
 gpui-component = { git = "https://github.com/longbridge/gpui-component.git", optional = true }
-iced = { version = "0.12", optional = true }
-slint = { version = "1.8", optional = true }
-tauri = { version = "1.6", optional = true }
+iced = { version = "0.13", optional = true }
+slint = { version = "1.12", optional = true }
+tauri = { version = "2.8", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"

@@ -6,9 +6,9 @@ edition = "2021"
 [workspace]
 
 [dependencies]
-slint = "1.8"
+slint = "1.12"
 dataset-ui-adapters = { path = "../vantage-ui-adapters", features = ["slint"] }
-tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.47", features = ["macros", "rt-multi-thread"] }
 
 [build-dependencies]
-slint-build = "1.8"
+slint-build = "1.12"

@@ -9,4 +9,4 @@ edition = "2021"
 eframe = "0.32"
 egui = "0.32"
 dataset-ui-adapters = { path = "../vantage-ui-adapters", features = ["egui"] }
-tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.47", features = ["macros", "rt-multi-thread"] }

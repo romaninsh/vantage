@@ -6,6 +6,6 @@ edition = "2021"
 [workspace]
 
 [dependencies]
-iced = "0.12"
+iced = "0.13"
 dataset-ui-adapters = { path = "../vantage-ui-adapters", features = ["iced"] }
-tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.47", features = ["macros", "rt-multi-thread"] }
