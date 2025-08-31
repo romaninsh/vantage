@@ -51,13 +51,10 @@ jobs:
             librsvg2-dev
 
       - name: Build UI adapters
-        working-directory: vantage-ui-adapters
-        run: cargo build --all-features
+        run: cargo build -p dataset-ui-adapters --all-features
 
       - name: Run UI adapters tests
-        working-directory: vantage-ui-adapters
-        run: cargo test --all-features
+        run: cargo test -p dataset-ui-adapters --all-features
 
       - name: Check formatting
-        working-directory: vantage-ui-adapters
-        run: cargo fmt -- --check
+        run: cargo fmt -p dataset-ui-adapters -- --check
