@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dataset UI Adapters - Tauri Example</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: #007bff;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        .controls {
+            padding: 20px;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .btn:hover {
+            background: #0056b3;
+        }
+
+        .info {
+            color: #6c757d;
+            font-size: 14px;
+            margin-left: auto;
+        }
+
+        .table-container {
+            padding: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+
+        .error {
+            color: #dc3545;
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+            padding: 12px;
+            margin: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Dataset UI Adapters - Tauri Example</h1>
+        </div>
+
+        <div class="controls">
+            <button class="btn" onclick="loadData()">Refresh Data</button>
+            <button class="btn" onclick="addSampleRow()">Add Row</button>
+            <div class="info">
+                <span id="row-count">Loading...</span>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <div id="loading" class="loading">Loading table data...</div>
+            <div id="error" class="error" style="display: none;"></div>
+            <table id="data-table" style="display: none;">
+                <thead>
+                    <tr id="table-headers"></tr>
+                </thead>
+                <tbody id="table-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const { invoke } = window.__TAURI__.tauri;
+
+        let tableData = [];
+        let columns = [];
+
+        async function loadData() {
+            try {
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('data-table').style.display = 'none';
+                document.getElementById('error').style.display = 'none';
+
+                // Load columns
+                columns = await invoke('get_table_columns');
+
+                // Load data
+                const result = await invoke('get_table_data', {
+                    page: 0,
+                    page_size: 100
+                });
+
+                tableData = result.rows;
+                renderTable();
+                updateRowCount(result.total);
+
+            } catch (error) {
+                showError('Failed to load data: ' + error);
+            }
+        }
+
+        function renderTable() {
+            const table = document.getElementById('data-table');
+            const headers = document.getElementById('table-headers');
+            const body = document.getElementById('table-body');
+
+            // Clear existing content
+            headers.innerHTML = '';
+            body.innerHTML = '';
+
+            // Render headers
+            columns.forEach(column => {
+                const th = document.createElement('th');
+                th.textContent = column;
+                headers.appendChild(th);
+            });
+
+            // Add actions column
+            const actionsHeader = document.createElement('th');
+            actionsHeader.textContent = 'Actions';
+            headers.appendChild(actionsHeader);
+
+            // Render rows
+            tableData.forEach((row, rowIndex) => {
+                const tr = document.createElement('tr');
+
+                row.forEach((cell, cellIndex) => {
+                    const td = document.createElement('td');
+                    td.textContent = cell;
+                    td.style.cursor = 'pointer';
+                    td.onclick = () => editCell(rowIndex, cellIndex, cell);
+                    tr.appendChild(td);
+                });
+
+                // Add actions column
+                const actionsTd = document.createElement('td');
+                const editBtn = document.createElement('button');
+                editBtn.textContent = 'Edit Row';
+                editBtn.className = 'btn';
+                editBtn.style.fontSize = '12px';
+                editBtn.style.padding = '4px 8px';
+                editBtn.onclick = () => editRow(rowIndex);
+                actionsTd.appendChild(editBtn);
+                tr.appendChild(actionsTd);
+
+                body.appendChild(tr);
+            });
+
+            document.getElementById('loading').style.display = 'none';
+            table.style.display = 'table';
+        }
+
+        async function editCell(row, col, currentValue) {
+            const newValue = prompt(`Edit ${columns[col]}:`, currentValue);
+            if (newValue !== null && newValue !== currentValue) {
+                try {
+                    await invoke('update_table_cell', {
+                        row: row,
+                        col: col,
+                        value: newValue
+                    });
+
+                    // Update local data and re-render
+                    tableData[row][col] = newValue;
+                    renderTable();
+                } catch (error) {
+                    showError('Failed to update cell: ' + error);
+                }
+            }
+        }
+
+        function editRow(rowIndex) {
+            alert(`Edit functionality for row ${rowIndex + 1} - This is a placeholder for more advanced editing`);
+        }
+
+        async function addSampleRow() {
+            try {
+                // This is a placeholder - in a real app you'd have proper add functionality
+                alert('Add row functionality would be implemented here');
+            } catch (error) {
+                showError('Failed to add row: ' + error);
+            }
+        }
+
+        function updateRowCount(count) {
+            document.getElementById('row-count').textContent = `Total rows: ${count}`;
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        // Load data when page loads
+        window.addEventListener('DOMContentLoaded', loadData);
+    </script>
+</body>
+</html>

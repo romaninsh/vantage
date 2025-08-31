@@ -1,0 +1,32 @@
+[package]
+name = "dataset-ui-adapters"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Core dependencies always included
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+async-trait = "0.1"
+
+# Framework-specific dependencies (all optional)
+egui = { version = "0.32", optional = true }
+egui-data-table = { version = "0.8", optional = true }
+egui_extras = { version = "0.32", optional = true }
+# gpui-component = { git = "https://github.com/longbridge/gpui-component.git", optional = true }
+iced = { version = "0.12", optional = true }
+slint = { version = "1.8", optional = true }
+tauri = { version = "1.6", optional = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[features]
+default = []
+egui = ["dep:egui", "dep:egui-data-table", "dep:egui_extras"]
+# gpui = ["dep:gpui-component"]
+iced = ["dep:iced"]
+slint = ["dep:slint"]
+tauri = ["dep:tauri"]

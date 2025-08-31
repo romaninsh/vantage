@@ -491,6 +491,32 @@ impl SurrealSelect<result::Rows> {
         }
     }
 }
+impl SurrealSelect<result::List> {
+    pub fn only_first_row(self) -> SurrealSelect<result::Single> {
+        if self.from_only {
+            panic!("SelectQuery<List>::only_first_row() must not have from_only=true");
+        }
+        if !self.single_value {
+            panic!("SelectQuery<List>::only_first_row() must have single_value=true");
+        }
+        SurrealSelect {
+            fields: self.fields,
+            fields_omit: self.fields_omit,
+            from: self.from,
+            from_omit: self.from_omit,
+            from_only: true,
+            where_conditions: self.where_conditions,
+            order_by: self.order_by,
+            group_by: self.group_by,
+            distinct: self.distinct,
+            limit: self.limit,
+            skip: self.skip,
+            _phantom: PhantomData,
+            single_value: self.single_value,
+        }
+    }
+}
+
 impl SurrealSelect<result::SingleRow> {
     pub fn only_expression(self, expr: OwnedExpression) -> SurrealSelect<result::Single> {
         self.without_fields()

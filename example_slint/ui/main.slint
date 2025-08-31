@@ -1,0 +1,20 @@
+import { StandardTableView } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    title: "Dataset UI Adapters - Slint Table Example";
+    width: 800px;
+    height: 600px;
+
+    in property <[[StandardListViewItem]]> table-rows;
+
+    StandardTableView {
+        width: parent.width - 40px;
+        height: parent.height - 40px;
+        x: 20px;
+        y: 20px;
+
+        columns: [{ title: "Name" }, { title: "Calories" }, { title: "Price" }, { title: "Inventory" }];
+
+        rows: root.table-rows;
+    }
+}

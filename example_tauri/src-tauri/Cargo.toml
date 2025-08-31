@@ -1,0 +1,26 @@
+[package]
+name = "example_tauri"
+version = "0.1.0"
+description = "Dataset UI Adapters - Tauri Table Example"
+authors = ["you"]
+license = ""
+repository = ""
+edition = "2021"
+
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }
+
+[dependencies]
+tauri = { version = "1.6", features = ["shell-open"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+dataset-ui-adapters = { path = "../../vantage-ui-adapters", features = [
+    "tauri",
+] }
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

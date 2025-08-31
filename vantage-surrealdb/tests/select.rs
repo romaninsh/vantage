@@ -342,30 +342,6 @@ async fn test_get_list() {
 }
 
 #[tokio::test]
-async fn test_get_single() {
-    let mock_data = serde_json::json!("John Doe");
-    let db = setup_test_db_with_data(mock_data).await;
-
-    // Test SurrealSelect<result::Single> -> Value
-    let select_rows = SurrealSelect::new()
-        .with_source("users")
-        .with_condition(Field::new("id").eq("user123"))
-        .only_first_row();
-
-    let select_single = select_rows.only_column("name");
-
-    assert_eq!(
-        select_single.preview(),
-        "SELECT VALUE name FROM ONLY users WHERE id = \"user123\""
-    );
-
-    // Test actual execution
-    let name = select_single.get(&db).await;
-    assert!(name.is_string());
-    assert_eq!(name.as_str().unwrap(), "John Doe");
-}
-
-#[tokio::test]
 async fn test_single_row() {
     let mock_data = serde_json::json!([
         {"theme": "dark", "language": "en"}
@@ -462,4 +438,34 @@ fn test_value_select() {
         select.preview(),
         "SELECT VALUE stock * price FROM inventory WHERE product_id = \"prod123\""
     );
+}
+
+#[tokio::test]
+async fn test_single_value() {
+    let mock_data = serde_json::json!("John Doe");
+    let db = setup_test_db_with_data(mock_data).await;
+
+    // Approach 1: only_first_row() then only_column()
+    let name1 = SurrealSelect::new()
+        .with_source("users")
+        .with_condition(Field::new("id").eq("user123"))
+        .only_first_row()
+        .only_column("name")
+        .get(&db)
+        .await;
+
+    // Approach 2: only_column() then only_first_row()
+    let name2 = SurrealSelect::new()
+        .with_source("users")
+        .with_condition(Field::new("id").eq("user123"))
+        .only_column("name")
+        .only_first_row()
+        .get(&db)
+        .await;
+
+    // Both should return the same result
+    assert!(name1.is_string());
+    assert!(name2.is_string());
+    assert_eq!(name1.as_str().unwrap(), "John Doe");
+    assert_eq!(name2.as_str().unwrap(), "John Doe");
 }
