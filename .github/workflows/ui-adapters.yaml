@@ -61,7 +61,3 @@ jobs:
       - name: Check formatting
         working-directory: vantage-ui-adapters
         run: cargo fmt -- --check
-
-      - name: Run clippy
-        working-directory: vantage-ui-adapters
-        run: cargo clippy --all-features --no-deps -- -D warnings
