@@ -2,12 +2,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde_json::Value;
+use vantage_expressions::IntoExpressive;
 use vantage_expressions::{
     Flatten, OwnedExpression, OwnedExpressionFlattener, protocol::DataSource,
 };
 
 use surreal_client::SurrealClient;
 use surreal_client::error::Result;
+
+use crate::operation::Expressive;
 
 // Create a wrapper for shared SurrealDB state
 #[derive(Clone)]
@@ -20,6 +23,10 @@ impl SurrealDB {
         Self {
             inner: Arc::new(tokio::sync::Mutex::new(client)),
         }
+    }
+
+    pub async fn get(&self, into_query: impl Expressive) -> Value {
+        self.execute(&into_query.expr()).await
     }
 
     pub async fn query(&self, query: String, params: Value) -> Result<Vec<Value>> {
@@ -135,7 +142,6 @@ mod tests {
         select::SurrealSelect,
         thing::Thing,
     };
-    use serde_json::json;
     use surreal_client::Engine;
     use vantage_expressions::{
         expr,
@@ -146,7 +152,7 @@ mod tests {
 
     #[async_trait::async_trait]
     impl Engine for MockEngine {
-        async fn send_message(&mut self, method: &str, params: Value) -> Result<Value> {
+        async fn send_message(&mut self, _method: &str, _params: Value) -> Result<Value> {
             Ok(serde_json::Value::Null)
         }
     }

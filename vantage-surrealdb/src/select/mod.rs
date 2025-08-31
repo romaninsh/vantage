@@ -15,13 +15,14 @@ use serde_json::Value;
 use target::Target;
 
 use crate::{
+    SurrealDB,
     identifier::Identifier,
     operation::Expressive,
     sum::{Fx, Sum},
     surreal_return::SurrealReturn,
 };
 use vantage_expressions::{
-    Expr, OwnedExpression, expr,
+    DataSource, Expr, OwnedExpression, expr,
     protocol::selectable::Selectable,
     result::{self, QueryResult},
 };
@@ -46,6 +47,7 @@ pub struct SurrealSelect<T = result::Rows> {
     pub fields: Vec<SelectField>, // SELECT clause fields
     pub fields_omit: Vec<Field>,
     single_value: bool,
+    from_only: bool,
     pub from: Vec<Target>, // FROM clause targets
     pub from_omit: bool,
     pub where_conditions: Vec<OwnedExpression>,
@@ -57,6 +59,52 @@ pub struct SurrealSelect<T = result::Rows> {
     _phantom: PhantomData<T>,
 }
 
+impl SurrealSelect<result::Single> {
+    pub async fn get(&self, db: &SurrealDB) -> Value {
+        match db.execute(&self.expr()).await {
+            Value::Array(arr) if !arr.is_empty() => arr[0].clone(),
+            other => other,
+        }
+    }
+}
+
+impl SurrealSelect<result::List> {
+    pub async fn get(&self, db: &SurrealDB) -> Vec<Value> {
+        match db.execute(&self.expr()).await {
+            Value::Array(list) => list,
+            _ => panic!("Expected array from database query"),
+        }
+    }
+}
+
+impl SurrealSelect<result::Rows> {
+    pub async fn get(&self, db: &SurrealDB) -> Vec<serde_json::Map<String, Value>> {
+        match db.execute(&self.expr()).await {
+            Value::Array(rows) => rows
+                .into_iter()
+                .map(|item| match item {
+                    Value::Object(map) => map,
+                    _ => panic!("Expected object in result set"),
+                })
+                .collect(),
+            _ => panic!("Expected array from database query"),
+        }
+    }
+}
+
+impl SurrealSelect<result::SingleRow> {
+    pub async fn get(&self, db: &SurrealDB) -> serde_json::Map<String, Value> {
+        match db.execute(&self.expr()).await {
+            Value::Array(arr) if !arr.is_empty() => match &arr[0] {
+                Value::Object(map) => map.clone(),
+                _ => panic!("Expected object in result set"),
+            },
+            Value::Object(map) => map,
+            _ => panic!("Expected object or array from database query"),
+        }
+    }
+}
+
 impl<T> Default for SurrealSelect<T> {
     fn default() -> Self {
         Self {
@@ -65,6 +113,7 @@ impl<T> Default for SurrealSelect<T> {
             single_value: false,
             from: Vec::new(),
             from_omit: false,
+            from_only: false,
             where_conditions: Vec::new(),
             order_by: Vec::new(),
             group_by: Vec::new(),
@@ -108,14 +157,6 @@ impl SurrealSelect {
         self.set_source(source, Some(alias.into()));
         self
     }
-    pub fn with_field(mut self, field: impl Into<String>) -> Self {
-        self.add_field(field);
-        self
-    }
-    pub fn with_expression(mut self, expression: OwnedExpression, alias: Option<String>) -> Self {
-        self.add_expression(expression, alias);
-        self
-    }
 
     pub fn with_condition(mut self, condition: OwnedExpression) -> Self {
         self.add_where_condition(condition);
@@ -126,13 +167,25 @@ impl SurrealSelect {
         self.add_order_by(field_or_expr, ascending);
         self
     }
+}
+
+impl<T: QueryResult> SurrealSelect<T> {
+    pub fn without_fields(mut self) -> Self {
+        self.fields = vec![];
+        self
+    }
+    pub fn with_field(mut self, field: impl Into<String>) -> Self {
+        Selectable::add_field(&mut self, field);
+        self
+    }
+    pub fn with_expression(mut self, expression: OwnedExpression, alias: Option<String>) -> Self {
+        Selectable::add_expression(&mut self, expression, alias);
+        self
+    }
     pub fn with_value(mut self) -> Self {
         self.single_value = true;
         self
     }
-}
-
-impl<T> SurrealSelect<T> {
     /// Renders the SELECT fields clause
     ///
     /// doc wip
@@ -162,7 +215,7 @@ impl<T> SurrealSelect<T> {
                 .map(|target| target.clone().into())
                 .collect();
             expr!(
-                " FROM {}",
+                format!(" FROM {}{{}}", if self.from_only { "ONLY " } else { "" }),
                 OwnedExpression::from_vec(from_expressions, ", ")
             )
         }
@@ -368,19 +421,38 @@ impl<T: QueryResult> Selectable for SurrealSelect<T> {
 
 impl SurrealSelect<result::Rows> {
     pub fn as_sum(self, field_or_expr: impl Into<Expr>) -> SurrealReturn {
-        let result = self.as_list(field_or_expr);
-        SurrealReturn::new(Sum::new(result.expr()).into()).into()
+        let query = self.without_fields();
+        let query = match field_or_expr.into() {
+            Expr::Scalar(Value::String(s)) => query.only_column(s),
+            Expr::Nested(e) => query.only_expression(e),
+            other => query.only_expression(expr!("{}", other)),
+        };
+
+        SurrealReturn::new(Sum::new(query.expr()).into()).into()
     }
     pub fn as_count(self) -> SurrealReturn {
-        let result = self.as_list(expr!("*"));
+        let result = self.only_expression(expr!("*"));
         SurrealReturn::new(Fx::new("count", vec![result.expr()]).into()).into()
     }
-    pub fn as_list(self, field_or_expr: impl Into<Expr>) -> SurrealSelect<result::List> {
-        let mut result = SurrealSelect {
-            fields: vec![],
+    pub fn only_expression(self, expr: OwnedExpression) -> SurrealSelect<result::List> {
+        self.without_fields().with_expression(expr, None).as_list()
+    }
+    pub fn only_column(self, column: impl Into<String>) -> SurrealSelect<result::List> {
+        self.without_fields().with_field(column).as_list()
+    }
+    fn as_list(self) -> SurrealSelect<result::List> {
+        if self.from_only {
+            panic!("SelectQuery<Rows>::as_list() must not have from_only=true");
+        }
+        if self.single_value {
+            panic!("SelectQuery<Rows>::as_list() must not have single_value=true");
+        }
+        SurrealSelect {
+            fields: self.fields,
             fields_omit: self.fields_omit,
             from: self.from,
             from_omit: self.from_omit,
+            from_only: self.from_only,
             where_conditions: self.where_conditions,
             order_by: self.order_by,
             group_by: self.group_by,
@@ -391,13 +463,67 @@ impl SurrealSelect<result::Rows> {
 
             // Use "VALUE" for column
             single_value: true,
-        };
-        match field_or_expr.into() {
-            Expr::Scalar(Value::String(s)) => result.add_field(s),
-            Expr::Nested(e) => result.add_expression(e, None),
-            other => result.add_expression(expr!("{}", other), None),
-        };
-        result
+        }
+    }
+    pub fn only_first_row(self) -> SurrealSelect<result::SingleRow> {
+        if self.from_only {
+            panic!("SelectQuery<Rows>::as_one_row() must not have from_only=true");
+        }
+        if self.single_value {
+            panic!("SelectQuery<Rows>::as_one_row() must not have single_value=true");
+        }
+        SurrealSelect {
+            fields: self.fields,
+            fields_omit: self.fields_omit,
+            from: self.from,
+            from_omit: self.from_omit,
+            from_only: true,
+            where_conditions: self.where_conditions,
+            order_by: self.order_by,
+            group_by: self.group_by,
+            distinct: self.distinct,
+            limit: self.limit,
+            skip: self.skip,
+            _phantom: PhantomData,
+
+            // Use normal row
+            single_value: self.single_value,
+        }
+    }
+}
+impl SurrealSelect<result::SingleRow> {
+    pub fn only_expression(self, expr: OwnedExpression) -> SurrealSelect<result::Single> {
+        self.without_fields()
+            .with_expression(expr, None)
+            .as_single_value()
+    }
+    pub fn only_column(self, column: impl Into<String>) -> SurrealSelect<result::Single> {
+        self.without_fields().with_field(column).as_single_value()
+    }
+    pub fn as_single_value(self) -> SurrealSelect<result::Single> {
+        if !self.from_only {
+            panic!("SelectQuery<SingleRow>::as_single_value() must have from_only=true");
+        }
+        if self.single_value {
+            panic!("SelectQuery<SingleRow>::as_single_value() must not have single_value=true");
+        }
+        SurrealSelect {
+            fields: self.fields,
+            fields_omit: self.fields_omit,
+            from: self.from,
+            from_omit: self.from_omit,
+            from_only: true,
+            where_conditions: self.where_conditions,
+            order_by: self.order_by,
+            group_by: self.group_by,
+            distinct: self.distinct,
+            limit: self.limit,
+            skip: self.skip,
+            _phantom: PhantomData,
+
+            // Use "VALUE" for single value
+            single_value: true,
+        }
     }
 }
 

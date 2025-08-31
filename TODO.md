@@ -2,6 +2,12 @@
 
 - [x] Swap to sqlx
 
+# v0.3 PRERELEASE
+
+- [ ] Implement `only_column()` method for SurrealSelect query builder
+- [x] Implement prelude for vantage_surrealdb to avoid manual imports
+- [x] Fix get() method to accept (&select) instead of requiring select.expr() - should work with IntoExpression trait
+
 # v0.3 (Eta 2025)
 
 - [-] Refactor Expressions and separate it into a module

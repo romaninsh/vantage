@@ -4,9 +4,10 @@
 
 use std::{marker::PhantomData, ops::Deref};
 
-use vantage_expressions::{OwnedExpression, expr, result};
+use serde_json::Value;
+use vantage_expressions::{DataSource, OwnedExpression, expr, result};
 
-use crate::{operation::Expressive, protocol::SurrealQueriable};
+use crate::{SurrealDB, operation::Expressive, protocol::SurrealQueriable};
 
 /// SurrealDB identifier with automatic escaping
 ///
@@ -40,6 +41,12 @@ impl SurrealReturn {
             expr: expr!("RETURN {}", expr),
             _phantom: PhantomData,
         }
+    }
+}
+
+impl SurrealReturn<result::Single> {
+    pub async fn get(&self, db: &SurrealDB) -> Value {
+        db.execute(&self.expr()).await
     }
 }
 
