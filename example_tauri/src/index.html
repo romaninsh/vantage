@@ -33,39 +33,6 @@
                 font-size: 24px;
             }
 
-            .controls {
-                padding: 20px;
-                border-bottom: 1px solid #dee2e6;
-                display: flex;
-                gap: 10px;
-                align-items: center;
-            }
-
-            .btn {
-                background: #007bff;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 14px;
-            }
-
-            .btn:hover {
-                background: #0056b3;
-            }
-
-            .btn:disabled {
-                background: #6c757d;
-                cursor: not-allowed;
-            }
-
-            .info {
-                color: #6c757d;
-                font-size: 14px;
-                margin-left: auto;
-            }
-
             .table-container {
                 padding: 20px;
             }
@@ -108,28 +75,12 @@
                 margin: 20px;
                 display: none;
             }
-
-            .cell-editable {
-                cursor: pointer;
-            }
-
-            .cell-editable:hover {
-                background-color: #e9ecef;
-            }
         </style>
     </head>
     <body>
         <div class="container">
             <div class="header">
                 <h1>Dataset UI Adapters - Tauri Example</h1>
-            </div>
-
-            <div class="controls">
-                <button class="btn" onclick="loadData()" id="refreshBtn">Refresh Data</button>
-                <button class="btn" onclick="addSampleRow()" id="addBtn">Add Row</button>
-                <div class="info">
-                    <span id="row-count">Initializing...</span>
-                </div>
             </div>
 
             <div class="table-container">
@@ -154,34 +105,10 @@
                 errorDiv.textContent = message;
                 errorDiv.style.display = "block";
                 document.getElementById("loading").style.display = "none";
-                console.error("Error:", message);
             }
 
             function hideError() {
                 document.getElementById("error").style.display = "none";
-            }
-
-            function updateRowCount(count) {
-                document.getElementById("row-count").textContent = `Total rows: ${count}`;
-            }
-
-            function updateLoadingState(isLoading) {
-                const loadingDiv = document.getElementById("loading");
-                const tableDiv = document.getElementById("data-table");
-                const refreshBtn = document.getElementById("refreshBtn");
-                const addBtn = document.getElementById("addBtn");
-
-                if (isLoading) {
-                    loadingDiv.style.display = "block";
-                    tableDiv.style.display = "none";
-                    refreshBtn.disabled = true;
-                    addBtn.disabled = true;
-                } else {
-                    loadingDiv.style.display = "none";
-                    tableDiv.style.display = "table";
-                    refreshBtn.disabled = false;
-                    addBtn.disabled = false;
-                }
             }
 
             async function loadData() {
@@ -191,7 +118,8 @@
                 }
 
                 try {
-                    updateLoadingState(true);
+                    document.getElementById("loading").style.display = "block";
+                    document.getElementById("data-table").style.display = "none";
                     hideError();
 
                     columns = await invoke("get_table_columns");
@@ -202,11 +130,11 @@
 
                     tableData = result.rows;
                     renderTable();
-                    updateRowCount(result.total);
-                    updateLoadingState(false);
+
+                    document.getElementById("loading").style.display = "none";
+                    document.getElementById("data-table").style.display = "table";
                 } catch (error) {
                     showError("Failed to load data: " + (error.message || error));
-                    updateLoadingState(false);
                 }
             }
 
@@ -214,103 +142,24 @@
                 const headers = document.getElementById("table-headers");
                 const body = document.getElementById("table-body");
 
-                // Clear existing content
                 headers.innerHTML = "";
                 body.innerHTML = "";
 
-                // Render headers
                 columns.forEach((column) => {
                     const th = document.createElement("th");
                     th.textContent = column;
                     headers.appendChild(th);
                 });
 
-                // Add actions column
-                const actionsHeader = document.createElement("th");
-                actionsHeader.textContent = "Actions";
-                headers.appendChild(actionsHeader);
-
-                // Render rows
-                tableData.forEach((row, rowIndex) => {
+                tableData.forEach((row) => {
                     const tr = document.createElement("tr");
-
-                    row.forEach((cell, cellIndex) => {
+                    row.forEach((cell) => {
                         const td = document.createElement("td");
                         td.textContent = cell;
-                        td.className = "cell-editable";
-                        td.onclick = () => editCell(rowIndex, cellIndex, cell);
-                        td.title = `Click to edit ${columns[cellIndex]}`;
                         tr.appendChild(td);
                     });
-
-                    // Add actions column
-                    const actionsTd = document.createElement("td");
-
-                    const editBtn = document.createElement("button");
-                    editBtn.textContent = "Edit Row";
-                    editBtn.className = "btn";
-                    editBtn.style.fontSize = "12px";
-                    editBtn.style.padding = "4px 8px";
-                    editBtn.onclick = () => editRow(rowIndex);
-                    actionsTd.appendChild(editBtn);
-
-                    const deleteBtn = document.createElement("button");
-                    deleteBtn.textContent = "Delete";
-                    deleteBtn.className = "btn";
-                    deleteBtn.style.fontSize = "12px";
-                    deleteBtn.style.padding = "4px 8px";
-                    deleteBtn.style.marginLeft = "4px";
-                    deleteBtn.style.background = "#dc3545";
-                    deleteBtn.onclick = () => deleteRow(rowIndex);
-                    actionsTd.appendChild(deleteBtn);
-
-                    tr.appendChild(actionsTd);
                     body.appendChild(tr);
                 });
-            }
-
-            async function editCell(row, col, currentValue) {
-                const newValue = prompt(`Edit ${columns[col]}:`, currentValue);
-                if (newValue !== null && newValue !== currentValue) {
-                    try {
-                        await invoke("update_table_cell", {
-                            row: row,
-                            col: col,
-                            value: newValue,
-                        });
-
-                        tableData[row][col] = newValue;
-                        renderTable();
-                    } catch (error) {
-                        showError("Failed to update cell: " + (error.message || error));
-                    }
-                }
-            }
-
-            function editRow(rowIndex) {
-                alert(
-                    `Advanced row editing for row ${rowIndex + 1} would be implemented here.\n\nFor now, you can click individual cells to edit them.`,
-                );
-            }
-
-            async function deleteRow(rowIndex) {
-                if (confirm(`Are you sure you want to delete row ${rowIndex + 1}?`)) {
-                    try {
-                        await invoke("remove_table_row", { index: rowIndex });
-                        await loadData();
-                    } catch (error) {
-                        showError("Failed to delete row: " + (error.message || error));
-                    }
-                }
-            }
-
-            async function addSampleRow() {
-                try {
-                    await invoke("add_table_row");
-                    await loadData();
-                } catch (error) {
-                    showError("Failed to add row: " + (error.message || error));
-                }
             }
 
             function initializeTauriAPI() {
@@ -329,8 +178,6 @@
                         showError(
                             "Tauri API not available. Make sure you're running this in a Tauri app.",
                         );
-                        document.getElementById("refreshBtn").disabled = true;
-                        document.getElementById("addBtn").disabled = true;
                     }
                 }, 100);
             });

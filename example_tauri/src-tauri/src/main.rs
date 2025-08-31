@@ -10,11 +10,7 @@ async fn main() {
         .manage(table)
         .invoke_handler(tauri::generate_handler![
             get_table_data,
-            get_table_columns,
-            get_table_row_count,
-            update_table_cell,
-            add_table_row,
-            remove_table_row
+            get_table_columns
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -57,39 +53,4 @@ async fn get_table_columns(
 ) -> Result<Vec<String>, String> {
     let columns = table.column_names();
     Ok(columns)
-}
-
-#[tauri::command]
-async fn get_table_row_count(
-    table: tauri::State<'_, TauriTable<MockProductDataSet>>,
-) -> Result<usize, String> {
-    Ok(table.row_count())
-}
-
-#[tauri::command]
-async fn update_table_cell(
-    table: tauri::State<'_, TauriTable<MockProductDataSet>>,
-    row: usize,
-    col: usize,
-    value: String,
-) -> Result<bool, String> {
-    table.update_cell(row, col, value);
-    Ok(true)
-}
-
-#[tauri::command]
-async fn add_table_row(
-    table: tauri::State<'_, TauriTable<MockProductDataSet>>,
-) -> Result<bool, String> {
-    table.add_row();
-    Ok(true)
-}
-
-#[tauri::command]
-async fn remove_table_row(
-    table: tauri::State<'_, TauriTable<MockProductDataSet>>,
-    index: usize,
-) -> Result<bool, String> {
-    table.remove_row(index);
-    Ok(true)
 }
