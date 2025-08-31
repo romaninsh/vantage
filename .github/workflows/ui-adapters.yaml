@@ -33,13 +33,17 @@ jobs:
             libgl1-mesa-dev
 
       - name: Build UI adapters
-        run: cargo build -p vantage-ui-adapters --all-features
+        working-directory: vantage-ui-adapters
+        run: cargo build --all-features
 
       - name: Run UI adapters tests
-        run: cargo test -p vantage-ui-adapters --all-features
+        working-directory: vantage-ui-adapters
+        run: cargo test --all-features
 
       - name: Check formatting
-        run: cargo fmt -p vantage-ui-adapters -- --check
+        working-directory: vantage-ui-adapters
+        run: cargo fmt -- --check
 
       - name: Run clippy
-        run: cargo clippy -p vantage-ui-adapters --all-features -- -D warnings
+        working-directory: vantage-ui-adapters
+        run: cargo clippy --all-features -- -D warnings
