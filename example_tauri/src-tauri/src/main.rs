@@ -8,10 +8,7 @@ async fn main() {
 
     tauri::Builder::default()
         .manage(table)
-        .invoke_handler(tauri::generate_handler![
-            get_table_data,
-            get_table_columns
-        ])
+        .invoke_handler(tauri::generate_handler![get_table_data, get_table_columns])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
