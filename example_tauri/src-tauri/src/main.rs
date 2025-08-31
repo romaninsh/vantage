@@ -1,5 +1,4 @@
 use dataset_ui_adapters::{tauri_adapter::TauriTable, MockProductDataSet, TableStore};
-use tauri::generate_handler;
 
 #[tokio::main]
 async fn main() {
@@ -9,11 +8,13 @@ async fn main() {
 
     tauri::Builder::default()
         .manage(table)
-        .invoke_handler(generate_handler![
+        .invoke_handler(tauri::generate_handler![
             get_table_data,
             get_table_columns,
             get_table_row_count,
-            update_table_cell
+            update_table_cell,
+            add_table_row,
+            remove_table_row
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -28,7 +29,7 @@ async fn get_table_data(
     let page = page.unwrap_or(0);
     let page_size = page_size.unwrap_or(100);
 
-    let all_rows = table.inner().get_rows();
+    let all_rows = table.get_rows();
     let total_rows = all_rows.len();
     let start = page * page_size;
     let end = (start + page_size).min(total_rows);
@@ -54,7 +55,7 @@ async fn get_table_data(
 async fn get_table_columns(
     table: tauri::State<'_, TauriTable<MockProductDataSet>>,
 ) -> Result<Vec<String>, String> {
-    let columns = table.inner().column_names();
+    let columns = table.column_names();
     Ok(columns)
 }
 
@@ -62,7 +63,7 @@ async fn get_table_columns(
 async fn get_table_row_count(
     table: tauri::State<'_, TauriTable<MockProductDataSet>>,
 ) -> Result<usize, String> {
-    Ok(table.inner().row_count())
+    Ok(table.row_count())
 }
 
 #[tauri::command]
@@ -72,6 +73,23 @@ async fn update_table_cell(
     col: usize,
     value: String,
 ) -> Result<bool, String> {
-    table.inner().update_cell(row, col, value);
+    table.update_cell(row, col, value);
+    Ok(true)
+}
+
+#[tauri::command]
+async fn add_table_row(
+    table: tauri::State<'_, TauriTable<MockProductDataSet>>,
+) -> Result<bool, String> {
+    table.add_row();
+    Ok(true)
+}
+
+#[tauri::command]
+async fn remove_table_row(
+    table: tauri::State<'_, TauriTable<MockProductDataSet>>,
+    index: usize,
+) -> Result<bool, String> {
+    table.remove_row(index);
     Ok(true)
 }

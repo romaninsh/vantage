@@ -15,17 +15,17 @@ impl Default for TauriTableRow {
 
 /// Tauri table model implementing similar pattern to other adapters
 pub struct TauriTableModel<D: DataSet> {
-    store: Arc<TableStore<D>>,
     rows: Arc<RwLock<Vec<TauriTableRow>>>,
     column_names: Arc<RwLock<Vec<String>>>,
+    _phantom: std::marker::PhantomData<D>,
 }
 
 impl<D: DataSet + 'static> TauriTableModel<D> {
-    pub fn new(store: TableStore<D>) -> Self {
+    pub fn new(_store: TableStore<D>) -> Self {
         let model = Self {
-            store: Arc::new(store),
             rows: Arc::new(RwLock::new(Vec::new())),
             column_names: Arc::new(RwLock::new(Vec::new())),
+            _phantom: std::marker::PhantomData,
         };
 
         model.load_placeholder_data();
@@ -33,7 +33,6 @@ impl<D: DataSet + 'static> TauriTableModel<D> {
     }
 
     fn load_placeholder_data(&self) {
-        // Load column names
         if let Ok(mut column_names) = self.column_names.write() {
             *column_names = vec![
                 "Name".to_string(),
@@ -43,7 +42,6 @@ impl<D: DataSet + 'static> TauriTableModel<D> {
             ];
         }
 
-        // Load placeholder data
         let placeholder_data = vec![
             vec!["Flux Capacitor Cupcake", "300", "120", "50"],
             vec!["DeLorean Doughnut", "250", "135", "30"],
@@ -53,13 +51,12 @@ impl<D: DataSet + 'static> TauriTableModel<D> {
         ];
 
         if let Ok(mut rows) = self.rows.write() {
-            let vec_data: Vec<TauriTableRow> = placeholder_data
+            *rows = placeholder_data
                 .into_iter()
                 .map(|row| TauriTableRow {
                     cells: row.into_iter().map(|s| s.to_string()).collect(),
                 })
                 .collect();
-            *rows = vec_data;
         }
     }
 
@@ -82,15 +79,14 @@ impl<D: DataSet + 'static> TauriTableModel<D> {
 
     pub fn add_row(&self) {
         if let Ok(mut rows) = self.rows.write() {
-            let new_row = TauriTableRow {
+            rows.push(TauriTableRow {
                 cells: vec![
                     "New Product".to_string(),
                     "0".to_string(),
                     "0".to_string(),
                     "0".to_string(),
                 ],
-            };
-            rows.push(new_row);
+            });
         }
     }
 
