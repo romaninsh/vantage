@@ -343,8 +343,8 @@ impl DataSet for MockProductDataSet {
 #[cfg(feature = "egui")]
 pub mod egui_adapter;
 
-// #[cfg(feature = "gpui")]
-// pub mod gpui_adapter;
+#[cfg(feature = "gpui")]
+pub mod gpui_adapter;
 
 #[cfg(feature = "iced")]
 pub mod iced_adapter;

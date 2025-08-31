@@ -1,25 +1,18 @@
-use crate::{CellValue, DataSet, Result, TableStore};
+use crate::{DataSet, TableStore};
 use std::sync::Arc;
 use tokio::runtime::Handle;
 
-// Note: GPUI-component may have different actual trait names
-// This is a placeholder based on common table delegate patterns
-
-/// Mock TableDelegate trait for GPUI
-/// (The actual trait from gpui-component might be different)
-pub trait TableDelegate {
-    fn columns_count(&self) -> usize;
-    fn rows_count(&self) -> usize;
-    fn cell_text(&self, row: usize, column: usize) -> String;
-    fn column_title(&self, column: usize) -> String;
-    fn can_edit_cell(&self, row: usize, column: usize) -> bool;
-    fn set_cell_text(&mut self, row: usize, column: usize, text: String) -> bool;
-}
+#[cfg(feature = "gpui")]
+use gpui::{div, px, App, Context, InteractiveElement, IntoElement, ParentElement, Styled, Window};
+#[cfg(feature = "gpui")]
+use gpui_component::{
+    table::{Column, Table, TableDelegate},
+    StyledExt,
+};
 
 /// GPUI adapter implementing TableDelegate
 pub struct GpuiTableDelegate<D: DataSet> {
     store: Arc<TableStore<D>>,
-    runtime: Handle,
     cached_row_count: Option<usize>,
     cached_column_count: Option<usize>,
 }
@@ -28,7 +21,6 @@ impl<D: DataSet + 'static> GpuiTableDelegate<D> {
     pub fn new(store: TableStore<D>) -> Self {
         Self {
             store: Arc::new(store),
-            runtime: Handle::current(),
             cached_row_count: None,
             cached_column_count: None,
         }
@@ -39,12 +31,64 @@ impl<D: DataSet + 'static> GpuiTableDelegate<D> {
         F: std::future::Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        self.runtime.block_on(future)
+        // For now, we'll use a simple approach and create a new runtime
+        // In a real implementation, you might want to use a global runtime or handle this differently
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+        rt.block_on(future)
+    }
+
+    // Convenience methods for direct access without App context
+    pub fn rows_count(&self) -> usize {
+        let store = self.store.clone();
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+        rt.block_on(async move {
+            match store.row_count().await {
+                Ok(count) => count,
+                Err(_) => 0,
+            }
+        })
+    }
+
+    pub fn columns_count(&self) -> usize {
+        let store = self.store.clone();
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+        rt.block_on(async move {
+            match store.column_info().await {
+                Ok(columns) => columns.len(),
+                Err(_) => 0,
+            }
+        })
+    }
+
+    pub fn cell_text(&self, row: usize, column: usize) -> String {
+        let store = self.store.clone();
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+        rt.block_on(async move {
+            match store.cell_value(row, column).await {
+                Ok(value) => value.as_string(),
+                Err(_) => "Error".to_string(),
+            }
+        })
+    }
+
+    pub fn column_title(&self, column: usize) -> String {
+        let store = self.store.clone();
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+        rt.block_on(async move {
+            match store.column_info().await {
+                Ok(columns) => columns
+                    .get(column)
+                    .map(|col| col.name.clone())
+                    .unwrap_or_else(|| format!("Column {}", column)),
+                Err(_) => format!("Column {}", column),
+            }
+        })
     }
 }
 
+#[cfg(feature = "gpui")]
 impl<D: DataSet + 'static> TableDelegate for GpuiTableDelegate<D> {
-    fn columns_count(&self) -> usize {
+    fn columns_count(&self, _cx: &App) -> usize {
         if let Some(count) = self.cached_column_count {
             return count;
         }
@@ -57,12 +101,10 @@ impl<D: DataSet + 'static> TableDelegate for GpuiTableDelegate<D> {
             }
         });
 
-        // Note: We can't mutate self here due to the trait signature
-        // In a real implementation, you'd use interior mutability
         count
     }
 
-    fn rows_count(&self) -> usize {
+    fn rows_count(&self, _cx: &App) -> usize {
         if let Some(count) = self.cached_row_count {
             return count;
         }
@@ -78,48 +120,94 @@ impl<D: DataSet + 'static> TableDelegate for GpuiTableDelegate<D> {
         count
     }
 
-    fn cell_text(&self, row: usize, column: usize) -> String {
+    fn column(&self, col_ix: usize, _cx: &App) -> &Column {
+        static COLUMNS: std::sync::LazyLock<Vec<Column>> = std::sync::LazyLock::new(|| {
+            vec![
+                Column::new("name", "Product Name").width(px(200.)),
+                Column::new("category", "Category").width(px(150.)),
+                Column::new("price", "Price").width(px(100.)),
+                Column::new("stock", "Stock").width(px(80.)),
+            ]
+        });
+
+        &COLUMNS[col_ix]
+    }
+
+    fn render_th(
+        &self,
+        col_ix: usize,
+        _window: &mut Window,
+        _cx: &mut Context<Table<Self>>,
+    ) -> impl IntoElement {
         let store = self.store.clone();
-        self.block_on(async move {
-            match store.cell_value(row, column).await {
+        let column_name = self.block_on(async move {
+            match store.column_info().await {
+                Ok(columns) => columns
+                    .get(col_ix)
+                    .map(|col| col.name.clone())
+                    .unwrap_or_else(|| format!("Column {}", col_ix)),
+                Err(_) => format!("Column {}", col_ix),
+            }
+        });
+
+        div().child(column_name)
+    }
+
+    fn render_td(
+        &self,
+        row_ix: usize,
+        col_ix: usize,
+        _window: &mut Window,
+        _cx: &mut Context<Table<Self>>,
+    ) -> impl IntoElement {
+        let store = self.store.clone();
+        let cell_text = self.block_on(async move {
+            match store.cell_value(row_ix, col_ix).await {
                 Ok(value) => value.as_string(),
                 Err(_) => "Error".to_string(),
             }
-        })
-    }
-
-    fn column_title(&self, column: usize) -> String {
-        let store = self.store.clone();
-        self.block_on(async move {
-            match store.column_info().await {
-                Ok(columns) => columns
-                    .get(column)
-                    .map(|col| col.name.clone())
-                    .unwrap_or_else(|| format!("Column {}", column)),
-                Err(_) => format!("Column {}", column),
-            }
-        })
-    }
-
-    fn can_edit_cell(&self, row: usize, column: usize) -> bool {
-        let store = self.store.clone();
-        self.block_on(async move {
-            match store.column_info().await {
-                Ok(columns) => columns.get(column).map(|col| col.editable).unwrap_or(false),
-                Err(_) => false,
-            }
-        })
-    }
-
-    fn set_cell_text(&mut self, row: usize, column: usize, text: String) -> bool {
-        let store = self.store.clone();
-        let new_value = CellValue::String(text);
-
-        self.runtime.spawn(async move {
-            let _ = store.update_cell(row, column, new_value).await;
         });
 
-        true // Optimistically return success
+        div().child(cell_text)
+    }
+
+    fn render_tr(
+        &self,
+        row_ix: usize,
+        _window: &mut Window,
+        _cx: &mut Context<Table<Self>>,
+    ) -> gpui::Stateful<gpui::Div> {
+        div().id(row_ix)
+    }
+
+    fn loading(&self, _cx: &App) -> bool {
+        false
+    }
+
+    fn is_eof(&self, _cx: &App) -> bool {
+        true
+    }
+
+    fn load_more_threshold(&self) -> usize {
+        0
+    }
+
+    fn load_more(&mut self, _window: &mut Window, _cx: &mut Context<Table<Self>>) {}
+
+    fn visible_rows_changed(
+        &mut self,
+        _range: std::ops::Range<usize>,
+        _window: &mut Window,
+        _cx: &mut Context<Table<Self>>,
+    ) {
+    }
+
+    fn visible_columns_changed(
+        &mut self,
+        _range: std::ops::Range<usize>,
+        _window: &mut Window,
+        _cx: &mut Context<Table<Self>>,
+    ) {
     }
 }
 
