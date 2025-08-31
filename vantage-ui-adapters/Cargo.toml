@@ -20,6 +20,10 @@ gpui-component = { git = "https://github.com/longbridge/gpui-component.git", opt
 
 slint = { version = "1.12", optional = true }
 tauri = { version = "2.8", optional = true }
+ratatui = { version = "0.29", optional = true }
+crossterm = { version = "0.28", optional = true }
+cursive = { version = "0.21", optional = true }
+cursive_table_view = { version = "0.15", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
@@ -31,3 +35,5 @@ gpui = ["dep:gpui", "dep:gpui-component"]
 
 slint = ["dep:slint"]
 tauri = ["dep:tauri"]
+ratatui = ["dep:ratatui", "dep:crossterm"]
+cursive = ["dep:cursive", "dep:cursive_table_view"]

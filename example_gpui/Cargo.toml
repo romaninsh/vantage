@@ -5,6 +5,7 @@ edition = "2021"
 
 [workspace]
 
+
 [dependencies]
 dataset-ui-adapters = { path = "../vantage-ui-adapters", features = ["gpui"] }
 gpui = { git = "https://github.com/zed-industries/zed.git" }

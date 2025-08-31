@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        example: [egui, gpui, slint, tauri]
+        example: [egui, gpui, slint, tauri, tui, cursive]
 
     steps:
       - uses: actions/checkout@v4
@@ -68,9 +68,9 @@ jobs:
         run: |
           if [ "${{ matrix.example }}" = "tauri" ]; then
             cd src-tauri
-            cargo build --release
+            cargo build
           else
-            cargo build --release
+            cargo build
           fi
 
       - name: Check example_${{ matrix.example }} formatting
@@ -88,7 +88,7 @@ jobs:
         run: |
           if [ "${{ matrix.example }}" = "tauri" ]; then
             cd src-tauri
-            cargo clippy --release -- -D warnings
+            cargo clippy -- -D warnings
           else
-            cargo clippy --release -- -D warnings
+            cargo clippy -- -D warnings
           fi

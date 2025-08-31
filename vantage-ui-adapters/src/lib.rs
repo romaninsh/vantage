@@ -351,3 +351,9 @@ pub mod slint_adapter;
 
 #[cfg(feature = "tauri")]
 pub mod tauri_adapter;
+
+#[cfg(feature = "ratatui")]
+pub mod ratatui_adapter;
+
+#[cfg(feature = "cursive")]
+pub mod cursive_adapter;

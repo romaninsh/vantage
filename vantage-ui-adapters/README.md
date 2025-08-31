@@ -19,9 +19,10 @@ A Rust crate providing universal table data adapters for major UI frameworks. Th
 
 - **egui** - Immediate mode GUI with `egui-data-table` integration
 - **GPUI** - GPU-accelerated UI framework (from Zed team)
-
 - **Slint** - Declarative UI toolkit with native performance
 - **Tauri** - Web-based desktop apps with Rust backend
+- **Ratatui** - Terminal-based UI framework for modern TUI applications
+- **Cursive** - Terminal UI framework with `cursive_table_view` integration
 
 ## Quick Start
 
@@ -30,6 +31,9 @@ Add to your `Cargo.toml`:
 ```toml
 [dependencies]
 dataset-ui-adapters = { path = ".", features = ["egui"] }
+# Or for terminal UI:
+# dataset-ui-adapters = { path = ".", features = ["ratatui"] }
+# dataset-ui-adapters = { path = ".", features = ["cursive"] }
 ```
 
 Basic usage:
@@ -74,6 +78,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 | GPUI      | ✅ GPU-based   | ✅ Yes  | ❌ No   | ❌ No     | ✅ Yes    |
 | Slint     | ✅ Built-in    | ✅ Yes  | ❌ No   | ❌ No     | ✅ Yes    |
 | Tauri     | 🌐 Web-based   | ✅ Yes  | 🌐 JS   | 🌐 JS     | 🌐 JS     |
+| Ratatui   | 📜 Terminal    | ❌ No   | ❌ No   | ❌ No     | ✅ Yes    |
+| Cursive   | 📜 Terminal    | ❌ No   | ✅ Yes  | ❌ No     | ✅ Yes    |
 
 ## Examples
 
@@ -100,6 +106,30 @@ let model = table.as_model_rc();
 
 // In your .slint file:
 // StandardTableView { rows: model }
+```
+
+### Ratatui Integration
+
+```rust
+use dataset_ui_adapters::ratatui_adapter::*;
+
+let store = TableStore::new(your_dataset);
+let mut adapter = RatatuiTableAdapter::new(store);
+adapter.refresh_data().await;
+
+// In your TUI render loop:
+let table = adapter.create_table();
+frame.render_stateful_widget(table, area, adapter.state_mut());
+```
+
+### Cursive Integration
+
+```rust
+use dataset_ui_adapters::cursive_adapter::*;
+
+let store = TableStore::new(your_dataset);
+let app = CursiveTableApp::new(store)?;
+app.run()?;  // Runs complete TUI application
 ```
 
 ### Tauri Integration
@@ -173,9 +203,10 @@ impl DataSet for MyDataSet {
 
 - **egui**: Leverages built-in virtualization for large datasets
 - **GPUI**: GPU-accelerated rendering with efficient diff calculations
-
 - **Slint**: Model-based reactivity with automatic change propagation
 - **Tauri**: JSON serialization optimizations and pagination
+- **Ratatui**: Lightweight terminal rendering with minimal memory usage
+- **Cursive**: Built-in table widget with sorting and async data loading
 
 ### Memory Usage
 
@@ -210,6 +241,8 @@ Framework-specific examples:
 ```bash
 cargo run --example egui_example --features egui
 cargo run --example slint_example --features slint
+cargo run --example tui_example --features ratatui
+cargo run --example cursive_example --features cursive
 # etc.
 ```
 
