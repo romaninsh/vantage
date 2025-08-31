@@ -36,30 +36,16 @@ jobs:
       - name: Install system dependencies
         run: |
           export DEBIAN_FRONTEND=noninteractive
+          sudo apt-get update -qq > /dev/null 2>&1
           sudo apt-get install -qq -y --no-install-recommends \
             pkg-config \
-            libfontconfig1-dev \
-            libfreetype6-dev \
-            libx11-dev \
-            libgl1-mesa-dev \
-            libglib2.0-dev \
-            libxkbcommon-dev \
-            libxkbcommon-x11-dev \
-            libgtk-3-dev \
-            libatk1.0-dev \
-            libcairo2-dev \
-            libgdk-pixbuf2.0-dev \
-            libpango1.0-dev \
-            libsoup-3.0-dev \
-            libwebkit2gtk-4.1-dev \
             build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
             libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libfontconfig-dev \
+            libwebkit2gtk-4.1-dev
 
       - name: Build example_${{ matrix.example }}
         working-directory: example_${{ matrix.example }}
