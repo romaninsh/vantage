@@ -1,0 +1,52 @@
+name: UI Adapters Tests
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "vantage-ui-adapters/**"
+      - ".github/workflows/ui-adapters.yaml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxrandr-dev \
+            libxi-dev \
+            libxinerama-dev \
+            libxxf86vm-dev \
+            libgl1-mesa-dev \
+            libasound2-dev \
+            libpulse-dev
+
+      - name: Build UI adapters
+        run: cargo build -p vantage-ui-adapters --all-features
+
+      - name: Run UI adapters tests
+        run: cargo test -p vantage-ui-adapters --all-features
+
+      - name: Check formatting
+        run: cargo fmt -p vantage-ui-adapters -- --check
+
+      - name: Run clippy
+        run: cargo clippy -p vantage-ui-adapters --all-features -- -D warnings
