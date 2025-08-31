@@ -39,7 +39,7 @@ jobs:
             libcairo2-dev \
             libgdk-pixbuf2.0-dev \
             libpango1.0-dev \
-            libsoup-2.4-dev
+            libsoup-3.0-dev
 
       - name: Build UI adapters
         working-directory: vantage-ui-adapters
