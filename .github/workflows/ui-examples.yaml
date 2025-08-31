@@ -27,7 +27,9 @@ jobs:
         with:
           cache-on-failure: true
           key: "ui-examples-${{ matrix.example }}"
-          workspaces: "example_${{ matrix.example }} -> target"
+          workspaces: |
+            example_${{ matrix.example }} -> target
+            example_tauri/src-tauri -> target
 
       - name: Install system dependencies
         run: |
