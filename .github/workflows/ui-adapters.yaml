@@ -11,6 +11,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 1
 
 jobs:
   test:
@@ -41,6 +42,8 @@ jobs:
 
       - name: Build UI adapters
         run: cargo build -p dataset-ui-adapters --all-features
+        env:
+          CARGO_INCREMENTAL: 1
 
       - name: Run UI adapters tests
         run: cargo test -p dataset-ui-adapters --all-features
