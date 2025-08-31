@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        example: [egui, iced, gpui, slint, tauri]
+        example: [egui, gpui, slint, tauri]
 
     steps:
       - uses: actions/checkout@v4

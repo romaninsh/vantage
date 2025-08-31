@@ -19,7 +19,7 @@ A Rust crate providing universal table data adapters for major UI frameworks. Th
 
 - **egui** - Immediate mode GUI with `egui-data-table` integration
 - **GPUI** - GPU-accelerated UI framework (from Zed team)
-- **Iced** - Cross-platform GUI with reactive architecture
+
 - **Slint** - Declarative UI toolkit with native performance
 - **Tauri** - Web-based desktop apps with Rust backend
 
@@ -72,7 +72,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 | --------- | -------------- | ------- | ------- | --------- | --------- |
 | egui      | ✅ Built-in    | ✅ Yes  | ❌ No   | ❌ No     | ✅ Yes    |
 | GPUI      | ✅ GPU-based   | ✅ Yes  | ❌ No   | ❌ No     | ✅ Yes    |
-| Iced      | ❌ Manual      | ✅ Yes  | ❌ No   | ❌ No     | ✅ Yes    |
 | Slint     | ✅ Built-in    | ✅ Yes  | ❌ No   | ❌ No     | ✅ Yes    |
 | Tauri     | 🌐 Web-based   | ✅ Yes  | 🌐 JS   | 🌐 JS     | 🌐 JS     |
 
@@ -174,7 +173,7 @@ impl DataSet for MyDataSet {
 
 - **egui**: Leverages built-in virtualization for large datasets
 - **GPUI**: GPU-accelerated rendering with efficient diff calculations
-- **Iced**: Message-based updates minimize unnecessary re-renders
+
 - **Slint**: Model-based reactivity with automatic change propagation
 - **Tauri**: JSON serialization optimizations and pagination
 

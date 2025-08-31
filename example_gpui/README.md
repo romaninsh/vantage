@@ -83,7 +83,6 @@ The application will open a native desktop window with:
 This example demonstrates one of five UI framework integrations:
 
 - `example_egui` - egui framework integration
-- `example_iced` - Iced framework integration
 - `example_gpui` - **This example** - GPUI framework integration
 - `example_slint` - Slint framework integration
 - `example_tauri` - Tauri framework integration

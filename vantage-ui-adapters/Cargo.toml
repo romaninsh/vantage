@@ -17,7 +17,7 @@ egui-data-table = { version = "0.8", optional = true }
 egui_extras = { version = "0.32", optional = true }
 gpui = { git = "https://github.com/zed-industries/zed.git", optional = true }
 gpui-component = { git = "https://github.com/longbridge/gpui-component.git", optional = true }
-iced = { version = "0.13", optional = true }
+
 slint = { version = "1.12", optional = true }
 tauri = { version = "2.8", optional = true }
 
@@ -28,6 +28,6 @@ tokio-test = "0.4"
 default = []
 egui = ["dep:egui", "dep:egui-data-table", "dep:egui_extras"]
 gpui = ["dep:gpui", "dep:gpui-component"]
-iced = ["dep:iced"]
+
 slint = ["dep:slint"]
 tauri = ["dep:tauri"]
