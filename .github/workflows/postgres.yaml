@@ -35,6 +35,6 @@ jobs:
       - name: Build
         run: cargo build
       - name: Run tests
-        run: cargo test --workspace --exclude bakery_model --exclude bakery_api --exclude vantage-surrealdb --exclude surreal-client --exclude vantage-admin
+        run: cargo test --workspace --exclude bakery_model --exclude bakery_api --exclude vantage-surrealdb --exclude surreal-client --exclude vantage-admin --exclude vantage-ui-adapters
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres

@@ -1,0 +1,69 @@
+name: UI Examples Build
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "example_*/**"
+      - "vantage-ui-adapters/**"
+      - ".github/workflows/ui-examples.yaml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-examples:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        example: [egui, gpui, slint, tauri, tui, cursive]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          key: "ui-examples-${{ matrix.example }}"
+          cache-workspace-crates: true
+          cache-all-crates: true
+          workspaces: |
+            example_${{ matrix.example }} -> target
+            example_tauri/src-tauri -> target
+
+      - name: Install system dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          sudo apt-get update -qq > /dev/null 2>&1
+          sudo apt-get install -qq -y --no-install-recommends \
+            pkg-config \
+            build-essential \
+            libssl-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libfontconfig-dev
+
+      - name: Build example_${{ matrix.example }}
+        working-directory: example_${{ matrix.example }}
+        run: |
+          if [ "${{ matrix.example }}" = "tauri" ]; then
+            sudo apt-get install -qq -y --no-install-recommends libwebkit2gtk-4.1-dev
+            cd src-tauri
+            cargo build
+          else
+            cargo build
+          fi
+
+      - name: Check example_${{ matrix.example }} formatting
+        working-directory: example_${{ matrix.example }}
+        run: |
+          if [ "${{ matrix.example }}" = "tauri" ]; then
+            cd src-tauri
+            cargo fmt -- --check
+          else
+            cargo fmt -- --check
+          fi
