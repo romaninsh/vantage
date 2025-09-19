@@ -10,7 +10,9 @@ edition = "2021"
 dataset-ui-adapters = { path = "../vantage-ui-adapters", features = [
     "ratatui",
 ] }
+bakery_model3 = { path = "../bakery_model3" }
 ratatui = "0.29"
 crossterm = "0.28"
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
 color-eyre = "0.6"
+anyhow = "1.0"

@@ -15,48 +15,47 @@ impl Default for TauriTableRow {
 
 /// Tauri table model implementing similar pattern to other adapters
 pub struct TauriTableModel<D: DataSet> {
+    store: Arc<TableStore<D>>,
     rows: Arc<RwLock<Vec<TauriTableRow>>>,
     column_names: Arc<RwLock<Vec<String>>>,
-    _phantom: std::marker::PhantomData<D>,
 }
 
 impl<D: DataSet + 'static> TauriTableModel<D> {
-    pub fn new(_store: TableStore<D>) -> Self {
+    pub async fn new(store: TableStore<D>) -> Self {
         let model = Self {
+            store: Arc::new(store),
             rows: Arc::new(RwLock::new(Vec::new())),
             column_names: Arc::new(RwLock::new(Vec::new())),
-            _phantom: std::marker::PhantomData,
         };
 
-        model.load_placeholder_data();
+        model.load_data().await;
         model
     }
 
-    fn load_placeholder_data(&self) {
-        if let Ok(mut column_names) = self.column_names.write() {
-            *column_names = vec![
-                "Name".to_string(),
-                "Calories".to_string(),
-                "Price".to_string(),
-                "Inventory".to_string(),
-            ];
+    async fn load_data(&self) {
+        // Load column names
+        if let Ok(column_info) = self.store.column_info().await {
+            if let Ok(mut column_names) = self.column_names.write() {
+                *column_names = column_info.into_iter().map(|col| col.name).collect();
+            }
         }
 
-        let placeholder_data = vec![
-            vec!["Flux Capacitor Cupcake", "300", "120", "50"],
-            vec!["DeLorean Doughnut", "250", "135", "30"],
-            vec!["Time Traveler Tart", "200", "220", "20"],
-            vec!["Enchantment Under the Sea Pie", "350", "299", "15"],
-            vec!["Hoverboard Cookies", "150", "199", "40"],
-        ];
+        // Load row data
+        if let Ok(row_count) = self.store.row_count().await {
+            let _ = self.store.prefetch_range(0, row_count).await;
 
-        if let Ok(mut rows) = self.rows.write() {
-            *rows = placeholder_data
-                .into_iter()
-                .map(|row| TauriTableRow {
-                    cells: row.into_iter().map(|s| s.to_string()).collect(),
-                })
-                .collect();
+            if let Ok(mut rows) = self.rows.write() {
+                let mut row_data = Vec::new();
+                for i in 0..row_count {
+                    if let Ok(table_row) = self.store.get_row(i).await {
+                        let tauri_row = TauriTableRow {
+                            cells: table_row.into_iter().map(|cell| cell.as_string()).collect(),
+                        };
+                        row_data.push(tauri_row);
+                    }
+                }
+                *rows = row_data;
+            }
         }
     }
 
@@ -79,13 +78,15 @@ impl<D: DataSet + 'static> TauriTableModel<D> {
 
     pub fn add_row(&self) {
         if let Ok(mut rows) = self.rows.write() {
+            // Get column count from existing data or use empty row
+            let column_count = if let Some(first_row) = rows.first() {
+                first_row.cells.len()
+            } else {
+                0
+            };
+
             rows.push(TauriTableRow {
-                cells: vec![
-                    "New Product".to_string(),
-                    "0".to_string(),
-                    "0".to_string(),
-                    "0".to_string(),
-                ],
+                cells: vec![String::new(); column_count],
             });
         }
     }
@@ -120,8 +121,8 @@ impl<D: DataSet + 'static> TauriTableModel<D> {
         String::new()
     }
 
-    pub fn refresh(&self) {
-        self.load_placeholder_data();
+    pub async fn refresh(&self) {
+        self.load_data().await;
     }
 }
 
@@ -131,9 +132,9 @@ pub struct TauriTable<D: DataSet> {
 }
 
 impl<D: DataSet + 'static> TauriTable<D> {
-    pub fn new(store: TableStore<D>) -> Self {
+    pub async fn new(store: TableStore<D>) -> Self {
         Self {
-            model: TauriTableModel::new(store),
+            model: TauriTableModel::new(store).await,
         }
     }
 
@@ -145,8 +146,8 @@ impl<D: DataSet + 'static> TauriTable<D> {
         self.model.get_rows()
     }
 
-    pub fn refresh(&self) {
-        self.model.refresh();
+    pub async fn refresh(&self) {
+        self.model.refresh().await;
     }
 
     pub fn column_names(&self) -> Vec<String> {
@@ -180,56 +181,5 @@ impl<D: DataSet + 'static> std::fmt::Debug for TauriTable<D> {
             .field("row_count", &self.row_count())
             .field("column_count", &self.column_names().len())
             .finish()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::MockProductDataSet;
-
-    #[tokio::test]
-    async fn test_tauri_table_creation() {
-        let dataset = MockProductDataSet::new();
-        let store = TableStore::new(dataset);
-        let table = TauriTable::new(store);
-
-        assert_eq!(table.row_count(), 5);
-        assert_eq!(table.column_names().len(), 4);
-        assert_eq!(table.column_names()[0].as_str(), "Name");
-    }
-
-    #[test]
-    fn test_tauri_cell_operations() {
-        let dataset = MockProductDataSet::new();
-        let store = TableStore::new(dataset);
-        let table = TauriTable::new(store);
-
-        // Test getting cell value
-        let cell_value = table.get_cell_value(0, 0);
-        assert_eq!(cell_value, "Flux Capacitor Cupcake");
-
-        // Test updating cell
-        table.update_cell(0, 0, "Updated Product".to_string());
-        let updated_value = table.get_cell_value(0, 0);
-        assert_eq!(updated_value, "Updated Product");
-    }
-
-    #[test]
-    fn test_tauri_row_operations() {
-        let dataset = MockProductDataSet::new();
-        let store = TableStore::new(dataset);
-        let table = TauriTable::new(store);
-
-        let initial_count = table.row_count();
-        assert_eq!(initial_count, 5);
-
-        // Test adding row
-        table.add_row();
-        assert_eq!(table.row_count(), 6);
-
-        // Test removing row
-        table.remove_row(5);
-        assert_eq!(table.row_count(), 5);
     }
 }

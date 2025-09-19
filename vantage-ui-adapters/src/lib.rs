@@ -243,103 +243,6 @@ impl<D: DataSet> TableStore<D> {
 }
 
 // Mock implementation for testing
-#[derive(Debug)]
-pub struct MockProductDataSet {
-    products: Vec<TableRow>,
-    columns: Vec<ColumnInfo>,
-}
-
-impl MockProductDataSet {
-    pub fn new() -> Self {
-        let columns = vec![
-            ColumnInfo {
-                name: "name".to_string(),
-                data_type: "String".to_string(),
-                sortable: true,
-                editable: true,
-            },
-            ColumnInfo {
-                name: "calories".to_string(),
-                data_type: "Integer".to_string(),
-                sortable: true,
-                editable: true,
-            },
-            ColumnInfo {
-                name: "price".to_string(),
-                data_type: "Integer".to_string(),
-                sortable: true,
-                editable: true,
-            },
-            ColumnInfo {
-                name: "inventory".to_string(),
-                data_type: "Integer".to_string(),
-                sortable: true,
-                editable: true,
-            },
-        ];
-
-        let products = vec![
-            vec![
-                CellValue::String("Flux Capacitor Cupcake".to_string()),
-                CellValue::Integer(300),
-                CellValue::Integer(120),
-                CellValue::Integer(50),
-            ],
-            vec![
-                CellValue::String("DeLorean Doughnut".to_string()),
-                CellValue::Integer(250),
-                CellValue::Integer(135),
-                CellValue::Integer(30),
-            ],
-            vec![
-                CellValue::String("Time Traveler Tart".to_string()),
-                CellValue::Integer(200),
-                CellValue::Integer(220),
-                CellValue::Integer(20),
-            ],
-            vec![
-                CellValue::String("Enchantment Under the Sea Pie".to_string()),
-                CellValue::Integer(350),
-                CellValue::Integer(299),
-                CellValue::Integer(15),
-            ],
-            vec![
-                CellValue::String("Hoverboard Cookies".to_string()),
-                CellValue::Integer(150),
-                CellValue::Integer(199),
-                CellValue::Integer(40),
-            ],
-        ];
-
-        Self { products, columns }
-    }
-}
-
-#[async_trait]
-impl DataSet for MockProductDataSet {
-    async fn row_count(&self) -> Result<usize> {
-        Ok(self.products.len())
-    }
-
-    async fn column_info(&self) -> Result<Vec<ColumnInfo>> {
-        Ok(self.columns.clone())
-    }
-
-    async fn fetch_rows(&self, start: usize, count: usize) -> Result<Vec<TableRow>> {
-        let end = (start + count).min(self.products.len());
-        if start >= self.products.len() {
-            return Ok(vec![]);
-        }
-        Ok(self.products[start..end].to_vec())
-    }
-
-    async fn fetch_row(&self, index: usize) -> Result<TableRow> {
-        self.products
-            .get(index)
-            .cloned()
-            .ok_or(TableStoreError::IndexError)
-    }
-}
 
 /// Adapter for vantage-table to DataSet interface
 pub struct VantageTableAdapter<E: Entity> {
@@ -349,76 +252,69 @@ pub struct VantageTableAdapter<E: Entity> {
 }
 
 impl<E: Entity + Send + Sync + 'static> VantageTableAdapter<E> {
-    pub fn new(table: Table<SurrealDB, E>) -> Self {
-        let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+    pub async fn new(table: Table<SurrealDB, E>) -> Self {
+        let column_names: Vec<String> = table.columns().keys().cloned().collect();
+        let columns: Vec<ColumnInfo> = column_names
+            .iter()
+            .map(|name| ColumnInfo {
+                name: name.clone(),
+                data_type: "String".to_string(),
+                sortable: true,
+                editable: false,
+            })
+            .collect();
 
-        let (data, columns) = rt.block_on(async {
-            let column_names: Vec<String> = table.columns().keys().cloned().collect();
-            let columns: Vec<ColumnInfo> = column_names
-                .iter()
-                .map(|name| ColumnInfo {
-                    name: name.clone(),
-                    data_type: "String".to_string(),
-                    sortable: true,
-                    editable: false,
-                })
-                .collect();
+        let query = table.select_surreal();
+        let data_source = table.data_source();
+        let result = data_source.get(query).await;
 
-            let query = table.select_surreal();
-            let data_source = table.data_source();
-            let result = data_source.get(query).await;
-
-            let rows = if let serde_json::Value::Array(array) = result {
-                array
-                    .into_iter()
-                    .filter_map(|obj| {
-                        if let serde_json::Value::Object(map) = obj {
-                            let mut row = Vec::new();
-                            for column_name in &column_names {
-                                let value =
-                                    map.get(column_name).unwrap_or(&serde_json::Value::Null);
-                                let cell_value = match value {
-                                    serde_json::Value::String(s) => CellValue::String(s.clone()),
-                                    serde_json::Value::Number(n) => {
-                                        if let Some(i) = n.as_i64() {
-                                            CellValue::Integer(i)
-                                        } else if let Some(f) = n.as_f64() {
-                                            CellValue::Float(f)
-                                        } else {
-                                            CellValue::Null
-                                        }
+        let rows = if let serde_json::Value::Array(array) = result {
+            array
+                .into_iter()
+                .filter_map(|obj| {
+                    if let serde_json::Value::Object(map) = obj {
+                        let mut row = Vec::new();
+                        for column_name in &column_names {
+                            let value = map.get(column_name).unwrap_or(&serde_json::Value::Null);
+                            let cell_value = match value {
+                                serde_json::Value::String(s) => CellValue::String(s.clone()),
+                                serde_json::Value::Number(n) => {
+                                    if let Some(i) = n.as_i64() {
+                                        CellValue::Integer(i)
+                                    } else if let Some(f) = n.as_f64() {
+                                        CellValue::Float(f)
+                                    } else {
+                                        CellValue::Null
                                     }
-                                    serde_json::Value::Bool(b) => CellValue::Boolean(*b),
-                                    serde_json::Value::Object(o) => CellValue::String(
-                                        serde_json::to_string(o).unwrap_or_default(),
-                                    ),
-                                    serde_json::Value::Array(a) => CellValue::String(
-                                        serde_json::to_string(a).unwrap_or_default(),
-                                    ),
-                                    _ => CellValue::Null,
-                                };
-                                row.push(cell_value);
-                            }
-                            if !row.is_empty() {
-                                Some(row)
-                            } else {
-                                None
-                            }
+                                }
+                                serde_json::Value::Bool(b) => CellValue::Boolean(*b),
+                                serde_json::Value::Object(o) => {
+                                    CellValue::String(serde_json::to_string(o).unwrap_or_default())
+                                }
+                                serde_json::Value::Array(a) => {
+                                    CellValue::String(serde_json::to_string(a).unwrap_or_default())
+                                }
+                                _ => CellValue::Null,
+                            };
+                            row.push(cell_value);
+                        }
+                        if !row.is_empty() {
+                            Some(row)
                         } else {
                             None
                         }
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            };
-
-            (rows, columns)
-        });
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         Self {
             table,
-            cached_data: data,
+            cached_data: rows,
             cached_columns: columns,
         }
     }

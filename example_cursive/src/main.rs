@@ -1,20 +1,18 @@
-use dataset_ui_adapters::{cursive_adapter::CursiveTableApp, TableStore, VantageTableAdapter};
 use bakery_model3::*;
+use dataset_ui_adapters::{cursive_adapter::CursiveTableApp, TableStore, VantageTableAdapter};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Connect to SurrealDB and get client table in a separate runtime
-    let rt = tokio::runtime::Runtime::new()?;
-    let client_table = rt.block_on(async {
-        bakery_model3::connect_surrealdb().await?;
-        Ok::<_, anyhow::Error>(Client::table())
-    })?;
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Connect to SurrealDB and get client table
+    bakery_model3::connect_surrealdb().await?;
+    let client_table = Client::table();
 
     // Create the dataset adapter and table store
-    let dataset = VantageTableAdapter::new(client_table);
+    let dataset = VantageTableAdapter::new(client_table).await;
     let store = TableStore::new(dataset);
 
     // Create and run the Cursive app
-    let app = CursiveTableApp::new(store)?;
+    let app = CursiveTableApp::new(store).await?;
 
     println!("Starting Bakery Model 3 - Cursive Client List...");
     println!("Controls: ↑/↓ navigate, Enter to select, q to quit");

@@ -22,7 +22,7 @@ impl TableApp {
             Client::table()
         });
 
-        let dataset = VantageTableAdapter::new(client_table);
+        let dataset = rt.block_on(async { VantageTableAdapter::new(client_table).await });
         let store = TableStore::new(dataset);
         let delegate = GpuiTableDelegate::new(store);
         let table = cx.new(|cx| Table::new(delegate, window, cx).stripe(true).border(true));

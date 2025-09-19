@@ -19,7 +19,9 @@ serde_json = "1.0"
 dataset-ui-adapters = { path = "../../vantage-ui-adapters", features = [
     "tauri",
 ] }
+bakery_model3 = { path = "../../bakery_model3" }
 tokio = { version = "1.47", features = ["macros", "rt-multi-thread"] }
+anyhow = "1.0"
 
 [features]
 default = []
