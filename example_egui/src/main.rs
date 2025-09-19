@@ -1,5 +1,5 @@
-use dataset_ui_adapters::{egui_adapter::EguiTable, TableStore, VantageTableAdapter};
 use bakery_model3::*;
+use dataset_ui_adapters::{egui_adapter::EguiTable, TableStore, VantageTableAdapter};
 use eframe::egui;
 
 struct TableApp {

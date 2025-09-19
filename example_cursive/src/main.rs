@@ -1,5 +1,5 @@
-use dataset_ui_adapters::{cursive_adapter::CursiveTableApp, TableStore, VantageTableAdapter};
 use bakery_model3::*;
+use dataset_ui_adapters::{cursive_adapter::CursiveTableApp, TableStore, VantageTableAdapter};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

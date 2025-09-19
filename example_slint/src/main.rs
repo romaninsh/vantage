@@ -1,5 +1,5 @@
-use dataset_ui_adapters::{slint_adapter::SlintTable, TableStore, VantageTableAdapter};
 use bakery_model3::*;
+use dataset_ui_adapters::{slint_adapter::SlintTable, TableStore, VantageTableAdapter};
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use std::rc::Rc;
 

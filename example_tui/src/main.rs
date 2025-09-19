@@ -1,7 +1,7 @@
+use bakery_model3::*;
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use dataset_ui_adapters::{ratatui_adapter::RatatuiTableAdapter, TableStore, VantageTableAdapter};
-use bakery_model3::*;
 use ratatui::{
     layout::{Constraint, Layout, Margin, Rect},
     style::{Color, Style},
