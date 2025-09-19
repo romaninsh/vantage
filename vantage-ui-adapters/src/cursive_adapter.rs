@@ -112,7 +112,7 @@ impl<D: DataSet + 'static> CursiveTableAdapter<D> {
 
     pub fn into_view(self) -> impl View {
         LinearLayout::vertical()
-            .child(TextView::new("Dataset UI Adapters - Cursive Table Example").center())
+            .child(TextView::new("Bakery Model 3 - Client List").center())
             .child(TextView::new("Use ↑/↓ to navigate, Enter to select, q to quit").center())
             .child(self.table_view.with_name("table").min_size((80, 20)))
     }
@@ -132,6 +132,14 @@ impl<D: DataSet + 'static> CursiveTableAdapter<D> {
 
     pub fn column_count(&self) -> usize {
         self.column_headers.len()
+    }
+
+    pub fn get_column_headers(&self) -> &[String] {
+        &self.column_headers
+    }
+
+    pub fn get_cached_data(&self) -> &[TableRow] {
+        &self.cached_data
     }
 }
 
@@ -155,11 +163,15 @@ impl<D: DataSet + 'static> CursiveTableApp<D> {
         siv.add_global_callback('q', |s| s.quit());
         siv.add_global_callback(Key::Esc, |s| s.quit());
 
+        // Get data before consuming the adapter
+        let column_headers = self.adapter.get_column_headers().to_vec();
+        let cached_data = self.adapter.get_cached_data().to_vec();
+
         // Add the table view
         let view = self.adapter.into_view();
         siv.add_layer(
             Dialog::around(view)
-                .title("Dataset UI Adapters - Cursive")
+                .title("Bakery Model 3 - SurrealDB Clients")
                 .button("Refresh", |s| {
                     // Note: In a real app, you'd want to handle refresh properly
                     s.add_layer(Dialog::info("Refresh functionality would go here"));
@@ -167,10 +179,23 @@ impl<D: DataSet + 'static> CursiveTableApp<D> {
                 .button("Quit", |s| s.quit()),
         );
 
-        // Set up callbacks for the table
-        siv.call_on_name("table", |table: &mut TableView<TableRow, usize>| {
-            table.set_on_select(|_siv, _row, _index| {
-                // Row selection callback - no action needed
+        // Set up callbacks for the table - Enter key to show details
+        siv.call_on_name("table", move |table: &mut TableView<TableRow, usize>| {
+            let headers = column_headers.clone();
+            let data = cached_data.clone();
+            table.set_on_submit(move |siv, _row, index| {
+                if let Some(row_data) = data.get(index) {
+                    let mut details = String::from("Row Details:\n\n");
+                    for (i, header) in headers.iter().enumerate() {
+                        details.push_str(&format!("{}: {}\n", header, row_data.to_column(i)));
+                    }
+                    siv.add_layer(Dialog::text(details).title("Row Information").button(
+                        "Close",
+                        |s| {
+                            s.pop_layer();
+                        },
+                    ));
+                }
             });
         });
 
