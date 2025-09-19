@@ -246,7 +246,7 @@ impl<D: DataSet> TableStore<D> {
 
 /// Adapter for vantage-table to DataSet interface
 pub struct VantageTableAdapter<E: Entity> {
-    table: Table<SurrealDB, E>,
+    _table: Table<SurrealDB, E>,
     cached_data: Vec<TableRow>,
     cached_columns: Vec<ColumnInfo>,
 }
@@ -313,7 +313,7 @@ impl<E: Entity + Send + Sync + 'static> VantageTableAdapter<E> {
         };
 
         Self {
-            table,
+            _table: table,
             cached_data: rows,
             cached_columns: columns,
         }

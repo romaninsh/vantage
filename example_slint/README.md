@@ -1,118 +1,83 @@
 # Slint Table Example
 
-This example demonstrates how to use the `dataset-ui-adapters` crate with the Slint GUI framework to display tabular data using Slint's built-in `StandardTableView` widget.
+A desktop application demonstrating Vantage UI Adapters with the Slint framework, displaying real SurrealDB data.
 
-## Features
+![Slint Example](docs/images/slint.png)
 
-- **StandardTableView Integration**: Uses Slint's native table widget
-- **Data Adapter Pattern**: Demonstrates clean integration with the dataset-ui-adapters framework
-- **Modern Slint 1.8**: Uses the latest Slint version with full feature support
-- **Reactive UI**: Automatic data binding with Slint's reactive architecture
-- **Cross-platform**: Runs on Windows, macOS, and Linux
+## Overview
 
-## Running the Example
+This example shows how to integrate [Vantage UI Adapters](https://github.com/romaninsh/vantage/tree/main/vantage-ui-adapters) with Slint to display client data from SurrealDB in a declarative, native UI desktop application.
 
-Make sure you have Rust installed, then run:
+## Quick Start
 
 ```bash
+# Start SurrealDB and populate with data
+cd ../vantage-surrealdb
+./run.sh
+# In another terminal:
+./ingress.sh
+
+# Run the Slint example
+cd ../example_slint
 cargo run
 ```
 
-## What You'll See
+## Code Example
 
-The application will open a window showing:
-- A clean, professional table interface
-- 4 columns: Name, Calories, Price, Inventory
-- 5 rows of sample product data (flux capacitors, time travel themed items)
-- Native scrolling and selection capabilities
-- Built-in keyboard navigation support
+```rust
+use bakery_model3::*;
+use dataset_ui_adapters::{slint_adapter::SlintTable, TableStore, VantageTableAdapter};
+use slint::{ComponentHandle, Model, ModelRc, VecModel};
 
-## Code Structure
+slint::include_modules!();
 
-- `src/main.rs` - Main application entry point
-- `ui/main.slint` - Slint UI definition with StandardTableView
-- `build.rs` - Build script for Slint compilation
-- Uses `dataset-ui-adapters` with the `slint` feature enabled
+#[tokio::main]
+async fn main() -> Result<(), slint::PlatformError> {
+    // Connect to SurrealDB and get client table
+    bakery_model3::connect_surrealdb().await.expect("Failed to connect to SurrealDB");
 
-### Key Components
+    let client_table = Client::table();
+    let dataset = VantageTableAdapter::new(client_table).await;
+    let store = TableStore::new(dataset);
+    let table = SlintTable::new(store).await;
+    let window = MainWindow::new()?;
 
-#### UI Definition (`main.slint`)
-```slint
-StandardTableView {
-    columns: [
-        { title: "Name" },
-        { title: "Calories" },
-        { title: "Price" },
-        { title: "Inventory" }
-    ];
-    rows: root.table-rows;
+    // Convert adapter data to Slint format
+    let model_rc = table.as_model_rc();
+    let mut slint_rows = Vec::new();
+
+    for i in 0..model_rc.row_count() {
+        if let Some(row) = model_rc.row_data(i) {
+            let standard_items: Vec<slint::StandardListViewItem> = row
+                .cells
+                .iter()
+                .map(|cell| slint::StandardListViewItem::from(cell.as_str()))
+                .collect();
+            let row_model = ModelRc::from(Rc::new(VecModel::from(standard_items)));
+            slint_rows.push(row_model);
+        }
+    }
+
+    let table_model = Rc::new(VecModel::from(slint_rows));
+    window.set_table_rows(ModelRc::from(table_model));
+
+    window.run()
 }
 ```
 
-#### Rust Integration (`main.rs`)
-- Creates `MockProductDataSet` with sample data
-- Uses `SlintTable` adapter to bridge between data and UI
-- Converts adapter data to Slint's `StandardListViewItem` format
-- Uses nested `ModelRc` structure for table rows
+## Features
 
-## Data Flow
+- **Declarative UI**: Built with Slint's declarative markup language
+- **Real Database Data**: Displays actual SurrealDB client records
+- **Native Performance**: Compiled to native code with GPU acceleration
+- **Async Data Loading**: Non-blocking data fetching through Vantage adapters
 
-```
-MockProductDataSet → TableStore → SlintTable → ModelRc<SlintTableRow> → StandardTableView
-```
+## Requirements
 
-## Sample Data
+- SurrealDB server running on `ws://localhost:8000`
+- Rust with Slint dependencies
+- Sample data populated via `vantage-surrealdb/ingress.sh`
 
-The example displays product data including:
-- **Flux Capacitor Cupcake** - 300 calories, $120, 50 in stock
-- **DeLorean Doughnut** - 250 calories, $135, 30 in stock
-- **Time Traveler Tart** - 200 calories, $220, 20 in stock
-- **Enchantment Under the Sea Pie** - 350 calories, $299, 15 in stock
-- **Hoverboard Cookies** - 150 calories, $199, 40 in stock
+## Integration
 
-## Architecture Benefits
-
-### Clean Separation
-- **Data Layer**: Your existing dataset implementations
-- **Adapter Layer**: Handles format conversion and caching
-- **UI Layer**: Pure Slint UI definitions
-
-### Type Safety
-- Rust's type system ensures data consistency
-- Slint's compile-time UI validation
-- No runtime type errors
-
-### Performance
-- Efficient data loading through the adapter pattern
-- Native rendering performance with Slint
-- Memory-efficient reactive updates
-
-## Next Steps
-
-To extend this example for production use:
-
-1. **Real Data Sources**: Replace `MockProductDataSet` with actual data backends
-2. **Interactive Features**: Add editing, sorting, and filtering capabilities
-3. **Custom Styling**: Customize table appearance with Slint's styling system
-4. **Error Handling**: Add proper error handling and loading states
-5. **Async Operations**: Implement async data loading with progress indicators
-
-## Dependencies
-
-- `slint 1.8` - Modern declarative UI framework
-- `dataset-ui-adapters` - Our table adapter framework with `slint` feature
-- `slint-build 1.8` - Build-time Slint compiler
-
-## Technical Notes
-
-### StandardTableView Requirements
-- Expects `[[StandardListViewItem]]` for row data
-- Each row is a `ModelRc<StandardListViewItem>`
-- Columns defined with simple `{ title: "Name" }` structure
-
-### Build Process
-- Slint files are compiled at build time via `build.rs`
-- Generated Rust code provides type-safe UI bindings
-- No runtime parsing or validation overhead
-
-This example showcases the elegance of combining Slint's declarative UI approach with Rust's type safety and the dataset-ui-adapters pattern for clean, maintainable table implementations.
+This example is part of the [Vantage UI Adapters](https://github.com/romaninsh/vantage/tree/main/vantage-ui-adapters) ecosystem, demonstrating how the same data layer works across different UI frameworks.

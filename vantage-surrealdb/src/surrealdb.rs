@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde_json::Value;
-use vantage_expressions::IntoExpressive;
+
 use vantage_expressions::{
     Flatten, OwnedExpression, OwnedExpressionFlattener, protocol::DataSource,
 };
