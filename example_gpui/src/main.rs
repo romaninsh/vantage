@@ -1,5 +1,5 @@
-use dataset_ui_adapters::{gpui_adapter::GpuiTableDelegate, TableStore, VantageTableAdapter};
 use bakery_model3::*;
+use dataset_ui_adapters::{gpui_adapter::GpuiTableDelegate, TableStore, VantageTableAdapter};
 use gpui::*;
 use gpui_component::{table::Table, v_flex, ActiveTheme, Root, StyledExt};
 use tokio::runtime::Runtime;
