@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use crate::{Expr, OwnedExpression};
 
-pub trait Selectable: Send + Sync + Debug {
+pub trait Selectable: Send + Sync + Debug + Into<OwnedExpression> {
     /// Specifies a source for a query. Depending on implementation, can be executed
     /// multiple times. If `source` is expression you might need to use alias.
     fn set_source(&mut self, source: impl Into<Expr>, alias: Option<String>);

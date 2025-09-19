@@ -10,6 +10,7 @@ use vantage_expressions::{
 use surreal_client::SurrealClient;
 use surreal_client::error::Result;
 
+use crate::SurrealSelect;
 use crate::operation::Expressive;
 
 // Create a wrapper for shared SurrealDB state
@@ -38,6 +39,10 @@ impl SurrealDB {
             Value::Array(vec) => Ok(vec),
             other => Ok(vec![other]),
         }
+    }
+
+    pub fn select(&self) -> SurrealSelect {
+        SurrealSelect::new()
     }
 
     /// Convert {} placeholders to $_arg1, $_arg2, etc. and extract parameters
@@ -85,6 +90,10 @@ impl SurrealDB {
 
 // Implement DataSource trait for OwnedExpression
 impl DataSource<OwnedExpression> for SurrealDB {
+    fn select(&self) -> impl vantage_expressions::protocol::selectable::Selectable {
+        SurrealSelect::new()
+    }
+
     async fn execute(&self, expr: &OwnedExpression) -> Value {
         let (query_str, params) = self.prepare_query(expr);
         let params_json = serde_json::to_value(params).unwrap_or(serde_json::json!({}));
