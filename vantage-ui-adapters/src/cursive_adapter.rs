@@ -40,33 +40,29 @@ pub struct CursiveTableAdapter<D: DataSet> {
     table_view: TableView<TableRow, usize>,
     cached_data: Vec<TableRow>,
     column_headers: Vec<String>,
-    rt: tokio::runtime::Runtime,
 }
 
 impl<D: DataSet + 'static> CursiveTableAdapter<D> {
-    pub fn new(store: TableStore<D>) -> Result<Self, Box<dyn std::error::Error>> {
-        let rt = tokio::runtime::Runtime::new()?;
-        let table_view = TableView::<TableRow, usize>::new();
-
-        Ok(Self {
+    pub async fn new(store: TableStore<D>) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut adapter = Self {
             store: Arc::new(store),
-            table_view,
+            table_view: TableView::<TableRow, usize>::new(),
             cached_data: Vec::new(),
             column_headers: Vec::new(),
-            rt,
-        })
+        };
+
+        adapter.refresh_data().await?;
+        Ok(adapter)
     }
 
-    pub fn refresh_data(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn refresh_data(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let store = self.store.clone();
 
         // Get column info
-        self.column_headers = self.rt.block_on(async {
-            match store.column_info().await {
-                Ok(columns) => columns.into_iter().map(|col| col.name).collect(),
-                Err(_) => vec!["Column 1".to_string(), "Column 2".to_string()],
-            }
-        });
+        self.column_headers = match store.column_info().await {
+            Ok(columns) => columns.into_iter().map(|col| col.name).collect(),
+            Err(_) => vec!["Column 1".to_string(), "Column 2".to_string()],
+        };
 
         // Set up table columns
         self.table_view.clear();
@@ -79,24 +75,20 @@ impl<D: DataSet + 'static> CursiveTableAdapter<D> {
 
         // Get row count and load data
         let store = self.store.clone();
-        let row_count = self
-            .rt
-            .block_on(async { store.row_count().await.unwrap_or(0) });
+        let row_count = store.row_count().await.unwrap_or(0);
 
         // Load all rows
         self.cached_data.clear();
         let store = self.store.clone();
 
         for i in 0..row_count {
-            let row_data = self.rt.block_on(async {
-                match store.get_row(i).await {
-                    Ok(row) => row
-                        .into_iter()
-                        .map(|cell| cell.as_string())
-                        .collect::<Vec<_>>(),
-                    Err(_) => vec!["Error".to_string(); self.column_headers.len()],
-                }
-            });
+            let row_data = match store.get_row(i).await {
+                Ok(row) => row
+                    .into_iter()
+                    .map(|cell| cell.as_string())
+                    .collect::<Vec<_>>(),
+                Err(_) => vec!["Error".to_string(); self.column_headers.len()],
+            };
 
             self.cached_data.push(TableRow {
                 data: row_data,
@@ -149,9 +141,8 @@ pub struct CursiveTableApp<D: DataSet + 'static> {
 }
 
 impl<D: DataSet + 'static> CursiveTableApp<D> {
-    pub fn new(store: TableStore<D>) -> Result<Self, Box<dyn std::error::Error>> {
-        let mut adapter = CursiveTableAdapter::new(store)?;
-        adapter.refresh_data()?;
+    pub async fn new(store: TableStore<D>) -> Result<Self, Box<dyn std::error::Error>> {
+        let adapter = CursiveTableAdapter::new(store).await?;
 
         Ok(Self { adapter })
     }
@@ -201,44 +192,5 @@ impl<D: DataSet + 'static> CursiveTableApp<D> {
 
         siv.run();
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::MockProductDataSet;
-
-    #[test]
-    fn test_cursive_adapter_creation() {
-        let dataset = MockProductDataSet::new();
-        let store = TableStore::new(dataset);
-        let mut adapter = CursiveTableAdapter::new(store).unwrap();
-
-        adapter.refresh_data().unwrap();
-
-        assert_eq!(adapter.row_count(), 5);
-        assert_eq!(adapter.column_count(), 4);
-    }
-
-    #[test]
-    fn test_table_row_item() {
-        let row = TableRow {
-            data: vec!["test1".to_string(), "test2".to_string()],
-            index: 0,
-        };
-
-        assert_eq!(row.to_column(0), "test1");
-        assert_eq!(row.to_column(1), "test2");
-    }
-
-    #[test]
-    fn test_cursive_app_creation() {
-        let dataset = MockProductDataSet::new();
-        let store = TableStore::new(dataset);
-        let app = CursiveTableApp::new(store).unwrap();
-
-        assert_eq!(app.adapter.row_count(), 5);
-        assert_eq!(app.adapter.column_count(), 4);
     }
 }

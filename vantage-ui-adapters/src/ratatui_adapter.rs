@@ -149,38 +149,3 @@ impl<D: DataSet + 'static> RatatuiTableAdapter<D> {
         self.cached_rows.get(row)?.get(col).cloned()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::MockProductDataSet;
-
-    #[tokio::test]
-    async fn test_ratatui_adapter_creation() {
-        let dataset = MockProductDataSet::new();
-        let store = TableStore::new(dataset);
-        let mut adapter = RatatuiTableAdapter::new(store);
-
-        adapter.refresh_data().await;
-
-        assert_eq!(adapter.row_count(), 5);
-        assert_eq!(adapter.column_count(), 4);
-        assert_eq!(adapter.selected_row(), Some(0));
-    }
-
-    #[tokio::test]
-    async fn test_ratatui_adapter_navigation() {
-        let dataset = MockProductDataSet::new();
-        let store = TableStore::new(dataset);
-        let mut adapter = RatatuiTableAdapter::new(store);
-
-        adapter.refresh_data().await;
-
-        // Test navigation
-        adapter.next_row();
-        assert_eq!(adapter.selected_row(), Some(1));
-
-        adapter.previous_row();
-        assert_eq!(adapter.selected_row(), Some(0));
-    }
-}

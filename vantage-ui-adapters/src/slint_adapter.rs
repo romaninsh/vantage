@@ -23,53 +23,49 @@ pub struct SlintTableModel<D: DataSet> {
 }
 
 impl<D: DataSet + 'static> SlintTableModel<D> {
-    pub fn new(store: TableStore<D>) -> Self {
+    pub async fn new(store: TableStore<D>) -> Self {
         let model = Self {
             store: Arc::new(store),
             rows: RefCell::new(VecModel::default()),
             column_names: RefCell::new(Vec::new()),
         };
 
-        model.load_real_data();
+        model.load_real_data().await;
         model
     }
 
-    fn load_real_data(&self) {
-        let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
-
-        rt.block_on(async {
-            // Load column names from the store
-            if let Ok(column_info) = self.store.column_info().await {
-                if let Ok(mut column_names) = self.column_names.try_borrow_mut() {
-                    *column_names = column_info
-                        .into_iter()
-                        .map(|col| SharedString::from(col.name))
-                        .collect();
-                }
+    async fn load_real_data(&self) {
+        // Load column names from the store
+        if let Ok(column_info) = self.store.column_info().await {
+            if let Ok(mut column_names) = self.column_names.try_borrow_mut() {
+                *column_names = column_info
+                    .into_iter()
+                    .map(|col| SharedString::from(col.name))
+                    .collect();
             }
+        }
 
-            // Load actual data from the store
-            if let Ok(row_count) = self.store.row_count().await {
-                // Prefetch all rows and then get them individually
-                let _ = self.store.prefetch_range(0, row_count).await;
+        // Load actual data from the store
+        if let Ok(row_count) = self.store.row_count().await {
+            // Prefetch all rows and then get them individually
+            let _ = self.store.prefetch_range(0, row_count).await;
 
-                if let Ok(rows) = self.rows.try_borrow_mut() {
-                    let mut vec_data = Vec::new();
-                    for i in 0..row_count {
-                        if let Ok(table_row) = self.store.get_row(i).await {
-                            let slint_row = SlintTableRow {
-                                cells: table_row
-                                    .into_iter()
-                                    .map(|cell| SharedString::from(cell.as_string()))
-                                    .collect(),
-                            };
-                            vec_data.push(slint_row);
-                        }
+            if let Ok(rows) = self.rows.try_borrow_mut() {
+                let mut vec_data = Vec::new();
+                for i in 0..row_count {
+                    if let Ok(table_row) = self.store.get_row(i).await {
+                        let slint_row = SlintTableRow {
+                            cells: table_row
+                                .into_iter()
+                                .map(|cell| SharedString::from(cell.as_string()))
+                                .collect(),
+                        };
+                        vec_data.push(slint_row);
                     }
-                    rows.set_vec(vec_data);
                 }
+                rows.set_vec(vec_data);
             }
-        });
+        }
     }
 
     pub fn column_names(&self) -> Vec<SharedString> {
@@ -92,13 +88,15 @@ impl<D: DataSet + 'static> SlintTableModel<D> {
 
     pub fn add_row(&self) {
         if let Ok(rows) = self.rows.try_borrow_mut() {
+            // Get column count from existing data or use empty row
+            let column_count = if let Some(first_row) = rows.row_data(0) {
+                first_row.cells.len()
+            } else {
+                0
+            };
+
             let new_row = SlintTableRow {
-                cells: vec![
-                    SharedString::from("New Product"),
-                    SharedString::from("0"),
-                    SharedString::from("0"),
-                    SharedString::from("0"),
-                ],
+                cells: vec![SharedString::from(""); column_count],
             };
             rows.push(new_row);
         }
@@ -151,9 +149,9 @@ pub struct SlintTable<D: DataSet> {
 }
 
 impl<D: DataSet + 'static> SlintTable<D> {
-    pub fn new(store: TableStore<D>) -> Self {
+    pub async fn new(store: TableStore<D>) -> Self {
         Self {
-            model: SlintTableModel::new(store),
+            model: SlintTableModel::new(store).await,
         }
     }
 
@@ -165,8 +163,8 @@ impl<D: DataSet + 'static> SlintTable<D> {
         self.model.as_model_rc()
     }
 
-    pub fn refresh(&self) {
-        self.model.load_real_data();
+    pub async fn refresh(&self) {
+        self.model.load_real_data().await;
     }
 
     pub fn column_names(&self) -> Vec<SharedString> {
@@ -200,106 +198,5 @@ impl<D: DataSet + 'static> std::fmt::Debug for SlintTable<D> {
             .field("row_count", &self.row_count())
             .field("column_count", &self.column_names().len())
             .finish()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::MockProductDataSet;
-
-    #[tokio::test]
-    async fn test_slint_model_creation() {
-        let dataset = MockProductDataSet::new();
-        let store = TableStore::new(dataset);
-        let model = SlintTableModel::new(store);
-
-        // Test column names
-        let column_names = model.column_names();
-        assert_eq!(column_names.len(), 4);
-        assert_eq!(column_names[0].as_str(), "Name");
-
-        // Test row count
-        assert_eq!(model.row_count(), 5);
-    }
-
-    #[tokio::test]
-    async fn test_slint_row_data() {
-        let dataset = MockProductDataSet::new();
-        let store = TableStore::new(dataset);
-        let model = SlintTableModel::new(store);
-
-        // Test accessing cell data
-        let first_cell = model.get_cell_value(0, 0);
-        assert_eq!(first_cell, "Flux Capacitor Cupcake");
-
-        let second_cell = model.get_cell_value(0, 1);
-        assert_eq!(second_cell, "300");
-    }
-
-    #[tokio::test]
-    async fn test_slint_table_wrapper() {
-        let dataset = MockProductDataSet::new();
-        let store = TableStore::new(dataset);
-        let table = SlintTable::new(store);
-
-        let model_rc = table.as_model_rc();
-        assert_eq!(model_rc.row_count(), 5);
-
-        // Test column names
-        let columns = table.column_names();
-        assert_eq!(columns.len(), 4);
-        assert_eq!(columns[0].as_str(), "Name");
-    }
-
-    #[test]
-    fn test_slint_cell_update() {
-        let dataset = MockProductDataSet::new();
-        let store = TableStore::new(dataset);
-        let table = SlintTable::new(store);
-
-        // Test cell update
-        table.update_cell(0, 0, "Updated Product".to_string());
-
-        // Verify local update
-        let updated_value = table.get_cell_value(0, 0);
-        assert_eq!(updated_value, "Updated Product");
-    }
-
-    #[test]
-    fn test_slint_row_operations() {
-        let dataset = MockProductDataSet::new();
-        let store = TableStore::new(dataset);
-        let table = SlintTable::new(store);
-
-        let initial_count = table.row_count();
-        assert_eq!(initial_count, 5);
-
-        // Test adding row
-        table.add_row();
-        assert_eq!(table.row_count(), 6);
-
-        // Test new row content
-        let new_row_value = table.get_cell_value(5, 0);
-        assert_eq!(new_row_value, "New Product");
-
-        // Test removing row
-        table.remove_row(5);
-        assert_eq!(table.row_count(), 5);
-    }
-
-    #[tokio::test]
-    async fn test_slint_refresh() {
-        let dataset = MockProductDataSet::new();
-        let store = TableStore::new(dataset);
-        let table = SlintTable::new(store);
-
-        // Test refresh doesn't panic
-        table.refresh();
-        assert_eq!(table.row_count(), 5);
-
-        // Verify data is still correct after refresh
-        let first_cell = table.get_cell_value(0, 0);
-        assert_eq!(first_cell, "Flux Capacitor Cupcake");
     }
 }

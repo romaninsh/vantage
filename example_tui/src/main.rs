@@ -1,6 +1,7 @@
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use dataset_ui_adapters::{ratatui_adapter::RatatuiTableAdapter, MockProductDataSet, TableStore};
+use dataset_ui_adapters::{ratatui_adapter::RatatuiTableAdapter, TableStore, VantageTableAdapter};
+use bakery_model3::*;
 use ratatui::{
     layout::{Constraint, Layout, Margin, Rect},
     style::{Color, Style},
@@ -11,7 +12,7 @@ use ratatui::{
 
 const INFO_TEXT: [&str; 2] = [
     "(Esc) quit | (↑) move up | (↓) move down",
-    "Dataset UI Adapters - Ratatui Example",
+    "Bakery Model 3 - Ratatui Client List",
 ];
 
 struct App<D: dataset_ui_adapters::DataSet + 'static> {
@@ -82,7 +83,7 @@ impl<D: dataset_ui_adapters::DataSet + 'static> App<D> {
             .create_table()
             .block(
                 Block::bordered()
-                    .title("Dataset UI Adapters - Table View")
+                    .title("Bakery Model 3 - Client List")
                     .border_type(BorderType::Rounded),
             )
             .style(Style::default().bg(Color::Black));
@@ -121,9 +122,19 @@ impl<D: dataset_ui_adapters::DataSet + 'static> App<D> {
 async fn main() -> Result<()> {
     color_eyre::install()?;
 
+    // Connect to SurrealDB and get client table
+    bakery_model3::connect_surrealdb()
+        .await
+        .expect("Failed to connect to SurrealDB");
+    let client_table = Client::table();
+
     // Create the dataset and table store
-    let dataset = MockProductDataSet::new();
+    let dataset = VantageTableAdapter::new(client_table).await;
     let store = TableStore::new(dataset);
+
+    println!("Starting Bakery Model 3 - Ratatui Client List...");
+    println!("Controls: ↑/↓ navigate, q/Esc to quit, r to refresh");
+    println!("Real SurrealDB data using Vantage 0.3 architecture");
 
     // Create and run the app
     let terminal = ratatui::init();

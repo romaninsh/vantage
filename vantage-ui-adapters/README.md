@@ -1,28 +1,17 @@
-# Dataset UI Adapters
+# Vantage UI Adapters
 
-A Rust crate providing universal table data adapters for major UI frameworks. This crate implements a layered architecture that bridges between your data layer and various UI framework table components, with intelligent caching and async data loading.
+Universal table data adapters for major Rust UI frameworks. This crate bridges between data sources and UI framework table components, with intelligent caching and async data loading.
 
-## Architecture
+## Screenshots
 
-```
-┌─────────────────┐    ┌──────────────┐    ┌─────────────────────┐
-│   Your DataSet  │───▶│ TableStore   │───▶│ Framework Adapters  │
-│   (Dry/Remote)  │    │ (Caching)    │    │ (egui, GPUI, etc.)  │
-└─────────────────┘    └──────────────┘    └─────────────────────┘
-```
-
-- **DataSet**: Your existing dry dataset that can query but never caches
-- **TableStore**: Intermediate caching layer that handles smart querying and data storage
-- **Framework Adapters**: UI framework-specific implementations
-
-## Supported UI Frameworks
-
-- **egui** - Immediate mode GUI with `egui-data-table` integration
-- **GPUI** - GPU-accelerated UI framework (from Zed team)
-- **Slint** - Declarative UI toolkit with native performance
-- **Tauri** - Web-based desktop apps with Rust backend
-- **Ratatui** - Terminal-based UI framework for modern TUI applications
-- **Cursive** - Terminal UI framework with `cursive_table_view` integration
+| Framework                             | Screenshot                          |
+| ------------------------------------- | ----------------------------------- |
+| **egui** - Immediate mode GUI         | ![egui](docs/images/egui.png)       |
+| **GPUI** - GPU-accelerated UI         | ![gpui](docs/images/gpui.png)       |
+| **Slint** - Declarative UI toolkit    | ![slint](docs/images/slint.png)     |
+| **Tauri** - Web-based desktop apps    | ![tauri](docs/images/tauri.png)     |
+| **Ratatui** - Terminal UI framework   | ![tui](docs/images/tui.png)         |
+| **Cursive** - Terminal UI with tables | ![cursive](docs/images/cursive.png) |
 
 ## Quick Start
 
@@ -30,229 +19,222 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-dataset-ui-adapters = { path = ".", features = ["egui"] }
-# Or for terminal UI:
-# dataset-ui-adapters = { path = ".", features = ["ratatui"] }
-# dataset-ui-adapters = { path = ".", features = ["cursive"] }
+vantage-ui-adapters = { path = ".", features = ["egui"] }
+bakery_model3 = { path = "../bakery_model3" }
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
 ```
 
-Basic usage:
+Example usage:
 
 ```rust
-use dataset_ui_adapters::*;
+use vantage_ui_adapters::{egui_adapter::EguiTable, TableStore, VantageTableAdapter};
+use bakery_model3::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 1. Create your dataset (implements DataSet trait)
-    let dataset = MockProductDataSet::new();
+    // Connect to SurrealDB and get client table
+    bakery_model3::connect_surrealdb().await?;
+    let client_table = Client::table();
 
-    // 2. Wrap in TableStore for caching
-    let store = TableStore::new(dataset).with_page_size(100);
+    // Create adapter and table
+    let client_table_adapter = VantageTableAdapter::new(client_table).await;
+    let store = TableStore::new(client_table_adapter);
+    let table = EguiTable::new(store).await;
 
-    // 3. Create framework-specific adapter
-    #[cfg(feature = "egui")]
-    {
-        let mut table = egui_adapter::EguiTable::new(store);
-        // Use with: ui.add(table.show());
-    }
-
+    // Use in your UI framework...
     Ok(())
 }
 ```
 
+## Architecture
+
+- **Vantage Table**: Database tables (e.g. Clients from SurrealDB)
+- **UI Adapter**: Bridge layer with caching and async loading
+- **UI Framework**: Any supported framework (egui, GPUI, Slint, etc.)
+
+## Supported Frameworks
+
+| Framework   | Type        | Columns | Rows | Auto-refresh | Editing |
+| ----------- | ----------- | ------- | ---- | ------------ | ------- |
+| **egui**    | Desktop GUI | ✅      | ✅   | ❌           | ❌      |
+| **GPUI**    | GPU Desktop | ✅      | ✅   | ❌           | ❌      |
+| **Slint**   | Native UI   | ✅      | ✅   | ❌           | ❌      |
+| **Tauri**   | Web Desktop | ✅      | ✅   | ❌           | ❌      |
+| **Ratatui** | Terminal    | ✅      | ✅   | ❌           | ❌      |
+| **Cursive** | Terminal    | ✅      | ✅   | ❌           | ❌      |
+
+## Framework Usage
+
+### egui
+
+```rust
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client_table = Client::table();
+    let client_table_adapter = VantageTableAdapter::new(client_table).await;
+    let store = TableStore::new(client_table_adapter);
+    let table = EguiTable::new(store).await;
+
+    let app = TableApp { table };
+    eframe::run_native("Client List", options, Box::new(|_cc| Ok(Box::new(app))))?;
+    Ok(())
+}
+```
+
+### GPUI
+
+```rust
+#[tokio::main]
+async fn main() {
+    let client_table = Client::table();
+    let client_table_adapter = VantageTableAdapter::new(client_table).await;
+    let store = TableStore::new(client_table_adapter);
+    let table = GpuiTable::new(store).await;
+
+    gpui::App::new().run(move |cx: &mut AppContext| {
+        let app = TableApp { table };
+        cx.open_window(WindowOptions::default(), |cx| app.into());
+    });
+}
+```
+
+### Slint
+
+```rust
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client_table = Client::table();
+    let client_table_adapter = VantageTableAdapter::new(client_table).await;
+    let store = TableStore::new(client_table_adapter);
+    let table = SlintTable::new(store).await;
+
+    let app = MainWindow::new()?;
+    app.set_table_model(table.as_model_rc());
+    app.run()?;
+    Ok(())
+}
+```
+
+### Tauri
+
+```rust
+#[tokio::main]
+async fn main() {
+    let client_table = Client::table();
+    let client_table_adapter = VantageTableAdapter::new(client_table).await;
+    let store = TableStore::new(client_table_adapter);
+    let table = TauriTable::new(store).await;
+
+    tauri::Builder::default()
+        .manage(table)
+        .invoke_handler(tauri::generate_handler![get_table_data, get_table_columns])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+```
+
+### Ratatui
+
+```rust
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client_table = Client::table();
+    let client_table_adapter = VantageTableAdapter::new(client_table).await;
+    let store = TableStore::new(client_table_adapter);
+    let mut adapter = RatatuiTableAdapter::new(store);
+    adapter.refresh_data().await;
+
+    loop {
+        terminal.draw(|f| {
+            let table = adapter.create_table();
+            f.render_stateful_widget(table, f.area(), adapter.state_mut());
+        })?;
+
+        if let Event::Key(key) = event::read()? {
+            adapter.handle_key_event(key);
+        }
+    }
+}
+```
+
+### Cursive
+
+```rust
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client_table = Client::table();
+    let client_table_adapter = VantageTableAdapter::new(client_table).await;
+    let store = TableStore::new(client_table_adapter);
+    let app = CursiveTableApp::new(store).await?;
+    app.run()?;
+    Ok(())
+}
+```
+
+## Data Integration
+
+The adapters work with any data source that implements the `DataSet` trait. The included `VantageTableAdapter` connects to SurrealDB via the vantage-table ecosystem:
+
+```rust
+// Automatic integration with bakery_model3
+let client_table = Client::table();  // From bakery_model3
+let client_table_adapter = VantageTableAdapter::new(client_table).await;
+let store = TableStore::new(client_table_adapter);
+```
+
 ## Features
 
-### Core Features
-
-- **Async Data Loading**: Non-blocking data fetching with caching
+- **Async Data Loading**: Non-blocking data fetching
 - **Smart Caching**: Automatic caching with configurable page sizes
-- **Cell-Level Access**: Efficient individual cell value retrieval
-- **Mutation Support**: Update, insert, and delete operations
-- **Column Metadata**: Rich column information with type and edit capabilities
-
-### Framework-Specific Features
-
-| Framework | Virtualization | Editing | Sorting | Filtering | Selection |
-| --------- | -------------- | ------- | ------- | --------- | --------- |
-| egui      | ✅ Built-in    | ✅ Yes  | ❌ No   | ❌ No     | ✅ Yes    |
-| GPUI      | ✅ GPU-based   | ✅ Yes  | ❌ No   | ❌ No     | ✅ Yes    |
-| Slint     | ✅ Built-in    | ✅ Yes  | ❌ No   | ❌ No     | ✅ Yes    |
-| Tauri     | 🌐 Web-based   | ✅ Yes  | 🌐 JS   | 🌐 JS     | 🌐 JS     |
-| Ratatui   | 📜 Terminal    | ❌ No   | ❌ No   | ❌ No     | ✅ Yes    |
-| Cursive   | 📜 Terminal    | ❌ No   | ✅ Yes  | ❌ No     | ✅ Yes    |
+- **Real Database Integration**: Works with SurrealDB via vantage-table
+- **Cross-Framework**: Same data layer works across all UI frameworks
+- **Type Safety**: Full Rust type safety throughout the stack
 
 ## Examples
 
-### egui Integration
-
-```rust
-use dataset_ui_adapters::egui_adapter::*;
-
-let store = TableStore::new(your_dataset);
-let mut table = EguiTable::new(store);
-
-// In your egui update loop:
-ui.add(table.show());
-```
-
-### Slint Integration
-
-```rust
-use dataset_ui_adapters::slint_adapter::*;
-
-let store = TableStore::new(your_dataset);
-let table = SlintTable::new(store);
-let model = table.as_model_rc();
-
-// In your .slint file:
-// StandardTableView { rows: model }
-```
-
-### Ratatui Integration
-
-```rust
-use dataset_ui_adapters::ratatui_adapter::*;
-
-let store = TableStore::new(your_dataset);
-let mut adapter = RatatuiTableAdapter::new(store);
-adapter.refresh_data().await;
-
-// In your TUI render loop:
-let table = adapter.create_table();
-frame.render_stateful_widget(table, area, adapter.state_mut());
-```
-
-### Cursive Integration
-
-```rust
-use dataset_ui_adapters::cursive_adapter::*;
-
-let store = TableStore::new(your_dataset);
-let app = CursiveTableApp::new(store)?;
-app.run()?;  // Runs complete TUI application
-```
-
-### Tauri Integration
-
-```rust
-use dataset_ui_adapters::tauri_adapter::*;
-
-let store = TableStore::new(your_dataset);
-let table = TauriTable::new(store);
-
-tauri::Builder::default()
-    .manage(table.manager().clone())
-    .invoke_handler(tauri::generate_handler![
-        get_table_columns,
-        get_table_data,
-        update_table_cell,
-        get_table_row_count
-    ])
-    .run(tauri::generate_context!())?;
-```
-
-## Implementing DataSet
-
-To use this crate with your own data, implement the `DataSet` trait:
-
-```rust
-use dataset_ui_adapters::*;
-
-struct MyDataSet {
-    // Your data source (database connection, API client, etc.)
-}
-
-#[async_trait::async_trait]
-impl DataSet for MyDataSet {
-    async fn row_count(&self) -> Result<usize> {
-        // Return total number of rows
-        todo!()
-    }
-
-    async fn column_info(&self) -> Result<Vec<ColumnInfo>> {
-        // Return column metadata
-        todo!()
-    }
-
-    async fn fetch_rows(&self, start: usize, count: usize) -> Result<Vec<TableRow>> {
-        // Fetch a range of rows efficiently
-        todo!()
-    }
-
-    async fn fetch_row(&self, index: usize) -> Result<TableRow> {
-        // Fetch a single row
-        todo!()
-    }
-
-    // Optional: implement mutation methods
-    async fn update_cell(&self, row: usize, col: usize, value: CellValue) -> Result<()> {
-        todo!()
-    }
-}
-```
-
-## Performance Considerations
-
-### Caching Strategy
-
-- **Page-based loading**: Configurable page sizes (default: 100 rows)
-- **LRU-style cache**: Most recently accessed data stays in memory
-- **Smart prefetching**: Anticipates scroll patterns for smooth UI
-
-### Framework Optimizations
-
-- **egui**: Leverages built-in virtualization for large datasets
-- **GPUI**: GPU-accelerated rendering with efficient diff calculations
-- **Slint**: Model-based reactivity with automatic change propagation
-- **Tauri**: JSON serialization optimizations and pagination
-- **Ratatui**: Lightweight terminal rendering with minimal memory usage
-- **Cursive**: Built-in table widget with sorting and async data loading
-
-### Memory Usage
-
-- Configurable cache limits
-- On-demand loading reduces memory footprint
-- Efficient cell value storage with copy-on-write semantics
-
-## Testing
-
-Run tests for all frameworks:
+Run the examples to see each framework in action:
 
 ```bash
-cargo test --all-features
+# Desktop examples
+cd example_egui && cargo run
+cd example_gpui && cargo run
+cd example_slint && cargo run
+cd example_tauri && cargo run dev
+
+# Terminal examples
+cd example_tui && cargo run
+cd example_cursive && cargo run
 ```
 
-Run tests for specific framework:
+## Requirements
+
+- SurrealDB server running on `ws://localhost:8000`
+- Rust 1.70+ with async/await support
+- UI framework dependencies (installed automatically with features)
+
+### Setting up SurrealDB
+
+The `vantage-surrealdb` crate provides setup scripts to get you started quickly:
 
 ```bash
-cargo test --features egui
+cd vantage-surrealdb
+
+# Start SurrealDB server
+./run.sh
+
+# In another terminal, populate with sample data
+./ingress.sh
 ```
 
-## Examples
-
-Comprehensive example with all frameworks:
-
-```bash
-cargo run --example comprehensive_example --all-features
-```
-
-Framework-specific examples:
-
-```bash
-cargo run --example egui_example --features egui
-cargo run --example slint_example --features slint
-cargo run --example tui_example --features ratatui
-cargo run --example cursive_example --features cursive
-# etc.
-```
+This will start SurrealDB on `ws://localhost:8000` and populate it with the bakery model data (clients, orders, products, etc.) that all the UI examples use.
 
 ## Contributing
 
-1. Add new framework support by implementing the framework's table traits
-2. All adapters should follow the same patterns established in existing code
-3. Include comprehensive tests for new adapters
-4. Update documentation and examples
+1. Each framework adapter follows the same async loading pattern
+2. All examples use the same `bakery_model3` data source
+3. No mock data - all adapters work with real SurrealDB data
+4. Maintain consistent API across frameworks where possible
 
 ## License
 
-This project is licensed under the MIT License.
+MIT License - see LICENSE file for details.

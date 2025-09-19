@@ -1,10 +1,17 @@
-use dataset_ui_adapters::{tauri_adapter::TauriTable, MockProductDataSet, TableStore};
+use dataset_ui_adapters::{tauri_adapter::TauriTable, TableStore, VantageTableAdapter};
+use bakery_model3::*;
 
 #[tokio::main]
 async fn main() {
-    let dataset = MockProductDataSet::new();
+    // Connect to SurrealDB and get client table
+    bakery_model3::connect_surrealdb()
+        .await
+        .expect("Failed to connect to SurrealDB");
+
+    let client_table = Client::table();
+    let dataset = VantageTableAdapter::new(client_table).await;
     let store = TableStore::new(dataset);
-    let table = TauriTable::new(store);
+    let table = TauriTable::new(store).await;
 
     tauri::Builder::default()
         .manage(table)
@@ -15,7 +22,7 @@ async fn main() {
 
 #[tauri::command]
 async fn get_table_data(
-    table: tauri::State<'_, TauriTable<MockProductDataSet>>,
+    table: tauri::State<'_, TauriTable<VantageTableAdapter<Client>>>,
     page: Option<usize>,
     page_size: Option<usize>,
 ) -> Result<serde_json::Value, String> {
@@ -46,7 +53,7 @@ async fn get_table_data(
 
 #[tauri::command]
 async fn get_table_columns(
-    table: tauri::State<'_, TauriTable<MockProductDataSet>>,
+    table: tauri::State<'_, TauriTable<VantageTableAdapter<Client>>>,
 ) -> Result<Vec<String>, String> {
     let columns = table.column_names();
     Ok(columns)

@@ -1,30 +1,30 @@
-use dataset_ui_adapters::{egui_adapter::EguiTable, MockProductDataSet, TableStore};
+use dataset_ui_adapters::{egui_adapter::EguiTable, TableStore, VantageTableAdapter};
+use bakery_model3::*;
 use eframe::egui;
 
 struct TableApp {
-    table: EguiTable<MockProductDataSet>,
+    table: EguiTable<VantageTableAdapter<Client>>,
 }
 
-impl Default for TableApp {
-    fn default() -> Self {
-        // Create mock dataset
-        let dataset = MockProductDataSet::new();
+impl TableApp {
+    async fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        bakery_model3::connect_surrealdb().await?;
+        let client_table = Client::table();
+        let dataset = VantageTableAdapter::new(client_table).await;
         let store = TableStore::new(dataset);
-        let table = EguiTable::new(store);
-
-        Self { table }
+        let table = EguiTable::new(store).await;
+        Ok(Self { table })
     }
 }
 
 impl eframe::App for TableApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Dataset UI Adapters - egui Table Example");
+            ui.heading("Bakery Model 3 - egui Client List");
             ui.separator();
 
             ui.add_space(10.0);
 
-            // Display the table
             self.table.show(ui);
         });
     }
@@ -35,14 +35,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([800.0, 600.0])
-            .with_title("Dataset UI Adapters - egui Example"),
+            .with_title("Bakery Model 3 - egui Client List"),
         ..Default::default()
     };
 
+    let app = TableApp::new().await?;
+
     eframe::run_native(
-        "Dataset UI Adapters - egui Example",
+        "Bakery Model 3 - egui Client List",
         options,
-        Box::new(|_cc| Ok(Box::new(TableApp::default()))),
+        Box::new(move |_cc| Ok(Box::new(app))),
     )?;
 
     Ok(())

@@ -2,24 +2,20 @@ use dataset_ui_adapters::{slint_adapter::SlintTable, TableStore, VantageTableAda
 use bakery_model3::*;
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use std::rc::Rc;
-use tokio::runtime::Runtime;
 
 slint::include_modules!();
 
-fn main() -> Result<(), slint::PlatformError> {
+#[tokio::main]
+async fn main() -> Result<(), slint::PlatformError> {
     // Connect to SurrealDB and get client table
-    let rt = Runtime::new().expect("Failed to create tokio runtime");
+    bakery_model3::connect_surrealdb()
+        .await
+        .expect("Failed to connect to SurrealDB");
 
-    let client_table = rt.block_on(async {
-        bakery_model3::connect_surrealdb()
-            .await
-            .expect("Failed to connect to SurrealDB");
-        Client::table()
-    });
-
-    let dataset = VantageTableAdapter::new(client_table);
+    let client_table = Client::table();
+    let dataset = VantageTableAdapter::new(client_table).await;
     let store = TableStore::new(dataset);
-    let table = SlintTable::new(store);
+    let table = SlintTable::new(store).await;
     let window = MainWindow::new()?;
 
     // Convert adapter data to Slint format
