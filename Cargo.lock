@@ -2520,6 +2520,8 @@ dependencies = [
  "thiserror 2.0.16",
  "tokio",
  "tokio-test",
+ "vantage-surrealdb",
+ "vantage-table",
 ]
 
 [[package]]

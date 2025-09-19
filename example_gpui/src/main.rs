@@ -1,16 +1,28 @@
-use dataset_ui_adapters::{gpui_adapter::GpuiTableDelegate, MockProductDataSet, TableStore};
+use bakery_model3::*;
+use dataset_ui_adapters::{gpui_adapter::GpuiTableDelegate, TableStore, VantageTableAdapter};
 use gpui::*;
 use gpui_component::{table::Table, v_flex, ActiveTheme, Root, StyledExt};
+use tokio::runtime::Runtime;
 
 actions!(example_gpui, [Quit]);
 
 struct TableApp {
-    table: Entity<Table<GpuiTableDelegate<MockProductDataSet>>>,
+    table: Entity<Table<GpuiTableDelegate<VantageTableAdapter<Client>>>>,
 }
 
 impl TableApp {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let dataset = MockProductDataSet::new();
+        // Connect to SurrealDB and get client table
+        let rt = Runtime::new().expect("Failed to create tokio runtime");
+
+        let client_table = rt.block_on(async {
+            bakery_model3::connect_surrealdb()
+                .await
+                .expect("Failed to connect to SurrealDB");
+            Client::table()
+        });
+
+        let dataset = VantageTableAdapter::new(client_table);
         let store = TableStore::new(dataset);
         let delegate = GpuiTableDelegate::new(store);
         let table = cx.new(|cx| Table::new(delegate, window, cx).stripe(true).border(true));
@@ -35,12 +47,12 @@ impl Render for TableApp {
                     .text_2xl()
                     .font_bold()
                     .text_color(cx.theme().foreground)
-                    .child("Dataset UI Adapters - GPUI Table Example"),
+                    .child("Bakery Model 3 - GPUI Client List"),
             )
             .child(
                 div()
                     .text_color(cx.theme().muted_foreground)
-                    .child("Basic example showing data table integration with GPUI"),
+                    .child("Real SurrealDB data using Vantage 0.3 architecture"),
             )
             .child(self.table.clone())
     }
@@ -60,7 +72,7 @@ fn main() {
 
         // Set up simple menu with just Quit
         cx.set_menus(vec![Menu {
-            name: "Dataset UI Adapters".into(),
+            name: "Bakery Model 3".into(),
             items: vec![MenuItem::action("Quit", Quit)],
         }]);
 
@@ -72,7 +84,7 @@ fn main() {
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(window_bounds)),
             titlebar: Some(TitlebarOptions {
-                title: Some("Dataset UI Adapters - GPUI Example".into()),
+                title: Some("Bakery Model 3 - Client List".into()),
                 appears_transparent: false,
                 traffic_light_position: None,
             }),

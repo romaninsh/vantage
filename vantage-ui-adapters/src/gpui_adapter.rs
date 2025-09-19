@@ -118,16 +118,19 @@ impl<D: DataSet + 'static> TableDelegate for GpuiTableDelegate<D> {
     }
 
     fn column(&self, col_ix: usize, _cx: &App) -> &Column {
-        static COLUMNS: std::sync::LazyLock<Vec<Column>> = std::sync::LazyLock::new(|| {
-            vec![
-                Column::new("name", "Product Name").width(px(200.)),
-                Column::new("category", "Category").width(px(150.)),
-                Column::new("price", "Price").width(px(100.)),
-                Column::new("stock", "Stock").width(px(80.)),
-            ]
-        });
+        static FALLBACK_COLUMN: std::sync::LazyLock<Column> =
+            std::sync::LazyLock::new(|| Column::new("data", "Data").width(px(150.)));
 
-        &COLUMNS[col_ix]
+        let store = self.store.clone();
+        if let Ok(columns) = self.block_on(async move { store.column_info().await }) {
+            if columns.get(col_ix).is_some() {
+                &FALLBACK_COLUMN
+            } else {
+                &FALLBACK_COLUMN
+            }
+        } else {
+            &FALLBACK_COLUMN
+        }
     }
 
     fn render_th(

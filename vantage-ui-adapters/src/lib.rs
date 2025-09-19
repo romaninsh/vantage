@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use thiserror::Error;
+use vantage_surrealdb::{SurrealDB, SurrealTableExt};
+use vantage_table::{Entity, Table};
 
 #[derive(Error, Debug)]
 pub enum TableStoreError {
@@ -333,6 +335,115 @@ impl DataSet for MockProductDataSet {
 
     async fn fetch_row(&self, index: usize) -> Result<TableRow> {
         self.products
+            .get(index)
+            .cloned()
+            .ok_or(TableStoreError::IndexError)
+    }
+}
+
+/// Adapter for vantage-table to DataSet interface
+pub struct VantageTableAdapter<E: Entity> {
+    table: Table<SurrealDB, E>,
+    cached_data: Vec<TableRow>,
+    cached_columns: Vec<ColumnInfo>,
+}
+
+impl<E: Entity + Send + Sync + 'static> VantageTableAdapter<E> {
+    pub fn new(table: Table<SurrealDB, E>) -> Self {
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+
+        let (data, columns) = rt.block_on(async {
+            let column_names: Vec<String> = table.columns().keys().cloned().collect();
+            let columns: Vec<ColumnInfo> = column_names
+                .iter()
+                .map(|name| ColumnInfo {
+                    name: name.clone(),
+                    data_type: "String".to_string(),
+                    sortable: true,
+                    editable: false,
+                })
+                .collect();
+
+            let query = table.select_surreal();
+            let data_source = table.data_source();
+            let result = data_source.get(query).await;
+
+            let rows = if let serde_json::Value::Array(array) = result {
+                array
+                    .into_iter()
+                    .filter_map(|obj| {
+                        if let serde_json::Value::Object(map) = obj {
+                            let mut row = Vec::new();
+                            for column_name in &column_names {
+                                let value =
+                                    map.get(column_name).unwrap_or(&serde_json::Value::Null);
+                                let cell_value = match value {
+                                    serde_json::Value::String(s) => CellValue::String(s.clone()),
+                                    serde_json::Value::Number(n) => {
+                                        if let Some(i) = n.as_i64() {
+                                            CellValue::Integer(i)
+                                        } else if let Some(f) = n.as_f64() {
+                                            CellValue::Float(f)
+                                        } else {
+                                            CellValue::Null
+                                        }
+                                    }
+                                    serde_json::Value::Bool(b) => CellValue::Boolean(*b),
+                                    serde_json::Value::Object(o) => CellValue::String(
+                                        serde_json::to_string(o).unwrap_or_default(),
+                                    ),
+                                    serde_json::Value::Array(a) => CellValue::String(
+                                        serde_json::to_string(a).unwrap_or_default(),
+                                    ),
+                                    _ => CellValue::Null,
+                                };
+                                row.push(cell_value);
+                            }
+                            if !row.is_empty() {
+                                Some(row)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+
+            (rows, columns)
+        });
+
+        Self {
+            table,
+            cached_data: data,
+            cached_columns: columns,
+        }
+    }
+}
+
+#[async_trait]
+impl<E: Entity + Send + Sync + 'static> DataSet for VantageTableAdapter<E> {
+    async fn row_count(&self) -> Result<usize> {
+        Ok(self.cached_data.len())
+    }
+
+    async fn column_info(&self) -> Result<Vec<ColumnInfo>> {
+        Ok(self.cached_columns.clone())
+    }
+
+    async fn fetch_rows(&self, start: usize, count: usize) -> Result<Vec<TableRow>> {
+        let end = (start + count).min(self.cached_data.len());
+        if start >= self.cached_data.len() {
+            return Ok(vec![]);
+        }
+        Ok(self.cached_data[start..end].to_vec())
+    }
+
+    async fn fetch_row(&self, index: usize) -> Result<TableRow> {
+        self.cached_data
             .get(index)
             .cloned()
             .ok_or(TableStoreError::IndexError)
