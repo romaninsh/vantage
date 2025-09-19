@@ -24,4 +24,53 @@ pub trait Selectable: Send + Sync + Debug + Into<OwnedExpression> {
     fn is_distinct(&self) -> bool;
     fn get_limit(&self) -> Option<i64>;
     fn get_skip(&self) -> Option<i64>;
+
+    // Default implementations for builder-style methods
+    fn with_source(mut self, source: impl Into<Expr>) -> Self
+    where
+        Self: Sized,
+    {
+        Self::set_source(&mut self, source, None);
+        self
+    }
+
+    fn with_source_as(mut self, source: impl Into<Expr>, alias: impl Into<String>) -> Self
+    where
+        Self: Sized,
+    {
+        Self::set_source(&mut self, source, Some(alias.into()));
+        self
+    }
+
+    fn with_condition(mut self, condition: OwnedExpression) -> Self
+    where
+        Self: Sized,
+    {
+        Self::add_where_condition(&mut self, condition);
+        self
+    }
+
+    fn with_order(mut self, field_or_expr: impl Into<Expr>, ascending: bool) -> Self
+    where
+        Self: Sized,
+    {
+        Self::add_order_by(&mut self, field_or_expr, ascending);
+        self
+    }
+
+    fn with_field(mut self, field: impl Into<String>) -> Self
+    where
+        Self: Sized,
+    {
+        Self::add_field(&mut self, field);
+        self
+    }
+
+    fn with_expression(mut self, expression: OwnedExpression, alias: Option<String>) -> Self
+    where
+        Self: Sized,
+    {
+        Self::add_expression(&mut self, expression, alias);
+        self
+    }
 }

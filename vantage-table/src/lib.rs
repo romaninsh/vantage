@@ -31,10 +31,14 @@ use indexmap::IndexMap;
 use std::marker::PhantomData;
 use vantage_expressions::{OwnedExpression, protocol::selectable::Selectable};
 
+pub mod columns;
+pub mod conditions;
 pub mod readable;
 
 /// Re-export DataSource from vantage-expressions for convenience
 pub use vantage_expressions::protocol::datasource::DataSource;
+
+pub use crate::columns::Column;
 
 /// Trait for entities that can be associated with tables
 pub trait Entity {
@@ -44,39 +48,6 @@ pub trait Entity {
 /// Empty entity type for tables without a specific entity
 pub struct EmptyEntity;
 impl Entity for EmptyEntity {}
-
-/// Represents a table column with optional alias
-#[derive(Debug, Clone)]
-pub struct Column {
-    name: String,
-    alias: Option<String>,
-}
-
-impl Column {
-    /// Create a new column with the given name
-    pub fn new(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            alias: None,
-        }
-    }
-
-    /// Set an alias for this column
-    pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
-        self.alias = Some(alias.into());
-        self
-    }
-
-    /// Get the column name
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// Get the column alias if set
-    pub fn alias(&self) -> Option<&str> {
-        self.alias.as_deref()
-    }
-}
 
 /// A table abstraction defined over a datasource and entity
 #[derive(Debug)]
@@ -125,30 +96,9 @@ impl<T: DataSource<OwnedExpression>, E: Entity> Table<T, E> {
             conditions: self.conditions,
         }
     }
-
-    /// Add a column to the table
-    pub fn add_column(&mut self, column: Column) {
-        self.columns.insert(column.name().to_string(), column);
-    }
-
-    /// Add a condition to limit what records the table represents
-    pub fn add_condition(&mut self, condition: OwnedExpression) {
-        self.conditions.push(condition);
-    }
-
     /// Get the table name
     pub fn table_name(&self) -> &str {
         &self.table_name
-    }
-
-    /// Get all columns
-    pub fn columns(&self) -> &IndexMap<String, Column> {
-        &self.columns
-    }
-
-    /// Get all conditions
-    pub fn conditions(&self) -> &[OwnedExpression] {
-        &self.conditions
     }
 
     /// Get the underlying data source

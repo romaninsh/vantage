@@ -148,25 +148,6 @@ impl SurrealSelect {
         self.from = targets;
         self
     }
-
-    pub fn with_source(mut self, source: impl Into<Expr>) -> Self {
-        self.set_source(source, None);
-        self
-    }
-    pub fn with_source_as(mut self, source: impl Into<Expr>, alias: impl Into<String>) -> Self {
-        self.set_source(source, Some(alias.into()));
-        self
-    }
-
-    pub fn with_condition(mut self, condition: OwnedExpression) -> Self {
-        self.add_where_condition(condition);
-        self
-    }
-
-    pub fn with_order(mut self, field_or_expr: impl Into<Expr>, ascending: bool) -> Self {
-        self.add_order_by(field_or_expr, ascending);
-        self
-    }
 }
 
 impl<T: QueryResult> SurrealSelect<T> {
@@ -174,14 +155,7 @@ impl<T: QueryResult> SurrealSelect<T> {
         self.fields = vec![];
         self
     }
-    pub fn with_field(mut self, field: impl Into<String>) -> Self {
-        Selectable::add_field(&mut self, field);
-        self
-    }
-    pub fn with_expression(mut self, expression: OwnedExpression, alias: Option<String>) -> Self {
-        Selectable::add_expression(&mut self, expression, alias);
-        self
-    }
+
     pub fn with_value(mut self) -> Self {
         self.single_value = true;
         self
