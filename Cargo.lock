@@ -924,6 +924,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "bakery_model3"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "surreal-client",
+ "tokio",
+ "vantage-expressions",
+ "vantage-surrealdb",
+ "vantage-table",
+]
+
+[[package]]
 name = "base62"
 version = "2.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
