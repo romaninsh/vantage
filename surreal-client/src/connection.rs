@@ -1,7 +1,7 @@
 //! Connection builder for SurrealDB with authentication and engine creation
 
 use crate::{Engine, Result, SurrealClient, SurrealError, WsEngine};
-use serde::{Deserialize, Serialize};
+
 use serde_json::{Value, json};
 use url::Url;
 

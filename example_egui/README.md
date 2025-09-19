@@ -1,89 +1,72 @@
 # egui Table Example
 
-This example demonstrates how to use the `dataset-ui-adapters` crate with the egui GUI framework to display tabular data using the powerful `egui-data-table` library.
+A desktop application demonstrating Vantage UI Adapters with the egui framework, displaying real SurrealDB data.
 
-## Features
+![egui Example](docs/images/egui.png)
 
-- Professional data table with egui-data-table integration
-- Click-to-edit cells functionality
-- Undo/Redo support (built into egui-data-table)
-- Row duplication and removal capabilities
-- Keyboard navigation
-- Show/Hide/Reorder columns
-- Built-in clipboard support
-- Modern egui 0.32 with latest data table features
+## Overview
 
-## Running the Example
+This example shows how to integrate [Vantage UI Adapters](https://github.com/romaninsh/vantage/tree/main/vantage-ui-adapters) with egui to display client data from SurrealDB in an immediate mode GUI desktop application.
 
-Make sure you have Rust installed, then run:
+## Quick Start
 
 ```bash
+# Start SurrealDB and populate with data
+cd ../vantage-surrealdb
+./run.sh
+# In another terminal:
+./ingress.sh
+
+# Run the egui example
+cd ../example_egui
 cargo run
 ```
 
-## What You'll See
+## Code Example
 
-The application will open a window showing:
-- A header with the application title
-- A professional data table with advanced features
-- 4 columns: Name, Calories, Price, Inventory
-- 5 rows of sample product data (flux capacitors, time travel themed items)
-- A "Refresh Data" button to reload the table
-- Built-in table controls for sorting, editing, and row management
+```rust
+use bakery_model3::*;
+use dataset_ui_adapters::{egui_adapter::EguiTable, TableStore, VantageTableAdapter};
+use eframe::egui;
 
-## Interaction
+struct TableApp {
+    table: EguiTable<VantageTableAdapter<Client>>,
+}
 
-- **Click any cell** to start editing it
-- **Double-click** for advanced editing features
-- **Right-click** for context menu options
-- **Use keyboard shortcuts** for navigation and editing
-- **Drag column headers** to reorder columns
-- **Use built-in controls** for adding/removing rows
-- **Undo/Redo** with Ctrl+Z/Ctrl+Y
+impl TableApp {
+    async fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        bakery_model3::connect_surrealdb().await?;
+        let client_table = Client::table();
+        let dataset = VantageTableAdapter::new(client_table).await;
+        let store = TableStore::new(dataset);
+        let table = EguiTable::new(store).await;
+        Ok(Self { table })
+    }
+}
 
-## Code Structure
+impl eframe::App for TableApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading("Bakery Model 3 - egui Client List");
+            self.table.show(ui);
+        });
+    }
+}
+```
 
-- `src/main.rs` - Main application using eframe
-- Uses `dataset-ui-adapters` with the `egui` feature enabled
-- Implements the `RowViewer` trait for proper data table integration
-- Demonstrates professional table features with minimal code
+## Features
 
-## Key Components
+- **Immediate Mode GUI**: Fast iteration and development with egui
+- **Real Database Data**: Displays actual SurrealDB client records
+- **Cross-Platform**: Runs on Windows, macOS, and Linux
+- **Async Data Loading**: Non-blocking data fetching through Vantage adapters
 
-### EguiTableViewer
-- Implements the `RowViewer` trait required by egui-data-table
-- Handles cell display and editing logic
-- Manages data conversion between CellValue and display formats
+## Requirements
 
-### EguiTable
-- Wraps the DataTable and Viewer for easy usage
-- Provides simple `show()` method for integration
-- Handles data loading and refresh functionality
+- SurrealDB server running on `ws://localhost:8000`
+- Rust with egui dependencies
+- Sample data populated via `vantage-surrealdb/ingress.sh`
 
-## Current Implementation
+## Integration
 
-This example uses hardcoded placeholder data to demonstrate the table functionality. The data includes:
-- Product names (Flux Capacitor Cupcake, DeLorean Doughnut, etc.)
-- Nutritional information (calories)
-- Pricing data
-- Inventory counts
-
-## Next Steps
-
-To extend this example for production use:
-
-1. **Connect Real Data**: Replace placeholder data with actual DataSet implementation
-2. **Async Loading**: Add proper async data loading with loading indicators
-3. **Persistence**: Implement actual data persistence for edits
-4. **Validation**: Add input validation for cell editing
-5. **Custom Styling**: Customize table appearance and behavior
-6. **Advanced Features**: Utilize more egui-data-table features like custom cell renderers
-
-## Dependencies
-
-- `eframe 0.32` - Modern egui application framework
-- `egui 0.32` - Immediate mode GUI library
-- `egui-data-table 0.8` - Professional data table widget
-- `dataset-ui-adapters` - Our table adapter framework
-
-This example showcases the power of combining egui's immediate mode approach with a sophisticated data table component, providing a professional data editing experience.
+This example is part of the [Vantage UI Adapters](https://github.com/romaninsh/vantage/tree/main/vantage-ui-adapters) ecosystem, demonstrating how the same data layer works across different UI frameworks.

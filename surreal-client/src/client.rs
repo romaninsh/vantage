@@ -90,12 +90,6 @@ impl SurrealClient {
         }
     }
 
-    /// Generate the next incremental ID for RPC messages
-    fn next_id(&self) -> u64 {
-        self.incremental_id
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-    }
-
     /// Set a parameter for the session
     pub async fn let_var(&mut self, key: &str, value: Value) -> Result<()> {
         let mut engine = self.engine.lock().await;

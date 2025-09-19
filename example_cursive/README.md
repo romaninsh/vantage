@@ -1,59 +1,73 @@
-# Dataset UI Adapters - Cursive Example
+# Cursive Table Example
 
-This example demonstrates how to use the dataset UI adapters with Cursive for terminal-based table display using the `cursive_table_view` widget.
+A terminal application demonstrating Vantage UI Adapters with the Cursive framework, displaying real SurrealDB data.
 
-## Features
+![Cursive Example](docs/images/cursive.png)
 
-- Interactive terminal table with Cursive TUI framework
-- Sortable columns by clicking on headers
-- Row selection with Enter key
-- Dialog boxes for displaying selected row information
-- Clean, cross-platform terminal interface
+## Overview
 
-## Running the Example
+This example shows how to integrate [Vantage UI Adapters](https://github.com/romaninsh/vantage/tree/main/vantage-ui-adapters) with Cursive to display client data from SurrealDB in an interactive terminal user interface.
+
+## Quick Start
 
 ```bash
+# Start SurrealDB and populate with data
+cd ../vantage-surrealdb
+./run.sh
+# In another terminal:
+./ingress.sh
+
+# Run the Cursive example
+cd ../example_cursive
 cargo run
+```
+
+## Code Example
+
+```rust
+use bakery_model3::*;
+use dataset_ui_adapters::{cursive_adapter::CursiveTableApp, TableStore, VantageTableAdapter};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Connect to SurrealDB and get client table
+    bakery_model3::connect_surrealdb().await?;
+    let client_table = Client::table();
+
+    // Create the dataset adapter and table store
+    let dataset = VantageTableAdapter::new(client_table).await;
+    let store = TableStore::new(dataset);
+
+    // Create and run the Cursive app
+    let app = CursiveTableApp::new(store).await?;
+    app.run()?;
+
+    Ok(())
+}
 ```
 
 ## Controls
 
-- `↑/↓` or `Tab/Shift+Tab` - Navigate between rows
-- `Enter` - Select a row (shows details in a dialog)
-- `Left/Right` - Navigate between columns
-- `q` or `Esc` - Quit the application
-- `Refresh` button - Refresh data (placeholder functionality)
+- **↑/↓ Arrow Keys**: Navigate up/down through table rows
+- **Enter**: Select row (opens dialog with row details)
+- **q**: Quit the application
+- **Mouse Click**: Click column headers to sort by that column
 
-## Architecture
+## Features
 
-The example uses:
+- **Interactive Terminal UI**: Rich terminal interface with mouse support
+- **Real Database Data**: Displays actual SurrealDB client records
+- **Sortable Columns**: Click column headers to sort data
+- **Row Selection**: Select rows to view detailed information
+- **Async Data Loading**: Non-blocking data fetching through Vantage adapters
 
-- `CursiveTableAdapter` - Adapter that bridges the generic `TableStore` with Cursive's TableView widget
-- `TableStore` - Caching layer that manages data fetching and caching
-- `MockProductDataSet` - Sample dataset implementation for demonstration
-- `cursive_table_view` - Third-party widget providing table functionality for Cursive
+## Requirements
 
-## Implementation Details
+- SurrealDB server running on `ws://localhost:8000`
+- Rust with Cursive dependencies
+- Terminal with mouse support (optional)
+- Sample data populated via `vantage-surrealdb/ingress.sh`
 
-The `CursiveTableAdapter` provides:
+## Integration
 
-- Async data loading with caching using embedded Tokio runtime
-- Sortable table columns with automatic type detection (numeric vs. string)
-- Row selection callbacks and event handling
-- Consistent interface with other UI adapters (GPUI, eGUI, Slint, Tauri, Ratatui)
-
-The adapter follows the same pattern as other framework adapters in the project:
-
-1. Wraps a `TableStore<D>` instance
-2. Provides framework-specific rendering methods
-3. Handles user interaction and state management
-4. Maintains data consistency across UI updates
-
-## Key Differences from Other Adapters
-
-- Uses `usize` column identifiers instead of `String` (required by cursive_table_view)
-- Embeds a Tokio runtime for handling async data operations
-- Leverages cursive's built-in dialog system for user interactions
-- Supports column sorting out of the box
-
-This demonstrates how the same data layer can be adapted to work with different TUI frameworks while maintaining consistent behavior and data access patterns.
+This example is part of the [Vantage UI Adapters](https://github.com/romaninsh/vantage/tree/main/vantage-ui-adapters) ecosystem, demonstrating how the same data layer works across different UI frameworks.

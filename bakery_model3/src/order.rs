@@ -73,7 +73,7 @@ pub trait OrderTable {
 }
 
 pub trait OrderTableReports {
-    async fn generate_report(&self) -> Result<String>;
+    fn generate_report(&self) -> impl std::future::Future<Output = Result<String>> + Send;
 }
 
 impl OrderTableReports for Table<SurrealDB, Order> {

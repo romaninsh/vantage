@@ -1,8 +1,7 @@
 use async_trait::async_trait;
 use serde_json::Value;
-use std::any::Any;
 
-use super::{error::Result, rpc::RpcMessage};
+use super::error::Result;
 
 /// Engine trait for HTTP/WebSocket abstraction
 #[async_trait]
