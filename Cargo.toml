@@ -6,6 +6,7 @@ members = [
     "vantage-surrealdb",
     "vantage-mongodb",
     "bakery_model",
+    "bakery_model3",
     "bakery_api",
     "surreal-client",
     # "vantage-admin",
