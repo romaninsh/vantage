@@ -4,6 +4,51 @@ use vantage_expressions::expression::flatten::{Flatten, OwnedExpressionFlattener
 use vantage_expressions::protocol::selectable::Selectable;
 use vantage_expressions::{DataSource, Expr, IntoExpressive, OwnedExpression, expr};
 
+#[derive(Debug, Clone)]
+struct MockSelect;
+
+impl Selectable for MockSelect {
+    fn set_source(&mut self, _source: impl Into<Expr>, _alias: Option<String>) {}
+    fn add_field(&mut self, _field: impl Into<String>) {}
+    fn add_expression(&mut self, _expression: OwnedExpression, _alias: Option<String>) {}
+    fn add_where_condition(&mut self, _condition: OwnedExpression) {}
+    fn set_distinct(&mut self, _distinct: bool) {}
+    fn add_order_by(&mut self, _field_or_expr: impl Into<Expr>, _ascending: bool) {}
+    fn add_group_by(&mut self, _expression: OwnedExpression) {}
+    fn set_limit(&mut self, _limit: Option<i64>, _skip: Option<i64>) {}
+    fn clear_fields(&mut self) {}
+    fn clear_where_conditions(&mut self) {}
+    fn clear_order_by(&mut self) {}
+    fn clear_group_by(&mut self) {}
+    fn has_fields(&self) -> bool {
+        false
+    }
+    fn has_where_conditions(&self) -> bool {
+        false
+    }
+    fn has_order_by(&self) -> bool {
+        false
+    }
+    fn has_group_by(&self) -> bool {
+        false
+    }
+    fn is_distinct(&self) -> bool {
+        false
+    }
+    fn get_limit(&self) -> Option<i64> {
+        None
+    }
+    fn get_skip(&self) -> Option<i64> {
+        None
+    }
+}
+
+impl Into<OwnedExpression> for MockSelect {
+    fn into(self) -> OwnedExpression {
+        expr!("SELECT * FROM mock")
+    }
+}
+
 // Helper function for pattern matching against database mock patterns
 fn find_matching_pattern(
     patterns: &[(String, serde_json::Value)],
@@ -53,51 +98,6 @@ fn test_arc_mutex_with_database_execution() {
                     .map(|(k, v)| (k.to_string(), v))
                     .collect(),
             }
-        }
-    }
-
-    #[derive(Debug, Clone)]
-    struct MockSelect;
-
-    impl Selectable for MockSelect {
-        fn set_source(&mut self, _source: impl Into<Expr>, _alias: Option<String>) {}
-        fn add_field(&mut self, _field: impl Into<String>) {}
-        fn add_expression(&mut self, _expression: OwnedExpression, _alias: Option<String>) {}
-        fn add_where_condition(&mut self, _condition: OwnedExpression) {}
-        fn set_distinct(&mut self, _distinct: bool) {}
-        fn add_order_by(&mut self, _field_or_expr: impl Into<Expr>, _ascending: bool) {}
-        fn add_group_by(&mut self, _expression: OwnedExpression) {}
-        fn set_limit(&mut self, _limit: Option<i64>, _skip: Option<i64>) {}
-        fn clear_fields(&mut self) {}
-        fn clear_where_conditions(&mut self) {}
-        fn clear_order_by(&mut self) {}
-        fn clear_group_by(&mut self) {}
-        fn has_fields(&self) -> bool {
-            false
-        }
-        fn has_where_conditions(&self) -> bool {
-            false
-        }
-        fn has_order_by(&self) -> bool {
-            false
-        }
-        fn has_group_by(&self) -> bool {
-            false
-        }
-        fn is_distinct(&self) -> bool {
-            false
-        }
-        fn get_limit(&self) -> Option<i64> {
-            None
-        }
-        fn get_skip(&self) -> Option<i64> {
-            None
-        }
-    }
-
-    impl Into<OwnedExpression> for MockSelect {
-        fn into(self) -> OwnedExpression {
-            expr!("SELECT * FROM mock")
         }
     }
 
