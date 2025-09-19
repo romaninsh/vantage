@@ -1,5 +1,5 @@
-use dataset_ui_adapters::{tauri_adapter::TauriTable, TableStore, VantageTableAdapter};
 use bakery_model3::*;
+use dataset_ui_adapters::{tauri_adapter::TauriTable, TableStore, VantageTableAdapter};
 
 #[tokio::main]
 async fn main() {

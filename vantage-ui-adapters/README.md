@@ -4,14 +4,14 @@ Universal table data adapters for major Rust UI frameworks. This crate bridges b
 
 ## Screenshots
 
-| Framework                             | Screenshot                          |
-| ------------------------------------- | ----------------------------------- |
-| **egui** - Immediate mode GUI         | ![egui](docs/images/egui.png)       |
-| **GPUI** - GPU-accelerated UI         | ![gpui](docs/images/gpui.png)       |
-| **Slint** - Declarative UI toolkit    | ![slint](docs/images/slint.png)     |
-| **Tauri** - Web-based desktop apps    | ![tauri](docs/images/tauri.png)     |
-| **Ratatui** - Terminal UI framework   | ![tui](docs/images/tui.png)         |
-| **Cursive** - Terminal UI with tables | ![cursive](docs/images/cursive.png) |
+| Framework                                                                                               | Screenshot                          |
+| ------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| [**egui**](https://github.com/romaninsh/vantage/tree/main/example_egui) - Immediate mode GUI            | ![egui](docs/images/egui.png)       |
+| [**GPUI**](https://github.com/romaninsh/vantage/tree/main/example_gpui) - GPU-accelerated UI            | ![gpui](docs/images/gpui.png)       |
+| [**Slint**](https://github.com/romaninsh/vantage/tree/main/example_slint) - Declarative UI toolkit      | ![slint](docs/images/slint.png)     |
+| [**Tauri**](https://github.com/romaninsh/vantage/tree/main/example_tauri) - Web-based desktop apps      | ![tauri](docs/images/tauri.png)     |
+| [**Ratatui**](https://github.com/romaninsh/vantage/tree/main/example_tui) - Terminal UI framework       | ![tui](docs/images/tui.png)         |
+| [**Cursive**](https://github.com/romaninsh/vantage/tree/main/example_cursive) - Terminal UI with tables | ![cursive](docs/images/cursive.png) |
 
 ## Quick Start
 
