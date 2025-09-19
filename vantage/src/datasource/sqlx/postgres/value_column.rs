@@ -6,14 +6,14 @@ use tokio_postgres::types::Format;
 
 use crate::expr;
 use crate::expr_arc;
-use crate::prelude::column::SqlColumn;
 use crate::prelude::Column;
 use crate::prelude::TableAlias;
-use crate::sql::chunk::Chunk;
-use crate::sql::expression::{Expression, ExpressionArc};
+use crate::prelude::column::SqlColumn;
 use crate::sql::Condition;
 use crate::sql::Operations;
 use crate::sql::WrapArc;
+use crate::sql::chunk::Chunk;
+use crate::sql::expression::{Expression, ExpressionArc};
 use crate::traits::column::SqlField;
 
 #[derive(Debug, Clone)]

@@ -5,22 +5,22 @@ use std::sync::Arc;
 
 use crate::dataset::ReadableDataSet;
 use crate::prelude::{EmptyEntity, Entity};
+use crate::sql::Query;
 use crate::sql::chunk::Chunk;
 use crate::sql::expression::{Expression, ExpressionArc};
 use crate::sql::query::SqlQuery;
-use crate::sql::Query;
 use crate::traits::datasource::DataSource;
 use anyhow::Context;
-use anyhow::{anyhow, Result};
-use futures::{pin_mut, TryStreamExt};
+use anyhow::{Result, anyhow};
+use futures::{TryStreamExt, pin_mut};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
-use serde_json::json;
 use serde_json::Map;
 use serde_json::Value;
-use tokio_postgres::types::ToSql;
+use serde_json::json;
 use tokio_postgres::Client;
 use tokio_postgres::Row;
+use tokio_postgres::types::ToSql;
 
 #[derive(Clone, Debug)]
 pub struct Postgres {
@@ -89,7 +89,7 @@ impl Postgres {
                         "Unsupported type: {} for column {}",
                         col_type,
                         name
-                    ))
+                    ));
                 }
             };
 
@@ -175,7 +175,9 @@ impl InsertRows for Postgres {
             if row_set.len() != num_rows {
                 return Err(anyhow!(
                     "Number of columns in a row {} does not match number of fields in a query {} at row {}",
-                    row_set.len(), num_rows, row_cnt
+                    row_set.len(),
+                    num_rows,
+                    row_cnt
                 ));
             }
 

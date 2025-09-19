@@ -1,14 +1,14 @@
 use indexmap::IndexMap;
 use serde::Serialize;
-use serde_json::{to_value, Value};
+use serde_json::{Value, to_value};
 use std::sync::Arc;
 
 use super::column::SqlColumn;
 use super::{AnyTable, PgValueColumn, SqlTable, TableWithColumns};
 use crate::prelude::AssociatedQuery;
+use crate::sql::Query;
 use crate::sql::query::{QueryType, SqlQuery};
 use crate::sql::table::Table;
-use crate::sql::Query;
 use crate::traits::column::SqlField;
 use crate::traits::datasource::DataSource;
 use crate::traits::entity::Entity;

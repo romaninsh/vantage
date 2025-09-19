@@ -5,7 +5,7 @@ use serde_json::json;
 
 use crate::{
     prelude::{PgValueColumn, SqlTable},
-    sql::{query::SqlQuery, Chunk, Operations, Query},
+    sql::{Chunk, Operations, Query, query::SqlQuery},
 };
 
 use super::TableExtension;
@@ -56,7 +56,7 @@ mod tests {
     use crate::{
         mocks::datasource::MockDataSource,
         prelude::{AnyTable, Chunk, Operations, TableWithQueries},
-        sql::{table::extensions::Hooks, Table},
+        sql::{Table, table::extensions::Hooks},
     };
 
     #[tokio::test]

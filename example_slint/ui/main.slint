@@ -1,7 +1,7 @@
 import { StandardTableView } from "std-widgets.slint";
 
 export component MainWindow inherits Window {
-    title: "Dataset UI Adapters - Slint Table Example";
+    title: "Bakery Model 3 - Slint Client List";
     width: 800px;
     height: 600px;
 
@@ -13,7 +13,14 @@ export component MainWindow inherits Window {
         x: 20px;
         y: 20px;
 
-        columns: [{ title: "Name" }, { title: "Calories" }, { title: "Price" }, { title: "Inventory" }];
+        columns: [
+            { title: "Name" },
+            { title: "Email" },
+            { title: "Contact Details" },
+            { title: "Paying Client" },
+            { title: "Bakery" },
+            { title: "Metadata" }
+        ];
 
         rows: root.table-rows;
     }

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use indexmap::IndexMap;
 use serde_json::Value;
 use std::sync::Arc;
@@ -8,8 +8,8 @@ use super::{PgValueColumn, SqlTable};
 use crate::expr;
 use crate::lazy_expression::LazyExpression;
 use crate::prelude::Operations;
-use crate::sql::table::Table;
 use crate::sql::Expression;
+use crate::sql::table::Table;
 use crate::traits::column::SqlField;
 use crate::traits::datasource::DataSource;
 use crate::traits::entity::Entity;

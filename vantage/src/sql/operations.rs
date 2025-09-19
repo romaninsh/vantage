@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use crate::{
     expr_arc,
+    sql::Condition,
     sql::chunk::Chunk,
     sql::expression::{Expression, ExpressionArc},
-    sql::Condition,
 };
 
 /// Operations trait provides implementatoin of some common SQL operations

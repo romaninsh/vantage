@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use indexmap::IndexMap;
 use serde_json::Value;
 pub use with_traits::SqlQuery;
@@ -402,7 +402,10 @@ impl SqlQuery for Query {
                 self.set_fields.insert(field.to_string(), value);
             }
             _ => {
-                panic!("Query should be \"Insert\", \"Update\" or \"Replace\" to set field value. Type is set to {:?}", self.query_type);
+                panic!(
+                    "Query should be \"Insert\", \"Update\" or \"Replace\" to set field value. Type is set to {:?}",
+                    self.query_type
+                );
             }
         }
     }
@@ -558,7 +561,10 @@ mod tests {
 
         let (sql, params) = outer_query.render_chunk().split();
 
-        assert_eq!(sql, "WITH roles AS (SELECT id, role_name FROM roles) SELECT user_name, roles.role_name FROM users JOIN roles ON users.role_id = roles.id");
+        assert_eq!(
+            sql,
+            "WITH roles AS (SELECT id, role_name FROM roles) SELECT user_name, roles.role_name FROM users JOIN roles ON users.role_id = roles.id"
+        );
         assert_eq!(params.len(), 0);
     }
 

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use std::borrow::BorrowMut;
 use std::mem::take;
 use std::ptr::eq;
@@ -6,9 +6,9 @@ use std::sync::Arc;
 
 use super::{Join, SqlTable, TableWithColumns};
 use crate::prelude::{Chunk, EmptyEntity};
+use crate::sql::Operations;
 use crate::sql::query::{JoinQuery, JoinType, QueryConditions};
 use crate::sql::table::Table;
-use crate::sql::Operations;
 use crate::traits::datasource::DataSource;
 use crate::traits::entity::Entity;
 use crate::uniqid::UniqueIdVendor;

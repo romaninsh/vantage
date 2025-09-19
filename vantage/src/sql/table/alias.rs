@@ -1,5 +1,5 @@
 use crate::{traits::DataSource, uniqid::UniqueIdVendor};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use indexmap::IndexMap;
 use std::sync::{Arc, Mutex, RwLock};
 use tokio_postgres::types::ToSql;
@@ -332,8 +332,8 @@ mod tests {
         expr_arc,
         prelude::{ExpressionArc, JoinQuery, PgValueColumn, SqlTable, TableWithQueries},
         sql::{
-            query::{ConditionType, JoinType, QueryConditions, QuerySource},
             Chunk, Join,
+            query::{ConditionType, JoinType, QueryConditions, QuerySource},
         },
     };
     use indexmap::IndexMap;

@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::sync::RwLock;
 
 use crate::expr;
-use crate::sql::expression::{Expression, ExpressionArc};
 use crate::sql::Chunk;
+use crate::sql::expression::{Expression, ExpressionArc};
 
 use super::table::Column;
 
