@@ -16,7 +16,9 @@ impl TableApp {
         let rt = Runtime::new().expect("Failed to create tokio runtime");
 
         let client_table = rt.block_on(async {
-            bakery_model3::connect_surrealdb().await.expect("Failed to connect to SurrealDB");
+            bakery_model3::connect_surrealdb().
+                .await
+                .expect("Failed to connect to SurrealDB");
             Client::table()
         });
 
