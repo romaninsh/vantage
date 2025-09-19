@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 
-use super::reference::{many::ReferenceMany, one::ReferenceOne, RelatedSqlTable};
+use super::reference::{RelatedSqlTable, many::ReferenceMany, one::ReferenceOne};
 use crate::sql::Chunk;
 use crate::traits::datasource::DataSource;
 use crate::traits::entity::Entity;
@@ -195,7 +195,10 @@ mod tests {
         });
 
         let q = users.get_select_query_for_field_names(&["name", "orders_sum"]);
-        assert_eq!(q.preview(), "SELECT name, (SELECT (SUM(sum)) AS sum FROM orders WHERE (orders.user_id = users.id)) AS orders_sum FROM users");
+        assert_eq!(
+            q.preview(),
+            "SELECT name, (SELECT (SUM(sum)) AS sum FROM orders WHERE (orders.user_id = users.id)) AS orders_sum FROM users"
+        );
     }
 
     #[test]

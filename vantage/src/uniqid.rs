@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use env_logger::fmt::style::Reset;
 use indexmap::IndexMap;
 

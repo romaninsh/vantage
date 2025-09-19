@@ -5,7 +5,7 @@ use std::ops::{Deref, DerefMut};
 use crate::{
     dataset::ReadableDataSet,
     prelude::Entity,
-    sql::{query::SqlQuery, Chunk, Expression, Query},
+    sql::{Chunk, Expression, Query, query::SqlQuery},
     traits::DataSource,
 };
 

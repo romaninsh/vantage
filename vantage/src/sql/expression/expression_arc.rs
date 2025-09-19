@@ -113,8 +113,8 @@ impl SqlField for ExpressionArc {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
     use Chunk;
+    use serde_json::json;
 
     #[test]
     fn test_expression() {

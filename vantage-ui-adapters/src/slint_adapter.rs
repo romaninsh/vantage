@@ -30,39 +30,46 @@ impl<D: DataSet + 'static> SlintTableModel<D> {
             column_names: RefCell::new(Vec::new()),
         };
 
-        model.load_placeholder_data();
+        model.load_real_data();
         model
     }
 
-    fn load_placeholder_data(&self) {
-        // Load column names
-        if let Ok(mut column_names) = self.column_names.try_borrow_mut() {
-            *column_names = vec![
-                SharedString::from("Name"),
-                SharedString::from("Calories"),
-                SharedString::from("Price"),
-                SharedString::from("Inventory"),
-            ];
-        }
+    fn load_real_data(&self) {
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
 
-        // Load placeholder data
-        let placeholder_data = vec![
-            vec!["Flux Capacitor Cupcake", "300", "120", "50"],
-            vec!["DeLorean Doughnut", "250", "135", "30"],
-            vec!["Time Traveler Tart", "200", "220", "20"],
-            vec!["Enchantment Under the Sea Pie", "350", "299", "15"],
-            vec!["Hoverboard Cookies", "150", "199", "40"],
-        ];
+        rt.block_on(async {
+            // Load column names from the store
+            if let Ok(column_info) = self.store.column_info().await {
+                if let Ok(mut column_names) = self.column_names.try_borrow_mut() {
+                    *column_names = column_info
+                        .into_iter()
+                        .map(|col| SharedString::from(col.name))
+                        .collect();
+                }
+            }
 
-        if let Ok(rows) = self.rows.try_borrow_mut() {
-            let vec_data: Vec<SlintTableRow> = placeholder_data
-                .into_iter()
-                .map(|row| SlintTableRow {
-                    cells: row.into_iter().map(SharedString::from).collect(),
-                })
-                .collect();
-            rows.set_vec(vec_data);
-        }
+            // Load actual data from the store
+            if let Ok(row_count) = self.store.row_count().await {
+                // Prefetch all rows and then get them individually
+                let _ = self.store.prefetch_range(0, row_count).await;
+
+                if let Ok(rows) = self.rows.try_borrow_mut() {
+                    let mut vec_data = Vec::new();
+                    for i in 0..row_count {
+                        if let Ok(table_row) = self.store.get_row(i).await {
+                            let slint_row = SlintTableRow {
+                                cells: table_row
+                                    .into_iter()
+                                    .map(|cell| SharedString::from(cell.as_string()))
+                                    .collect(),
+                            };
+                            vec_data.push(slint_row);
+                        }
+                    }
+                    rows.set_vec(vec_data);
+                }
+            }
+        });
     }
 
     pub fn column_names(&self) -> Vec<SharedString> {
@@ -159,7 +166,7 @@ impl<D: DataSet + 'static> SlintTable<D> {
     }
 
     pub fn refresh(&self) {
-        self.model.load_placeholder_data();
+        self.model.load_real_data();
     }
 
     pub fn column_names(&self) -> Vec<SharedString> {

@@ -22,7 +22,7 @@
 //! [`count()`]: Table::count()
 //! [`sum()`]: Table::sum()
 
-use std::any::{type_name, Any};
+use std::any::{Any, type_name};
 use std::fmt::{Debug, Display};
 use std::ops::Deref;
 use std::sync::{Arc, Mutex, RwLock};

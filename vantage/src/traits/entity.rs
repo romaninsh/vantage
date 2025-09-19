@@ -1,4 +1,4 @@
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 pub trait Entity:
     Serialize + DeserializeOwned + Default + Clone + Send + Sync + Sized + 'static

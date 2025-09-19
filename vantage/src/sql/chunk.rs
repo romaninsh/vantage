@@ -1,6 +1,6 @@
 use crate::sql::Expression;
 use rust_decimal::Decimal;
-use serde_json::{to_value, Value};
+use serde_json::{Value, to_value};
 use std::fmt::Debug;
 
 /// A `Chunk` trait for generating SQL queries and their associated parameters
