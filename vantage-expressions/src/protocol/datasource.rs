@@ -1,5 +1,8 @@
 use serde_json::Value;
+use std::future::Future;
 use std::pin::Pin;
+
+use super::selectable::Selectable;
 
 pub trait DataSource<T> {
     fn execute(&self, expr: &T) -> impl Future<Output = Value> + Send;
@@ -8,6 +11,8 @@ pub trait DataSource<T> {
         &self,
         expr: T,
     ) -> impl Fn() -> Pin<Box<dyn Future<Output = Value> + Send>> + Send + Sync + 'static;
+
+    fn select(&self) -> impl Selectable;
 }
 
 // mod tests {
