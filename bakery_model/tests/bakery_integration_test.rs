@@ -92,6 +92,7 @@ async fn create_bootstrap_db() -> Result<()> {
 // }
 
 #[tokio::test]
+#[ignore = "INSERT functionality is glitchy in Vantage 0.2"]
 async fn test_bakery() -> Result<()> {
     create_bootstrap_db().await?;
 

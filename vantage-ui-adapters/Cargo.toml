@@ -20,10 +20,10 @@ egui_extras = { version = "0.32", optional = true }
 gpui = { git = "https://github.com/zed-industries/zed.git", optional = true }
 gpui-component = { git = "https://github.com/longbridge/gpui-component.git", optional = true }
 
-slint = { version = "1.12", optional = true }
+slint = { version = "1.13", optional = true }
 tauri = { version = "2.8", optional = true }
 ratatui = { version = "0.29", optional = true }
-crossterm = { version = "0.28", optional = true }
+crossterm = { version = "0.29", optional = true }
 cursive = { version = "0.21", optional = true }
 cursive_table_view = { version = "0.15", optional = true }
 

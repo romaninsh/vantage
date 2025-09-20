@@ -12,10 +12,10 @@ vantage-dataset = { path = "../vantage-dataset" }
 async-trait = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-indexmap = "2.0"
+indexmap = "2.11"
 
 [dev-dependencies]
-tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.47", features = ["macros", "rt-multi-thread"] }
 serde_json = "1.0"
 vantage-expressions = { path = "../vantage-expressions" }
 vantage-surrealdb = { path = "../vantage-surrealdb" }

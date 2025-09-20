@@ -14,7 +14,7 @@ readme = "../README.md"
 [dependencies]
 async-trait = "0.1"
 vantage-expressions = { path = "../vantage-expressions" }
-indexmap = { version = "2.11.0", features = ["serde"] }
+indexmap = { version = "2.11.4", features = ["serde"] }
 serde_json = { version = "1", features = [
     "preserve_order",
     "raw_value",
