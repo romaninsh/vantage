@@ -6,14 +6,14 @@ fn main() {
     // Basic find query
     let query = select("users");
     println!("Basic find:");
-    let expr: vantage_expressions::OwnedExpression = query.into();
+    let expr: vantage_expressions::Expression = query.into();
     println!("{}\n", expr.preview());
 
     // Find with filter
     let mut query = select("users");
     query.add_where_condition(Document::filter("status", "active").into());
     println!("Find with filter:");
-    let expr: vantage_expressions::OwnedExpression = query.into();
+    let expr: vantage_expressions::Expression = query.into();
     println!("{}\n", expr.preview());
 
     // Find with multiple conditions
@@ -21,14 +21,14 @@ fn main() {
     query.add_where_condition(Document::filter("age", 25).into());
     query.add_where_condition(Document::filter("city", "New York").into());
     println!("Find with multiple conditions:");
-    let expr: vantage_expressions::OwnedExpression = query.into();
+    let expr: vantage_expressions::Expression = query.into();
     println!("{}\n", expr.preview());
 
     // Find with operators
     let mut query = select("products");
     query.add_where_condition(Document::gt("price", 100).into());
     println!("Find with $gt operator:");
-    let expr: vantage_expressions::OwnedExpression = query.into();
+    let expr: vantage_expressions::Expression = query.into();
     println!("{}\n", expr.preview());
 
     // Find with $or operator
@@ -41,7 +41,7 @@ fn main() {
         .into(),
     );
     println!("Find with $or operator:");
-    let expr: vantage_expressions::OwnedExpression = query.into();
+    let expr: vantage_expressions::Expression = query.into();
     println!("{}\n", expr.preview());
 
     // Find with projection
@@ -49,7 +49,7 @@ fn main() {
     query.add_field("name".to_string());
     query.add_field("email".to_string());
     println!("Find with projection:");
-    let expr: vantage_expressions::OwnedExpression = query.into();
+    let expr: vantage_expressions::Expression = query.into();
     println!("{}\n", expr.preview());
 
     // Find with sort, skip, and limit
@@ -57,7 +57,7 @@ fn main() {
     query.add_order_by("created_at", true);
     query.set_limit(Some(10), Some(20));
     println!("Find with sort, skip, and limit:");
-    let expr: vantage_expressions::OwnedExpression = query.into();
+    let expr: vantage_expressions::Expression = query.into();
     println!("{}\n", expr.preview());
 
     // Complex find query
@@ -80,7 +80,7 @@ fn main() {
     query.add_order_by("created_at", true);
     query.set_limit(Some(100), None);
     println!("Complex find query:");
-    let expr: vantage_expressions::OwnedExpression = query.into();
+    let expr: vantage_expressions::Expression = query.into();
     println!("{}\n", expr.preview());
 
     // Insert one document
@@ -91,7 +91,7 @@ fn main() {
             .insert("age", 30),
     );
     println!("Insert one:");
-    let expr: vantage_expressions::OwnedExpression = query.into();
+    let expr: vantage_expressions::Expression = query.into();
     println!("{}\n", expr.preview());
 
     // Insert multiple documents
@@ -104,7 +104,7 @@ fn main() {
             .insert("email", "bob@example.com"),
     ]);
     println!("Insert many:");
-    let expr: vantage_expressions::OwnedExpression = query.into();
+    let expr: vantage_expressions::Expression = query.into();
     println!("{}\n", expr.preview());
 
     // Update query
@@ -119,19 +119,19 @@ fn main() {
             ),
         );
     println!("Update query:");
-    let expr: vantage_expressions::OwnedExpression = query.into();
+    let expr: vantage_expressions::Expression = query.into();
     println!("{}\n", expr.preview());
 
     // Delete query
     let query = delete("users").filter(Document::filter("status", "inactive"));
     println!("Delete query:");
-    let expr: vantage_expressions::OwnedExpression = query.into();
+    let expr: vantage_expressions::Expression = query.into();
     println!("{}\n", expr.preview());
 
     // Count query
     let query = count("users").filter(Document::gt("age", 18));
     println!("Count query:");
-    let expr: vantage_expressions::OwnedExpression = query.into();
+    let expr: vantage_expressions::Expression = query.into();
     println!("{}\n", expr.preview());
 
     // Advanced operators
@@ -153,7 +153,7 @@ fn main() {
             .into(),
     );
     println!("Advanced operators ($in, $regex, $exists):");
-    let expr: vantage_expressions::OwnedExpression = query.into();
+    let expr: vantage_expressions::Expression = query.into();
     println!("{}\n", expr.preview());
 
     // Text search simulation
@@ -167,7 +167,7 @@ fn main() {
             .into(),
     );
     println!("Text search:");
-    let expr: vantage_expressions::OwnedExpression = query.into();
+    let expr: vantage_expressions::Expression = query.into();
     println!("{}\n", expr.preview());
 
     // Geospatial query simulation
@@ -191,6 +191,6 @@ fn main() {
             .into(),
     );
     println!("Geospatial query:");
-    let expr: vantage_expressions::OwnedExpression = query.into();
+    let expr: vantage_expressions::Expression = query.into();
     println!("{}\n", expr.preview());
 }

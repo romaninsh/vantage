@@ -25,7 +25,7 @@ pub use vantage_expressions::protocol::expressive::IntoExpressive;
 pub use vantage_expressions::protocol::selectable::Selectable;
 
 // Expression utilities
-pub use vantage_expressions::{Expr, OwnedExpression, expr};
+pub use vantage_expressions::{Expr, Expression, expr};
 
 // Common surreal-client types
 pub use surreal_client::{SurrealClient, SurrealConnection};

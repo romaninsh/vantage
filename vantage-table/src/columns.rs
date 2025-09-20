@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use vantage_expressions::{DataSource, OwnedExpression};
+use vantage_expressions::{DataSource, Expression};
 
 use super::{Entity, Table};
 
@@ -36,7 +36,24 @@ impl Column {
     }
 }
 
-impl<T: DataSource<OwnedExpression>, E: Entity> Table<T, E> {
+impl From<String> for Column {
+    fn from(name: String) -> Self {
+        Self::new(name)
+    }
+}
+
+impl From<&str> for Column {
+    fn from(name: &str) -> Self {
+        Self::new(name)
+    }
+}
+
+impl<T: DataSource<Expression>, E: Entity> Table<T, E> {
+    pub fn with_column(mut self, column: impl Into<Column>) -> Self {
+        self.add_column(column.into());
+        self
+    }
+
     /// Add a column to the table
     pub fn add_column(&mut self, column: Column) {
         self.columns.insert(column.name().to_string(), column);

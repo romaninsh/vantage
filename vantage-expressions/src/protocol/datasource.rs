@@ -4,7 +4,7 @@ use std::pin::Pin;
 
 use super::selectable::Selectable;
 
-pub trait DataSource<T> {
+pub trait DataSource<T>: Send + Sync {
     fn execute(&self, expr: &T) -> impl Future<Output = Value> + Send;
 
     fn defer(

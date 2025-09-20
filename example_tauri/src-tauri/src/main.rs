@@ -22,7 +22,7 @@ async fn main() {
 
 #[tauri::command]
 async fn get_table_data(
-    table: tauri::State<'_, TauriTable<VantageTableAdapter<Client>>>,
+    table: tauri::State<'_, TauriTable<VantageTableAdapter<SurrealDB, Client>>>,
     page: Option<usize>,
     page_size: Option<usize>,
 ) -> Result<serde_json::Value, String> {
@@ -53,7 +53,7 @@ async fn get_table_data(
 
 #[tauri::command]
 async fn get_table_columns(
-    table: tauri::State<'_, TauriTable<VantageTableAdapter<Client>>>,
+    table: tauri::State<'_, TauriTable<VantageTableAdapter<SurrealDB, Client>>>,
 ) -> Result<Vec<String>, String> {
     let columns = table.column_names();
     Ok(columns)

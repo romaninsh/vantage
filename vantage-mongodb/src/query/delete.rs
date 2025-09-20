@@ -1,5 +1,5 @@
 use serde_json::Value;
-use vantage_expressions::{OwnedExpression, expr};
+use vantage_expressions::{Expression, expr};
 
 use crate::Document;
 
@@ -23,8 +23,8 @@ impl MongoDelete {
     }
 }
 
-impl Into<OwnedExpression> for MongoDelete {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for MongoDelete {
+    fn into(self) -> Expression {
         let filter = if self.filter.is_empty() {
             "{}".to_string()
         } else {
@@ -38,7 +38,7 @@ impl Into<OwnedExpression> for MongoDelete {
                     }
                 }
             }
-            Into::<OwnedExpression>::into(combined).preview()
+            Into::<Expression>::into(combined).preview()
         };
 
         expr!(format!("db.{}.deleteMany({})", self.collection, filter))
@@ -52,7 +52,7 @@ mod tests {
     #[test]
     fn test_delete() {
         let delete = MongoDelete::new("users").filter(Document::filter("status", "inactive"));
-        let expr: OwnedExpression = delete.into();
+        let expr: Expression = delete.into();
         let result = expr.preview();
         assert!(result.contains("db.users.deleteMany("));
         assert!(result.contains("\"status\""));

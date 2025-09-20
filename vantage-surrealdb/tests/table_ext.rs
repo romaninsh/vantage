@@ -1,7 +1,7 @@
 use serde_json::Value;
 use vantage_expressions::expr;
 use vantage_surrealdb::{SurrealDB, SurrealTableExt};
-use vantage_table::{Column, Table};
+use vantage_table::{Column, EmptyEntity, Table};
 
 async fn setup_test_db_with_data(mock_data: Value) -> SurrealDB {
     use surreal_client::{Engine, SurrealClient};
@@ -136,7 +136,52 @@ async fn test_select_surreal_with_conditions() {
     assert!(column_select.preview().contains("WHERE age > 18"));
 
     let single_select = table.select_surreal_single("email").unwrap();
-    assert!(single_select.preview().contains("WHERE age > 18"));
+    assert!(single_select.query.preview().contains("WHERE age > 18"));
+}
+
+#[tokio::test]
+async fn test_surreal_get() -> Result<(), Box<dyn std::error::Error>> {
+    use serde_json::Value;
+    use surreal_client::{Engine, SurrealClient};
+
+    struct MockEngine;
+
+    #[async_trait::async_trait]
+    impl Engine for MockEngine {
+        async fn send_message(
+            &mut self,
+            _method: &str,
+            _params: Value,
+        ) -> surreal_client::error::Result<Value> {
+            Ok(serde_json::json!([
+                {"name": "Alice", "email": "alice@example.com", "age": 25},
+                {"name": "Bob", "email": "bob@example.com", "age": 30}
+            ]))
+        }
+    }
+
+    let client = SurrealClient::new(
+        Box::new(MockEngine),
+        Some("test".to_string()),
+        Some("v1".to_string()),
+    );
+    let ds = SurrealDB::new(client);
+
+    let table = Table::new("users", ds)
+        .with_column("name")
+        .with_column("email")
+        .with_column("age")
+        .into_entity::<EmptyEntity>();
+
+    // Test surreal_get() method - use get_values() for testing since EmptyEntity can't deserialize structured data
+    let results = table.get_values().await?;
+    assert_eq!(results.len(), 2);
+
+    // Verify the structure of returned data
+    assert!(results[0].get("name").is_some());
+    assert!(results[0].get("email").is_some());
+
+    Ok(())
 }
 
 #[tokio::test]

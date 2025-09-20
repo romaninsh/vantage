@@ -3,7 +3,7 @@
 //! doc wip
 
 use crate::operation::Expressive;
-use vantage_expressions::{OwnedExpression, expr, protocol::expressive::IntoExpressive};
+use vantage_expressions::{Expression, expr, protocol::expressive::IntoExpressive};
 
 /// SurrealDB Thing (record ID) representation
 ///
@@ -64,18 +64,18 @@ impl Thing {
 }
 
 impl Expressive for Thing {
-    fn expr(&self) -> OwnedExpression {
+    fn expr(&self) -> Expression {
         expr!(format!("{}:{}", self.table, self.id))
     }
 }
 
-impl Into<OwnedExpression> for Thing {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for Thing {
+    fn into(self) -> Expression {
         self.expr()
     }
 }
 
-impl From<Thing> for IntoExpressive<OwnedExpression> {
+impl From<Thing> for IntoExpressive<Expression> {
     fn from(thing: Thing) -> Self {
         IntoExpressive::nested(thing.expr())
     }

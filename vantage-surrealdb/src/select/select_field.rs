@@ -2,7 +2,7 @@
 //!
 //! doc wip
 
-use vantage_expressions::{OwnedExpression, expr};
+use vantage_expressions::{Expression, expr};
 
 use crate::identifier::Identifier;
 
@@ -23,7 +23,7 @@ use crate::identifier::Identifier;
 
 #[derive(Debug, Clone)]
 pub struct SelectField {
-    expression: OwnedExpression,
+    expression: Expression,
     alias: Option<String>,
     is_value: bool, // For VALUE clause
 }
@@ -36,7 +36,7 @@ impl SelectField {
     /// # Arguments
     ///
     /// * `expression` - doc wip
-    pub fn new(expression: impl Into<OwnedExpression>) -> Self {
+    pub fn new(expression: impl Into<Expression>) -> Self {
         Self {
             expression: expression.into(),
             alias: None,
@@ -65,8 +65,8 @@ impl SelectField {
     }
 }
 
-impl Into<OwnedExpression> for SelectField {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for SelectField {
+    fn into(self) -> Expression {
         match (&self.alias, self.is_value) {
             (Some(alias), true) => expr!("VALUE {} AS {}", self.expression, Identifier::new(alias)),
             (Some(alias), false) => expr!("{} AS {}", self.expression, Identifier::new(alias)),

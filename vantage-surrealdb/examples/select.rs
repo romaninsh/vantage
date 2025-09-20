@@ -49,6 +49,6 @@ fn main() {
     basic_select.set_limit(Some(5), None);
 
     println!("Basic SurrealDB select:");
-    let expr: vantage_expressions::OwnedExpression = basic_select.into();
+    let expr: vantage_expressions::Expression = basic_select.into();
     println!("{}", expr.preview());
 }

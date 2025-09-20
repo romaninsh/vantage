@@ -1,14 +1,14 @@
 //! Mutable expressions allow multiple expressions to reference the same mutable value.
 //! The value is stored in an `Arc<Mutex<T>>` and evaluated at render time.
 
-use crate::expression::owned::OwnedExpression;
+use crate::expression::owned::Expression;
 use crate::protocol::expressive::IntoExpressive;
 
 use std::sync::{Arc, Mutex};
 
-impl<T> From<Arc<Mutex<T>>> for IntoExpressive<OwnedExpression>
+impl<T> From<Arc<Mutex<T>>> for IntoExpressive<Expression>
 where
-    T: Into<IntoExpressive<OwnedExpression>> + Clone + Send + Sync + 'static,
+    T: Into<IntoExpressive<Expression>> + Clone + Send + Sync + 'static,
 {
     fn from(arc_mutex: Arc<Mutex<T>>) -> Self {
         IntoExpressive::deferred(move || {
@@ -18,9 +18,9 @@ where
     }
 }
 
-impl<T> From<&Arc<Mutex<T>>> for IntoExpressive<OwnedExpression>
+impl<T> From<&Arc<Mutex<T>>> for IntoExpressive<Expression>
 where
-    T: Into<IntoExpressive<OwnedExpression>> + Clone + Send + Sync + 'static,
+    T: Into<IntoExpressive<Expression>> + Clone + Send + Sync + 'static,
 {
     fn from(arc_mutex: &Arc<Mutex<T>>) -> Self {
         let arc_mutex = arc_mutex.clone();
@@ -35,12 +35,12 @@ where
 mod tests {
     use super::*;
     use crate::expr;
-    use crate::expression::owned::OwnedExpression;
+    use crate::expression::owned::Expression;
 
     #[test]
     fn test_from_arc_mutex() {
         let arc_mutex = Arc::new(Mutex::new(42i32));
-        let _expr: IntoExpressive<OwnedExpression> = arc_mutex.into();
+        let _expr: IntoExpressive<Expression> = arc_mutex.into();
         // The conversion should work without panicking
     }
 

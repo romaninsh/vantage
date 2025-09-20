@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::sync::OnceLock;
 use surreal_client::SurrealConnection;
-use vantage_surrealdb::SurrealDB;
+pub use vantage_surrealdb::SurrealDB;
 
 pub mod bakery;
 pub use bakery::*;

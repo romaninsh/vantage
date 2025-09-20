@@ -1,8 +1,8 @@
-use vantage_expressions::{OwnedExpression, expr};
+use vantage_expressions::{Expression, expr};
 
 #[derive(Debug, Clone)]
 pub struct QueryConditions {
-    conditions: Vec<OwnedExpression>,
+    conditions: Vec<Expression>,
 }
 
 impl QueryConditions {
@@ -12,7 +12,7 @@ impl QueryConditions {
         }
     }
 
-    pub fn add_condition(&mut self, condition: OwnedExpression) {
+    pub fn add_condition(&mut self, condition: Expression) {
         self.conditions.push(condition);
     }
 
@@ -24,36 +24,36 @@ impl QueryConditions {
         !self.conditions.is_empty()
     }
 
-    pub fn render(&self) -> OwnedExpression {
+    pub fn render(&self) -> Expression {
         if self.conditions.is_empty() {
             expr!("")
         } else if self.conditions.len() == 1 {
             expr!(" WHERE {}", self.conditions[0].clone())
         } else {
             // Combine multiple conditions with AND
-            let conditions: Vec<OwnedExpression> = self
+            let conditions: Vec<Expression> = self
                 .conditions
                 .iter()
                 .map(|c| expr!("({})", c.clone()))
                 .collect();
-            let combined = OwnedExpression::from_vec(conditions, " AND ");
+            let combined = Expression::from_vec(conditions, " AND ");
             expr!(" WHERE {}", combined)
         }
     }
 
-    pub fn render_conditions(&self) -> OwnedExpression {
+    pub fn render_conditions(&self) -> Expression {
         if self.conditions.is_empty() {
             expr!("")
         } else if self.conditions.len() == 1 {
             self.conditions[0].clone()
         } else {
             // Combine multiple conditions with AND
-            let conditions: Vec<OwnedExpression> = self
+            let conditions: Vec<Expression> = self
                 .conditions
                 .iter()
                 .map(|c| expr!("({})", c.clone()))
                 .collect();
-            OwnedExpression::from_vec(conditions, " AND ")
+            Expression::from_vec(conditions, " AND ")
         }
     }
 }

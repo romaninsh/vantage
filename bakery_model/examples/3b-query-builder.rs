@@ -1,4 +1,4 @@
-use vantage_expressions::{expr, OwnedExpression};
+use vantage_expressions::{expr, Expression};
 use vantage_sql::{
     select::{join_query::JoinQuery, query_source::QuerySource},
     Select,
@@ -10,7 +10,7 @@ use sqlformat::FormatOptions;
 use sqlformat::QueryParams;
 
 pub fn format_query(q: &Select) -> String {
-    let select_expr: OwnedExpression = q.clone().into();
+    let select_expr: Expression = q.clone().into();
     let raw_sql = select_expr.preview();
 
     let formatted_sql = sqlformat::format(&raw_sql, &QueryParams::None, &FormatOptions::default());

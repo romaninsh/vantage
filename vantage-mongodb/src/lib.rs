@@ -3,7 +3,7 @@ pub mod protocol;
 pub mod query;
 
 use serde_json::Value;
-use vantage_expressions::{OwnedExpression, expr, protocol::selectable::Selectable};
+use vantage_expressions::{Expression, expr, protocol::selectable::Selectable};
 
 pub use field::Field;
 pub use query::{MongoCount, MongoDelete, MongoInsert, MongoSelect, MongoUpdate};
@@ -121,8 +121,8 @@ impl Into<Value> for Document {
     }
 }
 
-impl Into<OwnedExpression> for Document {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for Document {
+    fn into(self) -> Expression {
         let value: Value = self.into();
         expr!(serde_json::to_string_pretty(&value).unwrap())
     }
@@ -136,7 +136,7 @@ mod tests {
     fn test_simple_document() {
         let doc = Document::new().insert("name", "John").insert("age", 30);
 
-        let expr: OwnedExpression = doc.into();
+        let expr: Expression = doc.into();
         let result = expr.preview();
 
         // Parse back to verify structure
@@ -148,7 +148,7 @@ mod tests {
     #[test]
     fn test_document_filter() {
         let doc = Document::filter("status", "active");
-        let expr: OwnedExpression = doc.into();
+        let expr: Expression = doc.into();
         let result = expr.preview();
 
         let parsed: Value = serde_json::from_str(&result).unwrap();
@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn test_document_gt() {
         let doc = Document::gt("age", 18);
-        let expr: OwnedExpression = doc.into();
+        let expr: Expression = doc.into();
         let result = expr.preview();
 
         let parsed: Value = serde_json::from_str(&result).unwrap();
@@ -171,7 +171,7 @@ mod tests {
             Document::filter("status", "active"),
             Document::filter("priority", "high"),
         ]);
-        let expr: OwnedExpression = doc.into();
+        let expr: Expression = doc.into();
         let result = expr.preview();
 
         let parsed: Value = serde_json::from_str(&result).unwrap();
@@ -189,7 +189,7 @@ mod tests {
             .and("age", Document::new().insert("$gt", 18))
             .and("status", "active");
 
-        let expr: OwnedExpression = doc.into();
+        let expr: Expression = doc.into();
         let result = expr.preview();
 
         let parsed: Value = serde_json::from_str(&result).unwrap();
@@ -201,7 +201,7 @@ mod tests {
     #[test]
     fn test_document_regex() {
         let doc = Document::regex("name", "^John");
-        let expr: OwnedExpression = doc.into();
+        let expr: Expression = doc.into();
         let result = expr.preview();
 
         let parsed: Value = serde_json::from_str(&result).unwrap();
@@ -211,7 +211,7 @@ mod tests {
     #[test]
     fn test_document_exists() {
         let doc = Document::exists("email", true);
-        let expr: OwnedExpression = doc.into();
+        let expr: Expression = doc.into();
         let result = expr.preview();
 
         let parsed: Value = serde_json::from_str(&result).unwrap();
@@ -227,7 +227,7 @@ mod tests {
                 Value::String("pending".to_string()),
             ],
         );
-        let expr: OwnedExpression = doc.into();
+        let expr: Expression = doc.into();
         let result = expr.preview();
 
         let parsed: Value = serde_json::from_str(&result).unwrap();
@@ -241,28 +241,28 @@ mod tests {
     fn test_convenience_functions() {
         // Test select convenience function
         let select_query = super::select("users");
-        let expr: OwnedExpression = select_query.into();
+        let expr: Expression = select_query.into();
         assert_eq!(expr.preview(), "db.users.find({})");
 
         // Test insert convenience function
         let insert_query =
             super::insert("users").insert_one(Document::new().insert("name", "John"));
-        let expr: OwnedExpression = insert_query.into();
+        let expr: Expression = insert_query.into();
         assert!(expr.preview().contains("db.users.insertOne"));
 
         // Test update convenience function
         let update_query = super::update("users").filter(Document::filter("id", 1));
-        let expr: OwnedExpression = update_query.into();
+        let expr: Expression = update_query.into();
         assert!(expr.preview().contains("db.users.updateMany"));
 
         // Test delete convenience function
         let delete_query = super::delete("users").filter(Document::filter("status", "inactive"));
-        let expr: OwnedExpression = delete_query.into();
+        let expr: Expression = delete_query.into();
         assert!(expr.preview().contains("db.users.deleteMany"));
 
         // Test count convenience function
         let count_query = super::count("users").filter(Document::gt("age", 18));
-        let expr: OwnedExpression = count_query.into();
+        let expr: Expression = count_query.into();
         assert!(expr.preview().contains("db.users.countDocuments"));
     }
 }

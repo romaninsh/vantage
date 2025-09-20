@@ -1,4 +1,4 @@
-use vantage_expressions::{OwnedExpression, expr};
+use vantage_expressions::{Expression, expr};
 
 use crate::Document;
 
@@ -27,19 +27,19 @@ impl MongoInsert {
     }
 }
 
-impl Into<OwnedExpression> for MongoInsert {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for MongoInsert {
+    fn into(self) -> Expression {
         if self.documents.len() == 1 {
             expr!(format!(
                 "db.{}.insertOne({})",
                 self.collection,
-                Into::<OwnedExpression>::into(self.documents[0].clone()).preview()
+                Into::<Expression>::into(self.documents[0].clone()).preview()
             ))
         } else {
             let docs: Vec<String> = self
                 .documents
                 .iter()
-                .map(|doc| Into::<OwnedExpression>::into(doc.clone()).preview())
+                .map(|doc| Into::<Expression>::into(doc.clone()).preview())
                 .collect();
             expr!(format!(
                 "db.{}.insertMany([{}])",
@@ -58,7 +58,7 @@ mod tests {
     fn test_insert_one() {
         let insert = MongoInsert::new("users")
             .insert_one(Document::new().insert("name", "John").insert("age", 30));
-        let expr: OwnedExpression = insert.into();
+        let expr: Expression = insert.into();
         let result = expr.preview();
         assert!(result.contains("db.users.insertOne("));
         assert!(result.contains("\"name\""));
@@ -71,7 +71,7 @@ mod tests {
             Document::new().insert("name", "John"),
             Document::new().insert("name", "Jane"),
         ]);
-        let expr: OwnedExpression = insert.into();
+        let expr: Expression = insert.into();
         let result = expr.preview();
         assert!(result.contains("db.users.insertMany(["));
         assert!(result.contains("\"John\""));

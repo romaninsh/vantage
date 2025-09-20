@@ -178,10 +178,10 @@ Fields are automatically quoted when they contain special characters, start with
 This crate integrates seamlessly with the vantage-expressions framework and implements the `Select` trait:
 
 ```rust
-use vantage_expressions::{OwnedExpression, protocol::select::Select};
+use vantage_expressions::{Expression, protocol::select::Select};
 
 let query = MongoSelect::from_collection("users").filter(Document::filter("status", "active"));
-let expr: OwnedExpression = query.into();
+let expr: Expression = query.into();
 println!("{}", expr.preview());
 
 // Use as Select trait

@@ -169,7 +169,7 @@ query builder, any table or any datasource.
 
 Key architectural changes:
 - Table definitions now use builder pattern instead of static initialization
-- Field accessors return OwnedExpression instead of typed column objects
+- Field accessors return Expression instead of typed column objects
 - Database-specific features (like SurrealDB embedded docs) properly supported
 - Connection management moved to dedicated client libraries (surreal-client)
 - DSN connection pattern adopted (ws://user:pass@host:port/namespace/database)

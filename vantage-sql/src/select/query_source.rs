@@ -1,17 +1,17 @@
 use crate::Identifier;
 use std::sync::Arc;
-use vantage_expressions::{OwnedExpression, expr};
+use vantage_expressions::{Expression, expr};
 
 #[derive(Debug, Clone)]
 pub enum QuerySource {
     None,
     Table(String, Option<String>),
     Query(Arc<Box<crate::Select>>, Option<String>),
-    Expression(OwnedExpression, Option<String>),
+    Expression(Expression, Option<String>),
 }
 
 impl QuerySource {
-    pub fn new(source: impl Into<OwnedExpression>) -> Self {
+    pub fn new(source: impl Into<Expression>) -> Self {
         Self::Expression(source.into(), None)
     }
 
@@ -31,11 +31,11 @@ impl QuerySource {
         Self::Query(Arc::new(Box::new(query)), Some(alias.into()))
     }
 
-    pub fn expression(expr: OwnedExpression) -> Self {
+    pub fn expression(expr: Expression) -> Self {
         Self::Expression(expr, None)
     }
 
-    pub fn expression_with_alias(expr: OwnedExpression, alias: impl Into<String>) -> Self {
+    pub fn expression_with_alias(expr: Expression, alias: impl Into<String>) -> Self {
         Self::Expression(expr, Some(alias.into()))
     }
 
@@ -57,7 +57,7 @@ impl QuerySource {
         }
     }
 
-    pub fn render_with_prefix(&self, prefix: &str) -> OwnedExpression {
+    pub fn render_with_prefix(&self, prefix: &str) -> Expression {
         match self {
             QuerySource::None => expr!(""),
             QuerySource::Table(table, None) => {
@@ -80,7 +80,7 @@ impl QuerySource {
                 }
             }
             QuerySource::Query(query, None) => {
-                let subquery: OwnedExpression = query.as_ref().as_ref().clone().into();
+                let subquery: Expression = query.as_ref().as_ref().clone().into();
                 if prefix.is_empty() {
                     expr!("({})", subquery)
                 } else {
@@ -88,7 +88,7 @@ impl QuerySource {
                 }
             }
             QuerySource::Query(query, Some(alias)) => {
-                let subquery: OwnedExpression = query.as_ref().as_ref().clone().into();
+                let subquery: Expression = query.as_ref().as_ref().clone().into();
                 if prefix.is_empty() {
                     expr!("({}) AS {}", subquery, Identifier::new(alias))
                 } else {
@@ -118,8 +118,8 @@ impl QuerySource {
     }
 }
 
-impl Into<OwnedExpression> for QuerySource {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for QuerySource {
+    fn into(self) -> Expression {
         self.render_with_prefix("")
     }
 }

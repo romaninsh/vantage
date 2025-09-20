@@ -8,32 +8,32 @@ use crate::protocol::expressive::{Expressive, IntoExpressive};
 
 /// Owned expression contains template and Vec of IntoExpressive parameters
 #[derive(Clone)]
-pub struct OwnedExpression {
+pub struct Expression {
     pub template: String,
-    pub parameters: Vec<IntoExpressive<OwnedExpression>>,
+    pub parameters: Vec<IntoExpressive<Expression>>,
 }
 
-impl Expressive<OwnedExpression> for OwnedExpression {
-    fn expr(&self, template: &str, args: Vec<IntoExpressive<OwnedExpression>>) -> OwnedExpression {
-        OwnedExpression::new(template, args)
+impl Expressive<Expression> for Expression {
+    fn expr(&self, template: &str, args: Vec<IntoExpressive<Expression>>) -> Expression {
+        Expression::new(template, args)
     }
 }
 
-impl From<OwnedExpression> for IntoExpressive<OwnedExpression> {
-    fn from(expr: OwnedExpression) -> Self {
+impl From<Expression> for IntoExpressive<Expression> {
+    fn from(expr: Expression) -> Self {
         IntoExpressive::Nested(expr)
     }
 }
 
-impl std::fmt::Debug for OwnedExpression {
+impl std::fmt::Debug for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.preview())
     }
 }
 
-// Specialized implementations for OwnedExpression
+// Specialized implementations for Expression
 
-impl<T: Into<IntoExpressive<OwnedExpression>>> From<Vec<T>> for IntoExpressive<OwnedExpression> {
+impl<T: Into<IntoExpressive<Expression>>> From<Vec<T>> for IntoExpressive<Expression> {
     fn from(vec: Vec<T>) -> Self {
         let values: Vec<Value> = vec
             .into_iter()
@@ -47,15 +47,15 @@ impl<T: Into<IntoExpressive<OwnedExpression>>> From<Vec<T>> for IntoExpressive<O
     }
 }
 
-impl<T: Into<IntoExpressive<OwnedExpression>> + Clone, const N: usize> From<[T; N]>
-    for IntoExpressive<OwnedExpression>
+impl<T: Into<IntoExpressive<Expression>> + Clone, const N: usize> From<[T; N]>
+    for IntoExpressive<Expression>
 {
     fn from(arr: [T; N]) -> Self {
         arr.to_vec().into()
     }
 }
 
-impl<F, Fut> From<F> for IntoExpressive<OwnedExpression>
+impl<F, Fut> From<F> for IntoExpressive<Expression>
 where
     F: Fn() -> Fut + Send + Sync + 'static,
     Fut: std::future::Future<Output = Value> + Send + 'static,
@@ -74,12 +74,12 @@ where
 macro_rules! expr {
     // Simple template without parameters: expr!("age")
     ($template:expr) => {
-        $crate::expression::owned::OwnedExpression::new($template, vec![])
+        $crate::expression::owned::Expression::new($template, vec![])
     };
 
     // Template with parameters: expr!("{} > {}", param1, param2)
     ($template:expr, $($param:expr),*) => {
-        $crate::expression::owned::OwnedExpression::new(
+        $crate::expression::owned::Expression::new(
             $template,
             vec![
                 $(
@@ -90,12 +90,9 @@ macro_rules! expr {
     };
 }
 
-impl OwnedExpression {
+impl Expression {
     /// Create a new owned expression with template and parameters
-    pub fn new(
-        template: impl Into<String>,
-        parameters: Vec<IntoExpressive<OwnedExpression>>,
-    ) -> Self {
+    pub fn new(template: impl Into<String>, parameters: Vec<IntoExpressive<Expression>>) -> Self {
         Self {
             template: template.into(),
             parameters,
@@ -103,7 +100,7 @@ impl OwnedExpression {
     }
 
     /// Create expression from vector of expressions and a delimeter
-    pub fn from_vec(vec: Vec<OwnedExpression>, delimeter: &str) -> Self {
+    pub fn from_vec(vec: Vec<Expression>, delimeter: &str) -> Self {
         let template = vec
             .iter()
             .map(|_| "{}")
@@ -146,15 +143,15 @@ mod tests {
         }
     }
 
-    impl From<Identifier> for OwnedExpression {
+    impl From<Identifier> for Expression {
         fn from(id: Identifier) -> Self {
-            OwnedExpression::new(&format!("`{}`", id.identifier), vec![])
+            Expression::new(&format!("`{}`", id.identifier), vec![])
         }
     }
 
-    impl From<Identifier> for IntoExpressive<OwnedExpression> {
+    impl From<Identifier> for IntoExpressive<Expression> {
         fn from(id: Identifier) -> Self {
-            IntoExpressive::nested(OwnedExpression::from(id))
+            IntoExpressive::nested(Expression::from(id))
         }
     }
 
@@ -162,7 +159,7 @@ mod tests {
 
     #[test]
     fn test_basic() {
-        let expr = OwnedExpression::new(
+        let expr = Expression::new(
             "SELECT * FROM {} WHERE name={} AND age>{} AND {} AND gender in {}",
             vec![
                 Identifier::new("users").into(),

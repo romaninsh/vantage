@@ -2,7 +2,7 @@
 //!
 //! doc wip
 
-use vantage_expressions::OwnedExpression;
+use vantage_expressions::Expression;
 
 use crate::{identifier::Identifier, operation::Expressive};
 
@@ -38,19 +38,19 @@ impl Field {
         }
     }
 
-    pub fn dot(&self, field: impl Into<String>) -> OwnedExpression {
+    pub fn dot(&self, field: impl Into<String>) -> Expression {
         Identifier::new(self.field.clone()).dot(field.into())
     }
 }
 
-impl Into<OwnedExpression> for Field {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for Field {
+    fn into(self) -> Expression {
         self.expr()
     }
 }
 
 impl Expressive for Field {
-    fn expr(&self) -> OwnedExpression {
+    fn expr(&self) -> Expression {
         Identifier::new(self.field.clone()).into()
     }
 }

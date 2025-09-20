@@ -3,7 +3,7 @@ use dataset_ui_adapters::{egui_adapter::EguiTable, TableStore, VantageTableAdapt
 use eframe::egui;
 
 struct TableApp {
-    table: EguiTable<VantageTableAdapter<Client>>,
+    table: EguiTable<VantageTableAdapter<SurrealDB, Client>>,
 }
 
 impl TableApp {

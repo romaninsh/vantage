@@ -5,7 +5,7 @@ pub mod query_type;
 
 use indexmap::IndexMap;
 use serde_json::Value;
-use vantage_expressions::{Expr, OwnedExpression, expr, protocol::selectable::Selectable};
+use vantage_expressions::{Expr, Expression, expr, protocol::selectable::Selectable};
 
 use crate::Identifier;
 use join_query::JoinQuery;
@@ -19,7 +19,7 @@ pub struct Select {
     with: IndexMap<String, QuerySource>,
     distinct: bool,
     query_type: QueryType,
-    fields: IndexMap<Option<String>, OwnedExpression>,
+    fields: IndexMap<Option<String>, Expression>,
     set_fields: IndexMap<String, Value>,
 
     where_conditions: QueryConditions,
@@ -29,8 +29,8 @@ pub struct Select {
     skip_items: Option<i64>,
     limit_items: Option<i64>,
 
-    group_by: Vec<OwnedExpression>,
-    order_by: Vec<OwnedExpression>,
+    group_by: Vec<Expression>,
+    order_by: Vec<Expression>,
 }
 
 impl Select {
@@ -73,7 +73,7 @@ impl Select {
         self
     }
 
-    pub fn with_field(mut self, name: &str, expression: OwnedExpression) -> Self {
+    pub fn with_field(mut self, name: &str, expression: Expression) -> Self {
         self.fields.insert(Some(name.to_string()), expression);
         self
     }
@@ -84,17 +84,17 @@ impl Select {
         self
     }
 
-    pub fn with_expression(mut self, expression: OwnedExpression, alias: &str) -> Self {
+    pub fn with_expression(mut self, expression: Expression, alias: &str) -> Self {
         self.fields.insert(Some(alias.to_string()), expression);
         self
     }
 
-    pub fn with_where_condition(mut self, condition: OwnedExpression) -> Self {
+    pub fn with_where_condition(mut self, condition: Expression) -> Self {
         self.where_conditions.add_condition(condition);
         self
     }
 
-    pub fn with_having_condition(mut self, condition: OwnedExpression) -> Self {
+    pub fn with_having_condition(mut self, condition: Expression) -> Self {
         self.having_conditions.add_condition(condition);
         self
     }
@@ -104,18 +104,18 @@ impl Select {
         self
     }
 
-    pub fn with_group_by(mut self, expression: OwnedExpression) -> Self {
+    pub fn with_group_by(mut self, expression: Expression) -> Self {
         self.group_by.push(expression);
         self
     }
 
-    pub fn with_order_by(mut self, expression: OwnedExpression) -> Self {
+    pub fn with_order_by(mut self, expression: Expression) -> Self {
         self.order_by.push(expression);
         self.order_by.push(expr!("true")); // Default to ascending
         self
     }
 
-    pub fn with_order_by_desc(mut self, expression: OwnedExpression) -> Self {
+    pub fn with_order_by_desc(mut self, expression: Expression) -> Self {
         self.order_by.push(expression);
         self.order_by.push(expr!("false")); // Descending
         self
@@ -148,7 +148,7 @@ impl Select {
         self
     }
 
-    pub fn fields(mut self, fields: IndexMap<Option<String>, OwnedExpression>) -> Self {
+    pub fn fields(mut self, fields: IndexMap<Option<String>, Expression>) -> Self {
         self.fields = fields;
         self
     }
@@ -158,11 +158,11 @@ impl Select {
         self
     }
 
-    fn render_fields(&self) -> OwnedExpression {
+    fn render_fields(&self) -> Expression {
         if self.fields.is_empty() {
             expr!("*")
         } else {
-            let field_expressions: Vec<OwnedExpression> = self
+            let field_expressions: Vec<Expression> = self
                 .fields
                 .iter()
                 .map(|(alias, field)| {
@@ -173,56 +173,56 @@ impl Select {
                     }
                 })
                 .collect();
-            OwnedExpression::from_vec(field_expressions, ", ")
+            Expression::from_vec(field_expressions, ", ")
         }
     }
 
-    fn render_with(&self) -> OwnedExpression {
+    fn render_with(&self) -> Expression {
         if self.with.is_empty() {
             expr!("")
         } else {
-            let with_expressions: Vec<OwnedExpression> = self
+            let with_expressions: Vec<Expression> = self
                 .with
                 .iter()
                 .map(|(alias, source)| match source {
                     QuerySource::Query(query, _) => {
-                        let subquery: OwnedExpression = query.as_ref().as_ref().clone().into();
+                        let subquery: Expression = query.as_ref().as_ref().clone().into();
                         expr!("{} AS ({})", Identifier::new(alias), subquery)
                     }
                     _ => {
-                        let source_expr: OwnedExpression = source.clone().into();
+                        let source_expr: Expression = source.clone().into();
                         expr!("{} AS ({})", Identifier::new(alias), source_expr)
                     }
                 })
                 .collect();
             expr!(
                 "WITH {} ",
-                OwnedExpression::from_vec(with_expressions, ", ")
+                Expression::from_vec(with_expressions, ", ")
             )
         }
     }
 
-    fn render_from(&self) -> OwnedExpression {
+    fn render_from(&self) -> Expression {
         if self.from.is_empty() {
             expr!("")
         } else {
-            let from_expressions: Vec<OwnedExpression> = self
+            let from_expressions: Vec<Expression> = self
                 .from
                 .iter()
                 .map(|source| source.clone().into())
                 .collect();
             expr!(
                 " FROM {}",
-                OwnedExpression::from_vec(from_expressions, ", ")
+                Expression::from_vec(from_expressions, ", ")
             )
         }
     }
 
-    fn render_where(&self) -> OwnedExpression {
+    fn render_where(&self) -> Expression {
         self.where_conditions.render()
     }
 
-    fn render_having(&self) -> OwnedExpression {
+    fn render_having(&self) -> Expression {
         if self.having_conditions.has_conditions() {
             let conditions = self.having_conditions.render_conditions();
             expr!(" HAVING {}", conditions)
@@ -231,29 +231,29 @@ impl Select {
         }
     }
 
-    fn render_joins(&self) -> OwnedExpression {
+    fn render_joins(&self) -> Expression {
         if self.joins.is_empty() {
             expr!("")
         } else {
-            let join_expressions: Vec<OwnedExpression> =
+            let join_expressions: Vec<Expression> =
                 self.joins.iter().map(|join| join.render()).collect();
-            OwnedExpression::from_vec(join_expressions, "")
+            Expression::from_vec(join_expressions, "")
         }
     }
 
-    fn render_group_by(&self) -> OwnedExpression {
+    fn render_group_by(&self) -> Expression {
         if self.group_by.is_empty() {
             expr!("")
         } else {
-            let group_expressions: Vec<OwnedExpression> = self.group_by.clone();
+            let group_expressions: Vec<Expression> = self.group_by.clone();
             expr!(
                 " GROUP BY {}",
-                OwnedExpression::from_vec(group_expressions, ", ")
+                Expression::from_vec(group_expressions, ", ")
             )
         }
     }
 
-    fn render_order_by(&self) -> OwnedExpression {
+    fn render_order_by(&self) -> Expression {
         if self.order_by.is_empty() {
             expr!("")
         } else {
@@ -271,11 +271,11 @@ impl Select {
                 }
             }
 
-            expr!(" ORDER BY {}", OwnedExpression::from_vec(result, ", "))
+            expr!(" ORDER BY {}", Expression::from_vec(result, ", "))
         }
     }
 
-    fn render_limit(&self) -> OwnedExpression {
+    fn render_limit(&self) -> Expression {
         match (self.limit_items, self.skip_items) {
             (Some(limit), Some(skip)) => expr!(" LIMIT {} OFFSET {}", limit, skip),
             (Some(limit), None) => expr!(" LIMIT {}", limit),
@@ -284,7 +284,7 @@ impl Select {
         }
     }
 
-    fn render_distinct(&self) -> OwnedExpression {
+    fn render_distinct(&self) -> Expression {
         if self.distinct {
             expr!("DISTINCT ")
         } else {
@@ -293,8 +293,8 @@ impl Select {
     }
 }
 
-impl Into<OwnedExpression> for Select {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for Select {
+    fn into(self) -> Expression {
         let with_clause = self.render_with();
         let distinct = self.render_distinct();
         let fields = self.render_fields();
@@ -363,11 +363,11 @@ impl Selectable for Select {
         self.fields.insert(None, Identifier::new(field).into());
     }
 
-    fn add_expression(&mut self, expression: OwnedExpression, alias: Option<String>) {
+    fn add_expression(&mut self, expression: Expression, alias: Option<String>) {
         self.fields.insert(alias, expression);
     }
 
-    fn add_where_condition(&mut self, condition: OwnedExpression) {
+    fn add_where_condition(&mut self, condition: Expression) {
         self.where_conditions.add_condition(condition);
     }
 
@@ -383,7 +383,7 @@ impl Selectable for Select {
             .push(expr!(if ascending { "true" } else { "false" }));
     }
 
-    fn add_group_by(&mut self, expression: OwnedExpression) {
+    fn add_group_by(&mut self, expression: Expression) {
         self.group_by.push(expression);
     }
 
@@ -444,7 +444,7 @@ mod tests {
     #[test]
     fn test_basic_select() {
         let select = Select::new();
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         let sql = expr.preview();
         assert_eq!(sql, "SELECT *");
     }
@@ -456,7 +456,7 @@ mod tests {
         fields.insert(Some("age".to_string()), Identifier::new("age").into());
 
         let select = Select::new().fields(fields);
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         let sql = expr.preview();
         assert_eq!(sql, "SELECT `name` AS `name`, `age` AS `age`");
     }
@@ -465,7 +465,7 @@ mod tests {
     fn test_select_with_from() {
         let select = Select::new().from(vec![QuerySource::new(Identifier::new("users"))]);
 
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         let sql = expr.preview();
         assert_eq!(sql, "SELECT * FROM `users`");
     }
@@ -480,7 +480,7 @@ mod tests {
             .fields(fields)
             .from(vec![QuerySource::new(Identifier::new("users"))]);
 
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         let sql = expr.preview();
         assert_eq!(sql, "SELECT `name` AS `name`, `age` AS `age` FROM `users`");
     }
@@ -518,7 +518,7 @@ mod tests {
             .with_where_condition(expr!("age > 30"))
             .with_distinct();
 
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         let sql = expr.preview();
         assert!(sql.contains("SELECT DISTINCT"));
         assert!(sql.contains("FROM `users`"));
@@ -537,7 +537,7 @@ mod tests {
                 JoinQuery::left(QuerySource::table("roles")).on(expr!("users.role_id = roles.id")),
             );
 
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         let sql = expr.preview();
         assert!(sql.contains(
             "SELECT `id` AS `id`, `name` AS `name` FROM `users` LEFT JOIN `roles` ON users.role_id = roles.id"
@@ -560,7 +560,7 @@ mod tests {
             .with_column("user_name")
             .with_field("roles.role_name", expr!("roles.role_name"));
 
-        let expr: OwnedExpression = outer_query.into();
+        let expr: Expression = outer_query.into();
         let sql = expr.preview();
 
         assert!(sql.contains(
@@ -579,7 +579,7 @@ mod tests {
             .with_group_by(expr!("name"))
             .with_order_by_desc(expr!("age"));
 
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         let sql = expr.preview();
 
         assert!(sql.contains("GROUP BY name"));
@@ -595,7 +595,7 @@ mod tests {
             .with_column("age")
             .with_skip_and_limit(10, 20);
 
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         let sql = expr.preview();
         assert!(sql.contains("LIMIT 20 OFFSET 10"));
     }
@@ -609,7 +609,7 @@ mod tests {
             .with_column("age")
             .with_limit(20);
 
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         let sql = expr.preview();
         assert!(sql.contains("LIMIT 20"));
         assert!(!sql.contains("OFFSET"));
@@ -624,7 +624,7 @@ mod tests {
             .with_column("age")
             .with_skip(10);
 
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         let sql = expr.preview();
         assert!(sql.contains("OFFSET 10"));
         assert!(!sql.contains("LIMIT"));
@@ -639,7 +639,7 @@ mod tests {
             .with_group_by(expr!("department"))
             .with_having_condition(expr!("COUNT(*) > 5"));
 
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         let sql = expr.preview();
         assert!(sql.contains("GROUP BY department"));
         assert!(sql.contains("HAVING COUNT(*) > 5"));
@@ -652,7 +652,7 @@ mod tests {
             .with_column("id")
             .with_column("name");
 
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         let sql = expr.preview();
         assert!(sql.contains("FROM `users` AS `u`"));
     }
@@ -663,7 +663,7 @@ mod tests {
             .with_table("product")
             .with_field("name_caps", expr!("UPPER(name)"));
 
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         let sql = expr.preview();
         assert_eq!(sql, "SELECT UPPER(name) AS `name_caps` FROM `product`");
     }
@@ -676,7 +676,7 @@ mod tests {
             .with_where_condition(expr!("name = 'John'"))
             .with_where_condition(expr!("age > 30"));
 
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         let sql = expr.preview();
         assert!(sql.contains("WHERE (name = 'John') AND (age > 30)"));
     }
@@ -692,7 +692,7 @@ mod tests {
                     .on(expr!("orders.status = 'active'")),
             );
 
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         let sql = expr.preview();
         assert!(sql.contains(
             "JOIN `orders` ON (users.id = orders.user_id) AND (orders.status = 'active')"

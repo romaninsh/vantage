@@ -3,7 +3,7 @@
 //! Provides field projection functionality for SurrealDB queries, allowing
 //! construction of object projections like `{field: value, alias: expression}`.
 
-use vantage_expressions::{OwnedExpression, expr};
+use vantage_expressions::{Expression, expr};
 
 use crate::{identifier::Identifier, operation::Expressive};
 
@@ -14,12 +14,12 @@ use crate::{identifier::Identifier, operation::Expressive};
 #[derive(Debug, Clone)]
 pub struct FieldProjectionField {
     alias: String,
-    expression: OwnedExpression,
+    expression: Expression,
 }
 
 impl FieldProjectionField {
     /// Creates a new field projection field
-    pub fn new(alias: impl Into<String>, expression: impl Into<OwnedExpression>) -> Self {
+    pub fn new(alias: impl Into<String>, expression: impl Into<Expression>) -> Self {
         Self {
             alias: alias.into(),
             expression: expression.into(),
@@ -28,7 +28,7 @@ impl FieldProjectionField {
 }
 
 impl Expressive for FieldProjectionField {
-    fn expr(&self) -> OwnedExpression {
+    fn expr(&self) -> Expression {
         expr!(
             "{}: {}",
             Identifier::new(self.alias.clone()),
@@ -37,8 +37,8 @@ impl Expressive for FieldProjectionField {
     }
 }
 
-impl Into<OwnedExpression> for FieldProjectionField {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for FieldProjectionField {
+    fn into(self) -> Expression {
         self.expr()
     }
 }
@@ -61,13 +61,13 @@ impl Into<OwnedExpression> for FieldProjectionField {
 /// ```
 #[derive(Debug, Clone)]
 pub struct FieldProjection {
-    base: Option<OwnedExpression>,
+    base: Option<Expression>,
     fields: Vec<FieldProjectionField>,
 }
 
 impl FieldProjection {
     /// Creates a new field projection with a base expression
-    pub fn new(base: impl Into<OwnedExpression>) -> Self {
+    pub fn new(base: impl Into<Expression>) -> Self {
         Self {
             base: Some(base.into()),
             fields: Vec::new(),
@@ -92,7 +92,7 @@ impl FieldProjection {
     /// * `alias` - The field name/alias in the resulting object
     pub fn with_expression(
         mut self,
-        expression: impl Into<OwnedExpression>,
+        expression: impl Into<Expression>,
         alias: impl Into<String>,
     ) -> Self {
         self.add_expression(expression, alias);
@@ -120,7 +120,7 @@ impl FieldProjection {
     /// * `alias` - The field name/alias in the resulting object
     pub fn add_expression(
         &mut self,
-        expression: impl Into<OwnedExpression>,
+        expression: impl Into<Expression>,
         alias: impl Into<String>,
     ) {
         self.fields
@@ -129,21 +129,21 @@ impl FieldProjection {
 }
 
 impl Expressive for FieldProjection {
-    fn expr(&self) -> OwnedExpression {
+    fn expr(&self) -> Expression {
         let field_expressions =
-            OwnedExpression::from_vec(self.fields.iter().map(|f| f.expr()).collect(), ", ");
+            Expression::from_vec(self.fields.iter().map(|f| f.expr()).collect(), ", ");
         let base = self.base.clone().unwrap();
 
         if base.preview().is_empty() {
-            OwnedExpression::new("{{}}", vec![field_expressions.into()])
+            Expression::new("{{}}", vec![field_expressions.into()])
         } else {
-            OwnedExpression::new("{}.{{}}", vec![base.into(), field_expressions.into()])
+            Expression::new("{}.{{}}", vec![base.into(), field_expressions.into()])
         }
     }
 }
 
-impl Into<OwnedExpression> for FieldProjection {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for FieldProjection {
+    fn into(self) -> Expression {
         self.expr()
     }
 }

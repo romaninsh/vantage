@@ -2,7 +2,7 @@
 //!
 //! doc wip
 
-use vantage_expressions::OwnedExpression;
+use vantage_expressions::Expression;
 
 /// Represents a target in a FROM clause
 ///
@@ -20,7 +20,7 @@ use vantage_expressions::OwnedExpression;
 
 #[derive(Debug, Clone)]
 pub struct Target {
-    target: OwnedExpression,
+    target: Expression,
 }
 
 impl Target {
@@ -31,15 +31,15 @@ impl Target {
     /// # Arguments
     ///
     /// * `target` - doc wip
-    pub fn new(target: impl Into<OwnedExpression>) -> Self {
+    pub fn new(target: impl Into<Expression>) -> Self {
         Self {
             target: target.into(),
         }
     }
 }
 
-impl Into<OwnedExpression> for Target {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for Target {
+    fn into(self) -> Expression {
         self.target
     }
 }

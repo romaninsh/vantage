@@ -2,14 +2,14 @@
 //!
 //! This module provides operations that extend expressions with SurrealDB-specific functionality.
 
-use vantage_expressions::{Expr, OwnedExpression, expr};
+use vantage_expressions::{Expr, Expression, expr};
 
 use crate::identifier::Identifier;
 
-/// Trait for types that can be converted to OwnedExpression
-pub trait Expressive: Into<OwnedExpression> {
-    /// Convert to OwnedExpression
-    fn expr(&self) -> OwnedExpression;
+/// Trait for types that can be converted to Expression
+pub trait Expressive: Into<Expression> {
+    /// Convert to Expression
+    fn expr(&self) -> Expression;
 }
 
 /// Extension trait to add reference traversal methods to expressions
@@ -24,7 +24,7 @@ pub trait RefOperation: Expressive {
     /// # Returns
     ///
     /// An expression that renders as "self->reference->table"
-    fn rref(&self, reference: impl Into<String>, table: impl Into<String>) -> OwnedExpression;
+    fn rref(&self, reference: impl Into<String>, table: impl Into<String>) -> Expression;
 
     /// Creates a left reference traversal expression in the format: self<-ref<-table
     ///
@@ -36,12 +36,12 @@ pub trait RefOperation: Expressive {
     /// # Returns
     ///
     /// An expression that renders as "self<-reference<-table"
-    fn lref(&self, reference: impl Into<String>, table: impl Into<String>) -> OwnedExpression;
-    fn alias(&self, alias: impl Into<String>) -> OwnedExpression;
-    fn eq(&self, other: impl Into<Expr>) -> OwnedExpression;
-    fn sub(&self, other: impl Into<Expr>) -> OwnedExpression;
-    fn contains(&self, other: impl Into<Expr>) -> OwnedExpression;
-    fn in_(&self, other: impl Into<Expr>) -> OwnedExpression;
+    fn lref(&self, reference: impl Into<String>, table: impl Into<String>) -> Expression;
+    fn alias(&self, alias: impl Into<String>) -> Expression;
+    fn eq(&self, other: impl Into<Expr>) -> Expression;
+    fn sub(&self, other: impl Into<Expr>) -> Expression;
+    fn contains(&self, other: impl Into<Expr>) -> Expression;
+    fn in_(&self, other: impl Into<Expr>) -> Expression;
 }
 
 // Default implementations for RefOperation
@@ -49,47 +49,47 @@ impl<T> RefOperation for T
 where
     T: Expressive,
 {
-    fn rref(&self, reference: impl Into<String>, table: impl Into<String>) -> OwnedExpression {
+    fn rref(&self, reference: impl Into<String>, table: impl Into<String>) -> Expression {
         expr!(
             "{}->{}->{}",
             self.expr(),
-            OwnedExpression::new(reference.into(), vec![]),
-            OwnedExpression::new(table.into(), vec![])
+            Expression::new(reference.into(), vec![]),
+            Expression::new(table.into(), vec![])
         )
     }
 
-    fn lref(&self, reference: impl Into<String>, table: impl Into<String>) -> OwnedExpression {
+    fn lref(&self, reference: impl Into<String>, table: impl Into<String>) -> Expression {
         expr!(
             "{}<-{}<-{}",
             self.expr(),
-            OwnedExpression::new(reference.into(), vec![]),
-            OwnedExpression::new(table.into(), vec![])
+            Expression::new(reference.into(), vec![]),
+            Expression::new(table.into(), vec![])
         )
     }
 
-    fn alias(&self, alias: impl Into<String>) -> OwnedExpression {
+    fn alias(&self, alias: impl Into<String>) -> Expression {
         expr!("{} AS {}", self.expr(), Identifier::new(alias.into()))
     }
 
-    fn eq(&self, other: impl Into<Expr>) -> OwnedExpression {
+    fn eq(&self, other: impl Into<Expr>) -> Expression {
         expr!("{} = {}", self.expr(), other.into())
     }
 
-    fn sub(&self, other: impl Into<Expr>) -> OwnedExpression {
+    fn sub(&self, other: impl Into<Expr>) -> Expression {
         expr!("{} - {}", self.expr(), other.into())
     }
 
-    fn contains(&self, other: impl Into<Expr>) -> OwnedExpression {
+    fn contains(&self, other: impl Into<Expr>) -> Expression {
         expr!("{} CONTAINS {}", self.expr(), other.into())
     }
 
-    fn in_(&self, other: impl Into<Expr>) -> OwnedExpression {
+    fn in_(&self, other: impl Into<Expr>) -> Expression {
         expr!("{} IN {}", self.expr(), other.into())
     }
 }
 
-impl Expressive for OwnedExpression {
-    fn expr(&self) -> OwnedExpression {
+impl Expressive for Expression {
+    fn expr(&self) -> Expression {
         self.clone()
     }
 }

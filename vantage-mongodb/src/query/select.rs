@@ -2,16 +2,16 @@ use crate::field::Field;
 use async_trait::async_trait;
 use serde_json::Value;
 use std::fmt::Debug;
-use vantage_expressions::{Expr, OwnedExpression, expr, protocol::selectable::Selectable};
+use vantage_expressions::{Expr, Expression, expr, protocol::selectable::Selectable};
 
 #[derive(Debug, Clone)]
 pub struct MongoSelect {
-    source: Option<OwnedExpression>,
+    source: Option<Expression>,
     source_alias: Option<String>,
     fields: Vec<Field>,
-    where_conditions: Vec<OwnedExpression>,
-    order_by: Vec<(OwnedExpression, bool)>,
-    group_by: Vec<OwnedExpression>,
+    where_conditions: Vec<Expression>,
+    order_by: Vec<(Expression, bool)>,
+    group_by: Vec<Expression>,
     distinct: bool,
     limit: Option<i64>,
     skip: Option<i64>,
@@ -36,7 +36,7 @@ impl MongoSelect {
         self.fields.iter().any(|field| field.is_expression())
     }
 
-    fn render_find(&self) -> OwnedExpression {
+    fn render_find(&self) -> Expression {
         let collection = if let Some(ref source) = self.source {
             source.clone()
         } else {
@@ -80,7 +80,7 @@ impl MongoSelect {
         expr!(base_query)
     }
 
-    fn render_aggregate(&self) -> OwnedExpression {
+    fn render_aggregate(&self) -> Expression {
         let collection = if let Some(ref source) = self.source {
             source.clone()
         } else {
@@ -124,7 +124,7 @@ impl MongoSelect {
         ))
     }
 
-    fn render_project_stage(&self) -> OwnedExpression {
+    fn render_project_stage(&self) -> Expression {
         if self.fields.is_empty() {
             return expr!("{}");
         }
@@ -148,7 +148,7 @@ impl MongoSelect {
         expr!(format!("{{{}}}", project_fields.join(", ")))
     }
 
-    fn combine_where_conditions(&self) -> OwnedExpression {
+    fn combine_where_conditions(&self) -> Expression {
         if self.where_conditions.is_empty() {
             return expr!("{}");
         }
@@ -162,7 +162,7 @@ impl MongoSelect {
         self.where_conditions[0].clone()
     }
 
-    fn render_projection(&self) -> OwnedExpression {
+    fn render_projection(&self) -> Expression {
         if self.fields.is_empty() {
             return expr!("{}");
         }
@@ -188,11 +188,11 @@ impl Selectable for MongoSelect {
         self.fields.push(Field::new_simple(field.into()));
     }
 
-    fn add_expression(&mut self, expression: OwnedExpression, alias: Option<String>) {
+    fn add_expression(&mut self, expression: Expression, alias: Option<String>) {
         self.fields.push(Field::new_expression(expression, alias));
     }
 
-    fn add_where_condition(&mut self, condition: OwnedExpression) {
+    fn add_where_condition(&mut self, condition: Expression) {
         self.where_conditions.push(condition);
     }
 
@@ -205,7 +205,7 @@ impl Selectable for MongoSelect {
         self.order_by.push((expression, ascending));
     }
 
-    fn add_group_by(&mut self, expression: OwnedExpression) {
+    fn add_group_by(&mut self, expression: Expression) {
         self.group_by.push(expression);
     }
 
@@ -259,8 +259,8 @@ impl Selectable for MongoSelect {
     }
 }
 
-impl Into<OwnedExpression> for MongoSelect {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for MongoSelect {
+    fn into(self) -> Expression {
         if self.has_expressions() {
             self.render_aggregate()
         } else {
@@ -279,7 +279,7 @@ mod tests {
     fn test_basic_select() {
         let mut select = MongoSelect::new();
         select.set_source(expr!("users"), None);
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         assert_eq!(expr.preview(), "db.users.find({})");
     }
 
@@ -288,7 +288,7 @@ mod tests {
         let mut select = MongoSelect::new();
         select.set_source(expr!("users"), None);
         select.add_where_condition(expr!("{\"name\": \"John\"}"));
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         let result = expr.preview();
         assert!(result.contains("db.users.find("));
         assert!(result.contains("\"name\""));
@@ -301,7 +301,7 @@ mod tests {
         select.set_source(expr!("users"), None);
         select.add_field("name".to_string());
         select.add_field("email".to_string());
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         let result = expr.preview();
         assert!(result.contains("db.users.find({}, "));
         assert!(result.contains("name"));
@@ -312,7 +312,7 @@ mod tests {
         let mut select = MongoSelect::new();
         select.set_source(expr!("users"), None);
         select.add_order_by(expr!("{\"name\": 1}"), true);
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         let result = expr.preview();
         assert!(result.contains("db.users.find({}).sort("));
         assert!(result.contains("\"name\""));
@@ -323,7 +323,7 @@ mod tests {
         let mut select = MongoSelect::new();
         select.set_source(expr!("users"), None);
         select.set_limit(Some(10), None);
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         assert_eq!(expr.preview(), "db.users.find({}).limit(10)");
     }
 
@@ -332,7 +332,7 @@ mod tests {
         let mut select = MongoSelect::new();
         select.set_source(expr!("users"), None);
         select.set_limit(Some(10), Some(5));
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         assert_eq!(expr.preview(), "db.users.find({}).skip(5).limit(10)");
     }
 
@@ -362,7 +362,7 @@ mod tests {
         select.set_source(expr!("orders"), None);
         select.add_expression(expr!("quantity*price"), Some("total".to_string()));
 
-        let expr: OwnedExpression = select.into();
+        let expr: Expression = select.into();
         let result = expr.preview();
 
         assert!(result.contains("db.orders.aggregate([{$project: {\"total\": quantity*price}}])"));
@@ -376,7 +376,7 @@ mod tests {
         select_find.add_field("name".to_string());
         select_find.add_field("email".to_string());
 
-        let expr: OwnedExpression = select_find.into();
+        let expr: Expression = select_find.into();
         let result = expr.preview();
         assert!(result.contains("db.users.find("));
         assert!(!result.contains("aggregate"));
@@ -387,7 +387,7 @@ mod tests {
         select_aggregate.add_field("customer".to_string());
         select_aggregate.add_expression(expr!("quantity*price"), Some("total".to_string()));
 
-        let expr: OwnedExpression = select_aggregate.into();
+        let expr: Expression = select_aggregate.into();
         let result = expr.preview();
         assert!(result.contains("db.orders.aggregate("));
         assert!(!result.contains("find"));

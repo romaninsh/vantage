@@ -1,5 +1,5 @@
 use crate::select::{QueryConditions, QuerySource};
-use vantage_expressions::{OwnedExpression, expr};
+use vantage_expressions::{Expression, expr};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JoinType {
@@ -41,16 +41,16 @@ impl JoinQuery {
         Self::new(JoinType::Full, source, QueryConditions::new())
     }
 
-    pub fn on(mut self, condition: OwnedExpression) -> Self {
+    pub fn on(mut self, condition: Expression) -> Self {
         self.on_conditions.add_condition(condition);
         self
     }
 
-    pub fn add_on_condition(&mut self, condition: OwnedExpression) {
+    pub fn add_on_condition(&mut self, condition: Expression) {
         self.on_conditions.add_condition(condition);
     }
 
-    pub fn render(&self) -> OwnedExpression {
+    pub fn render(&self) -> Expression {
         let source = self.source.render_with_prefix("");
         let on_conditions = self.render_on_conditions();
 
@@ -88,7 +88,7 @@ impl JoinQuery {
         join_clause
     }
 
-    fn render_on_conditions(&self) -> OwnedExpression {
+    fn render_on_conditions(&self) -> Expression {
         if self.on_conditions.has_conditions() {
             let conditions = self.on_conditions.render_conditions();
             expr!("ON {}", conditions)

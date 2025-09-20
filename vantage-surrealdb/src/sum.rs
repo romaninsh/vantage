@@ -2,7 +2,7 @@
 //!
 //! doc wip
 
-use vantage_expressions::{OwnedExpression, expr};
+use vantage_expressions::{Expression, expr};
 
 use crate::{identifier::Identifier, operation::Expressive};
 
@@ -21,7 +21,7 @@ use crate::{identifier::Identifier, operation::Expressive};
 /// ```
 #[derive(Debug, Clone)]
 pub struct Sum {
-    expr: OwnedExpression,
+    expr: Expression,
 }
 
 impl Sum {
@@ -32,7 +32,7 @@ impl Sum {
     /// # Arguments
     ///
     /// * `identifier` - doc wip
-    pub fn new(expr: OwnedExpression) -> Self {
+    pub fn new(expr: Expression) -> Self {
         Self {
             expr: expr!("math::sum({})", expr),
         }
@@ -40,13 +40,13 @@ impl Sum {
 }
 
 impl Expressive for Sum {
-    fn expr(&self) -> OwnedExpression {
+    fn expr(&self) -> Expression {
         self.expr.clone()
     }
 }
 
-impl Into<OwnedExpression> for Sum {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for Sum {
+    fn into(self) -> Expression {
         self.expr()
     }
 }
@@ -54,7 +54,7 @@ impl Into<OwnedExpression> for Sum {
 #[derive(Debug, Clone)]
 pub struct Fx {
     name: String,
-    expr: Vec<OwnedExpression>,
+    expr: Vec<Expression>,
 }
 
 impl Fx {
@@ -65,7 +65,7 @@ impl Fx {
     /// # Arguments
     ///
     /// * `identifier` - doc wip
-    pub fn new(name: impl Into<String>, expr: Vec<OwnedExpression>) -> Self {
+    pub fn new(name: impl Into<String>, expr: Vec<Expression>) -> Self {
         Self {
             name: name.into(),
             expr,
@@ -74,17 +74,17 @@ impl Fx {
 }
 
 impl Expressive for Fx {
-    fn expr(&self) -> OwnedExpression {
+    fn expr(&self) -> Expression {
         expr!(
             "{}({})",
             Identifier::new(self.name.clone()),
-            OwnedExpression::from_vec(self.expr.clone(), ", ")
+            Expression::from_vec(self.expr.clone(), ", ")
         )
     }
 }
 
-impl Into<OwnedExpression> for Fx {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for Fx {
+    fn into(self) -> Expression {
         self.expr()
     }
 }

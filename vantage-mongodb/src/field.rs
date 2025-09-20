@@ -1,16 +1,16 @@
-use vantage_expressions::{OwnedExpression, expr};
+use vantage_expressions::{Expression, expr};
 
 #[derive(Debug, Clone)]
 pub enum Field {
     Simple(String),
     Expression {
-        expression: OwnedExpression,
+        expression: Expression,
         alias: Option<String>,
     },
 }
 
 impl Field {
-    pub fn new_expression(expression: OwnedExpression, alias: Option<String>) -> Self {
+    pub fn new_expression(expression: Expression, alias: Option<String>) -> Self {
         Self::Expression { expression, alias }
     }
 
@@ -31,7 +31,7 @@ impl Field {
             || field.chars().next().map_or(false, |c| c.is_numeric())
     }
 
-    pub fn expression(&self) -> OwnedExpression {
+    pub fn expression(&self) -> Expression {
         match self {
             Field::Simple(field) => {
                 if Self::needs_quotes(field) {
@@ -52,8 +52,8 @@ impl Field {
     }
 }
 
-impl Into<OwnedExpression> for Field {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for Field {
+    fn into(self) -> Expression {
         self.expression()
     }
 }
@@ -65,35 +65,35 @@ mod tests {
     #[test]
     fn test_field_no_quotes() {
         let field = Field::new_simple("username");
-        let expr: OwnedExpression = field.into();
+        let expr: Expression = field.into();
         assert_eq!(expr.preview(), "username");
     }
 
     #[test]
     fn test_field_with_dot() {
         let field = Field::new_simple("user.name");
-        let expr: OwnedExpression = field.into();
+        let expr: Expression = field.into();
         assert_eq!(expr.preview(), "\"user.name\"");
     }
 
     #[test]
     fn test_field_with_dollar() {
         let field = Field::new_simple("$set");
-        let expr: OwnedExpression = field.into();
+        let expr: Expression = field.into();
         assert_eq!(expr.preview(), "\"$set\"");
     }
 
     #[test]
     fn test_field_with_space() {
         let field = Field::new_simple("user name");
-        let expr: OwnedExpression = field.into();
+        let expr: Expression = field.into();
         assert_eq!(expr.preview(), "\"user name\"");
     }
 
     #[test]
     fn test_field_starts_with_number() {
         let field = Field::new_simple("1user");
-        let expr: OwnedExpression = field.into();
+        let expr: Expression = field.into();
         assert_eq!(expr.preview(), "\"1user\"");
     }
 
