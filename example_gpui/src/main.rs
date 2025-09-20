@@ -2,7 +2,6 @@ use bakery_model3::*;
 use dataset_ui_adapters::{gpui_adapter::GpuiTableDelegate, TableStore, VantageTableAdapter};
 use gpui::*;
 use gpui_component::{table::Table, v_flex, ActiveTheme, Root, StyledExt};
-use tokio::runtime::Runtime;
 
 actions!(example_gpui, [Quit]);
 
@@ -11,27 +10,8 @@ struct TableApp {
 }
 
 impl TableApp {
-    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        // Connect to SurrealDB and get client table
-        let rt = Runtime::new().expect("Failed to create tokio runtime");
-
-        let client_table = rt.block_on(async {
-            bakery_model3::connect_surrealdb()
-                .await
-                .expect("Failed to connect to SurrealDB");
-            Client::table()
-        });
-
-        let dataset = rt.block_on(async { VantageTableAdapter::new(client_table).await });
-        let store = TableStore::new(dataset);
-        let delegate = GpuiTableDelegate::new(store);
-        let table = cx.new(|cx| Table::new(delegate, window, cx).stripe(true).border(true));
-
+    fn new(table: Entity<Table<GpuiTableDelegate<VantageTableAdapter<Client>>>>) -> Self {
         Self { table }
-    }
-
-    fn view(window: &mut Window, cx: &mut App) -> Entity<Self> {
-        cx.new(|cx| Self::new(window, cx))
     }
 }
 
@@ -59,6 +39,14 @@ impl Render for TableApp {
 }
 
 fn main() {
+    // Initialize SurrealDB before starting GPUI
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+    rt.block_on(async {
+        bakery_model3::connect_surrealdb()
+            .await
+            .expect("Failed to connect to SurrealDB");
+    });
+
     let app = Application::new();
 
     app.run(move |cx| {
@@ -78,25 +66,50 @@ fn main() {
 
         cx.activate(true);
 
-        let window_size = size(px(1000.), px(700.));
+        let mut window_size = size(px(1000.), px(700.));
+        if let Some(display) = cx.primary_display() {
+            let display_size = display.bounds().size;
+            window_size.width = window_size.width.min(display_size.width * 0.85);
+            window_size.height = window_size.height.min(display_size.height * 0.85);
+        }
         let window_bounds = Bounds::centered(None, window_size, cx);
 
-        let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(window_bounds)),
-            titlebar: Some(TitlebarOptions {
-                title: Some("Bakery Model 3 - Client List".into()),
-                appears_transparent: false,
-                traffic_light_position: None,
-            }),
-            window_min_size: Some(size(px(600.), px(400.))),
-            kind: WindowKind::Normal,
-            ..Default::default()
-        };
+        cx.spawn(async move |cx| {
+            let options = WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(window_bounds)),
+                titlebar: Some(TitlebarOptions {
+                    title: Some("Bakery Model 3 - Client List".into()),
+                    appears_transparent: false,
+                    traffic_light_position: None,
+                }),
+                window_min_size: Some(size(px(600.), px(400.))),
+                kind: WindowKind::Normal,
+                ..Default::default()
+            };
 
-        cx.open_window(options, |window, cx| {
-            let table_app = TableApp::view(window, cx);
-            cx.new(|cx| Root::new(table_app.into(), window, cx))
+            let client_table = Client::table();
+            let dataset = VantageTableAdapter::new(client_table).await;
+            let store = TableStore::new(dataset);
+            let delegate = GpuiTableDelegate::new(store);
+
+            let window = cx
+                .open_window(options, |window, cx| {
+                    let table =
+                        cx.new(|cx| Table::new(delegate, window, cx).stripe(true).border(true));
+                    let view = cx.new(|_| TableApp::new(table));
+                    cx.new(|cx| Root::new(view.into(), window, cx))
+                })
+                .expect("failed to open window");
+
+            window
+                .update(cx, |_, window, _| {
+                    window.activate_window();
+                    window.set_window_title("Bakery Model 3 - Client List");
+                })
+                .expect("failed to update window");
+
+            Ok::<_, anyhow::Error>(())
         })
-        .unwrap();
+        .detach();
     });
 }
