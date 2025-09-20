@@ -6,11 +6,11 @@ use gpui_component::{table::Table, v_flex, ActiveTheme, Root, StyledExt};
 actions!(example_gpui, [Quit]);
 
 struct TableApp {
-    table: Entity<Table<GpuiTableDelegate<VantageTableAdapter<Client>>>>,
+    table: Entity<Table<GpuiTableDelegate<VantageTableAdapter<SurrealDB, Client>>>>,
 }
 
 impl TableApp {
-    fn new(table: Entity<Table<GpuiTableDelegate<VantageTableAdapter<Client>>>>) -> Self {
+    fn new(table: Entity<Table<GpuiTableDelegate<VantageTableAdapter<SurrealDB, Client>>>>) -> Self {
         Self { table }
     }
 }
