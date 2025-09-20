@@ -10,7 +10,9 @@ struct TableApp {
 }
 
 impl TableApp {
-    fn new(table: Entity<Table<GpuiTableDelegate<VantageTableAdapter<SurrealDB, Client>>>>) -> Self {
+    fn new(
+        table: Entity<Table<GpuiTableDelegate<VantageTableAdapter<SurrealDB, Client>>>>,
+    ) -> Self {
         Self { table }
     }
 }
