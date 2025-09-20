@@ -16,22 +16,22 @@ pub trait Flatten<T> {
     fn flatten_nested(&self, expr: &T) -> T;
 }
 
-/// Default implementation for OwnedExpression flattening
-pub struct OwnedExpressionFlattener;
+/// Default implementation for Expression flattening
+pub struct ExpressionFlattener;
 
-impl OwnedExpressionFlattener {
+impl ExpressionFlattener {
     pub fn new() -> Self {
         Self
     }
 }
 
-impl Default for OwnedExpressionFlattener {
+impl Default for ExpressionFlattener {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Flatten<Expression> for OwnedExpressionFlattener {
+impl Flatten<Expression> for ExpressionFlattener {
     fn flatten(&self, expr: &Expression) -> Expression {
         let resolved = self.resolve_deferred(expr);
         self.flatten_nested(&resolved)
@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn test_flatten_nested_expressions() {
-        let flattener = OwnedExpressionFlattener::new();
+        let flattener = ExpressionFlattener::new();
 
         let nested_expr = expr!("Hello {}", "world");
         let main_expr = expr!("select {}", IntoExpressive::nested(nested_expr));
@@ -96,7 +96,7 @@ mod tests {
 
     #[test]
     fn test_multiple_nested_expressions() {
-        let flattener = OwnedExpressionFlattener::new();
+        let flattener = ExpressionFlattener::new();
 
         let greeting = expr!("Hello {}", "John");
         let farewell = expr!("Goodbye {}", "Jane");
@@ -115,7 +115,7 @@ mod tests {
 
     #[test]
     fn test_mixed_parameters() {
-        let flattener = OwnedExpressionFlattener::new();
+        let flattener = ExpressionFlattener::new();
 
         let nested = expr!("count({})", "*");
         let main_expr = expr!(

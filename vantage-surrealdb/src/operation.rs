@@ -6,9 +6,9 @@ use vantage_expressions::{Expr, Expression, expr};
 
 use crate::identifier::Identifier;
 
-/// Trait for types that can be converted to OwnedExpression
+/// Trait for types that can be converted to Expression
 pub trait Expressive: Into<Expression> {
-    /// Convert to OwnedExpression
+    /// Convert to Expression
     fn expr(&self) -> Expression;
 }
 

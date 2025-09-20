@@ -10,7 +10,7 @@ pub mod util;
 pub mod value;
 
 // pub use expression::lazy::LazyExpression;
-pub use expression::flatten::{Flatten, OwnedExpressionFlattener};
+pub use expression::flatten::{ExpressionFlattener, Flatten};
 pub use expression::owned::Expression;
 pub use protocol::associated_queryable::AssociatedQueryable;
 pub use protocol::datasource::DataSource;
@@ -19,5 +19,5 @@ pub use protocol::selectable::Selectable;
 
 pub use protocol::result;
 
-/// Short type alias for `IntoExpressive<OwnedExpression>`
+/// Short type alias for `IntoExpressive<Expression>`
 pub type Expr = IntoExpressive<Expression>;

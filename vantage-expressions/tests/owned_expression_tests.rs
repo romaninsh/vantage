@@ -18,7 +18,7 @@ fn test_arc_mutex_with_database_execution() {
         // Create shared mutable variable
         let shared_var = Arc::new(Mutex::new(10i32));
 
-        // Create expressions using OwnedExpression
+        // Create expressions using Expression
         let expr1 = expr!("hello {}", &shared_var);
         let expr2 = expr!("select spelling from numbers where num={}", &shared_var);
 

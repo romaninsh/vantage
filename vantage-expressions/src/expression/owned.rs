@@ -31,7 +31,7 @@ impl std::fmt::Debug for Expression {
     }
 }
 
-// Specialized implementations for OwnedExpression
+// Specialized implementations for Expression
 
 impl<T: Into<IntoExpressive<Expression>>> From<Vec<T>> for IntoExpressive<Expression> {
     fn from(vec: Vec<T>) -> Self {

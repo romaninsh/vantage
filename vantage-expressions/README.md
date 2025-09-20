@@ -49,7 +49,7 @@ A most basic way to create an expression, is using the `expr!` macro provided by
 Lets create expression with a parameter:
 
 ```rust
-use vantage_expressions::{expr, OwnedExpression, IntoExpressive};
+use vantage_expressions::{expr, Expression, IntoExpressive};
 
 // Create expressions using the expr! macro
 let final_query = expr!("SELECT * FROM users WHERE age > {}", 18);
@@ -100,12 +100,12 @@ DataSource should be implemented for your Database driver. For instance,
 in `vantage-sql` you get PostgreSQL:
 
 ```rust
-impl DataSource<OwnedExpression> for PostgreSQL {
-    async fn execute(&self, expr: &OwnedExpression) -> Value {
+impl DataSource<Expression> for PostgreSQL {
+    async fn execute(&self, expr: &Expression) -> Value {
         // Execute now and return value
     }
 
-    fn defer(&self, expr: OwnedExpression) -> impl Fn() -> Pin<Box<dyn Future<Output = Value> + Send>> + Send + Sync + 'static {
+    fn defer(&self, expr: Expression) -> impl Fn() -> Pin<Box<dyn Future<Output = Value> + Send>> + Send + Sync + 'static {
         // Return a closure, which will execute and return value later
     }
 ```
@@ -183,7 +183,7 @@ and database capabilities.
 Consult `docs` for specific guides on advanced scenarios in implementing
 your DataSource.
 
-1. Start by using `OwnedExpression` with your custom DataSource implementation.
+1. Start by using `Expression` with your custom DataSource implementation.
 2. Implement `IntoExpressive<T>` for your types to allow them to be used in expressions parameters.
 3. Implement `Expressive` for complex types that can be converted into expressions.
 4. Implement `Selectable` for standardizing select queries across backends.

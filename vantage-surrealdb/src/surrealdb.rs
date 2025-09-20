@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use vantage_expressions::{Expression, Flatten, OwnedExpressionFlattener, protocol::DataSource};
+use vantage_expressions::{Expression, ExpressionFlattener, Flatten, protocol::DataSource};
 
 use surreal_client::SurrealClient;
 use surreal_client::error::Result;
@@ -45,7 +45,7 @@ impl SurrealDB {
 
     /// Convert {} placeholders to $_arg1, $_arg2, etc. and extract parameters
     fn prepare_query(&self, expr: &Expression) -> (String, HashMap<String, Value>) {
-        let flattener = OwnedExpressionFlattener::new();
+        let flattener = ExpressionFlattener::new();
         let flattened = flattener.flatten(expr);
 
         let mut query = String::new();
@@ -86,7 +86,7 @@ impl SurrealDB {
     }
 }
 
-// Implement DataSource trait for OwnedExpression
+// Implement DataSource trait for Expression
 impl DataSource<Expression> for SurrealDB {
     fn select(&self) -> impl vantage_expressions::protocol::selectable::Selectable {
         SurrealSelect::new()

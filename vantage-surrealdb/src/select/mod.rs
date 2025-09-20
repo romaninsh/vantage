@@ -289,8 +289,8 @@ impl<T: QueryResult> Expressive for SurrealSelect<T> {
     }
 }
 
-// impl<T: QueryResult> Into<OwnedExpression> for SurrealSelect<T> {
-//     fn into(self) -> OwnedExpression {
+// impl<T: QueryResult> Into<Expression> for SurrealSelect<T> {
+//     fn into(self) -> Expression {
 //         self.render()
 //     }
 // }

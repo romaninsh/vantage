@@ -4,7 +4,7 @@
 
 use crate::Expression;
 use crate::IntoExpressive;
-use crate::expression::flatten::{Flatten, OwnedExpressionFlattener};
+use crate::expression::flatten::{ExpressionFlattener, Flatten};
 use crate::protocol::datasource::DataSource;
 use crate::protocol::selectable::Selectable;
 use serde_json::Value;
@@ -43,6 +43,7 @@ impl FlatteningPatternDataSource {
     /// Execute deferred parameters and flatten nested expressions recursively
     async fn execute_and_flatten_expression(&self, expr: &Expression) -> Expression {
         let mut expr = expr.clone();
+        let flattener = ExpressionFlattener::new();
         let mut max_iterations = 10; // Prevent infinite loops
 
         // Keep processing until no more deferred parameters exist
@@ -57,8 +58,7 @@ impl FlatteningPatternDataSource {
                 }
             }
 
-            // Flatten nested expressions
-            let flattener = OwnedExpressionFlattener::new();
+            // Use Flatten trait to flatten nested expressions
             expr = flattener.flatten_nested(&expr);
 
             // Check if there are still deferred parameters after flattening

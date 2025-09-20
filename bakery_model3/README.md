@@ -122,6 +122,7 @@ This creates the `bakery/v2` database with sample clients, products, and orders.
 ## Migration Status (0.2 → 0.3)
 
 ✅ **Completed**:
+
 - Entity definitions adapted for SurrealDB (string IDs, embedded documents)
 - Table trait patterns established using vantage-table
 - Expression system integrated via vantage-expressions
@@ -131,6 +132,7 @@ This creates the `bakery/v2` database with sample clients, products, and orders.
 - Basic data retrieval (select_surreal(), select_surreal_column() working)
 
 ⏳ **In Progress**:
+
 - CRUD operations (.get(), .insert(), .count() methods - waiting for vantage-table impl)
 - Condition system (.with_condition(), field comparisons - not yet implemented)
 - Relationship traversal (.ref_orders(), .with_many() - not yet implemented)
@@ -141,7 +143,7 @@ This creates the `bakery/v2` database with sample clients, products, and orders.
 Key differences from Vantage 0.2:
 
 - **Table definitions**: Now use builder pattern instead of static initialization
-- **Field accessors**: Return OwnedExpression instead of typed column objects
+- **Field accessors**: Return Expression instead of typed column objects
 - **Database features**: SurrealDB embedded documents properly supported
 - **Connection management**: Moved to dedicated client libraries (surreal-client)
 - **DSN pattern**: Connection strings like `ws://user:pass@host:port/namespace/database`
@@ -156,6 +158,7 @@ cargo run --example 0-intro
 ```
 
 Expected output:
+
 ```
 email: biff-3293@hotmail.com, client: Biff Tannen
 email: doc@brown.com, client: Doc Brown
