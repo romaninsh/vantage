@@ -1,9 +1,8 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use vantage_expressions::expr;
 use vantage_surrealdb::SurrealDB;
-use vantage_table::{Column, Entity, Table};
+use vantage_table::{Entity, Table};
 
 use crate::surrealdb;
 
@@ -27,46 +26,15 @@ impl Entity for Order {}
 impl Order {
     pub fn table() -> Table<SurrealDB, Order> {
         Table::new("order", surrealdb())
-            .into_entity::<Order>()
-            .with(|t| {
-                t.add_column(Column::new("bakery"));
-                t.add_column(Column::new("is_deleted"));
-                t.add_column(Column::new("created_at"));
-                t.add_column(Column::new("lines"));
-            })
+            .with_column("bakery")
+            .with_column("is_deleted")
+            .with_column("created_at")
+            .with_column("lines")
+            .into_entity()
     }
 }
 
 pub trait OrderTable {
-    fn bakery(&self) -> vantage_expressions::OwnedExpression {
-        expr!("bakery")
-    }
-
-    fn is_deleted(&self) -> vantage_expressions::OwnedExpression {
-        expr!("is_deleted")
-    }
-
-    fn created_at(&self) -> vantage_expressions::OwnedExpression {
-        expr!("created_at")
-    }
-
-    fn lines(&self) -> vantage_expressions::OwnedExpression {
-        expr!("lines")
-    }
-
-    // Access embedded line item fields
-    fn lines_product(&self) -> vantage_expressions::OwnedExpression {
-        expr!("lines.*.product")
-    }
-
-    fn lines_quantity(&self) -> vantage_expressions::OwnedExpression {
-        expr!("lines.*.quantity")
-    }
-
-    fn lines_price(&self) -> vantage_expressions::OwnedExpression {
-        expr!("lines.*.price")
-    }
-
     // TODO: Uncomment when relationships are implemented in 0.3
     // fn ref_bakery(&self) -> Table<SurrealDB, Bakery>;
     // fn ref_client(&self) -> Table<SurrealDB, Client>; // Through graph relationship

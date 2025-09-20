@@ -7,9 +7,9 @@
 //!
 //! To create a function like `first()` that handles all IntoExpressive variants:
 //!
-//! 1. **Function Signature**: Use `impl Into<IntoExpressive<YourExprType>>`
+//! 1. **Function Signature**: Use `impl Into<IntoExpressive<Expression>>`
 //!    ```rust
-//!    fn your_function(input: impl Into<IntoExpressive<YourExprType>>) -> YourExprType
+//!    fn your_function(input: impl Into<IntoExpressive<Expression>>) -> Expression
 //!    ```
 //!
 //! 2. **Handle Each Variant**:
@@ -19,7 +19,7 @@
 //!
 //! 3. **Pattern Template**:
 //!    ```rust
-//!    fn your_function(input: impl Into<IntoExpressive<ExprType>>) -> ExprType {
+//!    fn your_function(input: impl Into<IntoExpressive<Expression>>) -> Expression {
 //!        let input = input.into();
 //!        match input {
 //!            IntoExpressive::Scalar(value) => {
@@ -69,55 +69,10 @@
 //! first(IntoExpressive::deferred(|| async { json!([1, 2, 3]) }))
 //! ```
 
-use std::pin::Pin;
-
 use serde_json::{Value, json};
-use vantage_expressions::{protocol::expressive::Expressive, protocol::selectable::Selectable, *};
+use vantage_expressions::{protocol::expressive::Expressive, *};
 
-#[derive(Debug, Clone)]
-struct MockSelect;
-
-impl Selectable for MockSelect {
-    fn set_source(&mut self, _source: impl Into<Expr>, _alias: Option<String>) {}
-    fn add_field(&mut self, _field: impl Into<String>) {}
-    fn add_expression(&mut self, _expression: OwnedExpression, _alias: Option<String>) {}
-    fn add_where_condition(&mut self, _condition: OwnedExpression) {}
-    fn set_distinct(&mut self, _distinct: bool) {}
-    fn add_order_by(&mut self, _field_or_expr: impl Into<Expr>, _ascending: bool) {}
-    fn add_group_by(&mut self, _expression: OwnedExpression) {}
-    fn set_limit(&mut self, _limit: Option<i64>, _skip: Option<i64>) {}
-    fn clear_fields(&mut self) {}
-    fn clear_where_conditions(&mut self) {}
-    fn clear_order_by(&mut self) {}
-    fn clear_group_by(&mut self) {}
-    fn has_fields(&self) -> bool {
-        false
-    }
-    fn has_where_conditions(&self) -> bool {
-        false
-    }
-    fn has_order_by(&self) -> bool {
-        false
-    }
-    fn has_group_by(&self) -> bool {
-        false
-    }
-    fn is_distinct(&self) -> bool {
-        false
-    }
-    fn get_limit(&self) -> Option<i64> {
-        None
-    }
-    fn get_skip(&self) -> Option<i64> {
-        None
-    }
-}
-
-impl Into<OwnedExpression> for MockSelect {
-    fn into(self) -> OwnedExpression {
-        expr!("SELECT * FROM mock")
-    }
-}
+use vantage_expressions::mocks::PatternDataSource;
 
 #[derive(Clone)]
 struct ExampleExpression {
@@ -276,57 +231,11 @@ fn test_example_expression_with_params() {
         "SELECT * FROM users WHERE id = 42 AND name = \"hello\" AND department IN (subquery)"
     );
 }
-// DataSource implementations for testing
-#[derive(Clone)]
-struct MockDatabase {
-    patterns: Vec<(String, Value)>,
-}
-
-impl MockDatabase {
-    fn new(patterns: Vec<(&str, Value)>) -> Self {
-        Self {
-            patterns: patterns
-                .into_iter()
-                .map(|(k, v)| (k.to_string(), v))
-                .collect(),
-        }
-    }
-}
-
-impl DataSource<ExampleExpression> for MockDatabase {
-    fn select(&self) -> impl Selectable {
-        MockSelect
-    }
-
-    async fn execute(&self, expr: &ExampleExpression) -> Value {
-        // Simulate async database query execution
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-
-        let query = expr.preview();
-        for (pattern, value) in &self.patterns {
-            if query.contains(pattern) {
-                return value.clone();
-            }
-        }
-        Value::Null
-    }
-
-    fn defer(
-        &self,
-        expr: ExampleExpression,
-    ) -> impl Fn() -> Pin<Box<dyn Future<Output = Value> + Send>> + Send + Sync + 'static {
-        let db = self.clone();
-        move || {
-            let db = db.clone();
-            let expr = expr.clone();
-            Box::pin(async move { db.execute(&expr).await })
-        }
-    }
-}
 
 #[tokio::test]
 async fn test_datasource_basic() {
-    let db = MockDatabase::new(vec![("SELECT * FROM items", json!([100, 200, 300, 400]))]);
+    let db = PatternDataSource::<ExampleExpression>::new()
+        .with_pattern("SELECT * FROM items", json!([100, 200, 300, 400]));
     let expr = example_expr!("SELECT * FROM items");
 
     let closure = db.defer(expr);
@@ -336,7 +245,8 @@ async fn test_datasource_basic() {
 
 #[tokio::test]
 async fn test_datasource_with_scalar_mixing() {
-    let db = MockDatabase::new(vec![("SELECT COUNT(*) FROM logs", json!(42))]);
+    let db = PatternDataSource::<ExampleExpression>::new()
+        .with_pattern("SELECT COUNT(*) FROM logs", json!(42));
     let subquery = example_expr!("SELECT COUNT(*) FROM logs");
 
     // Mix deferred result with scalar values
@@ -359,7 +269,8 @@ async fn test_datasource_with_scalar_mixing() {
 
 #[tokio::test]
 async fn test_nested_queries() {
-    let db = MockDatabase::new(vec![("SELECT * FROM items", json!([100, 200, 300, 400]))]);
+    let db = PatternDataSource::<ExampleExpression>::new()
+        .with_pattern("SELECT * FROM items", json!([100, 200, 300, 400]));
     let expr = example_expr!("SELECT * FROM items");
 
     let result = db.execute(&expr).await;

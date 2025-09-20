@@ -2,7 +2,7 @@
 //!
 //! doc wip
 
-use vantage_expressions::{OwnedExpression, expr};
+use vantage_expressions::{Expression, expr};
 
 /// SurrealDB conditional expression (IF-THEN-ELSE)
 ///
@@ -23,9 +23,9 @@ use vantage_expressions::{OwnedExpression, expr};
 /// ```
 #[derive(Debug, Clone)]
 pub struct Conditional {
-    condition: OwnedExpression,
-    then_expr: OwnedExpression,
-    else_expr: OwnedExpression,
+    condition: Expression,
+    then_expr: Expression,
+    else_expr: Expression,
 }
 
 impl Conditional {
@@ -39,9 +39,9 @@ impl Conditional {
     /// * `then_expr` - doc wip
     /// * `else_expr` - doc wip
     pub fn new(
-        condition: impl Into<OwnedExpression>,
-        then_expr: impl Into<OwnedExpression>,
-        else_expr: impl Into<OwnedExpression>,
+        condition: impl Into<Expression>,
+        then_expr: impl Into<Expression>,
+        else_expr: impl Into<Expression>,
     ) -> Self {
         Self {
             condition: condition.into(),
@@ -51,8 +51,8 @@ impl Conditional {
     }
 }
 
-impl Into<OwnedExpression> for Conditional {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for Conditional {
+    fn into(self) -> Expression {
         expr!(
             "IF ({}) THEN ({}) ELSE ({}) END",
             self.condition,

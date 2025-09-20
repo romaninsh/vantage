@@ -29,7 +29,7 @@
 
 use indexmap::IndexMap;
 use std::marker::PhantomData;
-use vantage_expressions::{OwnedExpression, protocol::selectable::Selectable};
+use vantage_expressions::{Expression, protocol::selectable::Selectable, util::error::Result};
 
 pub mod columns;
 pub mod conditions;
@@ -41,11 +41,13 @@ pub use vantage_expressions::protocol::datasource::DataSource;
 pub use crate::columns::Column;
 
 /// Trait for entities that can be associated with tables
-pub trait Entity {
-    // Placeholder for entity trait
+pub trait Entity:
+    serde::Serialize + serde::de::DeserializeOwned + Default + Clone + Send + Sync + Sized + 'static
+{
 }
 
 /// Empty entity type for tables without a specific entity
+#[derive(serde::Serialize, serde::Deserialize, Default, Clone)]
 pub struct EmptyEntity;
 impl Entity for EmptyEntity {}
 
@@ -53,17 +55,17 @@ impl Entity for EmptyEntity {}
 #[derive(Debug)]
 pub struct Table<T, E>
 where
-    T: DataSource<OwnedExpression>,
+    T: DataSource<Expression>,
     E: Entity,
 {
     data_source: T,
     _phantom: PhantomData<E>,
     table_name: String,
     columns: IndexMap<String, Column>,
-    conditions: Vec<OwnedExpression>,
+    conditions: Vec<Expression>,
 }
 
-impl<T: DataSource<OwnedExpression>> Table<T, EmptyEntity> {
+impl<T: DataSource<Expression>> Table<T, EmptyEntity> {
     /// Create a new table with the given name and datasource
     pub fn new(table_name: impl Into<String>, data_source: T) -> Self {
         Self {
@@ -76,7 +78,7 @@ impl<T: DataSource<OwnedExpression>> Table<T, EmptyEntity> {
     }
 }
 
-impl<T: DataSource<OwnedExpression>, E: Entity> Table<T, E> {
+impl<T: DataSource<Expression>, E: Entity> Table<T, E> {
     /// Use a callback with a builder pattern for configuration
     pub fn with<F>(mut self, func: F) -> Self
     where
@@ -133,8 +135,28 @@ impl<T: DataSource<OwnedExpression>, E: Entity> Table<T, E> {
     }
 
     /// Get data from the table using the configured columns and conditions
-    pub async fn get(&self) -> serde_json::Value {
+    pub async fn get(&self) -> Result<Vec<E>> {
+        let values = self.get_values().await?;
+        let entities = values
+            .into_iter()
+            .map(|item| serde_json::from_value::<E>(item))
+            .collect::<std::result::Result<Vec<E>, _>>()
+            .map_err(|e| vantage_expressions::util::error::Error::new(e.to_string()))?;
+        Ok(entities)
+    }
+
+    /// Get raw data from the table as Vec<Value> without entity deserialization
+    pub async fn get_values(&self) -> Result<Vec<serde_json::Value>> {
         let select = self.select();
-        self.data_source.execute(&select.into()).await
+        let raw_result = self.data_source.execute(&select.into()).await;
+
+        // Try to parse as array of objects
+        if let serde_json::Value::Array(items) = raw_result {
+            Ok(items)
+        } else {
+            Err(vantage_expressions::util::error::Error::new(
+                "Expected array of objects from database",
+            ))
+        }
     }
 }

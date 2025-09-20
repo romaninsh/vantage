@@ -1,14 +1,14 @@
 use async_trait::async_trait;
 use serde::de::DeserializeOwned;
 use vantage_dataset::dataset::{ReadableDataSet, Result};
-use vantage_expressions::OwnedExpression;
+use vantage_expressions::Expression;
 
 use crate::{DataSource, Entity, Table};
 
 #[async_trait]
 impl<T, E, R> ReadableDataSet<R> for Table<T, E>
 where
-    T: DataSource<OwnedExpression> + Send + Sync,
+    T: DataSource<Expression> + Send + Sync,
     E: Entity + Send + Sync,
     R: DeserializeOwned + Send + Sync,
 {

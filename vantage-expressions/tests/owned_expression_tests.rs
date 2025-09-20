@@ -1,145 +1,19 @@
 use serde_json::json;
 use std::sync::{Arc, Mutex};
-use vantage_expressions::expression::flatten::{Flatten, OwnedExpressionFlattener};
-use vantage_expressions::protocol::selectable::Selectable;
-use vantage_expressions::{DataSource, Expr, IntoExpressive, OwnedExpression, expr};
-
-#[derive(Debug, Clone)]
-struct MockSelect;
-
-impl Selectable for MockSelect {
-    fn set_source(&mut self, _source: impl Into<Expr>, _alias: Option<String>) {}
-    fn add_field(&mut self, _field: impl Into<String>) {}
-    fn add_expression(&mut self, _expression: OwnedExpression, _alias: Option<String>) {}
-    fn add_where_condition(&mut self, _condition: OwnedExpression) {}
-    fn set_distinct(&mut self, _distinct: bool) {}
-    fn add_order_by(&mut self, _field_or_expr: impl Into<Expr>, _ascending: bool) {}
-    fn add_group_by(&mut self, _expression: OwnedExpression) {}
-    fn set_limit(&mut self, _limit: Option<i64>, _skip: Option<i64>) {}
-    fn clear_fields(&mut self) {}
-    fn clear_where_conditions(&mut self) {}
-    fn clear_order_by(&mut self) {}
-    fn clear_group_by(&mut self) {}
-    fn has_fields(&self) -> bool {
-        false
-    }
-    fn has_where_conditions(&self) -> bool {
-        false
-    }
-    fn has_order_by(&self) -> bool {
-        false
-    }
-    fn has_group_by(&self) -> bool {
-        false
-    }
-    fn is_distinct(&self) -> bool {
-        false
-    }
-    fn get_limit(&self) -> Option<i64> {
-        None
-    }
-    fn get_skip(&self) -> Option<i64> {
-        None
-    }
-}
-
-impl Into<OwnedExpression> for MockSelect {
-    fn into(self) -> OwnedExpression {
-        expr!("SELECT * FROM mock")
-    }
-}
-
-// Helper function for pattern matching against database mock patterns
-fn find_matching_pattern(
-    patterns: &[(String, serde_json::Value)],
-    query: &str,
-) -> serde_json::Value {
-    patterns
-        .iter()
-        .find(|(pattern, _)| query.contains(pattern))
-        .map(|(_, value)| value.clone())
-        .unwrap_or(serde_json::Value::Null)
-}
-
-// Helper function for executing deferred parameters and flattening
-async fn execute_and_flatten_owned_expression(expr: &OwnedExpression) -> OwnedExpression {
-    let mut expr = expr.clone();
-
-    // Execute all deferred parameters
-    for param in &mut expr.parameters {
-        if let IntoExpressive::Deferred(f) = param {
-            *param = f().await;
-        }
-    }
-
-    // Flatten nested expressions
-    let flattener = OwnedExpressionFlattener::new();
-    flattener.flatten_nested(&expr)
-}
+use vantage_expressions::mocks::FlatteningPatternDataSource;
+use vantage_expressions::{DataSource, Expression, IntoExpressive, expr};
 
 #[test]
 fn test_arc_mutex_with_database_execution() {
-    use serde_json::Value;
-    use std::future::Future;
-    use std::pin::Pin;
-    use tokio;
-
-    // DataSource implementation for OwnedExpression
-    #[derive(Clone)]
-    struct MockOwnedDatabase {
-        patterns: Vec<(String, Value)>,
-    }
-
-    impl MockOwnedDatabase {
-        fn new(patterns: Vec<(&str, Value)>) -> Self {
-            Self {
-                patterns: patterns
-                    .into_iter()
-                    .map(|(k, v)| (k.to_string(), v))
-                    .collect(),
-            }
-        }
-    }
-
-    impl DataSource<OwnedExpression> for MockOwnedDatabase {
-        fn select(&self) -> impl Selectable {
-            MockSelect
-        }
-
-        async fn execute(&self, expr: &OwnedExpression) -> Value {
-            let expr = execute_and_flatten_owned_expression(expr).await;
-
-            // Simulate async database query execution
-            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-
-            let query = expr.preview();
-            find_matching_pattern(&self.patterns, &query)
-        }
-
-        fn defer(
-            &self,
-            expr: OwnedExpression,
-        ) -> impl Fn() -> Pin<Box<dyn Future<Output = Value> + Send>> + Send + Sync + 'static
-        {
-            let db = self.clone();
-            move || {
-                let db = db.clone();
-                let expr = expr.clone();
-                Box::pin(async move { db.execute(&expr).await })
-            }
-        }
-    }
-
     tokio_test::block_on(async {
         // Create database mock with patterns for different values
-        let db = MockOwnedDatabase::new(vec![
-            ("hello 10", json!("greeting_10")),
-            ("select spelling from numbers where num=10", json!("ten")),
-            (
+        let db = FlatteningPatternDataSource::new()
+            .with_pattern("hello 10", json!("greeting_10"))
+            .with_pattern("select spelling from numbers where num=10", json!("ten"))
+            .with_pattern(
                 "select spelling from numbers where num=15",
                 json!("fifteen"),
-            ),
-        ]);
+            );
 
         // Create shared mutable variable
         let shared_var = Arc::new(Mutex::new(10i32));
@@ -169,80 +43,28 @@ fn test_arc_mutex_with_database_execution() {
 
 #[test]
 fn test_arc_mutex_with_nested_expression() {
-    use serde_json::Value;
-    use std::future::Future;
-    use std::pin::Pin;
-    use tokio;
-
     #[derive(Debug, Clone)]
     struct GreetingQuery {
         name: String,
     }
 
-    impl From<&GreetingQuery> for OwnedExpression {
-        fn from(greeting: &GreetingQuery) -> OwnedExpression {
+    impl From<&GreetingQuery> for Expression {
+        fn from(greeting: &GreetingQuery) -> Expression {
             expr!("Hello {}", greeting.name.clone())
         }
     }
 
-    impl From<GreetingQuery> for IntoExpressive<OwnedExpression> {
+    impl From<GreetingQuery> for IntoExpressive<Expression> {
         fn from(greeting: GreetingQuery) -> Self {
-            IntoExpressive::nested(OwnedExpression::from(&greeting))
-        }
-    }
-
-    // DataSource implementation
-    #[derive(Clone)]
-    struct MockDatabase {
-        patterns: Vec<(String, Value)>,
-    }
-
-    impl MockDatabase {
-        fn new(patterns: Vec<(&str, Value)>) -> Self {
-            Self {
-                patterns: patterns
-                    .into_iter()
-                    .map(|(k, v)| (k.to_string(), v))
-                    .collect(),
-            }
-        }
-    }
-
-    impl DataSource<OwnedExpression> for MockDatabase {
-        fn select(&self) -> impl Selectable {
-            MockSelect
-        }
-
-        async fn execute(&self, expr: &OwnedExpression) -> Value {
-            let expr = execute_and_flatten_owned_expression(expr).await;
-
-            // Simulate async database query execution
-            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-
-            let query = expr.preview();
-            find_matching_pattern(&self.patterns, &query)
-        }
-
-        fn defer(
-            &self,
-            expr: OwnedExpression,
-        ) -> impl Fn() -> Pin<Box<dyn Future<Output = Value> + Send>> + Send + Sync + 'static
-        {
-            let db = self.clone();
-            move || {
-                let db = db.clone();
-                let expr = expr.clone();
-                Box::pin(async move { db.execute(&expr).await })
-            }
+            IntoExpressive::nested(Expression::from(&greeting))
         }
     }
 
     tokio_test::block_on(async {
         // Create database mock
-        let db = MockDatabase::new(vec![
-            ("select Hello \"world\"", json!("greeting_world")),
-            ("select Hello \"vantage\"", json!("greeting_vantage")),
-        ]);
+        let db = FlatteningPatternDataSource::new()
+            .with_pattern("select Hello \"world\"", json!("greeting_world"))
+            .with_pattern("select Hello \"vantage\"", json!("greeting_vantage"));
 
         // Create mutable greeting struct
         let greeting = Arc::new(Mutex::new(GreetingQuery {
@@ -264,5 +86,117 @@ fn test_arc_mutex_with_nested_expression() {
         // Execute same expression again - should see new nested expression result
         let result2 = db.execute(&expr).await;
         assert_eq!(result2, json!("greeting_vantage"));
+    });
+}
+
+#[test]
+fn test_triple_nested_expression() {
+    #[derive(Debug, Clone)]
+    struct Department {
+        name: String,
+    }
+
+    #[derive(Debug, Clone)]
+    struct FilterQuery {
+        department: Arc<Mutex<Department>>,
+    }
+
+    #[derive(Debug, Clone)]
+    struct MainQuery {
+        filter: Arc<Mutex<FilterQuery>>,
+    }
+
+    impl From<&Department> for Expression {
+        fn from(dept: &Department) -> Expression {
+            expr!("UPPER({})", dept.name.clone())
+        }
+    }
+
+    impl From<&FilterQuery> for Expression {
+        fn from(filter: &FilterQuery) -> Expression {
+            expr!("COUNT(*) WHERE department = {}", &filter.department)
+        }
+    }
+
+    impl From<&MainQuery> for Expression {
+        fn from(main: &MainQuery) -> Expression {
+            expr!("SELECT {} FROM users", &main.filter)
+        }
+    }
+
+    impl From<Department> for IntoExpressive<Expression> {
+        fn from(dept: Department) -> Self {
+            IntoExpressive::nested(Expression::from(&dept))
+        }
+    }
+
+    impl From<FilterQuery> for IntoExpressive<Expression> {
+        fn from(filter: FilterQuery) -> Self {
+            IntoExpressive::nested(Expression::from(&filter))
+        }
+    }
+
+    impl From<MainQuery> for IntoExpressive<Expression> {
+        fn from(main: MainQuery) -> Self {
+            IntoExpressive::nested(Expression::from(&main))
+        }
+    }
+
+    tokio_test::block_on(async {
+        // Create database mock with triple-nested query patterns
+        let db = FlatteningPatternDataSource::new()
+            .with_pattern(
+                "query result: SELECT COUNT(*) WHERE department = UPPER(\"engineering\") FROM users",
+                json!("result_engineering"),
+            )
+            .with_pattern(
+                "query result: SELECT COUNT(*) WHERE department = UPPER(\"marketing\") FROM users",
+                json!("result_marketing"),
+            )
+            .with_pattern(
+                "query result: SELECT COUNT(*) WHERE department = UPPER(\"sales\") FROM users",
+                json!("result_sales"),
+            );
+
+        // Create triple-nested mutable structure
+        let department = Arc::new(Mutex::new(Department {
+            name: "engineering".to_string(),
+        }));
+
+        let filter = Arc::new(Mutex::new(FilterQuery {
+            department: department.clone(),
+        }));
+
+        let main_query = Arc::new(Mutex::new(MainQuery {
+            filter: filter.clone(),
+        }));
+
+        // Level 1: Main expression containing nested expressions
+        // Level 2: Filter expression containing department expression
+        // Level 3: Department expression with UPPER function
+        let expr = expr!("query result: {}", &main_query);
+
+        // Execute first query - engineering
+        let result1 = db.execute(&expr).await;
+        assert_eq!(result1, json!("result_engineering"));
+
+        // Modify the deepest nested value (Level 3)
+        {
+            let mut dept_guard = department.lock().unwrap();
+            dept_guard.name = "marketing".to_string();
+        }
+
+        // Execute same expression again - should see new deeply nested result
+        let result2 = db.execute(&expr).await;
+        assert_eq!(result2, json!("result_marketing"));
+
+        // Change again to test triple nesting fully
+        {
+            let mut dept_guard = department.lock().unwrap();
+            dept_guard.name = "sales".to_string();
+        }
+
+        let result3 = db.execute(&expr).await;
+        assert_eq!(result3, json!("result_sales"));
     });
 }

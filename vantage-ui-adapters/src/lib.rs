@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use thiserror::Error;
-use vantage_surrealdb::{SurrealDB, SurrealTableExt};
+use vantage_expressions::protocol::datasource::DataSource;
+use vantage_expressions::Expression;
 use vantage_table::{Entity, Table};
 
 #[derive(Error, Debug)]
@@ -245,14 +246,14 @@ impl<D: DataSet> TableStore<D> {
 // Mock implementation for testing
 
 /// Adapter for vantage-table to DataSet interface
-pub struct VantageTableAdapter<E: Entity> {
-    _table: Table<SurrealDB, E>,
+pub struct VantageTableAdapter<T: DataSource<Expression>, E: Entity> {
+    _table: Table<T, E>,
     cached_data: Vec<TableRow>,
     cached_columns: Vec<ColumnInfo>,
 }
 
-impl<E: Entity + Send + Sync + 'static> VantageTableAdapter<E> {
-    pub async fn new(table: Table<SurrealDB, E>) -> Self {
+impl<T: DataSource<Expression>, E: Entity> VantageTableAdapter<T, E> {
+    pub async fn new(table: Table<T, E>) -> Self {
         let column_names: Vec<String> = table.columns().keys().cloned().collect();
         let columns: Vec<ColumnInfo> = column_names
             .iter()
@@ -264,53 +265,47 @@ impl<E: Entity + Send + Sync + 'static> VantageTableAdapter<E> {
             })
             .collect();
 
-        let query = table.select_surreal();
-        let data_source = table.data_source();
-        let result = data_source.get(query).await;
+        let result = table.get_values().await.unwrap();
 
-        let rows = if let serde_json::Value::Array(array) = result {
-            array
-                .into_iter()
-                .filter_map(|obj| {
-                    if let serde_json::Value::Object(map) = obj {
-                        let mut row = Vec::new();
-                        for column_name in &column_names {
-                            let value = map.get(column_name).unwrap_or(&serde_json::Value::Null);
-                            let cell_value = match value {
-                                serde_json::Value::String(s) => CellValue::String(s.clone()),
-                                serde_json::Value::Number(n) => {
-                                    if let Some(i) = n.as_i64() {
-                                        CellValue::Integer(i)
-                                    } else if let Some(f) = n.as_f64() {
-                                        CellValue::Float(f)
-                                    } else {
-                                        CellValue::Null
-                                    }
+        let rows = result
+            .into_iter()
+            .filter_map(|obj| {
+                if let serde_json::Value::Object(map) = obj {
+                    let mut row = Vec::new();
+                    for column_name in &column_names {
+                        let value = map.get(column_name).unwrap_or(&serde_json::Value::Null);
+                        let cell_value = match value {
+                            serde_json::Value::String(s) => CellValue::String(s.clone()),
+                            serde_json::Value::Number(n) => {
+                                if let Some(i) = n.as_i64() {
+                                    CellValue::Integer(i)
+                                } else if let Some(f) = n.as_f64() {
+                                    CellValue::Float(f)
+                                } else {
+                                    CellValue::Null
                                 }
-                                serde_json::Value::Bool(b) => CellValue::Boolean(*b),
-                                serde_json::Value::Object(o) => {
-                                    CellValue::String(serde_json::to_string(o).unwrap_or_default())
-                                }
-                                serde_json::Value::Array(a) => {
-                                    CellValue::String(serde_json::to_string(a).unwrap_or_default())
-                                }
-                                _ => CellValue::Null,
-                            };
-                            row.push(cell_value);
-                        }
-                        if !row.is_empty() {
-                            Some(row)
-                        } else {
-                            None
-                        }
+                            }
+                            serde_json::Value::Bool(b) => CellValue::Boolean(*b),
+                            serde_json::Value::Object(o) => {
+                                CellValue::String(serde_json::to_string(o).unwrap_or_default())
+                            }
+                            serde_json::Value::Array(a) => {
+                                CellValue::String(serde_json::to_string(a).unwrap_or_default())
+                            }
+                            _ => CellValue::Null,
+                        };
+                        row.push(cell_value);
+                    }
+                    if !row.is_empty() {
+                        Some(row)
                     } else {
                         None
                     }
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
+                } else {
+                    None
+                }
+            })
+            .collect();
 
         Self {
             _table: table,
@@ -321,7 +316,7 @@ impl<E: Entity + Send + Sync + 'static> VantageTableAdapter<E> {
 }
 
 #[async_trait]
-impl<E: Entity + Send + Sync + 'static> DataSet for VantageTableAdapter<E> {
+impl<T: DataSource<Expression>, E: Entity> DataSet for VantageTableAdapter<T, E> {
     async fn row_count(&self) -> Result<usize> {
         Ok(self.cached_data.len())
     }

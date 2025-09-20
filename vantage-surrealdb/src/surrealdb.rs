@@ -3,9 +3,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use vantage_expressions::{
-    Flatten, OwnedExpression, OwnedExpressionFlattener, protocol::DataSource,
-};
+use vantage_expressions::{Expression, Flatten, OwnedExpressionFlattener, protocol::DataSource};
 
 use surreal_client::SurrealClient;
 use surreal_client::error::Result;
@@ -46,7 +44,7 @@ impl SurrealDB {
     }
 
     /// Convert {} placeholders to $_arg1, $_arg2, etc. and extract parameters
-    fn prepare_query(&self, expr: &OwnedExpression) -> (String, HashMap<String, Value>) {
+    fn prepare_query(&self, expr: &Expression) -> (String, HashMap<String, Value>) {
         let flattener = OwnedExpressionFlattener::new();
         let flattened = flattener.flatten(expr);
 
@@ -89,12 +87,12 @@ impl SurrealDB {
 }
 
 // Implement DataSource trait for OwnedExpression
-impl DataSource<OwnedExpression> for SurrealDB {
+impl DataSource<Expression> for SurrealDB {
     fn select(&self) -> impl vantage_expressions::protocol::selectable::Selectable {
         SurrealSelect::new()
     }
 
-    async fn execute(&self, expr: &OwnedExpression) -> Value {
+    async fn execute(&self, expr: &Expression) -> Value {
         let (query_str, params) = self.prepare_query(expr);
         let params_json = serde_json::to_value(params).unwrap_or(serde_json::json!({}));
 
@@ -129,7 +127,7 @@ impl DataSource<OwnedExpression> for SurrealDB {
 
     fn defer(
         &self,
-        expr: OwnedExpression,
+        expr: Expression,
     ) -> impl Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Value> + Send>>
     + Send
     + Sync

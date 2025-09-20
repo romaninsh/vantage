@@ -2,7 +2,7 @@
 //!
 //! doc wip
 
-use vantage_expressions::{IntoExpressive, OwnedExpression, expr};
+use vantage_expressions::{IntoExpressive, Expression, expr};
 
 use crate::operation::Expressive;
 
@@ -38,7 +38,7 @@ impl Identifier {
         }
     }
 
-    pub fn dot(self, other: impl Into<String>) -> OwnedExpression {
+    pub fn dot(self, other: impl Into<String>) -> Expression {
         expr!("{}.{}", self, Identifier::new(other.into()))
     }
 
@@ -58,20 +58,20 @@ impl Identifier {
     }
 }
 
-impl Into<OwnedExpression> for Identifier {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for Identifier {
+    fn into(self) -> Expression {
         self.expr()
     }
 }
 
-impl From<Identifier> for IntoExpressive<OwnedExpression> {
+impl From<Identifier> for IntoExpressive<Expression> {
     fn from(id: Identifier) -> Self {
         IntoExpressive::nested(id.into())
     }
 }
 
 impl Expressive for Identifier {
-    fn expr(&self) -> OwnedExpression {
+    fn expr(&self) -> Expression {
         if self.needs_escaping() {
             expr!(format!("⟨{}⟩", self.identifier))
         } else {

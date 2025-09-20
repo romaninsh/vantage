@@ -1,5 +1,5 @@
 use serde_json::Value;
-use vantage_expressions::{OwnedExpression, expr};
+use vantage_expressions::{Expression, expr};
 
 use crate::Document;
 
@@ -23,8 +23,8 @@ impl MongoCount {
     }
 }
 
-impl Into<OwnedExpression> for MongoCount {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for MongoCount {
+    fn into(self) -> Expression {
         let filter = if self.filter.is_empty() {
             "{}".to_string()
         } else {
@@ -38,7 +38,7 @@ impl Into<OwnedExpression> for MongoCount {
                     }
                 }
             }
-            Into::<OwnedExpression>::into(combined).preview()
+            Into::<Expression>::into(combined).preview()
         };
 
         expr!(format!("db.{}.countDocuments({})", self.collection, filter))
@@ -52,7 +52,7 @@ mod tests {
     #[test]
     fn test_count() {
         let count = MongoCount::new("users").filter(Document::gt("age", 18));
-        let expr: OwnedExpression = count.into();
+        let expr: Expression = count.into();
         let result = expr.preview();
         assert!(result.contains("db.users.countDocuments("));
         assert!(result.contains("$gt"));

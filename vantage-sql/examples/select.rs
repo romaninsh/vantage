@@ -17,7 +17,7 @@ fn main() {
     select.set_distinct(true);
 
     println!("SQL Select with Selectable trait:");
-    let expr: vantage_expressions::OwnedExpression = select.clone().into();
+    let expr: vantage_expressions::Expression = select.clone().into();
     println!("{}", expr.preview());
     println!();
 
@@ -54,6 +54,6 @@ fn main() {
     basic_select.set_limit(Some(5), None);
 
     println!("Basic SQL select:");
-    let expr: vantage_expressions::OwnedExpression = basic_select.into();
+    let expr: vantage_expressions::Expression = basic_select.into();
     println!("{}", expr.preview());
 }

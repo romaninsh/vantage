@@ -1,5 +1,5 @@
 use serde_json::Value;
-use vantage_expressions::{OwnedExpression, expr};
+use vantage_expressions::{Expression, expr};
 
 use crate::Document;
 
@@ -30,8 +30,8 @@ impl MongoUpdate {
     }
 }
 
-impl Into<OwnedExpression> for MongoUpdate {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for MongoUpdate {
+    fn into(self) -> Expression {
         let filter = if self.filter.is_empty() {
             "{}".to_string()
         } else {
@@ -45,11 +45,11 @@ impl Into<OwnedExpression> for MongoUpdate {
                     }
                 }
             }
-            Into::<OwnedExpression>::into(combined).preview()
+            Into::<Expression>::into(combined).preview()
         };
 
         let update =
-            Into::<OwnedExpression>::into(self.update.unwrap_or_else(|| Document::new())).preview();
+            Into::<Expression>::into(self.update.unwrap_or_else(|| Document::new())).preview();
 
         expr!(format!(
             "db.{}.updateMany({}, {})",
@@ -67,7 +67,7 @@ mod tests {
         let update = MongoUpdate::new("users")
             .filter(Document::filter("name", "John"))
             .set_update(Document::new().insert("$set", Document::new().insert("age", 31)));
-        let expr: OwnedExpression = update.into();
+        let expr: Expression = update.into();
         let result = expr.preview();
         assert!(result.contains("db.users.updateMany("));
         assert!(result.contains("\"name\""));

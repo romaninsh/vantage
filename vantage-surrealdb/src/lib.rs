@@ -31,11 +31,11 @@
 //! - [`variable`] - doc wip
 //! - [`protocol`] - doc wip
 
-// TODO: will implement associated queries later
-// pub mod associated_query;
+pub mod associated_query;
 pub mod conditional;
 pub mod field_projection;
 pub mod identifier;
+pub mod mocks;
 pub mod operation;
 pub mod protocol;
 pub mod sum;
@@ -48,6 +48,7 @@ pub mod table_ext;
 pub mod thing;
 pub mod variable;
 
+pub use associated_query::{SurrealAssociated, SurrealAssociatedQueryable};
 pub use select::SurrealSelect;
 pub use surrealdb::SurrealDB;
 pub use table_ext::SurrealTableExt;

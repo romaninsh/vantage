@@ -18,26 +18,16 @@ async fn create_bootstrap_db() -> Result<()> {
 async fn main() -> Result<()> {
     create_bootstrap_db().await?;
 
-    // This example is explained in README.md <https://github.com/romaninsh/vantage>.
-    //
-    // Use a set of our clients as a type:
     let set_of_clients = Client::table();
 
-    // As you would expect, you can iterate over clients easily.
-    let client_query = set_of_clients.select_surreal();
-    let ds = surrealdb();
-    let clients = ds.get(client_query).await;
+    // Client table represents remotely stored clients.
 
-    if let serde_json::Value::Array(client_array) = clients {
-        for client in client_array {
-            if let (Some(name), Some(email)) = (client.get("name"), client.get("email")) {
-                println!(
-                    "email: {}, client: {}",
-                    email.as_str().unwrap_or(""),
-                    name.as_str().unwrap_or("")
-                );
-            }
-        }
+    for client in set_of_clients.surreal_get().await? {
+        println!("email: {}, client: {}", client.email, client.name);
+    }
+
+    for client in set_of_clients.get().await? {
+        println!("email: {}, client: {}", client.email, client.name);
     }
 
     /////////////////////////////////////////////////////////////////////////////////////////

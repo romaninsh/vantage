@@ -25,4 +25,21 @@ impl std::fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+impl Error {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            context: None,
+            error: MyError::Other(message.into()),
+        }
+    }
+
+    pub fn with_context(message: impl Into<String>, context: impl Into<String>) -> Self {
+        Self {
+            context: Some(context.into()),
+            error: MyError::Other(message.into()),
+        }
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;

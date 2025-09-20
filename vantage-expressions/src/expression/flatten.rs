@@ -1,7 +1,7 @@
 //! Flattening functionality for expressions with deferred parameters and nested expressions.
 //! This module provides traits and helpers to resolve deferred parameters and flatten nested structures.
 
-use crate::expression::owned::OwnedExpression;
+use crate::expression::owned::Expression;
 use crate::protocol::expressive::IntoExpressive;
 
 /// Trait for flattening expressions by resolving deferred parameters and nested expressions
@@ -31,13 +31,13 @@ impl Default for OwnedExpressionFlattener {
     }
 }
 
-impl Flatten<OwnedExpression> for OwnedExpressionFlattener {
-    fn flatten(&self, expr: &OwnedExpression) -> OwnedExpression {
+impl Flatten<Expression> for OwnedExpressionFlattener {
+    fn flatten(&self, expr: &Expression) -> Expression {
         let resolved = self.resolve_deferred(expr);
         self.flatten_nested(&resolved)
     }
 
-    fn resolve_deferred(&self, expr: &OwnedExpression) -> OwnedExpression {
+    fn resolve_deferred(&self, expr: &Expression) -> Expression {
         let expr = expr.clone();
 
         // Note: This is a sync implementation that doesn't actually execute deferred closures
@@ -46,7 +46,7 @@ impl Flatten<OwnedExpression> for OwnedExpressionFlattener {
         expr
     }
 
-    fn flatten_nested(&self, expr: &OwnedExpression) -> OwnedExpression {
+    fn flatten_nested(&self, expr: &Expression) -> Expression {
         let mut final_template = String::new();
         let mut final_params = Vec::new();
         let template_parts = expr.template.split("{}");
@@ -68,7 +68,7 @@ impl Flatten<OwnedExpression> for OwnedExpressionFlattener {
             final_template.push_str(template_iter.next().unwrap_or(""));
         }
 
-        OwnedExpression {
+        Expression {
             template: final_template,
             parameters: final_params,
         }

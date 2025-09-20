@@ -2,7 +2,7 @@
 //!
 //! doc wip
 
-use vantage_expressions::{OwnedExpression, expr};
+use vantage_expressions::{Expression, expr};
 
 /// SurrealDB variable representation
 ///
@@ -35,8 +35,8 @@ impl Variable {
     }
 }
 
-impl Into<OwnedExpression> for Variable {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for Variable {
+    fn into(self) -> Expression {
         expr!(format!("${}", self.name))
     }
 }

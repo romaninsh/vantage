@@ -5,7 +5,7 @@
 use std::{marker::PhantomData, ops::Deref};
 
 use serde_json::Value;
-use vantage_expressions::{DataSource, OwnedExpression, expr, result};
+use vantage_expressions::{DataSource, Expression, expr, result};
 
 use crate::{SurrealDB, operation::Expressive, protocol::SurrealQueriable};
 
@@ -24,7 +24,7 @@ use crate::{SurrealDB, operation::Expressive, protocol::SurrealQueriable};
 /// ```
 #[derive(Debug, Clone)]
 pub struct SurrealReturn<T = result::Single> {
-    expr: OwnedExpression,
+    expr: Expression,
     _phantom: PhantomData<T>,
 }
 
@@ -36,7 +36,7 @@ impl SurrealReturn {
     /// # Arguments
     ///
     /// * `identifier` - doc wip
-    pub fn new(expr: OwnedExpression) -> Self {
+    pub fn new(expr: Expression) -> Self {
         Self {
             expr: expr!("RETURN {}", expr),
             _phantom: PhantomData,
@@ -51,7 +51,7 @@ impl SurrealReturn<result::Single> {
 }
 
 impl Deref for SurrealReturn {
-    type Target = OwnedExpression;
+    type Target = Expression;
 
     fn deref(&self) -> &Self::Target {
         &self.expr
@@ -59,13 +59,13 @@ impl Deref for SurrealReturn {
 }
 impl SurrealQueriable for SurrealReturn {}
 impl Expressive for SurrealReturn {
-    fn expr(&self) -> OwnedExpression {
+    fn expr(&self) -> Expression {
         self.expr.clone()
     }
 }
 
-impl Into<OwnedExpression> for SurrealReturn {
-    fn into(self) -> OwnedExpression {
+impl Into<Expression> for SurrealReturn {
+    fn into(self) -> Expression {
         self.expr()
     }
 }
