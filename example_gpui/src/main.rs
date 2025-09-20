@@ -94,7 +94,8 @@ fn main() {
 
             let window = cx
                 .open_window(options, |window, cx| {
-                    let table = cx.new(|cx| Table::new(delegate, window, cx).stripe(true).border(true));
+                    let table =
+                        cx.new(|cx| Table::new(delegate, window, cx).stripe(true).border(true));
                     let view = cx.new(|_| TableApp::new(table));
                     cx.new(|cx| Root::new(view.into(), window, cx))
                 })
