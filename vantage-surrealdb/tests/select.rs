@@ -422,7 +422,7 @@ fn test_aggregation_methods() {
 
     assert_eq!(
         count_query.preview(),
-        "RETURN count(SELECT VALUE * FROM products WHERE active = true)"
+        "RETURN count(SELECT VALUE id FROM products WHERE active = true)"
     );
 }
 
