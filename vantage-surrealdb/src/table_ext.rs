@@ -1,4 +1,6 @@
-use vantage_expressions::{expr, protocol::selectable::Selectable};
+use vantage_expressions::{
+    expr, protocol::datasource::ColumnLike, protocol::selectable::Selectable,
+};
 use vantage_table::{Entity, Table};
 
 use crate::{

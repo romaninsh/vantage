@@ -1,9 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use vantage_expressions::AssociatedQueryable;
-use vantage_surrealdb::{
-    SurrealAssociatedQueryable, SurrealDB, mocks::SurrealMockBuilder, table_ext::SurrealTableExt,
-};
+use vantage_surrealdb::{mocks::SurrealMockBuilder, prelude::*};
 use vantage_table::{Entity, Table};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

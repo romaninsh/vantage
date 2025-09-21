@@ -12,4 +12,10 @@ impl<T: DataSource<Expression>, E: Entity> Table<T, E> {
     pub fn conditions(&self) -> &[Expression] {
         &self.conditions
     }
+
+    /// Add a condition using the builder pattern
+    pub fn with_condition(mut self, condition: Expression) -> Self {
+        self.add_condition(condition);
+        self
+    }
 }

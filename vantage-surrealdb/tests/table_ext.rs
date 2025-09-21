@@ -45,7 +45,7 @@ async fn test_select_surreal_methods() {
     let db = setup_test_db_with_data(mock_data).await;
     let mut table = Table::new("users", db);
 
-    table.add_column(Column::new("name"));
+    table.add_column("name");
     table.add_column(Column::new("email"));
     table.add_column(Column::new("age"));
 

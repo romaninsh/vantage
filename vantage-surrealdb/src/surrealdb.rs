@@ -88,6 +88,7 @@ impl SurrealDB {
 
 // Implement DataSource trait for Expression
 impl DataSource<Expression> for SurrealDB {
+    type Column = crate::SurrealColumn;
     fn select(&self) -> impl vantage_expressions::protocol::selectable::Selectable {
         SurrealSelect::new()
     }

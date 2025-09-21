@@ -29,3 +29,9 @@ pub use vantage_expressions::{Expr, Expression, expr};
 
 // Common surreal-client types
 pub use surreal_client::{SurrealClient, SurrealConnection};
+
+pub use crate::SurrealAssociated;
+pub use crate::SurrealAssociatedQueryable;
+pub use crate::SurrealColumn;
+pub use crate::SurrealColumnOperations;
+pub use crate::SurrealTableExt;
