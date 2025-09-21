@@ -4,7 +4,16 @@ use std::pin::Pin;
 
 use super::selectable::Selectable;
 
+/// Minimal trait for column-like objects
+pub trait ColumnLike: Send + Sync + Clone {
+    fn name(&self) -> &str;
+    fn alias(&self) -> Option<&str>;
+    fn expr(&self) -> crate::Expression;
+}
+
 pub trait DataSource<T>: Send + Sync {
+    type Column: ColumnLike;
+
     fn execute(&self, expr: &T) -> impl Future<Output = Value> + Send;
 
     fn defer(

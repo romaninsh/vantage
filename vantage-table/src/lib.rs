@@ -31,14 +31,17 @@ use indexmap::IndexMap;
 use std::marker::PhantomData;
 use vantage_expressions::{Expression, protocol::selectable::Selectable, util::error::Result};
 
-pub mod columns;
-pub mod conditions;
+pub mod prelude;
 pub mod readable;
+pub mod with_columns;
+pub mod with_conditions;
 
+/// Re-export ColumnLike from vantage-expressions for convenience
+pub use vantage_expressions::protocol::datasource::ColumnLike;
 /// Re-export DataSource from vantage-expressions for convenience
 pub use vantage_expressions::protocol::datasource::DataSource;
 
-pub use crate::columns::{Column, ColumnOperations};
+pub use crate::with_columns::Column;
 
 /// Trait for entities that can be associated with tables
 pub trait Entity:
@@ -61,7 +64,7 @@ where
     data_source: T,
     _phantom: PhantomData<E>,
     table_name: String,
-    columns: IndexMap<String, Column>,
+    columns: IndexMap<String, T::Column>,
     conditions: Vec<Expression>,
 }
 
@@ -108,19 +111,11 @@ impl<T: DataSource<Expression>, E: Entity> Table<T, E> {
         &self.data_source
     }
 
-    /// Add a condition using the builder pattern
-    pub fn with_condition(mut self, condition: Expression) -> Self {
-        self.add_condition(condition);
-        self
-    }
-
-    /// Get a reference to a column for operations
-    pub fn column(&self, name: &str) -> Option<&Column> {
-        self.columns.get(name)
-    }
-
     /// Create a select query with table configuration applied
-    pub fn select(&self) -> impl Selectable {
+    pub fn select(&self) -> impl Selectable
+    where
+        T::Column: ColumnLike,
+    {
         let mut select = self.data_source.select();
 
         // Set the table as source
@@ -146,7 +141,10 @@ impl<T: DataSource<Expression>, E: Entity> Table<T, E> {
     }
 
     /// Get data from the table using the configured columns and conditions
-    pub async fn get(&self) -> Result<Vec<E>> {
+    pub async fn get(&self) -> Result<Vec<E>>
+    where
+        T::Column: ColumnLike,
+    {
         let values = self.get_values().await?;
         let entities = values
             .into_iter()
@@ -157,7 +155,10 @@ impl<T: DataSource<Expression>, E: Entity> Table<T, E> {
     }
 
     /// Get raw data from the table as Vec<Value> without entity deserialization
-    pub async fn get_values(&self) -> Result<Vec<serde_json::Value>> {
+    pub async fn get_values(&self) -> Result<Vec<serde_json::Value>>
+    where
+        T::Column: ColumnLike,
+    {
         let select = self.select();
         let raw_result = self.data_source.execute(&select.into()).await;
 

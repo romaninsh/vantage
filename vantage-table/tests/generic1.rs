@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use vantage_table::{Entity, Table};
+use vantage_table::prelude::*;
 
 fn setup_test_datasource_with_data(
     mock_data: Value,

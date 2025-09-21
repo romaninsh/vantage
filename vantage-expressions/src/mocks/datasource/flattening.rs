@@ -88,6 +88,8 @@ impl Default for FlatteningPatternDataSource {
 }
 
 impl DataSource<Expression> for FlatteningPatternDataSource {
+    type Column = crate::mocks::MockColumn;
+
     fn select(&self) -> impl Selectable {
         crate::mocks::selectable::MockSelect
     }

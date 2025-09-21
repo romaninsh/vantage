@@ -47,8 +47,8 @@ impl Identifier {
     /// doc wip
     fn needs_escaping(&self) -> bool {
         let reserved_keywords = [
-            "DEFINE", "CREATE", "SELECT", "UPDATE", "DELETE", "FROM", "WHERE", "SET", "ONLY",
-            "TABLE",
+            "DEFINE", "CREATE", "SELECT", "UPDATE", "DELETE", "FROM", "RETURN", "WHERE", "SET",
+            "ONLY", "TABLE",
         ];
 
         let upper_identifier = self.identifier.to_uppercase();

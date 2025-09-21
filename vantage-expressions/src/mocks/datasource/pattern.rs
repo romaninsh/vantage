@@ -59,6 +59,8 @@ impl<E> DataSource<E> for PatternDataSource<E>
 where
     E: Clone + Send + Sync + std::fmt::Debug + 'static,
 {
+    type Column = crate::mocks::MockColumn;
+
     fn select(&self) -> impl Selectable {
         crate::mocks::selectable::MockSelect
     }

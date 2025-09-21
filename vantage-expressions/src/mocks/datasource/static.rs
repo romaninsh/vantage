@@ -46,6 +46,8 @@ impl StaticDataSource {
 }
 
 impl DataSource<Expression> for StaticDataSource {
+    type Column = crate::mocks::MockColumn;
+
     fn select(&self) -> impl Selectable {
         crate::mocks::selectable::MockSelect
     }
