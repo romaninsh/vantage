@@ -1,7 +1,10 @@
 use vantage_expressions::{expr, protocol::selectable::Selectable};
 use vantage_table::{Entity, Table};
 
-use crate::{SurrealDB, associated_query::SurrealAssociated, select::SurrealSelect};
+use crate::{
+    SurrealDB, associated_query::SurrealAssociated, select::SurrealSelect,
+    surreal_return::SurrealReturn,
+};
 use vantage_expressions::protocol::result;
 
 /// Extension trait for Table<SurrealDB, E> providing SurrealDB-specific query methods
@@ -27,6 +30,9 @@ pub trait SurrealTableExt<E: Entity> {
 
     /// Execute a select query and return the results directly
     async fn surreal_get(&self) -> vantage_expressions::util::error::Result<Vec<E>>;
+
+    /// Create a count query that returns the number of rows
+    fn surreal_count(&self) -> SurrealAssociated<SurrealReturn, i64>;
 }
 
 #[async_trait::async_trait]
@@ -130,5 +136,10 @@ impl<E: Entity> SurrealTableExt<E> for Table<SurrealDB, E> {
     async fn surreal_get(&self) -> vantage_expressions::util::error::Result<Vec<E>> {
         use vantage_expressions::AssociatedQueryable;
         self.select_surreal().get().await
+    }
+
+    fn surreal_count(&self) -> SurrealAssociated<SurrealReturn, i64> {
+        let count_return = self.select_surreal().query.as_count();
+        SurrealAssociated::new(count_return, self.data_source().clone())
     }
 }

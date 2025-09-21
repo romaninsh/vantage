@@ -1,7 +1,7 @@
 pub mod protocol;
 pub mod select;
 
-use vantage_expressions::{IntoExpressive, Expression, expr};
+use vantage_expressions::{Expression, IntoExpressive, expr};
 
 pub use select::Select;
 

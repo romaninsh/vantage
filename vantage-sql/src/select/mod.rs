@@ -195,10 +195,7 @@ impl Select {
                     }
                 })
                 .collect();
-            expr!(
-                "WITH {} ",
-                Expression::from_vec(with_expressions, ", ")
-            )
+            expr!("WITH {} ", Expression::from_vec(with_expressions, ", "))
         }
     }
 
@@ -211,10 +208,7 @@ impl Select {
                 .iter()
                 .map(|source| source.clone().into())
                 .collect();
-            expr!(
-                " FROM {}",
-                Expression::from_vec(from_expressions, ", ")
-            )
+            expr!(" FROM {}", Expression::from_vec(from_expressions, ", "))
         }
     }
 
