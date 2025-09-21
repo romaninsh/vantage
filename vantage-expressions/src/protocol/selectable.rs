@@ -73,4 +73,12 @@ pub trait Selectable: Send + Sync + Debug + Into<Expression> {
         Self::add_expression(&mut self, expression, alias);
         self
     }
+
+    fn with_limit(mut self, limit: Option<i64>, skip: Option<i64>) -> Self
+    where
+        Self: Sized,
+    {
+        Self::set_limit(&mut self, limit, skip);
+        self
+    }
 }

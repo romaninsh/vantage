@@ -118,11 +118,7 @@ impl FieldProjection {
     ///
     /// * `expression` - The expression to evaluate for this field
     /// * `alias` - The field name/alias in the resulting object
-    pub fn add_expression(
-        &mut self,
-        expression: impl Into<Expression>,
-        alias: impl Into<String>,
-    ) {
+    pub fn add_expression(&mut self, expression: impl Into<Expression>, alias: impl Into<String>) {
         self.fields
             .push(FieldProjectionField::new(alias, expression));
     }

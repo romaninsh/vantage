@@ -405,7 +405,7 @@ impl SurrealSelect<result::Rows> {
         SurrealReturn::new(Sum::new(query.expr()).into()).into()
     }
     pub fn as_count(self) -> SurrealReturn {
-        let result = self.only_expression(expr!("*"));
+        let result = self.only_expression(expr!("id"));
         SurrealReturn::new(Fx::new("count", vec![result.expr()]).into()).into()
     }
     pub fn only_expression(self, expr: Expression) -> SurrealSelect<result::List> {

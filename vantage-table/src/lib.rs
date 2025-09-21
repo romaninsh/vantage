@@ -38,7 +38,7 @@ pub mod readable;
 /// Re-export DataSource from vantage-expressions for convenience
 pub use vantage_expressions::protocol::datasource::DataSource;
 
-pub use crate::columns::Column;
+pub use crate::columns::{Column, ColumnOperations};
 
 /// Trait for entities that can be associated with tables
 pub trait Entity:
@@ -52,7 +52,7 @@ pub struct EmptyEntity;
 impl Entity for EmptyEntity {}
 
 /// A table abstraction defined over a datasource and entity
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Table<T, E>
 where
     T: DataSource<Expression>,
@@ -106,6 +106,17 @@ impl<T: DataSource<Expression>, E: Entity> Table<T, E> {
     /// Get the underlying data source
     pub fn data_source(&self) -> &T {
         &self.data_source
+    }
+
+    /// Add a condition using the builder pattern
+    pub fn with_condition(mut self, condition: Expression) -> Self {
+        self.add_condition(condition);
+        self
+    }
+
+    /// Get a reference to a column for operations
+    pub fn column(&self, name: &str) -> Option<&Column> {
+        self.columns.get(name)
     }
 
     /// Create a select query with table configuration applied

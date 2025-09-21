@@ -2,8 +2,10 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use bakery_model3::*;
+use vantage_expressions::AssociatedQueryable;
+use vantage_expressions::Selectable;
 use vantage_surrealdb::SurrealTableExt;
-use vantage_table::Entity;
+use vantage_table::{ColumnOperations, Entity};
 
 async fn create_bootstrap_db() -> Result<()> {
     // Run this once for demos to work:
@@ -20,31 +22,38 @@ async fn main() -> Result<()> {
 
     let set_of_clients = Client::table();
 
-    // Client table represents remotely stored clients.
-
-    for client in set_of_clients.surreal_get().await? {
-        println!("email: {}, client: {}", client.email, client.name);
-    }
-
+    println!("-[ get entity values out of any table ]------------------------------------");
+    // Regardless of DataSource - you can get all clients like this
     for client in set_of_clients.get().await? {
         println!("email: {}, client: {}", client.email, client.name);
     }
 
-    /////////////////////////////////////////////////////////////////////////////////////////
-    println!("-------------------------------------------------------------------------------");
-    /////////////////////////////////////////////////////////////////////////////////////////
+    println!("-[ vendor-specific select modification ]------------------------------------");
+    // Since table is using SurrealDB as a source, we can get SurrealSelect,
+    // or rather it's associated version, to tweak query before execution.
+    let select = set_of_clients.select_surreal().with_limit(Some(1), Some(0));
 
-    // TODO: Uncomment when condition system is implemented in 0.3
-    // Create and apply conditions to create a new set:
-    // let condition = set_of_clients.is_paying_client().eq(&true);
-    // let paying_clients = set_of_clients.with_condition(condition);
+    for client in select.get().await? {
+        println!("email: {}, client: {}", client.email, client.name);
+    }
 
-    // TODO: Uncomment when count() method is implemented in 0.3
-    // Generate count() Query from Table<SurrealDB, Client> and execute it:
-    // println!(
-    //     "Count of paying clients: {}",
-    //     paying_clients.count().get_one_untyped().await?
-    // );
+    println!("-[ adding conditions ]------------------------------------");
+    // using table["name"] for field referencing .eq() for conditions
+    let paying_clients = set_of_clients
+        .clone()
+        .with_condition(set_of_clients["is_paying_client"].eq(true));
+
+    for client in paying_clients.get().await? {
+        println!(
+            "client: {}, is_paying: {}",
+            client.name, client.is_paying_client
+        );
+    }
+
+    println!("-[ calculating count, implicit type ]-----------------------");
+    // Generate i64 count() from Table<SurrealDB, Client> and execute it:
+    let count_result = paying_clients.surreal_count().get().await?;
+    println!("Count of paying clients: {}", count_result);
 
     /////////////////////////////////////////////////////////////////////////////////////////
     println!("-------------------------------------------------------------------------------");
