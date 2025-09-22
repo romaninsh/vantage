@@ -43,6 +43,12 @@ jobs:
             bakery_model -> target
             bakery_api -> target
 
+      - name: Setup database schema
+        run: |
+          psql -h localhost -U postgres -d postgres -f bakery_model/schema-pg.sql
+        env:
+          PGPASSWORD: postgres
+
       - name: Build vantage v0.2
         working-directory: vantage
         run: cargo build
