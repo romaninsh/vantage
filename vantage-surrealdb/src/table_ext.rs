@@ -48,7 +48,7 @@ pub trait SurrealTableExt<E: Entity> {
     /// Get entities with their IDs as tuples (id, entity)
     async fn get_with_ids(&self) -> Result<Vec<(String, E)>>;
 
-    async fn map(self, fx: fn(E) -> E) -> Result<Self>
+    async fn map(self, transform: fn(E) -> E) -> Result<Self>
     where
         Self: Sized;
 }
