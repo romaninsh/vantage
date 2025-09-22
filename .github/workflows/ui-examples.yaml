@@ -1,8 +1,6 @@
 name: UI Examples Build
 
 on:
-  push:
-    branches: ["main"]
   pull_request:
     branches: ["main"]
     paths:
@@ -27,11 +25,11 @@ jobs:
         with:
           cache-on-failure: true
           key: "ui-examples-${{ matrix.example }}"
-          cache-workspace-crates: true
+          cache-workspace-crates: false
           cache-all-crates: true
+          shared-key: "ui-examples"
           workspaces: |
             example_${{ matrix.example }} -> target
-            example_tauri/src-tauri -> target
 
       - name: Install system dependencies
         run: |
@@ -48,22 +46,22 @@ jobs:
             libfontconfig-dev
 
       - name: Build example_${{ matrix.example }}
-        working-directory: example_${{ matrix.example }}
         run: |
           if [ "${{ matrix.example }}" = "tauri" ]; then
             sudo apt-get install -qq -y --no-install-recommends libwebkit2gtk-4.1-dev
-            cd src-tauri
+            cd example_tauri/src-tauri
             cargo build
           else
+            cd example_${{ matrix.example }}
             cargo build
           fi
 
       - name: Check example_${{ matrix.example }} formatting
-        working-directory: example_${{ matrix.example }}
         run: |
           if [ "${{ matrix.example }}" = "tauri" ]; then
-            cd src-tauri
+            cd example_tauri/src-tauri
             cargo fmt -- --check
           else
+            cd example_${{ matrix.example }}
             cargo fmt -- --check
           fi

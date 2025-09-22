@@ -27,23 +27,23 @@ impl MongoInsert {
     }
 }
 
-impl Into<Expression> for MongoInsert {
-    fn into(self) -> Expression {
-        if self.documents.len() == 1 {
+impl From<MongoInsert> for Expression {
+    fn from(val: MongoInsert) -> Self {
+        if val.documents.len() == 1 {
             expr!(format!(
                 "db.{}.insertOne({})",
-                self.collection,
-                Into::<Expression>::into(self.documents[0].clone()).preview()
+                val.collection,
+                Into::<Expression>::into(val.documents[0].clone()).preview()
             ))
         } else {
-            let docs: Vec<String> = self
+            let docs: Vec<String> = val
                 .documents
                 .iter()
                 .map(|doc| Into::<Expression>::into(doc.clone()).preview())
                 .collect();
             expr!(format!(
                 "db.{}.insertMany([{}])",
-                self.collection,
+                val.collection,
                 docs.join(", ")
             ))
         }

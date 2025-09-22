@@ -6,5 +6,5 @@ pub mod ws;
 // pub use http::HttpEngine;
 // pub use ws::WsEngine;
 pub use ws::WsEngine;
-#[cfg(feature = "pool")]
-pub use ws_pool::WsPoolEngine;
+// #[cfg(feature = "pool")]
+// pub use ws_pool::WsPoolEngine;

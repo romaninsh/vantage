@@ -64,14 +64,13 @@ impl RecordId {
         }
 
         // Try to parse as JSON object/array
-        if id_str.starts_with('{') || id_str.starts_with('[') {
-            match serde_json::from_str::<Value>(id_str) {
-                Ok(value) => match value {
-                    Value::Object(_) => return Ok(Self::object(table, value)),
-                    Value::Array(arr) => return Ok(Self::array(table, arr)),
-                    _ => {}
-                },
-                Err(_) => {}
+        if (id_str.starts_with('{') || id_str.starts_with('['))
+            && let Ok(value) = serde_json::from_str::<Value>(id_str)
+        {
+            match value {
+                Value::Object(_) => return Ok(Self::object(table, value)),
+                Value::Array(arr) => return Ok(Self::array(table, arr)),
+                _ => {}
             }
         }
 

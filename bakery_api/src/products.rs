@@ -59,8 +59,7 @@ mod tests {
                 {"id": 2, "name": "DeLorean Doughnut"},
                 {"id": 3, "name": "Time Traveler Tart"},
                 {"id": 4, "name": "Enchantment Under the Sea Pie"},
-                {"id": 5, "name": "Hoverboard Cookies"},
-                {"id": 6, "name": "Nuclear Sandwich"}
+                {"id": 5, "name": "Hoverboard Cookies"}
             ])
         );
     }

@@ -107,13 +107,10 @@ impl Expression {
             .collect::<Vec<&str>>()
             .join(delimeter);
 
-        let parameters = vec
-            .into_iter()
-            .map(|expr| IntoExpressive::nested(expr))
-            .collect();
+        let parameters = vec.into_iter().map(IntoExpressive::nested).collect();
 
         Self {
-            template: template,
+            template,
             parameters,
         }
     }
@@ -145,7 +142,7 @@ mod tests {
 
     impl From<Identifier> for Expression {
         fn from(id: Identifier) -> Self {
-            Expression::new(&format!("`{}`", id.identifier), vec![])
+            Expression::new(format!("`{}`", id.identifier), vec![])
         }
     }
 

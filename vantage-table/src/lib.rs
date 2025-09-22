@@ -154,7 +154,7 @@ impl<T: DataSource<Expression>, E: Entity> Table<T, E> {
         Ok(entities)
     }
 
-    /// Get raw data from the table as Vec<Value> without entity deserialization
+    /// Get raw data from the table as `Vec<Value>` without entity deserialization
     pub async fn get_values(&self) -> Result<Vec<serde_json::Value>>
     where
         T::Column: ColumnLike,

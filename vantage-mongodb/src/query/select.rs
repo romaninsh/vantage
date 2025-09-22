@@ -1,6 +1,5 @@
 use crate::field::Field;
 use async_trait::async_trait;
-use serde_json::Value;
 use std::fmt::Debug;
 use vantage_expressions::{Expr, Expression, expr, protocol::selectable::Selectable};
 
@@ -15,6 +14,12 @@ pub struct MongoSelect {
     distinct: bool,
     limit: Option<i64>,
     skip: Option<i64>,
+}
+
+impl Default for MongoSelect {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MongoSelect {
@@ -259,12 +264,12 @@ impl Selectable for MongoSelect {
     }
 }
 
-impl Into<Expression> for MongoSelect {
-    fn into(self) -> Expression {
-        if self.has_expressions() {
-            self.render_aggregate()
+impl From<MongoSelect> for Expression {
+    fn from(val: MongoSelect) -> Self {
+        if val.has_expressions() {
+            val.render_aggregate()
         } else {
-            self.render_find()
+            val.render_find()
         }
     }
 }

@@ -3,6 +3,11 @@ name: SurrealDB Tests
 on:
   pull_request:
     branches: ["main"]
+    paths:
+      - "vantage-surrealdb/**"
+      - "surreal-client/**"
+      - "bakery_model3/**"
+      - ".github/workflows/surreal.yaml"
 
 env:
   CARGO_TERM_COLOR: always
@@ -77,6 +82,34 @@ jobs:
 
       - name: Run vantage-surrealdb and surreal-client tests
         run: cargo test -p vantage-surrealdb -p surreal-client
+        env:
+          DB_ENDPOINT: ws://localhost:8000
+          DB_USER: root
+          DB_PASS: root
+          DB_AUTH_LEVEL: root
+          DB_NS: bakery
+
+      - name: Build bakery_model3
+        run: cargo build -p bakery_model3
+        env:
+          DB_ENDPOINT: ws://localhost:8000
+          DB_USER: root
+          DB_PASS: root
+          DB_AUTH_LEVEL: root
+          DB_NS: bakery
+
+      - name: Run bakery_model3 tests
+        run: cargo test -p bakery_model3
+        env:
+          DB_ENDPOINT: ws://localhost:8000
+          DB_USER: root
+          DB_PASS: root
+          DB_AUTH_LEVEL: root
+          DB_NS: bakery
+
+      - name: Run bakery_model3 example
+        run: cargo run --example 0-intro
+        working-directory: bakery_model3
         env:
           DB_ENDPOINT: ws://localhost:8000
           DB_USER: root

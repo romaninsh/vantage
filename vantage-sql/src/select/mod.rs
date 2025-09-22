@@ -14,6 +14,7 @@ pub use query_source::QuerySource;
 use query_type::QueryType;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Select {
     from: Vec<QuerySource>,
     with: IndexMap<String, QuerySource>,
@@ -31,6 +32,12 @@ pub struct Select {
 
     group_by: Vec<Expression>,
     order_by: Vec<Expression>,
+}
+
+impl Default for Select {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Select {
@@ -287,11 +294,11 @@ impl Select {
     }
 }
 
-impl Into<Expression> for Select {
-    fn into(self) -> Expression {
-        let with_clause = self.render_with();
-        let distinct = self.render_distinct();
-        let fields = self.render_fields();
+impl From<Select> for Expression {
+    fn from(val: Select) -> Self {
+        let with_clause = val.render_with();
+        let distinct = val.render_distinct();
+        let fields = val.render_fields();
 
         let mut query = if distinct.preview().is_empty() {
             expr!("SELECT {}", fields)
@@ -304,37 +311,37 @@ impl Into<Expression> for Select {
             query = expr!("{}{}", with_clause, query);
         }
 
-        let from_clause = self.render_from();
+        let from_clause = val.render_from();
         if !from_clause.preview().is_empty() {
             query = expr!("{}{}", query, from_clause);
         }
 
-        let joins_clause = self.render_joins();
+        let joins_clause = val.render_joins();
         if !joins_clause.preview().is_empty() {
             query = expr!("{}{}", query, joins_clause);
         }
 
-        let where_clause = self.render_where();
+        let where_clause = val.render_where();
         if !where_clause.preview().is_empty() {
             query = expr!("{}{}", query, where_clause);
         }
 
-        let group_by_clause = self.render_group_by();
+        let group_by_clause = val.render_group_by();
         if !group_by_clause.preview().is_empty() {
             query = expr!("{}{}", query, group_by_clause);
         }
 
-        let having_clause = self.render_having();
+        let having_clause = val.render_having();
         if !having_clause.preview().is_empty() {
             query = expr!("{}{}", query, having_clause);
         }
 
-        let order_by_clause = self.render_order_by();
+        let order_by_clause = val.render_order_by();
         if !order_by_clause.preview().is_empty() {
             query = expr!("{}{}", query, order_by_clause);
         }
 
-        let limit_clause = self.render_limit();
+        let limit_clause = val.render_limit();
         if !limit_clause.preview().is_empty() {
             query = expr!("{}{}", query, limit_clause);
         }

@@ -18,9 +18,9 @@ impl Identifier {
     }
 }
 
-impl Into<Expression> for Identifier {
-    fn into(self) -> Expression {
-        expr!(format!("`{}`", self.identifier))
+impl From<Identifier> for Expression {
+    fn from(val: Identifier) -> Self {
+        expr!(format!("`{}`", val.identifier))
     }
 }
 

@@ -25,10 +25,7 @@ impl ImDataSource {
 
     fn get_or_create_table(&self, table_name: &str) -> IndexMap<String, serde_json::Value> {
         let mut tables = self.tables.lock().unwrap();
-        tables
-            .entry(table_name.to_string())
-            .or_insert_with(IndexMap::new)
-            .clone()
+        tables.entry(table_name.to_string()).or_default().clone()
     }
 
     fn update_table(&self, table_name: &str, table: IndexMap<String, serde_json::Value>) {

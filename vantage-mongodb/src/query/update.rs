@@ -30,14 +30,14 @@ impl MongoUpdate {
     }
 }
 
-impl Into<Expression> for MongoUpdate {
-    fn into(self) -> Expression {
-        let filter = if self.filter.is_empty() {
+impl From<MongoUpdate> for Expression {
+    fn from(val: MongoUpdate) -> Self {
+        let filter = if val.filter.is_empty() {
             "{}".to_string()
         } else {
             // Combine filters
             let mut combined = Document::new();
-            for f in self.filter {
+            for f in val.filter {
                 let value: Value = f.into();
                 if let Value::Object(obj) = value {
                     for (key, val) in obj {
@@ -48,12 +48,11 @@ impl Into<Expression> for MongoUpdate {
             Into::<Expression>::into(combined).preview()
         };
 
-        let update =
-            Into::<Expression>::into(self.update.unwrap_or_else(|| Document::new())).preview();
+        let update = Into::<Expression>::into(val.update.unwrap_or_default()).preview();
 
         expr!(format!(
             "db.{}.updateMany({}, {})",
-            self.collection, filter, update
+            val.collection, filter, update
         ))
     }
 }

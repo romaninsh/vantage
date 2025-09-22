@@ -31,9 +31,9 @@ fn test_arc_with_different_types() {
     assert_eq!(expr2.preview(), "count: 123");
 
     // Test with f64
-    let shared_float = Arc::new(3.14f64);
+    let shared_float = Arc::new(std::f64::consts::PI);
     let expr3 = expr!("pi: {}", &shared_float);
-    assert_eq!(expr3.preview(), "pi: 3.14");
+    assert_eq!(expr3.preview(), "pi: 3.141592653589793");
 }
 
 #[test]

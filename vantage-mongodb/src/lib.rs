@@ -36,6 +36,12 @@ pub struct Document {
     fields: indexmap::IndexMap<String, Value>,
 }
 
+impl Default for Document {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Document {
     pub fn new() -> Self {
         Self {
@@ -111,19 +117,19 @@ impl Document {
     }
 }
 
-impl Into<Value> for Document {
-    fn into(self) -> Value {
+impl From<Document> for Value {
+    fn from(val: Document) -> Self {
         let mut map = serde_json::Map::new();
-        for (key, value) in self.fields {
+        for (key, value) in val.fields {
             map.insert(key, value);
         }
         Value::Object(map)
     }
 }
 
-impl Into<Expression> for Document {
-    fn into(self) -> Expression {
-        let value: Value = self.into();
+impl From<Document> for Expression {
+    fn from(val: Document) -> Self {
+        let value: Value = val.into();
         expr!(serde_json::to_string_pretty(&value).unwrap())
     }
 }

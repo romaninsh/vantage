@@ -33,15 +33,15 @@ impl ColumnLike for MockColumn {
     }
 }
 
-impl Into<IntoExpressive<Expression>> for MockColumn {
-    fn into(self) -> IntoExpressive<Expression> {
-        IntoExpressive::nested(self.expr())
+impl From<MockColumn> for IntoExpressive<Expression> {
+    fn from(val: MockColumn) -> Self {
+        IntoExpressive::nested(val.expr())
     }
 }
 
-impl Into<IntoExpressive<Expression>> for &MockColumn {
-    fn into(self) -> IntoExpressive<Expression> {
-        IntoExpressive::nested(self.expr())
+impl From<&MockColumn> for IntoExpressive<Expression> {
+    fn from(val: &MockColumn) -> Self {
+        IntoExpressive::nested(val.expr())
     }
 }
 

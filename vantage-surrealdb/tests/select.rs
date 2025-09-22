@@ -200,7 +200,7 @@ fn query11() {
                             .with_condition(
                                 Identifier::new("lines")
                                     .dot("product")
-                                    .contains(Parent::new().dot("id")),
+                                    .contains(Parent::identifier().dot("id")),
                             )
                             .expr(),
                     )

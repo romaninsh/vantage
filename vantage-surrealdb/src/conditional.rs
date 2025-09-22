@@ -51,13 +51,13 @@ impl Conditional {
     }
 }
 
-impl Into<Expression> for Conditional {
-    fn into(self) -> Expression {
+impl From<Conditional> for Expression {
+    fn from(val: Conditional) -> Self {
         expr!(
             "IF ({}) THEN ({}) ELSE ({}) END",
-            self.condition,
-            self.then_expr,
-            self.else_expr
+            val.condition,
+            val.then_expr,
+            val.else_expr
         )
     }
 }

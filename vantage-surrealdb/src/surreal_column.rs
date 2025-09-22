@@ -272,10 +272,10 @@ mod surreal_column_operations_tests {
         let col = SurrealColumn::new("name");
 
         // Test with reference
-        let expr = (&col).eq("John");
+        let expr = col.eq("John");
         assert_eq!(expr.preview(), "name = \"John\"");
 
-        let expr = (&col).ne("Jane");
+        let expr = col.ne("Jane");
         assert_eq!(expr.preview(), "name != \"Jane\"");
     }
 

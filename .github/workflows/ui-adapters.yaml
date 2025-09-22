@@ -1,8 +1,6 @@
 name: UI Adapters Tests
 
 on:
-  push:
-    branches: ["main"]
   pull_request:
     branches: ["main"]
     paths:
@@ -21,7 +19,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-          cache-workspace-crates: true
+          cache-workspace-crates: false
           cache-all-crates: true
           key: ui-adapters
           workspaces: vantage-ui-adapters -> target
@@ -42,10 +40,13 @@ jobs:
             libwebkit2gtk-4.1-dev
 
       - name: Build UI adapters
-        run: cargo build -p dataset-ui-adapters --all-features
+        working-directory: vantage-ui-adapters
+        run: cargo build --all-features
 
       - name: Run UI adapters tests
-        run: cargo test -p dataset-ui-adapters --all-features
+        working-directory: vantage-ui-adapters
+        run: cargo test --all-features
 
       - name: Check formatting
-        run: cargo fmt -p dataset-ui-adapters -- --check
+        working-directory: vantage-ui-adapters
+        run: cargo fmt -- --check

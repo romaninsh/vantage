@@ -66,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let all_users = users.get().await?;
     println!("All users ({}):", all_users.len());
     for user in &all_users {
-        let id_display = user.id.as_ref().map(|s| s.as_str()).unwrap_or("<no-id>");
+        let id_display = user.id.as_deref().unwrap_or("<no-id>");
         println!(
             "  [{}] {} - {} (age {})",
             id_display, user.name, user.email, user.age

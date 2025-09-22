@@ -37,9 +37,9 @@ impl Expressive for FieldProjectionField {
     }
 }
 
-impl Into<Expression> for FieldProjectionField {
-    fn into(self) -> Expression {
-        self.expr()
+impl From<FieldProjectionField> for Expression {
+    fn from(val: FieldProjectionField) -> Self {
+        val.expr()
     }
 }
 
@@ -138,9 +138,9 @@ impl Expressive for FieldProjection {
     }
 }
 
-impl Into<Expression> for FieldProjection {
-    fn into(self) -> Expression {
-        self.expr()
+impl From<FieldProjection> for Expression {
+    fn from(val: FieldProjection) -> Self {
+        val.expr()
     }
 }
 

@@ -3,6 +3,7 @@
 //! doc wip
 
 use crate::operation::Expressive;
+use std::str::FromStr;
 use vantage_expressions::{Expression, expr, protocol::expressive::IntoExpressive};
 
 /// SurrealDB Thing (record ID) representation
@@ -16,7 +17,7 @@ use vantage_expressions::{Expression, expr, protocol::expressive::IntoExpressive
 ///
 /// // doc wip
 /// let thing = Thing::new("users".to_string(), "john".to_string());
-/// let parsed = Thing::from_str("users:john");
+/// let parsed = "users:john".parse::<Thing>();
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Thing {
@@ -39,26 +40,19 @@ impl Thing {
             id: id.into(),
         }
     }
+}
 
-    /// Parses a Thing from string format "table:id"
-    ///
-    /// doc wip
-    ///
-    /// # Arguments
-    ///
-    /// * `thing_str` - doc wip
-    ///
-    /// # Returns
-    ///
-    /// doc wip
-    pub fn from_str(thing_str: &str) -> Option<Self> {
+impl FromStr for Thing {
+    type Err = String;
+
+    fn from_str(thing_str: &str) -> Result<Self, Self::Err> {
         if let Some((table, id)) = thing_str.split_once(':') {
-            Some(Self {
+            Ok(Self {
                 table: table.to_string(),
                 id: id.to_string(),
             })
         } else {
-            None
+            Err(format!("Invalid thing format: {}", thing_str))
         }
     }
 }
@@ -69,9 +63,9 @@ impl Expressive for Thing {
     }
 }
 
-impl Into<Expression> for Thing {
-    fn into(self) -> Expression {
-        self.expr()
+impl From<Thing> for Expression {
+    fn from(val: Thing) -> Self {
+        val.expr()
     }
 }
 

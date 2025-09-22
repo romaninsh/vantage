@@ -58,9 +58,9 @@ impl Identifier {
     }
 }
 
-impl Into<Expression> for Identifier {
-    fn into(self) -> Expression {
-        self.expr()
+impl From<Identifier> for Expression {
+    fn from(val: Identifier) -> Self {
+        val.expr()
     }
 }
 
@@ -82,7 +82,7 @@ impl Expressive for Identifier {
 
 pub struct Parent {}
 impl Parent {
-    pub fn new() -> Identifier {
+    pub fn identifier() -> Identifier {
         Identifier::new("$parent")
     }
 }

@@ -226,7 +226,7 @@ async fn test_typed_expressions() {
     let val2 = example_expr!(String; "\"value2\"");
     let bool_query = eq(val1, val2);
     let bool_result: bool = db.execute(&bool_query).await;
-    assert_eq!(bool_result, true);
+    assert!(bool_result);
 }
 
 #[test]

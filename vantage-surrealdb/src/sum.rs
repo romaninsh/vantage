@@ -45,9 +45,9 @@ impl Expressive for Sum {
     }
 }
 
-impl Into<Expression> for Sum {
-    fn into(self) -> Expression {
-        self.expr()
+impl From<Sum> for Expression {
+    fn from(val: Sum) -> Self {
+        val.expr()
     }
 }
 
@@ -83,8 +83,8 @@ impl Expressive for Fx {
     }
 }
 
-impl Into<Expression> for Fx {
-    fn into(self) -> Expression {
-        self.expr()
+impl From<Fx> for Expression {
+    fn from(val: Fx) -> Self {
+        val.expr()
     }
 }

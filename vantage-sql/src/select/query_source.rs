@@ -118,8 +118,8 @@ impl QuerySource {
     }
 }
 
-impl Into<Expression> for QuerySource {
-    fn into(self) -> Expression {
-        self.render_with_prefix("")
+impl From<QuerySource> for Expression {
+    fn from(val: QuerySource) -> Self {
+        val.render_with_prefix("")
     }
 }

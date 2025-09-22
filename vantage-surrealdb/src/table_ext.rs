@@ -175,28 +175,20 @@ impl<E: Entity> SurrealTableExt<E> for Table<SurrealDB, E> {
     }
 
     async fn get_with_ids(&self) -> Result<Vec<(String, E)>> {
-        // Create a modified select query that includes the id field
-        let mut select = SurrealSelect::new();
-        select.set_source(self.table_name(), None);
+        use crate::identifier::Identifier;
+        use crate::select::select_field::SelectField;
 
-        // Explicitly add id field
-        select.add_field("id");
+        // Use the existing select_surreal() logic and add id field at the beginning
+        let mut select = self.select_surreal();
 
-        // Add all configured columns
-        for column in self.columns().values() {
-            match column.alias() {
-                Some(alias) => select.add_expression(expr!(column.name()), Some(alias.to_string())),
-                None => select.add_field(column.name()),
-            }
-        }
+        // Insert id field at the beginning to match expected query pattern
+        select
+            .query
+            .fields
+            .insert(0, SelectField::new(Identifier::new("id")));
 
-        // Add all conditions
-        for condition in self.conditions() {
-            select.add_where_condition(condition.clone());
-        }
-
-        // Execute the query
-        let raw_result = self.data_source().execute(&select.into()).await;
+        // Execute the query and get raw values
+        let raw_result = self.data_source().execute(&select.query.into()).await;
 
         // Parse results
         let values = if let serde_json::Value::Array(items) = raw_result {

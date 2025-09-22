@@ -145,9 +145,9 @@ impl<Q: SurrealQueriable + Selectable, R: Send + Sync> Selectable for SurrealAss
     }
 }
 
-impl<Q: SurrealQueriable + Into<Expression>, R> Into<Expression> for SurrealAssociated<Q, R> {
-    fn into(self) -> Expression {
-        self.query.into()
+impl<Q: SurrealQueriable + Into<Expression>, R> From<SurrealAssociated<Q, R>> for Expression {
+    fn from(val: SurrealAssociated<Q, R>) -> Self {
+        val.query.into()
     }
 }
 
@@ -173,12 +173,7 @@ impl<E: Entity> SurrealAssociatedQueryable<Vec<E>>
 {
     async fn get_as_value(&self) -> Result<Value> {
         let raw_result = self.query.get(&self.datasource).await;
-        let json_value = Value::Array(
-            raw_result
-                .into_iter()
-                .map(|map| Value::Object(map))
-                .collect(),
-        );
+        let json_value = Value::Array(raw_result.into_iter().map(Value::Object).collect());
         Ok(json_value)
     }
 }
@@ -265,12 +260,11 @@ impl AssociatedQueryable<i64> for SurrealAssociated<SurrealReturn, i64> {
     async fn get(&self) -> Result<i64> {
         let raw_result = self.query.get(&self.datasource).await;
         // SurrealDB count returns [number], so extract the first element
-        if let Value::Array(ref arr) = raw_result {
-            if let Some(Value::Number(num)) = arr.first() {
-                if let Some(count) = num.as_i64() {
-                    return Ok(count);
-                }
-            }
+        if let Value::Array(ref arr) = raw_result
+            && let Some(Value::Number(num)) = arr.first()
+            && let Some(count) = num.as_i64()
+        {
+            return Ok(count);
         }
         Err(Error::new(
             "Failed to parse count result as i64".to_string(),

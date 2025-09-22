@@ -35,8 +35,8 @@ impl Variable {
     }
 }
 
-impl Into<Expression> for Variable {
-    fn into(self) -> Expression {
-        expr!(format!("${}", self.name))
+impl From<Variable> for Expression {
+    fn from(val: Variable) -> Self {
+        expr!(format!("${}", val.name))
     }
 }
