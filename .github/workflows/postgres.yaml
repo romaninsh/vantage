@@ -82,9 +82,3 @@ jobs:
         run: cargo test -- --test-threads=1
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
-
-      - name: Run integration tests
-        working-directory: bakery_model
-        run: cargo test --test integration
-        env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres

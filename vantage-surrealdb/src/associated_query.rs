@@ -173,12 +173,7 @@ impl<E: Entity> SurrealAssociatedQueryable<Vec<E>>
 {
     async fn get_as_value(&self) -> Result<Value> {
         let raw_result = self.query.get(&self.datasource).await;
-        let json_value = Value::Array(
-            raw_result
-                .into_iter()
-                .map(Value::Object)
-                .collect(),
-        );
+        let json_value = Value::Array(raw_result.into_iter().map(Value::Object).collect());
         Ok(json_value)
     }
 }
@@ -267,9 +262,10 @@ impl AssociatedQueryable<i64> for SurrealAssociated<SurrealReturn, i64> {
         // SurrealDB count returns [number], so extract the first element
         if let Value::Array(ref arr) = raw_result
             && let Some(Value::Number(num)) = arr.first()
-                && let Some(count) = num.as_i64() {
-                    return Ok(count);
-                }
+            && let Some(count) = num.as_i64()
+        {
+            return Ok(count);
+        }
         Err(Error::new(
             "Failed to parse count result as i64".to_string(),
         ))
