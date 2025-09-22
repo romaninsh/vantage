@@ -1,5 +1,11 @@
+use serde_json::Value;
 use vantage_expressions::{
-    expr, protocol::datasource::ColumnLike, protocol::selectable::Selectable,
+    expr,
+    protocol::{
+        datasource::{ColumnLike, DataSource},
+        selectable::Selectable,
+    },
+    util::error::{Error, Result},
 };
 use vantage_table::{Entity, Table};
 
@@ -22,19 +28,29 @@ pub trait SurrealTableExt<E: Entity> {
     fn select_surreal_column(
         &self,
         column: impl Into<String>,
-    ) -> Result<SurrealAssociated<SurrealSelect<result::List>, Vec<serde_json::Value>>, String>;
+    ) -> Result<SurrealAssociated<SurrealSelect<result::List>, Vec<serde_json::Value>>>;
 
     /// Create a SurrealAssociated that returns a single value (first row, single column)
     fn select_surreal_single(
         &self,
         column: impl Into<String>,
-    ) -> Result<SurrealAssociated<SurrealSelect<result::Single>, serde_json::Value>, String>;
+    ) -> Result<SurrealAssociated<SurrealSelect<result::Single>, serde_json::Value>>;
 
     /// Execute a select query and return the results directly
-    async fn surreal_get(&self) -> vantage_expressions::util::error::Result<Vec<E>>;
+    async fn surreal_get(&self) -> Result<Vec<E>>;
 
     /// Create a count query that returns the number of rows
     fn surreal_count(&self) -> SurrealAssociated<SurrealReturn, i64>;
+
+    /// Update record by patching, with specified ID
+    async fn update(&self, id: String, patch: Value) -> Result<()>;
+
+    /// Get entities with their IDs as tuples (id, entity)
+    async fn get_with_ids(&self) -> Result<Vec<(String, E)>>;
+
+    async fn map(self, fx: fn(E) -> E) -> Result<Self>
+    where
+        Self: Sized;
 }
 
 #[async_trait::async_trait]
@@ -81,13 +97,15 @@ impl<E: Entity> SurrealTableExt<E> for Table<SurrealDB, E> {
     fn select_surreal_column(
         &self,
         column: impl Into<String>,
-    ) -> Result<SurrealAssociated<SurrealSelect<result::List>, Vec<serde_json::Value>>, String>
-    {
+    ) -> Result<SurrealAssociated<SurrealSelect<result::List>, Vec<serde_json::Value>>> {
         let column_name = column.into();
 
         // Validate column exists
         if !self.columns().contains_key(&column_name) {
-            return Err(format!("Column '{}' not found in table", column_name));
+            return Err(Error::new(format!(
+                "Column '{}' not found in table",
+                column_name
+            )));
         }
 
         let column_obj = &self.columns()[&column_name];
@@ -111,12 +129,15 @@ impl<E: Entity> SurrealTableExt<E> for Table<SurrealDB, E> {
     fn select_surreal_single(
         &self,
         column: impl Into<String>,
-    ) -> Result<SurrealAssociated<SurrealSelect<result::Single>, serde_json::Value>, String> {
+    ) -> Result<SurrealAssociated<SurrealSelect<result::Single>, serde_json::Value>> {
         let column_name = column.into();
 
         // Validate column exists
         if !self.columns().contains_key(&column_name) {
-            return Err(format!("Column '{}' not found in table", column_name));
+            return Err(Error::new(format!(
+                "Column '{}' not found in table",
+                column_name
+            )));
         }
 
         let column_obj = &self.columns()[&column_name];
@@ -135,7 +156,7 @@ impl<E: Entity> SurrealTableExt<E> for Table<SurrealDB, E> {
         ))
     }
 
-    async fn surreal_get(&self) -> vantage_expressions::util::error::Result<Vec<E>> {
+    async fn surreal_get(&self) -> Result<Vec<E>> {
         use vantage_expressions::AssociatedQueryable;
         self.select_surreal().get().await
     }
@@ -143,5 +164,110 @@ impl<E: Entity> SurrealTableExt<E> for Table<SurrealDB, E> {
     fn surreal_count(&self) -> SurrealAssociated<SurrealReturn, i64> {
         let count_return = self.select_surreal().query.as_count();
         SurrealAssociated::new(count_return, self.data_source().clone())
+    }
+
+    async fn update(&self, id: String, patch: Value) -> Result<()> {
+        self.data_source()
+            .merge(&id, patch)
+            .await
+            .map_err(|e| Error::new(format!("SurrealDB update failed: {}", e)))?;
+        Ok(())
+    }
+
+    async fn get_with_ids(&self) -> Result<Vec<(String, E)>> {
+        // Create a modified select query that includes the id field
+        let mut select = SurrealSelect::new();
+        select.set_source(self.table_name(), None);
+
+        // Explicitly add id field
+        select.add_field("id");
+
+        // Add all configured columns
+        for column in self.columns().values() {
+            match column.alias() {
+                Some(alias) => select.add_expression(expr!(column.name()), Some(alias.to_string())),
+                None => select.add_field(column.name()),
+            }
+        }
+
+        // Add all conditions
+        for condition in self.conditions() {
+            select.add_where_condition(condition.clone());
+        }
+
+        // Execute the query
+        let raw_result = self.data_source().execute(&select.into()).await;
+
+        // Parse results
+        let values = if let serde_json::Value::Array(items) = raw_result {
+            items
+        } else {
+            return Err(Error::new("Expected array of objects from database"));
+        };
+
+        let mut results = Vec::new();
+        for item in values {
+            // Extract ID from the JSON object
+            let id = if let serde_json::Value::Object(ref obj) = item {
+                obj.get("id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| Error::new("Entity missing 'id' field".to_string()))?
+                    .to_string()
+            } else {
+                return Err(Error::new("Expected object from database".to_string()));
+            };
+
+            // Create a copy without the id field for entity deserialization
+            let mut entity_data = item.clone();
+            if let serde_json::Value::Object(ref mut obj) = entity_data {
+                obj.remove("id");
+            }
+
+            // Deserialize the entity
+            let entity = serde_json::from_value::<E>(entity_data)
+                .map_err(|e| Error::new(format!("Failed to deserialize entity: {}", e)))?;
+
+            results.push((id, entity));
+        }
+
+        Ok(results)
+    }
+
+    async fn map(self, fx: fn(E) -> E) -> Result<Self> {
+        for (id, entity) in self.get_with_ids().await? {
+            let new_entity = fx(entity.clone());
+
+            // Serialize both entities to Value for comparison
+            let original_value = serde_json::to_value(&entity)
+                .map_err(|e| Error::new(format!("Failed to serialize original entity: {}", e)))?;
+            let new_value = serde_json::to_value(&new_entity)
+                .map_err(|e| Error::new(format!("Failed to serialize new entity: {}", e)))?;
+
+            // Find differences between original and new entity
+            let mut patch = serde_json::Map::new();
+            if let (Value::Object(original_map), Value::Object(new_map)) =
+                (&original_value, &new_value)
+            {
+                for (key, new_val) in new_map {
+                    if let Some(original_val) = original_map.get(key) {
+                        if original_val != new_val {
+                            patch.insert(key.clone(), new_val.clone());
+                        }
+                    } else {
+                        // New field added
+                        patch.insert(key.clone(), new_val.clone());
+                    }
+                }
+            }
+
+            // Skip if no changes
+            if patch.is_empty() {
+                continue;
+            }
+
+            // Update with the changes
+            self.update(id, Value::Object(patch)).await?;
+        }
+        Ok(self)
     }
 }

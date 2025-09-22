@@ -55,6 +55,42 @@ async fn main() -> Result<()> {
     let count_result = paying_clients.surreal_count().get().await?;
     println!("Count of paying clients: {}", count_result);
 
+    println!("-[ change Doc Brown into non-paying ]-----------------------");
+    set_of_clients
+        .clone()
+        .with_condition(set_of_clients["name"].eq("Doc Brown #VIP"))
+        .map(|mut c: Client| {
+            c.is_paying_client = false;
+            c
+        })
+        .await?;
+
+    // Generate i64 count() from Table<SurrealDB, Client> and execute it:
+    let count_result = paying_clients.surreal_count().get().await?;
+    println!("Count of paying clients: {}", count_result);
+
+    println!("-[ add #VIP to all paying clients' names ]-----------------------");
+    // Use map to transform paying clients by adding #VIP suffix to their names
+    paying_clients
+        .clone()
+        .map(|mut client: Client| {
+            if !client.name.contains("#VIP") {
+                client.name = format!("{} #VIP", client.name);
+            }
+            client
+        })
+        .await?;
+
+    println!("Updated paying clients with #VIP suffix");
+
+    // Show the updated paying clients
+    for client in paying_clients.get().await? {
+        println!(
+            "VIP client: {}, is_paying: {}",
+            client.name, client.is_paying_client
+        );
+    }
+
     /////////////////////////////////////////////////////////////////////////////////////////
     println!("-------------------------------------------------------------------------------");
     /////////////////////////////////////////////////////////////////////////////////////////

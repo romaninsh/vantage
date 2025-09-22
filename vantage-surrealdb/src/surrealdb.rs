@@ -39,6 +39,12 @@ impl SurrealDB {
         }
     }
 
+    /// Merge data into a record by ID
+    pub async fn merge(&self, id: &str, data: Value) -> Result<Value> {
+        let client = self.inner.lock().await;
+        client.merge(id, data).await
+    }
+
     pub fn select(&self) -> SurrealSelect {
         SurrealSelect::new()
     }
