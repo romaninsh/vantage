@@ -93,8 +93,8 @@ impl Selectable for MockSelect {
     }
 }
 
-impl Into<Expression> for MockSelect {
-    fn into(self) -> Expression {
+impl From<MockSelect> for Expression {
+    fn from(_val: MockSelect) -> Self {
         crate::expr!("SELECT * FROM mock")
     }
 }
@@ -105,7 +105,7 @@ mod tests {
 
     #[test]
     fn test_mock_select_interface() {
-        let mut mock = MockSelect::default();
+        let mut mock = MockSelect;
 
         // These should all work without panicking
         mock.set_source("users", None);

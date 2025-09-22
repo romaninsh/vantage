@@ -9,7 +9,7 @@ pub trait IntoValue: Send + Sync + Debug {
 
 #[async_trait]
 pub trait IntoValueAsync: Send + Sync + Debug {
-    async fn into_value_async(self: &Self) -> Value;
+    async fn to_value_async(&self) -> Value;
 }
 
 macro_rules! impl_into_value {
@@ -29,8 +29,8 @@ impl_into_value! {
     i64 => |v| Value::Number(serde_json::Number::from(v)),
     u64 => |v| Value::Number(serde_json::Number::from(v)),
     f64 => |v| Value::Number(serde_json::Number::from_f64(v).unwrap()),
-    bool => |v| Value::Bool(v),
-    String => |v| Value::String(v),
+    bool => Value::Bool,
+    String => Value::String,
     &str => |v:&str| Value::String(v.to_string()),
     () => |_| Value::Null
 }
@@ -66,7 +66,7 @@ mod tests {
         fx(123i32);
         fx(123i64);
         fx(123u64);
-        fx(3.14f64);
+        fx(std::f64::consts::PI);
         fx(true);
         fx(false);
         fx("hello".to_string());

@@ -38,12 +38,10 @@ impl Flatten<Expression> for ExpressionFlattener {
     }
 
     fn resolve_deferred(&self, expr: &Expression) -> Expression {
-        let expr = expr.clone();
-
         // Note: This is a sync implementation that doesn't actually execute deferred closures
         // For testing purposes, deferred parameters are left as-is
         // In real usage, this would be handled by the DataSource execute method
-        expr
+        expr.clone()
     }
 
     fn flatten_nested(&self, expr: &Expression) -> Expression {

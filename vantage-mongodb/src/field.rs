@@ -28,7 +28,7 @@ impl Field {
             || field.contains('.')
             || field.contains(' ')
             || field.contains('-')
-            || field.chars().next().map_or(false, |c| c.is_numeric())
+            || field.chars().next().is_some_and(|c| c.is_numeric())
     }
 
     pub fn expression(&self) -> Expression {
@@ -52,9 +52,9 @@ impl Field {
     }
 }
 
-impl Into<Expression> for Field {
-    fn into(self) -> Expression {
-        self.expression()
+impl From<Field> for Expression {
+    fn from(val: Field) -> Self {
+        val.expression()
     }
 }
 

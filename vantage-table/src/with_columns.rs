@@ -98,15 +98,15 @@ impl<T: DataSource<Expression>, E: Entity> Index<&str> for Table<T, E> {
     }
 }
 
-impl Into<IntoExpressive<Expression>> for Column {
-    fn into(self) -> IntoExpressive<Expression> {
-        IntoExpressive::nested(self.expr())
+impl From<Column> for IntoExpressive<Expression> {
+    fn from(val: Column) -> Self {
+        IntoExpressive::nested(val.expr())
     }
 }
 
-impl Into<IntoExpressive<Expression>> for &Column {
-    fn into(self) -> IntoExpressive<Expression> {
-        IntoExpressive::nested(self.expr())
+impl From<&Column> for IntoExpressive<Expression> {
+    fn from(val: &Column) -> Self {
+        IntoExpressive::nested(val.expr())
     }
 }
 

@@ -23,14 +23,14 @@ impl MongoDelete {
     }
 }
 
-impl Into<Expression> for MongoDelete {
-    fn into(self) -> Expression {
-        let filter = if self.filter.is_empty() {
+impl From<MongoDelete> for Expression {
+    fn from(val: MongoDelete) -> Self {
+        let filter = if val.filter.is_empty() {
             "{}".to_string()
         } else {
             // Combine filters
             let mut combined = Document::new();
-            for f in self.filter {
+            for f in val.filter {
                 let value: Value = f.into();
                 if let Value::Object(obj) = value {
                     for (key, val) in obj {
@@ -41,7 +41,7 @@ impl Into<Expression> for MongoDelete {
             Into::<Expression>::into(combined).preview()
         };
 
-        expr!(format!("db.{}.deleteMany({})", self.collection, filter))
+        expr!(format!("db.{}.deleteMany({})", val.collection, filter))
     }
 }
 

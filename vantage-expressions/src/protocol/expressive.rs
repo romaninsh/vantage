@@ -4,12 +4,13 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+type DeferredFn<T> =
+    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = IntoExpressive<T>> + Send>> + Send + Sync>;
+
 pub enum IntoExpressive<T> {
     Scalar(Value),
     Nested(T),
-    Deferred(
-        Arc<dyn Fn() -> Pin<Box<dyn Future<Output = IntoExpressive<T>> + Send>> + Send + Sync>,
-    ),
+    Deferred(DeferredFn<T>),
 }
 
 impl<T: Debug> Debug for IntoExpressive<T> {
@@ -149,11 +150,7 @@ impl<T: Debug> IntoExpressive<T> {
         }
     }
 
-    pub fn as_deferred(
-        &self,
-    ) -> Option<
-        &Arc<dyn Fn() -> Pin<Box<dyn Future<Output = IntoExpressive<T>> + Send>> + Send + Sync>,
-    > {
+    pub fn as_deferred(&self) -> Option<&DeferredFn<T>> {
         match self {
             IntoExpressive::Deferred(f) => Some(f),
             _ => None,

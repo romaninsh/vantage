@@ -41,6 +41,11 @@ pub fn postgres() -> Postgres {
 }
 
 pub async fn connect_postgres() -> Result<()> {
+    // If already connected, just return success
+    if POSTGRESS.get().is_some() {
+        return Ok(());
+    }
+
     let connection_string = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://postgres@localhost:5432/postgres".to_string());
 

@@ -45,7 +45,7 @@ impl MockQueue {
         let mut topics = self.topics.lock().unwrap();
         topics
             .entry(topic_name.to_string())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(message);
     }
 }
