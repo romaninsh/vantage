@@ -16,6 +16,12 @@ pub struct MongoSelect {
     skip: Option<i64>,
 }
 
+impl Default for MongoSelect {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MongoSelect {
     pub fn new() -> Self {
         Self {
@@ -258,12 +264,12 @@ impl Selectable for MongoSelect {
     }
 }
 
-impl Into<Expression> for MongoSelect {
-    fn into(self) -> Expression {
-        if self.has_expressions() {
-            self.render_aggregate()
+impl From<MongoSelect> for Expression {
+    fn from(val: MongoSelect) -> Self {
+        if val.has_expressions() {
+            val.render_aggregate()
         } else {
-            self.render_find()
+            val.render_find()
         }
     }
 }

@@ -64,6 +64,17 @@ pub struct SurrealClient {
     incremental_id: Arc<std::sync::atomic::AtomicU64>,
 }
 
+impl Clone for SurrealClient {
+    /// Clone the client - creates a new client instance sharing the same engine and session
+    fn clone(&self) -> Self {
+        Self {
+            engine: self.engine.clone(),
+            session: self.session.clone(),
+            incremental_id: self.incremental_id.clone(),
+        }
+    }
+}
+
 impl SurrealClient {
     /// Create a new SurrealDB instance with the given engine and optional namespace/database
     pub fn new(
@@ -78,15 +89,6 @@ impl SurrealClient {
             engine: Arc::new(tokio::sync::Mutex::new(engine)),
             session,
             incremental_id: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-        }
-    }
-
-    /// Clone the client - creates a new client instance sharing the same engine and session
-    pub fn clone(&self) -> Self {
-        Self {
-            engine: self.engine.clone(),
-            session: self.session.clone(),
-            incremental_id: self.incremental_id.clone(),
         }
     }
 

@@ -65,13 +65,13 @@ impl SelectField {
     }
 }
 
-impl Into<Expression> for SelectField {
-    fn into(self) -> Expression {
-        match (&self.alias, self.is_value) {
-            (Some(alias), true) => expr!("VALUE {} AS {}", self.expression, Identifier::new(alias)),
-            (Some(alias), false) => expr!("{} AS {}", self.expression, Identifier::new(alias)),
-            (None, true) => expr!("VALUE {}", self.expression),
-            (None, false) => self.expression,
+impl From<SelectField> for Expression {
+    fn from(val: SelectField) -> Self {
+        match (&val.alias, val.is_value) {
+            (Some(alias), true) => expr!("VALUE {} AS {}", val.expression, Identifier::new(alias)),
+            (Some(alias), false) => expr!("{} AS {}", val.expression, Identifier::new(alias)),
+            (None, true) => expr!("VALUE {}", val.expression),
+            (None, false) => val.expression,
         }
     }
 }

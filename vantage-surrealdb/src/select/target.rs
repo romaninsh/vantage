@@ -38,8 +38,8 @@ impl Target {
     }
 }
 
-impl Into<Expression> for Target {
-    fn into(self) -> Expression {
-        self.target
+impl From<Target> for Expression {
+    fn from(val: Target) -> Self {
+        val.target
     }
 }

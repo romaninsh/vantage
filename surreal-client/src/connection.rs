@@ -80,7 +80,7 @@ impl SurrealConnection {
         // Extract namespace and database from path segments
         let path_segments: Vec<&str> = url.path_segments().map(|c| c.collect()).unwrap_or_default();
 
-        if let Some(namespace) = path_segments.get(0).filter(|s| !s.is_empty()) {
+        if let Some(namespace) = path_segments.first().filter(|s| !s.is_empty()) {
             conn.namespace = Some(namespace.to_string());
         }
         if let Some(database) = path_segments.get(1).filter(|s| !s.is_empty()) {
@@ -251,7 +251,7 @@ impl SurrealConnection {
             .url
             .as_ref()
             .ok_or_else(|| SurrealError::Connection("URL is required".to_string()))?;
-        let url = Url::parse(&url_str)
+        let url = Url::parse(url_str)
             .map_err(|e| SurrealError::Connection(format!("Invalid URL: {}", e)))?;
 
         let engine: Box<dyn Engine> = match url.scheme() {

@@ -215,7 +215,7 @@ impl<T: QueryResult> SurrealSelect<T> {
         if self.group_by.is_empty() {
             expr!("")
         } else {
-            let group_expressions: Vec<Expression> = self.group_by.iter().cloned().collect();
+            let group_expressions: Vec<Expression> = self.group_by.to_vec();
             expr!(
                 " GROUP BY {}",
                 Expression::from_vec(group_expressions, ", ")
@@ -295,9 +295,9 @@ impl<T: QueryResult> Expressive for SurrealSelect<T> {
 //     }
 // }
 
-impl<T: QueryResult> Into<Expression> for SurrealSelect<T> {
-    fn into(self) -> Expression {
-        self.render()
+impl<T: QueryResult> From<SurrealSelect<T>> for Expression {
+    fn from(val: SurrealSelect<T>) -> Self {
+        val.render()
     }
 }
 
@@ -402,19 +402,21 @@ impl SurrealSelect<result::Rows> {
             other => query.only_expression(expr!("{}", other)),
         };
 
-        SurrealReturn::new(Sum::new(query.expr()).into()).into()
+        SurrealReturn::new(Sum::new(query.expr()).into())
     }
     pub fn as_count(self) -> SurrealReturn {
         let result = self.only_expression(expr!("id"));
-        SurrealReturn::new(Fx::new("count", vec![result.expr()]).into()).into()
+        SurrealReturn::new(Fx::new("count", vec![result.expr()]).into())
     }
     pub fn only_expression(self, expr: Expression) -> SurrealSelect<result::List> {
-        self.without_fields().with_expression(expr, None).as_list()
+        self.without_fields()
+            .with_expression(expr, None)
+            .into_list()
     }
     pub fn only_column(self, column: impl Into<String>) -> SurrealSelect<result::List> {
-        self.without_fields().with_field(column).as_list()
+        self.without_fields().with_field(column).into_list()
     }
-    fn as_list(self) -> SurrealSelect<result::List> {
+    fn into_list(self) -> SurrealSelect<result::List> {
         if self.from_only {
             panic!("SelectQuery<Rows>::as_list() must not have from_only=true");
         }

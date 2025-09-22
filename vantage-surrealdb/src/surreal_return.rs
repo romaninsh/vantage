@@ -64,8 +64,8 @@ impl Expressive for SurrealReturn {
     }
 }
 
-impl Into<Expression> for SurrealReturn {
-    fn into(self) -> Expression {
-        self.expr()
+impl From<SurrealReturn> for Expression {
+    fn from(val: SurrealReturn) -> Self {
+        val.expr()
     }
 }

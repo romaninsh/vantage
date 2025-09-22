@@ -54,7 +54,7 @@ impl JoinQuery {
         let source = self.source.render_with_prefix("");
         let on_conditions = self.render_on_conditions();
 
-        let join_clause = match self.join_type {
+        match self.join_type {
             JoinType::Inner => {
                 if on_conditions.preview().is_empty() {
                     expr!(" JOIN {}", source)
@@ -83,9 +83,7 @@ impl JoinQuery {
                     expr!(" FULL JOIN {} {}", source, on_conditions)
                 }
             }
-        };
-
-        join_clause
+        }
     }
 
     fn render_on_conditions(&self) -> Expression {

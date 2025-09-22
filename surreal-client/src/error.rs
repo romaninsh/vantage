@@ -28,7 +28,7 @@ pub enum SurrealError {
     Json(#[from] serde_json::Error),
 
     #[error("WebSocket error: {0}")]
-    WebSocket(#[from] tokio_tungstenite::tungstenite::Error),
+    WebSocket(#[from] Box<tokio_tungstenite::tungstenite::Error>),
 
     #[error("URL parse error: {0}")]
     UrlParse(#[from] url::ParseError),

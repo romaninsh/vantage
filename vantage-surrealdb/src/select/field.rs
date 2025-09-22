@@ -43,9 +43,9 @@ impl Field {
     }
 }
 
-impl Into<Expression> for Field {
-    fn into(self) -> Expression {
-        self.expr()
+impl From<Field> for Expression {
+    fn from(val: Field) -> Self {
+        val.expr()
     }
 }
 
