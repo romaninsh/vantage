@@ -89,8 +89,8 @@ async fn test_select_surreal_column_validation() {
     let result = table.select_surreal_column("nonexistent");
     assert!(result.is_err());
     assert_eq!(
-        result.unwrap_err(),
-        "Column 'nonexistent' not found in table"
+        result.unwrap_err().to_string(),
+        "Other error: Column 'nonexistent' not found in table"
     );
 }
 
@@ -110,7 +110,10 @@ async fn test_select_surreal_single_validation() {
     // Test invalid column
     let result = table.select_surreal_single("invalid");
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err(), "Column 'invalid' not found in table");
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "Other error: Column 'invalid' not found in table"
+    );
 }
 
 #[tokio::test]
