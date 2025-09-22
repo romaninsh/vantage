@@ -1,0 +1,58 @@
+name: Main Workspace (v0.3 Core)
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "vantage-expressions/**"
+      - "vantage-sql/**"
+      - "vantage-surrealdb/**"
+      - "vantage-mongodb/**"
+      - "vantage-dataset/**"
+      - "vantage-table/**"
+      - "surreal-client/**"
+      - "bakery_model3/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/main.yaml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          key: "main-workspace-v03"
+          cache-workspace-crates: true
+          cache-all-crates: true
+
+      - name: Check workspace structure
+        run: |
+          echo "=== Workspace members ==="
+          cargo metadata --format-version 1 | jq -r '.workspace_members[]'
+          echo ""
+
+      - name: Build all crates
+        run: cargo build --workspace
+
+      - name: Run all tests
+        run: cargo test --workspace
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Check documentation
+        run: cargo doc --workspace --no-deps --document-private-items
+        env:
+          RUSTDOCFLAGS: "-D warnings"
