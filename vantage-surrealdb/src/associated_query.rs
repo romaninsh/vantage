@@ -44,6 +44,33 @@ impl<Q: SurrealQueriable, R> SurrealAssociated<Q, R> {
     }
 }
 
+// Wrapper methods for SurrealSelect that preserve the SurrealAssociated wrapper
+impl<T: QueryResult, R> SurrealAssociated<SurrealSelect<T>, R> {
+    pub fn with_limit(mut self, limit: Option<i64>, skip: Option<i64>) -> Self {
+        self.query.set_limit(limit, skip);
+        self
+    }
+
+    pub fn with_order_by(
+        mut self,
+        field_or_expr: impl Into<vantage_expressions::Expr>,
+        ascending: bool,
+    ) -> Self {
+        self.query.add_order_by(field_or_expr, ascending);
+        self
+    }
+
+    pub fn with_field(mut self, field: impl Into<String>) -> Self {
+        self.query.add_field(field);
+        self
+    }
+
+    pub fn with_condition(mut self, condition: vantage_expressions::Expression) -> Self {
+        self.query.add_where_condition(condition);
+        self
+    }
+}
+
 // Preview method implementation for SurrealSelect types
 impl<T: QueryResult, R> SurrealAssociated<SurrealSelect<T>, R> {
     pub fn preview(&self) -> String {

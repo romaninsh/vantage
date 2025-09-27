@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 pub mod insertable;
 pub mod readable;
 pub mod table;
+pub mod writable;
 pub use table::Table;
 
 /// ImDataSource stores tables in memory using IndexMap for ordered iteration

@@ -22,7 +22,7 @@ use crate::{
     surreal_return::SurrealReturn,
 };
 use vantage_expressions::{
-    DataSource, Expr, Expression, expr,
+    Expr, Expression, QuerySource, expr,
     protocol::selectable::Selectable,
     result::{self, QueryResult},
 };

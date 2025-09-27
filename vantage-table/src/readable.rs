@@ -1,14 +1,14 @@
 use async_trait::async_trait;
 use serde::de::DeserializeOwned;
-use vantage_dataset::dataset::{ReadableDataSet, Result};
+use vantage_dataset::dataset::{Id, ReadableDataSet, Result};
 use vantage_expressions::Expression;
 
-use crate::{DataSource, Entity, Table};
+use crate::{Entity, QuerySource, Table, TableSource};
 
 #[async_trait]
 impl<T, E, R> ReadableDataSet<R> for Table<T, E>
 where
-    T: DataSource<Expression> + Send + Sync,
+    T: QuerySource<Expression> + TableSource + Send + Sync,
     E: Entity + Send + Sync,
     R: DeserializeOwned + Send + Sync,
 {
@@ -18,6 +18,11 @@ where
 
     async fn get_some(&self) -> Result<Option<R>> {
         <Self as ReadableDataSet<R>>::get_some_as::<R>(self).await
+    }
+
+    async fn get_id(&self, _id: impl Id) -> Result<R> {
+        let _id = _id.into();
+        todo!("Implement get_id for Table")
     }
 
     async fn get_as<U>(&self) -> Result<Vec<U>>

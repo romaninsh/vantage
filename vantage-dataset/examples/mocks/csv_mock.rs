@@ -3,7 +3,7 @@
 use csv::ReaderBuilder;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
-use vantage_dataset::dataset::{DataSetError, ReadableDataSet, Result};
+use vantage_dataset::dataset::{DataSetError, Id, ReadableDataSet, Result};
 
 /// MockCsv contains hardcoded CSV data as strings
 #[derive(Debug, Clone)]
@@ -62,6 +62,10 @@ where
 {
     async fn get(&self) -> Result<Vec<T>> {
         self.get_as().await
+    }
+
+    async fn get_id(&self, _id: impl Id) -> Result<T> {
+        return Err(DataSetError::NoCapability);
     }
 
     async fn get_some(&self) -> Result<Option<T>> {

@@ -11,6 +11,9 @@ pub enum DataSetError {
     #[error("No data available")]
     NoData,
 
+    #[error("Capability unavailable")]
+    NoCapability,
+
     #[error("{0}")]
     Other(String),
 }

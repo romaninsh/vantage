@@ -1,7 +1,7 @@
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 use vantage_expressions::mocks::FlatteningPatternDataSource;
-use vantage_expressions::{DataSource, Expression, IntoExpressive, expr};
+use vantage_expressions::{Expression, IntoExpressive, QuerySource, expr};
 
 #[test]
 fn test_arc_mutex_with_database_execution() {

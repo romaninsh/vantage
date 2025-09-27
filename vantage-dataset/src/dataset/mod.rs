@@ -13,11 +13,12 @@
 mod error;
 pub use error::{DataSetError, Result};
 
-mod kv;
-pub use kv::KvDataSet;
+/// Type alias for ID parameters that can be either &str or String
+pub trait Id: Into<String> + Send {}
+impl<T: Into<String> + Send> Id for T {}
 
 mod insertable;
-pub use insertable::InsertableDataSet;
+pub use insertable::{Importable, InsertableDataSet};
 
 mod readable;
 pub use readable::ReadableDataSet;

@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
-    dataset::{DataSetError, InsertableDataSet, Result},
+    dataset::{DataSetError, Importable, InsertableDataSet, ReadableDataSet, Result},
     im::Table,
 };
 
@@ -11,7 +11,7 @@ impl<T> InsertableDataSet<T> for Table<T>
 where
     T: Serialize + DeserializeOwned + Send + Sync,
 {
-    async fn insert(&self, record: T) -> Result<()> {
+    async fn insert(&self, record: T) -> Result<Option<String>> {
         // Serialize record to JSON
         let mut value = serde_json::to_value(record)
             .map_err(|e| DataSetError::other(format!("Serialization error: {}", e)))?;
@@ -38,11 +38,28 @@ where
 
         // Get current table and insert record
         let mut table = self.data_source.get_or_create_table(&self.table_name);
-        table.insert(id, value);
+        table.insert(id.clone(), value);
 
         // Update the table in data source
         self.data_source.update_table(&self.table_name, table);
 
+        Ok(Some(id))
+    }
+}
+
+#[async_trait]
+impl<T> Importable<T> for Table<T>
+where
+    T: Serialize + DeserializeOwned + Send + Sync,
+{
+    async fn import<D>(&mut self, source: D) -> Result<()>
+    where
+        D: ReadableDataSet<T> + Send,
+    {
+        let records = source.get().await?;
+        for record in records {
+            self.insert(record).await?;
+        }
         Ok(())
     }
 }

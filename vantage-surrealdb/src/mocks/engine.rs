@@ -187,7 +187,7 @@ impl Default for SurrealMockBuilder {
 mod tests {
     use super::*;
     use serde_json::json;
-    use vantage_expressions::DataSource;
+    use vantage_expressions::QuerySource;
 
     #[tokio::test]
     #[should_panic(

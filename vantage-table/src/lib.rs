@@ -29,19 +29,41 @@
 
 use indexmap::IndexMap;
 use std::marker::PhantomData;
+use vantage_expressions::SelectSource;
+use vantage_expressions::mocks::StaticDataSource;
 use vantage_expressions::{Expression, protocol::selectable::Selectable, util::error::Result};
 
+pub mod mocks;
 pub mod prelude;
 pub mod readable;
+pub mod tablesource;
 pub mod with_columns;
 pub mod with_conditions;
 
 /// Re-export ColumnLike from vantage-expressions for convenience
-pub use vantage_expressions::protocol::datasource::ColumnLike;
+pub use crate::tablesource::ColumnLike;
 /// Re-export DataSource from vantage-expressions for convenience
-pub use vantage_expressions::protocol::datasource::DataSource;
+pub use vantage_expressions::QuerySource;
 
+pub use crate::tablesource::TableSource;
 pub use crate::with_columns::Column;
+
+// Specific implementation for StaticDataSource
+impl TableSource for StaticDataSource {
+    type Column = mocks::MockColumn;
+
+    fn create_column(&self, name: &str, _table: impl TableLike) -> Self::Column {
+        name.into()
+    }
+}
+
+/// Trait for dynamic table operations without generics
+pub trait TableLike: Send + Sync {
+    /// Get all columns as boxed ColumnLike trait objects
+    fn columns(&self) -> Vec<Box<dyn ColumnLike>>;
+
+    fn table_alias(&self) -> &str;
+}
 
 /// Trait for entities that can be associated with tables
 pub trait Entity:
@@ -58,7 +80,7 @@ impl Entity for EmptyEntity {}
 #[derive(Debug, Clone)]
 pub struct Table<T, E>
 where
-    T: DataSource<Expression>,
+    T: TableSource,
     E: Entity,
 {
     data_source: T,
@@ -68,8 +90,8 @@ where
     conditions: Vec<Expression>,
 }
 
-impl<T: DataSource<Expression>> Table<T, EmptyEntity> {
-    /// Create a new table with the given name and datasource
+impl<T: TableSource> Table<T, EmptyEntity> {
+    /// Create a new table with the given name and table source
     pub fn new(table_name: impl Into<String>, data_source: T) -> Self {
         Self {
             data_source,
@@ -81,7 +103,7 @@ impl<T: DataSource<Expression>> Table<T, EmptyEntity> {
     }
 }
 
-impl<T: DataSource<Expression>, E: Entity> Table<T, E> {
+impl<T: TableSource, E: Entity> Table<T, E> {
     /// Use a callback with a builder pattern for configuration
     pub fn with<F>(mut self, func: F) -> Self
     where
@@ -110,12 +132,49 @@ impl<T: DataSource<Expression>, E: Entity> Table<T, E> {
     pub fn data_source(&self) -> &T {
         &self.data_source
     }
+}
+
+impl<T, E> Table<T, E>
+where
+    T: TableSource + SelectSource,
+    E: Entity,
+{
+    /// Get data from the table using the configured columns and conditions
+    pub async fn get(&self) -> Result<Vec<E>>
+    where
+        T: QuerySource<Expression>,
+        T::Select: Into<Expression>,
+    {
+        let values = self.get_values().await?;
+        let entities = values
+            .into_iter()
+            .map(|item| serde_json::from_value::<E>(item))
+            .collect::<std::result::Result<Vec<E>, _>>()
+            .map_err(|e| vantage_expressions::util::error::Error::new(e.to_string()))?;
+        Ok(entities)
+    }
+
+    /// Get raw data from the table as `Vec<Value>` without entity deserialization
+    pub async fn get_values(&self) -> Result<Vec<serde_json::Value>>
+    where
+        T: QuerySource<Expression>,
+        T::Select: Into<Expression>,
+    {
+        let select = self.select();
+        let raw_result = self.data_source.execute(&select.into()).await;
+
+        // Try to parse as array of objects
+        if let serde_json::Value::Array(items) = raw_result {
+            Ok(items)
+        } else {
+            Err(vantage_expressions::util::error::Error::new(
+                "Expected array of objects from database",
+            ))
+        }
+    }
 
     /// Create a select query with table configuration applied
-    pub fn select(&self) -> impl Selectable
-    where
-        T::Column: ColumnLike,
-    {
+    pub fn select(&self) -> T::Select {
         let mut select = self.data_source.select();
 
         // Set the table as source
@@ -139,36 +198,17 @@ impl<T: DataSource<Expression>, E: Entity> Table<T, E> {
 
         select
     }
+}
 
-    /// Get data from the table using the configured columns and conditions
-    pub async fn get(&self) -> Result<Vec<E>>
-    where
-        T::Column: ColumnLike,
-    {
-        let values = self.get_values().await?;
-        let entities = values
-            .into_iter()
-            .map(|item| serde_json::from_value::<E>(item))
-            .collect::<std::result::Result<Vec<E>, _>>()
-            .map_err(|e| vantage_expressions::util::error::Error::new(e.to_string()))?;
-        Ok(entities)
+impl<T: TableSource, E: Entity> TableLike for Table<T, E> {
+    fn columns(&self) -> Vec<Box<dyn ColumnLike>> {
+        self.columns
+            .values()
+            .map(|col| Box::new(col.clone()) as Box<dyn ColumnLike>)
+            .collect()
     }
 
-    /// Get raw data from the table as `Vec<Value>` without entity deserialization
-    pub async fn get_values(&self) -> Result<Vec<serde_json::Value>>
-    where
-        T::Column: ColumnLike,
-    {
-        let select = self.select();
-        let raw_result = self.data_source.execute(&select.into()).await;
-
-        // Try to parse as array of objects
-        if let serde_json::Value::Array(items) = raw_result {
-            Ok(items)
-        } else {
-            Err(vantage_expressions::util::error::Error::new(
-                "Expected array of objects from database",
-            ))
-        }
+    fn table_alias(&self) -> &str {
+        &self.table_name
     }
 }

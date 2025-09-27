@@ -4,9 +4,8 @@
 
 use crate::Expression;
 use crate::IntoExpressive;
+use crate::QuerySource;
 use crate::expression::flatten::{ExpressionFlattener, Flatten};
-use crate::protocol::datasource::DataSource;
-use crate::protocol::selectable::Selectable;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::future::Future;
@@ -87,12 +86,12 @@ impl Default for FlatteningPatternDataSource {
     }
 }
 
-impl DataSource<Expression> for FlatteningPatternDataSource {
-    type Column = crate::mocks::MockColumn;
+impl QuerySource<Expression> for FlatteningPatternDataSource {
+    // type Column = crate::mocks::MockColumn;
 
-    fn select(&self) -> impl Selectable {
-        crate::mocks::selectable::MockSelect
-    }
+    // fn select(&self) -> impl Selectable {
+    //     crate::mocks::selectable::MockSelect
+    // }
 
     async fn execute(&self, expr: &Expression) -> Value {
         let processed_expr = self.execute_and_flatten_expression(expr).await;

@@ -1,8 +1,8 @@
-use vantage_expressions::{DataSource, Expression};
+use vantage_expressions::Expression;
 
-use super::{Entity, Table};
+use super::{Entity, Table, TableSource};
 
-impl<T: DataSource<Expression>, E: Entity> Table<T, E> {
+impl<T: TableSource, E: Entity> Table<T, E> {
     /// Add a condition to limit what records the table represents
     pub fn add_condition(&mut self, condition: Expression) {
         self.conditions.push(condition);
