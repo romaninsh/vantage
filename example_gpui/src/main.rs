@@ -81,12 +81,14 @@ impl Render for TableApp {
                             }))
                     )
             )
-            .child(self.table.clone())
+            .child(self.table.clone());
+
+        layout
     }
 }
 
 impl TableApp {
-    fn show_add_client_modal(&mut self, cx: &mut Context<Self>) {
+    fn show_add_client_modal(&mut self, _cx: &mut Context<Self>) {
         println!("Modal function called - this will be implemented with a simple overlay");
 
         // For now, let's just simulate the action

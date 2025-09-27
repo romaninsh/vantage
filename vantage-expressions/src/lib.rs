@@ -5,6 +5,7 @@
 
 pub mod expression;
 pub mod mocks;
+pub mod prelude;
 pub mod protocol;
 pub mod querysource;
 pub mod util;

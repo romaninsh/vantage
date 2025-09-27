@@ -3,9 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use thiserror::Error;
-use vantage_expressions::protocol::datasource::DataSource;
-use vantage_expressions::Expression;
-use vantage_table::{Entity, Table};
+use vantage_expressions::prelude::*;
+use vantage_table::prelude::*;
 
 #[derive(Error, Debug)]
 pub enum TableStoreError {
@@ -246,13 +245,13 @@ impl<D: DataSet> TableStore<D> {
 // Mock implementation for testing
 
 /// Adapter for vantage-table to DataSet interface
-pub struct VantageTableAdapter<T: DataSource<Expression>, E: Entity> {
+pub struct VantageTableAdapter<T: QuerySource<Expression> + TableSource + SelectSource, E: Entity> {
     _table: Table<T, E>,
     cached_data: Vec<TableRow>,
     cached_columns: Vec<ColumnInfo>,
 }
 
-impl<T: DataSource<Expression>, E: Entity> VantageTableAdapter<T, E> {
+impl<T: QuerySource<Expression> + TableSource + SelectSource, E: Entity> VantageTableAdapter<T, E> {
     pub async fn new(table: Table<T, E>) -> Self {
         let column_names: Vec<String> = table.columns().keys().cloned().collect();
         let columns: Vec<ColumnInfo> = column_names
@@ -316,7 +315,7 @@ impl<T: DataSource<Expression>, E: Entity> VantageTableAdapter<T, E> {
 }
 
 #[async_trait]
-impl<T: DataSource<Expression>, E: Entity> DataSet for VantageTableAdapter<T, E> {
+impl<T: QuerySource<Expression> + TableSource + SelectSource, E: Entity> DataSet for VantageTableAdapter<T, E> {
     async fn row_count(&self) -> Result<usize> {
         Ok(self.cached_data.len())
     }

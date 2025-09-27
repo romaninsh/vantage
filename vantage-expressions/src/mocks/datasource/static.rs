@@ -47,12 +47,6 @@ impl StaticDataSource {
 }
 
 impl QuerySource<Expression> for StaticDataSource {
-    // type Column = crate::mocks::MockColumn;
-
-    // fn select(&self) -> impl Selectable {
-    //     crate::mocks::selectable::MockSelect
-    // }
-
     async fn execute(&self, _expr: &Expression) -> Value {
         self.value.clone()
     }
