@@ -41,7 +41,7 @@ fn test_multiple_tables_as_table_like() {
     // Process all tables uniformly
     for table in &tables {
         let columns = table.columns();
-        assert!(columns.len() > 0);
+        assert!(!columns.is_empty());
 
         // All columns should have names
         for column in columns {
