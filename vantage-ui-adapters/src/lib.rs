@@ -315,7 +315,9 @@ impl<T: QuerySource<Expression> + TableSource + SelectSource, E: Entity> Vantage
 }
 
 #[async_trait]
-impl<T: QuerySource<Expression> + TableSource + SelectSource, E: Entity> DataSet for VantageTableAdapter<T, E> {
+impl<T: QuerySource<Expression> + TableSource + SelectSource, E: Entity> DataSet
+    for VantageTableAdapter<T, E>
+{
     async fn row_count(&self) -> Result<usize> {
         Ok(self.cached_data.len())
     }
