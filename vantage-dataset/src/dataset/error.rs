@@ -11,6 +11,9 @@ pub enum DataSetError {
     #[error("No data available")]
     NoData,
 
+    #[error("Capability {method} is not implemented in generic {type_name}")]
+    NoCapability { method: String, type_name: String },
+
     #[error("{0}")]
     Other(String),
 }
@@ -24,6 +27,14 @@ impl DataSetError {
     /// Create a "no data available" error
     pub fn no_data() -> Self {
         Self::NoData
+    }
+
+    /// Create a "capability not implemented" error with method and type information
+    pub fn no_capability<S: Into<String>>(method: S, type_name: S) -> Self {
+        Self::NoCapability {
+            method: method.into(),
+            type_name: type_name.into(),
+        }
     }
 }
 

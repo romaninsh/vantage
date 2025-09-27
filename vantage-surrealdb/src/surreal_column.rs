@@ -4,7 +4,8 @@
 
 use crate::identifier::Identifier;
 use crate::operation::Expressive;
-use vantage_expressions::{Expression, IntoExpressive, expr, protocol::datasource::ColumnLike};
+use vantage_expressions::{Expression, IntoExpressive, expr};
+use vantage_table::ColumnLike;
 
 /// SurrealDB-specific column that renders as an Identifier
 #[derive(Debug, Clone)]

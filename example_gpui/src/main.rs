@@ -1,42 +1,102 @@
 use bakery_model3::*;
 use dataset_ui_adapters::{gpui_adapter::GpuiTableDelegate, TableStore, VantageTableAdapter};
 use gpui::*;
-use gpui_component::{table::Table, v_flex, ActiveTheme, Root, StyledExt};
+use gpui_component::{
+    button::{Button, ButtonVariants},
+    checkbox::Checkbox,
+    form::{form_field, v_form},
+    input::{InputState, TextInput},
+    modal::Modal,
+    table::Table,
+    v_flex, ActiveTheme, ContextModal as _, Root, StyledExt,
+};
 
-actions!(example_gpui, [Quit]);
+actions!(example_gpui, [Quit, AddClient]);
 
 struct TableApp {
     table: Entity<Table<GpuiTableDelegate<VantageTableAdapter<SurrealDB, Client>>>>,
+    name_input: Entity<InputState>,
+    email_input: Entity<InputState>,
+    contact_input: Entity<InputState>,
+    bakery_input: Entity<InputState>,
+    is_paying_client: bool,
+    show_dialog: bool,
 }
 
 impl TableApp {
     fn new(
         table: Entity<Table<GpuiTableDelegate<VantageTableAdapter<SurrealDB, Client>>>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
     ) -> Self {
-        Self { table }
+        let name_input = cx.new(|cx| InputState::new(window, cx));
+        let email_input = cx.new(|cx| InputState::new(window, cx));
+        let contact_input = cx.new(|cx| InputState::new(window, cx));
+        let bakery_input = cx.new(|cx| InputState::new(window, cx));
+
+        Self {
+            table,
+            name_input,
+            email_input,
+            contact_input,
+            bakery_input,
+            is_paying_client: false,
+            show_dialog: false,
+        }
     }
 }
 
 impl Render for TableApp {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
-            .size_full()
-            .p_4()
-            .gap_4()
-            .bg(cx.theme().background)
-            .child(
-                div()
-                    .text_2xl()
-                    .font_bold()
-                    .text_color(cx.theme().foreground)
-                    .child("Bakery Model 3 - GPUI Client List"),
-            )
-            .child(
-                div()
-                    .text_color(cx.theme().muted_foreground)
-                    .child("Real SurrealDB data using Vantage 0.3 architecture"),
-            )
-            .child(self.table.clone())
+        let mut layout =
+            v_flex()
+                .size_full()
+                .p_4()
+                .gap_4()
+                .bg(cx.theme().background)
+                .child(
+                    div()
+                        .text_2xl()
+                        .font_bold()
+                        .text_color(cx.theme().foreground)
+                        .child("Bakery Model 3 - GPUI Client List"),
+                )
+                .child(
+                    div()
+                        .text_color(cx.theme().muted_foreground)
+                        .child("Real SurrealDB data using Vantage 0.3 architecture"),
+                )
+                .child(
+                    div()
+                        .mb_4()
+                        .child(Button::new("add_client").label("Add Client").on_click(
+                            cx.listener(|this, _, _, cx| {
+                                println!("Button clicked!");
+                                this.show_add_client_modal(cx);
+                            }),
+                        )),
+                )
+                .child(self.table.clone());
+
+        layout
+    }
+}
+
+impl TableApp {
+    fn show_add_client_modal(&mut self, _cx: &mut Context<Self>) {
+        println!("Modal function called - this will be implemented with a simple overlay");
+
+        // For now, let's just simulate the action
+        let new_client = Client {
+            name: "Test Client".to_string(),
+            email: "test@example.com".to_string(),
+            contact_details: "555-1234".to_string(),
+            is_paying_client: true,
+            bakery: "test_bakery".to_string(),
+            metadata: None,
+        };
+
+        dbg!(&new_client);
     }
 }
 
@@ -98,7 +158,7 @@ fn main() {
                 .open_window(options, |window, cx| {
                     let table =
                         cx.new(|cx| Table::new(delegate, window, cx).stripe(true).border(true));
-                    let view = cx.new(|_| TableApp::new(table));
+                    let view = cx.new(|cx| TableApp::new(table, window, cx));
                     cx.new(|cx| Root::new(view.into(), window, cx))
                 })
                 .expect("failed to open window");

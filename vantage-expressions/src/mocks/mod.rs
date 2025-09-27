@@ -28,9 +28,7 @@
 //! // Matches exact queries and returns mapped responses
 //! ```
 
-pub mod column;
 pub mod datasource;
 pub mod selectable;
 
-pub use column::MockColumn;
 pub use datasource::{FlatteningPatternDataSource, PatternDataSource, StaticDataSource};

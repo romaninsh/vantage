@@ -42,7 +42,7 @@ async fn test_get_with_ids() {
     ]);
 
     let db = SurrealMockBuilder::new()
-        .with_query_response("SELECT id, ⟨from⟩, ⟨return⟩ FROM message", mock_data)
+        .with_query_response("SELECT ⟨from⟩, ⟨return⟩, id FROM message", mock_data)
         .build();
 
     #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -78,7 +78,7 @@ async fn test_map() {
     ]);
 
     let db = SurrealMockBuilder::new()
-        .with_query_response("SELECT id, ⟨from⟩, ⟨return⟩ FROM message", mock_data)
+        .with_query_response("SELECT ⟨from⟩, ⟨return⟩, id FROM message", mock_data)
         .with_exact_response(
             "merge",
             json!(["message:123", {"return": "HELLO"}]),

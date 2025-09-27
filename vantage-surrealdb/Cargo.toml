@@ -15,6 +15,7 @@ readme = "../README.md"
 async-trait = "0.1"
 vantage-expressions = { path = "../vantage-expressions" }
 vantage-table = { path = "../vantage-table" }
+vantage-dataset = { path = "../vantage-dataset" }
 surreal-client = { path = "../surreal-client" }
 indexmap = { version = "2.11.4", features = ["serde"] }
 serde_json = { version = "1", features = [

@@ -2,9 +2,10 @@
 //!
 //! Provides a simple column implementation that can be used across all mock DataSources.
 
+use crate::ColumnLike;
 use crate::Expression;
-use crate::protocol::datasource::ColumnLike;
-use crate::protocol::expressive::IntoExpressive;
+use vantage_expressions::IntoExpressive;
+use vantage_expressions::expr;
 
 /// Simple column implementation for testing mocks
 #[derive(Debug, Clone)]
@@ -29,7 +30,7 @@ impl ColumnLike for MockColumn {
     }
 
     fn expr(&self) -> Expression {
-        crate::expr!(self.name.clone())
+        expr!(self.name.clone())
     }
 }
 

@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 
 use bakery_model3::*;
 use vantage_expressions::AssociatedQueryable;
-use vantage_expressions::Selectable;
 use vantage_surrealdb::prelude::*;
 use vantage_table::prelude::*;
 

@@ -1,108 +1,44 @@
 # Introduction
 
-````admonish tip title="TL;DR"
+A modern enterprise stores data in multiple locations - SQL, NoSQL and Graph databases
+if you are lucky. If you are not - throw dozen of Excel documents and some legacy Oracle
+database into a mix.
 
-Vantage is a Rust framework for
- - operating on remote DataSet reflections in real-time;
- - converting intent/expressions into sophisticated SQL queries;
- - offering augmented entities to generic components;
+When it comes to data manipulation, there are more. Queues and Events is a typical
+way how large companies handle change in the data. It's hard to find an architect who
+would fully understand where data is and how it is managed.
 
-The core concepts enable transparent implementation for complex entity features such as:
- - transformation: references, aggregation, joins, expressions, conditions, column mapping and containtment;
- - behaviour: soft-delete, validation, hooks, default values;
- - source abstraction: SQL, CSV, APIs, NoSQL
+## Data Mesh
 
-```rust
-// A remote set of VIP Clients
-let vip_clients = Client::table()
-    .with_condition(Client::is_vip().eq(true));
+A principle of having a way to access any data in the company in the way how it is
+indended to be accessed is one of a legents. But this is exactly the challenge that
+Vantage framework solves.
 
-// A remote set of Overdue Invoices for VIP Clients
-let overdue_invoices = vip_clients.ref_invoices()
-    .my_overdue_filter();
+For a moment - lets assume you have been given permission to access the data in the
+way intended. To read data from one source, use a different mechanic to modify data
+and also augment data with additional sources - how can you make this useful?
 
-// Use generic function to build query, fetch data and construct table headers
-render_any_table_with_headers(Box::new(overdue_invoices)).await()?;
-```
-````
+Modern architecture approaches this through "middeware". Sadly - each middleware
+is yet another way to interact with your data. If not maintained correctly, your
+organisation ends up with even a bigger mess.
 
-## Problem Definition
+Data Mesh solves this by providing an interface to all of your companys data (I
+will real-time databases, not data analytics).
 
-Rust works really well with local data:
+## What problem does Vantage framework address?
 
-```rust
-struct Line {
-    id: i32,
-    quantity: i32,
-    price: i32,
-}
-struct Invoice {
-    id: i32,
-    lines: Vec<Line>,
-    due_date: Date,
-}
-struct Client {
-    id: i32,
-    name: String,
-    invoices: Vec<Invoice>,
-    is_vip: bool,
-}
-let clients = load_clients_local();
-let due_total = clients.iter().map(|client| {
-    client.invoices.iter().map(|invoice| {
-        invoice.lines.iter().map(|line| {
-            line.price * line.quantity
-        }).sum()
-    }).sum()
-}).sum();
-```
+With Vantage it's possible to build an interface for all the real-time data in your
+company. Because Vantage is built in rust - you can use this interface from any
+device and any programming language (if you have been granted permission of course).
 
-However if data is not stored locally and if you have significant volume of records, Rust can no
-longer rely on it's type system.
+And since Rust is very safe language with advanced type system - your entire software
+ecosystem will have safe and type-save way of access it.
 
-One option is to write custom SQL queries:
+You might already have dozens of questions. Answers are coming. This book will
+be able to address abstraction, cross-database queries, use of stored procedures
+and schema mapping, however I will need to start with the basics.
 
-```sql
-SELECT SUM(price*quantity) FROM lines WHERE invoice_id in (
-    SELECT id FROM invoices WHERE client_id in (
-        SELECT id FROM clients WHERE is_vip = true
-    )
-);
-```
-
-Rust types are powerless with custom SQL queries. Other option is to use ORM, but it would be very
-slow as most ORMs cannot execute SQL efficiently.
-
-## How Vantage addresses these challenges
-
-Vantage implements a concept of DataSet<Entity>. Think of it as Vec<Client>, but records are stored
-in a remote database. DataSets are **lazy** and **composable**. Our code does not know how many
-records match our criteria, but can still operate on that abstract set:
-
-```rust
-let clients = Client::table();
-let due_total = clients.ref_orders().ref_lines().sum(Lines::total()).await?;
-```
-
-Only when we call `await` the query will be built and executed. Logically speaking,
-we needed to combine **DataSet** with **Intent** to generate a query and execute it
-producing a **Result**:
-
-```kroki-plantuml
-@startmindmap
-skinparam monochrome true
-+ Query
--- DataSet(Lines)
---- DataSet(Orders)
----- DataSet(Clients)
--- Intent(sum)
-++ Result
-@endmindmap
-```
-
-```admonish tip title="Summary"
-
-**Vantage** operates with DataSets and Intents. You can manipulate DataSets inexpensively and when
-you are ready - intent will allow you to fetch the data.
-
-```
+You see - Vantage brings methodology to a system design in order to truthly
+revolutioise the way how data is accessed and if you follow me closely, you will
+understand the way how to once and for all solve build a distributed data mesh
+for your enterprise without renaming any column or migrating your data unnecessarily.

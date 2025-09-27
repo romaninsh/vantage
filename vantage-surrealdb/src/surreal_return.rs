@@ -5,7 +5,7 @@
 use std::{marker::PhantomData, ops::Deref};
 
 use serde_json::Value;
-use vantage_expressions::{DataSource, Expression, expr, result};
+use vantage_expressions::{Expression, QuerySource, expr, result};
 
 use crate::{SurrealDB, operation::Expressive, protocol::SurrealQueriable};
 

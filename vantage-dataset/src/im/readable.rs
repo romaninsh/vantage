@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use serde::de::DeserializeOwned;
 
 use crate::{
-    dataset::{DataSetError, ReadableDataSet, Result},
+    dataset::{DataSetError, Id, ReadableDataSet, Result},
     im::Table,
 };
 
@@ -16,6 +16,28 @@ where
     }
     async fn get_some(&self) -> Result<Option<T>> {
         self.get_some_as().await
+    }
+
+    async fn get_id(&self, id: impl Id) -> Result<T> {
+        let id = id.into();
+        let table = self.data_source.get_or_create_table(&self.table_name);
+
+        match table.get(&id) {
+            Some(value) => {
+                // Add the id field to the record for deserialization
+                let mut value_with_id = value.clone();
+                if let serde_json::Value::Object(ref mut map) = value_with_id {
+                    map.insert("id".to_string(), serde_json::Value::String(id.clone()));
+                }
+
+                serde_json::from_value(value_with_id)
+                    .map_err(|e| DataSetError::other(format!("Deserialization error: {}", e)))
+            }
+            None => Err(DataSetError::other(format!(
+                "Record with id '{}' not found",
+                id
+            ))),
+        }
     }
     async fn get_as<U>(&self) -> Result<Vec<U>>
     where

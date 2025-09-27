@@ -1,6 +1,6 @@
 use serde_json::Value;
 use vantage_expressions::expr;
-use vantage_surrealdb::{SurrealDB, SurrealTableExt};
+use vantage_surrealdb::prelude::*;
 use vantage_table::{Column, EmptyEntity, Table};
 
 async fn setup_test_db_with_data(mock_data: Value) -> SurrealDB {
@@ -50,7 +50,7 @@ async fn test_select_surreal_methods() {
     table.add_column(Column::new("age"));
 
     // Test select_surreal() - returns Rows
-    let rows_select = table.select_surreal();
+    let rows_select = table.select();
     assert_eq!(rows_select.preview(), "SELECT name, email, age FROM users");
 
     // Test select_surreal_first() - returns SingleRow with preserved column order
@@ -129,7 +129,7 @@ async fn test_select_surreal_with_conditions() {
     table.add_condition(expr!("age > {}", 18));
 
     // Test that conditions are applied to all select methods
-    let rows_select = table.select_surreal();
+    let rows_select = table.select();
     assert!(rows_select.preview().contains("WHERE age > 18"));
 
     let first_select = table.select_surreal_first();
@@ -197,7 +197,7 @@ async fn test_select_surreal_with_aliases() {
     table.add_column(Column::new("email").with_alias("user_email"));
 
     // Test that aliases are handled in regular select
-    let rows_select = table.select_surreal();
+    let rows_select = table.select();
     let query = rows_select.preview();
     assert!(query.contains("name AS user_name"));
     assert!(query.contains("email AS user_email"));

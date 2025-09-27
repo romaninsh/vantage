@@ -2030,6 +2030,7 @@ dependencies = [
  "surreal-client",
  "thiserror",
  "tokio",
+ "vantage-dataset",
  "vantage-expressions",
  "vantage-table",
 ]

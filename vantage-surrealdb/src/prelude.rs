@@ -20,7 +20,7 @@ pub use crate::thing::Thing;
 pub use crate::variable::Variable;
 
 // Protocol traits from vantage-expressions that are commonly used
-pub use vantage_expressions::protocol::DataSource;
+pub use vantage_expressions::QuerySource;
 pub use vantage_expressions::protocol::expressive::IntoExpressive;
 pub use vantage_expressions::protocol::selectable::Selectable;
 
@@ -34,4 +34,6 @@ pub use crate::SurrealAssociated;
 pub use crate::SurrealAssociatedQueryable;
 pub use crate::SurrealColumn;
 pub use crate::SurrealColumnOperations;
-pub use crate::SurrealTableExt;
+pub use crate::SurrealTableCore;
+pub use crate::table::ext::SurrealTableExt;
+// pub use crate::SurrealTableExt;

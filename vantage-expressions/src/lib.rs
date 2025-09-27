@@ -5,7 +5,9 @@
 
 pub mod expression;
 pub mod mocks;
+pub mod prelude;
 pub mod protocol;
+pub mod querysource;
 pub mod util;
 pub mod value;
 
@@ -13,9 +15,11 @@ pub mod value;
 pub use expression::flatten::{ExpressionFlattener, Flatten};
 pub use expression::owned::Expression;
 pub use protocol::associated_queryable::AssociatedQueryable;
-pub use protocol::datasource::DataSource;
 pub use protocol::expressive::IntoExpressive;
+pub use protocol::queryable::Queryable;
 pub use protocol::selectable::Selectable;
+pub use querysource::QuerySource;
+pub use querysource::SelectSource;
 
 pub use protocol::result;
 

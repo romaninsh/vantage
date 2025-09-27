@@ -1,10 +1,10 @@
 use indexmap::IndexMap;
 use std::ops::Index;
-use vantage_expressions::{
-    DataSource, Expression, IntoExpressive, expr, protocol::datasource::ColumnLike,
-};
+use vantage_expressions::{Expression, IntoExpressive, expr};
 
-use super::{Entity, Table};
+use crate::ColumnLike;
+
+use super::{Entity, Table, TableSource};
 
 /// Represents a table column with optional alias
 #[derive(Debug, Clone)]
@@ -64,7 +64,7 @@ impl From<&str> for Column {
     }
 }
 
-impl<T: DataSource<Expression>, E: Entity> Table<T, E>
+impl<T: TableSource, E: Entity> Table<T, E>
 where
     T::Column: ColumnLike,
 {
@@ -90,7 +90,7 @@ where
     }
 }
 
-impl<T: DataSource<Expression>, E: Entity> Index<&str> for Table<T, E> {
+impl<T: TableSource, E: Entity> Index<&str> for Table<T, E> {
     type Output = T::Column;
 
     fn index(&self, index: &str) -> &Self::Output {

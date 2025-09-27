@@ -26,8 +26,9 @@
 //! ```
 
 use crate::Expression;
-use crate::protocol::datasource::DataSource;
-use crate::protocol::selectable::Selectable;
+use crate::QuerySource;
+use crate::SelectSource;
+use crate::mocks::selectable::MockSelect;
 use serde_json::Value;
 use std::future::Future;
 use std::pin::Pin;
@@ -45,13 +46,7 @@ impl StaticDataSource {
     }
 }
 
-impl DataSource<Expression> for StaticDataSource {
-    type Column = crate::mocks::MockColumn;
-
-    fn select(&self) -> impl Selectable {
-        crate::mocks::selectable::MockSelect
-    }
-
+impl QuerySource<Expression> for StaticDataSource {
     async fn execute(&self, _expr: &Expression) -> Value {
         self.value.clone()
     }
@@ -65,6 +60,14 @@ impl DataSource<Expression> for StaticDataSource {
             let value = value.clone();
             Box::pin(async move { value })
         }
+    }
+}
+
+impl SelectSource for StaticDataSource {
+    type Select = MockSelect;
+
+    fn select(&self) -> Self::Select {
+        MockSelect
     }
 }
 

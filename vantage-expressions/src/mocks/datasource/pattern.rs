@@ -2,8 +2,7 @@
 //!
 //! Maps query patterns to specific responses based on exact string matching.
 
-use crate::protocol::datasource::DataSource;
-use crate::protocol::selectable::Selectable;
+use crate::QuerySource;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::future::Future;
@@ -55,16 +54,10 @@ where
     }
 }
 
-impl<E> DataSource<E> for PatternDataSource<E>
+impl<E> QuerySource<E> for PatternDataSource<E>
 where
     E: Clone + Send + Sync + std::fmt::Debug + 'static,
 {
-    type Column = crate::mocks::MockColumn;
-
-    fn select(&self) -> impl Selectable {
-        crate::mocks::selectable::MockSelect
-    }
-
     async fn execute(&self, expr: &E) -> Value {
         let query = format!("{:?}", expr);
         self.find_match(&query)

@@ -80,11 +80,12 @@ impl<E> InsertableDataSet<E> for Topic<E>
 where
     E: Serialize + Send + Sync,
 {
-    async fn insert(&self, record: E) -> Result<()> {
+    async fn insert(&self, record: E) -> Result<Option<String>> {
         let value = serde_json::to_value(record)
             .map_err(|e| DataSetError::other(format!("Serialization error: {}", e)))?;
 
         self.queue.push_message(&self.topic_name, value);
-        Ok(())
+
+        Ok(None)
     }
 }
