@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use serde::de::DeserializeOwned;
-use vantage_dataset::dataset::{Id, ReadableDataSet, Result};
+use vantage_dataset::dataset::{DataSetError, Id, ReadableDataSet, Result};
 use vantage_expressions::Expression;
 
 use crate::{Entity, QuerySource, Table, TableSource};
@@ -20,22 +20,23 @@ where
         <Self as ReadableDataSet<R>>::get_some_as::<R>(self).await
     }
 
+    /// get_id must be implemented properly for a specific table driver
     async fn get_id(&self, _id: impl Id) -> Result<R> {
         let _id = _id.into();
-        todo!("Implement get_id for Table")
+        Err(DataSetError::no_capability("get_id", "Table"))
     }
 
     async fn get_as<U>(&self) -> Result<Vec<U>>
     where
         U: DeserializeOwned,
     {
-        todo!("Implement get_as for Table")
+        Err(DataSetError::no_capability("get_as", "Table"))
     }
 
     async fn get_some_as<U>(&self) -> Result<Option<U>>
     where
         U: DeserializeOwned,
     {
-        todo!("Implement get_some_as for Table")
+        Err(DataSetError::no_capability("get_some_as", "Table"))
     }
 }

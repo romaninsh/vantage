@@ -65,7 +65,7 @@ where
     }
 
     async fn get_id(&self, _id: impl Id) -> Result<T> {
-        return Err(DataSetError::NoCapability);
+        return Err(DataSetError::no_capability("get_id", "CsvFile"));
     }
 
     async fn get_some(&self) -> Result<Option<T>> {
