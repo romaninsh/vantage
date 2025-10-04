@@ -76,9 +76,8 @@ where
     }
 
     /// Add a column to the table
-    pub fn add_column(&mut self, column: impl Into<String>) {
-        let column_name = column.into();
-        let column = self.data_source().create_column(&column_name, &*self);
+    pub fn add_column(&mut self, column: impl Into<T::Column>) {
+        let column = column.into();
         self.columns.insert(column.name().to_string(), column);
     }
 

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use vantage_surrealdb::SurrealDB;
-use vantage_table::{Entity, Table};
+use vantage_table::Table;
 
 use crate::surrealdb;
 
@@ -10,8 +10,6 @@ pub struct Bakery {
     pub name: String,
     pub profit_margin: i64,
 }
-
-impl Entity for Bakery {}
 
 impl Bakery {
     pub fn table() -> Table<SurrealDB, Bakery> {

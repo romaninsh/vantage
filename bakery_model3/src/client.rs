@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use vantage_surrealdb::SurrealDB;
-use vantage_table::{Entity, Table};
+use vantage_table::Table;
 
 use crate::surrealdb;
 
@@ -14,8 +14,6 @@ pub struct Client {
     pub bakery: String, // Record ID for bakery
     pub metadata: Option<serde_json::Value>,
 }
-
-impl Entity for Client {}
 
 impl Client {
     pub fn table() -> Table<SurrealDB, Client> {
