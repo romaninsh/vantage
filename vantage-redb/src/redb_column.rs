@@ -113,11 +113,12 @@ impl ColumnLike for RedbColumn {
 /// Operations available on redb columns
 pub trait RedbColumnOperations {
     /// Create equality condition for this column
-    fn eq<T: Into<serde_json::Value>>(self, value: T) -> Expression;
+    fn eq<T: Into<serde_json::Value>>(&self, value: T) -> crate::expression::RedbExpression;
 }
 
 impl RedbColumnOperations for RedbColumn {
-    fn eq<T: Into<serde_json::Value>>(self, _value: T) -> Expression {
-        todo!("Implement equality condition for redb column")
+    fn eq<T: Into<serde_json::Value>>(&self, value: T) -> crate::expression::RedbExpression {
+        use crate::expression::RedbExpression;
+        RedbExpression::eq(self.name.clone(), value.into())
     }
 }

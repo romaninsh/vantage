@@ -2,7 +2,6 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use vantage_dataset::dataset::ReadableDataSet;
 use vantage_redb::prelude::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -38,7 +37,8 @@ async fn main() -> Result<()> {
     println!("=== Vantage ReDB Introduction Example ===");
 
     let users_table = User::table();
-    let users = users_table.get().await?;
+    let condition = users_table["age"].eq(10);
+    let users = users_table.with_condition(condition).get().await?;
     for user in users {
         println!("  - {} ({}, age {})", user.name, user.email, user.age);
     }

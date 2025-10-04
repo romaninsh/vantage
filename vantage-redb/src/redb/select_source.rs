@@ -26,34 +26,41 @@ impl SelectSource<crate::expression::RedbExpression> for Redb {
         let table_name = select.table().map(|s| s.as_str()).unwrap_or("users");
 
         if let Some(key_expr) = select.key() {
-            return self.get_by_key::<E>(table_name, key_expr).await;
+            // Key should always be an Eq condition for ReDB
+            if let Some((column, value)) = key_expr.as_eq() {
+                let mut results = self
+                    .get_by_condition::<E>(
+                        table_name,
+                        column,
+                        value,
+                        select.limit().unwrap_or(1000) as usize,
+                    )
+                    .await;
+
+                if let Some(order_col) = select.order_column() {
+                    self.order_results(&mut results, order_col, select.order_ascending());
+                }
+
+                return results;
+            } else {
+                return serde_json::json!({"error": "ReDB only supports Eq conditions"});
+            }
         }
 
-        let mut results = if let (Some(column), Some(value)) =
-            (select.condition_column(), select.condition_value())
-        {
-            self.get_by_condition::<E>(
-                table_name,
-                column,
-                value,
-                select.limit().unwrap_or(1000) as usize,
-            )
-            .await
-        } else {
-            self.get_all_records::<E>(
+        let mut results = self
+            .get_all_records::<E>(
                 table_name,
                 select.limit().unwrap_or(1000) as usize,
                 select.skip().unwrap_or(0) as usize,
             )
-            .await
-        };
+            .await;
 
         if let Some(order_col) = select.order_column() {
             self.order_results(&mut results, order_col, select.order_ascending());
         }
 
-        // Apply limit and skip for ordered results or condition-based queries
-        if select.order_column().is_some() || select.condition_column().is_some() {
+        // Apply limit and skip for ordered results
+        if select.order_column().is_some() {
             self.apply_limit(&mut results, select.limit(), select.skip());
         }
 

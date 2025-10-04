@@ -8,19 +8,15 @@ use crate::{Entity, Table, TableSource};
 #[async_trait]
 impl<T, E> ReadableDataSet<E> for Table<T, E>
 where
-    T: TableSource,
+    T: TableSource + Clone,
     E: Entity,
 {
     async fn get(&self) -> Result<Vec<E>> {
-        self.data_source()
-            .get_table_data_as(self.table_name())
-            .await
+        self.data_source().get_table_data_as(self).await
     }
 
     async fn get_some(&self) -> Result<Option<E>> {
-        self.data_source()
-            .get_table_data_some_as(self.table_name())
-            .await
+        self.data_source().get_table_data_some_as(self).await
     }
 
     /// get_id must be implemented properly for a specific table driver
@@ -33,23 +29,19 @@ where
     where
         U: Entity,
     {
-        self.data_source()
-            .get_table_data_as(self.table_name())
-            .await
+        let t = self.clone().into_entity::<U>();
+        self.data_source().get_table_data_as(&t).await
     }
 
     async fn get_some_as<U>(&self) -> Result<Option<U>>
     where
         U: Entity,
     {
-        self.data_source()
-            .get_table_data_some_as(self.table_name())
-            .await
+        let t = self.clone().into_entity::<U>();
+        self.data_source().get_table_data_some_as(&t).await
     }
 
     async fn get_values(&self) -> Result<Vec<serde_json::Value>> {
-        self.data_source()
-            .get_table_data_values(self.table_name())
-            .await
+        self.data_source().get_table_data_values(self).await
     }
 }

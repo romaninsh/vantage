@@ -7,5 +7,3 @@
 //! - **Index management** - Secondary indexes through separate tables
 //! - **Transaction support** - ACID transactions for data consistency
 //! - **Serialization** - Automatic serde support for entities
-
-

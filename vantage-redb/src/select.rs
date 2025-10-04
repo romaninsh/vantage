@@ -8,8 +8,6 @@ pub struct RedbSelect<E: Entity> {
     _phantom: PhantomData<E>,
     table: Option<String>,
     key: Option<RedbExpression>,
-    condition_column: Option<String>,
-    condition_value: Option<serde_json::Value>,
     order_column: Option<String>,
     order_ascending: bool,
     limit: Option<i64>,
@@ -22,8 +20,6 @@ impl<E: Entity> RedbSelect<E> {
             _phantom: PhantomData,
             table: None,
             key: None,
-            condition_column: None,
-            condition_value: None,
             order_column: None,
             order_ascending: true,
             limit: None,
@@ -51,14 +47,6 @@ impl<E: Entity> RedbSelect<E> {
         self.skip
     }
 
-    pub fn condition_column(&self) -> Option<&String> {
-        self.condition_column.as_ref()
-    }
-
-    pub fn condition_value(&self) -> Option<&serde_json::Value> {
-        self.condition_value.as_ref()
-    }
-
     pub fn order_column(&self) -> Option<&String> {
         self.order_column.as_ref()
     }
@@ -68,14 +56,10 @@ impl<E: Entity> RedbSelect<E> {
     }
 
     pub fn with_condition(mut self, column: impl Into<String>, value: serde_json::Value) -> Self {
-        if self.condition_column.is_some() {
-            panic!(
-                "RedbSelect only supports one condition. Condition already set for column: {:?}",
-                self.condition_column
-            );
+        if self.key.is_some() {
+            panic!("RedbSelect only supports one condition. Key condition already set");
         }
-        self.condition_column = Some(column.into());
-        self.condition_value = Some(value);
+        self.key = Some(RedbExpression::eq(column.into(), value));
         self
     }
 
@@ -201,11 +185,11 @@ impl<E: Entity> From<RedbSelect<E>> for RedbExpression {
         let mut query = serde_json::json!({"table": table});
 
         if let Some(key) = select.key {
-            query["key"] = key.into_value();
-        } else if let (Some(column), Some(value)) =
-            (select.condition_column, select.condition_value)
-        {
-            query["condition"] = serde_json::json!({"column": column, "value": value});
+            if let Some((column, value)) = key.as_eq() {
+                query["condition"] = serde_json::json!({"column": column, "value": value});
+            } else {
+                query["key"] = key.into_value().unwrap_or(serde_json::Value::Null);
+            }
         } else {
             query["scan"] = serde_json::Value::Bool(true);
         }
@@ -224,8 +208,6 @@ impl<E: Entity> std::fmt::Debug for RedbSelect<E> {
         f.debug_struct("RedbSelect")
             .field("table", &self.table)
             .field("key", &self.key)
-            .field("condition_column", &self.condition_column)
-            .field("condition_value", &self.condition_value)
             .field("order_column", &self.order_column)
             .field("order_ascending", &self.order_ascending)
             .field("limit", &self.limit)

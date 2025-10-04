@@ -5,41 +5,6 @@ use redb::{ReadableTable, TableDefinition};
 use super::core::Redb;
 
 impl Redb {
-    pub async fn get_by_key<E>(
-        &self,
-        table_name: &str,
-        key_expr: &crate::expression::RedbExpression,
-    ) -> serde_json::Value
-    where
-        E: vantage_core::Entity,
-    {
-        let table_def: TableDefinition<&str, &[u8]> = TableDefinition::new(table_name);
-        let read_txn = match self.begin_read() {
-            Ok(txn) => txn,
-            Err(e) => return serde_json::json!({"error": format!("Transaction error: {}", e)}),
-        };
-
-        let table = match read_txn.open_table(table_def) {
-            Ok(table) => table,
-            Err(e) => return serde_json::json!({"error": format!("Table error: {}", e)}),
-        };
-
-        if let Some(key_str) = key_expr.value().as_str() {
-            match table.get(key_str) {
-                Ok(Some(data)) => {
-                    match self.deserialize_to_json_with_id::<E>(data.value(), key_str) {
-                        Ok(json) => json,
-                        Err(e) => serde_json::json!({"error": format!("Deserialize error: {}", e)}),
-                    }
-                }
-                Ok(None) => serde_json::json!(null),
-                Err(e) => serde_json::json!({"error": format!("Key lookup error: {}", e)}),
-            }
-        } else {
-            serde_json::json!({"error": "Invalid key format"})
-        }
-    }
-
     pub async fn get_by_condition<E>(
         &self,
         table_name: &str,
@@ -216,34 +181,41 @@ impl Redb {
         let table_name = select.table().map(|s| s.as_str()).unwrap_or("users");
 
         if let Some(key_expr) = select.key() {
-            return self.get_by_key::<E>(table_name, key_expr).await;
+            // Key should always be an Eq condition for ReDB
+            if let Some((column, value)) = key_expr.as_eq() {
+                let mut results = self
+                    .get_by_condition::<E>(
+                        table_name,
+                        column,
+                        value,
+                        select.limit().unwrap_or(1000) as usize,
+                    )
+                    .await;
+
+                if let Some(order_col) = select.order_column() {
+                    self.order_results(&mut results, order_col, select.order_ascending());
+                }
+
+                return results;
+            } else {
+                return serde_json::json!({"error": "ReDB only supports Eq conditions"});
+            }
         }
 
-        let mut results = if let (Some(column), Some(value)) =
-            (select.condition_column(), select.condition_value())
-        {
-            self.get_by_condition::<E>(
-                table_name,
-                column,
-                value,
-                select.limit().unwrap_or(1000) as usize,
-            )
-            .await
-        } else {
-            self.get_all_records::<E>(
+        let mut results = self
+            .get_all_records::<E>(
                 table_name,
                 select.limit().unwrap_or(1000) as usize,
                 select.skip().unwrap_or(0) as usize,
             )
-            .await
-        };
+            .await;
 
         if let Some(order_col) = select.order_column() {
             self.order_results(&mut results, order_col, select.order_ascending());
         }
 
-        // Apply limit and skip for ordered results or condition-based queries
-        if select.order_column().is_some() || select.condition_column().is_some() {
+        // Apply limit and skip for ordered results
+        if select.order_column().is_some() {
             self.apply_limit(&mut results, select.limit(), select.skip());
         }
 

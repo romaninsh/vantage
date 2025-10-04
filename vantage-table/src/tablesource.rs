@@ -7,31 +7,44 @@ use vantage_expressions::{Expression, protocol::datasource::DataSource};
 #[async_trait]
 pub trait TableSource: DataSource {
     type Column: ColumnLike + Clone + 'static;
+    type Expr: Clone + Send + Sync + 'static;
 
     /// Create a new column with the given name
     fn create_column(&self, name: &str, table: impl TableLike) -> Self::Column;
 
-    /// Get all data from a table as a specific type
-    async fn get_table_data_as<T>(
+    /// Create an expression from a template and parameters, similar to Expression::new
+    fn expr(
         &self,
-        table_name: &str,
-    ) -> vantage_dataset::dataset::Result<Vec<T>>
-    where
-        T: Entity;
+        template: impl Into<String>,
+        parameters: Vec<vantage_expressions::protocol::expressive::IntoExpressive<Self::Expr>>,
+    ) -> Self::Expr;
 
-    /// Get first record from a table as a specific type
-    async fn get_table_data_some_as<T>(
+    /// Get all data from a table as the table's entity type
+    async fn get_table_data_as<E>(
         &self,
-        table_name: &str,
-    ) -> vantage_dataset::dataset::Result<Option<T>>
+        table: &crate::Table<Self, E>,
+    ) -> vantage_dataset::dataset::Result<Vec<E>>
     where
-        T: Entity;
+        E: Entity,
+        Self: Sized;
 
-    /// Get all data from a table as JSON values
-    async fn get_table_data_values(
+    /// Get some data from a table as the table's entity type (usually first record)
+    async fn get_table_data_some_as<E>(
         &self,
-        table_name: &str,
-    ) -> vantage_dataset::dataset::Result<Vec<serde_json::Value>>;
+        table: &crate::Table<Self, E>,
+    ) -> vantage_dataset::dataset::Result<Option<E>>
+    where
+        E: Entity,
+        Self: Sized;
+
+    /// Get raw JSON values from a table without deserializing to a specific type
+    async fn get_table_data_values<E>(
+        &self,
+        table: &crate::Table<Self, E>,
+    ) -> vantage_dataset::dataset::Result<Vec<serde_json::Value>>
+    where
+        E: Entity,
+        Self: Sized;
 }
 
 /// Minimal trait for column-like objects

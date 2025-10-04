@@ -1,24 +1,44 @@
 use serde_json::Value;
 use vantage_expressions::protocol::expressive::{Expressive, IntoExpressive};
 
-/// RedbExpression is a minimal expression wrapper for ReDB key-value operations.
-/// Since ReDB is a simple key-value store, expressions are just Value wrappers.
+/// RedbExpression represents operations available in ReDB key-value store.
+/// Since ReDB is simple, we support basic value operations and equality conditions.
 #[derive(Debug, Clone)]
-pub struct RedbExpression {
-    value: Value,
+pub enum RedbExpression {
+    /// A simple value wrapper
+    Value(Value),
+    /// Equality condition with column name and value
+    Eq { column: String, value: Value },
 }
 
 impl RedbExpression {
     pub fn new(value: Value) -> Self {
-        Self { value }
+        Self::Value(value)
     }
 
-    pub fn value(&self) -> &Value {
-        &self.value
+    pub fn eq(column: String, value: Value) -> Self {
+        Self::Eq { column, value }
     }
 
-    pub fn into_value(self) -> Value {
-        self.value
+    pub fn value(&self) -> Option<&Value> {
+        match self {
+            Self::Value(v) => Some(v),
+            Self::Eq { .. } => None,
+        }
+    }
+
+    pub fn into_value(self) -> Option<Value> {
+        match self {
+            Self::Value(v) => Some(v),
+            Self::Eq { .. } => None,
+        }
+    }
+
+    pub fn as_eq(&self) -> Option<(&str, &Value)> {
+        match self {
+            Self::Eq { column, value } => Some((column, value)),
+            Self::Value(_) => None,
+        }
     }
 }
 
@@ -49,6 +69,9 @@ impl From<RedbExpression> for IntoExpressive<RedbExpression> {
 
 impl From<RedbExpression> for Value {
     fn from(expr: RedbExpression) -> Self {
-        expr.value
+        match expr {
+            RedbExpression::Value(v) => v,
+            RedbExpression::Eq { .. } => Value::Null, // Can't convert condition to value
+        }
     }
 }
