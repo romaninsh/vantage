@@ -29,6 +29,7 @@ use crate::Expression;
 use crate::QuerySource;
 use crate::SelectSource;
 use crate::mocks::selectable::MockSelect;
+use crate::protocol::datasource::DataSource;
 use serde_json::Value;
 use std::future::Future;
 use std::pin::Pin;
@@ -46,6 +47,7 @@ impl StaticDataSource {
     }
 }
 
+impl DataSource for StaticDataSource {}
 impl QuerySource<Expression> for StaticDataSource {
     async fn execute(&self, _expr: &Expression) -> Value {
         self.value.clone()

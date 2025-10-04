@@ -33,6 +33,9 @@ impl MockCsv {
     pub fn get_file_content(&self, filename: &str) -> Option<&String> {
         self.files.get(filename)
     }
+    pub fn list_files(&self) -> impl Iterator<Item = &String> {
+        self.files.keys()
+    }
 }
 
 /// CsvFile represents a typed CSV file dataset
@@ -116,5 +119,34 @@ where
         } else {
             Ok(None)
         }
+    }
+
+    async fn get_values(&self) -> Result<Vec<serde_json::Value>> {
+        let content = self
+            .csv_ds
+            .get_file_content(&self.filename)
+            .ok_or_else(|| DataSetError::other(format!("File '{}' not found", self.filename)))?;
+
+        let mut reader = ReaderBuilder::new()
+            .has_headers(true)
+            .from_reader(content.as_bytes());
+
+        let mut records = Vec::new();
+        for (index, result) in reader.deserialize::<serde_json::Value>().enumerate() {
+            let mut record = result
+                .map_err(|e| DataSetError::other(format!("CSV deserialization error: {}", e)))?;
+
+            // Add id field for indexing purposes
+            if let serde_json::Value::Object(ref mut map) = record {
+                map.insert(
+                    "id".to_string(),
+                    serde_json::Value::String(format!("row{}", index + 1)),
+                );
+            }
+
+            records.push(record);
+        }
+
+        Ok(records)
     }
 }

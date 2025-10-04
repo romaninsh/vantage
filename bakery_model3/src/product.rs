@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use vantage_surrealdb::SurrealDB;
-use vantage_table::{Entity, Table};
+use vantage_table::Table;
 
 use crate::surrealdb;
 
@@ -19,8 +19,6 @@ pub struct Product {
     pub is_deleted: bool,
     pub inventory: Inventory,
 }
-
-impl Entity for Product {}
 
 impl Product {
     pub fn table() -> Table<SurrealDB, Product> {

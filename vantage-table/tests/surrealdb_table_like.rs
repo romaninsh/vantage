@@ -50,9 +50,8 @@ async fn test_surrealdb_table_like() {
 #[tokio::test]
 async fn test_mixed_datasource_tables_as_table_like() {
     // Create different types of data sources
-    let static_datasource =
-        vantage_expressions::mocks::StaticDataSource::new(serde_json::json!([]));
-    let users_table = Table::new("users", static_datasource)
+    let mock_datasource = vantage_table::mocks::MockTableSource::new();
+    let users_table = Table::new("users", mock_datasource)
         .with_column("id")
         .with_column("username");
 

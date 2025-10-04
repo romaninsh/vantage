@@ -11,7 +11,7 @@
 pub use crate::Expression;
 
 // Query source traits
-pub use crate::querysource::{QuerySource, SelectSource};
+pub use crate::{QuerySource, SelectSource};
 
 // Essential protocol traits
 pub use crate::protocol::selectable::Selectable;

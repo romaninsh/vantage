@@ -6,6 +6,7 @@ use crate::Expression;
 use crate::IntoExpressive;
 use crate::QuerySource;
 use crate::expression::flatten::{ExpressionFlattener, Flatten};
+use crate::protocol::datasource::DataSource;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::future::Future;
@@ -86,6 +87,7 @@ impl Default for FlatteningPatternDataSource {
     }
 }
 
+impl DataSource for FlatteningPatternDataSource {}
 impl QuerySource<Expression> for FlatteningPatternDataSource {
     // type Column = crate::mocks::MockColumn;
 

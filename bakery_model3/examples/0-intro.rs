@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use bakery_model3::*;
 use vantage_expressions::AssociatedQueryable;
 use vantage_surrealdb::prelude::*;
-use vantage_table::prelude::*;
 
 async fn create_bootstrap_db() -> Result<()> {
     // Run this once for demos to work:
@@ -121,7 +120,6 @@ async fn main() -> Result<()> {
         name: String,
         email: String,
     }
-    impl Entity for MiniClient {}
 
     // TODO: Uncomment when get_some_as method is implemented
     // Load a single client by executing a query like SELECT name, email FROM .....
@@ -144,7 +142,6 @@ async fn main() -> Result<()> {
         is_paying_client: bool,
         metadata: Option<serde_json::Value>,
     }
-    impl Entity for MegaClient {}
 
     // TODO: Uncomment when advanced querying is implemented
     // The code is almost identical to the code above, but the query is more complex.

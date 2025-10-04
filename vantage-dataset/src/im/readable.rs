@@ -81,4 +81,20 @@ where
             Ok(None)
         }
     }
+
+    async fn get_values(&self) -> Result<Vec<serde_json::Value>> {
+        let table = self.data_source.get_or_create_table(&self.table_name);
+        let mut records = Vec::new();
+
+        for (id, value) in table.iter() {
+            // Add the id field to the record
+            let mut value_with_id = value.clone();
+            if let serde_json::Value::Object(ref mut map) = value_with_id {
+                map.insert("id".to_string(), serde_json::Value::String(id.clone()));
+            }
+            records.push(value_with_id);
+        }
+
+        Ok(records)
+    }
 }

@@ -2,15 +2,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use vantage_expressions::AssociatedQueryable;
 use vantage_surrealdb::{mocks::SurrealMockBuilder, prelude::*};
-use vantage_table::{Entity, Table};
+use vantage_table::Table;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct Client {
     pub name: String,
     pub email: String,
 }
-
-impl Entity for Client {}
 
 impl Client {
     pub fn table(db: SurrealDB) -> Table<SurrealDB, Client> {

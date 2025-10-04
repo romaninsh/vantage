@@ -2,7 +2,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use vantage_surrealdb::SurrealDB;
-use vantage_table::{Entity, Table};
+use vantage_table::Table;
 
 use crate::surrealdb;
 
@@ -20,8 +20,6 @@ pub struct Order {
     pub created_at: Option<String>, // SurrealDB datetime
     pub lines: Vec<OrderLine>,
 }
-
-impl Entity for Order {}
 
 impl Order {
     pub fn table() -> Table<SurrealDB, Order> {

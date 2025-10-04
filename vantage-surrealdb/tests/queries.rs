@@ -20,7 +20,6 @@ async fn test_associated_query_get_raw() {
         pub from: String,
         pub r#return: String,
     }
-    impl Entity for Message {}
 
     let messages = Table::new("message", db)
         .with_column("from")
@@ -50,7 +49,6 @@ async fn test_get_with_ids() {
         pub from: String,
         pub r#return: String,
     }
-    impl Entity for Message {}
 
     let messages = Table::new("message", db)
         .with_column("from")
@@ -96,7 +94,6 @@ async fn test_map() {
         pub from: String,
         pub r#return: String,
     }
-    impl Entity for Message {}
 
     let messages = Table::new("message", db)
         .with_column("from")

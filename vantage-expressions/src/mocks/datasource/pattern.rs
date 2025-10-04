@@ -3,6 +3,7 @@
 //! Maps query patterns to specific responses based on exact string matching.
 
 use crate::QuerySource;
+use crate::protocol::datasource::DataSource;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::future::Future;
@@ -54,6 +55,7 @@ where
     }
 }
 
+impl<E> DataSource for PatternDataSource<E> where E: Clone + Send + Sync + std::fmt::Debug + 'static {}
 impl<E> QuerySource<E> for PatternDataSource<E>
 where
     E: Clone + Send + Sync + std::fmt::Debug + 'static,
