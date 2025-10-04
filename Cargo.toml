@@ -3,6 +3,7 @@ members = [
     "vantage-expressions",
     "vantage-sql",
     "vantage-surrealdb",
+    "vantage-redb",
     "vantage-mongodb",
     "bakery_model3",
     "surreal-client",
