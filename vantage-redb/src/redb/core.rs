@@ -9,15 +9,15 @@ use vantage_expressions::protocol::datasource::DataSource;
 #[derive(Error, Debug)]
 pub enum RedbError {
     #[error("Database error: {0}")]
-    Database(#[from] redb::Error),
+    Database(#[from] Box<redb::Error>),
     #[error("Database error: {0}")]
-    DatabaseError(#[from] redb::DatabaseError),
+    DatabaseError(#[from] Box<redb::DatabaseError>),
     #[error("Transaction error: {0}")]
-    Transaction(#[from] redb::TransactionError),
+    Transaction(#[from] Box<redb::TransactionError>),
     #[error("Storage error: {0}")]
-    Storage(#[from] redb::StorageError),
+    Storage(#[from] Box<redb::StorageError>),
     #[error("Serialization error: {0}")]
-    Serialization(#[from] bincode::Error),
+    Serialization(#[from] Box<bincode::Error>),
     #[error("Query error: {0}")]
     Query(String),
 }
@@ -31,13 +31,13 @@ pub struct Redb {
 impl Redb {
     /// Create a new RedbDB instance
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, RedbError> {
-        let db = Database::create(path)?;
+        let db = Database::create(path).map_err(|e| RedbError::DatabaseError(Box::new(e)))?;
         Ok(Redb { db: Arc::new(db) })
     }
 
     /// Open existing RedbDB instance
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, RedbError> {
-        let db = Database::open(path)?;
+        let db = Database::open(path).map_err(|e| RedbError::DatabaseError(Box::new(e)))?;
         Ok(Redb { db: Arc::new(db) })
     }
 
@@ -48,12 +48,16 @@ impl Redb {
 
     /// Begin read transaction
     pub fn begin_read(&self) -> Result<ReadTransaction, RedbError> {
-        Ok(self.db.begin_read()?)
+        self.db
+            .begin_read()
+            .map_err(|e| RedbError::Transaction(Box::new(e)))
     }
 
     /// Begin write transaction
     pub fn begin_write(&self) -> Result<WriteTransaction, RedbError> {
-        Ok(self.db.begin_write()?)
+        self.db
+            .begin_write()
+            .map_err(|e| RedbError::Transaction(Box::new(e)))
     }
 }
 

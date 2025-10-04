@@ -71,21 +71,14 @@ impl Redb {
                         break;
                     }
 
-                    match item {
-                        Ok((id, data)) => {
-                            match self.deserialize_to_json_with_id::<E>(data.value(), id.value()) {
-                                Ok(record) => {
-                                    if let Some(field_value) = record.get(column) {
-                                        if field_value == value {
-                                            results.push(record);
-                                            count += 1;
-                                        }
-                                    }
-                                }
-                                Err(_) => {}
-                            }
-                        }
-                        Err(_) => {}
+                    if let Ok((id, data)) = item
+                        && let Ok(record) =
+                            self.deserialize_to_json_with_id::<E>(data.value(), id.value())
+                        && let Some(field_value) = record.get(column)
+                        && field_value == value
+                    {
+                        results.push(record);
+                        count += 1;
                     }
                 }
                 serde_json::Value::Array(results)
@@ -127,17 +120,12 @@ impl Redb {
                         break;
                     }
 
-                    match item {
-                        Ok((id, data)) => {
-                            match self.deserialize_to_json_with_id::<E>(data.value(), id.value()) {
-                                Ok(record) => {
-                                    results.push(record);
-                                    count += 1;
-                                }
-                                Err(_) => {}
-                            }
-                        }
-                        Err(_) => {}
+                    if let Ok((id, data)) = item
+                        && let Ok(record) =
+                            self.deserialize_to_json_with_id::<E>(data.value(), id.value())
+                    {
+                        results.push(record);
+                        count += 1;
                     }
                 }
                 serde_json::Value::Array(results)
@@ -191,10 +179,10 @@ impl Redb {
                 return;
             }
 
-            if let Some(limit_val) = limit_count {
-                if records.len() > limit_val {
-                    records.truncate(limit_val);
-                }
+            if let Some(limit_val) = limit_count
+                && records.len() > limit_val
+            {
+                records.truncate(limit_val);
             }
         }
     }

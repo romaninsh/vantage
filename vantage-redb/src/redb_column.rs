@@ -67,7 +67,7 @@ impl RedbColumn {
                 }
             };
 
-            index.entry(value).or_insert_with(Vec::new).push(id);
+            index.entry(value).or_default().push(id);
         }
 
         // Create index table and populate it

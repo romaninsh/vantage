@@ -98,10 +98,10 @@ impl<E: Entity> Selectable<RedbExpression> for RedbSelect<E> {
         _alias: Option<String>,
     ) {
         // For ReDB, source is the table name
-        if let Some(scalar) = source.into().as_scalar() {
-            if let Some(table_name) = scalar.as_str() {
-                self.table = Some(table_name.to_string());
-            }
+        if let Some(scalar) = source.into().as_scalar()
+            && let Some(table_name) = scalar.as_str()
+        {
+            self.table = Some(table_name.to_string());
         }
     }
 

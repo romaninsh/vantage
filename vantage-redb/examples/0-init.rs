@@ -43,7 +43,7 @@ async fn main() -> Result<()> {
         let mut email_index = write_txn.open_table(USERS_BY_EMAIL)?;
 
         // Create sample users
-        let users = vec![
+        let users = [
             User {
                 name: "Alice Johnson".to_string(),
                 email: "alice@example.com".to_string(),
