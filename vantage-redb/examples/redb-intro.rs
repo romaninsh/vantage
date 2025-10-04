@@ -26,10 +26,6 @@ impl User {
             .with_column("age")
             .into_entity()
     }
-
-    pub fn select() -> vantage_redb::RedbSelect<User> {
-        vantage_redb::RedbSelect::new()
-    }
 }
 
 #[tokio::main]
