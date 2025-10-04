@@ -29,8 +29,9 @@
 
 use indexmap::IndexMap;
 use std::marker::PhantomData;
+use std::sync::Arc;
 use vantage_expressions::SelectSource;
-use vantage_expressions::mocks::StaticDataSource;
+
 use vantage_expressions::{Expression, protocol::selectable::Selectable, util::error::Result};
 
 pub mod mocks;
@@ -48,33 +49,27 @@ pub use vantage_expressions::QuerySource;
 pub use crate::tablesource::TableSource;
 pub use crate::with_columns::Column;
 
-// Specific implementation for StaticDataSource
-impl TableSource for StaticDataSource {
-    type Column = mocks::MockColumn;
-
-    fn create_column(&self, name: &str, _table: impl TableLike) -> Self::Column {
-        name.into()
-    }
-}
-
 /// Trait for dynamic table operations without generics
 pub trait TableLike: Send + Sync {
     /// Get all columns as boxed ColumnLike trait objects
-    fn columns(&self) -> Vec<Box<dyn ColumnLike>>;
+    fn columns(&self) -> Arc<IndexMap<String, Box<dyn ColumnLike>>>;
 
+    fn table_name(&self) -> &str;
     fn table_alias(&self) -> &str;
 }
 
-/// Trait for entities that can be associated with tables
-pub trait Entity:
-    serde::Serialize + serde::de::DeserializeOwned + Default + Clone + Send + Sync + Sized + 'static
-{
-}
+// Re-export Entity trait from vantage-dataset
+pub use vantage_dataset::entity::Entity;
 
 /// Empty entity type for tables without a specific entity
 #[derive(serde::Serialize, serde::Deserialize, Default, Clone)]
 pub struct EmptyEntity;
-impl Entity for EmptyEntity {}
+
+/// Entity that contains ID only
+#[derive(serde::Serialize, serde::Deserialize, Default, Clone)]
+pub struct IdEntity {
+    pub id: String,
+}
 
 /// A table abstraction defined over a datasource and entity
 #[derive(Debug, Clone)]
@@ -90,7 +85,10 @@ where
     conditions: Vec<Expression>,
 }
 
-impl<T: TableSource> Table<T, EmptyEntity> {
+impl<T: TableSource> Table<T, EmptyEntity>
+where
+    T::Column: ColumnLike,
+{
     /// Create a new table with the given name and table source
     pub fn new(table_name: impl Into<String>, data_source: T) -> Self {
         Self {
@@ -200,15 +198,46 @@ where
     }
 }
 
-impl<T: TableSource, E: Entity> TableLike for Table<T, E> {
-    fn columns(&self) -> Vec<Box<dyn ColumnLike>> {
-        self.columns
-            .values()
-            .map(|col| Box::new(col.clone()) as Box<dyn ColumnLike>)
-            .collect()
+impl<T: TableSource, E: Entity> TableLike for Table<T, E>
+where
+    T::Column: ColumnLike + Clone + 'static,
+{
+    fn columns(&self) -> Arc<IndexMap<String, Box<dyn ColumnLike>>> {
+        let boxed_columns: IndexMap<String, Box<dyn ColumnLike>> = self
+            .columns
+            .iter()
+            .map(|(k, v)| (k.clone(), Box::new(v.clone()) as Box<dyn ColumnLike>))
+            .collect();
+        Arc::new(boxed_columns)
     }
 
     fn table_alias(&self) -> &str {
+        &self.table_name
+    }
+
+    fn table_name(&self) -> &str {
+        &self.table_name
+    }
+}
+
+impl<T: TableSource, E: Entity> TableLike for &Table<T, E>
+where
+    T::Column: ColumnLike + Clone + 'static,
+{
+    fn columns(&self) -> Arc<IndexMap<String, Box<dyn ColumnLike>>> {
+        let boxed_columns: IndexMap<String, Box<dyn ColumnLike>> = self
+            .columns
+            .iter()
+            .map(|(k, v)| (k.clone(), Box::new(v.clone()) as Box<dyn ColumnLike>))
+            .collect();
+        Arc::new(boxed_columns)
+    }
+
+    fn table_alias(&self) -> &str {
+        &self.table_name
+    }
+
+    fn table_name(&self) -> &str {
         &self.table_name
     }
 }

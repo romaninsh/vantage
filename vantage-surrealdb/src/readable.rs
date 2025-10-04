@@ -117,6 +117,36 @@ where
 
         Ok(None)
     }
+
+    async fn get_values(&self) -> Result<Vec<serde_json::Value>> {
+        // Get raw data as JSON values for indexing operations
+        let mut select = self.data_source().select();
+        select.set_source(self.table_name(), None);
+
+        // Add all configured columns
+        for column in self.columns().values() {
+            match column.alias() {
+                Some(alias) => select.add_expression(column.expr(), Some(alias.to_string())),
+                None => select.add_field(column.name()),
+            }
+        }
+
+        // Add all conditions from the table
+        for condition in self.conditions() {
+            select.add_where_condition(condition.clone());
+        }
+
+        let raw_result = self.data_source().execute(&select.into()).await;
+
+        // Return as array of JSON values
+        if let serde_json::Value::Array(items) = raw_result {
+            Ok(items)
+        } else {
+            Err(DataSetError::other(
+                "Expected array of objects from SurrealDB",
+            ))
+        }
+    }
 }
 
 #[cfg(test)]

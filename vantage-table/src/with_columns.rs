@@ -68,14 +68,17 @@ impl<T: TableSource, E: Entity> Table<T, E>
 where
     T::Column: ColumnLike,
 {
-    pub fn with_column(mut self, column: impl Into<T::Column>) -> Self {
-        self.add_column(column);
+    pub fn with_column(mut self, column: impl Into<String>) -> Self {
+        let column_name = column.into();
+        let column = self.data_source().create_column(&column_name, &self);
+        self.columns.insert(column.name().to_string(), column);
         self
     }
 
     /// Add a column to the table
-    pub fn add_column(&mut self, column: impl Into<T::Column>) {
-        let column = column.into();
+    pub fn add_column(&mut self, column: impl Into<String>) {
+        let column_name = column.into();
+        let column = self.data_source().create_column(&column_name, &*self);
         self.columns.insert(column.name().to_string(), column);
     }
 
@@ -110,14 +113,21 @@ impl From<&Column> for IntoExpressive<Expression> {
     }
 }
 
+impl From<Column> for String {
+    fn from(val: Column) -> Self {
+        val.name
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vantage_expressions::{expr, mocks::StaticDataSource};
+    use crate::mocks::MockTableSource;
+    use vantage_expressions::expr;
 
     #[test]
     fn test_column_in_expression() {
-        let datasource = StaticDataSource::new(serde_json::json!([]));
+        let datasource = MockTableSource::new();
         let table = Table::new("users", datasource)
             .with_column("is_vip")
             .with_column("name");

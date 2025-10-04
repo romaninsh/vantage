@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
+use vantage_expressions::protocol::datasource::DataSource;
 use vantage_expressions::{Expression, ExpressionFlattener, Flatten, QuerySource, SelectSource};
 
 use surreal_client::SurrealClient;
@@ -11,7 +12,7 @@ use surreal_client::error::Result;
 use crate::SurrealSelect;
 use crate::operation::Expressive;
 
-pub mod datasource;
+pub mod querysource;
 pub mod tablesource;
 
 // Create a wrapper for shared SurrealDB state
@@ -19,6 +20,8 @@ pub mod tablesource;
 pub struct SurrealDB {
     inner: Arc<tokio::sync::Mutex<SurrealClient>>,
 }
+
+impl DataSource for SurrealDB {}
 
 impl SurrealDB {
     pub fn new(client: SurrealClient) -> Self {

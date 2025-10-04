@@ -1,14 +1,14 @@
 use async_trait::async_trait;
 use serde::de::DeserializeOwned;
 use vantage_dataset::dataset::{DataSetError, Id, ReadableDataSet, Result};
-use vantage_expressions::Expression;
 
-use crate::{Entity, QuerySource, Table, TableSource};
+use crate::{Entity, Table, TableSource};
 
+// Single implementation for all TableSource types
 #[async_trait]
 impl<T, E, R> ReadableDataSet<R> for Table<T, E>
 where
-    T: QuerySource<Expression> + TableSource + Send + Sync,
+    T: TableSource,
     E: Entity + Send + Sync,
     R: DeserializeOwned + Send + Sync,
 {
@@ -30,13 +30,23 @@ where
     where
         U: DeserializeOwned,
     {
-        Err(DataSetError::no_capability("get_as", "Table"))
+        self.data_source()
+            .get_table_data_as(self.table_name())
+            .await
     }
 
     async fn get_some_as<U>(&self) -> Result<Option<U>>
     where
         U: DeserializeOwned,
     {
-        Err(DataSetError::no_capability("get_some_as", "Table"))
+        self.data_source()
+            .get_table_data_some_as(self.table_name())
+            .await
+    }
+
+    async fn get_values(&self) -> Result<Vec<serde_json::Value>> {
+        self.data_source()
+            .get_table_data_values(self.table_name())
+            .await
     }
 }
