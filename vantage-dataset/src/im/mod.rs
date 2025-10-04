@@ -51,7 +51,7 @@ mod tests {
     use super::*;
     use serde::{Deserialize, Serialize};
 
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
     struct User {
         id: Option<String>,
         name: String,
@@ -131,7 +131,7 @@ mod tests {
         let data_source = ImDataSource::new();
         let users = Table::<User>::new(&data_source, "users");
 
-        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
         struct Product {
             id: Option<String>,
             name: String,

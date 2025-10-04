@@ -7,6 +7,7 @@ edition = "2024"
 doctest = false
 
 [dependencies]
+vantage-core = { path = "../vantage-core" }
 vantage-expressions = { path = "../vantage-expressions" }
 vantage-dataset = { path = "../vantage-dataset" }
 async-trait = "0.1"

@@ -99,10 +99,25 @@ impl SurrealDB {
 }
 
 impl SelectSource for SurrealDB {
-    type Select = SurrealSelect;
+    type Select<E>
+        = SurrealSelect
+    where
+        E: vantage_core::Entity;
 
-    fn select(&self) -> Self::Select {
+    fn select<E>(&self) -> Self::Select<E>
+    where
+        E: vantage_core::Entity,
+    {
         SurrealSelect::new()
+    }
+
+    async fn execute_select<E>(&self, select: &Self::Select<E>) -> serde_json::Value
+    where
+        E: vantage_core::Entity,
+    {
+        // For SurrealDB, convert select to expression and execute
+        let expr = select.clone().into();
+        self.execute(&expr).await
     }
 }
 

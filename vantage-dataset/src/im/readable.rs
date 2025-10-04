@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use serde::de::DeserializeOwned;
+
+use vantage_core::Entity;
 
 use crate::{
     dataset::{DataSetError, Id, ReadableDataSet, Result},
@@ -9,7 +10,7 @@ use crate::{
 #[async_trait]
 impl<T> ReadableDataSet<T> for Table<T>
 where
-    T: DeserializeOwned + Send + Sync,
+    T: Entity,
 {
     async fn get(&self) -> Result<Vec<T>> {
         self.get_as().await
@@ -41,7 +42,7 @@ where
     }
     async fn get_as<U>(&self) -> Result<Vec<U>>
     where
-        U: DeserializeOwned,
+        U: Entity,
     {
         let table = self.data_source.get_or_create_table(&self.table_name);
         let mut records = Vec::new();
@@ -63,7 +64,7 @@ where
 
     async fn get_some_as<U>(&self) -> Result<Option<U>>
     where
-        U: DeserializeOwned,
+        U: Entity,
     {
         let table = self.data_source.get_or_create_table(&self.table_name);
 

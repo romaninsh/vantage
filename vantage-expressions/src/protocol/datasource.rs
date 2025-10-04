@@ -18,9 +18,18 @@ pub trait QuerySource<T>: DataSource {
     ) -> impl Fn() -> Pin<Box<dyn Future<Output = Value> + Send>> + Send + Sync + 'static;
 }
 
-pub trait SelectSource: DataSource {
-    type Select: Selectable;
+pub trait SelectSource<Ex = crate::Expression>: DataSource {
+    type Select<E>: Selectable<Ex>
+    where
+        E: crate::Entity;
 
-    // Return SelectQuery
-    fn select(&self) -> Self::Select;
+    // Return SelectQuery with entity type information
+    fn select<E>(&self) -> Self::Select<E>
+    where
+        E: crate::Entity;
+
+    // Execute select query directly
+    fn execute_select<E>(&self, select: &Self::Select<E>) -> impl Future<Output = Value> + Send
+    where
+        E: crate::Entity;
 }
