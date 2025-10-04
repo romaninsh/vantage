@@ -23,43 +23,57 @@ impl vantage_table::TableSource for SurrealDB {
 
     async fn get_table_data_as<E>(
         &self,
-        _table: &Table<Self, E>,
+        table: &Table<Self, E>,
     ) -> vantage_dataset::dataset::Result<Vec<E>>
     where
         E: vantage_core::Entity,
         Self: Sized,
     {
-        Err(DataSetError::no_capability(
-            "get_table_data_as",
-            "SurrealDB",
-        ))
+        let select = table.select();
+        let raw_result = select.get(self).await;
+
+        let entities = raw_result
+            .into_iter()
+            .map(|item| serde_json::from_value(serde_json::Value::Object(item)))
+            .collect::<std::result::Result<Vec<E>, _>>()
+            .map_err(|e| DataSetError::other(format!("Failed to deserialize entity: {}", e)))?;
+
+        Ok(entities)
     }
 
     async fn get_table_data_some_as<E>(
         &self,
-        _table: &Table<Self, E>,
+        table: &Table<Self, E>,
     ) -> vantage_dataset::dataset::Result<Option<E>>
     where
         E: vantage_core::Entity,
         Self: Sized,
     {
-        Err(DataSetError::no_capability(
-            "get_table_data_some_as",
-            "SurrealDB",
-        ))
+        let select = table.select().only_first_row();
+        let raw_result = select.get(self).await;
+
+        let entity = serde_json::from_value(serde_json::Value::Object(raw_result))
+            .map_err(|e| DataSetError::other(format!("Failed to deserialize entity: {}", e)))?;
+
+        Ok(Some(entity))
     }
 
     async fn get_table_data_values<E>(
         &self,
-        _table: &Table<Self, E>,
+        table: &Table<Self, E>,
     ) -> vantage_dataset::dataset::Result<Vec<serde_json::Value>>
     where
         E: vantage_core::Entity,
         Self: Sized,
     {
-        Err(DataSetError::no_capability(
-            "get_table_data_values",
-            "SurrealDB",
-        ))
+        let select = table.select();
+        let raw_result = select.get(self).await;
+
+        let values = raw_result
+            .into_iter()
+            .map(serde_json::Value::Object)
+            .collect();
+
+        Ok(values)
     }
 }
