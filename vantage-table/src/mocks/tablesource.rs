@@ -21,6 +21,12 @@ impl MockTableSource {
     }
 }
 
+impl Default for MockTableSource {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DataSource for MockTableSource {}
 
 #[async_trait]
