@@ -25,11 +25,11 @@ struct Product {
 // Implement DataSetSource for MockCsv
 #[async_trait]
 impl DataSetSource for MockCsv {
-    async fn list_candidates(&self) -> Result<Vec<String>> {
+    async fn list_datasets(&self) -> Result<Vec<String>> {
         Ok(self.list_files().cloned().collect())
     }
 
-    async fn get_candidate_info(&self, name: &str) -> Result<Option<serde_json::Value>> {
+    async fn get_dataset_info(&self, name: &str) -> Result<Option<serde_json::Value>> {
         if self.get_file_content(name).is_some() {
             Ok(Some(serde_json::json!({
                 "name": name,
@@ -62,11 +62,11 @@ async fn main() -> Result<()> {
 
     // Test discovery
     println!("=== Dataset Discovery ===");
-    let datasets = csv_ds.list_candidates().await?;
+    let datasets = csv_ds.list_datasets().await?;
     println!("Found datasets: {:?}", datasets);
 
     for dataset_name in &datasets {
-        if let Some(info) = csv_ds.get_candidate_info(dataset_name).await? {
+        if let Some(info) = csv_ds.get_dataset_info(dataset_name).await? {
             println!("Dataset '{}': {}", dataset_name, info);
         }
     }

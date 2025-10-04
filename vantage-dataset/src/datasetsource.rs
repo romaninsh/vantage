@@ -7,14 +7,14 @@ use async_trait::async_trait;
 pub trait DataSetSource: Send + Sync {
     /// List all available datasets in this data source
     /// Returns a list of dataset names
-    async fn list_candidates(&self) -> Result<Vec<String>>;
+    async fn list_datasets(&self) -> Result<Vec<String>>;
 
     /// Get metadata about a specific dataset
-    async fn get_candidate_info(&self, name: &str) -> Result<Option<serde_json::Value>>;
+    async fn get_dataset_info(&self, name: &str) -> Result<Option<serde_json::Value>>;
 
     /// Check if a dataset exists in this source
     async fn has_dataset(&self, name: &str) -> Result<bool> {
-        let candidates = self.list_candidates().await?;
+        let candidates = self.list_datasets().await?;
         Ok(candidates.contains(&name.to_string()))
     }
 }
