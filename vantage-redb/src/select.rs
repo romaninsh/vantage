@@ -69,7 +69,10 @@ impl<E: Entity> RedbSelect<E> {
 
     pub fn with_condition(mut self, column: impl Into<String>, value: serde_json::Value) -> Self {
         if self.condition_column.is_some() {
-            panic!("RedbSelect only supports one condition. Condition already set for column: {:?}", self.condition_column);
+            panic!(
+                "RedbSelect only supports one condition. Condition already set for column: {:?}",
+                self.condition_column
+            );
         }
         self.condition_column = Some(column.into());
         self.condition_value = Some(value);
@@ -78,7 +81,10 @@ impl<E: Entity> RedbSelect<E> {
 
     pub fn with_order(mut self, column: impl Into<String>, ascending: bool) -> Self {
         if self.order_column.is_some() {
-            panic!("RedbSelect only supports one order. Order already set for column: {:?}", self.order_column);
+            panic!(
+                "RedbSelect only supports one order. Order already set for column: {:?}",
+                self.order_column
+            );
         }
         self.order_column = Some(column.into());
         self.order_ascending = ascending;
