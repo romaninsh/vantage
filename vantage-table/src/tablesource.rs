@@ -1,4 +1,4 @@
-use crate::TableLike;
+use crate::{Entity, TableLike};
 use async_trait::async_trait;
 use vantage_expressions::{Expression, protocol::datasource::DataSource};
 
@@ -17,7 +17,7 @@ pub trait TableSource: DataSource {
         table_name: &str,
     ) -> vantage_dataset::dataset::Result<Vec<T>>
     where
-        T: serde::de::DeserializeOwned;
+        T: Entity;
 
     /// Get first record from a table as a specific type
     async fn get_table_data_some_as<T>(
@@ -25,7 +25,7 @@ pub trait TableSource: DataSource {
         table_name: &str,
     ) -> vantage_dataset::dataset::Result<Option<T>>
     where
-        T: serde::de::DeserializeOwned;
+        T: Entity;
 
     /// Get all data from a table as JSON values
     async fn get_table_data_values(

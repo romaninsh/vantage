@@ -2,7 +2,7 @@
 
 use super::{Id, Result};
 use async_trait::async_trait;
-use serde::de::DeserializeOwned;
+use vantage_core::Entity;
 
 #[async_trait]
 pub trait ReadableDataSet<E> {
@@ -13,12 +13,12 @@ pub trait ReadableDataSet<E> {
     // Get data as serde_json::Value for generic operations like indexing
     async fn get_values(&self) -> Result<Vec<serde_json::Value>>;
 
-    // Generic methods for any deserializable type
+    // Generic methods for any entity type
     async fn get_as<T>(&self) -> Result<Vec<T>>
     where
-        T: DeserializeOwned;
+        T: Entity;
 
     async fn get_some_as<T>(&self) -> Result<Option<T>>
     where
-        T: DeserializeOwned;
+        T: Entity;
 }

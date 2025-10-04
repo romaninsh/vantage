@@ -1,3 +1,7 @@
+//! # Vantage Core
+//!
+//! Core traits and types used throughout the Vantage framework.
+
 /// Entity trait for types that can be used with datasets
 ///
 /// Entities must be serializable, deserializable, and support basic operations

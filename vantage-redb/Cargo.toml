@@ -13,6 +13,7 @@ readme = "../README.md"
 
 [dependencies]
 async-trait = "0.1"
+vantage-core = { path = "../vantage-core" }
 vantage-expressions = { path = "../vantage-expressions" }
 vantage-table = { path = "../vantage-table" }
 vantage-dataset = { path = "../vantage-dataset" }

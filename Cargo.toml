@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "vantage-core",
     "vantage-expressions",
     "vantage-sql",
     "vantage-surrealdb",

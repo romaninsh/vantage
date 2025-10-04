@@ -4,7 +4,6 @@
 //! Since redb is a KV store, columns represent secondary index tables.
 
 use redb::{TableDefinition, WriteTransaction};
-use serde_json::Value;
 use std::collections::HashMap;
 use vantage_dataset::dataset::{DataSetError, ReadableDataSet, Result};
 use vantage_expressions::{Expression, expr};

@@ -1,8 +1,8 @@
 // examples/mocks/csv_mock.rs
 
 use csv::ReaderBuilder;
-use serde::de::DeserializeOwned;
 use std::collections::HashMap;
+use vantage_core::Entity;
 use vantage_dataset::dataset::{DataSetError, Id, ReadableDataSet, Result};
 
 /// MockCsv contains hardcoded CSV data as strings
@@ -47,7 +47,7 @@ pub struct CsvFile<T> {
 
 impl<T> CsvFile<T>
 where
-    T: DeserializeOwned,
+    T: Entity,
 {
     pub fn new(csv_ds: &MockCsv, filename: &str) -> Self {
         Self {
@@ -61,7 +61,7 @@ where
 #[async_trait::async_trait]
 impl<T> ReadableDataSet<T> for CsvFile<T>
 where
-    T: DeserializeOwned + Send + Sync,
+    T: Entity,
 {
     async fn get(&self) -> Result<Vec<T>> {
         self.get_as().await
@@ -77,7 +77,7 @@ where
 
     async fn get_as<U>(&self) -> Result<Vec<U>>
     where
-        U: DeserializeOwned,
+        U: Entity,
     {
         let content = self
             .csv_ds
@@ -100,7 +100,7 @@ where
 
     async fn get_some_as<U>(&self) -> Result<Option<U>>
     where
-        U: DeserializeOwned,
+        U: Entity,
     {
         let content = self
             .csv_ds

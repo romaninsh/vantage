@@ -116,7 +116,7 @@ mod tests {
     use crate::im::{ImDataSource, Table};
     use serde::{Deserialize, Serialize};
 
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
     struct User {
         id: Option<String>,
         name: String,

@@ -2,8 +2,8 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use vantage_dataset::dataset::ReadableDataSet;
 use vantage_redb::prelude::*;
-use vantage_table::prelude::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 struct User {
@@ -12,8 +12,6 @@ struct User {
     is_active: bool,
     age: u32,
 }
-
-impl Entity for User {}
 
 impl User {
     pub fn table() -> vantage_table::Table<Redb, User> {
@@ -31,6 +29,10 @@ impl User {
             .with_column("is_active")
             .with_column("age")
             .into_entity::<User>()
+    }
+
+    pub fn select() -> vantage_redb::RedbSelect<User> {
+        vantage_redb::RedbSelect::new()
     }
 }
 
@@ -55,27 +57,27 @@ async fn main() -> Result<()> {
         Err(e) => println!("❌ Get failed: {}", e),
     }
 
-    println!("\n-[ rebuilding age index ]------------------------------------");
-    // Rebuild the age column index for fast lookups by age value
-    if let Some(age_column) = users_table.column("age") {
-        println!("Rebuilding index for age column...");
+    // println!("\n-[ rebuilding age index ]------------------------------------");
+    // // Rebuild the age column index for fast lookups by age value
+    // if let Some(age_column) = users_table.column("age") {
+    //     println!("Rebuilding index for age column...");
 
-        // Get write transaction for index operations
-        let write_txn = users_table
-            .data_source()
-            .begin_write()
-            .expect("Failed to begin write transaction");
+    //     // Get write transaction for index operations
+    //     let write_txn = users_table
+    //         .data_source()
+    //         .begin_write()
+    //         .expect("Failed to begin write transaction");
 
-        match age_column.rebuild_index(&users_table, &write_txn).await {
-            Ok(()) => {
-                write_txn.commit().expect("Failed to commit index rebuild");
-                println!("✅ Age index rebuilt successfully");
-            }
-            Err(e) => println!("❌ Index rebuild failed: {}", e),
-        }
-    } else {
-        println!("❌ Age column not found");
-    }
+    //     match age_column.rebuild_index(&users_table, &write_txn).await {
+    //         Ok(()) => {
+    //             write_txn.commit().expect("Failed to commit index rebuild");
+    //             println!("✅ Age index rebuilt successfully");
+    //         }
+    //         Err(e) => println!("❌ Index rebuild failed: {}", e),
+    //     }
+    // } else {
+    //     println!("❌ Age column not found");
+    // }
 
     println!("\n=== ReDB Key-Value Store Features ===");
     println!("✅ ACID transactions - All operations are atomic");

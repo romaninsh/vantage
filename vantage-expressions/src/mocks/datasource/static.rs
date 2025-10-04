@@ -66,10 +66,24 @@ impl QuerySource<Expression> for StaticDataSource {
 }
 
 impl SelectSource for StaticDataSource {
-    type Select = MockSelect;
+    type Select<E>
+        = MockSelect
+    where
+        E: crate::Entity;
 
-    fn select(&self) -> Self::Select {
+    fn select<E>(&self) -> Self::Select<E>
+    where
+        E: crate::Entity,
+    {
         MockSelect
+    }
+
+    async fn execute_select<E>(&self, _select: &Self::Select<E>) -> Value
+    where
+        E: crate::Entity,
+    {
+        // For static data source, just return the stored value
+        self.value.clone()
     }
 }
 

@@ -19,6 +19,7 @@ pub use protocol::datasource::SelectSource;
 pub use protocol::expressive::IntoExpressive;
 pub use protocol::queryable::Queryable;
 pub use protocol::selectable::Selectable;
+pub use vantage_core::Entity;
 
 pub use protocol::result;
 

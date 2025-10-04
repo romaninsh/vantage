@@ -94,7 +94,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    #[derive(serde::Deserialize, Debug, PartialEq)]
+    #[derive(serde::Deserialize, serde::Serialize, Debug, PartialEq, Default, Clone)]
     struct TestUser {
         id: i32,
         name: String,

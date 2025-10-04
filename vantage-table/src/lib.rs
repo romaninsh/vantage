@@ -58,15 +58,15 @@ pub trait TableLike: Send + Sync {
     fn table_alias(&self) -> &str;
 }
 
-// Re-export Entity trait from vantage-dataset
-pub use vantage_dataset::entity::Entity;
+// Re-export Entity trait from vantage-core
+pub use vantage_core::Entity;
 
 /// Empty entity type for tables without a specific entity
-#[derive(serde::Serialize, serde::Deserialize, Default, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Default, Clone, Debug)]
 pub struct EmptyEntity;
 
 /// Entity that contains ID only
-#[derive(serde::Serialize, serde::Deserialize, Default, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Default, Clone, Debug)]
 pub struct IdEntity {
     pub id: String,
 }
@@ -141,7 +141,7 @@ where
     pub async fn get(&self) -> Result<Vec<E>>
     where
         T: QuerySource<Expression>,
-        T::Select: Into<Expression>,
+        T::Select<E>: Into<Expression>,
     {
         let values = self.get_values().await?;
         let entities = values
@@ -156,7 +156,7 @@ where
     pub async fn get_values(&self) -> Result<Vec<serde_json::Value>>
     where
         T: QuerySource<Expression>,
-        T::Select: Into<Expression>,
+        T::Select<E>: Into<Expression>,
     {
         let select = self.select();
         let raw_result = self.data_source.execute(&select.into()).await;
@@ -172,8 +172,8 @@ where
     }
 
     /// Create a select query with table configuration applied
-    pub fn select(&self) -> T::Select {
-        let mut select = self.data_source.select();
+    pub fn select(&self) -> T::Select<E> {
+        let mut select = self.data_source.select::<E>();
 
         // Set the table as source
         select.set_source(self.table_name.as_str(), None);

@@ -1855,6 +1855,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
+name = "vantage-core"
+version = "0.3.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "vantage-dataset"
 version = "0.3.0"
 dependencies = [
@@ -1867,6 +1874,7 @@ dependencies = [
  "thiserror 2.0.16",
  "tokio",
  "uuid",
+ "vantage-core",
 ]
 
 [[package]]
@@ -1875,10 +1883,13 @@ version = "0.3.0"
 dependencies = [
  "async-trait",
  "chrono",
+ "serde",
  "serde_json",
  "thiserror 2.0.16",
  "tokio",
  "tokio-test",
+ "vantage-core",
+ "vantage-dataset",
 ]
 
 [[package]]
@@ -1904,6 +1915,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.16",
  "tokio",
+ "vantage-core",
  "vantage-dataset",
  "vantage-expressions",
  "vantage-table",
@@ -1932,6 +1944,7 @@ dependencies = [
  "surreal-client",
  "thiserror 2.0.16",
  "tokio",
+ "vantage-core",
  "vantage-dataset",
  "vantage-expressions",
  "vantage-table",
@@ -1947,6 +1960,7 @@ dependencies = [
  "serde_json",
  "surreal-client",
  "tokio",
+ "vantage-core",
  "vantage-dataset",
  "vantage-expressions",
  "vantage-surrealdb",

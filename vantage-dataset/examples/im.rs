@@ -6,7 +6,7 @@ use vantage_dataset::im::{ImDataSource, Table};
 
 mod mocks;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct User {
     id: Option<String>,
     name: String,
@@ -14,7 +14,7 @@ struct User {
     age: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct Product {
     name: String,
     price: f64,
@@ -89,7 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Note: Products have auto-generated IDs internally, but don't expose them");
 
     // Demonstrate partial deserialization - only get user names and ages
-    #[derive(Debug, Deserialize)]
+    #[derive(Debug, Deserialize, Serialize, Default, Clone)]
     struct UserSummary {
         name: String,
         age: u32,

@@ -4,7 +4,7 @@
 
 pub use crate::redb::{Redb, RedbError};
 pub use crate::redb_column::{RedbColumn, RedbColumnOperations};
-pub use crate::table::{RedbTableCore, RedbTableExt};
+pub use crate::table::RedbTableExt;
 
 // Re-export main redb types for convenience
 pub use redb::{

@@ -4,6 +4,7 @@ mod mocks;
 use mocks::csv_mock::{CsvFile, MockCsv};
 
 use serde::{Deserialize, Serialize};
+use vantage_core::Entity;
 use vantage_dataset::prelude::*;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -90,7 +91,7 @@ async fn main() -> Result<()> {
         println!("\nFirst user: {} - {}", first_user.name, first_user.email);
 
         // Demonstrate partial deserialization
-        #[derive(Debug, Deserialize)]
+        #[derive(Debug, Deserialize, Serialize, Default, Clone)]
         struct UserContact {
             name: String,
             email: String,

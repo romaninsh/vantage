@@ -3,8 +3,9 @@
 //! This module provides a simple mock implementation of the Selectable trait
 //! that can be used in DataSource mocks and other testing scenarios.
 
+use crate::Expression;
+use crate::protocol::expressive::IntoExpressive;
 use crate::protocol::selectable::Selectable;
-use crate::{Expr, Expression};
 
 /// Simple mock implementation of Selectable trait
 ///
@@ -15,8 +16,12 @@ use crate::{Expr, Expression};
 #[derive(Debug, Clone, Default)]
 pub struct MockSelect;
 
-impl Selectable for MockSelect {
-    fn set_source(&mut self, _source: impl Into<Expr>, _alias: Option<String>) {
+impl Selectable<Expression> for MockSelect {
+    fn set_source(
+        &mut self,
+        _source: impl Into<IntoExpressive<Expression>>,
+        _alias: Option<String>,
+    ) {
         // Mock implementation - no actual query building
     }
 
@@ -36,7 +41,11 @@ impl Selectable for MockSelect {
         // Mock implementation - no actual query building
     }
 
-    fn add_order_by(&mut self, _field_or_expr: impl Into<Expr>, _ascending: bool) {
+    fn add_order_by(
+        &mut self,
+        _field_or_expr: impl Into<IntoExpressive<Expression>>,
+        _ascending: bool,
+    ) {
         // Mock implementation - no actual query building
     }
 

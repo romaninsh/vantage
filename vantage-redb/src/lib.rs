@@ -11,23 +11,17 @@
 //! - Secondary indexes through separate tables
 //! - Serialization/deserialization with serde
 //!
-//! ## Quick Start
-//!
-//! ```rust
-//! use vantage_redb::RedbDB;
-//! use redb::TableDefinition;
-//!
-//! const USERS: TableDefinition<&str, &[u8]> = TableDefinition::new("users");
-//!
-//! let db = RedbDB::new("my_db.redb").unwrap();
-//! // Use db for CRUD operations
-//! ```
 
 pub mod prelude;
 pub mod redb;
 pub mod redb_column;
 pub mod table;
 
+pub mod expression;
+pub mod select;
+
+pub use expression::RedbExpression;
 pub use redb::{Redb, RedbError};
 pub use redb_column::{RedbColumn, RedbColumnOperations};
-pub use table::{RedbTableCore, RedbTableExt};
+pub use select::RedbSelect;
+pub use table::RedbTableExt;
