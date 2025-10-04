@@ -4,9 +4,19 @@ Because Vantage works with any arbitrary database - Data Source are defined as a
 that can persist Entity data in a serialised way. Vantage is built on a foundation, that
 different DataSource vendors will have different capabilities.
 
+## Hierarchy
+
+In Vantage, there are different kinds of DataSource implementations.
+
+1. DataSource - foundational trait, that does not implement any methods
+2. QuerySource - capability of executing operations defined by Expressions
+3. SelectSource - capability of handling Select queries
+4. TableSource - usable with generic Table implementation, must also implement
+   QuerySource and SelectSource
+
 Lets start with a most basic one
 
-## IndexMap
+## IndexMap (DataSource)
 
 In rust IndexMap implements ordered hash map. Similar to array in PHP or object in JS.
 A regular IndexMap can act as a data source and a pretty fast one! You may also call
@@ -29,7 +39,7 @@ In other words - DataSet associated with ImDataSource will be:
 - ReadableDataSet (ds.get())
 - EditableDataSet (ds.patch(), ds.replace(), ds.delete())
 
-## CSV
+## CSV (DataSource)
 
 Vantage has a built-in CsvDataSet, which can read a CSV file for you. First row
 contains keys and all other rows contain values. To initialize CsvDataSet you
