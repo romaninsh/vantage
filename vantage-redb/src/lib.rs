@@ -24,4 +24,3 @@ pub use expression::RedbExpression;
 pub use redb::{Redb, RedbError};
 pub use redb_column::{RedbColumn, RedbColumnOperations};
 pub use select::RedbSelect;
-pub use table::RedbTableExt;

@@ -8,6 +8,4 @@
 //! - **Transaction support** - ACID transactions for data consistency
 //! - **Serialization** - Automatic serde support for entities
 
-mod core;
 
-pub use core::*;
