@@ -82,7 +82,7 @@ where
     _phantom: PhantomData<E>,
     table_name: String,
     columns: IndexMap<String, T::Column>,
-    conditions: Vec<Expression>,
+    conditions: Vec<T::Expr>,
 }
 
 impl<T: TableSource> Table<T, EmptyEntity>
@@ -134,20 +134,16 @@ impl<T: TableSource, E: Entity> Table<T, E> {
 
 impl<T, E> Table<T, E>
 where
-    T: TableSource + SelectSource,
+    T: TableSource + SelectSource<T::Expr>,
     E: Entity,
 {
     /// Get data from the table using the configured columns and conditions
-    pub async fn get(&self) -> Result<Vec<E>>
-    where
-        T: QuerySource<Expression>,
-        T::Select<E>: Into<Expression>,
-    {
-        let values = self.get_values().await?;
-        let entities = values
-            .into_iter()
-            .map(|item| serde_json::from_value::<E>(item))
-            .collect::<std::result::Result<Vec<E>, _>>()
+    pub async fn get(&self) -> Result<Vec<E>> {
+        // Use TableSource directly instead of QuerySource
+        let entities = self
+            .data_source
+            .get_table_data_as(self)
+            .await
             .map_err(|e| vantage_expressions::util::error::Error::new(e.to_string()))?;
         Ok(entities)
     }
@@ -155,8 +151,8 @@ where
     /// Get raw data from the table as `Vec<Value>` without entity deserialization
     pub async fn get_values(&self) -> Result<Vec<serde_json::Value>>
     where
-        T: QuerySource<Expression>,
-        T::Select<E>: Into<Expression>,
+        T: QuerySource<T::Expr>,
+        T::Select<E>: Into<T::Expr>,
     {
         let select = self.select();
         let raw_result = self.data_source.execute(&select.into()).await;
@@ -182,7 +178,7 @@ where
         for column in self.columns.values() {
             match column.alias() {
                 Some(alias) => select.add_expression(
-                    vantage_expressions::expr!(column.name()),
+                    self.data_source.expr(column.name(), vec![]),
                     Some(alias.to_string()),
                 ),
                 None => select.add_field(column.name()),

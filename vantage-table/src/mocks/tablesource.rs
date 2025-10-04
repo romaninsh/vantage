@@ -32,23 +32,33 @@ impl DataSource for MockTableSource {}
 #[async_trait]
 impl TableSource for MockTableSource {
     type Column = MockColumn;
+    type Expr = vantage_expressions::Expression;
 
     fn create_column(&self, name: &str, _table: impl TableLike) -> Self::Column {
         MockColumn::new(name)
     }
 
-    async fn get_table_data_as<T>(
+    fn expr(
         &self,
-        table_name: &str,
-    ) -> vantage_dataset::dataset::Result<Vec<T>>
+        template: impl Into<String>,
+        parameters: Vec<vantage_expressions::protocol::expressive::IntoExpressive<Self::Expr>>,
+    ) -> Self::Expr {
+        vantage_expressions::Expression::new(template, parameters)
+    }
+
+    async fn get_table_data_as<E>(
+        &self,
+        table: &crate::Table<Self, E>,
+    ) -> vantage_dataset::dataset::Result<Vec<E>>
     where
-        T: serde::de::DeserializeOwned,
+        E: crate::Entity,
+        Self: Sized,
     {
-        let values = self.get_table_data_values(table_name).await?;
+        let values = self.get_table_data_values(table).await?;
         let mut results = Vec::new();
 
         for value in values {
-            match serde_json::from_value::<T>(value) {
+            match serde_json::from_value::<E>(value) {
                 Ok(item) => results.push(item),
                 Err(e) => {
                     return Err(vantage_dataset::dataset::DataSetError::other(e.to_string()));
@@ -59,17 +69,18 @@ impl TableSource for MockTableSource {
         Ok(results)
     }
 
-    async fn get_table_data_some_as<T>(
+    async fn get_table_data_some_as<E>(
         &self,
-        table_name: &str,
-    ) -> vantage_dataset::dataset::Result<Option<T>>
+        table: &crate::Table<Self, E>,
+    ) -> vantage_dataset::dataset::Result<Option<E>>
     where
-        T: serde::de::DeserializeOwned,
+        E: crate::Entity,
+        Self: Sized,
     {
-        let values = self.get_table_data_values(table_name).await?;
+        let values = self.get_table_data_values(table).await?;
 
         if let Some(first_value) = values.into_iter().next() {
-            match serde_json::from_value::<T>(first_value) {
+            match serde_json::from_value::<E>(first_value) {
                 Ok(item) => Ok(Some(item)),
                 Err(e) => Err(vantage_dataset::dataset::DataSetError::other(e.to_string())),
             }
@@ -78,11 +89,15 @@ impl TableSource for MockTableSource {
         }
     }
 
-    async fn get_table_data_values(
+    async fn get_table_data_values<E>(
         &self,
-        table_name: &str,
-    ) -> vantage_dataset::dataset::Result<Vec<serde_json::Value>> {
-        match self.data.get(table_name) {
+        _table: &crate::Table<Self, E>,
+    ) -> vantage_dataset::dataset::Result<Vec<serde_json::Value>>
+    where
+        E: crate::Entity,
+        Self: Sized,
+    {
+        match self.data.get(&_table.table_name) {
             Some(data) => Ok(data.clone()),
             None => Ok(vec![]),
         }
@@ -110,7 +125,8 @@ mod tests {
             ],
         );
 
-        let users: Vec<TestUser> = mock.get_table_data_as("users").await.unwrap();
+        let table = crate::Table::new("users", mock).into_entity::<TestUser>();
+        let users: Vec<TestUser> = table.data_source().get_table_data_as(&table).await.unwrap();
         assert_eq!(users.len(), 2);
         assert_eq!(users[0].name, "Alice");
         assert_eq!(users[1].name, "Bob");

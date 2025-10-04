@@ -2,7 +2,6 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use vantage_dataset::dataset::ReadableDataSet;
 use vantage_redb::prelude::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -24,11 +23,8 @@ impl User {
 
         let db = Redb::open(&db_path).expect("Failed to open database");
         vantage_table::Table::new("users", db)
-            .with_column("name")
-            .with_column("email")
-            .with_column("is_active")
             .with_column("age")
-            .into_entity::<User>()
+            .into_entity()
     }
 }
 
@@ -37,20 +33,10 @@ async fn main() -> Result<()> {
     println!("=== Vantage ReDB Introduction Example ===");
 
     let users_table = User::table();
-
-    println!("-[ redb key-value operations ]------------------------------------");
-    // Since redb is a key-value store, we use the redb-specific methods
-    // rather than SQL-like operations
-
-    println!("Attempting to get all users using get()...");
-    match users_table.get().await {
-        Ok(users) => {
-            println!("✅ Retrieved {} users", users.len());
-            for user in users {
-                println!("  - {} ({}, age {})", user.name, user.email, user.age);
-            }
-        }
-        Err(e) => println!("❌ Get failed: {}", e),
+    let condition = users_table["age"].eq(10);
+    let users = users_table.with_condition(condition).get().await?;
+    for user in users {
+        println!("  - {} ({}, age {})", user.name, user.email, user.age);
     }
 
     // println!("\n-[ rebuilding age index ]------------------------------------");

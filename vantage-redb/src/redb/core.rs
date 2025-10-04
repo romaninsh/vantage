@@ -5,6 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error;
 use vantage_expressions::protocol::datasource::DataSource;
+use vantage_table::Table;
 
 #[derive(Error, Debug)]
 pub enum RedbError {
@@ -66,24 +67,40 @@ impl DataSource for Redb {}
 #[async_trait::async_trait]
 impl vantage_table::TableSource for Redb {
     type Column = crate::RedbColumn;
+    type Expr = crate::expression::RedbExpression;
 
     fn create_column(&self, name: &str, table: impl vantage_table::TableLike) -> Self::Column {
         crate::RedbColumn::new(name, table.table_name().to_string())
     }
 
-    async fn get_table_data_as<T>(
+    fn expr(
         &self,
-        table_name: &str,
-    ) -> vantage_dataset::dataset::Result<Vec<T>>
+        _template: impl Into<String>,
+        _parameters: Vec<vantage_expressions::protocol::expressive::IntoExpressive<Self::Expr>>,
+    ) -> Self::Expr {
+        panic!("ReDB is a key-value store and doesn't support SQL-like expressions")
+    }
+
+    async fn get_table_data_as<E>(
+        &self,
+        table: &Table<Self, E>,
+    ) -> vantage_dataset::dataset::Result<Vec<E>>
     where
-        T: vantage_core::Entity,
+        E: vantage_core::Entity,
+        Self: Sized,
     {
         use vantage_dataset::dataset::DataSetError;
         use vantage_expressions::protocol::selectable::Selectable;
 
         // Use RedbSelect and execute_select approach
-        let mut select = crate::RedbSelect::<T>::new();
-        select.set_source(table_name, None);
+        let mut select = crate::RedbSelect::<E>::new();
+        select.set_source(table.table_name(), None);
+
+        // Apply table conditions
+        for condition in table.conditions() {
+            select.add_where_condition(condition.clone());
+        }
+
         let json_result = self.execute_select(&select).await;
 
         // Check for errors in the JSON response
@@ -95,7 +112,7 @@ impl vantage_table::TableSource for Redb {
         if let serde_json::Value::Array(records) = json_result {
             let mut results = Vec::new();
             for record in records {
-                let entity: T = serde_json::from_value(record).map_err(|e| {
+                let entity: E = serde_json::from_value(record).map_err(|e| {
                     DataSetError::other(format!("Failed to deserialize record: {}", e))
                 })?;
                 results.push(entity);
@@ -106,19 +123,26 @@ impl vantage_table::TableSource for Redb {
         }
     }
 
-    async fn get_table_data_some_as<T>(
+    async fn get_table_data_some_as<E>(
         &self,
-        table_name: &str,
-    ) -> vantage_dataset::dataset::Result<Option<T>>
+        table: &Table<Self, E>,
+    ) -> vantage_dataset::dataset::Result<Option<E>>
     where
-        T: vantage_core::Entity,
+        E: vantage_core::Entity,
+        Self: Sized,
     {
         use vantage_dataset::dataset::DataSetError;
         use vantage_expressions::protocol::selectable::Selectable;
 
         // Use RedbSelect with limit 1
-        let mut select = crate::RedbSelect::<T>::new();
-        select.set_source(table_name, None);
+        let mut select = crate::RedbSelect::<E>::new();
+        select.set_source(table.table_name(), None);
+
+        // Apply table conditions
+        for condition in table.conditions() {
+            select.add_where_condition(condition.clone());
+        }
+
         let select = select.with_limit(1);
         let json_result = self.execute_select(&select).await;
 
@@ -130,7 +154,7 @@ impl vantage_table::TableSource for Redb {
         // Parse the JSON result into Option<T>
         if let serde_json::Value::Array(records) = json_result {
             if let Some(first_record) = records.first() {
-                let entity: T = serde_json::from_value(first_record.clone()).map_err(|e| {
+                let entity: E = serde_json::from_value(first_record.clone()).map_err(|e| {
                     DataSetError::other(format!("Failed to deserialize record: {}", e))
                 })?;
                 Ok(Some(entity))
@@ -142,10 +166,14 @@ impl vantage_table::TableSource for Redb {
         }
     }
 
-    async fn get_table_data_values(
+    async fn get_table_data_values<E>(
         &self,
-        _table_name: &str,
-    ) -> vantage_dataset::dataset::Result<Vec<serde_json::Value>> {
+        _table: &Table<Self, E>,
+    ) -> vantage_dataset::dataset::Result<Vec<serde_json::Value>>
+    where
+        E: vantage_core::Entity,
+        Self: Sized,
+    {
         use vantage_dataset::dataset::DataSetError;
 
         // ReDB can't retrieve data as generic JSON values because:
