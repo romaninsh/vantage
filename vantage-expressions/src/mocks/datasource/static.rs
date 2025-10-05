@@ -78,12 +78,23 @@ impl SelectSource for StaticDataSource {
         MockSelect
     }
 
-    async fn execute_select<E>(&self, _select: &Self::Select<E>) -> Value
+    async fn execute_select<E>(&self, _select: &Self::Select<E>) -> crate::util::Result<Vec<E>>
     where
         E: crate::Entity,
     {
-        // For static data source, just return the stored value
-        self.value.clone()
+        // Deserialize the stored JSON value into Vec<E>
+        if let Value::Array(arr) = &self.value {
+            let mut results = Vec::new();
+            for item in arr {
+                let entity: E = serde_json::from_value(item.clone()).map_err(|e| {
+                    crate::util::Error::new(format!("Failed to deserialize entity: {}", e))
+                })?;
+                results.push(entity);
+            }
+            Ok(results)
+        } else {
+            Ok(vec![])
+        }
     }
 }
 

@@ -16,6 +16,7 @@ pub mod prelude;
 pub mod redb;
 pub mod redb_column;
 pub mod table;
+pub mod util;
 
 pub mod expression;
 pub mod select;

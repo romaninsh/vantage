@@ -12,11 +12,11 @@ where
     E: Entity,
 {
     async fn get(&self) -> Result<Vec<E>> {
-        self.data_source().get_table_data_as(self).await
+        self.data_source().get_table_data(self).await
     }
 
     async fn get_some(&self) -> Result<Option<E>> {
-        self.data_source().get_table_data_some_as(self).await
+        self.data_source().get_table_data_some(self).await
     }
 
     /// get_id must be implemented properly for a specific table driver
@@ -30,7 +30,7 @@ where
         U: Entity,
     {
         let t = self.clone().into_entity::<U>();
-        self.data_source().get_table_data_as(&t).await
+        self.data_source().get_table_data(&t).await
     }
 
     async fn get_some_as<U>(&self) -> Result<Option<U>>
@@ -38,10 +38,10 @@ where
         U: Entity,
     {
         let t = self.clone().into_entity::<U>();
-        self.data_source().get_table_data_some_as(&t).await
+        self.data_source().get_table_data_some(&t).await
     }
 
     async fn get_values(&self) -> Result<Vec<serde_json::Value>> {
-        self.data_source().get_table_data_values(self).await
+        self.data_source().get_table_data_as_value(self).await
     }
 }

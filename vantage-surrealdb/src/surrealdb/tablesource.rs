@@ -21,7 +21,7 @@ impl vantage_table::TableSource for SurrealDB {
         Expression::new(template, parameters)
     }
 
-    async fn get_table_data_as<E>(
+    async fn get_table_data<E>(
         &self,
         table: &Table<Self, E>,
     ) -> vantage_dataset::dataset::Result<Vec<E>>
@@ -41,7 +41,7 @@ impl vantage_table::TableSource for SurrealDB {
         Ok(entities)
     }
 
-    async fn get_table_data_some_as<E>(
+    async fn get_table_data_some<E>(
         &self,
         table: &Table<Self, E>,
     ) -> vantage_dataset::dataset::Result<Option<E>>
@@ -58,7 +58,7 @@ impl vantage_table::TableSource for SurrealDB {
         Ok(Some(entity))
     }
 
-    async fn get_table_data_values<E>(
+    async fn get_table_data_as_value<E>(
         &self,
         table: &Table<Self, E>,
     ) -> vantage_dataset::dataset::Result<Vec<serde_json::Value>>
@@ -75,5 +75,36 @@ impl vantage_table::TableSource for SurrealDB {
             .collect();
 
         Ok(values)
+    }
+
+    async fn insert_table_data<E>(
+        &self,
+        table: &vantage_table::Table<Self, E>,
+        record: E,
+    ) -> vantage_dataset::dataset::Result<Option<String>>
+    where
+        E: vantage_core::Entity + serde::Serialize,
+        Self: Sized,
+    {
+        let data = serde_json::to_value(record)
+            .map_err(|e| DataSetError::other(format!("Failed to serialize record: {}", e)))?;
+
+        let table_obj = surreal_client::Table::new(table.table_name());
+        let client = self.inner.lock().await;
+        let result = client
+            .insert(&table_obj.to_string(), data)
+            .await
+            .map_err(|e| DataSetError::other(format!("Failed to insert record: {}", e)))?;
+
+        // Extract ID from result - SurrealDB typically returns the inserted record with ID
+        if let Some(obj) = result.as_object() {
+            if let Some(id_val) = obj.get("id") {
+                if let Some(id_str) = id_val.as_str() {
+                    return Ok(Some(id_str.to_string()));
+                }
+            }
+        }
+
+        Ok(None)
     }
 }

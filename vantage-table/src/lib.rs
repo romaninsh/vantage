@@ -34,6 +34,7 @@ use vantage_expressions::SelectSource;
 
 use vantage_expressions::{Expression, protocol::selectable::Selectable, util::error::Result};
 
+pub mod insertable;
 pub mod mocks;
 pub mod prelude;
 pub mod readable;
@@ -142,7 +143,7 @@ where
         // Use TableSource directly instead of QuerySource
         let entities = self
             .data_source
-            .get_table_data_as(self)
+            .get_table_data(self)
             .await
             .map_err(|e| vantage_expressions::util::error::Error::new(e.to_string()))?;
         Ok(entities)

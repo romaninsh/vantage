@@ -2,9 +2,10 @@
 //!
 //! Basic RedbSelect usage with conditions and ordering.
 
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use vantage_expressions::protocol::datasource::SelectSource;
+use vantage_redb::util::Result;
 use vantage_redb::{Redb, RedbSelect};
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -41,46 +42,46 @@ async fn main() -> Result<()> {
 
     // All users - using User::select() method
     let select = User::select();
-    let results = db.execute_select(&select).await;
+    let results = db.execute_select(&select).await?;
     println!("All users:\n{}\n", serde_json::to_string_pretty(&results)?);
 
     // Filter by age=10 - using direct RedbSelect creation
     let select_filtered = RedbSelect::<User>::new().with_condition("age", serde_json::json!(10));
-    let filtered_results = db.execute_select(&select_filtered).await;
+    let filtered_results = db.execute_select(&select_filtered).await?;
     println!(
-        "Users with age=10:\n{}\n",
+        "Filtered by age=10:\n{}\n",
         serde_json::to_string_pretty(&filtered_results)?
     );
 
     // Order by name ascending - using User::select() method
     let select_ordered = User::select().with_order("name", true);
-    let ordered_results = db.execute_select(&select_ordered).await;
+    let ordered_results = db.execute_select(&select_ordered).await?;
     println!(
-        "Users ordered by name (asc):\n{}\n",
+        "Ordered by name:\n{}\n",
         serde_json::to_string_pretty(&ordered_results)?
     );
 
     // Order by age descending - using User::select() method
     let select_age_desc = User::select().with_order("age", false);
-    let age_desc_results = db.execute_select(&select_age_desc).await;
+    let age_desc_results = db.execute_select(&select_age_desc).await?;
     println!(
-        "Users ordered by age (desc):\n{}\n",
+        "Ordered by age (descending):\n{}\n",
         serde_json::to_string_pretty(&age_desc_results)?
     );
 
     // Limit to first 2 users - using User::select() method
     let select_limited = User::select().with_limit(2);
-    let limited_results = db.execute_select(&select_limited).await;
+    let limited_results = db.execute_select(&select_limited).await?;
     println!(
-        "First 2 users (limit=2):\n{}\n",
+        "Limited to 2 results:\n{}\n",
         serde_json::to_string_pretty(&limited_results)?
     );
 
     // Limit with ordering - using User::select() method
     let select_ordered_limited = User::select().with_order("name", true).with_limit(2);
-    let ordered_limited_results = db.execute_select(&select_ordered_limited).await;
+    let ordered_limited_results = db.execute_select(&select_ordered_limited).await?;
     println!(
-        "First 2 users ordered by name:\n{}",
+        "Ordered by name, limited to 2:\n{}\n",
         serde_json::to_string_pretty(&ordered_limited_results)?
     );
 

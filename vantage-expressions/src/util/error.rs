@@ -2,7 +2,7 @@ use thiserror::Error;
 
 #[derive(Debug)]
 pub struct Error {
-    context: Option<String>,
+    pub(crate) context: Option<String>,
     error: MyError,
 }
 
@@ -43,3 +43,51 @@ impl Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// Context trait for adding error context like anyhow
+pub trait Context<T> {
+    fn context(self, msg: impl Into<String>) -> Result<T>;
+    fn with_context<F>(self, f: F) -> Result<T>
+    where
+        F: FnOnce() -> String;
+}
+
+impl<T, E> Context<T> for std::result::Result<T, E>
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    fn context(self, msg: impl Into<String>) -> Result<T> {
+        self.map_err(|err| {
+            let mut error = Error::new(format!("{}", err));
+            error.context = Some(msg.into());
+            error
+        })
+    }
+
+    fn with_context<F>(self, f: F) -> Result<T>
+    where
+        F: FnOnce() -> String,
+    {
+        self.map_err(|err| {
+            let mut error = Error::new(format!("{}", err));
+            error.context = Some(f());
+            error
+        })
+    }
+}
+
+/// Macro for creating Error instances, similar to anyhow!
+#[macro_export]
+macro_rules! error {
+    ($msg:literal $(,)?) => {
+        $crate::util::Error::new($msg)
+    };
+    ($err:expr $(,)?) => {
+        $crate::util::Error::new($err)
+    };
+    ($fmt:expr, $($arg:tt)*) => {
+        $crate::util::Error::new(format!($fmt, $($arg)*))
+    };
+}
+
+pub use error;

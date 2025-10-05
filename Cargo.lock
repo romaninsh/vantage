@@ -1906,7 +1906,6 @@ dependencies = [
 name = "vantage-redb"
 version = "0.3.0"
 dependencies = [
- "anyhow",
  "async-trait",
  "bincode",
  "indexmap",
@@ -1915,6 +1914,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.16",
  "tokio",
+ "uuid",
  "vantage-core",
  "vantage-dataset",
  "vantage-expressions",
