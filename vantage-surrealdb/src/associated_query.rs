@@ -211,7 +211,7 @@ impl<E: Entity> AssociatedQueryable<E> for SurrealAssociated<SurrealSelect<resul
     async fn get(&self) -> Result<E> {
         let raw_result = self.query.get(&self.datasource).await;
         let entity: E = serde_json::from_value(Value::Object(raw_result))
-            .context("Couldn't corvert from value")?;
+            .context("Couldn't convert from value")?;
         Ok(entity)
     }
 }
