@@ -55,7 +55,7 @@ impl<E: Entity> SurrealTableExt<E> for Table<SurrealDB, E> {
         self.data_source()
             .merge(&id, patch)
             .await
-            .map_err(|e| vantage_error!(format!("SurrealDB update failed: {}", e)))?;
+            .map_err(|e| vantage_error!("SurrealDB update failed: {}", e))?;
         Ok(())
     }
     async fn map(self, fx: fn(E) -> E) -> Result<Self> {
