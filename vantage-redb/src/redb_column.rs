@@ -5,10 +5,10 @@
 
 use crate::util::{Context, Result, vantage_error};
 use redb::{TableDefinition, WriteTransaction};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use vantage_dataset::dataset::ReadableDataSet;
 use vantage_expressions::{Expression, expr};
-use vantage_table::ColumnLike;
+use vantage_table::{ColumnFlag, ColumnLike};
 
 /// Redb-specific column that represents a secondary index table
 #[derive(Debug, Clone)]
@@ -106,6 +106,10 @@ impl ColumnLike for RedbColumn {
     fn expr(&self) -> Expression {
         // For redb, column expressions are just field references
         expr!("{}", self.name.clone())
+    }
+
+    fn flags(&self) -> HashSet<ColumnFlag> {
+        HashSet::new()
     }
 }
 
