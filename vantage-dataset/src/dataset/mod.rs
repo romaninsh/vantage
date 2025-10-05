@@ -10,8 +10,8 @@
 //! The included implementation for Datasets are:
 //!  - Table: a table is a dataset that stores data in a SQL table and implements both [`ReadableDataSet`] and [`WritableDataSet`].
 //!  - Query: a generic SELECT query that can fetch data and therefore implements [`ReadableDataSet`].
-mod error;
-pub use error::{DataSetError, Result};
+
+pub use vantage_core::{Result, VantageError};
 
 /// Type alias for ID parameters that can be either &str or String
 pub trait Id: Into<String> + Send {}

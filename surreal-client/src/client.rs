@@ -255,18 +255,9 @@ impl SurrealClient {
         engine.send_message("insert", params).await
     }
 
-    /// Insert into a specific table
-    pub async fn insert_into(&self, table: Table, data: Value) -> Result<Value> {
-        self.insert(&table.to_string(), data).await
-    }
-
-    /// Insert a single record
-    pub async fn insert_one(&self, table: Table, data: Value) -> Result<Value> {
-        self.insert(&table.to_string(), data).await
-    }
-
     /// Insert multiple records
     pub async fn insert_many(&self, table: Table, data: Vec<Value>) -> Result<Value> {
+        // TODO: add single test
         self.insert(&table.to_string(), Value::Array(data)).await
     }
 

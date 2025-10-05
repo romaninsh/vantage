@@ -3,6 +3,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use crate::Selectable;
+use vantage_core::Result;
 
 pub trait DataSource: Send + Sync {}
 
@@ -29,7 +30,10 @@ pub trait SelectSource<Ex = crate::Expression>: DataSource {
         E: crate::Entity;
 
     // Execute select query directly
-    fn execute_select<E>(&self, select: &Self::Select<E>) -> impl Future<Output = Value> + Send
+    fn execute_select<E>(
+        &self,
+        select: &Self::Select<E>,
+    ) -> impl Future<Output = Result<Vec<E>>> + Send
     where
         E: crate::Entity;
 }

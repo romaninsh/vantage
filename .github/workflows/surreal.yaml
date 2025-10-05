@@ -19,6 +19,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          key: "surreal-workspace-v03"
+          cache-workspace-crates: true
+          cache-all-crates: true
 
       - name: Start SurrealDB
         run: |

@@ -3,9 +3,10 @@ use async_trait::async_trait;
 use vantage_core::Entity;
 
 use crate::{
-    dataset::{DataSetError, Id, ReadableDataSet, Result},
+    dataset::{Id, ReadableDataSet, Result},
     im::Table,
 };
+use vantage_core::util::error::{Context, vantage_error};
 
 #[async_trait]
 impl<T> ReadableDataSet<T> for Table<T>
@@ -31,13 +32,9 @@ where
                     map.insert("id".to_string(), serde_json::Value::String(id.clone()));
                 }
 
-                serde_json::from_value(value_with_id)
-                    .map_err(|e| DataSetError::other(format!("Deserialization error: {}", e)))
+                serde_json::from_value(value_with_id).context("Failed to deserialize record")
             }
-            None => Err(DataSetError::other(format!(
-                "Record with id '{}' not found",
-                id
-            ))),
+            None => Err(vantage_error!("Record with id '{}' not found", id)),
         }
     }
     async fn get_as<U>(&self) -> Result<Vec<U>>
@@ -54,8 +51,8 @@ where
                 map.insert("id".to_string(), serde_json::Value::String(id.clone()));
             }
 
-            let record: U = serde_json::from_value(value_with_id)
-                .map_err(|e| DataSetError::other(format!("Deserialization error: {}", e)))?;
+            let record: U =
+                serde_json::from_value(value_with_id).context("Failed to deserialize record")?;
             records.push(record);
         }
 
@@ -75,8 +72,8 @@ where
                 map.insert("id".to_string(), serde_json::Value::String(id.clone()));
             }
 
-            let record: U = serde_json::from_value(value_with_id)
-                .map_err(|e| DataSetError::other(format!("Deserialization error: {}", e)))?;
+            let record: U =
+                serde_json::from_value(value_with_id).context("Failed to deserialize record")?;
             Ok(Some(record))
         } else {
             Ok(None)

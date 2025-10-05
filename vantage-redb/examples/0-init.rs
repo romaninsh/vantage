@@ -3,10 +3,11 @@
 //! This example shows how to work directly with redb to create initial database
 //! and populate it with sample data. This runs before the vantage-redb examples.
 
-use anyhow::Result;
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct User {

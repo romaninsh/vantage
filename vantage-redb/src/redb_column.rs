@@ -3,9 +3,10 @@
 //! A redb-specific column implementation for key-value operations.
 //! Since redb is a KV store, columns represent secondary index tables.
 
+use crate::util::{Context, Result, vantage_error};
 use redb::{TableDefinition, WriteTransaction};
 use std::collections::HashMap;
-use vantage_dataset::dataset::{DataSetError, ReadableDataSet, Result};
+use vantage_dataset::dataset::ReadableDataSet;
 use vantage_expressions::{Expression, expr};
 use vantage_table::ColumnLike;
 
@@ -51,7 +52,7 @@ impl RedbColumn {
         for record in values {
             let id = record["id"]
                 .as_str()
-                .ok_or_else(|| DataSetError::other("Record missing id field"))?
+                .ok_or_else(|| vantage_error!("Record missing id field"))?
                 .to_string();
 
             let value = match &record[&self.name] {
@@ -60,10 +61,9 @@ impl RedbColumn {
                 serde_json::Value::Bool(b) => b.to_string(),
                 serde_json::Value::Null => "null".to_string(),
                 _ => {
-                    return Err(DataSetError::other(format!(
-                        "Unsupported value type for field {}",
-                        self.name
-                    )));
+                    return Err(
+                        vantage_error!("Unsupported value type for field {}", self.name).into(),
+                    );
                 }
             };
 
@@ -75,20 +75,19 @@ impl RedbColumn {
         let table_def: TableDefinition<&str, &[u8]> = TableDefinition::new(&table_name);
         let mut index_table = write_txn
             .open_table(table_def)
-            .map_err(|e| DataSetError::other(format!("Failed to open index table: {}", e)))?;
+            .context("Failed to open index table")?;
 
         // Clear existing index entries
         index_table
             .retain(|_, _| false)
-            .map_err(|e| DataSetError::other(format!("Failed to clear index table: {}", e)))?;
+            .context("Failed to clear index table")?;
 
         for (value, ids) in index {
-            let serialized_ids = bincode::serialize(&ids)
-                .map_err(|e| DataSetError::other(format!("Failed to serialize IDs: {}", e)))?;
+            let serialized_ids = bincode::serialize(&ids).context("Failed to serialize IDs")?;
 
             index_table
                 .insert(value.as_str(), serialized_ids.as_slice())
-                .map_err(|e| DataSetError::other(format!("Failed to insert index entry: {}", e)))?;
+                .context("Failed to insert index entry")?;
         }
 
         Ok(())

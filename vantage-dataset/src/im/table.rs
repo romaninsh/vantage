@@ -2,9 +2,10 @@ use serde::{Serialize, de::DeserializeOwned};
 use uuid::Uuid;
 
 use crate::{
-    dataset::{DataSetError, ReadableDataSet, Result},
+    dataset::{ReadableDataSet, Result},
     im::ImDataSource,
 };
+use vantage_core::util::error::Context;
 
 /// Table represents a typed table in the ImDataSource
 pub struct Table<T> {
@@ -34,8 +35,8 @@ where
         table.clear();
 
         for i in ds.get().await?.into_iter() {
-            let mut value = serde_json::to_value(i)
-                .map_err(|e| DataSetError::Other(format!("Serialization error: {}", e)))?;
+            let mut value =
+                serde_json::to_value(i).context("Failed to serialize record during import")?;
 
             // Extract ID from record if present, otherwise generate random ID
             let id = if let Some(record_id) = value.get("id") {

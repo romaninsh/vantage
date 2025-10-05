@@ -1,6 +1,7 @@
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use vantage_dataset::prelude::InsertableDataSet;
+use vantage_redb::util::Result;
 
 use vantage_redb::prelude::*;
 
@@ -31,6 +32,23 @@ impl User {
 #[tokio::main]
 async fn main() -> Result<()> {
     println!("=== Vantage ReDB Introduction Example ===");
+
+    let users_table = User::table();
+    let condition = users_table["age"].eq(10);
+    let users = users_table.with_condition(condition).get().await?;
+    for user in users {
+        println!("  - {} ({}, age {})", user.name, user.email, user.age);
+    }
+
+    User::table()
+        .insert(User {
+            name: "David Wilson".to_string(),
+            email: "david@example.com".to_string(),
+            is_active: true,
+            age: 10,
+        })
+        .await
+        .map_err(|e| vantage_redb::util::Error::new(e.to_string()))?;
 
     let users_table = User::table();
     let condition = users_table["age"].eq(10);

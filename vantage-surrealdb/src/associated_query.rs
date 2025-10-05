@@ -1,8 +1,8 @@
 use serde_json::Value;
 use std::marker::PhantomData;
 use std::ops::Deref;
+use vantage_core::{Context, Result, vantage_error};
 use vantage_expressions::protocol::result::{self, QueryResult};
-use vantage_expressions::util::error::{Error, Result};
 use vantage_expressions::{AssociatedQueryable, Expression, Selectable};
 use vantage_table::Entity;
 
@@ -189,7 +189,7 @@ impl<E: Entity> AssociatedQueryable<Vec<E>>
             .into_iter()
             .map(|item| serde_json::from_value(Value::Object(item)))
             .collect::<std::result::Result<Vec<E>, _>>()
-            .map_err(|e| Error::new(e.to_string()))?;
+            .context("Couldn't convert from value")?;
         Ok(entities)
     }
 }
@@ -211,7 +211,7 @@ impl<E: Entity> AssociatedQueryable<E> for SurrealAssociated<SurrealSelect<resul
     async fn get(&self) -> Result<E> {
         let raw_result = self.query.get(&self.datasource).await;
         let entity: E = serde_json::from_value(Value::Object(raw_result))
-            .map_err(|e| Error::new(e.to_string()))?;
+            .context("Couldn't convert from value")?;
         Ok(entity)
     }
 }
@@ -293,9 +293,7 @@ impl AssociatedQueryable<i64> for SurrealAssociated<SurrealReturn, i64> {
         {
             return Ok(count);
         }
-        Err(Error::new(
-            "Failed to parse count result as i64".to_string(),
-        ))
+        Err(vantage_error!("Failed to parse count result as i64"))
     }
 }
 

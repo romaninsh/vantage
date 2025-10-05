@@ -20,7 +20,7 @@ pub trait TableSource: DataSource {
     ) -> Self::Expr;
 
     /// Get all data from a table as the table's entity type
-    async fn get_table_data_as<E>(
+    async fn get_table_data<E>(
         &self,
         table: &crate::Table<Self, E>,
     ) -> vantage_dataset::dataset::Result<Vec<E>>
@@ -29,7 +29,7 @@ pub trait TableSource: DataSource {
         Self: Sized;
 
     /// Get some data from a table as the table's entity type (usually first record)
-    async fn get_table_data_some_as<E>(
+    async fn get_table_data_some<E>(
         &self,
         table: &crate::Table<Self, E>,
     ) -> vantage_dataset::dataset::Result<Option<E>>
@@ -38,12 +38,22 @@ pub trait TableSource: DataSource {
         Self: Sized;
 
     /// Get raw JSON values from a table without deserializing to a specific type
-    async fn get_table_data_values<E>(
+    async fn get_table_data_as_value<E>(
         &self,
         table: &crate::Table<Self, E>,
     ) -> vantage_dataset::dataset::Result<Vec<serde_json::Value>>
     where
         E: Entity,
+        Self: Sized;
+
+    /// Insert a record into the table and return generated ID
+    async fn insert_table_data<E>(
+        &self,
+        table: &crate::Table<Self, E>,
+        record: E,
+    ) -> vantage_dataset::dataset::Result<Option<String>>
+    where
+        E: Entity + serde::Serialize,
         Self: Sized;
 }
 

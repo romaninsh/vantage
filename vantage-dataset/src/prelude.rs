@@ -5,7 +5,7 @@
 
 // Dataset traits for working with data
 pub use crate::dataset::{
-    DataSetError, Id, Importable, InsertableDataSet, ReadableDataSet, Result, WritableDataSet,
+    Id, Importable, InsertableDataSet, ReadableDataSet, Result, VantageError, WritableDataSet,
 };
 
 // DataSource traits for dataset discovery and creation
