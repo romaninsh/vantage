@@ -34,6 +34,12 @@ impl RedbColumn {
         self
     }
 
+    /// Set the table name for this column
+    pub fn with_table(mut self, table: impl Into<String>) -> Self {
+        self.table = table.into();
+        self
+    }
+
     /// Get the index table name for this column
     pub fn index_table_name(&self) -> String {
         format!("{}_idx_{}", self.table, self.name)
@@ -110,6 +116,20 @@ impl ColumnLike for RedbColumn {
 
     fn flags(&self) -> HashSet<ColumnFlag> {
         HashSet::new()
+    }
+}
+
+impl From<&str> for RedbColumn {
+    fn from(name: &str) -> Self {
+        // Use empty table name - will be set properly when added to a table
+        Self::new(name, String::new())
+    }
+}
+
+impl From<String> for RedbColumn {
+    fn from(name: String) -> Self {
+        // Use empty table name - will be set properly when added to a table
+        Self::new(name, String::new())
     }
 }
 
