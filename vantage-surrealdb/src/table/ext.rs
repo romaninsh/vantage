@@ -41,7 +41,7 @@ impl<E: Entity> SurrealTableExt<E> for Table<SurrealDB, E> {
                 .get("id")
                 .ok_or_else(|| vantage_error!("Missing 'id' field in result".to_string()))?
                 .as_str()
-                .ok_or_else(|| vantage_error!("ID field is not a string".to_string()))?
+                .ok_or_else(|| vantage_error!("ID field is not a string"))?
                 .to_string();
             let entity = from_value(v.into())
                 .map_err(|e| vantage_error!(format!("Failed to deserialize entity: {}", e)))?;
