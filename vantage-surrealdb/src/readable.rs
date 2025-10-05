@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use serde::de::DeserializeOwned;
-use vantage_dataset::dataset::{DataSetError, Id, ReadableDataSet, Result};
+use vantage_core::util::error::{Context, vantage_error};
+use vantage_dataset::dataset::{Id, ReadableDataSet, Result, VantageError};
 use vantage_expressions::expr;
 use vantage_table::{Entity, Table};
 
@@ -17,7 +18,7 @@ where
 
         match query_result.get().await {
             Ok(entities) => Ok(entities),
-            Err(_) => Err(DataSetError::other("Failed to execute SurrealDB query")),
+            Err(_) => Err(vantage_error!("Failed to execute SurrealDB query")),
         }
     }
 
@@ -36,7 +37,7 @@ where
             .with_id(id)
             .get_some()
             .await?
-            .ok_or_else(|| DataSetError::other("Record not found"))
+            .ok_or_else(|| vantage_error!("Record not found"))
     }
 
     async fn get_as<T>(&self) -> Result<Vec<T>>
@@ -68,15 +69,11 @@ where
                 .into_iter()
                 .map(|item| serde_json::from_value::<T>(item))
                 .collect::<std::result::Result<Vec<T>, _>>()
-                .map_err(|e| {
-                    DataSetError::other(format!("Failed to deserialize entities: {}", e))
-                })?;
+                .context("Failed to deserialize entities")?;
             return Ok(entities);
         }
 
-        Err(DataSetError::other(
-            "Expected array of objects from SurrealDB",
-        ))
+        Err(vantage_error!("Expected array of objects from SurrealDB"))
     }
 
     async fn get_some_as<T>(&self) -> Result<Option<T>>
@@ -108,9 +105,8 @@ where
         // Parse the first result
         if let serde_json::Value::Array(items) = raw_result {
             if let Some(first_item) = items.first() {
-                let entity = serde_json::from_value::<T>(first_item.clone()).map_err(|e| {
-                    DataSetError::other(format!("Failed to deserialize entity: {}", e))
-                })?;
+                let entity = serde_json::from_value::<T>(first_item.clone())
+                    .context("Failed to deserialize entity")?;
                 return Ok(Some(entity));
             }
         }
@@ -142,9 +138,7 @@ where
         if let serde_json::Value::Array(items) = raw_result {
             Ok(items)
         } else {
-            Err(DataSetError::other(
-                "Expected array of objects from SurrealDB",
-            ))
+            Err(vantage_error!("Expected array of objects from SurrealDB"))
         }
     }
 }

@@ -3,11 +3,9 @@
 //! This module provides the core Extensions that Table<SurrealDB> would have.
 //! You only need to include prelude::* to use this
 
+use vantage_core::{Result, vantage_error};
 use vantage_dataset::dataset::Id;
-use vantage_expressions::{
-    result,
-    util::error::{Error, Result},
-};
+use vantage_expressions::result;
 use vantage_table::{ColumnLike, Entity, Table};
 
 use crate::{
@@ -81,10 +79,7 @@ impl<E: Entity> SurrealTableCore<E> for Table<SurrealDB, E> {
     ) -> Result<SurrealAssociated<SurrealSelect<result::List>, Vec<serde_json::Value>>> {
         let column = column.into();
         let Some(col) = self.columns().get(&column) else {
-            return Err(Error::new(format!(
-                "Column '{}' not found in table",
-                &column
-            )));
+            return Err(vantage_error!("Column '{}' not found in table", &column));
         };
 
         // Add only the requested column
@@ -99,10 +94,7 @@ impl<E: Entity> SurrealTableCore<E> for Table<SurrealDB, E> {
     ) -> Result<SurrealAssociated<SurrealSelect<result::Single>, serde_json::Value>> {
         let column = column.into();
         let Some(col) = self.columns().get(&column) else {
-            return Err(Error::new(format!(
-                "Column '{}' not found in table",
-                &column
-            )));
+            return Err(vantage_error!("Column '{}' not found in table", &column));
         };
 
         // Add only the requested column

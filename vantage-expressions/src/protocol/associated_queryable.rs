@@ -3,7 +3,7 @@
 /// This trait provides execution methods for queries that have been
 /// associated with their datasource, allowing direct execution without
 /// passing the datasource separately.
-use crate::util::error::Result;
+use vantage_core::Result;
 
 #[async_trait::async_trait]
 pub trait AssociatedQueryable<R> {

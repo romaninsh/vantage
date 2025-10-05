@@ -1,3 +1,2 @@
-pub mod error;
-
-pub use error::{Error, Result};
+// vantage-expressions should not re-export vantage_core types
+// Each crate should import them directly as needed

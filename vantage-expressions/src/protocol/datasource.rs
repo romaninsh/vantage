@@ -3,7 +3,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use crate::Selectable;
-use crate::util::Result;
+use vantage_core::Result;
 
 pub trait DataSource: Send + Sync {}
 

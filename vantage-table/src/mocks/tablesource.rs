@@ -3,7 +3,8 @@ use crate::{TableLike, TableSource};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use vantage_dataset::{dataset::Result, prelude::DataSetError};
+use vantage_core::util::error::{Context, vantage_error};
+use vantage_dataset::{dataset::Result, prelude::VantageError};
 use vantage_expressions::protocol::datasource::DataSource;
 
 pub struct MockTableSource {
@@ -63,7 +64,7 @@ impl TableSource for MockTableSource {
             match serde_json::from_value::<E>(value) {
                 Ok(item) => results.push(item),
                 Err(e) => {
-                    return Err(vantage_dataset::dataset::DataSetError::other(e.to_string()));
+                    return Err(vantage_error!("Failed to deserialize entity: {}", e));
                 }
             }
         }
@@ -81,7 +82,7 @@ impl TableSource for MockTableSource {
         if let Some(first_value) = values.into_iter().next() {
             match serde_json::from_value::<E>(first_value) {
                 Ok(item) => Ok(Some(item)),
-                Err(e) => Err(vantage_dataset::dataset::DataSetError::other(e.to_string())),
+                Err(e) => Err(vantage_error!("Failed to deserialize entity: {}", e)),
             }
         } else {
             Ok(None)
@@ -114,9 +115,9 @@ impl TableSource for MockTableSource {
         let mut data = self.data.lock().unwrap();
         let vec = data
             .get_mut(&table.table_name)
-            .ok_or(DataSetError::NoData)?;
+            .ok_or(VantageError::no_data())?;
         let id = vec.len();
-        let value = serde_json::to_value(record).map_err(|e| DataSetError::other(e.to_string()))?;
+        let value = serde_json::to_value(record).context("Failed to serialize record")?;
         vec.push(value);
         Ok(Some(id.to_string()))
     }

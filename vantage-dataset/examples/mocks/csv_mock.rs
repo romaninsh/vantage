@@ -3,7 +3,8 @@
 use csv::ReaderBuilder;
 use std::collections::HashMap;
 use vantage_core::Entity;
-use vantage_dataset::dataset::{DataSetError, Id, ReadableDataSet, Result};
+use vantage_core::util::error::{Context, vantage_error};
+use vantage_dataset::dataset::{Id, ReadableDataSet, Result, VantageError};
 
 /// MockCsv contains hardcoded CSV data as strings
 #[derive(Debug, Clone)]
@@ -68,7 +69,7 @@ where
     }
 
     async fn get_id(&self, _id: impl Id) -> Result<T> {
-        return Err(DataSetError::no_capability("get_id", "CsvFile"));
+        return Err(VantageError::no_capability("get_id", "CsvFile"));
     }
 
     async fn get_some(&self) -> Result<Option<T>> {
@@ -82,7 +83,7 @@ where
         let content = self
             .csv_ds
             .get_file_content(&self.filename)
-            .ok_or_else(|| DataSetError::other(format!("File '{}' not found", self.filename)))?;
+            .ok_or_else(|| vantage_error!("File '{}' not found", self.filename))?;
 
         let mut reader = ReaderBuilder::new()
             .has_headers(true)
@@ -90,8 +91,7 @@ where
 
         let mut records = Vec::new();
         for result in reader.deserialize() {
-            let record: U = result
-                .map_err(|e| DataSetError::other(format!("CSV deserialization error: {}", e)))?;
+            let record: U = result.context("CSV deserialization error")?;
             records.push(record);
         }
 
@@ -105,7 +105,7 @@ where
         let content = self
             .csv_ds
             .get_file_content(&self.filename)
-            .ok_or_else(|| DataSetError::other(format!("File '{}' not found", self.filename)))?;
+            .ok_or_else(|| vantage_error!("File '{}' not found", self.filename))?;
 
         let mut reader = ReaderBuilder::new()
             .has_headers(true)
@@ -113,8 +113,7 @@ where
 
         let mut records = reader.deserialize();
         if let Some(result) = records.next() {
-            let record: U = result
-                .map_err(|e| DataSetError::other(format!("CSV deserialization error: {}", e)))?;
+            let record: U = result.context("CSV deserialization error")?;
             Ok(Some(record))
         } else {
             Ok(None)
@@ -125,7 +124,7 @@ where
         let content = self
             .csv_ds
             .get_file_content(&self.filename)
-            .ok_or_else(|| DataSetError::other(format!("File '{}' not found", self.filename)))?;
+            .ok_or_else(|| vantage_error!("File '{}' not found", self.filename))?;
 
         let mut reader = ReaderBuilder::new()
             .has_headers(true)
@@ -133,8 +132,7 @@ where
 
         let mut records = Vec::new();
         for (index, result) in reader.deserialize::<serde_json::Value>().enumerate() {
-            let mut record = result
-                .map_err(|e| DataSetError::other(format!("CSV deserialization error: {}", e)))?;
+            let mut record = result.context("CSV deserialization error")?;
 
             // Add id field for indexing purposes
             if let serde_json::Value::Object(ref mut map) = record {

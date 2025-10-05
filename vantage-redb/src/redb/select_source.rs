@@ -1,5 +1,6 @@
 //! SelectSource implementation for ReDB
 
+use vantage_core::Context;
 use vantage_expressions::protocol::datasource::SelectSource;
 
 use super::core::Redb;
@@ -18,15 +19,12 @@ impl SelectSource<crate::expression::RedbExpression> for Redb {
         crate::RedbSelect::new()
     }
 
-    async fn execute_select<E>(
-        &self,
-        select: &Self::Select<E>,
-    ) -> vantage_expressions::util::Result<Vec<E>>
+    async fn execute_select<E>(&self, select: &Self::Select<E>) -> vantage_core::Result<Vec<E>>
     where
         E: vantage_core::Entity,
     {
         self.redb_execute_select(select)
             .await
-            .map_err(|e| vantage_expressions::util::Error::new(format!("{}", e)))
+            .context("Failed to execute ReDB select")
     }
 }

@@ -167,7 +167,7 @@ impl vantage_table::TableSource for Redb {
         E: vantage_core::Entity,
         Self: Sized,
     {
-        use vantage_dataset::dataset::DataSetError;
+        use vantage_core::util::error::vantage_error;
         use vantage_expressions::protocol::selectable::Selectable;
 
         // Use RedbSelect and execute_select approach
@@ -181,9 +181,8 @@ impl vantage_table::TableSource for Redb {
 
         let records_result = self.redb_execute_select(&select).await;
 
-        // Handle the Result<Vec<E>>
-        let records =
-            records_result.map_err(|e| DataSetError::other(format!("ReDB error: {}", e)))?;
+        // Handle the Result<Vec<E>> - convert redb error to VantageError at boundary
+        let records = records_result.map_err(|e| vantage_error!("ReDB error: {}", e))?;
         Ok(records)
     }
 
@@ -195,7 +194,7 @@ impl vantage_table::TableSource for Redb {
         E: vantage_core::Entity,
         Self: Sized,
     {
-        use vantage_dataset::dataset::DataSetError;
+        use vantage_core::util::error::vantage_error;
         use vantage_expressions::protocol::selectable::Selectable;
 
         // Use RedbSelect with limit 1
@@ -207,12 +206,13 @@ impl vantage_table::TableSource for Redb {
             select.add_where_condition(condition.clone());
         }
 
-        let select = select.with_limit(1);
+        // Limit to 1 record for efficiency
+        select.set_limit(Some(1), None);
+
         let records_result = self.redb_execute_select(&select).await;
 
-        // Handle the Result<Vec<E>>
-        let records =
-            records_result.map_err(|e| DataSetError::other(format!("ReDB error: {}", e)))?;
+        // Handle the Result<Vec<E>> - convert redb error to VantageError at boundary
+        let records = records_result.map_err(|e| vantage_error!("ReDB error: {}", e))?;
         Ok(records.into_iter().next())
     }
 
@@ -224,13 +224,13 @@ impl vantage_table::TableSource for Redb {
         E: vantage_core::Entity,
         Self: Sized,
     {
-        use vantage_dataset::dataset::DataSetError;
+        use vantage_core::util::error::VantageError;
 
         // ReDB can't retrieve data as generic JSON values because:
         // 1. Data is stored as binary (bincode)
         // 2. We need the concrete type T to deserialize
         // 3. We can't convert arbitrary binary data to JSON
-        Err(DataSetError::no_capability(
+        Err(VantageError::no_capability(
             "get_table_data_values",
             "ReDB requires specific entity types for data retrieval - use Table<Redb, YourEntity>.get() instead",
         ))
@@ -245,47 +245,42 @@ impl vantage_table::TableSource for Redb {
         Self: Sized,
     {
         use uuid::Uuid;
-        use vantage_dataset::dataset::DataSetError;
+        use vantage_core::util::error::{Context, vantage_error};
 
         let table_name = table.table_name();
         let record_id = Uuid::new_v4().to_string();
 
         // Serialize the record
-        let serialized = bincode::serialize(&record)
-            .map_err(|e| DataSetError::other(format!("Serialization failed: {}", e)))?;
+        let serialized = bincode::serialize(&record).context("Serialization failed")?;
 
         // Track failed column indexes
         let mut failed_columns = Vec::new();
 
         // Begin write transaction
-        let write_txn = self.begin_write().map_err(|e| {
-            DataSetError::other(format!("Failed to begin write transaction: {}", e))
-        })?;
+        let write_txn = self
+            .begin_write()
+            .map_err(|e| vantage_error!("Failed to begin write transaction: {}", e))?;
 
         {
             // Insert into main table
             let main_table_def: TableDefinition<&str, &[u8]> = TableDefinition::new(table_name);
             let mut main_table = write_txn
                 .open_table(main_table_def)
-                .map_err(|e| DataSetError::other(format!("Failed to open main table: {}", e)))?;
+                .map_err(|e| vantage_error!("Failed to open main table: {}", e))?;
 
             main_table
                 .insert(record_id.as_str(), serialized.as_slice())
-                .map_err(|e| {
-                    DataSetError::other(format!("Failed to insert into main table: {}", e))
-                })?;
+                .map_err(|e| vantage_error!("Failed to insert into main table: {}", e))?;
 
             // Update index tables for each column
-            let record_json = serde_json::to_value(&record).map_err(|e| {
-                DataSetError::other(format!("Failed to serialize record to JSON: {}", e))
-            })?;
+            let record_json =
+                serde_json::to_value(&record).context("Failed to serialize record to JSON")?;
 
             for (_column_name, column) in table.columns() {
                 let column_name = column.name();
                 if let Some(field_value) = record_json.get(column_name) {
-                    let json_key = serde_json::to_string(field_value).map_err(|e| {
-                        DataSetError::other(format!("JSON key serialization failed: {}", e))
-                    })?;
+                    let json_key = serde_json::to_string(field_value)
+                        .context("JSON key serialization failed")?;
 
                     let index_table_name = format!("{}_by_{}", table_name, column_name);
                     let index_table_def: TableDefinition<&str, &str> =
@@ -294,8 +289,9 @@ impl vantage_table::TableSource for Redb {
                     // Try to open and update index table
                     match write_txn.open_table(index_table_def) {
                         Ok(mut index_table) => {
-                            if let Err(_) =
-                                index_table.insert(json_key.as_str(), record_id.as_str())
+                            if index_table
+                                .insert(json_key.as_str(), record_id.as_str())
+                                .is_err()
                             {
                                 // Record this column as failed
                                 failed_columns.push(column_name.to_string());
@@ -313,17 +309,14 @@ impl vantage_table::TableSource for Redb {
         // Commit transaction first
         write_txn
             .commit()
-            .map_err(|e| DataSetError::other(format!("Failed to commit transaction: {}", e)))?;
+            .map_err(|e| vantage_error!("Failed to commit transaction: {}", e))?;
 
         // Rebuild any failed column indexes
         for column_name in failed_columns {
             self.redb_rebuild_index(table, &column_name)
                 .await
                 .map_err(|e| {
-                    DataSetError::other(format!(
-                        "Failed to rebuild index for column {}: {}",
-                        column_name, e
-                    ))
+                    vantage_error!("Failed to rebuild index for column {}: {}", column_name, e)
                 })?;
         }
 

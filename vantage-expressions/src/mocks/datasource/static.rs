@@ -33,6 +33,8 @@ use crate::protocol::datasource::DataSource;
 use serde_json::Value;
 use std::future::Future;
 use std::pin::Pin;
+use vantage_core::Result;
+use vantage_core::util::error::Context;
 
 /// Mock DataSource that always returns the same static value
 #[derive(Debug, Clone)]
@@ -78,7 +80,7 @@ impl SelectSource for StaticDataSource {
         MockSelect
     }
 
-    async fn execute_select<E>(&self, _select: &Self::Select<E>) -> crate::util::Result<Vec<E>>
+    async fn execute_select<E>(&self, _select: &Self::Select<E>) -> Result<Vec<E>>
     where
         E: crate::Entity,
     {
@@ -86,9 +88,8 @@ impl SelectSource for StaticDataSource {
         if let Value::Array(arr) = &self.value {
             let mut results = Vec::new();
             for item in arr {
-                let entity: E = serde_json::from_value(item.clone()).map_err(|e| {
-                    crate::util::Error::new(format!("Failed to deserialize entity: {}", e))
-                })?;
+                let entity: E =
+                    serde_json::from_value(item.clone()).context("Failed to deserialize entity")?;
                 results.push(entity);
             }
             Ok(results)

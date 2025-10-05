@@ -1,6 +1,7 @@
-use crate::dataset::{DataSetError, Id, Result, WritableDataSet};
+use crate::dataset::{Id, Result, WritableDataSet};
 use async_trait::async_trait;
 use serde::{Serialize, de::DeserializeOwned};
+use vantage_core::util::error::{Context, vantage_error};
 
 use super::Table;
 
@@ -15,14 +16,10 @@ where
 
         // Check if ID already exists
         if table.contains_key(&id) {
-            return Err(DataSetError::other(format!(
-                "Record with id '{}' already exists",
-                id
-            )));
+            return Err(vantage_error!("Record with id '{}' already exists", id));
         }
 
-        let value = serde_json::to_value(record)
-            .map_err(|e| DataSetError::other(format!("Serialization error: {}", e)))?;
+        let value = serde_json::to_value(record).context("Failed to serialize record")?;
 
         table.insert(id, value);
         self.data_source.update_table(&self.table_name, table);
@@ -33,8 +30,7 @@ where
         let id = id.into();
         let mut table = self.data_source.get_or_create_table(&self.table_name);
 
-        let value = serde_json::to_value(record)
-            .map_err(|e| DataSetError::other(format!("Serialization error: {}", e)))?;
+        let value = serde_json::to_value(record).context("Failed to serialize record")?;
 
         table.insert(id, value);
         self.data_source.update_table(&self.table_name, table);
@@ -48,7 +44,7 @@ where
         // Check if record exists
         let existing_value = table
             .get(&id)
-            .ok_or_else(|| DataSetError::other(format!("Record with id '{}' not found", id)))?
+            .ok_or_else(|| vantage_error!("Record with id '{}' not found", id))?
             .clone();
 
         // Merge the partial update with existing record
@@ -60,7 +56,7 @@ where
                 existing_obj.insert(key, value);
             }
         } else {
-            return Err(DataSetError::other("Cannot patch non-object records"));
+            return Err(vantage_error!("Cannot patch non-object records"));
         }
 
         table.insert(id, merged);
@@ -73,10 +69,7 @@ where
         let mut table = self.data_source.get_or_create_table(&self.table_name);
 
         if table.shift_remove(&id).is_none() {
-            return Err(DataSetError::other(format!(
-                "Record with id '{}' not found",
-                id
-            )));
+            return Err(vantage_error!("Record with id '{}' not found", id));
         }
 
         self.data_source.update_table(&self.table_name, table);
@@ -92,8 +85,8 @@ where
         for (_, value) in table.iter_mut() {
             if let Ok(mut record) = serde_json::from_value::<T>(value.clone()) {
                 callback(&mut record);
-                *value = serde_json::to_value(record)
-                    .map_err(|e| DataSetError::other(format!("Serialization error: {}", e)))?;
+                *value =
+                    serde_json::to_value(record).context("Failed to serialize updated record")?;
             }
         }
 

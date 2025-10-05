@@ -32,7 +32,11 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use vantage_expressions::SelectSource;
 
-use vantage_expressions::{Expression, protocol::selectable::Selectable, util::error::Result};
+use vantage_core::{
+    Result,
+    util::error::{Context, vantage_error},
+};
+use vantage_expressions::{Expression, protocol::selectable::Selectable};
 
 pub mod insertable;
 pub mod mocks;
@@ -145,7 +149,7 @@ where
             .data_source
             .get_table_data(self)
             .await
-            .map_err(|e| vantage_expressions::util::error::Error::new(e.to_string()))?;
+            .context("Failed to get table data")?;
         Ok(entities)
     }
 
@@ -162,9 +166,7 @@ where
         if let serde_json::Value::Array(items) = raw_result {
             Ok(items)
         } else {
-            Err(vantage_expressions::util::error::Error::new(
-                "Expected array of objects from database",
-            ))
+            Err(vantage_error!("Expected array of objects from database"))
         }
     }
 

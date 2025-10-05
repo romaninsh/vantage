@@ -1,8 +1,6 @@
 use serde_json::{Value, from_value};
-use vantage_expressions::{
-    protocol::selectable::Selectable,
-    util::error::{Error, Result},
-};
+use vantage_core::{Result, vantage_error};
+use vantage_expressions::protocol::selectable::Selectable;
 use vantage_table::{Entity, Table};
 
 use crate::{SurrealDB, associated_query::SurrealAssociated, surreal_return::SurrealReturn};
@@ -41,12 +39,12 @@ impl<E: Entity> SurrealTableExt<E> for Table<SurrealDB, E> {
         for v in data {
             let id = v
                 .get("id")
-                .ok_or_else(|| Error::new("Missing 'id' field in result".to_string()))?
+                .ok_or_else(|| vantage_error!("Missing 'id' field in result".to_string()))?
                 .as_str()
-                .ok_or_else(|| Error::new("ID field is not a string".to_string()))?
+                .ok_or_else(|| vantage_error!("ID field is not a string".to_string()))?
                 .to_string();
             let entity = from_value(v.into())
-                .map_err(|e| Error::new(format!("Failed to deserialize entity: {}", e)))?;
+                .map_err(|e| vantage_error!(format!("Failed to deserialize entity: {}", e)))?;
             results.push((id, entity));
         }
 
@@ -57,7 +55,7 @@ impl<E: Entity> SurrealTableExt<E> for Table<SurrealDB, E> {
         self.data_source()
             .merge(&id, patch)
             .await
-            .map_err(|e| Error::new(format!("SurrealDB update failed: {}", e)))?;
+            .map_err(|e| vantage_error!(format!("SurrealDB update failed: {}", e)))?;
         Ok(())
     }
     async fn map(self, fx: fn(E) -> E) -> Result<Self> {
@@ -65,10 +63,11 @@ impl<E: Entity> SurrealTableExt<E> for Table<SurrealDB, E> {
             let new_entity = fx(entity.clone());
 
             // Serialize both entities to Value for comparison
-            let original_value = serde_json::to_value(&entity)
-                .map_err(|e| Error::new(format!("Failed to serialize original entity: {}", e)))?;
+            let original_value = serde_json::to_value(&entity).map_err(|e| {
+                vantage_error!(format!("Failed to serialize original entity: {}", e))
+            })?;
             let new_value = serde_json::to_value(&new_entity)
-                .map_err(|e| Error::new(format!("Failed to serialize new entity: {}", e)))?;
+                .map_err(|e| vantage_error!(format!("Failed to serialize new entity: {}", e)))?;
 
             // Find differences between original and new entity
             let mut patch = serde_json::Map::new();

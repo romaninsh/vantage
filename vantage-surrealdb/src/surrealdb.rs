@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
+use vantage_core::util::error::Context;
 use vantage_expressions::protocol::datasource::DataSource;
 use vantage_expressions::{Expression, ExpressionFlattener, Flatten, QuerySource, SelectSource};
 
@@ -111,13 +112,31 @@ impl SelectSource for SurrealDB {
         SurrealSelect::new()
     }
 
-    async fn execute_select<E>(&self, select: &Self::Select<E>) -> serde_json::Value
+    async fn execute_select<E>(&self, select: &Self::Select<E>) -> vantage_core::Result<Vec<E>>
     where
         E: vantage_core::Entity,
     {
         // For SurrealDB, convert select to expression and execute
         let expr = select.clone().into();
-        self.execute(&expr).await
+        let raw_result = self.execute(&expr).await;
+
+        // Parse JSON response into Vec<E>
+        match raw_result {
+            serde_json::Value::Array(items) => {
+                let entities = items
+                    .into_iter()
+                    .map(|item| serde_json::from_value::<E>(item))
+                    .collect::<std::result::Result<Vec<E>, _>>()
+                    .context("Failed to deserialize entities")?;
+                Ok(entities)
+            }
+            other => {
+                // Single object, convert to Vec
+                let entity =
+                    serde_json::from_value::<E>(other).context("Failed to deserialize entity")?;
+                Ok(vec![entity])
+            }
+        }
     }
 }
 

@@ -2,9 +2,10 @@ use async_trait::async_trait;
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
-    dataset::{DataSetError, Importable, InsertableDataSet, ReadableDataSet, Result},
+    dataset::{Importable, InsertableDataSet, ReadableDataSet, Result},
     im::Table,
 };
+use vantage_core::util::error::Context;
 
 #[async_trait]
 impl<T> InsertableDataSet<T> for Table<T>
@@ -13,8 +14,8 @@ where
 {
     async fn insert(&self, record: T) -> Result<Option<String>> {
         // Serialize record to JSON
-        let mut value = serde_json::to_value(record)
-            .map_err(|e| DataSetError::other(format!("Serialization error: {}", e)))?;
+        let mut value =
+            serde_json::to_value(record).context("Failed to serialize record to JSON")?;
 
         // Extract ID from record if present, otherwise generate random ID
         let id = if let Some(record_id) = value.get("id") {

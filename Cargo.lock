@@ -1859,6 +1859,7 @@ name = "vantage-core"
 version = "0.3.0"
 dependencies = [
  "serde",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

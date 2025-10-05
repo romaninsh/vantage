@@ -1,4 +1,5 @@
 use thiserror::Error;
+use vantage_core::util::error::VantageError;
 
 #[derive(Debug)]
 pub struct Error {
@@ -11,15 +12,17 @@ pub enum RedbError {
     #[error("Bincode error: {0}")]
     Bincode(#[from] bincode::Error),
     #[error("ReDB error: {0}")]
-    Redb(#[from] redb::Error),
+    Redb(#[from] Box<redb::Error>),
     #[error("ReDB transaction error: {0}")]
-    RedbTransaction(#[from] redb::TransactionError),
+    RedbTransaction(#[from] Box<redb::TransactionError>),
     #[error("ReDB table error: {0}")]
-    RedbTable(#[from] redb::TableError),
+    RedbTable(#[from] Box<redb::TableError>),
     #[error("ReDB storage error: {0}")]
-    RedbStorage(#[from] redb::StorageError),
+    RedbStorage(#[from] Box<redb::StorageError>),
     #[error("ReDB core error: {0}")]
-    RedbCore(#[from] crate::redb::core::RedbError),
+    RedbCore(#[from] Box<crate::redb::core::RedbError>),
+    #[error("Vantage error: {0}")]
+    Vantage(#[from] Box<VantageError>),
     #[error("Other error: {0}")]
     Other(String),
 }
@@ -52,6 +55,14 @@ impl Error {
             error: RedbError::Other(message.into()),
         }
     }
+
+    /// Create from VantageError
+    pub fn from_vantage(err: VantageError) -> Self {
+        Self {
+            context: None,
+            error: RedbError::Vantage(Box::new(err)),
+        }
+    }
 }
 
 impl From<bincode::Error> for Error {
@@ -67,7 +78,7 @@ impl From<redb::Error> for Error {
     fn from(err: redb::Error) -> Self {
         Self {
             context: None,
-            error: RedbError::Redb(err),
+            error: RedbError::Redb(Box::new(err)),
         }
     }
 }
@@ -76,7 +87,7 @@ impl From<redb::TransactionError> for Error {
     fn from(err: redb::TransactionError) -> Self {
         Self {
             context: None,
-            error: RedbError::RedbTransaction(err),
+            error: RedbError::RedbTransaction(Box::new(err)),
         }
     }
 }
@@ -85,7 +96,7 @@ impl From<redb::TableError> for Error {
     fn from(err: redb::TableError) -> Self {
         Self {
             context: None,
-            error: RedbError::RedbTable(err),
+            error: RedbError::RedbTable(Box::new(err)),
         }
     }
 }
@@ -94,7 +105,7 @@ impl From<redb::StorageError> for Error {
     fn from(err: redb::StorageError) -> Self {
         Self {
             context: None,
-            error: RedbError::RedbStorage(err),
+            error: RedbError::RedbStorage(Box::new(err)),
         }
     }
 }
@@ -103,7 +114,16 @@ impl From<crate::redb::core::RedbError> for Error {
     fn from(err: crate::redb::core::RedbError) -> Self {
         Self {
             context: None,
-            error: RedbError::RedbCore(err),
+            error: RedbError::RedbCore(Box::new(err)),
+        }
+    }
+}
+
+impl From<VantageError> for Error {
+    fn from(err: VantageError) -> Self {
+        Self {
+            context: None,
+            error: RedbError::Vantage(Box::new(err)),
         }
     }
 }
@@ -144,7 +164,7 @@ where
 
 /// Macro for creating Error instances, similar to anyhow!
 #[macro_export]
-macro_rules! error {
+macro_rules! redb_error {
     ($msg:literal $(,)?) => {
         $crate::util::Error::new($msg)
     };
@@ -156,7 +176,10 @@ macro_rules! error {
     };
 }
 
-pub use error;
+pub use redb_error;
+
+/// Re-export vantage_error macro for seamless usage
+pub use vantage_core::util::error::vantage_error;
 
 impl From<std::io::Error> for Error {
     fn from(err: std::io::Error) -> Self {
@@ -194,11 +217,20 @@ impl From<redb::CommitError> for Error {
     }
 }
 
-impl From<vantage_expressions::util::Error> for Error {
-    fn from(err: vantage_expressions::util::Error) -> Self {
-        Self {
-            context: None,
-            error: RedbError::Other(format!("Expression error: {}", err)),
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_unified_error_handling() {
+        // Test VantageError integration
+        let vantage_err = VantageError::other("test vantage error");
+        let redb_err: Error = vantage_err.into();
+        assert!(redb_err.to_string().contains("test vantage error"));
+
+        // Test vantage_error macro works
+        let macro_err = vantage_error!("macro error: {}", 42);
+        let redb_macro_err: Error = macro_err.into();
+        assert!(redb_macro_err.to_string().contains("macro error: 42"));
     }
 }

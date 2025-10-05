@@ -3,7 +3,7 @@
 use redb::{ReadableTable, TableDefinition};
 
 use super::core::Redb;
-use crate::util::{Context, Result, error};
+use crate::util::{Context, Result, vantage_error};
 
 impl Redb {
     async fn get_all_records<E>(
@@ -26,10 +26,10 @@ impl Redb {
             if i < skip {
                 continue;
             }
-            if let Some(limit) = limit {
-                if count >= limit {
-                    break;
-                }
+            if let Some(limit) = limit
+                && count >= limit
+            {
+                break;
             }
 
             let (_id, data) = item?;
@@ -53,7 +53,8 @@ impl Redb {
 
         for id in ids {
             let data = table.get(id.as_str())?;
-            let data_access = data.ok_or_else(|| error!("Record with id '{}' not found", id))?;
+            let data_access =
+                data.ok_or_else(|| vantage_error!("Record with id '{}' not found", id))?;
             let entity = bincode::deserialize::<E>(data_access.value())?;
             results.push(entity);
         }
@@ -91,7 +92,7 @@ impl Redb {
         }
     }
 
-    fn apply_order<E>(&self, mut results: Vec<E>, column: &str, ascending: bool) -> Result<Vec<E>>
+    fn apply_order<E>(&self, results: Vec<E>, column: &str, ascending: bool) -> Result<Vec<E>>
     where
         E: vantage_core::Entity,
     {
@@ -100,7 +101,7 @@ impl Redb {
 
         for entity in results {
             let json_value = serde_json::to_value(&entity)
-                .with_context(|| format!("Failed to serialize entity for ordering"))?;
+                .with_context(|| "Failed to serialize entity for ordering".to_string())?;
             json_results.push((json_value, entity));
         }
 
@@ -108,7 +109,7 @@ impl Redb {
         json_results
             .iter()
             .find(|(json, _)| json.get(column).is_some())
-            .ok_or_else(|| error!("Field '{}' not found in any entity", column))?;
+            .ok_or_else(|| vantage_error!("Field '{}' not found in any entity", column))?;
 
         // Sort by the specified column
         json_results.sort_by(|(json_a, _), (json_b, _)| {
@@ -149,7 +150,7 @@ impl Redb {
         let records = if let Some(key_expr) = select.key() {
             let (column, value) = key_expr
                 .as_eq()
-                .ok_or_else(|| error!("ReDB only supports Eq conditions"))?;
+                .ok_or_else(|| vantage_error!("ReDB only supports Eq conditions"))?;
 
             let mut ids = self.get_ids_by_condition(table_name, column, value).await?;
 

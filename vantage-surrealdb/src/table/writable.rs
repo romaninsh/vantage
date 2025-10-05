@@ -5,6 +5,7 @@
 
 use async_trait::async_trait;
 use serde::{Serialize, de::DeserializeOwned};
+use vantage_core::util::error::{Context, vantage_error};
 use vantage_dataset::dataset::{Id, InsertableDataSet, Result, WritableDataSet};
 use vantage_table::{Entity, Table};
 
@@ -19,9 +20,7 @@ where
     /// Insert a record with a specific ID, fails if ID already exists
     async fn insert_id(&self, id: impl Id, record: E) -> Result<()> {
         let id_str = id.into();
-        let data = serde_json::to_value(&record).map_err(|e| {
-            vantage_dataset::dataset::DataSetError::other(format!("Serialization failed: {}", e))
-        })?;
+        let data = serde_json::to_value(&record).context("Serialization failed")?;
 
         // Use with_id to create a table filtered to this specific record, then use insert
         let filtered_table = self.clone().with_id(id);
@@ -30,12 +29,7 @@ where
         client
             .insert(&format!("{}:{}", self.table_name(), id_str), data)
             .await
-            .map_err(|e| {
-                vantage_dataset::dataset::DataSetError::other(format!(
-                    "SurrealDB insert failed: {}",
-                    e
-                ))
-            })?;
+            .context("SurrealDB insert failed")?;
 
         Ok(())
     }
@@ -43,9 +37,7 @@ where
     /// Replace a record by ID (upsert - creates if missing, replaces if exists)
     async fn replace_id(&self, id: impl Id, record: E) -> Result<()> {
         let id_str = id.into();
-        let data = serde_json::to_value(&record).map_err(|e| {
-            vantage_dataset::dataset::DataSetError::other(format!("Serialization failed: {}", e))
-        })?;
+        let data = serde_json::to_value(&record).context("Serialization failed")?;
 
         // Use with_id to create a table filtered to this specific record
         let _filtered_table = self.clone().with_id(&id_str);
@@ -54,12 +46,7 @@ where
         client
             .update(&format!("{}:{}", self.table_name(), id_str), Some(data))
             .await
-            .map_err(|e| {
-                vantage_dataset::dataset::DataSetError::other(format!(
-                    "SurrealDB replace failed: {}",
-                    e
-                ))
-            })?;
+            .context("SurrealDB replace failed")?;
 
         Ok(())
     }
@@ -73,9 +60,10 @@ where
         let _filtered_table = self.clone().with_id(&id_str);
 
         let client = self.data_source().inner.lock().await;
-        client.merge(&record_id, partial).await.map_err(|e| {
-            vantage_dataset::dataset::DataSetError::other(format!("SurrealDB patch failed: {}", e))
-        })?;
+        client
+            .merge(&record_id, partial)
+            .await
+            .context("SurrealDB patch failed")?;
 
         Ok(())
     }
@@ -89,9 +77,10 @@ where
         let _filtered_table = self.clone().with_id(&id_str);
 
         let client = self.data_source().inner.lock().await;
-        client.delete(&record_id).await.map_err(|e| {
-            vantage_dataset::dataset::DataSetError::other(format!("SurrealDB delete failed: {}", e))
-        })?;
+        client
+            .delete(&record_id)
+            .await
+            .context("SurrealDB delete failed")?;
 
         Ok(())
     }
@@ -111,18 +100,10 @@ where
             callback(&mut record);
 
             // Only update if the record was actually modified
-            let original_value = serde_json::to_value(&original_record).map_err(|e| {
-                vantage_dataset::dataset::DataSetError::other(format!(
-                    "Failed to serialize original record: {}",
-                    e
-                ))
-            })?;
-            let new_value = serde_json::to_value(&record).map_err(|e| {
-                vantage_dataset::dataset::DataSetError::other(format!(
-                    "Failed to serialize modified record: {}",
-                    e
-                ))
-            })?;
+            let original_value = serde_json::to_value(&original_record)
+                .context("Failed to serialize original record")?;
+            let new_value =
+                serde_json::to_value(&record).context("Failed to serialize modified record")?;
 
             if original_value != new_value {
                 self.replace_id(id, record).await?;
@@ -154,14 +135,13 @@ where
 {
     /// Insert a record and return generated ID
     async fn insert(&self, record: E) -> Result<String> {
-        let data = serde_json::to_value(&record).map_err(|e| {
-            vantage_dataset::dataset::DataSetError::other(format!("Serialization failed: {}", e))
-        })?;
+        let data = serde_json::to_value(&record).context("Serialization failed")?;
 
         let client = self.data_source().inner.lock().await;
-        let result = client.insert(self.table_name(), data).await.map_err(|e| {
-            vantage_dataset::dataset::DataSetError::other(format!("SurrealDB insert failed: {}", e))
-        })?;
+        let result = client
+            .insert(self.table_name(), data)
+            .await
+            .context("SurrealDB insert failed")?;
 
         // Extract the ID from the result
         if let serde_json::Value::Array(results) = result {
@@ -178,9 +158,7 @@ where
             }
         }
 
-        Err(vantage_dataset::dataset::DataSetError::other(
-            "Failed to extract ID from insert result",
-        ))
+        Err(vantage_error!("Failed to extract ID from insert result"))
     }
 }
 
