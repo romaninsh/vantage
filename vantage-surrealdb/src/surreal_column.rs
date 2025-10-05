@@ -4,14 +4,16 @@
 
 use crate::identifier::Identifier;
 use crate::operation::Expressive;
+use std::collections::HashSet;
 use vantage_expressions::{Expression, IntoExpressive, expr};
-use vantage_table::ColumnLike;
+use vantage_table::{ColumnFlag, ColumnLike};
 
 /// SurrealDB-specific column that renders as an Identifier
 #[derive(Debug, Clone)]
 pub struct SurrealColumn {
     name: String,
     alias: Option<String>,
+    flags: HashSet<ColumnFlag>,
 }
 
 impl SurrealColumn {
@@ -20,12 +22,19 @@ impl SurrealColumn {
         Self {
             name: name.into(),
             alias: None,
+            flags: HashSet::new(),
         }
     }
 
     /// Set an alias for this column
     pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
         self.alias = Some(alias.into());
+        self
+    }
+
+    /// Add flags to this column
+    pub fn with_flags(mut self, flags: &[ColumnFlag]) -> Self {
+        self.flags.extend(flags.iter().cloned());
         self
     }
 
@@ -47,6 +56,10 @@ impl ColumnLike for SurrealColumn {
     fn expr(&self) -> Expression {
         self.identifier().expr()
     }
+
+    fn flags(&self) -> HashSet<ColumnFlag> {
+        self.flags.clone()
+    }
 }
 
 impl From<&str> for SurrealColumn {
@@ -67,6 +80,8 @@ impl From<vantage_table::Column> for SurrealColumn {
         if let Some(alias) = column.alias() {
             surreal_column = surreal_column.with_alias(alias);
         }
+        surreal_column =
+            surreal_column.with_flags(&column.flags().iter().cloned().collect::<Vec<_>>());
         surreal_column
     }
 }
@@ -115,6 +130,30 @@ mod tests {
         let surreal_col: SurrealColumn = vantage_col.into();
         assert_eq!(surreal_col.name(), "test");
         assert_eq!(surreal_col.alias(), Some("test_alias"));
+    }
+
+    #[test]
+    fn test_surreal_column_with_flags() {
+        let col = SurrealColumn::new("email").with_flags(&[ColumnFlag::Mandatory]);
+        assert!(col.flags().contains(&ColumnFlag::Mandatory));
+        assert_eq!(col.flags().len(), 1);
+    }
+
+    #[test]
+    fn test_surreal_column_no_flags() {
+        let col = SurrealColumn::new("optional_field");
+        assert!(col.flags().is_empty());
+    }
+
+    #[test]
+    fn test_from_vantage_column_with_flags() {
+        let vantage_col = vantage_table::Column::new("test")
+            .with_flags(&[ColumnFlag::Mandatory])
+            .with_alias("test_alias");
+        let surreal_col: SurrealColumn = vantage_col.into();
+        assert_eq!(surreal_col.name(), "test");
+        assert_eq!(surreal_col.alias(), Some("test_alias"));
+        assert!(surreal_col.flags().contains(&ColumnFlag::Mandatory));
     }
 }
 

@@ -1,4 +1,5 @@
 use indexmap::IndexMap;
+use std::collections::HashSet;
 use std::ops::Index;
 use vantage_expressions::{Expression, IntoExpressive, expr};
 
@@ -6,11 +7,19 @@ use crate::ColumnLike;
 
 use super::{Entity, Table, TableSource};
 
-/// Represents a table column with optional alias
+/// Column flags that define behavior and constraints
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub enum ColumnFlag {
+    /// Mandatory will require read/write operations to always have value for this field, it cannot be missing
+    Mandatory,
+}
+
+/// Represents a table column with optional alias and flags
 #[derive(Debug, Clone)]
 pub struct Column {
     name: String,
     alias: Option<String>,
+    flags: HashSet<ColumnFlag>,
 }
 
 impl Column {
@@ -19,6 +28,7 @@ impl Column {
         Self {
             name: name.into(),
             alias: None,
+            flags: HashSet::new(),
         }
     }
 
@@ -36,6 +46,17 @@ impl Column {
     /// Get the column alias if set
     pub fn alias(&self) -> Option<&str> {
         self.alias.as_deref()
+    }
+
+    /// Add flags to this column
+    pub fn with_flags(mut self, flags: &[ColumnFlag]) -> Self {
+        self.flags.extend(flags.iter().cloned());
+        self
+    }
+
+    /// Get the column flags
+    pub fn flags(&self) -> &HashSet<ColumnFlag> {
+        &self.flags
     }
 
     /// Create an expression from this column name
@@ -56,6 +77,10 @@ impl ColumnLike for Column {
     fn expr(&self) -> Expression {
         expr!(self.name.clone())
     }
+
+    fn flags(&self) -> HashSet<ColumnFlag> {
+        self.flags.clone()
+    }
 }
 
 impl From<&str> for Column {
@@ -68,9 +93,8 @@ impl<T: TableSource, E: Entity> Table<T, E>
 where
     T::Column: ColumnLike,
 {
-    pub fn with_column(mut self, column: impl Into<String>) -> Self {
-        let column_name = column.into();
-        let column = self.data_source().create_column(&column_name, &self);
+    pub fn with_column(mut self, column: impl Into<T::Column>) -> Self {
+        let column = column.into();
         self.columns.insert(column.name().to_string(), column);
         self
     }
@@ -133,5 +157,18 @@ mod tests {
 
         let expr = expr!("{} = true", &table["is_vip"]);
         assert_eq!(expr.preview(), "is_vip = true");
+    }
+
+    #[test]
+    fn test_column_with_flags() {
+        let column = Column::new("email").with_flags(&[ColumnFlag::Mandatory]);
+        assert!(column.flags().contains(&ColumnFlag::Mandatory));
+        assert_eq!(column.flags().len(), 1);
+    }
+
+    #[test]
+    fn test_column_no_flags() {
+        let column = Column::new("optional_field");
+        assert!(column.flags().is_empty());
     }
 }
