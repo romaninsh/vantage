@@ -2,8 +2,10 @@
 //!
 //! Provides a simple column implementation that can be used across all mock DataSources.
 
+use crate::ColumnFlag;
 use crate::ColumnLike;
 use crate::Expression;
+use std::collections::HashSet;
 use vantage_expressions::IntoExpressive;
 use vantage_expressions::expr;
 
@@ -31,6 +33,10 @@ impl ColumnLike for MockColumn {
 
     fn expr(&self) -> Expression {
         expr!(self.name.clone())
+    }
+
+    fn flags(&self) -> HashSet<ColumnFlag> {
+        HashSet::new()
     }
 }
 

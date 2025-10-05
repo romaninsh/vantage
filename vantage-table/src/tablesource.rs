@@ -1,5 +1,6 @@
 use crate::{Entity, TableLike};
 use async_trait::async_trait;
+use std::collections::HashSet;
 use vantage_expressions::{Expression, protocol::datasource::DataSource};
 
 /// Trait for table data sources that defines column type separate from execution
@@ -62,4 +63,5 @@ pub trait ColumnLike: Send + Sync + std::fmt::Debug {
     fn name(&self) -> &str;
     fn alias(&self) -> Option<&str>;
     fn expr(&self) -> Expression;
+    fn flags(&self) -> HashSet<crate::with_columns::ColumnFlag>;
 }

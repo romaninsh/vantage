@@ -5,10 +5,10 @@
 
 use crate::util::{Context, Result, vantage_error};
 use redb::{TableDefinition, WriteTransaction};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use vantage_dataset::dataset::ReadableDataSet;
 use vantage_expressions::{Expression, expr};
-use vantage_table::ColumnLike;
+use vantage_table::{ColumnFlag, ColumnLike};
 
 /// Redb-specific column that represents a secondary index table
 #[derive(Debug, Clone)]
@@ -31,6 +31,12 @@ impl RedbColumn {
     /// Set an alias for this column
     pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
         self.alias = Some(alias.into());
+        self
+    }
+
+    /// Set the table name for this column
+    pub fn with_table(mut self, table: impl Into<String>) -> Self {
+        self.table = table.into();
         self
     }
 
@@ -106,6 +112,24 @@ impl ColumnLike for RedbColumn {
     fn expr(&self) -> Expression {
         // For redb, column expressions are just field references
         expr!("{}", self.name.clone())
+    }
+
+    fn flags(&self) -> HashSet<ColumnFlag> {
+        HashSet::new()
+    }
+}
+
+impl From<&str> for RedbColumn {
+    fn from(name: &str) -> Self {
+        // Use empty table name - will be set properly when added to a table
+        Self::new(name, String::new())
+    }
+}
+
+impl From<String> for RedbColumn {
+    fn from(name: String) -> Self {
+        // Use empty table name - will be set properly when added to a table
+        Self::new(name, String::new())
     }
 }
 

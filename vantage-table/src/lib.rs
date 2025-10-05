@@ -27,6 +27,7 @@
 //!     });
 //! ```
 
+use async_trait::async_trait;
 use indexmap::IndexMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -52,15 +53,19 @@ pub use crate::tablesource::ColumnLike;
 pub use vantage_expressions::QuerySource;
 
 pub use crate::tablesource::TableSource;
-pub use crate::with_columns::Column;
+pub use crate::with_columns::{Column, ColumnFlag};
 
 /// Trait for dynamic table operations without generics
+#[async_trait]
 pub trait TableLike: Send + Sync {
     /// Get all columns as boxed ColumnLike trait objects
-    fn columns(&self) -> Arc<IndexMap<String, Box<dyn ColumnLike>>>;
+    fn columns(&self) -> Arc<IndexMap<String, Arc<dyn ColumnLike>>>;
 
     fn table_name(&self) -> &str;
     fn table_alias(&self) -> &str;
+
+    /// Get raw data from the table as `Vec<Value>` for UI grids
+    async fn get_values(&self) -> Result<Vec<serde_json::Value>>;
 }
 
 // Re-export Entity trait from vantage-core
@@ -197,17 +202,20 @@ where
     }
 }
 
+#[async_trait]
 impl<T: TableSource, E: Entity> TableLike for Table<T, E>
 where
+    T: TableSource + Send + Sync,
     T::Column: ColumnLike + Clone + 'static,
+    E: Send + Sync,
 {
-    fn columns(&self) -> Arc<IndexMap<String, Box<dyn ColumnLike>>> {
-        let boxed_columns: IndexMap<String, Box<dyn ColumnLike>> = self
+    fn columns(&self) -> Arc<IndexMap<String, Arc<dyn ColumnLike>>> {
+        let arc_columns: IndexMap<String, Arc<dyn ColumnLike>> = self
             .columns
             .iter()
-            .map(|(k, v)| (k.clone(), Box::new(v.clone()) as Box<dyn ColumnLike>))
+            .map(|(k, v)| (k.clone(), Arc::new(v.clone()) as Arc<dyn ColumnLike>))
             .collect();
-        Arc::new(boxed_columns)
+        Arc::new(arc_columns)
     }
 
     fn table_alias(&self) -> &str {
@@ -216,20 +224,30 @@ where
 
     fn table_name(&self) -> &str {
         &self.table_name
+    }
+
+    async fn get_values(&self) -> Result<Vec<serde_json::Value>> {
+        self.data_source
+            .get_table_data_as_value(self)
+            .await
+            .map_err(|e| vantage_error!("Failed to get table values: {}", e))
     }
 }
 
+#[async_trait]
 impl<T: TableSource, E: Entity> TableLike for &Table<T, E>
 where
+    T: TableSource + Send + Sync,
     T::Column: ColumnLike + Clone + 'static,
+    E: Send + Sync,
 {
-    fn columns(&self) -> Arc<IndexMap<String, Box<dyn ColumnLike>>> {
-        let boxed_columns: IndexMap<String, Box<dyn ColumnLike>> = self
+    fn columns(&self) -> Arc<IndexMap<String, Arc<dyn ColumnLike>>> {
+        let arc_columns: IndexMap<String, Arc<dyn ColumnLike>> = self
             .columns
             .iter()
-            .map(|(k, v)| (k.clone(), Box::new(v.clone()) as Box<dyn ColumnLike>))
+            .map(|(k, v)| (k.clone(), Arc::new(v.clone()) as Arc<dyn ColumnLike>))
             .collect();
-        Arc::new(boxed_columns)
+        Arc::new(arc_columns)
     }
 
     fn table_alias(&self) -> &str {
@@ -238,5 +256,12 @@ where
 
     fn table_name(&self) -> &str {
         &self.table_name
+    }
+
+    async fn get_values(&self) -> Result<Vec<serde_json::Value>> {
+        self.data_source
+            .get_table_data_as_value(self)
+            .await
+            .map_err(|e| vantage_error!("Failed to get table values: {}", e))
     }
 }
