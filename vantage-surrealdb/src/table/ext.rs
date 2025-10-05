@@ -67,7 +67,7 @@ impl<E: Entity> SurrealTableExt<E> for Table<SurrealDB, E> {
                 vantage_error!(format!("Failed to serialize original entity: {}", e))
             })?;
             let new_value = serde_json::to_value(&new_entity)
-                .map_err(|e| vantage_error!(format!("Failed to serialize new entity: {}", e)))?;
+                .map_err(|e| vantage_error!("Failed to serialize new entity: {}", e))?;
 
             // Find differences between original and new entity
             let mut patch = serde_json::Map::new();
