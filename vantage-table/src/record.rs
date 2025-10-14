@@ -7,7 +7,7 @@ use crate::{Entity, Table, TableSource};
 use async_trait::async_trait;
 use serde::{Serialize, de::DeserializeOwned};
 use std::ops::{Deref, DerefMut};
-use vantage_dataset::dataset::{Id, ReadableDataSet, Result, WritableDataSet};
+use vantage_dataset::dataset::{Id, Result, WritableDataSet};
 
 /// A record represents a single entity with its ID, providing save functionality
 pub struct Record<'a, E, T>
@@ -45,6 +45,16 @@ where
     {
         self.table.replace_id(&self.id, self.data.clone()).await
     }
+
+    /// Convert this record to a different entity type
+    pub fn into_entity<U>(&self) -> U
+    where
+        U: Entity + serde::de::DeserializeOwned,
+        E: Serialize,
+    {
+        let json = serde_json::to_value(&self.data).expect("Failed to serialize entity");
+        serde_json::from_value(json).expect("Failed to deserialize to target type")
+    }
 }
 
 impl<'a, E, T> Deref for Record<'a, E, T>
@@ -71,24 +81,53 @@ where
 
 /// Extension trait for tables that support both reading and writing to provide record functionality
 #[async_trait]
-pub trait RecordTable<E>: ReadableDataSet<E> + WritableDataSet<E>
+pub trait RecordTable<E>: WritableDataSet<E>
 where
     E: Entity,
 {
     async fn get_record(&self, id: impl Id) -> Result<Option<Record<'_, E, Self>>>;
+
+    /// Get records as an iterator for modification and saving
+    async fn iter_records(&self) -> Result<Vec<Record<'_, E, Self>>>
+    where
+        E: Clone + serde::Serialize + serde::de::DeserializeOwned + Send + Sync;
+
+    /// Get some record with ID for modification and saving
+    async fn get_some_record(&self) -> Result<Option<Record<'_, E, Self>>>
+    where
+        E: Clone + serde::Serialize + serde::de::DeserializeOwned + Send + Sync;
 }
 
 #[async_trait]
 impl<T, E> RecordTable<E> for Table<T, E>
 where
-    T: TableSource + Clone + Send + Sync,
+    T: TableSource + Send + Sync,
     E: Entity + Serialize + DeserializeOwned + Send + Sync,
 {
     async fn get_record(&self, id: impl Id) -> Result<Option<Record<'_, E, Table<T, E>>>> {
         let id_str = id.into();
-        match self.get_id(&id_str).await {
+        match self.data_source().get_table_data_by_id(self, &id_str).await {
             Ok(data) => Ok(Some(Record::new(id_str, data, self))),
             Err(_) => Ok(None),
         }
+    }
+
+    async fn iter_records(&self) -> Result<Vec<Record<'_, E, Table<T, E>>>>
+    where
+        E: Clone + serde::Serialize + serde::de::DeserializeOwned + Send + Sync,
+    {
+        let results = self.data_source().get_table_data(self).await?;
+        Ok(results
+            .into_iter()
+            .map(|(id, entity)| Record::new(id, entity, self))
+            .collect())
+    }
+
+    async fn get_some_record(&self) -> Result<Option<Record<'_, E, Table<T, E>>>>
+    where
+        E: Clone + serde::Serialize + serde::de::DeserializeOwned + Send + Sync,
+    {
+        let result = self.data_source().get_table_data_some(self).await?;
+        Ok(result.map(|(id, entity)| Record::new(id, entity, self)))
     }
 }

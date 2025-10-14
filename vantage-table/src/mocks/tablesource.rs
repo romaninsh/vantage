@@ -52,7 +52,7 @@ impl TableSource for MockTableSource {
         vantage_expressions::Expression::new(template, parameters)
     }
 
-    async fn get_table_data<E>(&self, table: &crate::Table<Self, E>) -> Result<Vec<E>>
+    async fn get_table_data<E>(&self, table: &crate::Table<Self, E>) -> Result<Vec<(String, E)>>
     where
         E: crate::Entity,
         Self: Sized,
@@ -61,8 +61,18 @@ impl TableSource for MockTableSource {
         let mut results = Vec::new();
 
         for value in values {
+            let id = value
+                .get("id")
+                .and_then(|v| {
+                    v.as_str()
+                        .map(|s| s.to_string())
+                        .or_else(|| v.as_i64().map(|i| i.to_string()))
+                        .or_else(|| v.as_u64().map(|u| u.to_string()))
+                })
+                .unwrap_or_else(|| "unknown".to_string());
+
             match serde_json::from_value::<E>(value) {
-                Ok(item) => results.push(item),
+                Ok(item) => results.push((id, item)),
                 Err(e) => {
                     return Err(vantage_error!("Failed to deserialize entity: {}", e));
                 }
@@ -72,7 +82,10 @@ impl TableSource for MockTableSource {
         Ok(results)
     }
 
-    async fn get_table_data_some<E>(&self, table: &crate::Table<Self, E>) -> Result<Option<E>>
+    async fn get_table_data_some<E>(
+        &self,
+        table: &crate::Table<Self, E>,
+    ) -> Result<Option<(String, E)>>
     where
         E: crate::Entity,
         Self: Sized,
@@ -80,8 +93,18 @@ impl TableSource for MockTableSource {
         let values = self.get_table_data_as_value(table).await?;
 
         if let Some(first_value) = values.into_iter().next() {
+            let id = first_value
+                .get("id")
+                .and_then(|v| {
+                    v.as_str()
+                        .map(|s| s.to_string())
+                        .or_else(|| v.as_i64().map(|i| i.to_string()))
+                        .or_else(|| v.as_u64().map(|u| u.to_string()))
+                })
+                .unwrap_or_else(|| "unknown".to_string());
+
             match serde_json::from_value::<E>(first_value) {
-                Ok(item) => Ok(Some(item)),
+                Ok(item) => Ok(Some((id, item))),
                 Err(e) => Err(vantage_error!("Failed to deserialize entity: {}", e)),
             }
         } else {
@@ -139,17 +162,44 @@ impl TableSource for MockTableSource {
 
     async fn replace_table_data_with_id<E>(
         &self,
-        _table: &crate::Table<Self, E>,
-        _id: impl vantage_dataset::dataset::Id,
-        _record: E,
+        table: &crate::Table<Self, E>,
+        id: impl vantage_dataset::dataset::Id,
+        record: E,
     ) -> Result<()>
     where
         E: crate::Entity + serde::Serialize,
         Self: Sized,
     {
-        Err(vantage_error!(
-            "replace_table_data_with_id not implemented in mock"
-        ))
+        let id_str = id.into();
+        let mut data = self.data.lock().unwrap();
+        let vec = data
+            .get_mut(&table.table_name)
+            .ok_or(VantageError::no_data())?;
+
+        // Find the record with matching ID
+        let mut found_index = None;
+        for (index, value) in vec.iter().enumerate() {
+            if let Some(record_id) = value.get("id") {
+                let record_id_str = record_id
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .or_else(|| record_id.as_i64().map(|i| i.to_string()))
+                    .or_else(|| record_id.as_u64().map(|u| u.to_string()))
+                    .unwrap_or_else(|| "unknown".to_string());
+
+                if record_id_str == id_str {
+                    found_index = Some(index);
+                    break;
+                }
+            }
+        }
+
+        let index =
+            found_index.ok_or_else(|| vantage_error!("No record found with ID: {}", id_str))?;
+
+        let value = serde_json::to_value(record).context("Failed to serialize record")?;
+        vec[index] = value;
+        Ok(())
     }
 
     async fn patch_table_data_with_id<E>(
@@ -239,9 +289,10 @@ mod tests {
         );
 
         let table = crate::Table::new("users", mock).into_entity::<TestUser>();
-        let users: Vec<TestUser> = table.data_source().get_table_data(&table).await.unwrap();
-        assert_eq!(users.len(), 2);
-        assert_eq!(users[0].name, "Alice");
-        assert_eq!(users[1].name, "Bob");
+        let users_with_ids: Vec<(String, TestUser)> =
+            table.data_source().get_table_data(&table).await.unwrap();
+        assert_eq!(users_with_ids.len(), 2);
+        assert_eq!(users_with_ids[0].1.name, "Alice");
+        assert_eq!(users_with_ids[1].1.name, "Bob");
     }
 }

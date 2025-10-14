@@ -24,7 +24,7 @@ impl vantage_table::TableSource for SurrealDB {
     async fn get_table_data<E>(
         &self,
         table: &Table<Self, E>,
-    ) -> vantage_dataset::dataset::Result<Vec<E>>
+    ) -> vantage_dataset::dataset::Result<Vec<(String, E)>>
     where
         E: vantage_core::Entity,
         Self: Sized,
@@ -32,19 +32,27 @@ impl vantage_table::TableSource for SurrealDB {
         let select = table.select();
         let raw_result = select.get(self).await;
 
-        let entities = raw_result
-            .into_iter()
-            .map(|item| serde_json::from_value(serde_json::Value::Object(item)))
-            .collect::<std::result::Result<Vec<E>, _>>()
-            .context("Failed to deserialize entities")?;
+        let mut results = Vec::new();
+        for item in raw_result {
+            let id = item
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
 
-        Ok(entities)
+            let entity = serde_json::from_value(serde_json::Value::Object(item))
+                .context("Failed to deserialize entity")?;
+
+            results.push((id, entity));
+        }
+
+        Ok(results)
     }
 
     async fn get_table_data_some<E>(
         &self,
         table: &Table<Self, E>,
-    ) -> vantage_dataset::dataset::Result<Option<E>>
+    ) -> vantage_dataset::dataset::Result<Option<(String, E)>>
     where
         E: vantage_core::Entity,
         Self: Sized,
@@ -52,10 +60,16 @@ impl vantage_table::TableSource for SurrealDB {
         let select = table.select().only_first_row();
         let raw_result = select.get(self).await;
 
+        let id = raw_result
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
         let entity = serde_json::from_value(serde_json::Value::Object(raw_result))
             .context("Failed to deserialize entity")?;
 
-        Ok(Some(entity))
+        Ok(Some((id, entity)))
     }
 
     async fn get_table_data_as_value<E>(

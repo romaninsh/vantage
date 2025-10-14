@@ -162,58 +162,74 @@ impl vantage_table::TableSource for Redb {
     async fn get_table_data<E>(
         &self,
         table: &Table<Self, E>,
-    ) -> vantage_dataset::dataset::Result<Vec<E>>
+    ) -> vantage_dataset::dataset::Result<Vec<(String, E)>>
     where
         E: vantage_core::Entity,
         Self: Sized,
     {
         use vantage_core::util::error::vantage_error;
-        use vantage_expressions::protocol::selectable::Selectable;
 
-        // Use RedbSelect and execute_select approach
-        let mut select = crate::RedbSelect::<E>::new();
-        select.set_source(table.table_name(), None);
+        let table_name = table.table_name();
+        let read_txn = self
+            .begin_read()
+            .map_err(|e| vantage_error!("Failed to begin read transaction: {}", e))?;
 
-        // Apply table conditions
-        for condition in table.conditions() {
-            select.add_where_condition(condition.clone());
+        let main_table_def: redb::TableDefinition<&str, &[u8]> =
+            redb::TableDefinition::new(table_name);
+        let main_table = read_txn
+            .open_table(main_table_def)
+            .map_err(|e| vantage_error!("Failed to open main table: {}", e))?;
+
+        let mut results = Vec::new();
+        let iter = main_table
+            .iter()
+            .map_err(|e| vantage_error!("Failed to iterate table: {}", e))?;
+
+        for entry in iter {
+            let (key, value) = entry.map_err(|e| vantage_error!("Failed to read entry: {}", e))?;
+            let id = key.value().to_string();
+            let entity: E = bincode::deserialize(value.value())
+                .map_err(|e| vantage_error!("Failed to deserialize entity: {}", e))?;
+            results.push((id, entity));
         }
 
-        let records_result = self.redb_execute_select(&select).await;
-
-        // Handle the Result<Vec<E>> - convert redb error to VantageError at boundary
-        let records = records_result.map_err(|e| vantage_error!("ReDB error: {}", e))?;
-        Ok(records)
+        Ok(results)
     }
 
     async fn get_table_data_some<E>(
         &self,
         table: &Table<Self, E>,
-    ) -> vantage_dataset::dataset::Result<Option<E>>
+    ) -> vantage_dataset::dataset::Result<Option<(String, E)>>
     where
         E: vantage_core::Entity,
         Self: Sized,
     {
         use vantage_core::util::error::vantage_error;
-        use vantage_expressions::protocol::selectable::Selectable;
 
-        // Use RedbSelect with limit 1
-        let mut select = crate::RedbSelect::<E>::new();
-        select.set_source(table.table_name(), None);
+        let table_name = table.table_name();
+        let read_txn = self
+            .begin_read()
+            .map_err(|e| vantage_error!("Failed to begin read transaction: {}", e))?;
 
-        // Apply table conditions
-        for condition in table.conditions() {
-            select.add_where_condition(condition.clone());
+        let main_table_def: redb::TableDefinition<&str, &[u8]> =
+            redb::TableDefinition::new(table_name);
+        let main_table = read_txn
+            .open_table(main_table_def)
+            .map_err(|e| vantage_error!("Failed to open main table: {}", e))?;
+
+        let mut iter = main_table
+            .iter()
+            .map_err(|e| vantage_error!("Failed to iterate table: {}", e))?;
+
+        if let Some(entry) = iter.next() {
+            let (key, value) = entry.map_err(|e| vantage_error!("Failed to read entry: {}", e))?;
+            let id = key.value().to_string();
+            let entity: E = bincode::deserialize(value.value())
+                .map_err(|e| vantage_error!("Failed to deserialize entity: {}", e))?;
+            Ok(Some((id, entity)))
+        } else {
+            Ok(None)
         }
-
-        // Limit to 1 record for efficiency
-        select.set_limit(Some(1), None);
-
-        let records_result = self.redb_execute_select(&select).await;
-
-        // Handle the Result<Vec<E>> - convert redb error to VantageError at boundary
-        let records = records_result.map_err(|e| vantage_error!("ReDB error: {}", e))?;
-        Ok(records.into_iter().next())
     }
 
     async fn get_table_data_as_value<E>(
