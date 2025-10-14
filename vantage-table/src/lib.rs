@@ -43,9 +43,11 @@ pub mod insertable;
 pub mod mocks;
 pub mod prelude;
 pub mod readable;
+pub mod record;
 pub mod tablesource;
 pub mod with_columns;
 pub mod with_conditions;
+pub mod writable;
 
 /// Re-export ColumnLike from vantage-expressions for convenience
 pub use crate::tablesource::ColumnLike;

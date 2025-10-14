@@ -74,3 +74,9 @@ impl From<Thing> for IntoExpressive<Expression> {
         IntoExpressive::nested(thing.expr())
     }
 }
+
+impl From<Thing> for surreal_client::RecordId {
+    fn from(thing: Thing) -> Self {
+        surreal_client::RecordId::string(thing.table, thing.id)
+    }
+}

@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use vantage_dataset::dataset::{InsertableDataSet, ReadableDataSet};
 use vantage_dataset::im::{ImDataSource, Table};
+use vantage_dataset::record::RecordDataSet;
 
 mod mocks;
 
@@ -135,6 +136,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for user in &updated_users {
         if user.id.as_ref().unwrap() == "user-1" {
             println!("  Overwritten user: {} - {}", user.name, user.email);
+        }
+    }
+
+    // Demonstrate Record functionality
+    println!("\n--- Record Functionality ---");
+
+    // Get a record by ID
+    if let Some(record) = users.get_record("user-1").await? {
+        println!("Got record for user-1: {} ({})", record.name, record.email);
+        println!("Record ID: {}", record.id());
+
+        // The record derefs to the User, so we can access fields directly
+        println!("User age through record: {}", record.age);
+    }
+
+    // Try to get a non-existent record
+    match users.get_record("nonexistent").await? {
+        Some(_) => println!("Unexpectedly found nonexistent record"),
+        None => println!("Correctly returned None for nonexistent record"),
+    }
+
+    // Get Charlie's record and demonstrate save
+    if let Some(mut charlie_record) = users.get_record("charlie-456").await? {
+        println!(
+            "Original Charlie: {} - {}",
+            charlie_record.name, charlie_record.email
+        );
+
+        // Modify the record through DerefMut
+        charlie_record.age += 1;
+        charlie_record.email = "charlie.updated@example.com".to_string();
+
+        println!(
+            "Modified Charlie: {} - {} (age {})",
+            charlie_record.name, charlie_record.email, charlie_record.age
+        );
+
+        // Save the changes back to the dataset
+        charlie_record.save().await?;
+        println!("Saved changes to Charlie's record");
+
+        // Verify the changes were persisted
+        if let Some(updated_charlie) = users.get_record("charlie-456").await? {
+            println!(
+                "Verified updated Charlie: {} - {} (age {})",
+                updated_charlie.name, updated_charlie.email, updated_charlie.age
+            );
         }
     }
 

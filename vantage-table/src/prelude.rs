@@ -7,3 +7,6 @@ pub use crate::Entity;
 pub use crate::Table;
 pub use crate::TableLike;
 pub use crate::TableSource;
+
+// Record functionality
+pub use crate::record::{Record, RecordTable};

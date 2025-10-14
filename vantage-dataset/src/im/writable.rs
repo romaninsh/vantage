@@ -6,11 +6,11 @@ use vantage_core::util::error::{Context, vantage_error};
 use super::Table;
 
 #[async_trait]
-impl<T> WritableDataSet<T> for Table<T>
+impl<E> WritableDataSet<E> for Table<E>
 where
-    T: Serialize + DeserializeOwned + Send + Sync + Clone + 'static,
+    E: Serialize + DeserializeOwned + Send + Sync + Clone + 'static,
 {
-    async fn insert_id(&self, id: impl Id, record: T) -> Result<()> {
+    async fn insert_id(&self, id: impl Id, record: E) -> Result<()> {
         let id = id.into();
         let mut table = self.data_source.get_or_create_table(&self.table_name);
 
@@ -26,7 +26,7 @@ where
         Ok(())
     }
 
-    async fn replace_id(&self, id: impl Id, record: T) -> Result<()> {
+    async fn replace_id(&self, id: impl Id, record: E) -> Result<()> {
         let id = id.into();
         let mut table = self.data_source.get_or_create_table(&self.table_name);
 
@@ -78,12 +78,12 @@ where
 
     async fn update<F>(&self, callback: F) -> Result<()>
     where
-        F: Fn(&mut T) + Send + Sync,
+        F: Fn(&mut E) + Send + Sync,
     {
         let mut table = self.data_source.get_or_create_table(&self.table_name);
 
         for (_, value) in table.iter_mut() {
-            if let Ok(mut record) = serde_json::from_value::<T>(value.clone()) {
+            if let Ok(mut record) = serde_json::from_value::<E>(value.clone()) {
                 callback(&mut record);
                 *value =
                     serde_json::to_value(record).context("Failed to serialize updated record")?;

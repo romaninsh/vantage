@@ -8,15 +8,15 @@ use crate::{
 use vantage_core::util::error::Context;
 
 /// Table represents a typed table in the ImDataSource
-pub struct Table<T> {
+pub struct Table<E> {
     pub(super) data_source: ImDataSource,
     pub(super) table_name: String,
-    _phantom: std::marker::PhantomData<T>,
+    _phantom: std::marker::PhantomData<E>,
 }
 
-impl<T> Table<T>
+impl<E> Table<E>
 where
-    T: Serialize + DeserializeOwned,
+    E: Serialize + DeserializeOwned,
 {
     pub fn new(data_source: &ImDataSource, table_name: &str) -> Self {
         Self {
@@ -30,7 +30,7 @@ where
         Uuid::new_v4().to_string()
     }
 
-    pub async fn import(&mut self, ds: impl ReadableDataSet<T>) -> Result<()> {
+    pub async fn import(&mut self, ds: impl ReadableDataSet<E>) -> Result<()> {
         let mut table = self.data_source.get_or_create_table(&self.table_name);
         table.clear();
 
