@@ -152,12 +152,15 @@ where
     /// Get data from the table using the configured columns and conditions
     pub async fn get(&self) -> Result<Vec<E>> {
         // Use TableSource directly instead of QuerySource
-        let entities = self
+        let entities_with_ids = self
             .data_source
             .get_table_data(self)
             .await
             .context("Failed to get table data")?;
-        Ok(entities)
+        Ok(entities_with_ids
+            .into_iter()
+            .map(|(_, entity)| entity)
+            .collect())
     }
 
     /// Get raw data from the table as `Vec<Value>` without entity deserialization

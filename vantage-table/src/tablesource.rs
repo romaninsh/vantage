@@ -21,20 +21,20 @@ pub trait TableSource: DataSource {
         parameters: Vec<vantage_expressions::protocol::expressive::IntoExpressive<Self::Expr>>,
     ) -> Self::Expr;
 
-    /// Get all data from a table as the table's entity type
+    /// Get all data from a table as the table's entity type with IDs
     async fn get_table_data<E>(
         &self,
         table: &crate::Table<Self, E>,
-    ) -> vantage_dataset::dataset::Result<Vec<E>>
+    ) -> vantage_dataset::dataset::Result<Vec<(String, E)>>
     where
         E: Entity,
         Self: Sized;
 
-    /// Get some data from a table as the table's entity type (usually first record)
+    /// Get some data from a table as the table's entity type (usually first record) with ID
     async fn get_table_data_some<E>(
         &self,
         table: &crate::Table<Self, E>,
-    ) -> vantage_dataset::dataset::Result<Option<E>>
+    ) -> vantage_dataset::dataset::Result<Option<(String, E)>>
     where
         E: Entity,
         Self: Sized;
