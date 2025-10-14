@@ -8,11 +8,11 @@ use crate::{
 use vantage_core::util::error::Context;
 
 #[async_trait]
-impl<T> InsertableDataSet<T> for Table<T>
+impl<E> InsertableDataSet<E> for Table<E>
 where
-    T: Serialize + DeserializeOwned + Send + Sync,
+    E: Serialize + DeserializeOwned + Send + Sync,
 {
-    async fn insert(&self, record: T) -> Result<Option<String>> {
+    async fn insert(&self, record: E) -> Result<Option<String>> {
         // Serialize record to JSON
         let mut value =
             serde_json::to_value(record).context("Failed to serialize record to JSON")?;

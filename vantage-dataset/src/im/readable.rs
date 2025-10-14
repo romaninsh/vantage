@@ -9,18 +9,18 @@ use crate::{
 use vantage_core::util::error::{Context, vantage_error};
 
 #[async_trait]
-impl<T> ReadableDataSet<T> for Table<T>
+impl<E> ReadableDataSet<E> for Table<E>
 where
-    T: Entity,
+    E: Entity,
 {
-    async fn get(&self) -> Result<Vec<T>> {
+    async fn get(&self) -> Result<Vec<E>> {
         self.get_as().await
     }
-    async fn get_some(&self) -> Result<Option<T>> {
+    async fn get_some(&self) -> Result<Option<E>> {
         self.get_some_as().await
     }
 
-    async fn get_id(&self, id: impl Id) -> Result<T> {
+    async fn get_id(&self, id: impl Id) -> Result<E> {
         let id = id.into();
         let table = self.data_source.get_or_create_table(&self.table_name);
 

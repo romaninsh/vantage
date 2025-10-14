@@ -121,6 +121,100 @@ impl TableSource for MockTableSource {
         vec.push(value);
         Ok(Some(id.to_string()))
     }
+
+    async fn insert_table_data_with_id<E>(
+        &self,
+        _table: &crate::Table<Self, E>,
+        _id: impl vantage_dataset::dataset::Id,
+        _record: E,
+    ) -> Result<()>
+    where
+        E: crate::Entity + serde::Serialize,
+        Self: Sized,
+    {
+        Err(vantage_error!(
+            "insert_table_data_with_id not implemented in mock"
+        ))
+    }
+
+    async fn replace_table_data_with_id<E>(
+        &self,
+        _table: &crate::Table<Self, E>,
+        _id: impl vantage_dataset::dataset::Id,
+        _record: E,
+    ) -> Result<()>
+    where
+        E: crate::Entity + serde::Serialize,
+        Self: Sized,
+    {
+        Err(vantage_error!(
+            "replace_table_data_with_id not implemented in mock"
+        ))
+    }
+
+    async fn patch_table_data_with_id<E>(
+        &self,
+        _table: &crate::Table<Self, E>,
+        _id: impl vantage_dataset::dataset::Id,
+        _partial: serde_json::Value,
+    ) -> Result<()>
+    where
+        E: crate::Entity,
+        Self: Sized,
+    {
+        Err(vantage_error!(
+            "patch_table_data_with_id not implemented in mock"
+        ))
+    }
+
+    async fn delete_table_data_with_id<E>(
+        &self,
+        _table: &crate::Table<Self, E>,
+        _id: impl vantage_dataset::dataset::Id,
+    ) -> Result<()>
+    where
+        E: crate::Entity,
+        Self: Sized,
+    {
+        Err(vantage_error!(
+            "delete_table_data_with_id not implemented in mock"
+        ))
+    }
+
+    async fn update_table_data<E, F>(
+        &self,
+        _table: &crate::Table<Self, E>,
+        _callback: F,
+    ) -> Result<()>
+    where
+        E: crate::Entity,
+        F: Fn(&mut E) + Send + Sync,
+        Self: Sized,
+    {
+        Err(vantage_error!("update_table_data not implemented in mock"))
+    }
+
+    async fn delete_table_data<E>(&self, _table: &crate::Table<Self, E>) -> Result<()>
+    where
+        E: crate::Entity,
+        Self: Sized,
+    {
+        Err(vantage_error!("delete_table_data not implemented in mock"))
+    }
+
+    async fn get_table_data_by_id<E>(
+        &self,
+        _table: &crate::Table<Self, E>,
+        _id: impl vantage_dataset::dataset::Id,
+    ) -> Result<E>
+    where
+        E: crate::Entity,
+        Self: Sized,
+    {
+        Err(vantage_error!(
+            "get_table_data_by_id not implemented in mock"
+        ))
+    }
 }
 
 #[cfg(test)]

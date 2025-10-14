@@ -322,4 +322,91 @@ impl vantage_table::TableSource for Redb {
 
         Ok(Some(record_id))
     }
+
+    async fn insert_table_data_with_id<E>(
+        &self,
+        _table: &vantage_table::Table<Self, E>,
+        _id: impl vantage_dataset::dataset::Id,
+        _record: E,
+    ) -> vantage_dataset::dataset::Result<()>
+    where
+        E: vantage_core::Entity + serde::Serialize,
+        Self: Sized,
+    {
+        todo!("insert_table_data_with_id not yet implemented")
+    }
+
+    async fn replace_table_data_with_id<E>(
+        &self,
+        _table: &vantage_table::Table<Self, E>,
+        _id: impl vantage_dataset::dataset::Id,
+        _record: E,
+    ) -> vantage_dataset::dataset::Result<()>
+    where
+        E: vantage_core::Entity + serde::Serialize,
+        Self: Sized,
+    {
+        todo!("replace_table_data_with_id not yet implemented")
+    }
+
+    async fn patch_table_data_with_id<E>(
+        &self,
+        _table: &vantage_table::Table<Self, E>,
+        _id: impl vantage_dataset::dataset::Id,
+        _partial: serde_json::Value,
+    ) -> vantage_dataset::dataset::Result<()>
+    where
+        E: vantage_core::Entity,
+        Self: Sized,
+    {
+        todo!("patch_table_data_with_id not yet implemented")
+    }
+
+    async fn delete_table_data_with_id<E>(
+        &self,
+        _table: &vantage_table::Table<Self, E>,
+        _id: impl vantage_dataset::dataset::Id,
+    ) -> vantage_dataset::dataset::Result<()>
+    where
+        E: vantage_core::Entity,
+        Self: Sized,
+    {
+        todo!("delete_table_data_with_id not yet implemented")
+    }
+
+    async fn update_table_data<E, F>(
+        &self,
+        _table: &vantage_table::Table<Self, E>,
+        _callback: F,
+    ) -> vantage_dataset::dataset::Result<()>
+    where
+        E: vantage_core::Entity,
+        F: Fn(&mut E) + Send + Sync,
+        Self: Sized,
+    {
+        todo!("update_table_data not yet implemented")
+    }
+
+    async fn delete_table_data<E>(
+        &self,
+        _table: &vantage_table::Table<Self, E>,
+    ) -> vantage_dataset::dataset::Result<()>
+    where
+        E: vantage_core::Entity,
+        Self: Sized,
+    {
+        todo!("delete_table_data not yet implemented")
+    }
+
+    async fn get_table_data_by_id<E>(
+        &self,
+        _table: &vantage_table::Table<Self, E>,
+        _id: impl vantage_dataset::dataset::Id,
+    ) -> vantage_dataset::dataset::Result<E>
+    where
+        E: vantage_core::Entity,
+        Self: Sized,
+    {
+        todo!("get_table_data_by_id not yet implemented")
+    }
 }

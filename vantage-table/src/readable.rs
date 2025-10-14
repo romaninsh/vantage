@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use vantage_dataset::dataset::{Id, ReadableDataSet, Result, VantageError};
+use vantage_dataset::dataset::{Id, ReadableDataSet, Result};
 
 use crate::{Entity, Table, TableSource};
 
@@ -20,9 +20,8 @@ where
     }
 
     /// get_id must be implemented properly for a specific table driver
-    async fn get_id(&self, _id: impl Id) -> Result<E> {
-        let _id = _id.into();
-        Err(VantageError::no_capability("get_id", "Table"))
+    async fn get_id(&self, id: impl Id) -> Result<E> {
+        self.data_source().get_table_data_by_id(self, id).await
     }
 
     async fn get_as<U>(&self) -> Result<Vec<U>>

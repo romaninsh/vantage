@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use bakery_model3::*;
 use vantage_expressions::AssociatedQueryable;
 use vantage_surrealdb::prelude::*;
+use vantage_table::record::RecordTable;
 
 async fn create_bootstrap_db() -> Result<()> {
     // Run this once for demos to work:
@@ -108,6 +109,56 @@ async fn main() -> Result<()> {
     // println!("Report:\n{}", report);
 
     // Using this method is safe, because it is unit-tested.
+
+    println!("-[ Record functionality test ]------------------------------------");
+
+    // Get clients with their IDs by explicitly selecting the id field
+    let select_with_id = set_of_clients.select().with_field("id");
+    let raw_results = select_with_id.get(set_of_clients.data_source()).await;
+
+    let first_result = raw_results
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("No clients found in database"))?;
+    println!(
+        "Raw client data with ID: {}",
+        serde_json::to_string_pretty(&serde_json::Value::Object(first_result.clone()))?
+    );
+
+    let id_value = first_result
+        .get("id")
+        .ok_or_else(|| anyhow::anyhow!("No 'id' field found in record"))?;
+    let id_str = id_value
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("ID field is not a string"))?;
+    println!("Attempting to get record with ID: {}", id_str);
+
+    // Record type is now: Record<'_, Client, Table<SurrealDB, Client>>
+    let mut client_record = set_of_clients
+        .get_record(id_str)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Failed to retrieve record"))?;
+
+    println!("✓ Successfully retrieved client record:");
+    println!("  ID: {}", client_record.id());
+    println!("  Name: {}", client_record.name);
+    println!("  Email: {}", client_record.email);
+    println!("  Is paying: {}", client_record.is_paying_client);
+    println!("  Contact: {}", client_record.contact_details);
+
+    // Modify the record through DerefMut - only update contact_details to avoid unique constraints
+    let old_contact = client_record.contact_details.clone();
+    client_record.contact_details = format!(
+        "Updated via Record API at {}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs()
+    );
+
+    // Save changes back to database
+    client_record.save().await?;
+    println!("✓ Updated and saved client record");
+    println!("  Old contact: {}", old_contact);
+    println!("  New contact: {}", client_record.contact_details);
 
     /////////////////////////////////////////////////////////////////////////////////////////
     println!("-------------------------------------------------------------------------------");

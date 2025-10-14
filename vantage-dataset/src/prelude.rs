@@ -13,6 +13,9 @@ pub use crate::datasetsource::{
     DataSetSource, InsertableDataSetSource, ReadableDataSetSource, WritableDataSetSource,
 };
 
+// Record functionality
+pub use crate::record::{Record, RecordDataSet};
+
 // Re-export commonly used external dependencies
 pub use async_trait::async_trait;
 pub use serde::{Deserialize, Serialize};
