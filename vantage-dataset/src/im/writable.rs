@@ -403,7 +403,7 @@ mod tests {
         // Update all records using JSON values
         users
             .update(|user| {
-                user.age = user.age + 1;
+                user.age += 1;
                 user.name = format!("{} (Updated)", user.name);
             })
             .await
