@@ -426,23 +426,23 @@ impl vantage_table::TableSource for SurrealDB {
             callback(&mut value);
 
             // Extract ID from the value to update the record
-            if let Some(id_value) = value.get("id") {
-                if let Some(id_str) = id_value.as_str() {
-                    let thing = if id_str.contains(':') {
-                        id_str.parse::<Thing>().map_err(|e| {
-                            vantage_core::util::error::vantage_error!("Invalid Thing format: {}", e)
-                        })?
-                    } else {
-                        Thing::new(table.table_name(), id_str.to_string())
-                    };
+            if let Some(id_value) = value.get("id")
+                && let Some(id_str) = id_value.as_str()
+            {
+                let thing = if id_str.contains(':') {
+                    id_str.parse::<Thing>().map_err(|e| {
+                        vantage_core::util::error::vantage_error!("Invalid Thing format: {}", e)
+                    })?
+                } else {
+                    Thing::new(table.table_name(), id_str.to_string())
+                };
 
-                    let record_id: surreal_client::RecordId = thing.into();
-                    let client = self.inner.lock().await;
-                    client
-                        .update_record(record_id, value)
-                        .await
-                        .context("Failed to update record using value callback")?;
-                }
+                let record_id: surreal_client::RecordId = thing.into();
+                let client = self.inner.lock().await;
+                client
+                    .update_record(record_id, value)
+                    .await
+                    .context("Failed to update record using value callback")?;
             }
         }
 

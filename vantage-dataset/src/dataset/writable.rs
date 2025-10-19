@@ -36,9 +36,4 @@ pub trait WritableValueSet {
 
     /// Delete all records in the DataSet
     async fn delete_all(&self) -> Result<()>;
-
-    /// Update records using a callback that modifies each record in place as JSON values
-    async fn update_value<F>(&self, callback: F) -> Result<()>
-    where
-        F: Fn(&mut serde_json::Value) + Send + Sync;
 }

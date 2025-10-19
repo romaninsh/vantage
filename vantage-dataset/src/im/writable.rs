@@ -126,20 +126,6 @@ where
         self.data_source.update_table(&self.table_name, table);
         Ok(())
     }
-
-    async fn update_value<F>(&self, callback: F) -> Result<()>
-    where
-        F: Fn(&mut serde_json::Value) + Send + Sync,
-    {
-        let mut table = self.data_source.get_or_create_table(&self.table_name);
-
-        for (_, value) in table.iter_mut() {
-            callback(value);
-        }
-
-        self.data_source.update_table(&self.table_name, table);
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -416,21 +402,9 @@ mod tests {
 
         // Update all records using JSON values
         users
-            .update_value(|value| {
-                if let serde_json::Value::Object(map) = value {
-                    if let Some(age) = map.get("age").and_then(|v| v.as_u64()) {
-                        map.insert(
-                            "age".to_string(),
-                            serde_json::Value::Number((age + 1).into()),
-                        );
-                    }
-                    if let Some(name) = map.get("name").and_then(|v| v.as_str()) {
-                        map.insert(
-                            "name".to_string(),
-                            serde_json::Value::String(format!("{} (Updated)", name)),
-                        );
-                    }
-                }
+            .update(|user| {
+                user.age = user.age + 1;
+                user.name = format!("{} (Updated)", user.name);
             })
             .await
             .unwrap();

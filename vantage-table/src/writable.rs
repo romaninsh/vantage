@@ -68,13 +68,4 @@ where
     async fn delete_all(&self) -> Result<()> {
         self.data_source.delete_table_data(self).await
     }
-
-    async fn update_value<F>(&self, callback: F) -> Result<()>
-    where
-        F: Fn(&mut serde_json::Value) + Send + Sync,
-    {
-        self.data_source
-            .update_table_data_value(self, callback)
-            .await
-    }
 }
