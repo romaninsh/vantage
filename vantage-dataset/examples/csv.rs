@@ -31,7 +31,7 @@ impl DataSetSource for MockCsv {
     }
 
     async fn get_dataset_info(&self, name: &str) -> Result<Option<serde_json::Value>> {
-        if self.get_file_content(name).is_some() {
+        if self.get_file_content(name).is_ok() {
             Ok(Some(serde_json::json!({
                 "name": name,
                 "type": "csv",
@@ -49,8 +49,8 @@ impl ReadableDataSetSource for MockCsv {
     type DataSet<E: Entity> = CsvFile<E>;
 
     async fn get_readable<E: Entity>(&self, name: &str) -> Result<Option<Self::DataSet<E>>> {
-        if self.get_file_content(name).is_some() {
-            Ok(Some(CsvFile::new(self, name)))
+        if self.get_file_content(name).is_ok() {
+            Ok(Some(CsvFile::new(self.clone(), name)))
         } else {
             Ok(None)
         }
@@ -118,7 +118,7 @@ async fn main() -> Result<()> {
 
     // Test direct dataset creation (backward compatibility)
     println!("\n=== Direct Dataset Creation (Backward Compatibility) ===");
-    let direct_users = CsvFile::<User>::new(&csv_ds, "users.csv");
+    let direct_users = CsvFile::<User>::new(csv_ds.clone(), "users.csv");
     let first_user_direct = direct_users.get_some().await?.unwrap();
     println!(
         "Direct access - First user: {} - {}",
@@ -134,7 +134,7 @@ async fn main() -> Result<()> {
     }
 
     // Try to read from a non-existent file directly
-    let missing_file = CsvFile::<User>::new(&csv_ds, "missing.csv");
+    let missing_file = CsvFile::<User>::new(csv_ds.clone(), "missing.csv");
     match missing_file.get_some().await {
         Ok(_) => println!("Unexpected success"),
         Err(e) => println!("Expected error for missing file: {}", e),

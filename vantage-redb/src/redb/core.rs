@@ -425,4 +425,91 @@ impl vantage_table::TableSource for Redb {
     {
         todo!("get_table_data_by_id not yet implemented")
     }
+
+    async fn get_table_data_as_value_by_id<E>(
+        &self,
+        _table: &vantage_table::Table<Self, E>,
+        _id: &str,
+    ) -> vantage_dataset::dataset::Result<serde_json::Value>
+    where
+        E: vantage_core::Entity,
+        Self: Sized,
+    {
+        use vantage_core::util::error::VantageError;
+
+        Err(VantageError::no_capability(
+            "get_table_data_as_value_by_id",
+            "ReDB requires specific entity types for data retrieval",
+        ))
+    }
+
+    async fn get_table_data_as_value_some<E>(
+        &self,
+        _table: &vantage_table::Table<Self, E>,
+    ) -> vantage_dataset::dataset::Result<Option<serde_json::Value>>
+    where
+        E: vantage_core::Entity,
+        Self: Sized,
+    {
+        use vantage_core::util::error::VantageError;
+
+        Err(VantageError::no_capability(
+            "get_table_data_as_value_some",
+            "ReDB requires specific entity types for data retrieval",
+        ))
+    }
+
+    async fn insert_table_data_with_id_value<E>(
+        &self,
+        _table: &vantage_table::Table<Self, E>,
+        _id: &str,
+        _record: serde_json::Value,
+    ) -> vantage_dataset::dataset::Result<()>
+    where
+        E: vantage_core::Entity,
+        Self: Sized,
+    {
+        use vantage_core::util::error::VantageError;
+
+        Err(VantageError::no_capability(
+            "insert_table_data_with_id_value",
+            "ReDB requires specific entity types for data insertion",
+        ))
+    }
+
+    async fn replace_table_data_with_id_value<E>(
+        &self,
+        _table: &vantage_table::Table<Self, E>,
+        _id: &str,
+        _record: serde_json::Value,
+    ) -> vantage_dataset::dataset::Result<()>
+    where
+        E: vantage_core::Entity,
+        Self: Sized,
+    {
+        use vantage_core::util::error::VantageError;
+
+        Err(VantageError::no_capability(
+            "replace_table_data_with_id_value",
+            "ReDB requires specific entity types for data replacement",
+        ))
+    }
+
+    async fn update_table_data_value<E, F>(
+        &self,
+        _table: &vantage_table::Table<Self, E>,
+        _callback: F,
+    ) -> vantage_dataset::dataset::Result<()>
+    where
+        E: vantage_core::Entity,
+        F: Fn(&mut serde_json::Value) + Send + Sync,
+        Self: Sized,
+    {
+        use vantage_core::util::error::VantageError;
+
+        Err(VantageError::no_capability(
+            "update_table_data_value",
+            "ReDB requires specific entity types for data updates",
+        ))
+    }
 }

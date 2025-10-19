@@ -8,7 +8,7 @@ pub mod insertable;
 pub mod readable;
 pub mod table;
 pub mod writable;
-pub use table::Table;
+pub use table::ImTable;
 
 /// ImDataSource stores tables in memory using IndexMap for ordered iteration
 #[derive(Debug, Clone)]
@@ -45,7 +45,7 @@ impl Default for ImDataSource {
 mod tests {
     use crate::{
         dataset::{InsertableDataSet, ReadableDataSet},
-        im::table::Table,
+        im::table::ImTable,
     };
 
     use super::*;
@@ -62,7 +62,7 @@ mod tests {
     #[tokio::test]
     async fn test_insert_and_get() {
         let data_source = ImDataSource::new();
-        let users = Table::<User>::new(&data_source, "users");
+        let users = ImTable::<User>::new(&data_source, "users");
 
         // Insert users
         let user1 = User {
@@ -95,7 +95,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_some() {
         let data_source = ImDataSource::new();
-        let users = Table::<User>::new(&data_source, "users");
+        let users = ImTable::<User>::new(&data_source, "users");
 
         let user = User {
             id: Some("charlie-123".to_string()),
@@ -115,7 +115,7 @@ mod tests {
     #[tokio::test]
     async fn test_empty_table() {
         let data_source = ImDataSource::new();
-        let users = Table::<User>::new(&data_source, "empty_users");
+        let users = ImTable::<User>::new(&data_source, "empty_users");
 
         // Get from empty table should return empty vec
         let all_users: Vec<User> = users.get().await.unwrap();
@@ -129,7 +129,7 @@ mod tests {
     #[tokio::test]
     async fn test_multiple_tables() {
         let data_source = ImDataSource::new();
-        let users = Table::<User>::new(&data_source, "users");
+        let users = ImTable::<User>::new(&data_source, "users");
 
         #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
         struct Product {
@@ -138,7 +138,7 @@ mod tests {
             price: f64,
         }
 
-        let products = Table::<Product>::new(&data_source, "products");
+        let products = ImTable::<Product>::new(&data_source, "products");
 
         // Insert into both tables
         users
@@ -175,7 +175,7 @@ mod tests {
     #[tokio::test]
     async fn test_empty_string_id() {
         let data_source = ImDataSource::new();
-        let users = Table::<User>::new(&data_source, "users");
+        let users = ImTable::<User>::new(&data_source, "users");
 
         // Insert user with empty string ID (should be preserved as valid ID)
         let user = User {
@@ -196,8 +196,8 @@ mod tests {
     #[tokio::test]
     async fn test_import() -> Result<(), Box<dyn std::error::Error>> {
         let data_source = ImDataSource::new();
-        let users1 = Table::<User>::new(&data_source, "users1");
-        let mut users2 = Table::<User>::new(&data_source, "users2");
+        let users1 = ImTable::<User>::new(&data_source, "users1");
+        let mut users2 = ImTable::<User>::new(&data_source, "users2");
 
         // Insert user with empty string ID (should be preserved as valid ID)
         let user = User {

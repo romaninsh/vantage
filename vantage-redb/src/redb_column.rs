@@ -6,7 +6,7 @@
 use crate::util::{Context, Result, vantage_error};
 use redb::{TableDefinition, WriteTransaction};
 use std::collections::{HashMap, HashSet};
-use vantage_dataset::dataset::ReadableDataSet;
+use vantage_dataset::dataset::{ReadableDataSet, ReadableValueSet};
 use vantage_expressions::{Expression, expr};
 use vantage_table::{ColumnFlag, ColumnLike};
 
@@ -47,7 +47,7 @@ impl RedbColumn {
 
     pub async fn rebuild_index(
         &self,
-        data: &impl ReadableDataSet<serde_json::Value>,
+        data: &(impl ReadableDataSet<serde_json::Value> + ReadableValueSet),
         write_txn: &WriteTransaction,
     ) -> Result<()> {
         let values = data.get_values().await?;

@@ -126,6 +126,50 @@ impl TableSource for MockTableSource {
         }
     }
 
+    async fn get_table_data_as_value_by_id<E>(
+        &self,
+        table: &crate::Table<Self, E>,
+        id: &str,
+    ) -> Result<serde_json::Value>
+    where
+        E: crate::Entity,
+        Self: Sized,
+    {
+        let data = self.data.lock().unwrap();
+        let vec = data.get(&table.table_name).ok_or(VantageError::no_data())?;
+
+        for value in vec {
+            if let Some(record_id) = value.get("id") {
+                let record_id_str = record_id
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .or_else(|| record_id.as_i64().map(|i| i.to_string()))
+                    .or_else(|| record_id.as_u64().map(|u| u.to_string()))
+                    .unwrap_or_else(|| "unknown".to_string());
+
+                if record_id_str == id {
+                    return Ok(value.clone());
+                }
+            }
+        }
+
+        Err(vantage_error!("No record found with ID: {}", id))
+    }
+
+    async fn get_table_data_as_value_some<E>(
+        &self,
+        table: &crate::Table<Self, E>,
+    ) -> Result<Option<serde_json::Value>>
+    where
+        E: crate::Entity,
+        Self: Sized,
+    {
+        match self.data.lock().unwrap().get(&table.table_name) {
+            Some(data) => Ok(data.first().cloned()),
+            None => Ok(None),
+        }
+    }
+
     async fn insert_table_data<E>(
         &self,
         table: &crate::Table<Self, E>,
@@ -264,6 +308,106 @@ impl TableSource for MockTableSource {
         Err(vantage_error!(
             "get_table_data_by_id not implemented in mock"
         ))
+    }
+
+    async fn insert_table_data_with_id_value<E>(
+        &self,
+        table: &crate::Table<Self, E>,
+        id: &str,
+        record: serde_json::Value,
+    ) -> Result<()>
+    where
+        E: crate::Entity,
+        Self: Sized,
+    {
+        let mut data = self.data.lock().unwrap();
+        let vec = data
+            .get_mut(&table.table_name)
+            .ok_or(VantageError::no_data())?;
+
+        // Check if ID already exists
+        for value in vec.iter() {
+            if let Some(record_id) = value.get("id") {
+                let record_id_str = record_id
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .or_else(|| record_id.as_i64().map(|i| i.to_string()))
+                    .or_else(|| record_id.as_u64().map(|u| u.to_string()))
+                    .unwrap_or_else(|| "unknown".to_string());
+
+                if record_id_str == id {
+                    return Err(vantage_error!("Record with ID '{}' already exists", id));
+                }
+            }
+        }
+
+        vec.push(record);
+        Ok(())
+    }
+
+    async fn replace_table_data_with_id_value<E>(
+        &self,
+        table: &crate::Table<Self, E>,
+        id: &str,
+        record: serde_json::Value,
+    ) -> Result<()>
+    where
+        E: crate::Entity,
+        Self: Sized,
+    {
+        let mut data = self.data.lock().unwrap();
+        let vec = data
+            .get_mut(&table.table_name)
+            .ok_or(VantageError::no_data())?;
+
+        // Find and replace the record with matching ID
+        let mut found_index = None;
+        for (index, value) in vec.iter().enumerate() {
+            if let Some(record_id) = value.get("id") {
+                let record_id_str = record_id
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .or_else(|| record_id.as_i64().map(|i| i.to_string()))
+                    .or_else(|| record_id.as_u64().map(|u| u.to_string()))
+                    .unwrap_or_else(|| "unknown".to_string());
+
+                if record_id_str == id {
+                    found_index = Some(index);
+                    break;
+                }
+            }
+        }
+
+        if let Some(index) = found_index {
+            vec[index] = record;
+        } else {
+            // Upsert - add if not found
+            vec.push(record);
+        }
+
+        Ok(())
+    }
+
+    async fn update_table_data_value<E, F>(
+        &self,
+        table: &crate::Table<Self, E>,
+        callback: F,
+    ) -> Result<()>
+    where
+        E: crate::Entity,
+        F: Fn(&mut serde_json::Value) + Send + Sync,
+        Self: Sized,
+    {
+        let mut data = self.data.lock().unwrap();
+        let vec = data
+            .get_mut(&table.table_name)
+            .ok_or(VantageError::no_data())?;
+
+        for value in vec.iter_mut() {
+            callback(value);
+        }
+
+        Ok(())
     }
 }
 

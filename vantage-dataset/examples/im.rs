@@ -1,9 +1,7 @@
 // examples/im_example.rs
 
 use serde::{Deserialize, Serialize};
-use vantage_dataset::dataset::{InsertableDataSet, ReadableDataSet};
-use vantage_dataset::im::{ImDataSource, Table};
-use vantage_dataset::record::RecordDataSet;
+use vantage_dataset::prelude::*;
 
 mod mocks;
 
@@ -23,11 +21,11 @@ struct Product {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> vantage_core::Result<()> {
     let im_data_source = ImDataSource::new();
 
-    let users = Table::<User>::new(&im_data_source, "users");
-    let mut products = Table::<Product>::new(&im_data_source, "products");
+    let users = ImTable::<User>::new(&im_data_source, "users");
+    let mut products = ImTable::<Product>::new(&im_data_source, "products");
 
     // Insert some users
     users
@@ -59,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Insert some products (no ID field needed - auto-generated)
     let csv_products =
-        mocks::csv_mock::CsvFile::<Product>::new(&mocks::csv_mock::MockCsv::new(), "products.csv");
+        mocks::csv_mock::CsvFile::<Product>::new(mocks::csv_mock::MockCsv::new(), "products.csv");
 
     products.import(csv_products).await?;
 

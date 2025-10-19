@@ -4,7 +4,9 @@ use csv::ReaderBuilder;
 use std::collections::HashMap;
 use vantage_core::Entity;
 use vantage_core::util::error::{Context, vantage_error};
-use vantage_dataset::dataset::{Id, ReadableDataSet, Result, VantageError};
+use vantage_dataset::dataset::{
+    Id, ReadableAsDataSet, ReadableDataSet, ReadableValueSet, Result, VantageError,
+};
 
 /// MockCsv contains hardcoded CSV data as strings
 #[derive(Debug, Clone)]
@@ -19,40 +21,56 @@ impl MockCsv {
         // Add users.csv data
         files.insert(
             "users.csv".to_string(),
-            "id,name,email,age\n1,Alice,alice@example.com,25\n2,Bob,bob@example.com,30\n3,Charlie,charlie@example.com,35".to_string(),
+            r#"id,name,email,age
+1,Alice Johnson,alice@example.com,28
+2,Bob Smith,bob@example.com,35
+3,Charlie Brown,charlie@example.com,42
+4,Diana Prince,diana@example.com,31"#
+                .to_string(),
         );
 
         // Add products.csv data
         files.insert(
             "products.csv".to_string(),
-            "id,name,price,category\n1,Laptop,999.99,Electronics\n2,Chair,149.99,Furniture\n3,Book,19.99,Education".to_string(),
+            r#"id,name,price,category
+101,Laptop,999.99,Electronics
+102,Coffee Mug,12.50,Kitchen
+103,Notebook,5.99,Office
+104,Wireless Mouse,25.00,Electronics"#
+                .to_string(),
         );
 
         Self { files }
     }
 
-    pub fn get_file_content(&self, filename: &str) -> Option<&String> {
-        self.files.get(filename)
+    pub fn get_csv_file<T: Entity>(&self, filename: &str) -> CsvFile<T> {
+        CsvFile::new(self.clone(), filename)
     }
+
     pub fn list_files(&self) -> impl Iterator<Item = &String> {
         self.files.keys()
     }
+
+    pub fn get_file_content(&self, filename: &str) -> Result<&str> {
+        self.files
+            .get(filename)
+            .map(|s| s.as_str())
+            .ok_or_else(|| vantage_error!("File {} not found", filename))
+    }
 }
 
-/// CsvFile represents a typed CSV file dataset
-pub struct CsvFile<T> {
+/// CsvFile represents a single CSV file that can be read as a dataset
+#[derive(Debug, Clone)]
+pub struct CsvFile<T: Entity> {
     csv_ds: MockCsv,
     filename: String,
     _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T> CsvFile<T>
-where
-    T: Entity,
-{
-    pub fn new(csv_ds: &MockCsv, filename: &str) -> Self {
+impl<T: Entity> CsvFile<T> {
+    pub fn new(csv_ds: MockCsv, filename: &str) -> Self {
         Self {
-            csv_ds: csv_ds.clone(),
+            csv_ds,
             filename: filename.to_string(),
             _phantom: std::marker::PhantomData,
         }
@@ -75,7 +93,45 @@ where
     async fn get_some(&self) -> Result<Option<T>> {
         self.get_some_as().await
     }
+}
 
+#[async_trait::async_trait]
+impl<T> ReadableValueSet for CsvFile<T>
+where
+    T: Entity,
+{
+    async fn get_values(&self) -> Result<Vec<serde_json::Value>> {
+        let content = self
+            .csv_ds
+            .get_file_content(&self.filename)
+            .context("Failed to get CSV content")?;
+
+        let mut reader = ReaderBuilder::new().from_reader(content.as_bytes());
+        let mut records = Vec::new();
+
+        for result in reader.deserialize::<serde_json::Value>() {
+            let record = result.context("Failed to deserialize CSV record")?;
+            records.push(record);
+        }
+
+        Ok(records)
+    }
+
+    async fn get_id_value(&self, _id: &str) -> Result<serde_json::Value> {
+        return Err(VantageError::no_capability("get_id_value", "CsvFile"));
+    }
+
+    async fn get_some_value(&self) -> Result<Option<serde_json::Value>> {
+        let values = self.get_values().await?;
+        Ok(values.into_iter().next())
+    }
+}
+
+#[async_trait::async_trait]
+impl<T> ReadableAsDataSet for CsvFile<T>
+where
+    T: Entity,
+{
     async fn get_as<U>(&self) -> Result<Vec<U>>
     where
         U: Entity,
@@ -83,68 +139,31 @@ where
         let content = self
             .csv_ds
             .get_file_content(&self.filename)
-            .ok_or_else(|| vantage_error!("File '{}' not found", self.filename))?;
+            .context("Failed to get CSV content")?;
 
-        let mut reader = ReaderBuilder::new()
-            .has_headers(true)
-            .from_reader(content.as_bytes());
-
+        let mut reader = ReaderBuilder::new().from_reader(content.as_bytes());
         let mut records = Vec::new();
-        for result in reader.deserialize() {
-            let record: U = result.context("CSV deserialization error")?;
+
+        for result in reader.deserialize::<U>() {
+            let record = result.context("Failed to deserialize CSV record")?;
             records.push(record);
         }
 
         Ok(records)
+    }
+
+    async fn get_id_as<U>(&self, _id: &str) -> Result<U>
+    where
+        U: Entity,
+    {
+        return Err(VantageError::no_capability("get_id_as", "CsvFile"));
     }
 
     async fn get_some_as<U>(&self) -> Result<Option<U>>
     where
         U: Entity,
     {
-        let content = self
-            .csv_ds
-            .get_file_content(&self.filename)
-            .ok_or_else(|| vantage_error!("File '{}' not found", self.filename))?;
-
-        let mut reader = ReaderBuilder::new()
-            .has_headers(true)
-            .from_reader(content.as_bytes());
-
-        let mut records = reader.deserialize();
-        if let Some(result) = records.next() {
-            let record: U = result.context("CSV deserialization error")?;
-            Ok(Some(record))
-        } else {
-            Ok(None)
-        }
-    }
-
-    async fn get_values(&self) -> Result<Vec<serde_json::Value>> {
-        let content = self
-            .csv_ds
-            .get_file_content(&self.filename)
-            .ok_or_else(|| vantage_error!("File '{}' not found", self.filename))?;
-
-        let mut reader = ReaderBuilder::new()
-            .has_headers(true)
-            .from_reader(content.as_bytes());
-
-        let mut records = Vec::new();
-        for (index, result) in reader.deserialize::<serde_json::Value>().enumerate() {
-            let mut record = result.context("CSV deserialization error")?;
-
-            // Add id field for indexing purposes
-            if let serde_json::Value::Object(ref mut map) = record {
-                map.insert(
-                    "id".to_string(),
-                    serde_json::Value::String(format!("row{}", index + 1)),
-                );
-            }
-
-            records.push(record);
-        }
-
-        Ok(records)
+        let records = self.get_as().await?;
+        Ok(records.into_iter().next())
     }
 }

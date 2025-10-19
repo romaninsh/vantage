@@ -3,12 +3,12 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
     dataset::{Importable, InsertableDataSet, ReadableDataSet, Result},
-    im::Table,
+    im::ImTable,
 };
 use vantage_core::util::error::Context;
 
 #[async_trait]
-impl<E> InsertableDataSet<E> for Table<E>
+impl<E> InsertableDataSet<E> for ImTable<E>
 where
     E: Serialize + DeserializeOwned + Send + Sync,
 {
@@ -49,7 +49,7 @@ where
 }
 
 #[async_trait]
-impl<T> Importable<T> for Table<T>
+impl<T> Importable<T> for ImTable<T>
 where
     T: Serialize + DeserializeOwned + Send + Sync,
 {

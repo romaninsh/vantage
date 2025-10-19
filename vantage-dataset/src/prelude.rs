@@ -5,13 +5,16 @@
 
 // Dataset traits for working with data
 pub use crate::dataset::{
-    Id, Importable, InsertableDataSet, ReadableDataSet, Result, VantageError, WritableDataSet,
+    Id, Importable, InsertableDataSet, ReadableAsDataSet, ReadableDataSet, ReadableValueSet,
+    Result, VantageError, WritableDataSet, WritableValueSet,
 };
 
 // DataSource traits for dataset discovery and creation
 pub use crate::datasetsource::{
     DataSetSource, InsertableDataSetSource, ReadableDataSetSource, WritableDataSetSource,
 };
+
+pub use crate::im::{ImDataSource, ImTable};
 
 // Record functionality
 pub use crate::record::{Record, RecordDataSet};
