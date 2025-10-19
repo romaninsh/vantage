@@ -8,13 +8,13 @@ use crate::{
 use vantage_core::util::error::Context;
 
 /// Table represents a typed table in the ImDataSource
-pub struct Table<E> {
+pub struct ImTable<E> {
     pub(super) data_source: ImDataSource,
     pub(super) table_name: String,
     _phantom: std::marker::PhantomData<E>,
 }
 
-impl<E> Table<E>
+impl<E> ImTable<E>
 where
     E: Serialize + DeserializeOwned,
 {

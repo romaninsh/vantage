@@ -21,10 +21,10 @@ mod insertable;
 pub use insertable::{Importable, InsertableDataSet};
 
 mod readable;
-pub use readable::ReadableDataSet;
+pub use readable::{ReadableAsDataSet, ReadableDataSet, ReadableValueSet};
 
 mod writable;
-pub use writable::WritableDataSet;
+pub use writable::{WritableDataSet, WritableValueSet};
 
 // mod scalar;
 // pub use scalar::ScalarDataSet;

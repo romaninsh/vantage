@@ -58,18 +58,23 @@ impl vantage_table::TableSource for SurrealDB {
         Self: Sized,
     {
         let select = table.select().only_first_row();
-        let raw_result = select.get(self).await;
+        let raw_result = select.try_get(self).await;
 
-        let id = raw_result
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown")
-            .to_string();
+        match raw_result {
+            Some(map) => {
+                let id = map
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
 
-        let entity = serde_json::from_value(serde_json::Value::Object(raw_result))
-            .context("Failed to deserialize entity")?;
+                let entity = serde_json::from_value(serde_json::Value::Object(map))
+                    .context("Failed to deserialize entity")?;
 
-        Ok(Some((id, entity)))
+                Ok(Some((id, entity)))
+            }
+            None => Ok(None),
+        }
     }
 
     async fn get_table_data_as_value<E>(
@@ -301,5 +306,146 @@ impl vantage_table::TableSource for SurrealDB {
         let entity = serde_json::from_value(raw_result).context("Failed to deserialize entity")?;
 
         Ok(entity)
+    }
+
+    async fn get_table_data_as_value_by_id<E>(
+        &self,
+        table: &vantage_table::Table<Self, E>,
+        id: &str,
+    ) -> vantage_dataset::dataset::Result<serde_json::Value>
+    where
+        E: vantage_core::Entity,
+        Self: Sized,
+    {
+        // Handle both full record IDs (e.g., "client:biff") and bare IDs (e.g., "biff")
+        let thing = if id.contains(':') {
+            // Already a full record ID, parse it directly
+            id.parse::<Thing>().map_err(|e| {
+                vantage_core::util::error::vantage_error!("Invalid Thing format: {}", e)
+            })?
+        } else {
+            // Bare ID, construct with table name
+            Thing::new(table.table_name(), id.to_string())
+        };
+
+        let record_id: surreal_client::RecordId = thing.into();
+
+        let client = self.inner.lock().await;
+        let raw_result = client
+            .select_record(record_id)
+            .await
+            .context("Failed to get record by ID")?;
+
+        Ok(raw_result)
+    }
+
+    async fn get_table_data_as_value_some<E>(
+        &self,
+        table: &vantage_table::Table<Self, E>,
+    ) -> vantage_dataset::dataset::Result<Option<serde_json::Value>>
+    where
+        E: vantage_core::Entity,
+        Self: Sized,
+    {
+        let select = table.select().only_first_row();
+        let raw_result = select.try_get(self).await;
+
+        match raw_result {
+            Some(map) => Ok(Some(serde_json::Value::Object(map))),
+            None => Ok(None),
+        }
+    }
+
+    async fn insert_table_data_with_id_value<E>(
+        &self,
+        table: &vantage_table::Table<Self, E>,
+        id: &str,
+        record: serde_json::Value,
+    ) -> vantage_dataset::dataset::Result<()>
+    where
+        E: vantage_core::Entity,
+        Self: Sized,
+    {
+        let thing = Thing::new(table.table_name(), id.to_string());
+        let record_id: surreal_client::RecordId = thing.into();
+
+        let client = self.inner.lock().await;
+        client
+            .create(&record_id.to_string(), Some(record))
+            .await
+            .context("Failed to insert record with ID using value")?;
+
+        Ok(())
+    }
+
+    async fn replace_table_data_with_id_value<E>(
+        &self,
+        table: &vantage_table::Table<Self, E>,
+        id: &str,
+        record: serde_json::Value,
+    ) -> vantage_dataset::dataset::Result<()>
+    where
+        E: vantage_core::Entity,
+        Self: Sized,
+    {
+        // Handle both full record IDs and bare IDs
+        let thing = if id.contains(':') {
+            id.parse::<Thing>().map_err(|e| {
+                vantage_core::util::error::vantage_error!("Invalid Thing format: {}", e)
+            })?
+        } else {
+            Thing::new(table.table_name(), id.to_string())
+        };
+
+        let record_id: surreal_client::RecordId = thing.into();
+
+        let client = self.inner.lock().await;
+        client
+            .update_record(record_id, record)
+            .await
+            .context("Failed to replace record using value")?;
+
+        Ok(())
+    }
+
+    async fn update_table_data_value<E, F>(
+        &self,
+        table: &vantage_table::Table<Self, E>,
+        callback: F,
+    ) -> vantage_dataset::dataset::Result<()>
+    where
+        E: vantage_core::Entity,
+        F: Fn(&mut serde_json::Value) + Send + Sync,
+        Self: Sized,
+    {
+        // Get all records as values
+        let values = self.get_table_data_as_value(table).await?;
+
+        // Apply callback to each value and update
+        for mut value in values {
+            callback(&mut value);
+
+            // Extract ID from the value to update the record
+            if let Some(id_value) = value.get("id") {
+                if let Some(id_str) = id_value.as_str() {
+                    let thing = if id_str.contains(':') {
+                        id_str.parse::<Thing>().map_err(|e| {
+                            vantage_core::util::error::vantage_error!("Invalid Thing format: {}", e)
+                        })?
+                    } else {
+                        Thing::new(table.table_name(), id_str.to_string())
+                    };
+
+                    let record_id: surreal_client::RecordId = thing.into();
+                    let client = self.inner.lock().await;
+                    client
+                        .update_record(record_id, value)
+                        .await
+                        .context("Failed to update record using value callback")?;
+                }
+            }
+        }
+
+        Ok(())
     }
 }

@@ -103,6 +103,17 @@ impl SurrealSelect<result::SingleRow> {
             _ => panic!("Expected object or array from database query"),
         }
     }
+
+    pub async fn try_get(&self, db: &SurrealDB) -> Option<serde_json::Map<String, Value>> {
+        match db.execute(&self.expr()).await {
+            Value::Array(arr) if !arr.is_empty() => match &arr[0] {
+                Value::Object(map) => Some(map.clone()),
+                _ => None,
+            },
+            Value::Object(map) => Some(map),
+            _ => None,
+        }
+    }
 }
 
 impl<T> Default for SurrealSelect<T> {

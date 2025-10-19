@@ -48,6 +48,25 @@ pub trait TableSource: DataSource {
         E: Entity,
         Self: Sized;
 
+    /// Get a single record by ID as raw JSON value
+    async fn get_table_data_as_value_by_id<E>(
+        &self,
+        table: &crate::Table<Self, E>,
+        id: &str,
+    ) -> Result<serde_json::Value>
+    where
+        E: Entity,
+        Self: Sized;
+
+    /// Get some data from a table as raw JSON value (usually first record)
+    async fn get_table_data_as_value_some<E>(
+        &self,
+        table: &crate::Table<Self, E>,
+    ) -> Result<Option<serde_json::Value>>
+    where
+        E: Entity,
+        Self: Sized;
+
     /// Insert a record into the table and return generated ID
     async fn insert_table_data<E>(
         &self,
@@ -126,6 +145,39 @@ pub trait TableSource: DataSource {
     ) -> Result<E>
     where
         E: Entity,
+        Self: Sized;
+
+    /// Insert a record with a specific ID using JSON value, fails if ID already exists
+    async fn insert_table_data_with_id_value<E>(
+        &self,
+        table: &crate::Table<Self, E>,
+        id: &str,
+        record: serde_json::Value,
+    ) -> Result<()>
+    where
+        E: Entity,
+        Self: Sized;
+
+    /// Replace a record by ID using JSON value (upsert - creates if missing, replaces if exists)
+    async fn replace_table_data_with_id_value<E>(
+        &self,
+        table: &crate::Table<Self, E>,
+        id: &str,
+        record: serde_json::Value,
+    ) -> Result<()>
+    where
+        E: Entity,
+        Self: Sized;
+
+    /// Update records using a callback that modifies each record in place as JSON values
+    async fn update_table_data_value<E, F>(
+        &self,
+        table: &crate::Table<Self, E>,
+        callback: F,
+    ) -> Result<()>
+    where
+        E: Entity,
+        F: Fn(&mut serde_json::Value) + Send + Sync,
         Self: Sized;
 }
 
