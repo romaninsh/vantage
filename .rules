@@ -255,6 +255,14 @@ InsertableDataSet supports append-only sources like message queues,
 WritableDataSet provides full CRUD operations, and IndexableDataSet handles
 key-value stores.
 
+**vantage-live** provides in-memory caching with async backend persistence for
+building responsive UIs. LiveTable acts as a synchronization layer between fast
+cache (ImTable, ReDB, Redis) and permanent backend (SurrealDB, PostgreSQL,
+MongoDB). RecordEdit manages editing sessions with snapshot-based change
+tracking, field-level diffing, and conflict detection. Manual save gives users
+control over persistence timing while async operations keep UI responsive.
+Implements all DataSet traits as drop-in replacement for regular tables.
+
 **surreal-client** is a comprehensive SurrealDB client library featuring both
 HTTP and WebSocket connections, immutable client design for thread safety,
 builder pattern configuration, multiple authentication methods, connection
@@ -299,7 +307,9 @@ adapted for SurrealDB (string IDs, embedded documents), with commented
 placeholders showing exactly what 0.2 functionality needs implementing in 0.3.
 Includes working 0-intro.rs example that successfully connects to SurrealDB,
 executes queries, and retrieves real data using SurrealTableExt methods,
-demonstrating current capabilities and migration roadmap.
+demonstrating current capabilities and migration roadmap. Future integration
+with vantage-live will demonstrate responsive form editing with conflict
+detection.
 
 **bakery_api** illustrates Axum web framework integration, showing how Vantage
 tables can power HTTP APIs and generic data grid capabilities for web
