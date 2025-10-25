@@ -3,8 +3,6 @@ use serde::{Deserialize, Serialize};
 use vantage_surrealdb::SurrealDB;
 use vantage_table::Table;
 
-use crate::surrealdb;
-
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct Bakery {
     pub name: String,
@@ -12,8 +10,8 @@ pub struct Bakery {
 }
 
 impl Bakery {
-    pub fn table() -> Table<SurrealDB, Bakery> {
-        Table::new("bakery", surrealdb())
+    pub fn table(db: SurrealDB) -> Table<SurrealDB, Bakery> {
+        Table::new("bakery", db)
             .with_column("name")
             .with_column("profit_margin")
             .into_entity()

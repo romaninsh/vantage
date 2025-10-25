@@ -4,19 +4,16 @@
 //! You only need to include prelude::* to use this
 
 use vantage_core::{Result, vantage_error};
-use vantage_dataset::dataset::Id;
 use vantage_expressions::result;
 use vantage_table::{ColumnLike, Entity, Table};
 
-use crate::{
-    SurrealAssociated, SurrealColumn, SurrealColumnOperations, SurrealDB, SurrealSelect,
-    thing::Thing,
-};
+use crate::operation::RefOperation;
+use crate::{SurrealAssociated, SurrealColumn, SurrealDB, SurrealSelect};
 
 /// Core trait for SurrealDB table operations that other traits can build upon
 pub trait SurrealTableCore<E: Entity> {
-    /// Add ID condition using Thing for proper SurrealDB record ID construction
-    fn with_id(self, id: impl Id) -> Self;
+    /// Add ID condition using String ID
+    fn with_id(self, id: &str) -> Self;
 
     /// Create a SurrealAssociated that returns multiple rows with all columns
     fn select_surreal(&self) -> SurrealAssociated<SurrealSelect<result::Rows>, Vec<E>>;
@@ -44,9 +41,9 @@ pub trait SurrealTableCore<E: Entity> {
 }
 
 impl<E: Entity> SurrealTableCore<E> for Table<SurrealDB, E> {
-    fn with_id(self, id: impl Id) -> Self {
-        let thing = Thing::new(self.table_name(), id.into());
-        self.with_condition(SurrealColumn::new("id").eq(thing))
+    fn with_id(self, id: &str) -> Self {
+        let id_col = SurrealColumn::<String>::new("id");
+        self.with_condition(id_col.eq(id))
     }
 
     fn select_surreal(&self) -> SurrealAssociated<SurrealSelect<result::Rows>, Vec<E>> {
@@ -116,7 +113,7 @@ mod tests {
 
         assert_eq!(
             t.with_id("abc").select().preview(),
-            "SELECT * FROM t WHERE id = t:abc"
+            "SELECT * FROM t WHERE id = \"abc\""
         );
     }
 }

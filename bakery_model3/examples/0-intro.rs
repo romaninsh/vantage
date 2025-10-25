@@ -19,7 +19,7 @@ async fn create_bootstrap_db() -> Result<()> {
 async fn main() -> Result<()> {
     create_bootstrap_db().await?;
 
-    let set_of_clients = Client::table();
+    let set_of_clients = Client::table(surrealdb());
 
     println!("-[ get entity values out of any table ]------------------------------------");
     // Regardless of DataSource - you can get all clients like this

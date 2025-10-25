@@ -117,6 +117,10 @@ impl ColumnLike for RedbColumn {
     fn flags(&self) -> HashSet<ColumnFlag> {
         HashSet::new()
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 impl From<&str> for RedbColumn {

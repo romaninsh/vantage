@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
                 .unwrap_or_default()
                 .cloned()
                 .collect();
-            let table = get_table(model_name)?;
+            let table = get_table(model_name, bakery_model3::surrealdb())?;
             handle_commands_for(table, commands).await?;
         }
         None => {

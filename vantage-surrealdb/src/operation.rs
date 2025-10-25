@@ -4,8 +4,6 @@
 
 use vantage_expressions::{Expr, Expression, expr};
 
-use crate::identifier::Identifier;
-
 /// Trait for types that can be converted to Expression
 pub trait Expressive: Into<Expression> {
     /// Convert to Expression
@@ -37,7 +35,6 @@ pub trait RefOperation: Expressive {
     ///
     /// An expression that renders as "self<-reference<-table"
     fn lref(&self, reference: impl Into<String>, table: impl Into<String>) -> Expression;
-    fn alias(&self, alias: impl Into<String>) -> Expression;
     fn eq(&self, other: impl Into<Expr>) -> Expression;
     fn sub(&self, other: impl Into<Expr>) -> Expression;
     fn contains(&self, other: impl Into<Expr>) -> Expression;
@@ -65,10 +62,6 @@ where
             Expression::new(reference.into(), vec![]),
             Expression::new(table.into(), vec![])
         )
-    }
-
-    fn alias(&self, alias: impl Into<String>) -> Expression {
-        expr!("{} AS {}", self.expr(), Identifier::new(alias.into()))
     }
 
     fn eq(&self, other: impl Into<Expr>) -> Expression {

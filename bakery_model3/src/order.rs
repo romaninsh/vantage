@@ -4,8 +4,6 @@ use serde::{Deserialize, Serialize};
 use vantage_surrealdb::SurrealDB;
 use vantage_table::Table;
 
-use crate::surrealdb;
-
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct OrderLine {
     pub product: String, // Record ID for product
@@ -22,8 +20,8 @@ pub struct Order {
 }
 
 impl Order {
-    pub fn table() -> Table<SurrealDB, Order> {
-        Table::new("order", surrealdb())
+    pub fn table(db: SurrealDB) -> Table<SurrealDB, Order> {
+        Table::new("order", db)
             .with_column("bakery")
             .with_column("is_deleted")
             .with_column("created_at")

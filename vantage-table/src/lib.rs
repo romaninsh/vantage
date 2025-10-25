@@ -63,6 +63,7 @@ pub use crate::with_columns::{Column, ColumnFlag};
 pub trait TableLike: Send + Sync {
     /// Get all columns as boxed ColumnLike trait objects
     fn columns(&self) -> Arc<IndexMap<String, Arc<dyn ColumnLike>>>;
+    fn get_column(&self, name: &str) -> Option<Arc<dyn ColumnLike>>;
 
     fn table_name(&self) -> &str;
     fn table_alias(&self) -> &str;
@@ -224,6 +225,12 @@ where
         Arc::new(arc_columns)
     }
 
+    fn get_column(&self, name: &str) -> Option<Arc<dyn ColumnLike>> {
+        self.columns
+            .get(name)
+            .map(|col| Arc::new(col.clone()) as Arc<dyn ColumnLike>)
+    }
+
     fn table_alias(&self) -> &str {
         &self.table_name
     }
@@ -254,6 +261,12 @@ where
             .map(|(k, v)| (k.clone(), Arc::new(v.clone()) as Arc<dyn ColumnLike>))
             .collect();
         Arc::new(arc_columns)
+    }
+
+    fn get_column(&self, name: &str) -> Option<Arc<dyn ColumnLike>> {
+        self.columns
+            .get(name)
+            .map(|col| Arc::new(col.clone()) as Arc<dyn ColumnLike>)
     }
 
     fn table_alias(&self) -> &str {

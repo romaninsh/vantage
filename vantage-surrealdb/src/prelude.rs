@@ -33,7 +33,7 @@ pub use surreal_client::{SurrealClient, SurrealConnection};
 pub use crate::SurrealAssociated;
 pub use crate::SurrealAssociatedQueryable;
 pub use crate::SurrealColumn;
-pub use crate::SurrealColumnOperations;
+
 pub use crate::SurrealTableCore;
 pub use crate::table::ext::SurrealTableExt;
 // pub use crate::SurrealTableExt;

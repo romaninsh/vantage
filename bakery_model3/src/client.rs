@@ -3,8 +3,6 @@ use serde::{Deserialize, Serialize};
 use vantage_surrealdb::{SurrealColumn, SurrealDB};
 use vantage_table::{ColumnFlag, Table};
 
-use crate::surrealdb;
-
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct Client {
     pub name: String,
@@ -16,8 +14,8 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn table() -> Table<SurrealDB, Client> {
-        Table::new("client", surrealdb())
+    pub fn table(db: SurrealDB) -> Table<SurrealDB, Client> {
+        Table::new("client", db)
             .with_column(SurrealColumn::new("name").with_flags(&[ColumnFlag::Mandatory]))
             .with_column("email")
             .with_column("contact_details")
