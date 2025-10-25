@@ -21,12 +21,13 @@ pub struct Product {
 
 impl Product {
     pub fn table(db: SurrealDB) -> Table<SurrealDB, Product> {
+        use vantage_surrealdb::prelude::*;
         Table::new("product", db)
-            .with_column("name")
-            .with_column("calories")
-            .with_column("price")
-            .with_column("bakery")
-            .with_column("is_deleted")
+            .with_column_of::<String>("name")
+            .with_column_of::<i64>("calories")
+            .with_column_of::<i64>("price")
+            .with_column_of::<String>("bakery")
+            .with_column_of::<bool>("is_deleted")
             .with_column("inventory")
             .into_entity()
     }
@@ -134,5 +135,90 @@ mod tests {
 
         let named = name_col.eq("Croissant");
         assert_eq!(named.preview(), "name = \"Croissant\"");
+    }
+
+    #[test]
+    fn test_typed_columns_with_get_type() {
+        use vantage_surrealdb::prelude::*;
+
+        let db = SurrealMockBuilder::new().build();
+        let mut products = Table::new("product", db).into_entity::<Product>();
+
+        // Add typed columns using with_column_of
+        products.add_column_of::<i64>("price");
+        products.add_column_of::<String>("name");
+        products.add_column_of::<bool>("is_deleted");
+
+        // Verify get_type returns correct type names
+        let price_col = products.get_column("price").unwrap();
+        assert_eq!(price_col.get_type(), "int");
+
+        let name_col = products.get_column("name").unwrap();
+        assert_eq!(name_col.get_type(), "string");
+
+        let is_deleted_col = products.get_column("is_deleted").unwrap();
+        assert_eq!(is_deleted_col.get_type(), "bool");
+    }
+
+    #[test]
+    fn test_with_column_of_builder_pattern() {
+        use vantage_surrealdb::prelude::*;
+
+        let db = SurrealMockBuilder::new().build();
+        let products = Table::new("product", db)
+            .with_column_of::<i64>("price")
+            .with_column_of::<String>("name")
+            .with_column_of::<i64>("calories")
+            .into_entity::<Product>();
+
+        // Verify all columns have correct types
+        assert_eq!(products.get_column("price").unwrap().get_type(), "int");
+        assert_eq!(products.get_column("name").unwrap().get_type(), "string");
+        assert_eq!(products.get_column("calories").unwrap().get_type(), "int");
+    }
+
+    #[test]
+    fn test_type_info_access() {
+        use surreal_client::types::SurrealTypeEnum;
+        use vantage_surrealdb::prelude::*;
+
+        let db = SurrealMockBuilder::new().build();
+        let products = Table::new("product", db)
+            .with_column_of::<i64>("price")
+            .with_column_of::<String>("name")
+            .with_column_of::<bool>("is_deleted")
+            .into_entity::<Product>();
+
+        // Get column and downcast to access type_info
+        let price_col = products.get_column("price").unwrap();
+        let surreal_col = price_col
+            .as_any()
+            .downcast_ref::<vantage_surrealdb::SurrealColumn>()
+            .unwrap();
+
+        // Access TypeInfo to get more than just the name
+        let type_info = surreal_col.get_type_info();
+        assert_eq!(type_info.type_name(), "int");
+        assert_eq!(type_info.type_enum(), SurrealTypeEnum::Int);
+
+        // Same for string column
+        let name_col = products.get_column("name").unwrap();
+        let surreal_col = name_col
+            .as_any()
+            .downcast_ref::<vantage_surrealdb::SurrealColumn>()
+            .unwrap();
+        let type_info = surreal_col.get_type_info();
+        assert_eq!(type_info.type_name(), "string");
+        assert_eq!(type_info.type_enum(), SurrealTypeEnum::String);
+
+        // And bool column
+        let deleted_col = products.get_column("is_deleted").unwrap();
+        let surreal_col = deleted_col
+            .as_any()
+            .downcast_ref::<vantage_surrealdb::SurrealColumn>()
+            .unwrap();
+        let type_info = surreal_col.get_type_info();
+        assert_eq!(type_info.type_name(), "bool");
+        assert_eq!(type_info.type_enum(), SurrealTypeEnum::Bool);
     }
 }

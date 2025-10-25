@@ -7,7 +7,7 @@ use crate::operation::Expressive;
 use crate::typed_expression::TypedExpression;
 use std::collections::HashSet;
 use std::marker::PhantomData;
-use surreal_client::types::{Any, SurrealType};
+use surreal_client::types::{Any, SurrealType, TypeInfo};
 use vantage_expressions::Expression;
 use vantage_table::{ColumnFlag, ColumnLike};
 
@@ -17,6 +17,7 @@ pub struct SurrealColumn<Type: SurrealType = Any> {
     name: String,
     alias: Option<String>,
     flags: HashSet<ColumnFlag>,
+    type_info: Box<dyn TypeInfo>,
     _phantom: PhantomData<Type>,
 }
 
@@ -27,6 +28,7 @@ impl<T: SurrealType> SurrealColumn<T> {
             name: name.into(),
             alias: None,
             flags: HashSet::new(),
+            type_info: T::as_type_info(),
             _phantom: PhantomData,
         }
     }
@@ -52,6 +54,11 @@ impl<T: SurrealType> SurrealColumn<T> {
     pub fn expr(&self) -> TypedExpression<T> {
         TypedExpression::new(self.identifier().expr())
     }
+
+    /// Get the type info for this column
+    pub fn get_type_info(&self) -> &dyn TypeInfo {
+        self.type_info.as_ref()
+    }
 }
 
 impl SurrealColumn<Any> {
@@ -66,6 +73,20 @@ impl SurrealColumn<Any> {
             name: self.name,
             alias: self.alias,
             flags: self.flags,
+            type_info: NewType::as_type_info(),
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<T: SurrealType> SurrealColumn<T> {
+    /// Convert a typed column to an untyped column (Any)
+    pub fn into_any(self) -> SurrealColumn<Any> {
+        SurrealColumn {
+            name: self.name,
+            alias: self.alias,
+            flags: self.flags,
+            type_info: self.type_info.clone(),
             _phantom: PhantomData,
         }
     }
@@ -115,6 +136,10 @@ impl<T: SurrealType> ColumnLike for SurrealColumn<T> {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+
+    fn get_type(&self) -> &'static str {
+        self.type_info.type_name()
+    }
 }
 
 impl From<&str> for SurrealColumn<Any> {
@@ -131,13 +156,13 @@ impl From<String> for SurrealColumn<Any> {
 
 impl From<vantage_table::Column> for SurrealColumn<Any> {
     fn from(column: vantage_table::Column) -> Self {
-        let mut surreal_column = Self::new(column.name());
-        if let Some(alias) = column.alias() {
-            surreal_column = surreal_column.with_alias(alias);
+        Self {
+            name: column.name().to_string(),
+            alias: column.alias().map(|s| s.to_string()),
+            flags: column.flags().clone(),
+            type_info: Any::as_type_info(),
+            _phantom: PhantomData,
         }
-        surreal_column =
-            surreal_column.with_flags(&column.flags().iter().cloned().collect::<Vec<_>>());
-        surreal_column
     }
 }
 

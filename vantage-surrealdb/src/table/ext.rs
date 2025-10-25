@@ -21,6 +21,14 @@ pub trait SurrealTableExt<E: Entity> {
     async fn map(self, transform: fn(E) -> E) -> Result<Self>
     where
         Self: Sized;
+
+    /// Add a typed column to the table (builder pattern)
+    fn with_column_of<T: surreal_client::types::SurrealType>(self, name: impl Into<String>) -> Self
+    where
+        Self: Sized;
+
+    /// Add a typed column to the table (mutable)
+    fn add_column_of<T: surreal_client::types::SurrealType>(&mut self, name: impl Into<String>);
 }
 
 #[async_trait::async_trait]
@@ -95,5 +103,16 @@ impl<E: Entity> SurrealTableExt<E> for Table<SurrealDB, E> {
             self.update(id, Value::Object(patch)).await?;
         }
         Ok(self)
+    }
+
+    fn with_column_of<T: surreal_client::types::SurrealType>(
+        self,
+        name: impl Into<String>,
+    ) -> Self {
+        self.with_column(crate::SurrealColumn::<T>::new(name).into_any())
+    }
+
+    fn add_column_of<T: surreal_client::types::SurrealType>(&mut self, name: impl Into<String>) {
+        self.add_column(crate::SurrealColumn::<T>::new(name).into_any());
     }
 }

@@ -36,6 +36,24 @@ impl SurrealTypeEnum {
     }
 }
 
+/// Object-safe trait for storing type metadata
+pub trait TypeInfo: Send + Sync + std::fmt::Debug {
+    /// Get the SurrealDB type name
+    fn type_name(&self) -> &'static str;
+
+    /// Get the SurrealDB type enum
+    fn type_enum(&self) -> SurrealTypeEnum;
+
+    /// Clone the type info as a boxed trait object
+    fn clone_box(&self) -> Box<dyn TypeInfo>;
+}
+
+impl Clone for Box<dyn TypeInfo> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}
+
 /// Marker trait for SurrealDB types
 /// Describes how a Rust type maps to SurrealDB type system
 pub trait SurrealType: Send + Sync + std::fmt::Debug + 'static {
@@ -61,6 +79,38 @@ pub trait SurrealType: Send + Sync + std::fmt::Debug + 'static {
             "from_value not implemented for {}",
             Self::type_name()
         ))
+    }
+
+    /// Create a TypeInfo instance for this type
+    fn as_type_info() -> Box<dyn TypeInfo>
+    where
+        Self: Sized,
+    {
+        Box::new(SurrealTypeWrapper::<Self>(std::marker::PhantomData))
+    }
+}
+
+/// Wrapper to make SurrealType object-safe via TypeInfo
+#[derive(Debug)]
+struct SurrealTypeWrapper<T: SurrealType>(std::marker::PhantomData<T>);
+
+impl<T: SurrealType> TypeInfo for SurrealTypeWrapper<T> {
+    fn type_name(&self) -> &'static str {
+        T::type_name()
+    }
+
+    fn type_enum(&self) -> SurrealTypeEnum {
+        T::type_enum()
+    }
+
+    fn clone_box(&self) -> Box<dyn TypeInfo> {
+        Box::new(SurrealTypeWrapper::<T>(std::marker::PhantomData))
+    }
+}
+
+impl<T: SurrealType> Clone for SurrealTypeWrapper<T> {
+    fn clone(&self) -> Self {
+        SurrealTypeWrapper(std::marker::PhantomData)
     }
 }
 

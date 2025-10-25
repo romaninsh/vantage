@@ -42,6 +42,10 @@ impl ColumnLike for MockColumn {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+
+    fn get_type(&self) -> &'static str {
+        "any"
+    }
 }
 
 impl From<MockColumn> for IntoExpressive<Expression> {
