@@ -62,6 +62,7 @@ pub struct SurrealClient {
     engine: Arc<tokio::sync::Mutex<Box<dyn Engine>>>,
     session: SessionState,
     incremental_id: Arc<std::sync::atomic::AtomicU64>,
+    debug: bool,
 }
 
 impl Clone for SurrealClient {
@@ -71,6 +72,7 @@ impl Clone for SurrealClient {
             engine: self.engine.clone(),
             session: self.session.clone(),
             incremental_id: self.incremental_id.clone(),
+            debug: self.debug,
         }
     }
 }
@@ -89,7 +91,19 @@ impl SurrealClient {
             engine: Arc::new(tokio::sync::Mutex::new(engine)),
             session,
             incremental_id: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            debug: false,
         }
+    }
+
+    /// Enable debug mode to log queries
+    pub fn with_debug(mut self, enabled: bool) -> Self {
+        self.debug = enabled;
+        self
+    }
+
+    /// Check if debug mode is enabled
+    pub fn is_debug(&self) -> bool {
+        self.debug
     }
 
     /// Set a parameter for the session
@@ -312,6 +326,18 @@ impl SurrealClient {
 
     /// Execute a custom SurrealQL query
     pub async fn query(&self, sql: &str, variables: Option<Value>) -> Result<Value> {
+        if self.debug {
+            if let Some(ref vars) = variables {
+                println!("🔍 SQL: {}", sql);
+                println!(
+                    "📊 Params: {}",
+                    serde_json::to_string_pretty(vars).unwrap_or_default()
+                );
+            } else {
+                println!("🔍 SQL: {}", sql);
+            }
+        }
+
         let mut engine = self.engine.lock().await;
 
         let params = if let Some(vars) = variables {
@@ -321,6 +347,28 @@ impl SurrealClient {
         };
 
         let response = engine.send_message("query", params).await?;
+
+        if self.debug {
+            // Check if response contains status field to determine icon
+            let icon = if let Value::Array(ref results) = response {
+                if results
+                    .iter()
+                    .any(|r| r.get("status").and_then(|s| s.as_str()) == Some("ERR"))
+                {
+                    "❌"
+                } else {
+                    "✅"
+                }
+            } else {
+                "✅"
+            };
+
+            println!(
+                "{} Response: {}",
+                icon,
+                serde_json::to_string_pretty(&response).unwrap_or_default()
+            );
+        }
 
         // Handle the query response format
         match response {

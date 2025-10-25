@@ -2,18 +2,30 @@ use anyhow::Result;
 use std::sync::OnceLock;
 use surreal_client::SurrealConnection;
 pub use vantage_surrealdb::SurrealDB;
+use vantage_table::prelude::*;
 
-pub mod bakery;
-pub use bakery::*;
+// Define all models in one place
+models! {
+    BakeryModel(SurrealDB) => {
+        bakery => Bakery,
+        client => Client,
+        order => Order,
+        product => Product,
+    }
+}
 
-pub mod client;
-pub use client::*;
-
-pub mod product;
-pub use product::*;
-
-pub mod order;
-pub use order::*;
+// with_model macro specific to BakeryModel
+#[macro_export]
+macro_rules! with_model {
+    ($model:expr, $callback:ident, $($args:expr),*) => {
+        match $model {
+            BakeryModel::Bakery(table) => $callback(table, $($args),*).await,
+            BakeryModel::Client(table) => $callback(table, $($args),*).await,
+            BakeryModel::Order(table) => $callback(table, $($args),*).await,
+            BakeryModel::Product(table) => $callback(table, $($args),*).await,
+        }
+    };
+}
 
 static SURREALDB: OnceLock<SurrealDB> = OnceLock::new();
 
@@ -31,11 +43,24 @@ pub fn surrealdb() -> SurrealDB {
 }
 
 pub async fn connect_surrealdb() -> Result<()> {
+    connect_surrealdb_with_debug(false).await
+}
+
+pub async fn connect_surrealdb_with_debug(debug: bool) -> Result<()> {
     let dsn = std::env::var("SURREALDB_URL")
         .unwrap_or_else(|_| "ws://root:root@localhost:8000/bakery/v2".to_string());
 
-    let client = SurrealConnection::dsn(&dsn)?.connect().await?;
+    let client = SurrealConnection::dsn(&dsn)?
+        .with_debug(debug)
+        .connect()
+        .await?;
 
     let db = SurrealDB::new(client);
-    set_surrealdb(db)
+    set_surrealdb(db)?;
+
+    if debug {
+        println!("🔧 Debug mode enabled - queries will be logged");
+    }
+
+    Ok(())
 }

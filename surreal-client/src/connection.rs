@@ -22,6 +22,9 @@ pub struct SurrealConnection {
 
     /// Whether to check SurrealDB version compatibility
     version_check: bool,
+
+    /// Whether to enable debug mode for query logging
+    debug: bool,
 }
 
 /// Authentication parameters
@@ -49,6 +52,7 @@ impl SurrealConnection {
     pub fn new() -> Self {
         Self {
             version_check: true,
+            debug: false,
             ..Default::default()
         }
     }
@@ -184,6 +188,12 @@ impl SurrealConnection {
         self
     }
 
+    /// Enable debug mode for query logging
+    pub fn with_debug(mut self, enabled: bool) -> Self {
+        self.debug = enabled;
+        self
+    }
+
     // /// Configure connection pool with custom settings
     // pub fn with_pool_config(mut self, config: PoolConfig) -> Self {
     //     self.pool_config = Some(config);
@@ -266,7 +276,8 @@ impl SurrealConnection {
 
         // Connect to the database
         // engine.connect().await?;
-        Ok(SurrealClient::new(engine, self.namespace, self.database))
+        let client = SurrealClient::new(engine, self.namespace, self.database);
+        Ok(client.with_debug(self.debug))
     }
 
     /*
