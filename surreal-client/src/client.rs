@@ -351,11 +351,10 @@ impl SurrealClient {
         if self.debug {
             // Check if response contains status field to determine icon
             let icon = if let Value::Array(ref results) = response {
-                if results.iter().any(|r| {
-                    r.get("status")
-                        .and_then(|s| s.as_str())
-                        .map_or(false, |s| s == "ERR")
-                }) {
+                if results
+                    .iter()
+                    .any(|r| r.get("status").and_then(|s| s.as_str()) == Some("ERR"))
+                {
                     "❌"
                 } else {
                     "✅"
