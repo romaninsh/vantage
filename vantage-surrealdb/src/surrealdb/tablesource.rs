@@ -40,17 +40,8 @@ impl vantage_table::TableSource for SurrealDB {
                 .unwrap_or("unknown")
                 .to_string();
 
-            let entity =
-                serde_json::from_value(serde_json::Value::Object(item.clone())).map_err(|e| {
-                    vantage_dataset::dataset::Error::Other(format!(
-                        "Failed to deserialize '{}' entity from table '{}': {}\nData: {}",
-                        std::any::type_name::<E>(),
-                        table.table_name(),
-                        e,
-                        serde_json::to_string_pretty(&item)
-                            .unwrap_or_else(|_| format!("{:?}", item))
-                    ))
-                })?;
+            let entity = serde_json::from_value(serde_json::Value::Object(item))
+                .context("Failed to deserialize entity")?;
 
             results.push((id, entity));
         }
@@ -77,17 +68,8 @@ impl vantage_table::TableSource for SurrealDB {
                     .unwrap_or("unknown")
                     .to_string();
 
-                let entity = serde_json::from_value(serde_json::Value::Object(map.clone()))
-                    .map_err(|e| {
-                        vantage_dataset::dataset::Error::Other(format!(
-                            "Failed to deserialize '{}' entity from table '{}': {}\nData: {}",
-                            std::any::type_name::<E>(),
-                            table.table_name(),
-                            e,
-                            serde_json::to_string_pretty(&map)
-                                .unwrap_or_else(|_| format!("{:?}", map))
-                        ))
-                    })?;
+                let entity = serde_json::from_value(serde_json::Value::Object(map))
+                    .context("Failed to deserialize entity")?;
 
                 Ok(Some((id, entity)))
             }
