@@ -90,7 +90,7 @@ async fn test_select_surreal_column_validation() {
     assert!(result.is_err());
     assert_eq!(
         result.unwrap_err().to_string(),
-        "Other error: Column 'nonexistent' not found in table"
+        "Column 'nonexistent' not found in table"
     );
 }
 
@@ -112,7 +112,7 @@ async fn test_select_surreal_single_validation() {
     assert!(result.is_err());
     assert_eq!(
         result.unwrap_err().to_string(),
-        "Other error: Column 'invalid' not found in table"
+        "Error: Column 'invalid' not found in table"
     );
 }
 

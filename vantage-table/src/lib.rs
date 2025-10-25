@@ -34,7 +34,7 @@ use std::sync::Arc;
 use vantage_expressions::SelectSource;
 
 use vantage_core::{
-    Result,
+    Result, error,
     util::error::{Context, vantage_error},
 };
 use vantage_expressions::{Expression, protocol::selectable::Selectable};
@@ -158,7 +158,7 @@ where
             .data_source
             .get_table_data(self)
             .await
-            .context("Failed to get table data")?;
+            .with_context(|| error!("Failed to get table data"))?;
         Ok(entities_with_ids
             .into_iter()
             .map(|(_, entity)| entity)

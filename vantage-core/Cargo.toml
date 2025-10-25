@@ -9,3 +9,16 @@ doctest = false
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"
+indexmap = "2.0"
+owo-colors = { version = "4.0", optional = true }
+atty = { version = "0.2", optional = true }
+anyhow = { version = "1.0", optional = true }
+
+[features]
+default = ["colored-errors"]
+colored-errors = ["owo-colors", "atty"]
+anyhow-compat = ["anyhow"]
+
+[dev-dependencies]
+owo-colors = "4.0"
+atty = "0.2"

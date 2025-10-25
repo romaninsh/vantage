@@ -1,6 +1,7 @@
-use anyhow::Result;
 use std::sync::OnceLock;
 use surreal_client::SurrealConnection;
+use vantage_core::{error, util::error::Context};
+use vantage_dataset::dataset::Result;
 pub use vantage_surrealdb::SurrealDB;
 use vantage_table::prelude::*;
 
@@ -30,9 +31,10 @@ macro_rules! with_model {
 static SURREALDB: OnceLock<SurrealDB> = OnceLock::new();
 
 pub fn set_surrealdb(db: SurrealDB) -> Result<()> {
-    SURREALDB
-        .set(db)
-        .map_err(|_| anyhow::anyhow!("Failed to set SurrealDB instance"))
+    if SURREALDB.set(db).is_err() {
+        return Err(error!("Failed to set SurrealDB instance"));
+    }
+    Ok(())
 }
 
 pub fn surrealdb() -> SurrealDB {
@@ -50,10 +52,12 @@ pub async fn connect_surrealdb_with_debug(debug: bool) -> Result<()> {
     let dsn = std::env::var("SURREALDB_URL")
         .unwrap_or_else(|_| "ws://root:root@localhost:8000/bakery/v2".to_string());
 
-    let client = SurrealConnection::dsn(&dsn)?
+    let client = SurrealConnection::dsn(&dsn)
+        .with_context(|| error!("Failed to parse DSN", dsn = &dsn))?
         .with_debug(debug)
         .connect()
-        .await?;
+        .await
+        .with_context(|| error!("Failed to connect to SurrealDB", dsn = &dsn))?;
 
     let db = SurrealDB::new(client);
     set_surrealdb(db)?;

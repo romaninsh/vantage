@@ -1,5 +1,5 @@
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use vantage_dataset::dataset::Result;
 
 use vantage_surrealdb::SurrealDB;
 use vantage_table::Table;

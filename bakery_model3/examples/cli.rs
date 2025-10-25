@@ -1,15 +1,22 @@
-use anyhow::Result;
 use bakery_model3::{
     connect_surrealdb_with_debug, get_table, model_names, with_model, BakeryModel,
 };
 use clap::{Arg, Command};
 use serde_json::Value;
+use vantage_core::util::error::Context;
 use vantage_dataset::prelude::*;
 use vantage_surrealdb::prelude::*;
 use vantage_table::TableLike;
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
+    if let Err(e) = run().await {
+        eprintln!("{}", e);
+        std::process::exit(1);
+    }
+}
+
+async fn run() -> vantage_dataset::dataset::Result<()> {
     let mut app = Command::new("db")
         .about("Database management utility for Bakery")
         .arg(
@@ -62,14 +69,17 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn handle_commands_for(model: BakeryModel, commands: Vec<String>) -> Result<()> {
+async fn handle_commands_for(
+    model: BakeryModel,
+    commands: Vec<String>,
+) -> vantage_dataset::dataset::Result<()> {
     with_model!(model, handle_commands, commands)
 }
 
 async fn handle_commands<E>(
     mut table: vantage_table::Table<bakery_model3::SurrealDB, E>,
     commands: Vec<String>,
-) -> Result<()>
+) -> vantage_dataset::dataset::Result<()>
 where
     E: vantage_table::Entity + std::fmt::Debug + serde::Serialize,
 {
@@ -146,7 +156,8 @@ where
                 let mut table_data = Vec::new();
 
                 for record in records {
-                    let value = serde_json::to_value(&record)?;
+                    let value = serde_json::to_value(&record)
+                        .with_context(|| vantage_core::error!("Failed to serialize record"))?;
                     let mut row = Vec::new();
 
                     for (col_name, column) in &display_columns {

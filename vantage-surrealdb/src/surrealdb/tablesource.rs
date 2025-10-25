@@ -1,6 +1,6 @@
 use crate::{SurrealDB, thing::Thing};
 use async_trait::async_trait;
-use vantage_core::util::error::Context;
+use vantage_core::{error, util::error::Context};
 use vantage_expressions::Expression;
 use vantage_table::Table;
 
@@ -40,8 +40,17 @@ impl vantage_table::TableSource for SurrealDB {
                 .unwrap_or("unknown")
                 .to_string();
 
-            let entity = serde_json::from_value(serde_json::Value::Object(item))
-                .context("Failed to deserialize entity")?;
+            let value = serde_json::Value::Object(item.clone());
+            let table_name = table.table_name().to_string();
+            let entity_type = std::any::type_name::<E>();
+            let entity = serde_path_to_error::deserialize::<_, E>(value).map_err(|e| {
+                error!(
+                    format!("Failed to deserialize entity: {}", e.inner()),
+                    table = &table_name,
+                    entity_type = entity_type,
+                    field = e.path().to_string()
+                )
+            })?;
 
             results.push((id, entity));
         }
@@ -68,8 +77,17 @@ impl vantage_table::TableSource for SurrealDB {
                     .unwrap_or("unknown")
                     .to_string();
 
-                let entity = serde_json::from_value(serde_json::Value::Object(map))
-                    .context("Failed to deserialize entity")?;
+                let value = serde_json::Value::Object(map.clone());
+                let table_name = table.table_name().to_string();
+                let entity_type = std::any::type_name::<E>();
+                let entity = serde_path_to_error::deserialize::<_, E>(value).map_err(|e| {
+                    error!(
+                        format!("Failed to deserialize entity: {}", e.inner()),
+                        table = &table_name,
+                        entity_type = entity_type,
+                        field = e.path().to_string()
+                    )
+                })?;
 
                 Ok(Some((id, entity)))
             }
@@ -301,9 +319,18 @@ impl vantage_table::TableSource for SurrealDB {
         let raw_result = client
             .select_record(record_id)
             .await
-            .context("Failed to get record by ID")?;
+            .with_context(|| error!("Failed to get record by ID"))?;
 
-        let entity = serde_json::from_value(raw_result).context("Failed to deserialize entity")?;
+        let table_name = table.table_name().to_string();
+        let entity_type = std::any::type_name::<E>();
+        let entity = serde_path_to_error::deserialize::<_, E>(raw_result.clone()).map_err(|e| {
+            error!(
+                format!("Failed to deserialize entity: {}", e.inner()),
+                table = &table_name,
+                entity_type = entity_type,
+                field = e.path().to_string()
+            )
+        })?;
 
         Ok(entity)
     }
