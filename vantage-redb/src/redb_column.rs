@@ -118,6 +118,10 @@ impl ColumnLike for RedbColumn {
         HashSet::new()
     }
 
+    fn get_type(&self) -> &'static str {
+        "any"
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
