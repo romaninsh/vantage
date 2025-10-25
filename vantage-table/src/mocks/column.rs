@@ -38,6 +38,10 @@ impl ColumnLike for MockColumn {
     fn flags(&self) -> HashSet<ColumnFlag> {
         HashSet::new()
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 impl From<MockColumn> for IntoExpressive<Expression> {

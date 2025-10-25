@@ -44,16 +44,18 @@ pub mod surrealdb;
 // pub mod query;
 pub mod prelude;
 // pub mod readable;
+pub mod column;
 pub mod select;
-pub mod surreal_column;
 pub mod table;
 pub mod thing;
+pub mod typed_expression;
 pub mod variable;
 
 pub use associated_query::{SurrealAssociated, SurrealAssociatedQueryable};
+pub use column::SurrealColumn;
 pub use select::SurrealSelect;
-pub use surreal_column::{SurrealColumn, SurrealColumnOperations};
 pub use surrealdb::SurrealDB;
 pub use table::{SurrealTableCore, SurrealTableExt};
+pub use typed_expression::TypedExpression;
 
 // Re-export main SurrealDB types for convenience

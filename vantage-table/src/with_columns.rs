@@ -81,6 +81,10 @@ impl ColumnLike for Column {
     fn flags(&self) -> HashSet<ColumnFlag> {
         self.flags.clone()
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 impl From<&str> for Column {
