@@ -61,12 +61,12 @@ macro_rules! models {
         }
 
         // Function to get a table by name
-        pub fn get_table(model: &str, db: $datasource) -> ::anyhow::Result<$enum_name> {
+        pub fn get_table(model: &str, db: $datasource) -> ::vantage_core::Result<$enum_name> {
             match model {
                 $(
                     stringify!($mod_name) => Ok($enum_name::$struct_name($struct_name::table(db.clone()))),
                 )*
-                _ => Err(::anyhow::anyhow!("Unknown model: {}", model)),
+                _ => Err(::vantage_core::VantageError::other(format!("Unknown model: {}", model))),
             }
         }
 

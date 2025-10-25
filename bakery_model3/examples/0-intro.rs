@@ -1,7 +1,7 @@
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use bakery_model3::*;
+use vantage_core::{error, util::error::Context, Result};
 use vantage_expressions::AssociatedQueryable;
 use vantage_surrealdb::prelude::*;
 use vantage_table::record::RecordTable;
@@ -10,7 +10,9 @@ async fn create_bootstrap_db() -> Result<()> {
     // Run this once for demos to work:
     //  > ./start.sh && ./ingress.sh (from vantage-surrealdb/scripts)
     //
-    bakery_model3::connect_surrealdb().await?;
+    bakery_model3::connect_surrealdb()
+        .await
+        .with_context(|| error!("Failed to initialize database"))?;
 
     Ok(())
 }
@@ -23,7 +25,11 @@ async fn main() -> Result<()> {
 
     println!("-[ get entity values out of any table ]------------------------------------");
     // Regardless of DataSource - you can get all clients like this
-    for client in set_of_clients.get().await? {
+    for client in set_of_clients
+        .get()
+        .await
+        .with_context(|| error!("Failed to retrieve clients"))?
+    {
         println!("email: {}, client: {}", client.email, client.name);
     }
 
@@ -32,7 +38,11 @@ async fn main() -> Result<()> {
     // or rather it's associated version, to tweak query before execution.
     let select = set_of_clients.select_surreal().with_limit(Some(1), Some(0));
 
-    for client in select.get().await? {
+    for client in select
+        .get()
+        .await
+        .with_context(|| error!("Failed to retrieve limited clients"))?
+    {
         println!("email: {}, client: {}", client.email, client.name);
     }
 
@@ -42,7 +52,11 @@ async fn main() -> Result<()> {
         .clone()
         .with_condition(set_of_clients["is_paying_client"].eq(true));
 
-    for client in paying_clients.get().await? {
+    for client in paying_clients
+        .get()
+        .await
+        .with_context(|| error!("Failed to retrieve paying clients"))?
+    {
         println!(
             "client: {}, is_paying: {}",
             client.name, client.is_paying_client
@@ -51,7 +65,11 @@ async fn main() -> Result<()> {
 
     println!("-[ calculating count, implicit type ]-----------------------");
     // Generate i64 count() from Table<SurrealDB, Client> and execute it:
-    let count_result = paying_clients.surreal_count().get().await?;
+    let count_result = paying_clients
+        .surreal_count()
+        .get()
+        .await
+        .with_context(|| error!("Failed to count paying clients"))?;
     println!("Count of paying clients: {}", count_result);
 
     println!("-[ change Doc Brown into non-paying ]-----------------------");
@@ -62,10 +80,15 @@ async fn main() -> Result<()> {
             c.is_paying_client = false;
             c
         })
-        .await?;
+        .await
+        .with_context(|| error!("Failed to update Doc Brown payment status"))?;
 
     // Generate i64 count() from Table<SurrealDB, Client> and execute it:
-    let count_result = paying_clients.surreal_count().get().await?;
+    let count_result = paying_clients
+        .surreal_count()
+        .get()
+        .await
+        .with_context(|| error!("Failed to count paying clients after update"))?;
     println!("Count of paying clients: {}", count_result);
 
     println!("-[ add #VIP to all paying clients' names ]-----------------------");
@@ -78,12 +101,17 @@ async fn main() -> Result<()> {
             }
             client
         })
-        .await?;
+        .await
+        .with_context(|| error!("Failed to add VIP suffix to paying clients"))?;
 
     println!("Updated paying clients with #VIP suffix");
 
     // Show the updated paying clients
-    for client in paying_clients.get().await? {
+    for client in paying_clients
+        .get()
+        .await
+        .with_context(|| error!("Failed to retrieve VIP clients"))?
+    {
         println!(
             "VIP client: {}, is_paying: {}",
             client.name, client.is_paying_client
@@ -118,25 +146,26 @@ async fn main() -> Result<()> {
 
     let first_result = raw_results
         .first()
-        .ok_or_else(|| anyhow::anyhow!("No clients found in database"))?;
-    println!(
-        "Raw client data with ID: {}",
-        serde_json::to_string_pretty(&serde_json::Value::Object(first_result.clone()))?
-    );
+        .ok_or_else(|| error!("No clients found in database"))?;
+    let json_output =
+        serde_json::to_string_pretty(&serde_json::Value::Object(first_result.clone()))
+            .with_context(|| error!("Failed to serialize client data to JSON"))?;
+    println!("Raw client data with ID: {}", json_output);
 
     let id_value = first_result
         .get("id")
-        .ok_or_else(|| anyhow::anyhow!("No 'id' field found in record"))?;
+        .ok_or_else(|| error!("No 'id' field found in record"))?;
     let id_str = id_value
         .as_str()
-        .ok_or_else(|| anyhow::anyhow!("ID field is not a string"))?;
+        .ok_or_else(|| error!("ID field is not a string"))?;
     println!("Attempting to get record with ID: {}", id_str);
 
     // Record type is now: Record<'_, Client, Table<SurrealDB, Client>>
     let mut client_record = set_of_clients
         .get_record(id_str)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("Failed to retrieve record"))?;
+        .await
+        .with_context(|| error!("Failed to fetch record", id = id_str))?
+        .ok_or_else(|| error!("Record not found", id = id_str))?;
 
     println!("✓ Successfully retrieved client record:");
     println!("  ID: {}", client_record.id());
@@ -147,15 +176,17 @@ async fn main() -> Result<()> {
 
     // Modify the record through DerefMut - only update contact_details to avoid unique constraints
     let old_contact = client_record.contact_details.clone();
-    client_record.contact_details = format!(
-        "Updated via Record API at {}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_secs()
-    );
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .with_context(|| error!("Failed to get system time"))?
+        .as_secs();
+    client_record.contact_details = format!("Updated via Record API at {}", timestamp);
 
     // Save changes back to database
-    client_record.save().await?;
+    client_record
+        .save()
+        .await
+        .with_context(|| error!("Failed to save client record", id = id_str))?;
     println!("✓ Updated and saved client record");
     println!("  Old contact: {}", old_contact);
     println!("  New contact: {}", client_record.contact_details);
