@@ -41,6 +41,7 @@ use vantage_expressions::{Expression, protocol::selectable::Selectable};
 
 pub mod insertable;
 pub mod mocks;
+pub mod models_macro;
 pub mod prelude;
 pub mod readable;
 pub mod record;

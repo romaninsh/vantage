@@ -10,3 +10,6 @@ pub use crate::TableSource;
 
 // Record functionality
 pub use crate::record::{Record, RecordTable};
+
+// Model macros
+pub use crate::models;
