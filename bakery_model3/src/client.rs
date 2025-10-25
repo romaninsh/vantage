@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use vantage_surrealdb::{SurrealColumn, SurrealDB};
+use vantage_surrealdb::SurrealDB;
 use vantage_table::{ColumnFlag, Table};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
@@ -15,12 +15,17 @@ pub struct Client {
 
 impl Client {
     pub fn table(db: SurrealDB) -> Table<SurrealDB, Client> {
+        use vantage_surrealdb::{prelude::*, SurrealColumn};
         Table::new("client", db)
-            .with_column(SurrealColumn::new("name").with_flags(&[ColumnFlag::Mandatory]))
-            .with_column("email")
-            .with_column("contact_details")
-            .with_column("is_paying_client")
-            .with_column("bakery")
+            .with_column(
+                SurrealColumn::<String>::new("name")
+                    .with_flags(&[ColumnFlag::Mandatory])
+                    .into_any(),
+            )
+            .with_column_of::<String>("email")
+            .with_column_of::<String>("contact_details")
+            .with_column_of::<bool>("is_paying_client")
+            .with_column_of::<String>("bakery")
             .with_column("metadata")
             .into_entity()
     }

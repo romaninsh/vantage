@@ -6,6 +6,7 @@ use clap::{Arg, Command};
 use serde_json::Value;
 use vantage_dataset::prelude::*;
 use vantage_surrealdb::prelude::*;
+use vantage_table::TableLike;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -77,8 +78,54 @@ where
             let parts: Vec<&str> = command.splitn(2, '=').collect();
             if parts.len() == 2 {
                 let field = parts[0];
-                let value = parts[1];
-                table.add_condition(table[field].eq(value.to_string()));
+                let value_str = parts[1];
+
+                // Get column type and parse value accordingly
+                if let Some(column) = table.get_column(field) {
+                    let col_type = column.get_type();
+
+                    match col_type {
+                        "bool" => {
+                            // Parse bool from various string representations
+                            let bool_val = matches!(
+                                value_str.to_lowercase().as_str(),
+                                "true" | "1" | "on" | "yes"
+                            );
+                            table.add_condition(table[field].eq(bool_val));
+                        }
+                        "int" => {
+                            // Parse int from string
+                            match value_str.parse::<i64>() {
+                                Ok(int_val) => {
+                                    table.add_condition(table[field].eq(int_val));
+                                }
+                                Err(_) => {
+                                    println!("❌ Invalid integer value: {}", value_str);
+                                    continue;
+                                }
+                            }
+                        }
+                        "float" => {
+                            // Parse float from string
+                            match value_str.parse::<f64>() {
+                                Ok(float_val) => {
+                                    table.add_condition(table[field].eq(float_val));
+                                }
+                                Err(_) => {
+                                    println!("❌ Invalid float value: {}", value_str);
+                                    continue;
+                                }
+                            }
+                        }
+                        _ => {
+                            // Default to string for any other type
+                            table.add_condition(table[field].eq(value_str.to_string()));
+                        }
+                    }
+                } else {
+                    println!("❌ Column '{}' not found", field);
+                    continue;
+                }
             } else {
                 println!("❌ Invalid condition format. Use: field=value");
             }
@@ -90,8 +137,11 @@ where
                 let records = table.get().await?;
                 let record_count = records.len();
                 let columns = table.columns();
-                let display_columns: Vec<&String> =
-                    columns.iter().take(5).map(|(k, _)| k).collect();
+                let display_columns: Vec<(&String, &dyn vantage_table::ColumnLike)> = columns
+                    .iter()
+                    .take(5)
+                    .map(|(k, v)| (k, v as &dyn vantage_table::ColumnLike))
+                    .collect();
 
                 let mut table_data = Vec::new();
 
@@ -99,27 +149,44 @@ where
                     let value = serde_json::to_value(&record)?;
                     let mut row = Vec::new();
 
-                    for column in &display_columns {
-                        let field_value = if let Some(v) = value.get(column.as_str()) {
-                            match v {
-                                Value::String(s) => s.clone(),
-                                Value::Number(n) => n.to_string(),
-                                Value::Bool(b) => b.to_string(),
-                                Value::Null => "None".to_string(),
-                                _ => format!("{:?}", v),
-                            }
+                    for (col_name, column) in &display_columns {
+                        let expected_type = column.get_type();
+
+                        if let Some(v) = value.get(col_name.as_str()) {
+                            let (field_value, has_mismatch) = match v {
+                                Value::String(s) => {
+                                    let mismatch =
+                                        expected_type != "string" && expected_type != "any";
+                                    (s.clone(), mismatch)
+                                }
+                                Value::Number(n) => {
+                                    let mismatch = expected_type != "int"
+                                        && expected_type != "float"
+                                        && expected_type != "any";
+                                    (n.to_string(), mismatch)
+                                }
+                                Value::Bool(b) => {
+                                    let mismatch =
+                                        expected_type != "bool" && expected_type != "any";
+                                    (b.to_string(), mismatch)
+                                }
+                                Value::Null => ("None".to_string(), false),
+                                _ => (format!("{:?}", v), expected_type != "any"),
+                            };
+                            row.push((field_value, has_mismatch));
                         } else {
-                            "None".to_string()
-                        };
-                        row.push(field_value);
+                            row.push(("None".to_string(), false));
+                        }
                     }
                     table_data.push(row);
                 }
 
                 if !table_data.is_empty() {
-                    let headers: Vec<String> =
-                        display_columns.iter().map(|s| (*s).clone()).collect();
-                    print_table(headers, table_data);
+                    let headers: Vec<String> = display_columns
+                        .iter()
+                        .map(|(name, _)| (*name).clone())
+                        .collect();
+                    print_table_with_colors(headers, table_data);
                 }
                 println!("Found {} records", record_count);
             }
@@ -140,18 +207,20 @@ where
     Ok(())
 }
 
-fn print_table(headers: Vec<String>, rows: Vec<Vec<String>>) {
-    let mut all_rows = vec![headers];
-    all_rows.extend(rows);
-
-    let mut col_widths = vec![0; all_rows[0].len()];
-    for row in &all_rows {
-        for (i, cell) in row.iter().enumerate() {
+fn print_table_with_colors(headers: Vec<String>, rows: Vec<Vec<(String, bool)>>) {
+    // Calculate column widths based on actual text content
+    let mut col_widths = vec![0; headers.len()];
+    for (i, header) in headers.iter().enumerate() {
+        col_widths[i] = header.len();
+    }
+    for row in &rows {
+        for (i, (cell, _)) in row.iter().enumerate() {
             col_widths[i] = col_widths[i].max(cell.len());
         }
     }
 
-    for (i, header) in all_rows[0].iter().enumerate() {
+    // Print headers
+    for (i, header) in headers.iter().enumerate() {
         if i > 0 {
             print!(" ");
         }
@@ -162,12 +231,23 @@ fn print_table(headers: Vec<String>, rows: Vec<Vec<String>>) {
     let total_width: usize = col_widths.iter().sum::<usize>() + col_widths.len() - 1;
     println!("{}", "-".repeat(total_width));
 
-    for row in &all_rows[1..] {
-        for (i, cell) in row.iter().enumerate() {
+    // Print rows with color coding
+    for row in &rows {
+        for (i, (cell, has_mismatch)) in row.iter().enumerate() {
             if i > 0 {
                 print!(" ");
             }
-            print!("{:<width$}", cell, width = col_widths[i]);
+            if *has_mismatch {
+                // Light red background: \x1b[48;5;224m (light red/pink)
+                // Reset: \x1b[0m
+                print!(
+                    "\x1b[48;5;224m{:<width$}\x1b[0m",
+                    cell,
+                    width = col_widths[i]
+                );
+            } else {
+                print!("{:<width$}", cell, width = col_widths[i]);
+            }
         }
         println!();
     }

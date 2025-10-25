@@ -188,4 +188,5 @@ pub trait ColumnLike: Send + Sync + std::fmt::Debug {
     fn expr(&self) -> Expression;
     fn flags(&self) -> HashSet<crate::with_columns::ColumnFlag>;
     fn as_any(&self) -> &dyn std::any::Any;
+    fn get_type(&self) -> &'static str;
 }

@@ -85,6 +85,10 @@ impl ColumnLike for Column {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+
+    fn get_type(&self) -> &'static str {
+        "any"
+    }
 }
 
 impl From<&str> for Column {
