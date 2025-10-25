@@ -13,7 +13,7 @@ pub struct Inventory {
 pub struct Product {
     pub name: String,
     pub calories: i64,
-    pub price: Option<i64>,
+    pub price: i64,
     pub bakery: String, // Record ID for bakery
     pub is_deleted: bool,
     pub inventory: Inventory,
