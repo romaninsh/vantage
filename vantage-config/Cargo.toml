@@ -1,0 +1,21 @@
+[package]
+name = "vantage-config"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+decimal = ["surreal-client/decimal"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+jsonschema = "0.18"
+schemars = "0.8"
+vantage-core = { path = "../vantage-core" }
+vantage-table = { path = "../vantage-table" }
+vantage-surrealdb = { path = "../vantage-surrealdb" }
+surreal-client = { path = "../surreal-client" }
+
+[dev-dependencies]
+tokio = { version = "1.0", features = ["full"] }

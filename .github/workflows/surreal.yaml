@@ -86,7 +86,7 @@ jobs:
         run: cargo build -p vantage-surrealdb -p surreal-client
 
       - name: Run vantage-surrealdb and surreal-client tests
-        run: cargo test -p vantage-surrealdb -p surreal-client
+        run: cargo test -p vantage-surrealdb -p surreal-client -- --test-threads=1
         env:
           DB_ENDPOINT: ws://localhost:8000
           DB_USER: root
@@ -104,7 +104,7 @@ jobs:
           DB_NS: bakery
 
       - name: Run bakery_model3 tests
-        run: cargo test -p bakery_model3
+        run: cargo test -p bakery_model3 -- --test-threads=1
         env:
           DB_ENDPOINT: ws://localhost:8000
           DB_USER: root

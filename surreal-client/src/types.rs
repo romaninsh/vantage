@@ -358,7 +358,7 @@ mod tests {
 
     #[test]
     fn test_float_type() {
-        let _f = 3.14f64;
+        let _f = 3.12345f64;
         assert_eq!(f64::type_enum(), SurrealTypeEnum::Float);
 
         let parsed =
