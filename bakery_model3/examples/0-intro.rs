@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use bakery_model3::*;
 use vantage_core::{error, util::error::Context, Result};
+use vantage_dataset::dataset::ReadableAsDataSet;
 use vantage_expressions::AssociatedQueryable;
 use vantage_surrealdb::prelude::*;
 use vantage_table::record::RecordTable;
@@ -203,18 +204,11 @@ async fn main() -> Result<()> {
         email: String,
     }
 
-    // TODO: Uncomment when get_some_as method is implemented
     // Load a single client by executing a query like SELECT name, email FROM .....
-    // let Some(mini_client) = set_of_clients.get_some_as::<MiniClient>().await? else {
-    //     panic!("No client found");
-    // };
-    // println!("data = {:?}", &mini_client);
-    // println!(
-    //     "MiniClient query: {}",
-    //     set_of_clients
-    //         .get_select_query_for_struct(MiniClient::default())
-    //         .preview()
-    // );
+    let Some(mini_client) = set_of_clients.get_some_as::<MiniClient>().await? else {
+        panic!("No client found");
+    };
+    println!("data = {:?}", &mini_client);
 
     // MegaClient defines metadata access - SurrealDB allows embedded documents
     #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -225,18 +219,11 @@ async fn main() -> Result<()> {
         metadata: Option<serde_json::Value>,
     }
 
-    // TODO: Uncomment when advanced querying is implemented
     // The code is almost identical to the code above, but the query is more complex.
-    // let Some(mega_client) = set_of_clients.get_some_as::<MegaClient>().await? else {
-    //     panic!("No client found");
-    // };
-    // println!("data = {:?}", &mega_client);
-    // println!(
-    //     "MegaClient query: {}",
-    //     set_of_clients
-    //         .get_select_query_for_struct(MegaClient::default())
-    //         .preview()
-    // );
+    let Some(mega_client) = set_of_clients.get_some_as::<MegaClient>().await? else {
+        panic!("No client found");
+    };
+    println!("data = {:?}", &mega_client);
 
     // To continue learning, visit: <https://romaninsh.github.io/vantage>, Ok?
     Ok(())
