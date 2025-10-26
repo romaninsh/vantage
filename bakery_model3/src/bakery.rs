@@ -11,26 +11,30 @@ pub struct Bakery {
 
 impl Bakery {
     pub fn table(db: SurrealDB) -> Table<SurrealDB, Bakery> {
+        use crate::{Client, Product};
+        let db2 = db.clone();
+        let db3 = db.clone();
         Table::new("bakery", db)
+            .with_id_column("id")
             .with_column("name")
             .with_column("profit_margin")
+            .with_many("clients", "bakery", move || Client::table(db2.clone()))
+            .with_many("products", "bakery", move || Product::table(db3.clone()))
             .into_entity()
     }
 }
 
 pub trait BakeryTable {
-    // TODO: Uncomment when relationships are implemented in 0.3
-    // fn ref_clients(&self) -> Table<SurrealDB, Client>;
-    // fn ref_products(&self) -> Table<SurrealDB, Product>;
+    fn ref_clients(&self) -> Table<SurrealDB, crate::Client>;
+    fn ref_products(&self) -> Table<SurrealDB, crate::Product>;
 }
 
 impl BakeryTable for Table<SurrealDB, Bakery> {
-    // TODO: Uncomment when relationships are implemented in 0.3
-    // fn ref_clients(&self) -> Table<SurrealDB, Client> {
-    //     // Implementation will depend on how relationships are handled in 0.3
-    // }
-    //
-    // fn ref_products(&self) -> Table<SurrealDB, Product> {
-    //     // Implementation will depend on how relationships are handled in 0.3
-    // }
+    fn ref_clients(&self) -> Table<SurrealDB, crate::Client> {
+        self.get_ref_as("clients").unwrap()
+    }
+
+    fn ref_products(&self) -> Table<SurrealDB, crate::Product> {
+        self.get_ref_as("products").unwrap()
+    }
 }

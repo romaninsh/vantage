@@ -7,7 +7,7 @@ use vantage_expressions::{Expression, protocol::datasource::DataSource};
 /// Trait for table data sources that defines column type separate from execution
 /// TableSource represents a data source that can create and manage tables
 #[async_trait]
-pub trait TableSource: DataSource {
+pub trait TableSource: DataSource + Clone {
     type Column: ColumnLike + Clone + 'static;
     type Expr: Clone + Send + Sync + 'static;
 

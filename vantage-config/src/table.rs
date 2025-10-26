@@ -12,10 +12,15 @@ impl VantageConfig {
         let entities = self.entities.as_ref()?;
         let entity = entities.get(entity_name)?;
 
-        Some(Self::build_table(entity, db))
+        Some(Self::build_table(entity, db, self))
     }
 
-    fn build_table(entity: &EntityConfig, db: SurrealDB) -> Table<SurrealDB, EmptyEntity> {
+    fn build_table(
+        entity: &EntityConfig,
+        db: SurrealDB,
+        config: &VantageConfig,
+    ) -> Table<SurrealDB, EmptyEntity> {
+        let db_for_relations = db.clone();
         let mut table = Table::new(&entity.table, db);
 
         for column in &entity.columns {
@@ -102,6 +107,53 @@ impl VantageConfig {
             };
 
             table = table.with_column(col);
+        }
+
+        // Add relationships if defined
+        if let Some(relations) = &entity.relations {
+            for relation in relations {
+                let rel_type = relation.rel_type.as_str();
+                let target = relation.target.clone();
+                let foreign_key = relation.foreign_key.clone();
+                let db_clone = db_for_relations.clone();
+                let config_clone = config.clone();
+
+                match rel_type {
+                    "belongs_to" | "has_one" => {
+                        table = table.with_one(&relation.name, &foreign_key, move || {
+                            if let Some(entities) = &config_clone.entities {
+                                if let Some(target_entity) = entities.get(&target) {
+                                    return Self::build_table(
+                                        target_entity,
+                                        db_clone.clone(),
+                                        &config_clone,
+                                    );
+                                }
+                            }
+                            // Fallback if target not found
+                            Table::new(&target, db_clone.clone()).into_entity()
+                        });
+                    }
+                    "has_many" => {
+                        table = table.with_many(&relation.name, &foreign_key, move || {
+                            if let Some(entities) = &config_clone.entities {
+                                if let Some(target_entity) = entities.get(&target) {
+                                    return Self::build_table(
+                                        target_entity,
+                                        db_clone.clone(),
+                                        &config_clone,
+                                    );
+                                }
+                            }
+                            // Fallback if target not found
+                            Table::new(&target, db_clone.clone()).into_entity()
+                        });
+                    }
+                    _ => {
+                        // Unknown relation type, skip
+                    }
+                }
+            }
         }
 
         table.into_entity()

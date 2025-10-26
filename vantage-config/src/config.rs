@@ -60,6 +60,22 @@ pub struct EntityConfig {
     pub id_column: String,
     /// Column definitions
     pub columns: Vec<ColumnConfig>,
+    /// Relationship definitions
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relations: Option<Vec<RelationConfig>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RelationConfig {
+    /// Relation type: "belongs_to" or "has_many"
+    #[serde(rename = "type")]
+    pub rel_type: String,
+    /// Name of the relation (used in ref_xxx methods)
+    pub name: String,
+    /// Foreign key column name
+    pub foreign_key: String,
+    /// Target entity name
+    pub target: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

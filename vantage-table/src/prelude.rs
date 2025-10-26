@@ -14,5 +14,9 @@ pub use crate::with_ordering::{OrderBy, OrderByExt, SortDirection};
 // Record functionality
 pub use crate::record::{Record, RecordTable};
 
+// Reference functionality
+pub use crate::any::AnyTable;
+pub use crate::references::{ReferenceMany, ReferenceOne, RelatedTable};
+
 // Model macros
 pub use crate::models;

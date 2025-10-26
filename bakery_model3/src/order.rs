@@ -14,6 +14,7 @@ pub struct OrderLine {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct Order {
     pub bakery: String, // Record ID for bakery
+    pub client: String, // Record ID for client
     pub is_deleted: bool,
     pub created_at: Option<String>, // SurrealDB datetime
     pub lines: Vec<OrderLine>,
@@ -21,19 +22,25 @@ pub struct Order {
 
 impl Order {
     pub fn table(db: SurrealDB) -> Table<SurrealDB, Order> {
+        use crate::{Bakery, Client};
+        let db2 = db.clone();
+        let db3 = db.clone();
         Table::new("order", db)
+            .with_id_column("id")
             .with_column("bakery")
+            .with_column("client")
             .with_column("is_deleted")
             .with_column("created_at")
             .with_column("lines")
+            .with_one("bakery", "bakery", move || Bakery::table(db2.clone()))
+            .with_one("client", "client", move || Client::table(db3.clone()))
             .into_entity()
     }
 }
 
 pub trait OrderTable {
-    // TODO: Uncomment when relationships are implemented in 0.3
-    // fn ref_bakery(&self) -> Table<SurrealDB, Bakery>;
-    // fn ref_client(&self) -> Table<SurrealDB, Client>; // Through graph relationship
+    fn ref_bakery(&self) -> Table<SurrealDB, crate::Bakery>;
+    fn ref_client(&self) -> Table<SurrealDB, crate::Client>;
 }
 
 pub trait OrderTableReports {
@@ -69,12 +76,11 @@ impl OrderTableReports for Table<SurrealDB, Order> {
 }
 
 impl OrderTable for Table<SurrealDB, Order> {
-    // TODO: Uncomment when relationships are implemented in 0.3
-    // fn ref_bakery(&self) -> Table<SurrealDB, Bakery> {
-    //     // Implementation will depend on how relationships are handled in 0.3
-    // }
-    //
-    // fn ref_client(&self) -> Table<SurrealDB, Client> {
-    //     // Implementation will need to traverse the client->placed->order relationship
-    // }
+    fn ref_bakery(&self) -> Table<SurrealDB, crate::Bakery> {
+        self.get_ref_as("bakery").unwrap()
+    }
+
+    fn ref_client(&self) -> Table<SurrealDB, crate::Client> {
+        self.get_ref_as("client").unwrap()
+    }
 }
