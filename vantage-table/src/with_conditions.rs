@@ -28,7 +28,7 @@ impl<T: TableSource, E: Entity> Table<T, E> {
     /// Returns error if the handle refers to a permanent condition (added via `add_condition`)
     pub fn temp_remove_condition(&mut self, handle: ConditionHandle) -> Result<()> {
         if handle.0 <= 0 {
-            return Err(error!("Cannot remove permanent condition").into());
+            return Err(error!("Cannot remove permanent condition"));
         }
         self.conditions.shift_remove(&handle.0);
         Ok(())

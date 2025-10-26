@@ -63,7 +63,7 @@ impl<T: TableSource, E: Entity> Table<T, E> {
     /// Returns error if the handle refers to a permanent order (added via `add_order`)
     pub fn temp_remove_order(&mut self, handle: OrderHandle) -> Result<()> {
         if handle.0 <= 0 {
-            return Err(error!("Cannot remove permanent order").into());
+            return Err(error!("Cannot remove permanent order"));
         }
         self.order_by.shift_remove(&handle.0);
         Ok(())
