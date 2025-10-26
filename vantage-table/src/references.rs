@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use crate::{ColumnLike, Entity, Table, TableSource, any::AnyTable};
-use vantage_core::{Result, error, util::error::Context};
+use vantage_core::{Result, error};
 use vantage_expressions::{IntoExpressive, protocol::selectable::Selectable};
 
 /// Trait for applying relationship conditions to tables

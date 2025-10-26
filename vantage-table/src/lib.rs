@@ -253,17 +253,6 @@ where
 
         select
     }
-
-    /// Create a select query for a specific field with table conditions applied
-    /// Used for building subqueries in IN clauses
-    pub fn select_field(&self, field_name: &str) -> T::Select<E> {
-        let mut select = self.data_source.select::<E>();
-        select.set_source(self.table_name.as_str(), None);
-        select.add_field(field_name);
-
-        // Add all conditions from the table
-        for condition in self.conditions.values() {
-            select.
 }
 
 #[async_trait]

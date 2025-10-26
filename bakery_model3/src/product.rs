@@ -100,8 +100,9 @@ mod tests {
         // Mock the query response
         let db = SurrealMockBuilder::new()
             .with_query_response(
-                "SELECT name, calories, price, bakery, is_deleted, inventory FROM ONLY product WHERE price = 100",
+                "SELECT id, name, calories, price, bakery, is_deleted, inventory FROM ONLY product WHERE price = 100",
                 json!([{
+                    "id": "product:1",
                     "name": "Expensive Cake",
                     "calories": 500,
                     "price": 100,
