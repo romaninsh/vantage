@@ -120,12 +120,7 @@ impl<E: Entity> Selectable<RedbExpression> for RedbSelect<E> {
         // Not applicable for key-value store
     }
 
-    fn add_order_by(
-        &mut self,
-        _field_or_expr: impl Into<IntoExpressive<RedbExpression>>,
-        _ascending: bool,
-    ) {
-    }
+    fn add_order_by(&mut self, _expression: RedbExpression, _ascending: bool) {}
 
     fn add_group_by(&mut self, _expression: RedbExpression) {}
 

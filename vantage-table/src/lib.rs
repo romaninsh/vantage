@@ -48,6 +48,7 @@ pub mod record;
 pub mod tablesource;
 pub mod with_columns;
 pub mod with_conditions;
+pub mod with_ordering;
 pub mod writable;
 
 /// Re-export ColumnLike from vantage-expressions for convenience
@@ -57,6 +58,8 @@ pub use vantage_expressions::QuerySource;
 
 pub use crate::tablesource::TableSource;
 pub use crate::with_columns::{Column, ColumnFlag};
+pub use crate::with_conditions::ConditionHandle;
+pub use crate::with_ordering::{OrderBy, OrderByExt, OrderHandle, SortDirection};
 
 /// Trait for dynamic table operations without generics
 #[async_trait]
@@ -96,7 +99,10 @@ where
     _phantom: PhantomData<E>,
     table_name: String,
     columns: IndexMap<String, T::Column>,
-    conditions: Vec<T::Expr>,
+    conditions: IndexMap<i64, T::Expr>,
+    next_condition_id: i64,
+    order_by: IndexMap<i64, (T::Expr, crate::with_ordering::SortDirection)>,
+    next_order_id: i64,
 }
 
 impl<T: TableSource> Table<T, EmptyEntity>
@@ -110,7 +116,10 @@ where
             _phantom: PhantomData,
             table_name: table_name.into(),
             columns: IndexMap::new(),
-            conditions: Vec::new(),
+            conditions: IndexMap::new(),
+            next_condition_id: 1,
+            order_by: IndexMap::new(),
+            next_order_id: 1,
         }
     }
 }
@@ -133,6 +142,9 @@ impl<T: TableSource, E: Entity> Table<T, E> {
             table_name: self.table_name,
             columns: self.columns,
             conditions: self.conditions,
+            next_condition_id: self.next_condition_id,
+            order_by: self.order_by,
+            next_order_id: self.next_order_id,
         }
     }
     /// Get the table name
@@ -201,8 +213,14 @@ where
         }
 
         // Add all conditions
-        for condition in &self.conditions {
+        for condition in self.conditions.values() {
             select.add_where_condition(condition.clone());
+        }
+
+        // Add all order clauses
+        for (expr, direction) in self.order_by.values() {
+            let ascending = matches!(direction, crate::with_ordering::SortDirection::Ascending);
+            select.add_order_by(expr.clone(), ascending);
         }
 
         select

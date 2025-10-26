@@ -186,7 +186,7 @@ mod tests {
         select.set_source("product", None);
         select.add_where_condition(expr!("bakery = {}", Thing::new("bakery", "hill_valley")));
         select.add_where_condition(expr!("is_deleted = {}", false));
-        select.add_order_by("name", true);
+        select.add_order_by(expr!("name"), true);
 
         let result = shared_db.execute(&select.expr()).await;
         println!("✅ Select with Thing reference: {:?}", result);
@@ -214,7 +214,7 @@ mod tests {
             None,
         );
         select.add_where_condition(expr!("is_deleted = {}", false));
-        select.add_order_by("name", true);
+        select.add_order_by(expr!("name"), true);
 
         let result = shared_db.execute(&select.expr()).await;
         println!("✅ Select with relationship traversal: {:?}", result);
@@ -228,7 +228,7 @@ mod tests {
             Thing::new("bakery", "hill_valley").lref("belongs_to", "client"),
             None,
         );
-        select.add_order_by("name", true);
+        select.add_order_by(expr!("name"), true);
 
         let result = shared_db.execute(&select.expr()).await;
         println!("✅ Select with left relationship: {:?}", result);

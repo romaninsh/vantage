@@ -53,10 +53,10 @@ impl<T: QueryResult, R> SurrealAssociated<SurrealSelect<T>, R> {
 
     pub fn with_order_by(
         mut self,
-        field_or_expr: impl Into<vantage_expressions::Expr>,
+        expression: vantage_expressions::Expression,
         ascending: bool,
     ) -> Self {
-        self.query.add_order_by(field_or_expr, ascending);
+        self.query.add_order_by(expression, ascending);
         self
     }
 
@@ -111,12 +111,8 @@ impl<Q: SurrealQueriable + Selectable, R: Send + Sync> Selectable for SurrealAss
         self.query.set_distinct(distinct)
     }
 
-    fn add_order_by(
-        &mut self,
-        field_or_expr: impl Into<vantage_expressions::Expr>,
-        ascending: bool,
-    ) {
-        self.query.add_order_by(field_or_expr, ascending)
+    fn add_order_by(&mut self, expression: vantage_expressions::Expression, ascending: bool) {
+        self.query.add_order_by(expression, ascending)
     }
 
     fn add_group_by(&mut self, expression: vantage_expressions::Expression) {

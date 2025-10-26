@@ -54,7 +54,7 @@ fn main() {
 
     // Find with sort, skip, and limit
     let mut query = select("users");
-    query.add_order_by("created_at", true);
+    query.add_order_by(vantage_expressions::expr!("created_at"), true);
     query.set_limit(Some(10), Some(20));
     println!("Find with sort, skip, and limit:");
     let expr: vantage_expressions::Expression = query.into();
@@ -77,7 +77,7 @@ fn main() {
     query.add_field("order_id".to_string());
     query.add_field("customer".to_string());
     query.add_field("total".to_string());
-    query.add_order_by("created_at", true);
+    query.add_order_by(vantage_expressions::expr!("created_at"), true);
     query.set_limit(Some(100), None);
     println!("Complex find query:");
     let expr: vantage_expressions::Expression = query.into();

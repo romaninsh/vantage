@@ -263,6 +263,8 @@ the following rules:
    limitation stop and explain situation to me (briefly), asking how to proceed.
  - there will generally be one README.md file per crate, but no need to create
    it.
+ - avoid using head, tail, and grep when executing terminal commands - see full
+   output instead.
  - agent will automatically update the following section to reflect contents of
    this repository, keeping it clean and short, add important notes and
    learnings from chat sessions, if you think those are essential later.

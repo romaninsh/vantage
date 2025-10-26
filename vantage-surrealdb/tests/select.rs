@@ -29,7 +29,7 @@ fn query01() {
     select.set_source("product", None);
     select.add_where_condition(expr!("bakery = {}", Thing::new("bakery", "hill_valley")));
     select.add_where_condition(expr!("is_deleted = {}", false));
-    select.add_order_by("name", true);
+    select.add_order_by(expr!("name"), true);
 
     let result = select.preview();
 
@@ -45,7 +45,7 @@ fn query01() {
         None,
     );
     select.add_where_condition(expr!("is_deleted = {}", false));
-    select.add_order_by("name", true);
+    select.add_order_by(expr!("name"), true);
 
     let result2 = select.preview();
 
@@ -64,7 +64,7 @@ fn query02() {
         Thing::new("bakery", "hill_valley").lref("belongs_to", "client"),
         None,
     );
-    select.add_order_by("name", true);
+    select.add_order_by(expr!("name"), true);
 
     let result = select.preview();
     assert_eq!(
@@ -77,7 +77,7 @@ fn query02() {
     // Second query: SELECT * FROM client WHERE bakery = bakery:hill_valley order by name
     select.set_source("client", None);
     select.add_where_condition(expr!("bakery = {}", Thing::new("bakery", "hill_valley")));
-    select.add_order_by("name", true);
+    select.add_order_by(expr!("name"), true);
 
     let result = select.preview();
     assert_eq!(
@@ -175,7 +175,7 @@ fn query07() {
 #[test]
 fn query11() {
     let select = SurrealSelect::new()
-        .with_order("product_name", true)
+        .with_order(expr!("product_name"), true)
         .with_condition(expr!("total_items_ordered > current_inventory"))
         .with_source(
             SurrealSelect::new()
