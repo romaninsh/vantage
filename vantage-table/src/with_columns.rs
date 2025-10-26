@@ -154,6 +154,7 @@ impl From<Column> for String {
 mod tests {
     use super::*;
     use crate::mocks::MockTableSource;
+    use crate::with_ordering::OrderByExt;
     use vantage_expressions::expr;
 
     #[test]
@@ -178,5 +179,30 @@ mod tests {
     fn test_column_no_flags() {
         let column = Column::new("optional_field");
         assert!(column.flags().is_empty());
+    }
+
+    #[test]
+    fn test_column_ordering() {
+        use crate::with_ordering::SortDirection;
+
+        let datasource = MockTableSource::new();
+        let table = Table::new("users", datasource)
+            .with_column("name")
+            .with_column("age");
+
+        let mut table = table;
+
+        // Test column.ascending()
+        table.add_order(table["name"].ascending());
+        assert_eq!(table.orders().count(), 1);
+
+        // Test column.descending()
+        table.add_order(table["age"].descending());
+        assert_eq!(table.orders().count(), 2);
+
+        // Verify directions
+        let orders: Vec<_> = table.orders().collect();
+        assert!(matches!(orders[0].1, SortDirection::Ascending));
+        assert!(matches!(orders[1].1, SortDirection::Descending));
     }
 }

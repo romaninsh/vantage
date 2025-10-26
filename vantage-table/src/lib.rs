@@ -59,7 +59,7 @@ pub use vantage_expressions::QuerySource;
 pub use crate::tablesource::TableSource;
 pub use crate::with_columns::{Column, ColumnFlag};
 pub use crate::with_conditions::ConditionHandle;
-pub use crate::with_ordering::{OrderHandle, SortDirection};
+pub use crate::with_ordering::{OrderBy, OrderByExt, OrderHandle, SortDirection};
 
 /// Trait for dynamic table operations without generics
 #[async_trait]
