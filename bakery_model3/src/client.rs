@@ -15,8 +15,12 @@ pub struct Client {
 
 impl Client {
     pub fn table(db: SurrealDB) -> Table<SurrealDB, Client> {
+        use crate::{Bakery, Order};
         use vantage_surrealdb::{prelude::*, SurrealColumn};
+        let db2 = db.clone();
+        let db3 = db.clone();
         Table::new("client", db)
+            .with_id_column("id")
             .with_column(
                 SurrealColumn::<String>::new("name")
                     .with_flags(&[ColumnFlag::Mandatory])
@@ -27,23 +31,23 @@ impl Client {
             .with_column_of::<bool>("is_paying_client")
             .with_column_of::<String>("bakery")
             .with_column("metadata")
+            .with_one("bakery", "bakery", move || Bakery::table(db2.clone()))
+            .with_many("orders", "client", move || Order::table(db3.clone()))
             .into_entity()
     }
 }
 
 pub trait ClientTable {
-    // TODO: Uncomment when relationships are implemented in 0.3
-    // fn ref_bakery(&self) -> Table<SurrealDB, Bakery>;
-    // fn ref_orders(&self) -> Table<SurrealDB, Order>;
+    fn ref_bakery(&self) -> Table<SurrealDB, crate::Bakery>;
+    fn ref_orders(&self) -> Table<SurrealDB, crate::Order>;
 }
 
 impl ClientTable for Table<SurrealDB, Client> {
-    // TODO: Uncomment when relationships are implemented in 0.3
-    // fn ref_bakery(&self) -> Table<SurrealDB, Bakery> {
-    //     // Implementation will depend on how relationships are handled in 0.3
-    // }
-    //
-    // fn ref_orders(&self) -> Table<SurrealDB, Order> {
-    //     // Implementation will depend on how relationships are handled in 0.3
-    // }
+    fn ref_bakery(&self) -> Table<SurrealDB, crate::Bakery> {
+        self.get_ref_as("bakery").unwrap()
+    }
+
+    fn ref_orders(&self) -> Table<SurrealDB, crate::Order> {
+        self.get_ref_as("orders").unwrap()
+    }
 }

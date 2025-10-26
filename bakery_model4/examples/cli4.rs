@@ -81,137 +81,177 @@ async fn run() -> Result<()> {
     Ok(())
 }
 
-async fn handle_commands(
+fn handle_commands(
     mut table: vantage_table::Table<bakery_model4::vantage_surrealdb::SurrealDB, EmptyEntity>,
     commands: Vec<String>,
-) -> Result<()> {
-    for command in commands {
-        if command.contains('=') {
-            let parts: Vec<&str> = command.splitn(2, '=').collect();
-            if parts.len() == 2 {
-                let field = parts[0];
-                let value_str = parts[1];
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>> {
+    Box::pin(async move {
+        let mut i = 0;
+        while i < commands.len() {
+            let command = &commands[i];
+            i += 1;
+            if command.contains('=') {
+                let parts: Vec<&str> = command.splitn(2, '=').collect();
+                if parts.len() == 2 {
+                    let field = parts[0];
+                    let value_str = parts[1];
 
-                // Get column type and parse value accordingly
-                if let Some(column) = table.get_column(field) {
-                    let col_type = column.get_type();
+                    // Get column type and parse value accordingly
+                    if let Some(column) = table.get_column(field) {
+                        let col_type = column.get_type();
 
-                    match col_type {
-                        "bool" => {
-                            let bool_val = matches!(
-                                value_str.to_lowercase().as_str(),
-                                "true" | "1" | "on" | "yes"
-                            );
-                            table.add_condition(table[field].eq(bool_val));
+                        match col_type {
+                            "bool" => {
+                                let bool_val = matches!(
+                                    value_str.to_lowercase().as_str(),
+                                    "true" | "1" | "on" | "yes"
+                                );
+                                table.add_condition(table[field].eq(bool_val));
+                            }
+                            "int" => match value_str.parse::<i64>() {
+                                Ok(int_val) => {
+                                    table.add_condition(table[field].eq(int_val));
+                                }
+                                Err(_) => {
+                                    println!("❌ Invalid integer value: {}", value_str);
+                                    continue;
+                                }
+                            },
+                            "float" => match value_str.parse::<f64>() {
+                                Ok(float_val) => {
+                                    table.add_condition(table[field].eq(float_val));
+                                }
+                                Err(_) => {
+                                    println!("❌ Invalid float value: {}", value_str);
+                                    continue;
+                                }
+                            },
+                            _ => {
+                                table.add_condition(table[field].eq(value_str.to_string()));
+                            }
                         }
-                        "int" => match value_str.parse::<i64>() {
-                            Ok(int_val) => {
-                                table.add_condition(table[field].eq(int_val));
-                            }
-                            Err(_) => {
-                                println!("❌ Invalid integer value: {}", value_str);
-                                continue;
-                            }
-                        },
-                        "float" => match value_str.parse::<f64>() {
-                            Ok(float_val) => {
-                                table.add_condition(table[field].eq(float_val));
-                            }
-                            Err(_) => {
-                                println!("❌ Invalid float value: {}", value_str);
-                                continue;
-                            }
-                        },
-                        _ => {
-                            table.add_condition(table[field].eq(value_str.to_string()));
-                        }
+                    } else {
+                        println!("❌ Column '{}' not found", field);
+                        continue;
                     }
                 } else {
-                    println!("❌ Column '{}' not found", field);
-                    continue;
+                    println!("❌ Invalid condition format. Use: field=value");
                 }
-            } else {
-                println!("❌ Invalid condition format. Use: field=value");
+                continue;
             }
-            continue;
-        }
 
-        match command.as_str() {
-            "list" => {
-                let values = table.get_values().await.context("Failed to get records")?;
-                let record_count = values.len();
-                let columns = table.columns();
-                let display_columns: Vec<(&String, &dyn vantage_table::ColumnLike)> = columns
-                    .iter()
-                    .take(5)
-                    .map(|(k, v)| (k, v as &dyn vantage_table::ColumnLike))
-                    .collect();
+            match command.as_str() {
+                "list" => {
+                    let values = table.get_values().await.context("Failed to get records")?;
+                    let record_count = values.len();
+                    let columns = table.columns();
+                    let display_columns: Vec<(&String, &dyn vantage_table::ColumnLike)> = columns
+                        .iter()
+                        .take(5)
+                        .map(|(k, v)| (k, v as &dyn vantage_table::ColumnLike))
+                        .collect();
 
-                let mut table_data = Vec::new();
+                    let mut table_data = Vec::new();
 
-                for value in values {
-                    let mut row = Vec::new();
+                    for value in values {
+                        let mut row = Vec::new();
 
-                    for (col_name, column) in &display_columns {
-                        let expected_type = column.get_type();
+                        for (col_name, column) in &display_columns {
+                            let expected_type = column.get_type();
 
-                        if let Some(v) = value.get(col_name.as_str()) {
-                            let (field_value, has_mismatch) = match v {
-                                Value::String(s) => {
-                                    let mismatch =
-                                        expected_type != "string" && expected_type != "any";
-                                    (s.clone(), mismatch)
-                                }
-                                Value::Number(n) => {
-                                    let mismatch = expected_type != "int"
-                                        && expected_type != "float"
-                                        && expected_type != "any";
-                                    (n.to_string(), mismatch)
-                                }
-                                Value::Bool(b) => {
-                                    let mismatch =
-                                        expected_type != "bool" && expected_type != "any";
-                                    (b.to_string(), mismatch)
-                                }
-                                Value::Null => ("None".to_string(), false),
-                                _ => (format!("{:?}", v), expected_type != "any"),
-                            };
-                            row.push((field_value, has_mismatch));
-                        } else {
-                            row.push(("None".to_string(), false));
+                            if let Some(v) = value.get(col_name.as_str()) {
+                                let (field_value, has_mismatch) = match v {
+                                    Value::String(s) => {
+                                        let mismatch =
+                                            expected_type != "string" && expected_type != "any";
+                                        (s.clone(), mismatch)
+                                    }
+                                    Value::Number(n) => {
+                                        let mismatch = expected_type != "int"
+                                            && expected_type != "float"
+                                            && expected_type != "any";
+                                        (n.to_string(), mismatch)
+                                    }
+                                    Value::Bool(b) => {
+                                        let mismatch =
+                                            expected_type != "bool" && expected_type != "any";
+                                        (b.to_string(), mismatch)
+                                    }
+                                    Value::Null => ("None".to_string(), false),
+                                    _ => (format!("{:?}", v), expected_type != "any"),
+                                };
+                                row.push((field_value, has_mismatch));
+                            } else {
+                                row.push(("None".to_string(), false));
+                            }
+                        }
+                        table_data.push(row);
+                    }
+
+                    if !table_data.is_empty() {
+                        let headers: Vec<String> = display_columns
+                            .iter()
+                            .map(|(name, _)| (*name).clone())
+                            .collect();
+                        print_table_with_colors(headers, table_data);
+                    }
+                    println!("Found {} records", record_count);
+                }
+                "get" => {
+                    let values = table.get_values().await.context("Failed to get values")?;
+                    match values.first() {
+                        Some(record) => println!(
+                            "{}",
+                            serde_json::to_string_pretty(record)
+                                .context("Failed to serialize record")?
+                        ),
+                        None => println!("No record found"),
+                    }
+                }
+                "ref" => {
+                    // Next command should be the reference name
+                    if i >= commands.len() {
+                        println!("❌ 'ref' command requires a reference name");
+                        println!("Usage: <entity> field=value ref <reference> <command>");
+                        println!("Example: bakery name=\"Broken Bakery\" ref products list");
+                        break;
+                    }
+
+                    let ref_name = &commands[i];
+                    i += 1;
+
+                    // Collect remaining commands for the referenced table
+                    let remaining_commands: Vec<String> = commands[i..].to_vec();
+
+                    // Get the referenced table using AnyTable
+                    match table.get_ref(ref_name) {
+                        Ok(any_table) => {
+                            println!("→ Following reference: {}", ref_name);
+
+                            if !remaining_commands.is_empty() {
+                                // Downcast to concrete type and recursively handle commands
+                                let ref_table = any_table
+                                .downcast::<bakery_model4::vantage_surrealdb::SurrealDB, EmptyEntity>()
+                                .with_context(|| error!("Failed to downcast reference", reference = ref_name))?;
+
+                                handle_commands(ref_table, remaining_commands).await?;
+                            }
+                        }
+                        Err(e) => {
+                            println!("❌ Reference '{}' not found: {}", ref_name, e);
                         }
                     }
-                    table_data.push(row);
+                    break; // Exit loop after handling ref
                 }
-
-                if !table_data.is_empty() {
-                    let headers: Vec<String> = display_columns
-                        .iter()
-                        .map(|(name, _)| (*name).clone())
-                        .collect();
-                    print_table_with_colors(headers, table_data);
+                _ => {
+                    println!("Unknown command: {}", command);
+                    println!("Available commands: list, get, ref <reference> <command>");
                 }
-                println!("Found {} records", record_count);
-            }
-            "get" => {
-                let values = table.get_values().await.context("Failed to get values")?;
-                match values.first() {
-                    Some(record) => println!(
-                        "{}",
-                        serde_json::to_string_pretty(record)
-                            .context("Failed to serialize record")?
-                    ),
-                    None => println!("No record found"),
-                }
-            }
-            _ => {
-                println!("Unknown command: {}", command);
-                println!("Available commands: list, get");
             }
         }
-    }
 
-    Ok(())
+        Ok(())
+    })
 }
 
 fn print_table_with_colors(headers: Vec<String>, rows: Vec<Vec<(String, bool)>>) {

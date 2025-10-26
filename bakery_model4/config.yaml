@@ -3,6 +3,8 @@ entities:
     table: bakery
     id_column: id
     columns:
+      - name: id
+        type: string
       - name: name
         type: string
       - name: profit_margin
@@ -10,11 +12,22 @@ entities:
         rules:
           min: 0
           max: 100
+    relations:
+      - type: has_many
+        name: clients
+        foreign_key: bakery
+        target: client
+      - type: has_many
+        name: products
+        foreign_key: bakery
+        target: product
 
   client:
     table: client
     id_column: id
     columns:
+      - name: id
+        type: string
       - name: email
         type: string
         rules:
@@ -35,15 +48,13 @@ entities:
         name: bakery
         foreign_key: bakery
         target: bakery
-      - type: has_many
-        name: orders
-        through: placed
-        target: order
 
   product:
     table: product
     id_column: id
     columns:
+      - name: id
+        type: string
       - name: name
         type: string
       - name: calories
@@ -70,6 +81,8 @@ entities:
     table: order
     id_column: id
     columns:
+      - name: id
+        type: string
       - name: bakery
         type: string
       - name: is_deleted
@@ -88,5 +101,5 @@ entities:
         target: bakery
       - type: belongs_to
         name: client
-        through: placed
+        foreign_key: client
         target: client

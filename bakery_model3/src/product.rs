@@ -21,14 +21,18 @@ pub struct Product {
 
 impl Product {
     pub fn table(db: SurrealDB) -> Table<SurrealDB, Product> {
+        use crate::Bakery;
         use vantage_surrealdb::prelude::*;
+        let db2 = db.clone();
         Table::new("product", db)
+            .with_id_column("id")
             .with_column_of::<String>("name")
             .with_column_of::<i64>("calories")
             .with_column_of::<i64>("price")
             .with_column_of::<String>("bakery")
             .with_column_of::<bool>("is_deleted")
             .with_column("inventory")
+            .with_one("bakery", "bakery", move || Bakery::table(db2.clone()))
             .into_entity()
     }
 }
@@ -74,11 +78,14 @@ pub trait ProductTable: TableLike {
             .into_type()
     }
 
-    // TODO: Uncomment when relationships are implemented in 0.3
-    // fn ref_bakery(&self) -> Table<SurrealDB, Bakery>;
+    fn ref_bakery(&self) -> Table<SurrealDB, crate::Bakery>;
 }
 
-impl ProductTable for Table<SurrealDB, Product> {}
+impl ProductTable for Table<SurrealDB, Product> {
+    fn ref_bakery(&self) -> Table<SurrealDB, crate::Bakery> {
+        self.get_ref_as("bakery").unwrap()
+    }
+}
 
 #[cfg(test)]
 mod tests {

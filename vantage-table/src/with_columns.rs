@@ -113,6 +113,15 @@ where
         self.columns.insert(column.name().to_string(), column);
     }
 
+    /// Add an ID column to the table (typically String type for most databases)
+    /// This is a convenience method for defining the primary key column
+    pub fn with_id_column(self, name: impl Into<String>) -> Self
+    where
+        T::Column: From<Column>,
+    {
+        self.with_column(Column::new(name.into()))
+    }
+
     /// Get all columns
     pub fn columns(&self) -> &IndexMap<String, T::Column> {
         &self.columns

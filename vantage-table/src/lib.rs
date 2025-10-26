@@ -39,16 +39,19 @@ use vantage_core::{
 };
 use vantage_expressions::{Expression, protocol::selectable::Selectable};
 
+pub mod any;
 pub mod insertable;
 pub mod mocks;
 pub mod models_macro;
 pub mod prelude;
 pub mod readable;
 pub mod record;
+pub mod references;
 pub mod tablesource;
 pub mod with_columns;
 pub mod with_conditions;
 pub mod with_ordering;
+pub mod with_refs;
 pub mod writable;
 
 /// Re-export ColumnLike from vantage-expressions for convenience
@@ -73,6 +76,14 @@ pub trait TableLike: Send + Sync {
 
     /// Get raw data from the table as `Vec<Value>` for UI grids
     async fn get_values(&self) -> Result<Vec<serde_json::Value>>;
+
+    /// Add a condition to this table using a type-erased expression
+    /// The expression must be of type T::Expr for the underlying table's TableSource
+    fn add_condition(&mut self, condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()>;
+
+    /// Convert to Any for downcasting
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any>;
+    fn as_any_ref(&self) -> &dyn std::any::Any;
 }
 
 // Re-export Entity trait from vantage-core
@@ -89,7 +100,7 @@ pub struct IdEntity {
 }
 
 /// A table abstraction defined over a datasource and entity
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Table<T, E>
 where
     T: TableSource,
@@ -103,6 +114,21 @@ where
     next_condition_id: i64,
     order_by: IndexMap<i64, (T::Expr, crate::with_ordering::SortDirection)>,
     next_order_id: i64,
+    refs: Option<IndexMap<String, Arc<dyn references::RelatedTable>>>,
+}
+
+impl<T: TableSource, E: Entity> std::fmt::Debug for Table<T, E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Table")
+            .field("table_name", &self.table_name)
+            .field("columns", &self.columns.keys().collect::<Vec<_>>())
+            .field("conditions_count", &self.conditions.len())
+            .field(
+                "refs_count",
+                &self.refs.as_ref().map(|r| r.len()).unwrap_or(0),
+            )
+            .finish()
+    }
 }
 
 impl<T: TableSource> Table<T, EmptyEntity>
@@ -120,6 +146,7 @@ where
             next_condition_id: 1,
             order_by: IndexMap::new(),
             next_order_id: 1,
+            refs: None,
         }
     }
 }
@@ -145,6 +172,7 @@ impl<T: TableSource, E: Entity> Table<T, E> {
             next_condition_id: self.next_condition_id,
             order_by: self.order_by,
             next_order_id: self.next_order_id,
+            refs: self.refs,
         }
     }
     /// Get the table name
@@ -225,10 +253,21 @@ where
 
         select
     }
+
+    /// Create a select query for a specific field with table conditions applied
+    /// Used for building subqueries in IN clauses
+    pub fn select_field(&self, field_name: &str) -> T::Select<E> {
+        let mut select = self.data_source.select::<E>();
+        select.set_source(self.table_name.as_str(), None);
+        select.add_field(field_name);
+
+        // Add all conditions from the table
+        for condition in self.conditions.values() {
+            select.
 }
 
 #[async_trait]
-impl<T: TableSource, E: Entity> TableLike for Table<T, E>
+impl<T: TableSource + 'static, E: Entity> TableLike for Table<T, E>
 where
     T: TableSource + Send + Sync,
     T::Column: ColumnLike + Clone + 'static,
@@ -263,42 +302,23 @@ where
             .await
             .map_err(|e| vantage_error!("Failed to get table values: {}", e))
     }
-}
 
-#[async_trait]
-impl<T: TableSource, E: Entity> TableLike for &Table<T, E>
-where
-    T: TableSource + Send + Sync,
-    T::Column: ColumnLike + Clone + 'static,
-    E: Send + Sync,
-{
-    fn columns(&self) -> Arc<IndexMap<String, Arc<dyn ColumnLike>>> {
-        let arc_columns: IndexMap<String, Arc<dyn ColumnLike>> = self
-            .columns
-            .iter()
-            .map(|(k, v)| (k.clone(), Arc::new(v.clone()) as Arc<dyn ColumnLike>))
-            .collect();
-        Arc::new(arc_columns)
+    fn add_condition(&mut self, condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()> {
+        // Downcast the boxed Any to T::Expr
+        let expr = condition
+            .downcast::<T::Expr>()
+            .map_err(|_| error!("Failed to downcast condition expression"))?;
+
+        // Use the existing add_condition method
+        self.add_condition(*expr);
+        Ok(())
     }
 
-    fn get_column(&self, name: &str) -> Option<Arc<dyn ColumnLike>> {
-        self.columns
-            .get(name)
-            .map(|col| Arc::new(col.clone()) as Arc<dyn ColumnLike>)
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
     }
 
-    fn table_alias(&self) -> &str {
-        &self.table_name
-    }
-
-    fn table_name(&self) -> &str {
-        &self.table_name
-    }
-
-    async fn get_values(&self) -> Result<Vec<serde_json::Value>> {
-        self.data_source
-            .get_table_data_as_value(self)
-            .await
-            .map_err(|e| vantage_error!("Failed to get table values: {}", e))
+    fn as_any_ref(&self) -> &dyn std::any::Any {
+        self
     }
 }

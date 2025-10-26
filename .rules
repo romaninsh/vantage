@@ -160,12 +160,14 @@ query builder, any table or any datasource.
 - ✅ Database connection initialization (DSN pattern implemented, working)
 - ✅ Query building and execution (SurrealTableExt methods working)
 - ✅ Basic data retrieval (select_surreal(), select_surreal_column() working)
-- ⏳ CRUD operations (.get(), .insert(), .count() methods - waiting for
-  vantage-table impl)
-- ⏳ Condition system (.with_condition(), field comparisons - not yet
-  implemented)
-- ⏳ Relationship traversal (.ref_orders(), .with_many() - not yet implemented)
-- ⏳ Dynamic entity loading (.get_some_as::<T>() - not yet implemented)
+- ✅ CRUD operations (.get(), .insert(), .count() methods working)
+- ✅ Condition system (.with_condition(), field comparisons working)
+- ✅ Relationship traversal (.ref_orders(), .with_many(), .with_one() implemented)
+- ✅ Dynamic entity loading (.get_some_as::<T>() working)
+- ✅ AnyTable type erasure for generic table handling
+- ✅ Reference downcasting (.get_ref_as() working)
+- ⏳ Condition propagation in references (WHERE clauses for related queries)
+- ⏳ get_linked_table for JOIN scenarios
 
 Key architectural changes:
 - Table definitions now use builder pattern instead of static initialization
@@ -175,6 +177,9 @@ Key architectural changes:
 - DSN connection pattern adopted (ws://user:pass@host:port/namespace/database)
 - SurrealTableExt provides database-specific query execution methods
 - Query execution uses ds.get(query) pattern instead of table.get().await
+- AnyTable replaces Box<dyn SqlTable> for type-erased tables with downcasting
+- References use closure factories returning concrete tables (converted to AnyTable)
+- Relationships defined with .with_one() and .with_many() builder methods
 
 ## Where is this going?
 
@@ -369,18 +374,22 @@ predefined entity types using get_values() for data retrieval.
 **vantage-config** provides YAML-based configuration parsing for dynamic entity
 definitions. Supports entity schemas with table names, columns (with types like
 int, float, decimal, string, bool, datetime, duration, any), validation rules
-(email, min, max), optional/nullable fields, and default values. Includes
-get_table() method that dynamically builds Table instances from config at
-runtime. Enables building data applications where entity schemas are defined in
-config files rather than Rust code.
+(email, min, max), optional/nullable fields, default values, and relationships.
+Includes get_table() method that dynamically builds Table instances from config
+at runtime, including .with_one() and .with_many() relationships. Enables
+building data applications where entity schemas are defined in config files
+rather than Rust code. Relations can be traversed via CLI commands like
+`cli bakery name="X" ref products list`.
 
 **vantage-table** provides the core Table<DataSource, Entity> abstraction in
-0.3, replacing the monolithic table implementation from 0.2. Currently supports
-basic table definition with columns and conditions, select query generation via
-Selectable trait. Missing key features like .get(), CRUD operations, and
-relationship traversal that existed in 0.2. Database-specific extensions like
-SurrealTableExt provide working query execution methods (select_surreal(),
-select_surreal_column()) that bridge the gap until core methods are implemented.
+0.3, replacing the monolithic table implementation from 0.2. Supports table
+definition with columns, conditions, ordering, and relationships. Includes
+AnyTable for type erasure with downcasting capability (stores TypeId and type
+names for debugging). Reference system using ReferenceOne/ReferenceMany traits
+enables relationship traversal with .get_ref() returning AnyTable and
+.get_ref_as() for automatic downcasting. Database-specific extensions like
+SurrealTableExt provide query execution methods. The .with_id_column() helper
+simplifies ID column definition.
 
 The Vantage 0.3 ecosystem consists of three main layers: core query building
 framework (expressions, database-specific builders), data management (dataset

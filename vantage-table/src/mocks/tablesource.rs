@@ -7,6 +7,7 @@ use vantage_core::util::error::{Context, vantage_error};
 use vantage_dataset::{dataset::Result, prelude::VantageError};
 use vantage_expressions::protocol::datasource::DataSource;
 
+#[derive(Clone)]
 pub struct MockTableSource {
     data: Arc<Mutex<HashMap<String, Vec<serde_json::Value>>>>,
 }
