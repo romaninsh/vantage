@@ -210,6 +210,45 @@ find_nearest_free_time(calendar1: EventTable, calendar2: EventTable)
 given the generic nature of tables, integrating with Axum will also be easy.
 Some implementation already exist in bakery_api/.
 
+## Error Handling
+
+All Vantage code MUST use VantageError from vantage-core. Key patterns:
+
+**DO:**
+```rust
+use vantage_core::{error, util::error::Context, Result};
+
+// Simple context
+some_operation().context("Failed to load config")?;
+
+// Rich context with parameters
+some_operation()
+    .with_context(|| error!("Failed to connect", dsn = &dsn, timeout = 30))?;
+
+// Creating errors directly
+return Err(error!("Invalid state", entity_name = name).into());
+
+// Function signatures
+pub fn my_function() -> Result<String> { ... }
+```
+
+**DON'T:**
+```rust
+// Never use Box<dyn Error>
+pub fn bad() -> Result<T, Box<dyn std::error::Error>> { ... }
+
+// Never use map_err for simple errors
+.map_err(|e| format!("Error: {}", e))?
+
+// Never use in library code (except bakery example or when error is logically impossible)
+config.unwrap()
+```
+
+**Converting from std::result::Result:**
+When dealing with functions that return `std::result::Result<T, E>`:
+- Use `.context("message")` for simple errors
+- Use `.with_context(|| error!("message", key = value))` for rich errors
+
 ## Code Generation instructions
 
 In this project some code is generated through AI agent, which follows
@@ -315,7 +354,23 @@ detection.
 tables can power HTTP APIs and generic data grid capabilities for web
 applications.
 
+**bakery_model4** demonstrates dynamic entity loading from YAML configuration
+files instead of compile-time struct definitions. Uses vantage-config to parse
+entity schemas (tables, columns, types, rules) at runtime and creates
+Table<SurrealDB, EmptyEntity> instances dynamically. Includes cli4 example that
+provides full CLI interface for any entity defined in config.yaml, supporting
+list, get, and field filtering operations. Shows how Vantage can work without
+predefined entity types using get_values() for data retrieval.
+
 ### Summary
+
+**vantage-config** provides YAML-based configuration parsing for dynamic entity
+definitions. Supports entity schemas with table names, columns (with types like
+int, float, decimal, string, bool, datetime, duration, any), validation rules
+(email, min, max), optional/nullable fields, and default values. Includes
+get_table() method that dynamically builds Table instances from config at
+runtime. Enables building data applications where entity schemas are defined in
+config files rather than Rust code.
 
 **vantage-table** provides the core Table<DataSource, Entity> abstraction in
 0.3, replacing the monolithic table implementation from 0.2. Currently supports
