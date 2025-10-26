@@ -95,7 +95,7 @@ impl VantageConfig {
                     }
                     col.into_any()
                 }
-                "any" | _ => {
+                _ => {
                     // Default to untyped column
                     SurrealColumn::<surreal_client::types::Any>::new(&column.name).into_any()
                 }

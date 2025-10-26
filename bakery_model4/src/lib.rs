@@ -15,7 +15,7 @@ pub fn get_table(
 ) -> Result<Table<SurrealDB, EmptyEntity>> {
     config
         .get_table(entity_name, db)
-        .ok_or_else(|| error!("Entity not found in config", entity_name = entity_name).into())
+        .ok_or_else(|| error!("Entity not found in config", entity_name = entity_name))
 }
 
 /// Connect to SurrealDB using DSN from environment or default

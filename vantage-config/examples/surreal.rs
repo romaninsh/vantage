@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // List all entities
     println!("Available entities:");
     if let Some(entities) = &config.entities {
-        for (name, _entity) in entities {
+        for name in entities.keys() {
             println!("  - {}", name);
         }
     }

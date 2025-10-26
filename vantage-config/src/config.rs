@@ -95,7 +95,7 @@ impl VantageConfig {
     /// Generate and return the JSON Schema as a pretty-printed string
     pub fn get_schema_json() -> Result<String> {
         let schema = schema_for!(VantageConfig);
-        Ok(serde_json::to_string_pretty(&schema).context("Failed to serialize schema to JSON")?)
+        serde_json::to_string_pretty(&schema).context("Failed to serialize schema to JSON")
     }
 
     /// Write the JSON Schema to a file
@@ -133,8 +133,7 @@ impl VantageConfig {
             return Err(error!(
                 "Schema validation failed",
                 errors = error_messages.join("\n")
-            )
-            .into());
+            ));
         }
 
         // Parse into our config struct
