@@ -1,0 +1,92 @@
+entities:
+  bakery:
+    table: bakery
+    id_column: id
+    columns:
+      - name: name
+        type: string
+      - name: profit_margin
+        type: int
+        rules:
+          min: 0
+          max: 100
+
+  client:
+    table: client
+    id_column: id
+    columns:
+      - name: email
+        type: string
+        rules:
+          email: true
+      - name: name
+        type: string
+      - name: contact_details
+        type: string
+      - name: is_paying_client
+        type: bool
+        default: false
+      - name: bakery
+        type: string
+      - name: metadata
+        optional: true
+    relations:
+      - type: belongs_to
+        name: bakery
+        foreign_key: bakery
+        target: bakery
+      - type: has_many
+        name: orders
+        through: placed
+        target: order
+
+  product:
+    table: product
+    id_column: id
+    columns:
+      - name: name
+        type: string
+      - name: calories
+        type: int
+        rules:
+          min: 0
+      - name: price
+        type: int
+        rules:
+          min: 1
+      - name: bakery
+        type: string
+      - name: is_deleted
+        type: bool
+        default: false
+      - name: inventory
+    relations:
+      - type: belongs_to
+        name: bakery
+        foreign_key: bakery
+        target: bakery
+
+  order:
+    table: order
+    id_column: id
+    columns:
+      - name: bakery
+        type: string
+      - name: is_deleted
+        type: bool
+        default: false
+      - name: created_at
+        type: datetime
+        default: now
+      - name: lines
+        type: array
+        default: []
+    relations:
+      - type: belongs_to
+        name: bakery
+        foreign_key: bakery
+        target: bakery
+      - type: belongs_to
+        name: client
+        through: placed
+        target: client

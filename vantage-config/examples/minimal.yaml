@@ -1,0 +1,28 @@
+entities:
+  client:
+    table: client
+    id_column: id
+    columns:
+      - name: email
+        type: string
+        rules:
+          email: true
+      - name: name
+        type: string
+      - name: is_paying_client
+        type: bool
+        default: false
+
+  product:
+    table: product
+    id_column: id
+    columns:
+      - name: name
+        type: string
+      - name: price
+        type: decimal
+        rules:
+          min: 0
+      - name: stock
+        type: int
+        default: 0

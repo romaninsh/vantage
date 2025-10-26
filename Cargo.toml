@@ -8,9 +8,11 @@ members = [
     "vantage-mongodb",
     # "vantage-live",
     "bakery_model3",
+    "bakery_model4",
     "surreal-client",
     "vantage-dataset",
     "vantage-table",
+    "vantage-config",
 ]
 exclude = [
     "vantage",

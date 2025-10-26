@@ -18,7 +18,7 @@ vantage-expressions = { path = "../vantage-expressions" }
 vantage-table = { path = "../vantage-table" }
 vantage-dataset = { path = "../vantage-dataset" }
 surreal-client = { path = "../surreal-client" }
-indexmap = { version = "2.11.4", features = ["serde"] }
+indexmap = { version = "2.12.0", features = ["serde"] }
 serde_json = { version = "1", features = [
     "preserve_order",
     "raw_value",
@@ -26,7 +26,7 @@ serde_json = { version = "1", features = [
 ] }
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"
-tokio = { version = "1.47", features = ["full"] }
+tokio = { version = "1.48", features = ["full"] }
 base64 = "0.22"
 md5 = "0.8"
 serde_path_to_error = "0.1"

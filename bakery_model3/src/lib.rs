@@ -52,6 +52,8 @@ pub async fn connect_surrealdb_with_debug(debug: bool) -> Result<()> {
     let dsn = std::env::var("SURREALDB_URL")
         .unwrap_or_else(|_| "ws://root:root@localhost:8000/bakery/v2".to_string());
 
+    // if you are using this in produciton code, do not include `dns` which might
+    // contain password
     let client = SurrealConnection::dsn(&dsn)
         .with_context(|| error!("Failed to parse DSN", dsn = &dsn))?
         .with_debug(debug)
