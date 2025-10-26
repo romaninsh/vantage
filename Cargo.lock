@@ -168,6 +168,7 @@ name = "bakery_model3"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "indexmap",
  "serde",
  "serde_json",
  "surreal-client",

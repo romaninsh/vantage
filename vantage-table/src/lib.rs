@@ -37,6 +37,7 @@ use vantage_core::{
     Result, error,
     util::error::{Context, vantage_error},
 };
+use vantage_dataset::dataset::{ReadableValueSet, WritableValueSet};
 use vantage_expressions::{Expression, protocol::selectable::Selectable};
 
 pub mod any;
@@ -66,16 +67,13 @@ pub use crate::with_ordering::{OrderBy, OrderByExt, OrderHandle, SortDirection};
 
 /// Trait for dynamic table operations without generics
 #[async_trait]
-pub trait TableLike: Send + Sync {
+pub trait TableLike: ReadableValueSet + WritableValueSet + Send + Sync {
     /// Get all columns as boxed ColumnLike trait objects
     fn columns(&self) -> Arc<IndexMap<String, Arc<dyn ColumnLike>>>;
     fn get_column(&self, name: &str) -> Option<Arc<dyn ColumnLike>>;
 
     fn table_name(&self) -> &str;
     fn table_alias(&self) -> &str;
-
-    /// Get raw data from the table as `Vec<Value>` for UI grids
-    async fn get_values(&self) -> Result<Vec<serde_json::Value>>;
 
     /// Add a condition to this table using a type-erased expression
     /// The expression must be of type T::Expr for the underlying table's TableSource
@@ -283,13 +281,6 @@ where
 
     fn table_name(&self) -> &str {
         &self.table_name
-    }
-
-    async fn get_values(&self) -> Result<Vec<serde_json::Value>> {
-        self.data_source
-            .get_table_data_as_value(self)
-            .await
-            .map_err(|e| vantage_error!("Failed to get table values: {}", e))
     }
 
     fn add_condition(&mut self, condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()> {

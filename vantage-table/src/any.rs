@@ -5,7 +5,9 @@
 
 use std::any::TypeId;
 
+use async_trait::async_trait;
 use vantage_core::{Result, error};
+use vantage_dataset::dataset::{ReadableValueSet, WritableValueSet};
 
 use crate::{Entity, Table, TableLike, TableSource};
 
@@ -92,6 +94,46 @@ impl std::fmt::Debug for AnyTable {
             .field("datasource", &self.datasource_name)
             .field("entity", &self.entity_name)
             .finish()
+    }
+}
+
+// Implement ReadableValueSet by delegating to inner TableLike
+#[async_trait]
+impl ReadableValueSet for AnyTable {
+    async fn get_values(&self) -> Result<Vec<serde_json::Value>> {
+        self.inner.get_values().await
+    }
+
+    async fn get_id_value(&self, id: &str) -> Result<serde_json::Value> {
+        self.inner.get_id_value(id).await
+    }
+
+    async fn get_some_value(&self) -> Result<Option<serde_json::Value>> {
+        self.inner.get_some_value().await
+    }
+}
+
+// Implement WritableValueSet by delegating to inner TableLike
+#[async_trait]
+impl WritableValueSet for AnyTable {
+    async fn insert_id_value(&self, id: &str, record: serde_json::Value) -> Result<()> {
+        self.inner.insert_id_value(id, record).await
+    }
+
+    async fn replace_id_value(&self, id: &str, record: serde_json::Value) -> Result<()> {
+        self.inner.replace_id_value(id, record).await
+    }
+
+    async fn patch_id(&self, id: &str, partial: serde_json::Value) -> Result<()> {
+        self.inner.patch_id(id, partial).await
+    }
+
+    async fn delete_id(&self, id: &str) -> Result<()> {
+        self.inner.delete_id(id).await
+    }
+
+    async fn delete_all(&self) -> Result<()> {
+        self.inner.delete_all().await
     }
 }
 

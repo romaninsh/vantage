@@ -7,6 +7,12 @@
 - [ ] Implement `only_column()` method for SurrealSelect query builder
 - [x] Implement prelude for vantage_surrealdb to avoid manual imports
 - [x] Fix get() method to accept (&select) instead of requiring select.expr() - should work with IntoExpression trait
+- [ ] **BUG**: SurrealDB IN subquery returns record objects not scalar values
+  - Reference traversal generates `WHERE bakery IN (SELECT id FROM bakery WHERE ...)`
+  - SurrealDB returns `{id: "bakery:hill_valley"}` from subquery, not `"bakery:hill_valley"`
+  - Need `SELECT VALUE id` but that's SurrealDB-specific, not in generic Selectable trait
+  - Workaround: Add `select_value()` to Selectable trait or handle in SurrealDB adapter
+  - Affects: Reference traversal in bakery_model4 (e.g., `bakery ref products list`)
 
 # v0.3 (Eta 2025)
 

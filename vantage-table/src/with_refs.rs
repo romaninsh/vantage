@@ -83,6 +83,14 @@ impl<T: TableSource + 'static, E: Entity> Table<T, E> {
             .insert(relation.to_string(), Arc::from(reference));
     }
 
+    /// Get list of available reference names
+    pub fn references(&self) -> Vec<String> {
+        self.refs
+            .as_ref()
+            .map(|refs| refs.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
     /// Get a related table as AnyTable
     ///
     /// Returns the related table with appropriate conditions applied.
