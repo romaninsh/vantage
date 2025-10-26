@@ -341,12 +341,7 @@ impl<T: QueryResult> Selectable for SurrealSelect<T> {
         self.distinct = distinct;
     }
 
-    fn add_order_by(&mut self, field_or_expr: impl Into<Expr>, ascending: bool) {
-        let expression = match field_or_expr.into() {
-            Expr::Scalar(Value::String(s)) => Identifier::new(s).into(),
-            other => expr!("{}", other),
-        };
-
+    fn add_order_by(&mut self, expression: Expression, ascending: bool) {
         self.order_by.push((expression, ascending));
     }
 

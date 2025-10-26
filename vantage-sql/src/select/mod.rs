@@ -376,9 +376,7 @@ impl Selectable for Select {
         self.distinct = distinct;
     }
 
-    fn add_order_by(&mut self, field_or_expr: impl Into<Expr>, ascending: bool) {
-        let expression = expr!("{}", field_or_expr.into());
-
+    fn add_order_by(&mut self, expression: Expression, ascending: bool) {
         self.order_by.push(expression);
         self.order_by
             .push(expr!(if ascending { "true" } else { "false" }));

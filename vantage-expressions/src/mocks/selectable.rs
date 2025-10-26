@@ -41,11 +41,7 @@ impl Selectable<Expression> for MockSelect {
         // Mock implementation - no actual query building
     }
 
-    fn add_order_by(
-        &mut self,
-        _field_or_expr: impl Into<IntoExpressive<Expression>>,
-        _ascending: bool,
-    ) {
+    fn add_order_by(&mut self, _expression: Expression, _ascending: bool) {
         // Mock implementation - no actual query building
     }
 
@@ -122,7 +118,7 @@ mod tests {
         mock.add_expression(crate::expr!("age > 18"), Some("adult".to_string()));
         mock.add_where_condition(crate::expr!("active = true"));
         mock.set_distinct(true);
-        mock.add_order_by("name", true);
+        mock.add_order_by(crate::expr!("name"), true);
         mock.add_group_by(crate::expr!("department"));
         mock.set_limit(Some(10), Some(0));
         mock.clear_fields();
