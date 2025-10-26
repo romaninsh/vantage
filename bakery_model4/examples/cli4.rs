@@ -211,9 +211,19 @@ fn handle_commands(
                 "ref" => {
                     // Next command should be the reference name
                     if i >= commands.len() {
-                        println!("❌ 'ref' command requires a reference name");
-                        println!("Usage: <entity> field=value ref <reference> <command>");
-                        println!("Example: bakery name=\"Broken Bakery\" ref products list");
+                        // Show available references
+                        let refs = table.references();
+                        if refs.is_empty() {
+                            println!("No references defined on this table");
+                        } else {
+                            println!("Available references:");
+                            for ref_name in refs {
+                                println!("  - {}", ref_name);
+                            }
+                            println!();
+                            println!("Usage: <entity> field=value ref <reference> <command>");
+                            println!("Example: bakery name=\"Broken Bakery\" ref products list");
+                        }
                         break;
                     }
 

@@ -70,5 +70,17 @@ macro_rules! models {
             }
         }
 
+        // Function to get all tables as AnyTable
+        pub fn all_tables(db: $datasource) -> ::indexmap::IndexMap<String, $crate::any::AnyTable> {
+            let mut tables = ::indexmap::IndexMap::new();
+            $(
+                tables.insert(
+                    stringify!($mod_name).to_string(),
+                    $crate::any::AnyTable::new($struct_name::table(db.clone())),
+                );
+            )*
+            tables
+        }
+
     };
 }

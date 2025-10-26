@@ -10,6 +10,7 @@ vantage-surrealdb = { path = "../vantage-surrealdb" }
 vantage-expressions = { path = "../vantage-expressions" }
 vantage-dataset = { path = "../vantage-dataset" }
 surreal-client = { path = "../surreal-client" }
+indexmap = "2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.48", features = ["full"] }
