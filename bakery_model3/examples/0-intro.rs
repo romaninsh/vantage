@@ -67,8 +67,7 @@ async fn main() -> Result<()> {
     println!("-[ calculating count, implicit type ]-----------------------");
     // Generate i64 count() from Table<SurrealDB, Client> and execute it:
     let count_result = paying_clients
-        .surreal_count()
-        .get()
+        .get_count()
         .await
         .with_context(|| error!("Failed to count paying clients"))?;
     println!("Count of paying clients: {}", count_result);
@@ -86,8 +85,7 @@ async fn main() -> Result<()> {
 
     // Generate i64 count() from Table<SurrealDB, Client> and execute it:
     let count_result = paying_clients
-        .surreal_count()
-        .get()
+        .get_count()
         .await
         .with_context(|| error!("Failed to count paying clients after update"))?;
     println!("Count of paying clients: {}", count_result);

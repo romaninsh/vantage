@@ -36,7 +36,7 @@ impl vantage_table::TableSource for SurrealDB {
             // Default to searching first column
             if let Some((col_name, _)) = columns.first() {
                 Expression::new(
-                    &format!("{} CONTAINS {{}}", col_name),
+                    format!("{} CONTAINS {{}}", col_name),
                     vec![search_value.into()],
                 )
             } else {
@@ -499,5 +499,75 @@ impl vantage_table::TableSource for SurrealDB {
         }
 
         Ok(())
+    }
+
+    async fn get_count<E>(
+        &self,
+        table: &vantage_table::Table<Self, E>,
+    ) -> vantage_dataset::dataset::Result<i64>
+    where
+        E: vantage_core::Entity,
+        Self: Sized,
+    {
+        use vantage_expressions::QuerySource;
+
+        let select = table.select();
+        let count_expr = select.as_count();
+        let result = self.execute(&count_expr).await;
+
+        // SurrealDB returns count directly as a number
+        if let Some(num) = result.as_i64() {
+            return Ok(num);
+        } else if let Some(num) = result.as_u64() {
+            return Ok(num as i64);
+        } else if let Some(arr) = result.as_array()
+            && let Some(first) = arr.first()
+        {
+            if let Some(num) = first.as_i64() {
+                return Ok(num);
+            } else if let Some(num) = first.as_u64() {
+                return Ok(num as i64);
+            }
+        }
+
+        Ok(0)
+    }
+
+    async fn get_sum<E>(
+        &self,
+        table: &vantage_table::Table<Self, E>,
+        column: &Self::Column,
+    ) -> vantage_dataset::dataset::Result<i64>
+    where
+        E: vantage_core::Entity,
+        Self: Sized,
+    {
+        use vantage_expressions::QuerySource;
+
+        let select = table.select();
+        let column_expr = column.expr();
+        let sum_expr = select.as_sum(column_expr);
+        let result = self.execute(&sum_expr).await;
+
+        // SurrealDB returns sum directly as a number
+        if let Some(num) = result.as_i64() {
+            return Ok(num);
+        } else if let Some(num) = result.as_u64() {
+            return Ok(num as i64);
+        } else if let Some(num) = result.as_f64() {
+            return Ok(num as i64);
+        } else if let Some(arr) = result.as_array()
+            && let Some(first) = arr.first()
+        {
+            if let Some(num) = first.as_i64() {
+                return Ok(num);
+            } else if let Some(num) = first.as_u64() {
+                return Ok(num as i64);
+            } else if let Some(num) = first.as_f64() {
+                return Ok(num as i64);
+            }
+        }
+
+        Ok(0)
     }
 }

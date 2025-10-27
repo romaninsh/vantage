@@ -434,6 +434,14 @@ impl Selectable for Select {
     fn get_skip(&self) -> Option<i64> {
         self.skip_items
     }
+
+    fn as_count(&self) -> Expression {
+        expr!("COUNT(*)")
+    }
+
+    fn as_sum(&self, column: Expression) -> Expression {
+        expr!("SUM({})", column)
+    }
 }
 
 #[cfg(test)]

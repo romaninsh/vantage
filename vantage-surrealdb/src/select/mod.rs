@@ -397,6 +397,21 @@ impl<T: QueryResult> Selectable for SurrealSelect<T> {
     fn get_skip(&self) -> Option<i64> {
         self.skip
     }
+
+    fn as_count(&self) -> Expression {
+        use crate::sum::Fx;
+
+        // SurrealDB syntax: count(id) wrapped in function call
+        let id_expr = expr!("id");
+        Fx::new("count", vec![id_expr]).into()
+    }
+
+    fn as_sum(&self, column: Expression) -> Expression {
+        use crate::sum::Sum;
+
+        // SurrealDB syntax: math::sum(column)
+        Sum::new(column).into()
+    }
 }
 
 impl SurrealSelect<result::Rows> {

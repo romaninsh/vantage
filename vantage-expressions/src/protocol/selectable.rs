@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use crate::Expression;
 use crate::protocol::expressive::IntoExpressive;
 
-pub trait Selectable<E = Expression>: Send + Sync + Debug + Into<E> {
+pub trait Selectable<E = Expression>: Send + Sync + Debug + Clone + Into<E> {
     /// Specifies a source for a query. Depending on implementation, can be executed
     /// multiple times. If `source` is expression you might need to use alias.
     fn set_source(&mut self, source: impl Into<IntoExpressive<E>>, alias: Option<String>);
@@ -25,6 +25,12 @@ pub trait Selectable<E = Expression>: Send + Sync + Debug + Into<E> {
     fn is_distinct(&self) -> bool;
     fn get_limit(&self) -> Option<i64>;
     fn get_skip(&self) -> Option<i64>;
+
+    /// Create a count expression from this query
+    fn as_count(&self) -> E;
+
+    /// Create a sum expression from this query
+    fn as_sum(&self, column: E) -> E;
 
     // Default implementations for builder-style methods
     fn with_source(mut self, source: impl Into<IntoExpressive<E>>) -> Self

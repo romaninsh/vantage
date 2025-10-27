@@ -261,6 +261,16 @@ impl Selectable for MongoSelect {
     fn get_skip(&self) -> Option<i64> {
         self.skip
     }
+
+    fn as_count(&self) -> Expression {
+        // MongoDB uses $count aggregation stage
+        expr!("$count")
+    }
+
+    fn as_sum(&self, column: Expression) -> Expression {
+        // MongoDB uses $sum aggregation
+        expr!("$sum: {}", column)
+    }
 }
 
 impl From<MongoSelect> for Expression {

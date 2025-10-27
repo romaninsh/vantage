@@ -157,6 +157,18 @@ pub trait TableSource: DataSource + Clone {
         E: Entity,
         Self: Sized;
 
+    /// Get count of records in the table
+    async fn get_count<E>(&self, table: &crate::Table<Self, E>) -> Result<i64>
+    where
+        E: Entity,
+        Self: Sized;
+
+    /// Get sum of a column in the table
+    async fn get_sum<E>(&self, table: &crate::Table<Self, E>, column: &Self::Column) -> Result<i64>
+    where
+        E: Entity,
+        Self: Sized;
+
     /// Insert a record with a specific ID using JSON value, fails if ID already exists
     async fn insert_table_data_with_id_value<E>(
         &self,

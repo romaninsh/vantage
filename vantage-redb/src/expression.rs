@@ -9,6 +9,10 @@ pub enum RedbExpression {
     Value(Value),
     /// Equality condition with column name and value
     Eq { column: String, value: Value },
+    /// Count operation (execution-level)
+    Count,
+    /// Sum operation (execution-level)
+    Sum,
 }
 
 impl RedbExpression {
@@ -23,21 +27,21 @@ impl RedbExpression {
     pub fn value(&self) -> Option<&Value> {
         match self {
             Self::Value(v) => Some(v),
-            Self::Eq { .. } => None,
+            Self::Eq { .. } | Self::Count | Self::Sum => None,
         }
     }
 
     pub fn into_value(self) -> Option<Value> {
         match self {
             Self::Value(v) => Some(v),
-            Self::Eq { .. } => None,
+            Self::Eq { .. } | Self::Count | Self::Sum => None,
         }
     }
 
     pub fn as_eq(&self) -> Option<(&str, &Value)> {
         match self {
             Self::Eq { column, value } => Some((column, value)),
-            Self::Value(_) => None,
+            Self::Value(_) | Self::Count | Self::Sum => None,
         }
     }
 }
@@ -71,7 +75,7 @@ impl From<RedbExpression> for Value {
     fn from(expr: RedbExpression) -> Self {
         match expr {
             RedbExpression::Value(v) => v,
-            RedbExpression::Eq { .. } => Value::Null, // Can't convert condition to value
+            RedbExpression::Eq { .. } | RedbExpression::Count | RedbExpression::Sum => Value::Null,
         }
     }
 }

@@ -96,6 +96,16 @@ impl Selectable<Expression> for MockSelect {
     fn get_skip(&self) -> Option<i64> {
         None // Mock implementation
     }
+
+    fn as_count(&self) -> Expression {
+        // Mock implementation - return a count expression
+        crate::expr!("COUNT(*)")
+    }
+
+    fn as_sum(&self, column: Expression) -> Expression {
+        // Mock implementation - return a sum expression
+        crate::expr!("SUM({})", column)
+    }
 }
 
 impl From<MockSelect> for Expression {

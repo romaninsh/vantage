@@ -1,5 +1,5 @@
 use super::MockColumn;
-use crate::{TableLike, TableSource};
+use crate::{TableLike, TableSource, tablesource::ColumnLike};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -427,6 +427,39 @@ impl TableSource for MockTableSource {
         }
 
         Ok(())
+    }
+
+    async fn get_count<E>(&self, table: &crate::Table<Self, E>) -> Result<i64>
+    where
+        E: crate::Entity,
+        Self: Sized,
+    {
+        let values = self.get_table_data_as_value(table).await?;
+        Ok(values.len() as i64)
+    }
+
+    async fn get_sum<E>(&self, table: &crate::Table<Self, E>, column: &Self::Column) -> Result<i64>
+    where
+        E: crate::Entity,
+        Self: Sized,
+    {
+        let values = self.get_table_data_as_value(table).await?;
+        let mut sum = 0i64;
+
+        for value in values {
+            if let Some(field_value) = value.get(column.name()) {
+                // Try to extract numeric value (assume integers)
+                if let Some(num) = field_value.as_i64() {
+                    sum += num;
+                } else if let Some(num) = field_value.as_u64() {
+                    sum += num as i64;
+                } else if let Some(num) = field_value.as_f64() {
+                    sum += num as i64;
+                }
+            }
+        }
+
+        Ok(sum)
     }
 }
 
