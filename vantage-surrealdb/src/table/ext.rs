@@ -3,14 +3,11 @@ use vantage_core::{Result, vantage_error};
 use vantage_expressions::protocol::selectable::Selectable;
 use vantage_table::{Entity, Table};
 
-use crate::{SurrealDB, associated_query::SurrealAssociated, surreal_return::SurrealReturn};
+use crate::SurrealDB;
 
 /// Extension trait for Table<SurrealDB, E> providing SurrealDB-specific async methods
 #[async_trait::async_trait]
 pub trait SurrealTableExt<E: Entity> {
-    /// Create a count query that returns the number of rows
-    fn surreal_count(&self) -> SurrealAssociated<SurrealReturn, i64>;
-
     /// Update record by patching, with specified ID
     async fn update(&self, id: String, patch: Value) -> Result<()>;
 
@@ -33,11 +30,6 @@ pub trait SurrealTableExt<E: Entity> {
 
 #[async_trait::async_trait]
 impl<E: Entity> SurrealTableExt<E> for Table<SurrealDB, E> {
-    fn surreal_count(&self) -> SurrealAssociated<SurrealReturn, i64> {
-        let count_return = self.select().as_count();
-        SurrealAssociated::new(count_return, self.data_source().clone())
-    }
-
     async fn get_with_ids(&self) -> Result<Vec<(String, E)>> {
         let s = self.select().with_field("id");
 

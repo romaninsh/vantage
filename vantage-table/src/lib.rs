@@ -269,13 +269,13 @@ where
         self.data_source.get_sum(self, column).await
     }
 
-    /// Create a count query (does not execute)
-    pub fn get_count_query(&self) -> T::Select<E> {
+    /// Create a count query expression (does not execute)
+    pub fn get_count_query(&self) -> T::Expr {
         self.select().as_count()
     }
 
-    /// Create a sum query for a column (does not execute)
-    pub fn get_sum_query(&self, column: &T::Column) -> T::Select<E> {
+    /// Create a sum query expression for a column (does not execute)
+    pub fn get_sum_query(&self, column: &T::Column) -> T::Expr {
         let column_expr = self.data_source.expr(column.name(), vec![]);
         self.select().as_sum(column_expr)
     }

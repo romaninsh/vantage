@@ -36,7 +36,7 @@ impl vantage_table::TableSource for SurrealDB {
             // Default to searching first column
             if let Some((col_name, _)) = columns.first() {
                 Expression::new(
-                    &format!("{} CONTAINS {{}}", col_name),
+                    format!("{} CONTAINS {{}}", col_name),
                     vec![search_value.into()],
                 )
             } else {
@@ -512,21 +512,21 @@ impl vantage_table::TableSource for SurrealDB {
         use vantage_expressions::QuerySource;
 
         let select = table.select();
-        let count_select = select.as_count();
-        let count_expr: vantage_expressions::Expression = count_select.into();
+        let count_expr = select.as_count();
         let result = self.execute(&count_expr).await;
 
-        // Extract count from result
-        if let Some(count_val) = result
-            .as_array()
-            .and_then(|arr| arr.first())
-            .and_then(|obj| obj.as_object())
-            .and_then(|map| map.get("count"))
-        {
-            if let Some(num) = count_val.as_i64() {
-                return Ok(num);
-            } else if let Some(num) = count_val.as_u64() {
-                return Ok(num as i64);
+        // SurrealDB returns count directly as a number
+        if let Some(num) = result.as_i64() {
+            return Ok(num);
+        } else if let Some(num) = result.as_u64() {
+            return Ok(num as i64);
+        } else if let Some(arr) = result.as_array() {
+            if let Some(first) = arr.first() {
+                if let Some(num) = first.as_i64() {
+                    return Ok(num);
+                } else if let Some(num) = first.as_u64() {
+                    return Ok(num as i64);
+                }
             }
         }
 
@@ -546,23 +546,25 @@ impl vantage_table::TableSource for SurrealDB {
 
         let select = table.select();
         let column_expr = column.expr();
-        let sum_select = select.as_sum(column_expr);
-        let sum_expr: vantage_expressions::Expression = sum_select.into();
+        let sum_expr = select.as_sum(column_expr);
         let result = self.execute(&sum_expr).await;
 
-        // Extract sum from result
-        if let Some(sum_val) = result
-            .as_array()
-            .and_then(|arr| arr.first())
-            .and_then(|obj| obj.as_object())
-            .and_then(|map| map.get("sum"))
-        {
-            if let Some(num) = sum_val.as_i64() {
-                return Ok(num);
-            } else if let Some(num) = sum_val.as_u64() {
-                return Ok(num as i64);
-            } else if let Some(num) = sum_val.as_f64() {
-                return Ok(num as i64);
+        // SurrealDB returns sum directly as a number
+        if let Some(num) = result.as_i64() {
+            return Ok(num);
+        } else if let Some(num) = result.as_u64() {
+            return Ok(num as i64);
+        } else if let Some(num) = result.as_f64() {
+            return Ok(num as i64);
+        } else if let Some(arr) = result.as_array() {
+            if let Some(first) = arr.first() {
+                if let Some(num) = first.as_i64() {
+                    return Ok(num);
+                } else if let Some(num) = first.as_u64() {
+                    return Ok(num as i64);
+                } else if let Some(num) = first.as_f64() {
+                    return Ok(num as i64);
+                }
             }
         }
 

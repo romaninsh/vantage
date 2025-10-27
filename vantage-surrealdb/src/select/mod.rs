@@ -398,24 +398,19 @@ impl<T: QueryResult> Selectable for SurrealSelect<T> {
         self.skip
     }
 
-    fn as_count(&self) -> Self
-    where
-        Self: Sized,
-    {
-        let mut count_select = self.clone();
-        count_select.clear_fields();
-        count_select.add_expression(expr!("count()"), None);
-        count_select
+    fn as_count(&self) -> Expression {
+        use crate::sum::Fx;
+
+        // SurrealDB syntax: count(id) wrapped in function call
+        let id_expr = expr!("id");
+        Fx::new("count", vec![id_expr]).into()
     }
 
-    fn as_sum(&self, column: Expression) -> Self
-    where
-        Self: Sized,
-    {
-        let mut sum_select = self.clone();
-        sum_select.clear_fields();
-        sum_select.add_expression(expr!("math::sum({})", column), Some("sum".to_string()));
-        sum_select
+    fn as_sum(&self, column: Expression) -> Expression {
+        use crate::sum::Sum;
+
+        // SurrealDB syntax: math::sum(column)
+        Sum::new(column).into()
     }
 }
 

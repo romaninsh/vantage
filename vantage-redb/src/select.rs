@@ -174,22 +174,16 @@ impl<E: Entity> Selectable<RedbExpression> for RedbSelect<E> {
         self.skip
     }
 
-    fn as_count(&self) -> Self
-    where
-        Self: Sized,
-    {
+    fn as_count(&self) -> RedbExpression {
         // ReDB doesn't have query language, count is done at execution level
-        // Just return a clone - actual count happens in execute
-        self.clone()
+        // Return a stub expression - actual count happens in execute
+        RedbExpression::Count
     }
 
-    fn as_sum(&self, _column: RedbExpression) -> Self
-    where
-        Self: Sized,
-    {
+    fn as_sum(&self, _column: RedbExpression) -> RedbExpression {
         // ReDB doesn't have query language, sum is done at execution level
-        // Just return a clone - actual sum happens in execute
-        self.clone()
+        // Return a stub expression - actual sum happens in execute
+        RedbExpression::Sum
     }
 }
 

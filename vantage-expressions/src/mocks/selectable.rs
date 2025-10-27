@@ -97,18 +97,14 @@ impl Selectable<Expression> for MockSelect {
         None // Mock implementation
     }
 
-    fn as_count(&self) -> Self
-    where
-        Self: Sized,
-    {
-        Self // Mock implementation - return clone
+    fn as_count(&self) -> Expression {
+        // Mock implementation - return a count expression
+        crate::expr!("COUNT(*)")
     }
 
-    fn as_sum(&self, _column: Expression) -> Self
-    where
-        Self: Sized,
-    {
-        Self // Mock implementation - return clone
+    fn as_sum(&self, column: Expression) -> Expression {
+        // Mock implementation - return a sum expression
+        crate::expr!("SUM({})", column)
     }
 }
 

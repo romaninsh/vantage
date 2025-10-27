@@ -179,22 +179,12 @@ impl<Q: SurrealQueriable + Selectable + Clone, R: Send + Sync> Selectable
         self.query.get_skip()
     }
 
-    fn as_count(&self) -> Self
-    where
-        Self: Sized,
-    {
-        let mut cloned = self.clone();
-        cloned.query = cloned.query.as_count();
-        cloned
+    fn as_count(&self) -> vantage_expressions::Expression {
+        self.query.as_count()
     }
 
-    fn as_sum(&self, column: vantage_expressions::Expression) -> Self
-    where
-        Self: Sized,
-    {
-        let mut cloned = self.clone();
-        cloned.query = cloned.query.as_sum(column);
-        cloned
+    fn as_sum(&self, column: vantage_expressions::Expression) -> vantage_expressions::Expression {
+        self.query.as_sum(column)
     }
 }
 

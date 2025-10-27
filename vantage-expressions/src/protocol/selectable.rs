@@ -26,15 +26,11 @@ pub trait Selectable<E = Expression>: Send + Sync + Debug + Clone + Into<E> {
     fn get_limit(&self) -> Option<i64>;
     fn get_skip(&self) -> Option<i64>;
 
-    /// Clone and modify this query to count rows instead of selecting data
-    fn as_count(&self) -> Self
-    where
-        Self: Sized;
+    /// Create a count expression from this query
+    fn as_count(&self) -> E;
 
-    /// Clone and modify this query to sum a column instead of selecting data
-    fn as_sum(&self, column: E) -> Self
-    where
-        Self: Sized;
+    /// Create a sum expression from this query
+    fn as_sum(&self, column: E) -> E;
 
     // Default implementations for builder-style methods
     fn with_source(mut self, source: impl Into<IntoExpressive<E>>) -> Self
