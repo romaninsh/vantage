@@ -40,8 +40,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(col_type) = &column.col_type {
                     print!(" (type: {})", col_type);
                 }
-                if column.optional {
-                    print!(" [optional]");
+                if !column.flags.is_empty() {
+                    print!(" [flags: {}]", column.flags.join(", "));
                 }
                 if let Some(default) = &column.default {
                     print!(" [default: {}]", default);

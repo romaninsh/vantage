@@ -26,13 +26,17 @@ impl VantageConfig {
         for column in &entity.columns {
             let col_type = column.col_type.as_deref().unwrap_or("any");
 
-            // Build column based on type
+            // Parse flags from config strings
             let mut flags = Vec::new();
-            if !column.optional {
-                flags.push(ColumnFlag::Mandatory);
-            }
-            if column.hidden {
-                flags.push(ColumnFlag::Hidden);
+            for flag_str in &column.flags {
+                match flag_str.to_lowercase().as_str() {
+                    "mandatory" => flags.push(ColumnFlag::Mandatory),
+                    "hidden" => flags.push(ColumnFlag::Hidden),
+                    "id" => flags.push(ColumnFlag::IdField),
+                    "title" => flags.push(ColumnFlag::TitleField),
+                    "searchable" => flags.push(ColumnFlag::Searchable),
+                    _ => {} // Ignore unknown flags
+                }
             }
 
             // Create typed column based on config

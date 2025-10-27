@@ -5,8 +5,10 @@ entities:
     columns:
       - name: id
         type: string
+        flags: [id]
       - name: name
         type: string
+        flags: [title, searchable]
       - name: profit_margin
         type: int
         rules:
@@ -28,12 +30,15 @@ entities:
     columns:
       - name: id
         type: string
+        flags: [id]
       - name: email
         type: string
+        flags: [searchable]
         rules:
           email: true
       - name: name
         type: string
+        flags: [title, searchable]
       - name: contact_details
         type: string
       - name: is_paying_client
@@ -42,7 +47,6 @@ entities:
       - name: bakery
         type: string
       - name: metadata
-        optional: true
     relations:
       - type: belongs_to
         name: bakery
@@ -55,8 +59,10 @@ entities:
     columns:
       - name: id
         type: string
+        flags: [id]
       - name: name
         type: string
+        flags: [title, searchable]
       - name: calories
         type: int
         rules:
@@ -70,6 +76,7 @@ entities:
       - name: is_deleted
         type: bool
         default: false
+        flags: [hidden]
       - name: inventory
     relations:
       - type: belongs_to
@@ -83,11 +90,13 @@ entities:
     columns:
       - name: id
         type: string
+        flags: [id]
       - name: bakery
         type: string
       - name: is_deleted
         type: bool
         default: false
+        flags: [hidden]
       - name: created_at
         type: datetime
         default: now

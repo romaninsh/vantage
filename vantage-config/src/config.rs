@@ -85,12 +85,9 @@ pub struct ColumnConfig {
     /// Column type (defaults to "any" if not specified)
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub col_type: Option<String>,
-    /// Whether the column is optional/nullable
-    #[serde(default)]
-    pub optional: bool,
-    /// Whether the column should be hidden from UI
-    #[serde(default)]
-    pub hidden: bool,
+    /// Column flags (mandatory, hidden, id, title, searchable)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub flags: Vec<String>,
     /// Default value
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default: Option<Value>,
