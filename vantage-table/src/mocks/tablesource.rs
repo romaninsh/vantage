@@ -53,6 +53,24 @@ impl TableSource for MockTableSource {
         vantage_expressions::Expression::new(template, parameters)
     }
 
+    fn search_expression(&self, table: &impl TableLike, search_value: &str) -> Self::Expr {
+        // Mock implementation: search in "name" field if it exists
+        let columns = table.columns();
+        if columns.contains_key("name") {
+            vantage_expressions::Expression::new(
+                "name LIKE {}",
+                vec![format!("%{}%", search_value).into()],
+            )
+        } else {
+            // Default to searching first column
+            if let Some((_, _)) = columns.first() {
+                vantage_expressions::Expression::new("true", vec![])
+            } else {
+                vantage_expressions::Expression::new("true", vec![])
+            }
+        }
+    }
+
     async fn get_table_data<E>(&self, table: &crate::Table<Self, E>) -> Result<Vec<(String, E)>>
     where
         E: crate::Entity,

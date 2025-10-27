@@ -38,7 +38,7 @@ use vantage_core::{
     util::error::{Context, vantage_error},
 };
 use vantage_dataset::dataset::{ReadableValueSet, WritableValueSet};
-use vantage_expressions::{Expression, protocol::selectable::Selectable};
+use vantage_expressions::{AnyExpression, Expression, protocol::selectable::Selectable};
 
 pub mod any;
 pub mod insertable;
@@ -78,6 +78,18 @@ pub trait TableLike: ReadableValueSet + WritableValueSet + Send + Sync {
     /// Add a condition to this table using a type-erased expression
     /// The expression must be of type T::Expr for the underlying table's TableSource
     fn add_condition(&mut self, condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()>;
+
+    /// Add a temporary condition using AnyExpression that can be removed later
+    fn temp_add_condition(&mut self, condition: AnyExpression) -> Result<ConditionHandle>;
+
+    /// Remove a temporary condition by its handle
+    fn temp_remove_condition(&mut self, handle: ConditionHandle) -> Result<()>;
+
+    /// Create a search expression for this table
+    fn search_expression(&self, search_value: &str) -> Result<AnyExpression>;
+
+    /// Clone into a Box for object-safe cloning
+    fn clone_box(&self) -> Box<dyn TableLike>;
 
     /// Convert to Any for downcasting
     fn into_any(self: Box<Self>) -> Box<dyn std::any::Any>;
@@ -181,6 +193,16 @@ impl<T: TableSource, E: Entity> Table<T, E> {
     /// Get the underlying data source
     pub fn data_source(&self) -> &T {
         &self.data_source
+    }
+
+    /// Get mutable access to conditions (pub(crate) for TableLike impl)
+    pub(crate) fn conditions_mut(&mut self) -> &mut IndexMap<i64, T::Expr> {
+        &mut self.conditions
+    }
+
+    /// Get mutable access to next_condition_id (pub(crate) for TableLike impl)
+    pub(crate) fn next_condition_id_mut(&mut self) -> &mut i64 {
+        &mut self.next_condition_id
     }
 }
 
@@ -289,9 +311,42 @@ where
             .downcast::<T::Expr>()
             .map_err(|_| error!("Failed to downcast condition expression"))?;
 
-        // Use the existing add_condition method
-        self.add_condition(*expr);
+        // Add permanent condition
+        let next_id = *self.next_condition_id_mut();
+        let id = -next_id;
+        *self.next_condition_id_mut() = next_id + 1;
+        self.conditions_mut().insert(id, *expr);
         Ok(())
+    }
+
+    fn temp_add_condition(&mut self, condition: AnyExpression) -> Result<ConditionHandle> {
+        // Downcast AnyExpression to T::Expr
+        let expr = condition.downcast::<T::Expr>().map_err(|_| {
+            error!("Failed to downcast AnyExpression to datasource expression type")
+        })?;
+
+        // Add temporary condition
+        let id = self.next_condition_id;
+        self.next_condition_id += 1;
+        self.conditions.insert(id, expr);
+        Ok(ConditionHandle::new(id))
+    }
+
+    fn temp_remove_condition(&mut self, handle: ConditionHandle) -> Result<()> {
+        if handle.id() <= 0 {
+            return Err(error!("Cannot remove permanent condition"));
+        }
+        self.conditions_mut().shift_remove(&handle.id());
+        Ok(())
+    }
+
+    fn search_expression(&self, search_value: &str) -> Result<AnyExpression> {
+        let expr = self.data_source.search_expression(self, search_value);
+        Ok(AnyExpression::new(expr))
+    }
+
+    fn clone_box(&self) -> Box<dyn TableLike> {
+        Box::new(self.clone())
     }
 
     fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {

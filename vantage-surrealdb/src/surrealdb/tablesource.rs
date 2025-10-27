@@ -21,6 +21,31 @@ impl vantage_table::TableSource for SurrealDB {
         Expression::new(template, parameters)
     }
 
+    fn search_expression(
+        &self,
+        table: &impl vantage_table::TableLike,
+        search_value: &str,
+    ) -> Self::Expr {
+        // SurrealDB uses CONTAINS operator for string search
+        let columns = table.columns();
+
+        // Search in "name" field if it exists, otherwise use first string column
+        if columns.contains_key("name") {
+            Expression::new("name CONTAINS {}", vec![search_value.into()])
+        } else {
+            // Default to searching first column
+            if let Some((col_name, _)) = columns.first() {
+                Expression::new(
+                    &format!("{} CONTAINS {{}}", col_name),
+                    vec![search_value.into()],
+                )
+            } else {
+                // No columns, return always-true expression
+                Expression::new("true", vec![])
+            }
+        }
+    }
+
     async fn get_table_data<E>(
         &self,
         table: &Table<Self, E>,

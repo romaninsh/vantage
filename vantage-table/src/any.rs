@@ -88,6 +88,18 @@ impl AnyTable {
     }
 }
 
+impl Clone for AnyTable {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone_box(),
+            datasource_type_id: self.datasource_type_id,
+            entity_type_id: self.entity_type_id,
+            datasource_name: self.datasource_name,
+            entity_name: self.entity_name,
+        }
+    }
+}
+
 impl std::fmt::Debug for AnyTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AnyTable")
@@ -134,6 +146,59 @@ impl WritableValueSet for AnyTable {
 
     async fn delete_all(&self) -> Result<()> {
         self.inner.delete_all().await
+    }
+}
+
+// Implement TableLike by delegating to inner
+#[async_trait]
+impl TableLike for AnyTable {
+    fn columns(
+        &self,
+    ) -> std::sync::Arc<indexmap::IndexMap<String, std::sync::Arc<dyn crate::ColumnLike>>> {
+        self.inner.columns()
+    }
+
+    fn get_column(&self, name: &str) -> Option<std::sync::Arc<dyn crate::ColumnLike>> {
+        self.inner.get_column(name)
+    }
+
+    fn table_name(&self) -> &str {
+        self.inner.table_name()
+    }
+
+    fn table_alias(&self) -> &str {
+        self.inner.table_alias()
+    }
+
+    fn add_condition(&mut self, condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()> {
+        self.inner.add_condition(condition)
+    }
+
+    fn temp_add_condition(
+        &mut self,
+        condition: vantage_expressions::AnyExpression,
+    ) -> Result<crate::ConditionHandle> {
+        self.inner.temp_add_condition(condition)
+    }
+
+    fn temp_remove_condition(&mut self, handle: crate::ConditionHandle) -> Result<()> {
+        self.inner.temp_remove_condition(handle)
+    }
+
+    fn search_expression(&self, search_value: &str) -> Result<vantage_expressions::AnyExpression> {
+        self.inner.search_expression(search_value)
+    }
+
+    fn clone_box(&self) -> Box<dyn TableLike> {
+        Box::new(self.clone())
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+
+    fn as_any_ref(&self) -> &dyn std::any::Any {
+        self
     }
 }
 
