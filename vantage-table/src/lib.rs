@@ -110,6 +110,12 @@ pub trait TableLike: ReadableValueSet + WritableValueSet + Send + Sync {
 
     /// Get sum of a column in the table
     async fn get_sum(&self, column: &dyn ColumnLike) -> Result<i64>;
+
+    /// Get the title field column if set
+    fn title_field(&self) -> Option<Arc<dyn ColumnLike>>;
+
+    /// Get the id field column if set
+    fn id_field(&self) -> Option<Arc<dyn ColumnLike>>;
 }
 
 // Re-export Entity trait from vantage-core
@@ -142,6 +148,8 @@ where
     next_order_id: i64,
     refs: Option<IndexMap<String, Arc<dyn references::RelatedTable>>>,
     pagination: Option<Pagination>,
+    title_field: Option<String>,
+    id_field: Option<String>,
 }
 
 impl<T: TableSource, E: Entity> std::fmt::Debug for Table<T, E> {
@@ -175,6 +183,8 @@ where
             next_order_id: 1,
             refs: None,
             pagination: None,
+            title_field: None,
+            id_field: None,
         }
     }
 }
@@ -202,6 +212,8 @@ impl<T: TableSource, E: Entity> Table<T, E> {
             next_order_id: self.next_order_id,
             refs: self.refs,
             pagination: self.pagination,
+            title_field: self.title_field,
+            id_field: self.id_field,
         }
     }
     /// Get the table name
@@ -222,6 +234,20 @@ impl<T: TableSource, E: Entity> Table<T, E> {
     /// Get mutable access to next_condition_id (pub(crate) for TableLike impl)
     pub(crate) fn next_condition_id_mut(&mut self) -> &mut i64 {
         &mut self.next_condition_id
+    }
+
+    /// Get the title field column if set
+    pub fn title_field(&self) -> Option<&T::Column> {
+        self.title_field
+            .as_ref()
+            .and_then(|name| self.columns.get(name))
+    }
+
+    /// Get the id field column if set
+    pub fn id_field(&self) -> Option<&T::Column> {
+        self.id_field
+            .as_ref()
+            .and_then(|name| self.columns.get(name))
     }
 }
 
@@ -421,5 +447,21 @@ where
         } else {
             Err(error!("Column type mismatch", column = column.name()))
         }
+    }
+
+    fn title_field(&self) -> Option<Arc<dyn ColumnLike>> {
+        self.title_field.as_ref().and_then(|name| {
+            self.columns
+                .get(name)
+                .map(|col| Arc::new(col.clone()) as Arc<dyn ColumnLike>)
+        })
+    }
+
+    fn id_field(&self) -> Option<Arc<dyn ColumnLike>> {
+        self.id_field.as_ref().and_then(|name| {
+            self.columns
+                .get(name)
+                .map(|col| Arc::new(col.clone()) as Arc<dyn ColumnLike>)
+        })
     }
 }

@@ -3,12 +3,17 @@ entities:
     table: client
     id_column: id
     columns:
+      - name: id
+        type: string
+        flags: [id]
       - name: email
         type: string
+        flags: [searchable]
         rules:
           email: true
       - name: name
         type: string
+        flags: [title, searchable]
       - name: is_paying_client
         type: bool
         default: false
@@ -17,10 +22,15 @@ entities:
     table: product
     id_column: id
     columns:
+      - name: id
+        type: string
+        flags: [id]
       - name: name
         type: string
+        flags: [title, searchable]
       - name: price
         type: decimal
+        flags: [mandatory]
         rules:
           min: 0
       - name: stock

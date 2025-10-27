@@ -14,6 +14,12 @@ pub enum ColumnFlag {
     Mandatory,
     /// Hidden columns should be excluded from UI display
     Hidden,
+    /// IdField marks this column as the primary identifier for the table
+    IdField,
+    /// TitleField marks this column as the display title/name for records
+    TitleField,
+    /// Searchable marks this column as searchable in text searches
+    Searchable,
 }
 
 /// Represents a table column with optional alias and flags
@@ -53,6 +59,12 @@ impl Column {
     /// Add flags to this column
     pub fn with_flags(mut self, flags: &[ColumnFlag]) -> Self {
         self.flags.extend(flags.iter().cloned());
+        self
+    }
+
+    /// Add a single flag to this column
+    pub fn with_flag(mut self, flag: ColumnFlag) -> Self {
+        self.flags.insert(flag);
         self
     }
 
@@ -105,14 +117,40 @@ where
 {
     pub fn with_column(mut self, column: impl Into<T::Column>) -> Self {
         let column = column.into();
-        self.columns.insert(column.name().to_string(), column);
+        let column_name = column.name().to_string();
+        let flags = column.flags();
+
+        // Auto-set id_field if column has IdField flag and id_field is not yet set
+        if flags.contains(&ColumnFlag::IdField) && self.id_field.is_none() {
+            self.id_field = Some(column_name.clone());
+        }
+
+        // Auto-set title_field if column has TitleField flag and title_field is not yet set
+        if flags.contains(&ColumnFlag::TitleField) && self.title_field.is_none() {
+            self.title_field = Some(column_name.clone());
+        }
+
+        self.columns.insert(column_name, column);
         self
     }
 
     /// Add a column to the table
     pub fn add_column(&mut self, column: impl Into<T::Column>) {
         let column = column.into();
-        self.columns.insert(column.name().to_string(), column);
+        let column_name = column.name().to_string();
+        let flags = column.flags();
+
+        // Auto-set id_field if column has IdField flag and id_field is not yet set
+        if flags.contains(&ColumnFlag::IdField) && self.id_field.is_none() {
+            self.id_field = Some(column_name.clone());
+        }
+
+        // Auto-set title_field if column has TitleField flag and title_field is not yet set
+        if flags.contains(&ColumnFlag::TitleField) && self.title_field.is_none() {
+            self.title_field = Some(column_name.clone());
+        }
+
+        self.columns.insert(column_name, column);
     }
 
     /// Add an ID column to the table (typically String type for most databases)
@@ -121,7 +159,18 @@ where
     where
         T::Column: From<Column>,
     {
-        self.with_column(Column::new(name.into()))
+        self.with_column(Column::new(name.into()).with_flag(ColumnFlag::IdField))
+    }
+
+    /// Add a title column to the table
+    /// This is a convenience method for defining the display title/name column
+    /// Title columns are used to describe a record when only a single value is possible,
+    /// for example on confirmation dialogs
+    pub fn with_title_column(self, name: impl Into<String>) -> Self
+    where
+        T::Column: From<Column>,
+    {
+        self.with_column(Column::new(name.into()).with_flag(ColumnFlag::TitleField))
     }
 
     /// Get all columns
@@ -187,9 +236,56 @@ mod tests {
     }
 
     #[test]
+    fn test_column_with_flag() {
+        let column = Column::new("id").with_flag(ColumnFlag::IdField);
+        assert!(column.flags().contains(&ColumnFlag::IdField));
+        assert_eq!(column.flags().len(), 1);
+    }
+
+    #[test]
     fn test_column_no_flags() {
         let column = Column::new("optional_field");
         assert!(column.flags().is_empty());
+    }
+
+    #[test]
+    fn test_table_auto_set_id_field() {
+        let datasource = MockTableSource::new();
+        let table = Table::new("users", datasource)
+            .with_id_column("id")
+            .with_column("name");
+
+        assert_eq!(table.id_field().map(|c| c.name()), Some("id"));
+    }
+
+    #[test]
+    fn test_table_auto_set_title_field() {
+        let datasource = MockTableSource::new();
+        let table = Table::new("users", datasource)
+            .with_id_column("id")
+            .with_title_column("name");
+
+        assert_eq!(table.title_field().map(|c| c.name()), Some("name"));
+    }
+
+    #[test]
+    fn test_table_first_wins_for_id_field() {
+        let datasource = MockTableSource::new();
+        let table = Table::new("users", datasource)
+            .with_id_column("id")
+            .with_id_column("alt_id");
+
+        assert_eq!(table.id_field().map(|c| c.name()), Some("id"));
+    }
+
+    #[test]
+    fn test_table_first_wins_for_title_field() {
+        let datasource = MockTableSource::new();
+        let table = Table::new("users", datasource)
+            .with_title_column("name")
+            .with_title_column("title");
+
+        assert_eq!(table.title_field().map(|c| c.name()), Some("name"));
     }
 
     #[test]

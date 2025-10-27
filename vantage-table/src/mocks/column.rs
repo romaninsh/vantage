@@ -2,6 +2,7 @@
 //!
 //! Provides a simple column implementation that can be used across all mock DataSources.
 
+use crate::Column;
 use crate::ColumnFlag;
 use crate::ColumnLike;
 use crate::Expression;
@@ -13,12 +14,16 @@ use vantage_expressions::expr;
 #[derive(Debug, Clone)]
 pub struct MockColumn {
     name: String,
+    flags: HashSet<ColumnFlag>,
 }
 
 impl MockColumn {
     /// Create a new mock column with the given name
     pub fn new(name: impl Into<String>) -> Self {
-        Self { name: name.into() }
+        Self {
+            name: name.into(),
+            flags: HashSet::new(),
+        }
     }
 }
 
@@ -36,7 +41,7 @@ impl ColumnLike for MockColumn {
     }
 
     fn flags(&self) -> HashSet<ColumnFlag> {
-        HashSet::new()
+        self.flags.clone()
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -69,6 +74,15 @@ impl From<&str> for MockColumn {
 impl From<String> for MockColumn {
     fn from(name: String) -> Self {
         Self::new(name)
+    }
+}
+
+impl From<Column> for MockColumn {
+    fn from(col: Column) -> Self {
+        Self {
+            name: col.name().to_string(),
+            flags: col.flags().clone(),
+        }
     }
 }
 

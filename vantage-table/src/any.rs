@@ -216,6 +216,14 @@ impl TableLike for AnyTable {
     async fn get_sum(&self, column: &dyn crate::ColumnLike) -> vantage_core::Result<i64> {
         self.inner.get_sum(column).await
     }
+
+    fn title_field(&self) -> Option<std::sync::Arc<dyn crate::ColumnLike>> {
+        self.inner.title_field()
+    }
+
+    fn id_field(&self) -> Option<std::sync::Arc<dyn crate::ColumnLike>> {
+        self.inner.id_field()
+    }
 }
 
 impl AnyTable {
