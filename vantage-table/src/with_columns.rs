@@ -162,6 +162,17 @@ where
         self.with_column(Column::new(name.into()).with_flag(ColumnFlag::IdField))
     }
 
+    /// Add a title column to the table
+    /// This is a convenience method for defining the display title/name column
+    /// Title columns are used to describe a record when only a single value is possible,
+    /// for example on confirmation dialogs
+    pub fn with_title_column(self, name: impl Into<String>) -> Self
+    where
+        T::Column: From<Column>,
+    {
+        self.with_column(Column::new(name.into()).with_flag(ColumnFlag::TitleField))
+    }
+
     /// Get all columns
     pub fn columns(&self) -> &IndexMap<String, T::Column> {
         &self.columns
@@ -251,11 +262,10 @@ mod tests {
     fn test_table_auto_set_title_field() {
         let datasource = MockTableSource::new();
         let table = Table::new("users", datasource)
-            .with_column("id")
-            .with_column("name");
+            .with_id_column("id")
+            .with_title_column("name");
 
-        // Note: MockColumn doesn't support flags, so title_field won't be set
-        assert_eq!(table.title_field().map(|c| c.name()), None);
+        assert_eq!(table.title_field().map(|c| c.name()), Some("name"));
     }
 
     #[test]
@@ -272,11 +282,10 @@ mod tests {
     fn test_table_first_wins_for_title_field() {
         let datasource = MockTableSource::new();
         let table = Table::new("users", datasource)
-            .with_column("name")
-            .with_column("title");
+            .with_title_column("name")
+            .with_title_column("title");
 
-        // Note: MockColumn doesn't support flags, so title_field won't be set
-        assert_eq!(table.title_field().map(|c| c.name()), None);
+        assert_eq!(table.title_field().map(|c| c.name()), Some("name"));
     }
 
     #[test]
