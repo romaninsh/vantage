@@ -88,6 +88,9 @@ pub struct ColumnConfig {
     /// Whether the column is optional/nullable
     #[serde(default)]
     pub optional: bool,
+    /// Whether the column should be hidden from UI
+    #[serde(default)]
+    pub hidden: bool,
     /// Default value
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default: Option<Value>,

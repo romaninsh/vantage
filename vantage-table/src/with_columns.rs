@@ -12,6 +12,8 @@ use super::{Entity, Table, TableSource};
 pub enum ColumnFlag {
     /// Mandatory will require read/write operations to always have value for this field, it cannot be missing
     Mandatory,
+    /// Hidden columns should be excluded from UI display
+    Hidden,
 }
 
 /// Represents a table column with optional alias and flags

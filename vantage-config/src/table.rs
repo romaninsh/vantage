@@ -31,6 +31,9 @@ impl VantageConfig {
             if !column.optional {
                 flags.push(ColumnFlag::Mandatory);
             }
+            if column.hidden {
+                flags.push(ColumnFlag::Hidden);
+            }
 
             // Create typed column based on config
             let col = match col_type {
