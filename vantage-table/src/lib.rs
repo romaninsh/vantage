@@ -44,6 +44,7 @@ pub mod any;
 pub mod insertable;
 pub mod mocks;
 pub mod models_macro;
+pub mod pagination;
 pub mod prelude;
 pub mod readable;
 pub mod record;
@@ -60,6 +61,7 @@ pub use crate::tablesource::ColumnLike;
 /// Re-export DataSource from vantage-expressions for convenience
 pub use vantage_expressions::QuerySource;
 
+pub use crate::pagination::Pagination;
 pub use crate::tablesource::TableSource;
 pub use crate::with_columns::{Column, ColumnFlag};
 pub use crate::with_conditions::ConditionHandle;
@@ -94,6 +96,18 @@ pub trait TableLike: ReadableValueSet + WritableValueSet + Send + Sync {
     /// Convert to Any for downcasting
     fn into_any(self: Box<Self>) -> Box<dyn std::any::Any>;
     fn as_any_ref(&self) -> &dyn std::any::Any;
+
+    /// Set pagination for this table
+    fn set_pagination(&mut self, pagination: Option<Pagination>);
+
+    /// Get pagination for this table
+    fn get_pagination(&self) -> Option<&Pagination>;
+
+    /// Get count of records in the table
+    async fn get_count(&self) -> Result<i64>;
+
+    /// Get sum of a column in the table
+    async fn get_sum(&self, column: &dyn ColumnLike) -> Result<i64>;
 }
 
 // Re-export Entity trait from vantage-core
@@ -125,6 +139,7 @@ where
     order_by: IndexMap<i64, (T::Expr, crate::with_ordering::SortDirection)>,
     next_order_id: i64,
     refs: Option<IndexMap<String, Arc<dyn references::RelatedTable>>>,
+    pagination: Option<Pagination>,
 }
 
 impl<T: TableSource, E: Entity> std::fmt::Debug for Table<T, E> {
@@ -157,6 +172,7 @@ where
             order_by: IndexMap::new(),
             next_order_id: 1,
             refs: None,
+            pagination: None,
         }
     }
 }
@@ -183,6 +199,7 @@ impl<T: TableSource, E: Entity> Table<T, E> {
             order_by: self.order_by,
             next_order_id: self.next_order_id,
             refs: self.refs,
+            pagination: self.pagination,
         }
     }
     /// Get the table name
@@ -242,6 +259,27 @@ where
         }
     }
 
+    /// Get count of records in the table
+    pub async fn get_count(&self) -> Result<i64> {
+        self.data_source.get_count(self).await
+    }
+
+    /// Get sum of a column in the table
+    pub async fn get_sum(&self, column: &T::Column) -> Result<i64> {
+        self.data_source.get_sum(self, column).await
+    }
+
+    /// Create a count query (does not execute)
+    pub fn get_count_query(&self) -> T::Select<E> {
+        self.select().as_count()
+    }
+
+    /// Create a sum query for a column (does not execute)
+    pub fn get_sum_query(&self, column: &T::Column) -> T::Select<E> {
+        let column_expr = self.data_source.expr(column.name(), vec![]);
+        self.select().as_sum(column_expr)
+    }
+
     /// Create a select query with table configuration applied
     pub fn select(&self) -> T::Select<E> {
         let mut select = self.data_source.select::<E>();
@@ -269,6 +307,11 @@ where
         for (expr, direction) in self.order_by.values() {
             let ascending = matches!(direction, crate::with_ordering::SortDirection::Ascending);
             select.add_order_by(expr.clone(), ascending);
+        }
+
+        // Apply pagination
+        if let Some(pagination) = &self.pagination {
+            pagination.apply_on_select(&mut select);
         }
 
         select
@@ -355,5 +398,26 @@ where
 
     fn as_any_ref(&self) -> &dyn std::any::Any {
         self
+    }
+
+    fn set_pagination(&mut self, pagination: Option<Pagination>) {
+        self.pagination = pagination;
+    }
+
+    fn get_pagination(&self) -> Option<&Pagination> {
+        self.pagination.as_ref()
+    }
+
+    async fn get_count(&self) -> Result<i64> {
+        self.data_source.get_count(self).await
+    }
+
+    async fn get_sum(&self, column: &dyn ColumnLike) -> Result<i64> {
+        // Try to downcast to T::Column
+        if let Some(typed_column) = column.as_any().downcast_ref::<T::Column>() {
+            self.data_source.get_sum(self, typed_column).await
+        } else {
+            Err(error!("Column type mismatch", column = column.name()))
+        }
     }
 }

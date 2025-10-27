@@ -4,6 +4,7 @@ use vantage_expressions::protocol::{expressive::IntoExpressive, selectable::Sele
 
 use crate::expression::RedbExpression;
 
+#[derive(Clone)]
 pub struct RedbSelect<E: Entity> {
     _phantom: PhantomData<E>,
     table: Option<String>,
@@ -171,6 +172,24 @@ impl<E: Entity> Selectable<RedbExpression> for RedbSelect<E> {
 
     fn get_skip(&self) -> Option<i64> {
         self.skip
+    }
+
+    fn as_count(&self) -> Self
+    where
+        Self: Sized,
+    {
+        // ReDB doesn't have query language, count is done at execution level
+        // Just return a clone - actual count happens in execute
+        self.clone()
+    }
+
+    fn as_sum(&self, _column: RedbExpression) -> Self
+    where
+        Self: Sized,
+    {
+        // ReDB doesn't have query language, sum is done at execution level
+        // Just return a clone - actual sum happens in execute
+        self.clone()
     }
 }
 

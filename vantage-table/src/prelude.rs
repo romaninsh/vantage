@@ -14,6 +14,9 @@ pub use vantage_dataset::dataset::{ReadableValueSet, WritableValueSet};
 // Ordering functionality
 pub use crate::with_ordering::{OrderBy, OrderByExt, SortDirection};
 
+// Pagination functionality
+pub use crate::Pagination;
+
 // Record functionality
 pub use crate::record::{Record, RecordTable};
 

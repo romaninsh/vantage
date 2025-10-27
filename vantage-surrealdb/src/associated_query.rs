@@ -25,6 +25,16 @@ pub struct SurrealAssociated<Q: SurrealQueriable, R> {
     _result: PhantomData<R>,
 }
 
+impl<Q: SurrealQueriable + Clone, R> Clone for SurrealAssociated<Q, R> {
+    fn clone(&self) -> Self {
+        Self {
+            query: self.query.clone(),
+            datasource: self.datasource.clone(),
+            _result: PhantomData,
+        }
+    }
+}
+
 impl<Q: SurrealQueriable + std::fmt::Debug, R> std::fmt::Debug for SurrealAssociated<Q, R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SurrealAssociated")
@@ -86,7 +96,9 @@ impl<Q: SurrealQueriable, R> Deref for SurrealAssociated<Q, R> {
     }
 }
 
-impl<Q: SurrealQueriable + Selectable, R: Send + Sync> Selectable for SurrealAssociated<Q, R> {
+impl<Q: SurrealQueriable + Selectable + Clone, R: Send + Sync> Selectable
+    for SurrealAssociated<Q, R>
+{
     fn set_source(&mut self, source: impl Into<vantage_expressions::Expr>, alias: Option<String>) {
         self.query.set_source(source, alias)
     }
@@ -165,6 +177,24 @@ impl<Q: SurrealQueriable + Selectable, R: Send + Sync> Selectable for SurrealAss
 
     fn get_skip(&self) -> Option<i64> {
         self.query.get_skip()
+    }
+
+    fn as_count(&self) -> Self
+    where
+        Self: Sized,
+    {
+        let mut cloned = self.clone();
+        cloned.query = cloned.query.as_count();
+        cloned
+    }
+
+    fn as_sum(&self, column: vantage_expressions::Expression) -> Self
+    where
+        Self: Sized,
+    {
+        let mut cloned = self.clone();
+        cloned.query = cloned.query.as_sum(column);
+        cloned
     }
 }
 

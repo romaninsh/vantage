@@ -200,6 +200,34 @@ impl TableLike for AnyTable {
     fn as_any_ref(&self) -> &dyn std::any::Any {
         self
     }
+
+    fn set_pagination(&mut self, pagination: Option<crate::Pagination>) {
+        self.inner.set_pagination(pagination)
+    }
+
+    fn get_pagination(&self) -> Option<&crate::Pagination> {
+        self.inner.get_pagination()
+    }
+
+    async fn get_count(&self) -> vantage_core::Result<i64> {
+        self.inner.get_count().await
+    }
+
+    async fn get_sum(&self, column: &dyn crate::ColumnLike) -> vantage_core::Result<i64> {
+        self.inner.get_sum(column).await
+    }
+}
+
+impl AnyTable {
+    /// Configure pagination using a callback
+    pub fn with_pagination<F>(&mut self, func: F)
+    where
+        F: FnOnce(&mut crate::Pagination),
+    {
+        let mut pagination = self.inner.get_pagination().copied().unwrap_or_default();
+        func(&mut pagination);
+        self.inner.set_pagination(Some(pagination));
+    }
 }
 
 #[cfg(test)]

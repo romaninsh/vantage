@@ -166,6 +166,12 @@ query builder, any table or any datasource.
 - ✅ Dynamic entity loading (.get_some_as::<T>() working)
 - ✅ AnyTable type erasure for generic table handling
 - ✅ Reference downcasting (.get_ref_as() working)
+- ✅ AnyTable implements TableLike, ReadableValueSet, WritableValueSet (full trait support)
+- ✅ AnyTable is Clone, Send, Sync for use in async contexts
+- ✅ AnyExpression type erasure using ExpressionLike trait in vantage-expressions
+- ✅ Temporary condition system (.temp_add_condition(), .temp_remove_condition())
+- ✅ Search expressions (.search_expression() in TableSource, vendor-specific implementations)
+- ✅ models! macro generates all_tables() -> IndexMap<String, AnyTable>
 - ⏳ Condition propagation in references (WHERE clauses for related queries)
 - ⏳ get_linked_table for JOIN scenarios
 
@@ -178,8 +184,13 @@ Key architectural changes:
 - SurrealTableExt provides database-specific query execution methods
 - Query execution uses ds.get(query) pattern instead of table.get().await
 - AnyTable replaces Box<dyn SqlTable> for type-erased tables with downcasting
+- AnyTable uses clone_box() pattern for object-safe cloning via TableLike trait
+- AnyExpression wraps any T: Clone + Send + Sync via ExpressionLike trait
+- Condition methods moved to TableLike trait using AnyExpression for type erasure
+- TableSource::search_expression() enables vendor-specific search (LIKE, CONTAINS, etc.)
 - References use closure factories returning concrete tables (converted to AnyTable)
 - Relationships defined with .with_one() and .with_many() builder methods
+- models! macro auto-generates all_tables() function for easy access to type-erased tables
 
 ## Where is this going?
 

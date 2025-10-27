@@ -520,4 +520,34 @@ impl vantage_table::TableSource for Redb {
             "ReDB requires specific entity types for data updates",
         ))
     }
+
+    async fn get_count<E>(
+        &self,
+        table: &vantage_table::Table<Self, E>,
+    ) -> vantage_dataset::dataset::Result<i64>
+    where
+        E: vantage_core::Entity,
+        Self: Sized,
+    {
+        // ReDB doesn't have native count - need to load all and count
+        let data = self.get_table_data(table).await?;
+        Ok(data.len() as i64)
+    }
+
+    async fn get_sum<E>(
+        &self,
+        _table: &vantage_table::Table<Self, E>,
+        _column: &Self::Column,
+    ) -> vantage_dataset::dataset::Result<i64>
+    where
+        E: vantage_core::Entity,
+        Self: Sized,
+    {
+        use vantage_core::util::error::VantageError;
+
+        Err(VantageError::no_capability(
+            "get_sum",
+            "ReDB is a key-value store and doesn't support sum operations",
+        ))
+    }
 }

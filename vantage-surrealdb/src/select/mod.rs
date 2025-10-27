@@ -397,6 +397,26 @@ impl<T: QueryResult> Selectable for SurrealSelect<T> {
     fn get_skip(&self) -> Option<i64> {
         self.skip
     }
+
+    fn as_count(&self) -> Self
+    where
+        Self: Sized,
+    {
+        let mut count_select = self.clone();
+        count_select.clear_fields();
+        count_select.add_expression(expr!("count()"), None);
+        count_select
+    }
+
+    fn as_sum(&self, column: Expression) -> Self
+    where
+        Self: Sized,
+    {
+        let mut sum_select = self.clone();
+        sum_select.clear_fields();
+        sum_select.add_expression(expr!("math::sum({})", column), Some("sum".to_string()));
+        sum_select
+    }
 }
 
 impl SurrealSelect<result::Rows> {

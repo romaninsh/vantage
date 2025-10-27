@@ -434,6 +434,26 @@ impl Selectable for Select {
     fn get_skip(&self) -> Option<i64> {
         self.skip_items
     }
+
+    fn as_count(&self) -> Self
+    where
+        Self: Sized,
+    {
+        let mut count_select = self.clone();
+        count_select.clear_fields();
+        count_select.add_expression(expr!("COUNT(*)"), Some("count".to_string()));
+        count_select
+    }
+
+    fn as_sum(&self, column: Expression) -> Self
+    where
+        Self: Sized,
+    {
+        let mut sum_select = self.clone();
+        sum_select.clear_fields();
+        sum_select.add_expression(expr!("SUM({})", column), Some("sum".to_string()));
+        sum_select
+    }
 }
 
 #[cfg(test)]

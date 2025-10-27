@@ -500,4 +500,72 @@ impl vantage_table::TableSource for SurrealDB {
 
         Ok(())
     }
+
+    async fn get_count<E>(
+        &self,
+        table: &vantage_table::Table<Self, E>,
+    ) -> vantage_dataset::dataset::Result<i64>
+    where
+        E: vantage_core::Entity,
+        Self: Sized,
+    {
+        use vantage_expressions::QuerySource;
+
+        let select = table.select();
+        let count_select = select.as_count();
+        let count_expr: vantage_expressions::Expression = count_select.into();
+        let result = self.execute(&count_expr).await;
+
+        // Extract count from result
+        if let Some(count_val) = result
+            .as_array()
+            .and_then(|arr| arr.first())
+            .and_then(|obj| obj.as_object())
+            .and_then(|map| map.get("count"))
+        {
+            if let Some(num) = count_val.as_i64() {
+                return Ok(num);
+            } else if let Some(num) = count_val.as_u64() {
+                return Ok(num as i64);
+            }
+        }
+
+        Ok(0)
+    }
+
+    async fn get_sum<E>(
+        &self,
+        table: &vantage_table::Table<Self, E>,
+        column: &Self::Column,
+    ) -> vantage_dataset::dataset::Result<i64>
+    where
+        E: vantage_core::Entity,
+        Self: Sized,
+    {
+        use vantage_expressions::QuerySource;
+
+        let select = table.select();
+        let column_expr = column.expr();
+        let sum_select = select.as_sum(column_expr);
+        let sum_expr: vantage_expressions::Expression = sum_select.into();
+        let result = self.execute(&sum_expr).await;
+
+        // Extract sum from result
+        if let Some(sum_val) = result
+            .as_array()
+            .and_then(|arr| arr.first())
+            .and_then(|obj| obj.as_object())
+            .and_then(|map| map.get("sum"))
+        {
+            if let Some(num) = sum_val.as_i64() {
+                return Ok(num);
+            } else if let Some(num) = sum_val.as_u64() {
+                return Ok(num as i64);
+            } else if let Some(num) = sum_val.as_f64() {
+                return Ok(num as i64);
+            }
+        }
+
+        Ok(0)
+    }
 }

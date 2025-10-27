@@ -96,6 +96,20 @@ impl Selectable<Expression> for MockSelect {
     fn get_skip(&self) -> Option<i64> {
         None // Mock implementation
     }
+
+    fn as_count(&self) -> Self
+    where
+        Self: Sized,
+    {
+        Self // Mock implementation - return clone
+    }
+
+    fn as_sum(&self, _column: Expression) -> Self
+    where
+        Self: Sized,
+    {
+        Self // Mock implementation - return clone
+    }
 }
 
 impl From<MockSelect> for Expression {

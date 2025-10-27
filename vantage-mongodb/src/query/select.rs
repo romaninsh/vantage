@@ -261,6 +261,28 @@ impl Selectable for MongoSelect {
     fn get_skip(&self) -> Option<i64> {
         self.skip
     }
+
+    fn as_count(&self) -> Self
+    where
+        Self: Sized,
+    {
+        let mut count_select = self.clone();
+        count_select.clear_fields();
+        // MongoDB uses $count aggregation stage
+        count_select.add_expression(expr!("$count"), Some("count".to_string()));
+        count_select
+    }
+
+    fn as_sum(&self, column: Expression) -> Self
+    where
+        Self: Sized,
+    {
+        let mut sum_select = self.clone();
+        sum_select.clear_fields();
+        // MongoDB uses $sum aggregation
+        sum_select.add_expression(expr!("$sum: {}", column), Some("sum".to_string()));
+        sum_select
+    }
 }
 
 impl From<MongoSelect> for Expression {
