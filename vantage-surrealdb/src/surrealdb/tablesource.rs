@@ -520,13 +520,13 @@ impl vantage_table::TableSource for SurrealDB {
             return Ok(num);
         } else if let Some(num) = result.as_u64() {
             return Ok(num as i64);
-        } else if let Some(arr) = result.as_array() {
-            if let Some(first) = arr.first() {
-                if let Some(num) = first.as_i64() {
-                    return Ok(num);
-                } else if let Some(num) = first.as_u64() {
-                    return Ok(num as i64);
-                }
+        } else if let Some(arr) = result.as_array()
+            && let Some(first) = arr.first()
+        {
+            if let Some(num) = first.as_i64() {
+                return Ok(num);
+            } else if let Some(num) = first.as_u64() {
+                return Ok(num as i64);
             }
         }
 
@@ -556,15 +556,15 @@ impl vantage_table::TableSource for SurrealDB {
             return Ok(num as i64);
         } else if let Some(num) = result.as_f64() {
             return Ok(num as i64);
-        } else if let Some(arr) = result.as_array() {
-            if let Some(first) = arr.first() {
-                if let Some(num) = first.as_i64() {
-                    return Ok(num);
-                } else if let Some(num) = first.as_u64() {
-                    return Ok(num as i64);
-                } else if let Some(num) = first.as_f64() {
-                    return Ok(num as i64);
-                }
+        } else if let Some(arr) = result.as_array()
+            && let Some(first) = arr.first()
+        {
+            if let Some(num) = first.as_i64() {
+                return Ok(num);
+            } else if let Some(num) = first.as_u64() {
+                return Ok(num as i64);
+            } else if let Some(num) = first.as_f64() {
+                return Ok(num as i64);
             }
         }
 
