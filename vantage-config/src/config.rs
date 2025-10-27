@@ -14,9 +14,9 @@ pub struct VantageConfig {
     /// Role-based permissions configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub roles: Option<HashMap<String, RoleConfig>>,
-    /// Entity definitions
+    /// Table definitions
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub entities: Option<HashMap<String, EntityConfig>>,
+    pub tables: Option<HashMap<String, EntityConfig>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -56,8 +56,6 @@ pub enum PermissionType {
 pub struct EntityConfig {
     /// Database table name
     pub table: String,
-    /// ID column name
-    pub id_column: String,
     /// Column definitions
     pub columns: Vec<ColumnConfig>,
     /// Relationship definitions
@@ -193,9 +191,9 @@ impl VantageConfig {
             }
         }
 
-        // Validate entities
-        if let Some(entities) = &config.entities {
-            for (entity_name, entity) in entities {
+        // Validate tables
+        if let Some(tables) = &config.tables {
+            for (entity_name, entity) in tables {
                 // Check for duplicate column names
                 let mut seen_columns = std::collections::HashSet::new();
                 for column in &entity.columns {

@@ -1,7 +1,7 @@
 use crate::{SurrealDB, thing::Thing};
 use async_trait::async_trait;
 use vantage_core::{error, util::error::Context};
-use vantage_expressions::Expression;
+use vantage_expressions::{Expression, expr};
 use vantage_table::Table;
 
 #[async_trait]
@@ -26,24 +26,25 @@ impl vantage_table::TableSource for SurrealDB {
         table: &impl vantage_table::TableLike,
         search_value: &str,
     ) -> Self::Expr {
-        // SurrealDB uses CONTAINS operator for string search
-        let columns = table.columns();
+        use vantage_table::ColumnCollectionExt;
+        use vantage_table::ColumnFlag;
 
-        // Search in "name" field if it exists, otherwise use first string column
-        if columns.contains_key("name") {
-            Expression::new("name CONTAINS {}", vec![search_value.into()])
-        } else {
-            // Default to searching first column
-            if let Some((col_name, _)) = columns.first() {
-                Expression::new(
-                    format!("{} CONTAINS {{}}", col_name),
-                    vec![search_value.into()],
-                )
-            } else {
-                // No columns, return always-true expression
-                Expression::new("true", vec![])
-            }
+        // Filter columns by Searchable flag
+        let searchable_columns = table.columns().only(ColumnFlag::Searchable);
+
+        if searchable_columns.is_empty() {
+            // No searchable columns, return always-true expression
+            return Expression::new("true", vec![]);
         }
+
+        // Build search conditions for each searchable column using @@ operator
+        let conditions: Vec<Expression> = searchable_columns
+            .iter()
+            .map(|(_col_name, col)| expr!("{} @@ {}", col.expr(), search_value))
+            .collect();
+
+        // Combine all conditions with OR
+        Expression::from_vec(conditions, " OR ")
     }
 
     async fn get_table_data<E>(

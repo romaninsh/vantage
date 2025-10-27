@@ -1,7 +1,6 @@
-entities:
+tables:
   client:
     table: client
-    id_column: id
     columns:
       - name: id
         type: string
@@ -20,7 +19,6 @@ entities:
 
   product:
     table: product
-    id_column: id
     columns:
       - name: id
         type: string
