@@ -8,6 +8,9 @@ pub use crate::Table;
 pub use crate::TableLike;
 pub use crate::TableSource;
 
+// Dataset traits
+pub use vantage_dataset::dataset::{ReadableValueSet, WritableValueSet};
+
 // Ordering functionality
 pub use crate::with_ordering::{OrderBy, OrderByExt, SortDirection};
 

@@ -3,6 +3,7 @@
 //! A database-agnostic expression framework with nesting support, extensible interfaces
 //!
 
+pub mod any_expression;
 pub mod expression;
 pub mod mocks;
 pub mod prelude;
@@ -11,6 +12,7 @@ pub mod util;
 pub mod value;
 
 // pub use expression::lazy::LazyExpression;
+pub use any_expression::{AnyExpression, ExpressionLike};
 pub use expression::flatten::{ExpressionFlattener, Flatten};
 pub use expression::owned::Expression;
 pub use protocol::associated_queryable::AssociatedQueryable;

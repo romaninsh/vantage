@@ -10,6 +10,9 @@
 // Core types
 pub use crate::Expression;
 
+// Type-erased expressions
+pub use crate::{AnyExpression, ExpressionLike};
+
 // Query source traits
 pub use crate::{QuerySource, SelectSource};
 

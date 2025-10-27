@@ -3,7 +3,17 @@ use vantage_core::{Result, error};
 
 /// Handle for temporary conditions that can be removed
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ConditionHandle(i64);
+pub struct ConditionHandle(pub(crate) i64);
+
+impl ConditionHandle {
+    pub(crate) fn new(id: i64) -> Self {
+        Self(id)
+    }
+
+    pub(crate) fn id(&self) -> i64 {
+        self.0
+    }
+}
 
 impl<T: TableSource, E: Entity> Table<T, E> {
     /// Add a permanent condition to limit what records the table represents
@@ -18,7 +28,7 @@ impl<T: TableSource, E: Entity> Table<T, E> {
         let id = self.next_condition_id;
         self.next_condition_id += 1;
         self.conditions.insert(id, condition);
-        ConditionHandle(id)
+        ConditionHandle::new(id)
     }
 
     /// Remove a temporary condition by its handle
@@ -92,7 +102,7 @@ mod tests {
         let _handle = table.temp_add_condition(expr!("temp"));
 
         // Try to forge a handle to permanent condition (negative ID)
-        let fake_handle = ConditionHandle(-1);
+        let fake_handle = ConditionHandle::new(-1);
         let result = table.temp_remove_condition(fake_handle);
         assert!(result.is_err());
     }

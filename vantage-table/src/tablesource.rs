@@ -21,6 +21,16 @@ pub trait TableSource: DataSource + Clone {
         parameters: Vec<vantage_expressions::protocol::expressive::IntoExpressive<Self::Expr>>,
     ) -> Self::Expr;
 
+    /// Create a search expression for a table (e.g., searches across searchable fields)
+    ///
+    /// Different vendors implement search differently:
+    /// - SQL: `field LIKE '%value%'`
+    /// - SurrealDB: `field CONTAINS 'value'` or `field ~ 'value'`
+    /// - MongoDB: `{ field: { $regex: 'value', $options: 'i' } }`
+    ///
+    /// The implementation should search across appropriate fields in the table.
+    fn search_expression(&self, table: &impl TableLike, search_value: &str) -> Self::Expr;
+
     /// Get all data from a table as the table's entity type with IDs
     async fn get_table_data<E>(
         &self,

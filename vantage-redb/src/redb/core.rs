@@ -159,6 +159,14 @@ impl vantage_table::TableSource for Redb {
         panic!("ReDB is a key-value store and doesn't support SQL-like expressions")
     }
 
+    fn search_expression(
+        &self,
+        _table: &impl vantage_table::TableLike,
+        _search_value: &str,
+    ) -> Self::Expr {
+        panic!("ReDB is a key-value store and doesn't support search expressions")
+    }
+
     async fn get_table_data<E>(
         &self,
         table: &Table<Self, E>,
