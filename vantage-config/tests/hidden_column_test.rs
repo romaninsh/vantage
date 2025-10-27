@@ -6,10 +6,9 @@ use vantage_table::prelude::{AnyTable, ColumnCollectionExt, ColumnFlag, TableLik
 #[test]
 fn test_hidden_column_flag() {
     let yaml = r#"
-entities:
+tables:
   user:
     table: user
-    id_column: id
     columns:
       - name: id
         type: string

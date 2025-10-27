@@ -19,7 +19,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // List all entities
     println!("Available entities:");
-    if let Some(entities) = &config.entities {
+    if let Some(entities) = &config.tables {
         for name in entities.keys() {
             println!("  - {}", name);
         }
@@ -27,11 +27,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
 
     // Get the client entity
-    if let Some(entities) = &config.entities {
+    if let Some(entities) = &config.tables {
         if let Some(client) = entities.get("client") {
             println!("Client entity:");
             println!("  Table: {}", client.table);
-            println!("  ID Column: {}", client.id_column);
             println!();
 
             println!("  Columns:");
@@ -57,10 +56,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             println!();
         } else {
-            println!("Client entity not found!");
+            println!("Client table not found!");
         }
     } else {
-        println!("No entities defined in config!");
+        println!("No tables defined in config");
     }
 
     // Test get_table method

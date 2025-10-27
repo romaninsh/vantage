@@ -1,16 +1,16 @@
-entities:
+tables:
   bakery:
     table: bakery
-    id_column: id
     columns:
       - name: id
         type: string
         flags: [id]
       - name: name
         type: string
-        flags: [title, searchable]
+        flags: [title, searchable, mandatory]
       - name: profit_margin
         type: int
+        flags: [mandatory]
         rules:
           min: 0
           max: 100
@@ -26,7 +26,6 @@ entities:
 
   client:
     table: client
-    id_column: id
     columns:
       - name: id
         type: string
@@ -38,14 +37,16 @@ entities:
           email: true
       - name: name
         type: string
-        flags: [title, searchable]
+        flags: [title, searchable, mandatory]
       - name: contact_details
         type: string
+        flags: [searchable]
       - name: is_paying_client
         type: bool
         default: false
       - name: bakery
         type: string
+        flags: [mandatory]
       - name: metadata
     relations:
       - type: belongs_to
@@ -55,24 +56,26 @@ entities:
 
   product:
     table: product
-    id_column: id
     columns:
       - name: id
         type: string
         flags: [id]
       - name: name
         type: string
-        flags: [title, searchable]
+        flags: [title, searchable, mandatory]
       - name: calories
         type: int
+        flags: [mandatory]
         rules:
           min: 0
       - name: price
         type: int
+        flags: [mandatory]
         rules:
           min: 1
       - name: bakery
         type: string
+        flags: [mandatory]
       - name: is_deleted
         type: bool
         default: false
@@ -86,13 +89,13 @@ entities:
 
   order:
     table: order
-    id_column: id
     columns:
       - name: id
         type: string
         flags: [id]
       - name: bakery
         type: string
+        flags: [mandatory]
       - name: is_deleted
         type: bool
         default: false
@@ -100,6 +103,7 @@ entities:
       - name: created_at
         type: datetime
         default: now
+        flags: [mandatory]
       - name: lines
         type: array
         default: []

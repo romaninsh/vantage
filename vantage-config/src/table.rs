@@ -3,16 +3,16 @@ use vantage_surrealdb::{SurrealColumn, SurrealDB};
 use vantage_table::{ColumnFlag, EmptyEntity, Table};
 
 impl VantageConfig {
-    /// Get a table builder for a named entity
+    /// Get a table builder for a named table
     pub fn get_table(
         &self,
-        entity_name: &str,
+        table_name: &str,
         db: SurrealDB,
     ) -> Option<Table<SurrealDB, EmptyEntity>> {
-        let entities = self.entities.as_ref()?;
-        let entity = entities.get(entity_name)?;
+        let tables = self.tables.as_ref()?;
+        let table_config = tables.get(table_name)?;
 
-        Some(Self::build_table(entity, db, self))
+        Some(Self::build_table(table_config, db, self))
     }
 
     fn build_table(
@@ -128,10 +128,10 @@ impl VantageConfig {
                 match rel_type {
                     "belongs_to" | "has_one" => {
                         table = table.with_one(&relation.name, &foreign_key, move || {
-                            if let Some(entities) = &config_clone.entities {
-                                if let Some(target_entity) = entities.get(&target) {
+                            if let Some(tables) = &config_clone.tables {
+                                if let Some(target_table) = tables.get(&target) {
                                     return Self::build_table(
-                                        target_entity,
+                                        target_table,
                                         db_clone.clone(),
                                         &config_clone,
                                     );
@@ -143,10 +143,10 @@ impl VantageConfig {
                     }
                     "has_many" => {
                         table = table.with_many(&relation.name, &foreign_key, move || {
-                            if let Some(entities) = &config_clone.entities {
-                                if let Some(target_entity) = entities.get(&target) {
+                            if let Some(tables) = &config_clone.tables {
+                                if let Some(target_table) = tables.get(&target) {
                                     return Self::build_table(
-                                        target_entity,
+                                        target_table,
                                         db_clone.clone(),
                                         &config_clone,
                                     );

@@ -7,7 +7,7 @@ use serde_json::Value;
 use vantage_core::{error, util::error::Context, Result};
 
 use vantage_surrealdb::prelude::*;
-use vantage_table::TableLike;
+use vantage_table::{prelude::WritableValueSet, TableLike};
 
 #[tokio::main]
 async fn main() {
@@ -68,13 +68,15 @@ async fn run() -> Result<()> {
             .with_context(|| error!("Failed to handle commands", entity_name = entity_name))?;
     } else {
         // Show available entities
-        if let Some(entities) = &config.entities {
+        if let Some(entities) = &config.tables {
             let entity_names: Vec<String> = entities.keys().cloned().collect();
             println!("Available entities: {}", entity_names.join(", "));
         }
         println!("Use 'db <entity> <command>' to interact with data");
         println!("Example: db client list");
         println!("         db client name=Marty list");
+        println!("         db bakery add \"foo\" \"{{\\\"name\\\":\\\"My Bakery\\\"}}\"");
+        println!("         db bakery delete \"foo\"");
         println!("Run 'db --help' for more information");
     }
 
@@ -253,9 +255,55 @@ fn handle_commands(
                     }
                     break; // Exit loop after handling ref
                 }
+                "add" => {
+                    // Next two args should be: id and json_data
+                    if i + 1 >= commands.len() {
+                        println!("❌ Usage: add <id> <json_data>");
+                        println!("Example: add \"foo\" \"{{name:'My Bakery'}}\"");
+                        break;
+                    }
+
+                    let id = &commands[i];
+                    i += 1;
+                    let json_str = &commands[i];
+                    i += 1;
+
+                    // Parse JSON string
+                    let record: Value = serde_json::from_str(json_str)
+                        .with_context(|| error!("Failed to parse JSON", json = json_str))?;
+
+                    // Insert using AnyTable's insert_id_value
+                    table
+                        .insert_id_value(id, record)
+                        .await
+                        .with_context(|| error!("Failed to insert record", id = id))?;
+
+                    println!("✓ Added record with id: {}", id);
+                }
+                "delete" => {
+                    // Next arg should be the id
+                    if i >= commands.len() {
+                        println!("❌ Usage: delete <id>");
+                        println!("Example: delete \"foo\"");
+                        break;
+                    }
+
+                    let id = &commands[i];
+                    i += 1;
+
+                    // Delete using AnyTable's delete_id
+                    table
+                        .delete_id(id)
+                        .await
+                        .with_context(|| error!("Failed to delete record", id = id))?;
+
+                    println!("✓ Deleted record with id: {}", id);
+                }
                 _ => {
                     println!("Unknown command: {}", command);
-                    println!("Available commands: list, get, ref <reference> <command>");
+                    println!(
+                        "Available commands: list, get, add, delete, ref <reference> <command>"
+                    );
                 }
             }
         }
