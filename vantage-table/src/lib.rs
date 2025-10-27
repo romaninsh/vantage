@@ -41,6 +41,7 @@ use vantage_dataset::dataset::{ReadableValueSet, WritableValueSet};
 use vantage_expressions::{AnyExpression, Expression, protocol::selectable::Selectable};
 
 pub mod any;
+pub mod column_collection;
 pub mod insertable;
 pub mod mocks;
 pub mod models_macro;
@@ -61,6 +62,7 @@ pub use crate::tablesource::ColumnLike;
 /// Re-export DataSource from vantage-expressions for convenience
 pub use vantage_expressions::QuerySource;
 
+pub use crate::column_collection::ColumnCollectionExt;
 pub use crate::pagination::Pagination;
 pub use crate::tablesource::TableSource;
 pub use crate::with_columns::{Column, ColumnFlag};

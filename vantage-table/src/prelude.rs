@@ -1,5 +1,6 @@
 pub use crate::Column;
 
+pub use crate::ColumnCollectionExt;
 pub use crate::ColumnFlag;
 pub use crate::ColumnLike;
 pub use crate::EmptyEntity;
