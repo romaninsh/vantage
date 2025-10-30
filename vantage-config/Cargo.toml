@@ -3,6 +3,14 @@ name = "vantage-config"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "vantage-config-check"
+path = "bin/vantage-config-check.rs"
+
+[[bin]]
+name = "generate-schema"
+path = "bin/generate-schema.rs"
+
 [features]
 decimal = ["surreal-client/decimal"]
 
