@@ -24,7 +24,11 @@ impl VantageConfig {
         let mut table = Table::new(&entity.table, db);
 
         for column in &entity.columns {
-            let col_type = column.col_type.as_deref().unwrap_or("any");
+            let col_type = column
+                .col_type
+                .as_ref()
+                .map(|t| t.as_str())
+                .unwrap_or("any");
 
             // Parse flags from config strings
             let mut flags = Vec::new();

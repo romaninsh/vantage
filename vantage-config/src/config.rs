@@ -77,12 +77,48 @@ pub struct RelationConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ColumnType {
+    Any,
+    Int,
+    Float,
+    #[cfg(feature = "decimal")]
+    Decimal,
+    String,
+    Bool,
+    DateTime,
+    Duration,
+}
+
+impl Default for ColumnType {
+    fn default() -> Self {
+        ColumnType::Any
+    }
+}
+
+impl ColumnType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ColumnType::Any => "any",
+            ColumnType::Int => "int",
+            ColumnType::Float => "float",
+            #[cfg(feature = "decimal")]
+            ColumnType::Decimal => "decimal",
+            ColumnType::String => "string",
+            ColumnType::Bool => "bool",
+            ColumnType::DateTime => "datetime",
+            ColumnType::Duration => "duration",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ColumnConfig {
     /// Column name
     pub name: String,
     /// Column type (defaults to "any" if not specified)
-    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    pub col_type: Option<String>,
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
+    pub col_type: Option<ColumnType>,
     /// Column flags (mandatory, hidden, id, title, searchable)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub flags: Vec<String>,

@@ -2,82 +2,378 @@
 
 [![Book](https://github.com/romaninsh/vantage/actions/workflows/book.yaml/badge.svg)](https://romaninsh.github.io/vantage/)
 
-Vantage is an **Entity framework** for Rust apps that implements an opinionated Model
-Driven Architecture.
+Vantage is an **Entity Framework** for Rust. With Vantage you can represent
+your business entities (Client, Order, Invoice, Lead) with native Rust types. Business
+logic implementation in Vantage and Rust is type-safe and is very ergonomic for large
+code-bases.
 
-Vantage makes Rust more suitable for writing Business software such as CRM, HR, ERP or Low Code apps
-where large number of entities (types representing business objects, like an 'Invoice') must hold
-complex relationship, attribute, validation and other business rules.
+Given a sample entity `struct Client { .. }`, your business code can operate with:
 
-Vantage framework focuses on the following 3 areas:
+- `ReadableDataSet<Client>` - An arbitrary Database, CSV files or API can implement this trait - allowing to read `Client` records from remote DataSource.
+- `Insertable<Client>` - Queue iterfaces, JSONP files and other
+- `WritableDataSet<Client>` - Patch(update), Replace or Delete remote operations
+- `DataSet<Client>` - Trait that implements 3 of the above operations.
 
-- **Entity definition** - Using Rust code, describe your logical business entities,
-  their attributes, relationships and business rules.
-- **Query Building** - Dynamically create SQL queries using SQL dialect of your choice
-  and utilise full range of database features. Queries are not strictly SQL - they can
-  be implemented for NoSQL databases, REST APIs or even GraphQL.
-- **Data Sets** - Implementation of a type that represents a set of records, stored
-  remotely. Data Sets can be filtered, joined, aggregated and manipulated in various ways.
-  Most operations will yield a new DataSet or will build a Query incapsulating all
-  the business logic.
-
-It is important that all 3 parts are combined together and as a result - Vantage
-allows you to write very low amount of code to achieve complex business logic without
-sacrifising performance.
-
-Vantage introduces a clean app architecture to your developer team, keeping them
-efficient and your code maintainable.
-
-## Defining Entities
-
-While ORM libraries like Diesel or SQLx will use your SQL structure as a base, Vantage
-allows you to define your entities entirely in Rust code, without boilerplate. You do not
-need to keep your entities in sync with SQL schema. For example, consider the following
-structure:
+DataSet represents collection of records stored remotely. In practice DataSets are usually massive and can
+contain millions of records. This is a typical Enterprise use-case:
 
 ```rust
+// Implemented in shared Business Model Library
+
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
-struct Invoice {
-    id: i64,
-    client_name: String,
-    total: i64,
-}
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-struct InvoiceLine {
-    id: i64,
-    invoice_id: i64,
-    product_code: String,
-    quantity: i64,
-    price: i64,
+struct Client {
+    name: String,
+    email: String,
+    is_paying_client: bool,
+    balance: Decimal,
 }
 
-impl Entity for Invoice {}
-impl Entity for InvoiceLine {}
+impl Client {
+    fn new(){ /* ... */};
+
+    fn registration_queue() -> impl Insertable<Client> {}
+    fn admin_api() -> impl DataSet<Client> {}
+    fn read_csv(filename: String) -> impl ReadableDataSet<Client> {}
+    fn mock() -> MockDataSet<Client> {}
+}
+
+/////////////////////////////////////////
+// In any of your 1000s microservices:
+
+use model::Client;
+
+async fn register_new_client(client: Client) -> Result<()> {
+    let queue = Client::registration_queue(); // Probably KafkaTopic<Client>
+    let id = uuid::Uuid::new_v4().to_string(); // Idempotent ID generation
+    queue.insert(id, client).await
+}
 ```
 
-Those structures are handy to use in Rust, but they do not map directly to SQL schema.
-Fields `client_name`, `total` and `product_code` are behind joins and subqueries.
-This is fully supported by Vantage - you can have several Rust structs for interfacing
-with your business entities, depending on use-case.
+Enterprise software employes hundreds of developers, and anyone can make use of type
+safety, without knowing implementation details. In example above - individual engineers
+do not need to know if `registration_queue()` is implemented by Kafka topic, SQL or Rest API,
+interface in SDK remains the same.
 
-See [bakery_model](bakery_model/src/) for more examples.
+## Vantage features
+
+Introduction above covered 3% of entire Vantage features set. Framework consist of over 10
+crates and implementing a wide range of features like:
+
+- Standard CRUD operations with persistence-abstraction
+- Implementation of DataSource-specific extensions
+- Implementation of Entity-specific extensions
+- Support for Expressions and Query Builder pattern (SQL, SurrealDB)
+- MultiModal and Json database support (Mongo, GraphQL, SurrealDB)
+- Data Source abstractions (CSV, Excel, PubSub, APIs)
+- DataSet building - conditions, query-based expressions and delayed condition lookup
+- Sync Relationship/References traversal - one-many and many-many - including cross-persistence.
+- Generic types for DataSet, Table and ActiveRecord over Entity
+- Support for standard and extended types on table columns
+- Column flags
+- (coming in 0.3) Column mapping, validation
+- Typed queries (known result type) and associated queries (can self-execute)
+- Type-erased structs for all major traits
+- Adaptors for UI frameworks, APIs (like axum)
+- (planned in 0.3) Aggregation, Joins, Expressions.
+- Yaml-based Entity configurator
+- Powerful Error handling
+
+## Type erasure support
+
+Rust type system is amazing and it is at the core of all Vantage features. In
+some cases, we want to erase types, for example if we require a generic type
+interface.
+
+Vantage provides a full set of "Any\*" types, which can be used like this:
 
 ```rust
-let invoice: Invoice = Invoice::table().with_id(123).get_one().await?;
-println!("Invoice: {:?}", invoice); // calculates total, client_name etc.
+let clients = Client::admin_api(); // impl DataSet<Client>
+let clients = AnyDataSet::new(clients); // AnyDataSet - types erased.
+
+let entities: = vec![clients, orders, ..];
 ```
 
-## Query Building
+Once type is erased - you can store different entities in same data-structure,
+implement cross-language SDKs. If you are interested in "Any\*" types,
+see Documentation. The rest of the README will focus on fully typed
+primitives.
 
-In pursuit of better performance developers of business apps often resort to writing
-entire queries with `sqlx`. While this may work for a small application, for a large
-project you would want generic types, dynamic queries and a better way to use Rust
-autocomplete and type systems.
+## DataSet operations
 
-Vantage provides a way to express your SQL queries in native Rust - dynamically:
+Crate `vantage-dataset` introduces ImTableSource, implementing in-memory
+DataSet implementation.
 
 ```rust
-use vantage::prelude::*; // sql::Query
+let in_memory_cache = ImDataSource::new();
+
+let client_cache = ImTable::<User>::new(&in_memory_cache, "clients");
+let clients.import(Client::read_csv("clients.csv")).await?;
+
+// Basic loading operation - load one client record
+let (id, client) = clients.load_some().await?;
+// Next - delete it from memory
+clients.delete_id(&id).await?;
+// Insert it back
+clients.insert_id(id, client).await?;
+```
+
+The above operation will work consistently with ANY data-set implementation.
+If you switch to `let clients = Client::admin_api()` the rest of your code
+remain un-changed, because both `ImTable` and `admin_api()` impl `DataSet<>`
+
+## Type casting and Value Sets
+
+Some record types can be incredibly complex. Vantage assumes that any entity
+can be represented through various types. Next example may fetch only the
+"name" field from admin_api (if API supports this):
+
+```rust
+struct MiniClient {
+    name: String,
+}
+let just_name = Client::admin_api()
+    .get_id_as::<MiniClient>(client_id)
+    .await?
+    .name;
+```
+
+DataSet has no mandatory fields. Sometimes you don't want to use types
+at all. For this situation, Vantage has full support for `serde_json::Value`:
+
+```rust
+let just_name = Client::admin_api()
+    .get_id_value(client_id)
+    .await?
+    .get("name")?;
+```
+
+If you want to learn more about `ValueSet` - you can find more info in the documentation.
+
+## Table
+
+`Table<>` type implemented in `vantage-table` crate brings a crucial type into Vantage:
+
+```rust
+impl Client {
+    fn table() -> Table<Client, Oracle>;
+}
+impl Order {
+    fn table() -> Table<Order, MongoDB>;
+}
+```
+
+Lets start by looking at the core features of Table:
+
+- Table has Columns
+- Table can be filtered
+- Table can be ordered
+- Table can paginate
+
+To maximize performance, Table will always try to use DataBase capabilities to implement
+above features, and retrieve data once it's filtered, ordered and paginated.
+
+```rust
+let mut order = Order::table();
+order.add_condition(order.is_deleted().eq(false));
+order.set_order_by(order.created_at().desc());
+order.set_pagination(Pagination::ipp(25));
+
+// filters, sorts and paginates on-the-server
+for (id, order) in order.get().await? {
+    dbg!(order);
+}
+```
+
+Table can be cloned and all the above methods support builder-pattern:
+
+```rust
+let orders = Order::table();
+for (id, order) in Order::table()
+  .with_condition(order.is_deleted().eq(false))
+  .with_order_by(order.created_at().desc())
+  .with_pagination(Pagination::ipp(25))
+  .get().await?
+{
+    dbg!(order);
+}
+```
+
+## TableSource
+
+Previous example created `order` table like this:
+
+```rust
+let order: Table<Order, MongoDB>
+```
+
+If MongoDB `impl DataSource`, then Vantage implements `DataSet<E>` for
+`Table<E, _: TableSource>` automatically. In other words - any table
+implements `DataSet` and `ValueSet` traits automatically.
+
+Lets populate our In-memory cache from MongoDB:
+
+```rust
+let mongo_orders = Order::table(); // Table<Order, MongoDB>
+let mongo_orders = mongo_orders
+    .with_condition(mongo_orders.is_deleted().eq(false));
+let im_orders = ImTable::<Order>::new(&in_memory_cache, "orders");
+
+im_orders.import(&mongo_orders).await?;
+```
+
+Software engineres love consistency, and Vantage delivers consistency!
+
+## SelectSource and Queries
+
+Relatonal databases - SQL or SurrealDB use powerful query languages to
+perform even more operations inside the database. `vantage-expressions`
+implement a building blocks for Query Builders. Crates `vantage-surrealdb`
+and `vantage-sql` provide implementation for Query Builder as well as
+ability to execute those queries:
+
+```rust
+impl SelectSource for SurrealDB {
+    type Select<E: Entity> = SurrealSelect;
+
+    fn select<E: Entity>(&self) -> Self::Select<E>;
+    async fn execute_select<E: Entity>(&self, select: &Self::Select<E>) -> Result<Vec<E>>;
+}
+
+impl Selectable for SurrealSelect { .. }
+```
+
+Vantage understands that Databases have different SQL dialects or even
+entirely different query languages. As with other things, Vantage
+expects all Query Builders to implement some bare minimum - `impl Selectable`.
+
+In our example, Organisation stores `Client` in SurrealDB - but that is
+not a database that most developers are familiar with.
+
+Vantage query builder interface breaches this gap. Here is how we can
+calculate `SELECT SUM(balance) from client where is_paying_client = true`
+in SurrealQL:
+
+```rust
+let clients = Client::table();
+let clients = clients.with_condition(clients.is_paying_client().eq(true));
+
+// SurrealSelect<result::Rows>
+let query = clients.select();
+
+// SurrealReturn
+let sum_query = query.as_sum(clients.balance());
+
+// Preview query
+println!("Sum query: {}", sum_query.preview());
+
+// Execute query and Convert Value into Decimal
+let sum: Decimal = sum_query.get().await?.into();
+```
+
+The code listed here will work just as well if Client table would be stored
+in Oracle. Vantage makes it very easy for organisation to move entities between
+persistences without changing code and without sacrifice in performance.
+
+## Expressions
+
+While we look into Queries, I should also explain Expressions. Implementing
+Query builder dialects with Vantage is easy, because you rely on Expression engine.
+In Vantage expression engine is composable and supports parameters:
+
+```rust
+let now = if Some(date) = cutoff_date {
+    expr!("{}", date)
+} else {
+    expr!("now()")
+}
+let condition = expr!("expires_at < {}", now);
+let delete = expr!("DELETE FROM clients WHERE {}", condition);
+
+// Prints: DELETE FROM clients WHERE expires_at < now() -- 0 parameters
+// or DELETE FROM clients WHERE expires_at < $1  ($1 = '2024-06-01T00:00:00Z' )
+println!("Delete query: {}", delete.preview());
+```
+
+Other query languages will struggle with variable number of parameters,
+and will outright make it impossible to compose expressions from chunks.
+
+Vantage additionally support **deferred expressions** - a way to create
+query across multiple databases without async code.
+
+## Deferred Expressions
+
+Suppose you have 2 databases. Both support queries, but otherwise incompatible.
+How do you construct a query like this:
+
+```sql
+select sum(vat) from MYSQL.orders where order.country_code in (
+    select country_code from POSTGRES.countries where is_eu = true
+)
+```
+
+Without Vantage you would query PostgreSQL first, await, fetch, insert
+result into MySQL query, fetch await etc.
+
+Vantage allows you to build query `sync` then query/fetch `async`:
+
+```rust
+let eu_countires = expr!("SELECT country_code FROM countries WHERE is_eu = true");
+let eu_countries = postgres.defer(&eu_countires);
+
+let vat_sum = expr!("SELECT SUM(vat) FROM orders WHERE country_code IN {}", eu_countries);
+let vat_sum = mysql.query(&vat_sum).await?; // <-- single await!
+```
+
+But why would you operate with expressions, when you have query builders?
+
+```rust
+let eu_countries = postgres
+    .select()
+    .with_source(expr!("countries"))
+    .with_field("country_code".to_string());
+
+let vat_sum = mysql
+    .select()
+    .with_source(expr!("orders"))
+    .with_expression(expr!("SUM(vat)", Some("total_vat".to_string()))
+    .with_condition(expr!("country_code in {}', postgrs.defer(&eu_countries)))
+    .get().await?; // <-- single await!
+```
+
+Why is this important? Because `Table<>` can encapsulate the above logic, hiding it's implementation
+away inside the data model, exposing the interface like this:
+
+```rust
+let eu_orders = Orders::table().only_eu_orders(); // add_condition(expr)
+let vat_sum = eu_orders.select().as_sum(eu_orders.vat()).get().await?;
+```
+
+## Expressionable
+
+In Vantage - many different things can be part of Expression. You aready have seen
+date and whatever `defer()` returns as part of expression. Any struct that implements
+Expressionable can be and this includes:
+
+- Table columns: `eu_orders.vat()`
+- Opeartions: `clients.is_paying_client().eq(true)`
+- Sort order: `clients.name().desc()`
+- Queries: `other_table.select()`
+- Query builder components: `Identifier`, `Field`, `JoinQuery`, `SurrealReturn` or `Thing`
+- Closure - that's what `defer()` returns after all.
+- Scalar values - int, string, etc - those become parameters
+
+Of course you can implement more types and even your own unique Expresison engines making
+them compatible. As example - MongoDB has expression engine that results in JSON strings.
+
+## Advanced Query Building
+
+> WARNING: Vantage 0.2 code, could be incompatible with 0.3
+
+In Vantage query builders implement `Selectable` trait - to make it familiar to
+developers, however SQL query builder much more powerful and allow to build any query
+using Rust:
+
+```rust
 
 let github_authors_and_teams = Query::new()
     .with_table("dx_teams", Some("t".to_string()))
@@ -103,140 +399,94 @@ let github_authors_and_teams = github_authors_and_teams
 
 (Full example: <https://github.com/romaninsh/vantage/blob/main/bakery_model/examples/3-query-builder.rs>)
 
-SQL is not the only query type supported by Vantage. You can use NoSQL queries, REST API
-and GraphQL queries too. Each query type is unique but will implement some shared traits.
+## Table References
 
-## Data Sets
-
-The third concept introduced by Vantage is Data Sets. This allows you to create a generic
-interface between your entities and query builder. This way you just need to define
-what you want to do with your entities, and the query will be built for you automatically:
+Vantage does not use term "relations" and instead uses "references". Defined like this:
 
 ```rust
-let clients: Table<Postgres, Client> = Client::table().with_condition(Client::is_paying_client().eq(&true));
-let unpaid_invoices: Table<Postgres, Invoice> = clients.ref_invoices()
-    .with_condition(Invoice::table().is_paid().eq(&false));
+let client = Client::table();
+let client = client.with_many("orders", "client_id", || Box::new(Order::table()));
 
-send_email_reminder(unpaid_invoices, "Pay now!").await?.unwrap();
-
-// This can also use generics:
-async fn send_email_reminder(data: impl ReadableDataSet<Invoice>, message: &str) -> Result<(), Error> {
-    for invoice in data.get().await? {
-        println!("Sending email to {} with message: {}", invoice.client_name, message);
+pub trait ClientTable {
+    fn ref_orders(&self) -> Table<Order, SurrealDB> {
+        self.get_ref_as("orders").unwrap()
     }
 }
+impl ClientTable for Table<Client, SurrealDB> {}
 ```
 
-Let me walk you through the code above so we can trace how Vantage builds queries out of
-entities for you:
-
-- Client::table() returns Table<Postgres, Client> type, because that's where our clients
-  are stored.
-- with_condition() narrows down the set of clients to only those who are paying. Because
-  Postgres supports `where` clause, this will become part of a `clients` table query.
-- ref_invoices() returns Table<Postgres, Invoice>, which will be based on Invoice::table()
-  but with additional conditions and client subquery.
-- final with_condition() narrows down the set of invoices to only those that are unpaid.
-
-Resulting type is `sql::Table<Postgres, Invoice>`. It has been mutated to accomodate all the
-changes we made to it, but query was not executed yet.
-
-Next we pass `unpaid_invoices` to `send_email_reminder` function, which would have accepted
-anything that implements `ReadableDataSet<Invoice>`. To `send_email_reminder` it does not
-matter if the data is coming from SQL, NoSQL or REST API. It only intends to fetch the
-data at some point.
-
-## Extensions and Plugins
-
-`Table<D, E>` implements a number of other useful traits:
-
-- `TableWithColumns` - allows you to describe table columns and map them to Rust types.
-- `TableWithConditions` - allows you to add conditions to the query.
-- `TableWithJoins` - allows you use 1-to-1 joins and store record data across multiple tables.
-- `TableWithQueries` - allow you to build additional queries like sum() or count().
-
-And of course you can add your own extensions to your table definitions:
+relationship can be traversed - transforming one table anto another. In Vantage traversal
+is also `sync` and will just modify conditions:
 
 ```rust
-impl MyTableWithACL for Table<_, MyEntity> {}
+let client_john = client.clone().with_condition(client.name().eq("John Doe"));
+let johns_orders = client_john.ref_orders();
+// Table<Order, SurrealDB>
 ```
 
-## Vantage and stateful applications
+As you can probably guess - Vantage allow you to traverse references across persistences
+as well and that happens transparently, without change to model API.
 
-Many Rust application are stateful. Implementing a UI may include search field, filters,
-pagination to limit amount of records you need to display for the user. There
-may be a custom field selection and even custom column types that you would need to deal
-with. Multiply that by 20-50 unique business entities, add all the UI you must build
-along with ACL and validation rules.
+Reference methods do not necessarily have to return Table, they can also respond with
+DataSet or even something more specific like ReadableDataSet.
 
-Without generic UI components, this will be a nightmare to implement. Vantage can help
-yet again.
+## Associated Records
 
-`Table` can be kept in memory, shared through a Mutex or Signal, modified by various
-UI components and provide `Query` to different parts of your application. For instance,
-your paginator component will want to use `table.count()` to determine how many records
-are there in total and use `table.set_limit()` to paginate resulting query. Your filter
-form component would use `table.get_columns()` to determine
-what fields are available for filtering and `table.add_condition()` to apply those
-conditions. Your data grid component would use `table.get()` to fetch the data.
+Up to this point, we have mostly looked at DataSets and Tables. They represent multiple
+records, but sometimes you want to operate with a single record.
 
-Rich data grid views are the core component of business applications and while Vantage
-does not provide a UI, it can drive your generic components and provide both structure
-and data for them.
-
-## Quick Start
-
-While not mandatory, I recommend you to define some entities before starting with Rust.
-Provided [bakery_model](bakery_model/src/) implements entities for "Baker", "Client", "Product",
-"Order" and "LineItem" - specifying fields and relationships, you may write business code
-relying on auto-complete and Rust type system:
+In Vantage for this purpose have yet another type: Record<> and RecordTable trait.
+Standard table implementation implements this trait already:
 
 ```rust
-use vantage::prelude::*;
-use bakery_model::*;
+let john_table = client.clone().with_condition(client.name().eq("John Doe"));
 
-let set_of_clients = Client::table();   // Table<Postgres, Client>
-
-let condition = set_of_clients.is_paying_client().eq(&true);  // condition: Condition
-let paying_clients = set_of_clients.with_condition(condition);  // Table<Postgres, Client>
-
-let orders = paying_clients.ref_orders();   // orders: Table<Postgres, Order>
-
-for row in orders.get().await? {  // Order
-    println!(
-        "Ord #{} for client {} (id: {}) total: ${:.2}\n",
-        order.id,
-        order.client_name,
-        order.client_id,
-        order.total as f64 / 100.0
-    );
-};
+// Record<Client, Table<Client, SurrealDB>>
+let mut john = john_table.get_some_record();
+john.email = "john@example.com";
+john.save().await?;
 ```
 
-Output:
+With Record, you don't need to store ID. Record has all the methods you implement for
+Client, and in addition offers `id()` and `save()`.
 
-```
-Ord #1 for client Marty McFly (id: 1) total: $8.93
-Ord #2 for client Doc Brown (id: 2) total: $2.20
-Ord #3 for client Doc Brown (id: 2) total: $9.95
-```
+Record must not outlive a `WritableDataSet` where it must save itself, but you
+have some amazing flexibility with this. For instance you can load record from cache,
+but save it into persistent table.
 
-SQL generated by Vantage and executed:
+## Mock Testing
 
-```sql
-SELECT id,
-    (SELECT name FROM client WHERE client.id = ord.client_id) AS client_name,
-    (SELECT SUM((SELECT price FROM product WHERE id = product_id) * quantity)
-    FROM order_line WHERE order_line.order_id = ord.id) AS total
-FROM ord
-WHERE client_id IN (SELECT id FROM client WHERE is_paying_client = true)
-  AND is_deleted = false;
-```
+Testing business logic is inherently difficult. As a result - business logic test is
+done in the **integration tests**, relies on database snapshots and is very slow.
 
-This illustrates how Vantage combined specific rules of your code such as "only paying clients" with
-the rules defined in the [bakery_model](bakery_model/src/), like "soft-delete enabled for Orders"
-and "prices are actually stored in product table" and "order has multiple line items" to generate
-a single and efficient SQL query.
+Vantage introduces mocks at the SDK level and therefore business logic can be tested
+at **unit test** level, without any external dependencies. This is much faster and
+will speed up your CI pipelines, making engineers more productive.
+
+## UI and API Adaptors
+
+Vantage has a crate `vantage-ui-adapters` which has a referenec integration with 6
+different Rust UI frameworks:
+
+- Cursive
+- EGui
+- GPUI
+- RatatUI
+- Slint
+- Tauri
+
+The goal of adapters is to create a UI Table around Vantage Table. Similarly there is
+integration with Axum (see `bakery_api` crate) - which can be a great example of
+building generic REST APIs for your `DataSets`. It should also be possible to implement
+A more sophisticated API such as GraphQL API for Tables (but that would be a 3rd party crate).
+
+## Table Columns
+
+Table Columns type is defined by TableSource, so for SurrealDB Vantage uses SurrealColumn.
+This technically allows to have Vendor-specific Column extensions.
+
+Additionally Columns support flags, which is a feature aimed at generic UI builders. For further
+information on this - check Any\* documentation.
 
 ## Using Vantage with Axum
 
@@ -273,279 +523,34 @@ API response for `GET /orders?client_id=2&page=1`
 ]
 ```
 
-Compare to [SQLx](https://github.com/launchbadge/realworld-axum-sqlx/blob/main/src/http/articles/listing.rs#L79), which is more readable?
-
-## Key Features
-
-- 🦀 **Rust-first Design** - Leverages Rust's type system for your business entities
-- 🥰 **Complexity Abstraction** - Hide complexity away from your business logic
-- 🚀 **High Performance** - Generates optimal SQL queries
-- 🔧 **Zero Boilerplate** - No code generation or macro magic required
-- 🧪 **Testing Ready** - First-class support for mocking and unit-testing
-- 🔄 **Relationship Handling** - Elegant handling of table relationships and joins
-- 📦 **Extensible** - Easy to add custom functionality and non-SQL support
-
-## Roadmap to 1.0
+## Roadmap
 
 Vantage needs a bit more work. Large number of features is already implemented, but
 some notable features are still missing:
 
-- Vantage need Real-World app implementation for a backend as a test-case. I had some
-  issues with UUID fields, there could have been some other issues too.
-- Vantage works with PostgreSQL but not with GraphQL. I'll need to implement them both
-  to make Vantage more usable for the frontend applications.
-- Implement better ways to manipulate conditions, fields etc. If we can add those
-  dynamically, we should also be able to remove them too.
-- Vantage supports only base types (subtypes of serde_json::Value). I'll need to implement
-  additional DataSource-specific columns.
-- We need DataSource support for a regular REST APIs and implement example of Vantage
-  used as WASM interface between React components and the backend server.
-- I'd like to create example for Sycamore and open-source Tailwind components, showing
-  how multiple independent components can interact through signals and manipulate
-  a dataset collectively, fetching data when needed.
-- An example for Egui would also be nice.
-- I have Associated queries already implemented, but I also want to have associated entities,
-  which can have their types manipulated, validated and saved back. Associated entity should
-  work with dynamic forms.
+- Joins - were present in 0.2, but not yet implemented in 0.3 (read and write)
+- Live Table - Mutexed table with real-time updates
+- Aggregate columns - were in 0.2, but not yet implemented in 0.3
+- Column hooks - allowing field mappings and custom calculation is still TODO.
+- Cleanups - still missing some Any\* types.
+- Interface consistency - more methods must return (id, E) tuple.
+- SQL testing - most tests so far were done with SurrealDB. We should give SQL more love.
+- Type support for SQL
+- Oracle, because why not!
+- Graph relations - implement hasMany support for Graph databases
+- More love for Mongo
+- Consider Neq4ql crate
+- Implement some RestAPI adaptors (e.g. GitLab)
+- Aggregators (grouping queries) for SQL and SurrealDB
 
 ## Installation
 
+// For 0.2 version:
 Just type: `cargo add vantage`
 
+// For 0.3 clone this repository and specify path to a crate.
+
 If you like what you see so far - reach out to me on BlueSky: [nearly.guru](https://bsky.app/profile/nearly.guru)
-
-# Walkthrough
-
-(You can run this [example](bakery_model/examples/0-intro.rs) with `cargo run --example 0-intro`)
-
-Vantage interract with your data through a unique concept called "Data Sets". Your application will
-work with different sets suc has "Set of Clients", "Set of Orders" and "Set of Products" etc.
-
-It's easier to explain with example. Your SQL table "clients" contains multiple client records. We
-do not know if there are 10 or 9,100,000 rows in this table. We simply refer to them as "set of
-clients".
-
-Vantage defines "Set of Clients" is a Rust type, such as `Table<Postgres, Client>`:
-
-```rust
-let set_of_clients = Client::table();   // Table<Postgres, Client>
-```
-
-Any set can be iterated over, but fetching data is an async operation:
-
-```rust
-for client in set_of_clients.get().await? {   // client: Client
-    println!("id: {}, client: {}", client.id, client.name);
-}
-```
-
-In a production applications you wouldn't be able to iterate over all the records like this,
-simply because of the large number of records. Which is why we need to narrow down our
-set_of_clients by applying a condition:
-
-```rust
-let condition = set_of_clients.is_paying_client().eq(&true);  // condition: Condition
-let paying_clients = set_of_clients.with_condition(condition);  // paying_clients: Table<Postgres, Client>
-```
-
-If our DataSource supports record counting (and SQL does), we can simply fetch through count():
-
-```rust
-println!(
-    "Count of paying clients: {}",
-    paying_clients.count().get_one_untyped().await?
-);
-```
-
-Now that you have some idea of what a DataSet is, lets look at how we can reference
-related sets. Traditionally we could say "one client has many orders". In Vantage we say
-"clients set refers to orders set":
-
-```rust
-let orders = paying_clients.ref_orders();   // orders: Table<Postgres, Order>
-```
-
-Type is automatically inferred, I do not need to specify it. This allows me to define
-a custom method on Table<Postgres, Order> inside `bakery_model` and use it anywhere:
-
-```rust
-let report = orders.generate_report().await?;
-println!("Report:\n{}", report);
-```
-
-Importantly - my implementation for `generate_report` comes with a unit-test. Postgres
-is too slow for unit-tests, so I use a mock data source. This allows me to significantly
-speed up my business logic test-suite.
-
-One thing that sets Vantage apart from other ORMs is that we are super-clever at building
-queries. `bakery_model` uses a default entity type Order but I can supply another struct type:
-
-```rust
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-struct MiniOrder {
-    id: i64,
-    client_id: i64,
-}
-impl Entity for MiniOrder {}
-```
-
-`impl Entity` is needed to load and store "MiniOrder" in any Vantage Data Set. Next I'll use
-`get_some_as` which gets just a single record from set. The scary-looking method
-`get_select_query_for_struct` is just to grab and display the query to you:
-
-```rust
-let Some(mini_order) = orders.get_some_as::<MiniOrder>().await? else {
-    panic!("No order found");
-};
-println!("data = {:?}", &mini_order);
-println!(
-    "MiniOrder query: {}",
-    orders
-        .get_select_query_for_struct(MiniOrder::default())
-        .preview()
-);
-```
-
-Vantage adjusts query based on fields defined in your struct. My `MegaOrder` will remove `client_id` and
-add `order_total` and `client_name` instead:
-
-```rust
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-struct MegaOrder {
-    id: i64,
-    client_name: String,
-    total: i64,
-}
-impl Entity for MegaOrder {}
-
-let Some(mini_order) = orders.get_some_as::<MegaOrder>().await? else {
-    panic!("No order found");
-};
-println!("data = {:?}", &mini_order);
-println!(
-    "MegaOrder query: {}",
-    orders
-        .get_select_query_for_struct(MegaOrder::default())
-        .preview()
-);
-```
-
-If you haven't already, now is a good time to run this code. Clone this repository and run:
-
-```bash
-$ cargo run --example 0-intro
-```
-
-At the end, example will print out both queries. Lets dive into them:
-
-```sql
-SELECT id, client_id
-FROM ord
-WHERE client_id IN (SELECT id FROM client WHERE is_paying_client = true)
-  AND is_deleted = false;
-```
-
-`MiniOrder` only needed two fields, so only two fields were queried.
-
-Condition on "is_paying_client" is something we implicitly defined when we referenced Orders from
-`paying_clients` Data Set. Wait. Why is `is_deleted` here?
-
-As it turns out - our table definition is using extension `SoftDelete`. In the `src/order.rs`:
-
-```rust
-table.with_extension(SoftDelete::new("is_deleted"));
-```
-
-This extension modifies all queries for the table and will mark records as deleted when you
-execute table.delete().
-
-The second query is even more interesting:
-
-```sql
-SELECT id,
-    (SELECT name FROM client WHERE client.id = ord.client_id) AS client_name,
-    (SELECT SUM((SELECT price FROM product WHERE id = product_id) * quantity)
-    FROM order_line WHERE order_line.order_id = ord.id) AS total
-FROM ord
-WHERE client_id IN (SELECT id FROM client WHERE is_paying_client = true)
-  AND is_deleted = false;
-```
-
-As it turns out - there is no physical field for `client_name`. Instead Vantage sub-queries
-`client` table to get the name. The implementation is, once again, inside `src/order.rs` file:
-
-```rust
-table
-  .with_one("client", "client_id", || Box::new(Client::table()))
-  .with_imported_fields("client", &["name"])
-```
-
-The final field - `total` is even more interesting - it gathers information from
-`order_line` that holds quantities and `product` that holds prices.
-
-Was there a chunk of SQL hidden somewhere? NO, It's all Vantage's query building magic. Look inside
-`src/order.rs` to see how it is implemented:
-
-```rust
-table
-  .with_many("line_items", "order_id", || Box::new(LineItem::table()))
-  .with_expression("total", |t| {
-    let item = t.sub_line_items();
-    item.sum(item.total()).render_chunk()
-  })
-```
-
-Where is multiplication? Apparently item.total() is responsible for that, we can see that in
-`src/lineitem.rs`.
-
-```rust
-table
-  .with_one("product", "product_id", || Box::new(Product::table()))
-  .with_expression("total", |t: &Table<Postgres, LineItem>| {
-    t.price().render_chunk().mul(t.quantity())
-  })
-  .with_expression("price", |t| {
-    let product = t.get_subquery_as::<Product>("product").unwrap();
-    product.field_query(product.price()).render_chunk()
-  })
-```
-
-### Conclusion
-
-We have discovered that behind a developer-friendly and very Rust-intuitive Data Set
-interface, Vantage offers some really powerful features and hides complexity.
-
-What does that mean to your developer team?
-
-You would need to define business entities once, but the rest of your team/code can focus on the
-business logic - like improving that `generate_report` method!
-
-My example illustrated how Vantage provides separation of concerns and abstraction of complexity - two
-very crucial concepts for business software developers.
-
-Use Vantage. No tradeoffs. Productive team! Happy days!
-
-### Components of Vantage
-
-To understand Vantage in-depth, you would need to dissect and dig into its individual components:
-
-1. DataSet - like a Map, but Rows are stored remotely and only fetched when needed.
-2. Expressions - recursive template engine for building SQL.
-3. Query - a dynamic object representing a single SQL query.
-4. DataSources - an implementation trait for persistence layer. Can be Postgres, a mock (more implementations coming soon).
-5. Table - DataSet with consistent columns, condition, joins and other features of SQL table.
-6. Field - representing columns or arbitrary expressions in a Table.
-7. Busines Entity - a record for a specific DataSet (or Table), such as Product, Order or Client.
-8. CRUD operations - insert, update and delete records in DataSet through hydration.
-9. Reference - ability for DataSet to return related DataSet (get client emails with active orders for unavailable stock items)
-10. Joins - combining two Tables into a single Table without hydration.
-11. Associated expression - Expression for specific DataSource created by operation on DataSet (sum of all unpaid invoices)
-12. Subqueries - Field for a Table represented through Associated expression on a Referenced DataSet.
-13. Aggregation - Creating new table from subqueries over some other DataSet.
-14. Associated record - Business Entity for a specific DataSet, that can be modified and saved back.
-
-A deep-dive into all of those concepts and why they are important for business software developers
-can be found in the [Vantage Book](https://romaninsh.github.io/vantage).
 
 ## Current status
 
