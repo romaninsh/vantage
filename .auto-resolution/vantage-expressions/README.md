@@ -207,6 +207,8 @@ enabling seamless cross-database operations. Result is passed into db.execute() 
 
 Create custom SQL constructs by implementing the `Expressive` trait:
 
+The `execute()` method handles all deferred operations and resolves them into final values. This design allows the use of shared state like `Arc<Mutex<T>>` inside callbacks, enabling dynamic query parameters that can change between query construction and execution.
+
 ```rust
 /// A UNION SQL construct
 #[derive(Clone)]

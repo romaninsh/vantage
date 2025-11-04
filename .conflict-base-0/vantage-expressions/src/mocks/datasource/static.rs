@@ -25,7 +25,6 @@
 //! // Any query returns the array of users
 //! ```
 
-use crate::Expression;
 use crate::QuerySource;
 use crate::SelectSource;
 use crate::mocks::selectable::MockSelect;
@@ -34,7 +33,6 @@ use serde_json::Value;
 use std::future::Future;
 use std::pin::Pin;
 use vantage_core::Result;
-use vantage_core::util::error::Context;
 
 /// Mock DataSource that always returns the same static value
 #[derive(Debug, Clone)]
@@ -50,15 +48,16 @@ impl StaticDataSource {
 }
 
 impl DataSource for StaticDataSource {}
-impl QuerySource<Expression> for StaticDataSource {
-    async fn execute(&self, _expr: &Expression) -> Value {
+impl QuerySource<serde_json::Value> for StaticDataSource {
+    async fn execute(&self, _expr: &crate::Expression<serde_json::Value>) -> serde_json::Value {
         self.value.clone()
     }
 
     fn defer(
         &self,
-        _expr: Expression,
-    ) -> impl Fn() -> Pin<Box<dyn Future<Output = Value> + Send>> + Send + Sync + 'static {
+        _expr: crate::Expression<serde_json::Value>,
+    ) -> impl Fn() -> Pin<Box<dyn Future<Output = serde_json::Value> + Send>> + Send + Sync + 'static
+    {
         let value = self.value.clone();
         move || {
             let value = value.clone();
@@ -67,32 +66,17 @@ impl QuerySource<Expression> for StaticDataSource {
     }
 }
 
-impl SelectSource for StaticDataSource {
-    type Select<E>
-        = MockSelect
-    where
-        E: crate::Entity;
+impl SelectSource<serde_json::Value> for StaticDataSource {
+    type Select = MockSelect;
 
-    fn select<E>(&self) -> Self::Select<E>
-    where
-        E: crate::Entity,
-    {
+    fn select(&self) -> Self::Select {
         MockSelect
     }
 
-    async fn execute_select<E>(&self, _select: &Self::Select<E>) -> Result<Vec<E>>
-    where
-        E: crate::Entity,
-    {
-        // Deserialize the stored JSON value into Vec<E>
+    async fn execute_select(&self, _select: &Self::Select) -> Result<Vec<serde_json::Value>> {
+        // Return the stored JSON value as Vec<Value>
         if let Value::Array(arr) = &self.value {
-            let mut results = Vec::new();
-            for item in arr {
-                let entity: E =
-                    serde_json::from_value(item.clone()).context("Failed to deserialize entity")?;
-                results.push(entity);
-            }
-            Ok(results)
+            Ok(arr.clone())
         } else {
             Ok(vec![])
         }
