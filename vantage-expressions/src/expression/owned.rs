@@ -84,11 +84,6 @@ macro_rules! expr_param {
         $deferred.into()
     };
 
-    // DeferredFn directly: [deferred] -> ExpressiveEnum::Deferred(deferred)
-    ([$deferred:expr]) => {
-        $crate::protocol::expressive::ExpressiveEnum::Deferred($deferred)
-    };
-
     // Regular scalar: expr -> ExpressiveEnum::Scalar(expr.into())
     ($param:expr) => {
         $crate::protocol::expressive::ExpressiveEnum::Scalar($param.into())
