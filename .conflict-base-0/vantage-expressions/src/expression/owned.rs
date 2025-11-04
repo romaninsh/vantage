@@ -81,7 +81,12 @@ macro_rules! expr_param {
 
     // Deferred function: {fn} -> ExpressiveEnum::Deferred(fn)
     ({$deferred:expr}) => {
-        $crate::protocol::expressive::ExpressiveEnum::Deferred(std::sync::Arc::new($deferred))
+        $deferred.into()
+    };
+
+    // DeferredFn directly: [deferred] -> ExpressiveEnum::Deferred(deferred)
+    ([$deferred:expr]) => {
+        $crate::protocol::expressive::ExpressiveEnum::Deferred($deferred)
     };
 
     // Regular scalar: expr -> ExpressiveEnum::Scalar(expr.into())

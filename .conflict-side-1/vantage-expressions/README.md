@@ -141,7 +141,7 @@ let counter = Arc::new(Mutex::new(10));
 // Create deferred function from mutex - will read current value when executed
 let deferred_count = DeferredFn::from_mutex(counter.clone());
 
-let query = expr!("SELECT * FROM items LIMIT {}", [deferred_count]);
+let query = expr!("SELECT * FROM items LIMIT {}", { deferred_count });
 
 // Change the value after query construction
 *counter.lock().unwrap() = 25;
