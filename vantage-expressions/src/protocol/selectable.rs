@@ -1,18 +1,18 @@
 use std::fmt::Debug;
 
 use crate::Expression;
-use crate::protocol::expressive::IntoExpressive;
+use crate::protocol::expressive::ExpressiveEnum;
 
-pub trait Selectable<E = Expression>: Send + Sync + Debug + Clone + Into<E> {
+pub trait Selectable<T>: Send + Sync + Debug + Clone + Into<Expression<T>> {
     /// Specifies a source for a query. Depending on implementation, can be executed
     /// multiple times. If `source` is expression you might need to use alias.
-    fn set_source(&mut self, source: impl Into<IntoExpressive<E>>, alias: Option<String>);
+    fn set_source(&mut self, source: impl Into<ExpressiveEnum<T>>, alias: Option<String>);
     fn add_field(&mut self, field: impl Into<String>);
-    fn add_expression(&mut self, expression: E, alias: Option<String>);
-    fn add_where_condition(&mut self, condition: E);
+    fn add_expression(&mut self, expression: Expression<T>, alias: Option<String>);
+    fn add_where_condition(&mut self, condition: Expression<T>);
     fn set_distinct(&mut self, distinct: bool);
-    fn add_order_by(&mut self, expression: E, ascending: bool);
-    fn add_group_by(&mut self, expression: E);
+    fn add_order_by(&mut self, expression: Expression<T>, ascending: bool);
+    fn add_group_by(&mut self, expression: Expression<T>);
     fn set_limit(&mut self, limit: Option<i64>, skip: Option<i64>);
     fn clear_fields(&mut self);
     fn clear_where_conditions(&mut self);
@@ -27,13 +27,13 @@ pub trait Selectable<E = Expression>: Send + Sync + Debug + Clone + Into<E> {
     fn get_skip(&self) -> Option<i64>;
 
     /// Create a count expression from this query
-    fn as_count(&self) -> E;
+    fn as_count(&self) -> Expression<T>;
 
     /// Create a sum expression from this query
-    fn as_sum(&self, column: E) -> E;
+    fn as_sum(&self, column: Expression<T>) -> Expression<T>;
 
     // Default implementations for builder-style methods
-    fn with_source(mut self, source: impl Into<IntoExpressive<E>>) -> Self
+    fn with_source(mut self, source: impl Into<ExpressiveEnum<T>>) -> Self
     where
         Self: Sized,
     {
@@ -43,7 +43,7 @@ pub trait Selectable<E = Expression>: Send + Sync + Debug + Clone + Into<E> {
 
     fn with_source_as(
         mut self,
-        source: impl Into<IntoExpressive<E>>,
+        source: impl Into<ExpressiveEnum<T>>,
         alias: impl Into<String>,
     ) -> Self
     where
@@ -53,7 +53,7 @@ pub trait Selectable<E = Expression>: Send + Sync + Debug + Clone + Into<E> {
         self
     }
 
-    fn with_condition(mut self, condition: E) -> Self
+    fn with_condition(mut self, condition: Expression<T>) -> Self
     where
         Self: Sized,
     {
@@ -61,7 +61,7 @@ pub trait Selectable<E = Expression>: Send + Sync + Debug + Clone + Into<E> {
         self
     }
 
-    fn with_order(mut self, expression: E, ascending: bool) -> Self
+    fn with_order(mut self, expression: Expression<T>, ascending: bool) -> Self
     where
         Self: Sized,
     {
@@ -77,7 +77,7 @@ pub trait Selectable<E = Expression>: Send + Sync + Debug + Clone + Into<E> {
         self
     }
 
-    fn with_expression(mut self, expression: E, alias: Option<String>) -> Self
+    fn with_expression(mut self, expression: Expression<T>, alias: Option<String>) -> Self
     where
         Self: Sized,
     {

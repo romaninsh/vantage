@@ -4,7 +4,7 @@
 //! that can be used in DataSource mocks and other testing scenarios.
 
 use crate::Expression;
-use crate::protocol::expressive::IntoExpressive;
+use crate::protocol::expressive::ExpressiveEnum;
 use crate::protocol::selectable::Selectable;
 
 /// Simple mock implementation of Selectable trait
@@ -16,10 +16,10 @@ use crate::protocol::selectable::Selectable;
 #[derive(Debug, Clone, Default)]
 pub struct MockSelect;
 
-impl Selectable<Expression> for MockSelect {
+impl Selectable<serde_json::Value> for MockSelect {
     fn set_source(
         &mut self,
-        _source: impl Into<IntoExpressive<Expression>>,
+        _source: impl Into<ExpressiveEnum<serde_json::Value>>,
         _alias: Option<String>,
     ) {
         // Mock implementation - no actual query building
@@ -29,11 +29,15 @@ impl Selectable<Expression> for MockSelect {
         // Mock implementation - no actual query building
     }
 
-    fn add_expression(&mut self, _expression: Expression, _alias: Option<String>) {
+    fn add_expression(
+        &mut self,
+        _expression: Expression<serde_json::Value>,
+        _alias: Option<String>,
+    ) {
         // Mock implementation - no actual query building
     }
 
-    fn add_where_condition(&mut self, _condition: Expression) {
+    fn add_where_condition(&mut self, _condition: Expression<serde_json::Value>) {
         // Mock implementation - no actual query building
     }
 
@@ -41,11 +45,11 @@ impl Selectable<Expression> for MockSelect {
         // Mock implementation - no actual query building
     }
 
-    fn add_order_by(&mut self, _expression: Expression, _ascending: bool) {
+    fn add_order_by(&mut self, _expression: Expression<serde_json::Value>, _ascending: bool) {
         // Mock implementation - no actual query building
     }
 
-    fn add_group_by(&mut self, _expression: Expression) {
+    fn add_group_by(&mut self, _expression: Expression<serde_json::Value>) {
         // Mock implementation - no actual query building
     }
 
@@ -97,33 +101,34 @@ impl Selectable<Expression> for MockSelect {
         None // Mock implementation
     }
 
-    fn as_count(&self) -> Expression {
+    fn as_count(&self) -> Expression<serde_json::Value> {
         // Mock implementation - return a count expression
-        crate::expr!("COUNT(*)")
+        Expression::new("COUNT(*)", vec![])
     }
 
-    fn as_sum(&self, column: Expression) -> Expression {
+    fn as_sum(&self, column: Expression<serde_json::Value>) -> Expression<serde_json::Value> {
         // Mock implementation - return a sum expression
-        crate::expr!("SUM({})", column)
+        Expression::new("SUM({})", vec![ExpressiveEnum::Nested(column)])
     }
 }
 
-impl From<MockSelect> for Expression {
+impl From<MockSelect> for Expression<serde_json::Value> {
     fn from(_val: MockSelect) -> Self {
-        crate::expr!("SELECT * FROM mock")
+        Expression::new("SELECT * FROM mock", vec![])
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::expr;
 
     #[test]
     fn test_mock_select_interface() {
         let mut mock = MockSelect;
 
         // These should all work without panicking
-        mock.set_source("users", None);
+        mock.set_source(expr!("users"), None);
         mock.add_field("name");
         mock.add_expression(crate::expr!("age > 18"), Some("adult".to_string()));
         mock.add_where_condition(crate::expr!("active = true"));
@@ -146,6 +151,6 @@ mod tests {
         assert_eq!(mock.get_skip(), None);
 
         // Converting to expression should work
-        let _expr: Expression = mock.into();
+        let _expr: Expression<serde_json::Value> = mock.into();
     }
 }
