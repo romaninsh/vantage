@@ -1,120 +1,122 @@
 //! Owned expressions will greedily own all the parameters.
 //! Owned expressions implement Expressive trait
 
-use serde_json::Value;
-use std::sync::Arc;
-
-use crate::protocol::expressive::{Expressive, IntoExpressive};
+use crate::protocol::expressive::{Expressive, ExpressiveEnum};
 
 /// Owned expression contains template and Vec of IntoExpressive parameters
 #[derive(Clone)]
-pub struct Expression {
+pub struct Expression<T> {
     pub template: String,
-    pub parameters: Vec<IntoExpressive<Expression>>,
+    pub parameters: Vec<ExpressiveEnum<T>>,
 }
 
-impl Expressive<Expression> for Expression {
-    fn expr(&self, template: &str, args: Vec<IntoExpressive<Expression>>) -> Expression {
-        Expression::new(template, args)
+impl<T: Clone> Expressive<T> for Expression<T> {
+    fn expr(&self) -> Expression<T> {
+        self.clone()
     }
 }
 
-impl From<Expression> for IntoExpressive<Expression> {
-    fn from(expr: Expression) -> Self {
-        IntoExpressive::Nested(expr)
+impl<T> From<Expression<T>> for ExpressiveEnum<T> {
+    fn from(expr: Expression<T>) -> Self {
+        ExpressiveEnum::Nested(expr)
     }
 }
 
-impl std::fmt::Debug for Expression {
+impl<T: std::fmt::Debug + std::fmt::Display> std::fmt::Debug for Expression<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.preview())
     }
 }
 
-// Specialized implementations for Expression
-
-impl<T: Into<IntoExpressive<Expression>>> From<Vec<T>> for IntoExpressive<Expression> {
-    fn from(vec: Vec<T>) -> Self {
-        let values: Vec<Value> = vec
-            .into_iter()
-            .map(|item| match item.into() {
-                IntoExpressive::Scalar(v) => v,
-                IntoExpressive::Nested(expr) => Value::String(expr.preview()),
-                IntoExpressive::Deferred(_) => Value::String("**deferred()".to_string()),
-            })
-            .collect();
-        IntoExpressive::Scalar(Value::Array(values))
-    }
-}
-
-impl<T: Into<IntoExpressive<Expression>> + Clone, const N: usize> From<[T; N]>
-    for IntoExpressive<Expression>
-{
-    fn from(arr: [T; N]) -> Self {
-        arr.to_vec().into()
-    }
-}
-
-impl<F, Fut> From<F> for IntoExpressive<Expression>
-where
-    F: Fn() -> Fut + Send + Sync + 'static,
-    Fut: std::future::Future<Output = Value> + Send + 'static,
-{
-    fn from(f: F) -> Self {
-        let f = Arc::new(f);
-        IntoExpressive::deferred(move || {
-            let f = f.clone();
-            Box::pin(async move { IntoExpressive::Scalar(f().await) })
-        })
-    }
-}
-
-/// Macro to create expressions with template and parameters
+/// Macro to create expressions with template and parameters for any type T
+/// Syntax:
+/// - expr_any!(T, "template", arg) -> arg becomes Scalar
+/// - expr_any!(T, "template", (expr)) -> expr becomes Nested
+/// - expr_any!(T, "template", {deferred}) -> deferred becomes Deferred
 #[macro_export]
-macro_rules! expr {
-    // Simple template without parameters: expr!("age")
-    ($template:expr) => {
-        $crate::expression::owned::Expression::new($template, vec![])
+macro_rules! expr_any {
+    // Simple template without parameters: expr_any!(T, "age")
+    ($t:ty, $template:expr) => {
+        $crate::expression::owned::Expression::<$t>::new($template, vec![])
     };
 
-    // Template with parameters: expr!("{} > {}", param1, param2)
-    ($template:expr, $($param:expr),*) => {
-        $crate::expression::owned::Expression::new(
+    // Template with parameters
+    ($t:ty, $template:expr, $($param:tt),*) => {
+        $crate::expression::owned::Expression::<$t>::new(
             $template,
             vec![
                 $(
-                    $param.into()
+                    $crate::expr_param!($param)
                 ),*
             ]
         )
     };
 }
 
-impl Expression {
+/// Macro to create expressions with serde_json::Value as default type
+/// Syntax:
+/// - expr!("template", arg) -> arg becomes Scalar
+/// - expr!("template", (expr)) -> expr becomes Nested
+/// - expr!("template", {deferred}) -> deferred becomes Deferred
+#[macro_export]
+macro_rules! expr {
+    // Simple template without parameters: expr!("age")
+    ($template:expr) => {
+        $crate::expr_any!(serde_json::Value, $template)
+    };
+
+    // Template with parameters
+    ($template:expr, $($param:tt),*) => {
+        $crate::expr_any!(serde_json::Value, $template, $($param),*)
+    };
+}
+
+/// Helper macro to handle different parameter syntaxes
+#[macro_export]
+macro_rules! expr_param {
+    // Nested expression: (expr) -> ExpressiveEnum::Nested(expr)
+    (($expr:expr)) => {
+        $crate::protocol::expressive::ExpressiveEnum::Nested($expr)
+    };
+
+    // Deferred function: {fn} -> ExpressiveEnum::Deferred(fn)
+    ({$deferred:expr}) => {
+        $crate::protocol::expressive::ExpressiveEnum::Deferred(std::sync::Arc::new($deferred))
+    };
+
+    // Regular scalar: expr -> ExpressiveEnum::Scalar(expr.into())
+    ($param:expr) => {
+        $crate::protocol::expressive::ExpressiveEnum::Scalar($param.into())
+    };
+}
+
+impl<T> Expression<T> {
     /// Create a new owned expression with template and parameters
-    pub fn new(template: impl Into<String>, parameters: Vec<IntoExpressive<Expression>>) -> Self {
+    pub fn new(template: impl Into<String>, parameters: Vec<ExpressiveEnum<T>>) -> Self {
         Self {
             template: template.into(),
             parameters,
         }
     }
 
-    /// Create expression from vector of expressions and a delimeter
-    pub fn from_vec(vec: Vec<Expression>, delimeter: &str) -> Self {
+    /// Create expression from vector of expressions and a delimiter
+    pub fn from_vec(vec: Vec<Expression<T>>, delimiter: &str) -> Self {
         let template = vec
             .iter()
             .map(|_| "{}")
             .collect::<Vec<&str>>()
-            .join(delimeter);
+            .join(delimiter);
 
-        let parameters = vec.into_iter().map(IntoExpressive::nested).collect();
+        let parameters = vec.into_iter().map(ExpressiveEnum::nested).collect();
 
         Self {
             template,
             parameters,
         }
     }
+}
 
+impl<T: std::fmt::Display + std::fmt::Debug> Expression<T> {
     pub fn preview(&self) -> String {
         let mut preview = self.template.clone();
         for param in &self.parameters {
@@ -128,67 +130,32 @@ impl Expression {
 #[cfg(test)]
 mod tests {
 
-    #[derive(Debug)]
-    struct Identifier {
-        identifier: String,
-    }
-    impl Identifier {
-        pub fn new(identifier: impl Into<String>) -> Self {
-            Self {
-                identifier: identifier.into(),
-            }
-        }
-    }
-
-    impl From<Identifier> for Expression {
-        fn from(id: Identifier) -> Self {
-            Expression::new(format!("`{}`", id.identifier), vec![])
-        }
-    }
-
-    impl From<Identifier> for IntoExpressive<Expression> {
-        fn from(id: Identifier) -> Self {
-            IntoExpressive::nested(Expression::from(id))
-        }
-    }
-
-    use super::*;
-
     #[test]
-    fn test_basic() {
-        let expr = Expression::new(
-            "SELECT * FROM {} WHERE name={} AND age>{} AND {} AND gender in {}",
-            vec![
-                Identifier::new("users").into(),
-                IntoExpressive::from("sue"),
-                IntoExpressive::from(18i64),
-                IntoExpressive::from(true),
-                IntoExpressive::from(["female", "male", "other"]),
-            ],
-        );
-
-        let preview = expr.preview();
-        assert_eq!(
-            preview,
-            "SELECT * FROM `users` WHERE name=\"sue\" AND age>18 AND true AND gender in [\"female\",\"male\",\"other\"]"
-        );
+    fn test_expr_macro() {
+        let expr = expr!("age > {}", 18);
+        assert_eq!(expr.template, "age > {}");
+        assert_eq!(expr.parameters.len(), 1);
     }
 
     #[test]
-    fn test_expr() {
-        let expr = expr!(
-            "SELECT * FROM {} WHERE name={} AND age>{} AND {} AND gender in {}",
-            Identifier::new("users"),
-            "sue",
-            18i64,
-            true,
-            ["female", "male", "other"]
-        );
+    fn test_expr_any_macro() {
+        let expr = expr_any!(i32, "age > {}", 18);
+        assert_eq!(expr.template, "age > {}");
+        assert_eq!(expr.parameters.len(), 1);
+    }
 
-        let preview = expr.preview();
-        assert_eq!(
-            preview,
-            "SELECT * FROM `users` WHERE name=\"sue\" AND age>18 AND true AND gender in [\"female\",\"male\",\"other\"]"
-        );
+    #[test]
+    fn test_nested_expr() {
+        let inner = expr!("status = {}", "active");
+        let outer = expr!("WHERE {} AND age > {}", (inner), "21");
+
+        assert_eq!(outer.template, "WHERE {} AND age > {}");
+        assert_eq!(outer.parameters.len(), 2);
+    }
+
+    #[test]
+    fn test_preview() {
+        let expr = expr_any!(String, "Hello {}", "world");
+        assert_eq!(expr.preview(), "Hello world");
     }
 }

@@ -29,9 +29,8 @@ use crate::QuerySource;
 use crate::SelectSource;
 use crate::mocks::selectable::MockSelect;
 use crate::protocol::datasource::DataSource;
+use crate::protocol::expressive::{DeferredFn, ExpressiveEnum};
 use serde_json::Value;
-use std::future::Future;
-use std::pin::Pin;
 use vantage_core::Result;
 
 /// Mock DataSource that always returns the same static value
@@ -53,16 +52,15 @@ impl QuerySource<serde_json::Value> for StaticDataSource {
         self.value.clone()
     }
 
-    fn defer(
-        &self,
-        _expr: crate::Expression<serde_json::Value>,
-    ) -> impl Fn() -> Pin<Box<dyn Future<Output = serde_json::Value> + Send>> + Send + Sync + 'static
+    fn defer(&self, _expr: crate::Expression<serde_json::Value>) -> DeferredFn<serde_json::Value>
+    where
+        serde_json::Value: Clone + Send + Sync + 'static,
     {
         let value = self.value.clone();
-        move || {
+        DeferredFn::new(move || {
             let value = value.clone();
-            Box::pin(async move { value })
-        }
+            Box::pin(async move { ExpressiveEnum::Scalar(value) })
+        })
     }
 }
 

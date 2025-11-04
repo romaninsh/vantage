@@ -31,4 +31,4 @@
 pub mod datasource;
 pub mod selectable;
 
-pub use datasource::{FlatteningPatternDataSource, PatternDataSource, StaticDataSource};
+pub use datasource::{FlatteningPatternDataSource, StaticDataSource};

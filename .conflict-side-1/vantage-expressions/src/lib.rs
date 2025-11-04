@@ -18,7 +18,7 @@ pub use expression::owned::Expression;
 pub use protocol::associated_queryable::AssociatedQueryable;
 pub use protocol::datasource::QuerySource;
 pub use protocol::datasource::SelectSource;
-pub use protocol::expressive::ExpressiveEnum;
+pub use protocol::expressive::{DeferredFn, ExpressiveEnum};
 pub use protocol::queryable::Queryable;
 pub use protocol::selectable::Selectable;
 pub use vantage_core::Entity;

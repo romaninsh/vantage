@@ -10,30 +10,21 @@ pub trait DataSource: Send + Sync {}
 /// Datasource implements a basic query interface for expression engine T
 /// that allow queries to be executed instantly (async) or convert them
 /// into closure, that can potentially be used in a different query.
-pub trait QuerySource<T>: DataSource {
-    fn execute(&self, expr: &T) -> impl Future<Output = Value> + Send;
+pub trait QuerySource<T = Value>: DataSource {
+    fn execute(&self, expr: &crate::Expression<T>) -> impl Future<Output = T> + Send;
 
     fn defer(
         &self,
-        expr: T,
-    ) -> impl Fn() -> Pin<Box<dyn Future<Output = Value> + Send>> + Send + Sync + 'static;
+        expr: crate::Expression<T>,
+    ) -> impl Fn() -> Pin<Box<dyn Future<Output = T> + Send>> + Send + Sync + 'static;
 }
 
-pub trait SelectSource<Ex = crate::Expression>: DataSource {
-    type Select<E>: Selectable<Ex>
-    where
-        E: crate::Entity;
+pub trait SelectSource<T = Value>: DataSource {
+    type Select: Selectable<T>;
 
-    // Return SelectQuery with entity type information
-    fn select<E>(&self) -> Self::Select<E>
-    where
-        E: crate::Entity;
+    // Return SelectQuery
+    fn select(&self) -> Self::Select;
 
     // Execute select query directly
-    fn execute_select<E>(
-        &self,
-        select: &Self::Select<E>,
-    ) -> impl Future<Output = Result<Vec<E>>> + Send
-    where
-        E: crate::Entity;
+    fn execute_select(&self, select: &Self::Select) -> impl Future<Output = Result<Vec<T>>> + Send;
 }
