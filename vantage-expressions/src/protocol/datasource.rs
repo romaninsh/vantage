@@ -1,8 +1,8 @@
 use serde_json::Value;
 use std::future::Future;
-use std::pin::Pin;
 
 use crate::Selectable;
+use crate::protocol::expressive::DeferredFn;
 use vantage_core::Result;
 
 pub trait DataSource: Send + Sync {}
@@ -13,10 +13,9 @@ pub trait DataSource: Send + Sync {}
 pub trait QuerySource<T = Value>: DataSource {
     fn execute(&self, expr: &crate::Expression<T>) -> impl Future<Output = T> + Send;
 
-    fn defer(
-        &self,
-        expr: crate::Expression<T>,
-    ) -> impl Fn() -> Pin<Box<dyn Future<Output = T> + Send>> + Send + Sync + 'static;
+    fn defer(&self, expr: crate::Expression<T>) -> DeferredFn<T>
+    where
+        T: Clone + Send + Sync + 'static;
 }
 
 pub trait SelectSource<T = Value>: DataSource {
