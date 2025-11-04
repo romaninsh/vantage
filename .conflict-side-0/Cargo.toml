@@ -1,0 +1,24 @@
+[workspace]
+members = [
+    "vantage-core",
+    "vantage-expressions",
+    "vantage-sql",
+    "vantage-surrealdb",
+    "vantage-redb",
+    "vantage-mongodb",
+    # "vantage-live",
+    "bakery_model3",
+    "bakery_model4",
+    "surreal-client",
+    "vantage-dataset",
+    "vantage-table",
+    "vantage-config",
+]
+exclude = [
+    "vantage",
+    "bakery_model",
+    "bakery_api",
+    "example_*",
+    "vantage-ui-adapters",
+]
+resolver = "2"

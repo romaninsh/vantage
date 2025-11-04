@@ -1,0 +1,129 @@
+name: SurrealDB Tests
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "vantage-surrealdb/**"
+      - "surreal-client/**"
+      - "bakery_model3/**"
+      - ".github/workflows/surreal.yaml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          key: "surreal-workspace-v03"
+          cache-workspace-crates: true
+          cache-all-crates: true
+
+      - name: Start SurrealDB
+        run: |
+          docker run -d \
+            --name surrealdb \
+            -p 8000:8000 \
+            -e SURREAL_CAPS_ALLOW_EXPERIMENTAL=graphql \
+            surrealdb/surrealdb:latest \
+            start \
+            --log debug \
+            --user root \
+            --pass root \
+            memory
+
+      - name: Wait for SurrealDB to be ready
+        run: |
+          echo "Waiting for SurrealDB to start..."
+          timeout 60 bash -c 'until curl -f http://localhost:8000/health 2>/dev/null; do sleep 1; done'
+          echo "SurrealDB is ready!"
+
+      - name: Setup environment variables
+        run: |
+          mkdir -p vantage-surrealdb/scripts
+          cd vantage-surrealdb/scripts
+          cat > .env << EOF
+          DB_ENDPOINT=ws://localhost:8000
+          DB_USER=root
+          DB_PASS=root
+          DB_AUTH_LEVEL=root
+          DB_NS=bakery
+          EOF
+
+      - name: Install SurrealDB CLI and difft
+        run: |
+          # Install SurrealDB CLI
+          curl -sSf https://install.surrealdb.com | sh
+          # sudo mv $HOME/.surrealdb/surreal /usr/local/bin/
+
+          # Verify installation
+          surreal --version
+
+          # Install difft
+          curl -L https://github.com/Wilfred/difftastic/releases/download/0.58.0/difft-x86_64-unknown-linux-gnu.tar.gz | tar xz
+          sudo mv difft /usr/local/bin/
+          difft --version
+
+      - name: Populate database
+        run: |
+          cd vantage-surrealdb/scripts
+          chmod +x ingress.sh
+          ./ingress.sh
+
+      - name: Run database tests
+        run: |
+          cd vantage-surrealdb/scripts
+          chmod +x test.sh
+          ./test.sh
+
+      - name: Build vantage-surrealdb and surreal-client crates
+        run: cargo build -p vantage-surrealdb -p surreal-client
+
+      - name: Run vantage-surrealdb and surreal-client tests
+        run: cargo test -p vantage-surrealdb -p surreal-client -- --test-threads=1
+        env:
+          DB_ENDPOINT: ws://localhost:8000
+          DB_USER: root
+          DB_PASS: root
+          DB_AUTH_LEVEL: root
+          DB_NS: bakery
+
+      - name: Build bakery_model3
+        run: cargo build -p bakery_model3
+        env:
+          DB_ENDPOINT: ws://localhost:8000
+          DB_USER: root
+          DB_PASS: root
+          DB_AUTH_LEVEL: root
+          DB_NS: bakery
+
+      - name: Run bakery_model3 tests
+        run: cargo test -p bakery_model3 -- --test-threads=1
+        env:
+          DB_ENDPOINT: ws://localhost:8000
+          DB_USER: root
+          DB_PASS: root
+          DB_AUTH_LEVEL: root
+          DB_NS: bakery
+
+      - name: Run bakery_model3 example
+        run: cargo run --example 0-intro
+        working-directory: bakery_model3
+        env:
+          DB_ENDPOINT: ws://localhost:8000
+          DB_USER: root
+          DB_PASS: root
+          DB_AUTH_LEVEL: root
+          DB_NS: bakery
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop surrealdb || true
+          docker rm surrealdb || true

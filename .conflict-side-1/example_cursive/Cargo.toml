@@ -1,0 +1,16 @@
+[package]
+name = "example_cursive"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+dataset-ui-adapters = { path = "../vantage-ui-adapters", features = [
+    "cursive",
+] }
+bakery_model3 = { path = "../bakery_model3" }
+cursive = "0.21"
+cursive_table_view = "0.15"
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+anyhow = "1.0"
