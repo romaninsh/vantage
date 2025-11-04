@@ -14,6 +14,7 @@ pub mod value;
 // pub use expression::lazy::LazyExpression;
 pub use any_expression::{AnyExpression, ExpressionLike};
 pub use expression::flatten::{ExpressionFlattener, Flatten};
+pub use expression::mapping::{ExpressionMap, ExpressionMapper};
 pub use expression::owned::Expression;
 pub use protocol::associated_queryable::AssociatedQueryable;
 pub use protocol::datasource::QuerySource;
