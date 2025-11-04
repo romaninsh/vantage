@@ -1,5 +1,4 @@
-use crate::dataset::{Id, ReadableDataSet, Result, WritableDataSet};
-use async_trait::async_trait;
+use crate::dataset::{Result, WritableDataSet, WritableValueSet};
 use std::ops::{Deref, DerefMut};
 use vantage_core::Entity;
 
@@ -9,7 +8,7 @@ where
     D: WritableDataSet<E> + ?Sized,
     E: Entity,
 {
-    id: String,
+    id: D::Id,
     data: E,
     dataset: &'a D,
 }
@@ -19,22 +18,18 @@ where
     D: WritableDataSet<E> + ?Sized,
     E: Entity + Clone,
 {
-    pub fn new(id: impl Id, data: E, dataset: &'a D) -> Self {
-        Self {
-            id: id.into(),
-            data,
-            dataset,
-        }
+    pub fn new(id: D::Id, data: E, dataset: &'a D) -> Self {
+        Self { id, data, dataset }
     }
 
     /// Get the ID of this record
-    pub fn id(&self) -> &str {
+    pub fn id(&self) -> &D::Id {
         &self.id
     }
 
     /// Save the current state of the record back to the dataset
     pub async fn save(&self) -> Result<()> {
-        self.dataset.replace_id(&self.id, self.data.clone()).await
+        self.dataset.replace(&self.id, self.data.clone()).await
     }
 }
 
@@ -60,25 +55,52 @@ where
     }
 }
 
-/// Extension trait for datasets that support both reading and writing to provide record functionality
-#[async_trait]
-pub trait RecordDataSet<E>: ReadableDataSet<E> + WritableDataSet<E>
+/// A wrapper for a data record represented by a Value, implementing save() method
+/// for saving record into WritableValueSet after it's modified
+pub struct RecordValue<'a, D>
 where
-    E: Entity,
+    D: WritableValueSet + ?Sized,
 {
-    async fn get_record(&self, id: impl Id) -> Result<Option<Record<'_, Self, E>>> {
-        let id_str = id.into();
-        match self.get_id(&id_str).await {
-            Ok(data) => Ok(Some(Record::new(id_str, data, self))),
-            Err(_) => Ok(None),
-        }
+    id: D::Id,
+    data: D::Value,
+    dataset: &'a D,
+}
+
+impl<'a, D> RecordValue<'a, D>
+where
+    D: WritableValueSet + ?Sized,
+{
+    pub fn new(id: D::Id, data: D::Value, dataset: &'a D) -> Self {
+        Self { id, data, dataset }
+    }
+
+    /// Get the ID of this record
+    pub fn id(&self) -> &D::Id {
+        &self.id
+    }
+
+    /// Save the current state of the record back to the dataset
+    pub async fn save(&self) -> Result<()> {
+        self.dataset.patch_value(&self.id, self.data.clone()).await
     }
 }
 
-// Auto-implement for any type that has both readable and writable traits
-impl<T, E> RecordDataSet<E> for T
+impl<'a, D> Deref for RecordValue<'a, D>
 where
-    T: ReadableDataSet<E> + WritableDataSet<E>,
-    E: Entity,
+    D: WritableValueSet + ?Sized,
 {
+    type Target = D::Value;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl<'a, D> DerefMut for RecordValue<'a, D>
+where
+    D: WritableValueSet + ?Sized,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
 }

@@ -5,8 +5,8 @@
 
 // Dataset traits for working with data
 pub use crate::dataset::{
-    Id, Importable, InsertableDataSet, ReadableAsDataSet, ReadableDataSet, ReadableValueSet,
-    Result, VantageError, WritableDataSet, WritableValueSet,
+    Importable, InsertableDataSet, ReadableDataSet, ReadableValueSet, Result, VantageError,
+    WritableDataSet, WritableValueSet,
 };
 
 // DataSource traits for dataset discovery and creation
@@ -17,7 +17,7 @@ pub use crate::datasetsource::{
 pub use crate::im::{ImDataSource, ImTable};
 
 // Record functionality
-pub use crate::record::{Record, RecordDataSet};
+pub use crate::record::{Record, RecordValue};
 
 // Re-export commonly used external dependencies
 pub use async_trait::async_trait;

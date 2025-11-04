@@ -1,11 +1,12 @@
 // examples/mocks/csv_mock.rs
 
 use csv::ReaderBuilder;
+use indexmap::IndexMap;
 use std::collections::HashMap;
 use vantage_core::Entity;
 use vantage_core::util::error::{Context, vantage_error};
 use vantage_dataset::dataset::{
-    Id, ReadableAsDataSet, ReadableDataSet, ReadableValueSet, Result, VantageError,
+    DataSet, ReadableDataSet, ReadableValueSet, Result, ValueSet, VantageError,
 };
 
 /// MockCsv contains hardcoded CSV data as strings
@@ -67,6 +68,11 @@ pub struct CsvFile<T: Entity> {
     _phantom: std::marker::PhantomData<T>,
 }
 
+impl<T: Entity> ValueSet for CsvFile<T> {
+    type Id = usize;
+    type Value = serde_json::Value;
+}
+
 impl<T: Entity> CsvFile<T> {
     pub fn new(csv_ds: MockCsv, filename: &str) -> Self {
         Self {
@@ -78,20 +84,62 @@ impl<T: Entity> CsvFile<T> {
 }
 
 #[async_trait::async_trait]
+impl<T> DataSet<T> for CsvFile<T> where T: Entity {}
+
+#[async_trait::async_trait]
 impl<T> ReadableDataSet<T> for CsvFile<T>
 where
     T: Entity,
 {
-    async fn get(&self) -> Result<Vec<T>> {
-        self.get_as().await
+    async fn list(&self) -> Result<IndexMap<Self::Id, T>> {
+        let content = self
+            .csv_ds
+            .get_file_content(&self.filename)
+            .context("Failed to get CSV content")?;
+
+        let mut reader = ReaderBuilder::new().from_reader(content.as_bytes());
+        let mut records = IndexMap::new();
+
+        for (idx, result) in reader.deserialize::<T>().enumerate() {
+            let record = result.context("Failed to deserialize CSV record")?;
+            records.insert(idx, record);
+        }
+
+        Ok(records)
     }
 
-    async fn get_id(&self, _id: impl Id) -> Result<T> {
-        return Err(VantageError::no_capability("get_id", "CsvFile"));
+    async fn get(&self, id: &Self::Id) -> Result<T> {
+        let content = self
+            .csv_ds
+            .get_file_content(&self.filename)
+            .context("Failed to get CSV content")?;
+
+        let mut reader = ReaderBuilder::new().from_reader(content.as_bytes());
+
+        for (idx, result) in reader.deserialize::<T>().enumerate() {
+            if idx == *id {
+                let record = result.context("Failed to deserialize CSV record")?;
+                return Ok(record);
+            }
+        }
+
+        Err(vantage_error!("Record with index {} not found", id))
     }
 
-    async fn get_some(&self) -> Result<Option<T>> {
-        self.get_some_as().await
+    async fn get_some(&self) -> Result<Option<(Self::Id, T)>> {
+        let content = self
+            .csv_ds
+            .get_file_content(&self.filename)
+            .context("Failed to get CSV content")?;
+
+        let mut reader = ReaderBuilder::new().from_reader(content.as_bytes());
+
+        if let Some(result) = reader.deserialize::<T>().next() {
+            let record = result.context("Failed to deserialize CSV record")?;
+            Ok(Some((0, record)))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -100,70 +148,43 @@ impl<T> ReadableValueSet for CsvFile<T>
 where
     T: Entity,
 {
-    async fn get_values(&self) -> Result<Vec<serde_json::Value>> {
+    async fn list_values(&self) -> Result<IndexMap<Self::Id, Self::Value>> {
         let content = self
             .csv_ds
             .get_file_content(&self.filename)
             .context("Failed to get CSV content")?;
 
         let mut reader = ReaderBuilder::new().from_reader(content.as_bytes());
-        let mut records = Vec::new();
+        let mut records = IndexMap::new();
 
-        for result in reader.deserialize::<serde_json::Value>() {
+        for (idx, result) in reader.deserialize::<serde_json::Value>().enumerate() {
             let record = result.context("Failed to deserialize CSV record")?;
-            records.push(record);
+            records.insert(idx, record);
         }
 
         Ok(records)
     }
 
-    async fn get_id_value(&self, _id: &str) -> Result<serde_json::Value> {
-        return Err(VantageError::no_capability("get_id_value", "CsvFile"));
+    async fn get_value(&self, id: &Self::Id) -> Result<Self::Value> {
+        let content = self
+            .csv_ds
+            .get_file_content(&self.filename)
+            .context("Failed to get CSV content")?;
+
+        let mut reader = ReaderBuilder::new().from_reader(content.as_bytes());
+
+        for (idx, result) in reader.deserialize::<serde_json::Value>().enumerate() {
+            if idx == *id {
+                let record = result.context("Failed to deserialize CSV record")?;
+                return Ok(record);
+            }
+        }
+
+        Err(vantage_error!("Record with index {} not found", id))
     }
 
-    async fn get_some_value(&self) -> Result<Option<serde_json::Value>> {
-        let values = self.get_values().await?;
+    async fn get_some_value(&self) -> Result<Option<(Self::Id, Self::Value)>> {
+        let values = self.list_values().await?;
         Ok(values.into_iter().next())
-    }
-}
-
-#[async_trait::async_trait]
-impl<T> ReadableAsDataSet for CsvFile<T>
-where
-    T: Entity,
-{
-    async fn get_as<U>(&self) -> Result<Vec<U>>
-    where
-        U: Entity,
-    {
-        let content = self
-            .csv_ds
-            .get_file_content(&self.filename)
-            .context("Failed to get CSV content")?;
-
-        let mut reader = ReaderBuilder::new().from_reader(content.as_bytes());
-        let mut records = Vec::new();
-
-        for result in reader.deserialize::<U>() {
-            let record = result.context("Failed to deserialize CSV record")?;
-            records.push(record);
-        }
-
-        Ok(records)
-    }
-
-    async fn get_id_as<U>(&self, _id: &str) -> Result<U>
-    where
-        U: Entity,
-    {
-        return Err(VantageError::no_capability("get_id_as", "CsvFile"));
-    }
-
-    async fn get_some_as<U>(&self) -> Result<Option<U>>
-    where
-        U: Entity,
-    {
-        let records = self.get_as().await?;
-        Ok(records.into_iter().next())
     }
 }
