@@ -95,6 +95,53 @@ your API to accept user-supplied expression.
 
 ## Type Mapping
 
+Expressions can be converted between compatible types using the mapping functionality. This is useful when you need to convert `Expression<String>` to `Expression<Value>` or between other compatible types:
+
+```rust
+use vantage_expressions::{Expression, ExpressiveEnum, expression::mapping::ExpressionMap};
+use serde_json::Value;
+
+// Create expression with String parameters
+let string_expr: Expression<String> = Expression::new(
+    "SELECT * FROM users WHERE name = {}",
+    vec![ExpressiveEnum::Scalar("John".to_string())],
+);
+
+// Convert to Expression<Value> using the map() method
+let value_expr: Expression<Value> = string_expr.map();
+```
+
+Type mapping handles all expression components automatically:
+
+- **Scalar values** are converted using the `Into` trait
+- **Nested expressions** are converted recursively
+- **Deferred values** are wrapped in conversion closures that execute at runtime
+
+This enables seamless interoperability between different expression types while maintaining type safety.
+
+### Cross-Database Queries with Type Mapping
+
+Type mapping becomes particularly powerful when combined with deferred queries across databases with incompatible value types:
+
+```rust
+use vantage_expressions::{expr, protocol::datasource::QuerySource, expression::mapping::ExpressionMap};
+
+// Database 1 uses String values, Database 2 uses JSON Values
+let db1 = StringDatabase::new("connection1");
+let db2 = JsonDatabase::new("connection2");
+
+// Create query for db1 and defer its execution
+let string_query = expr!("SELECT user_ids FROM active_users WHERE department = {}", "engineering");
+let deferred_query = db1.defer(string_query);
+
+// Map the deferred String query to JSON Value and execute on db2
+let result = db2.execute(&deferred_query.map()).await;
+```
+
+The deferred query from `db1` is automatically converted from `Expression<String>` to `Expression<Value>` when mapped, enabling cross-database operations even when the databases use incompatible value types.
+
+## Type Mapping
+
 If your database engine uses a custom type system (e.g. SurrealType) but under the hood it would use
 CBOR it is sufficient for you to implement `Into<cborium::Value>`. Now any expression defined for
 your custom type can be mapped into cborium::Value automatically.

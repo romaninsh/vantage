@@ -24,6 +24,7 @@ The `expr!` macro keeps your parameters separate from the query template, preven
 - **Deferred Execution**: Closures can be embedded that resolve at query execution time
 - **Cross-Database**: Same expression types work with SQL, MongoDB, SurrealDB and more
 - **Type Safe**: Built-in support for Rust types through `ExpressiveEnum`
+- **Type Mapping**: Convert expressions between compatible types (e.g., `String` to `Value`)
 - **Async Ready**: Designed for async/await patterns with `QuerySource` trait
 - **Extensible**: Implement `Selectable` trait to standardize query builders across backends
 
@@ -79,6 +80,53 @@ println!("Parameters: {:?}", flattened.parameters);
 ```
 
 This demonstrates dynamic query construction where conditions are built conditionally and combined using `from_vec()`. The flattening process reveals how nested expressions are organized into the final query structure.
+
+## Type Mapping
+
+Expressions can be converted between compatible types using the mapping functionality. This is useful when you need to convert `Expression<String>` to `Expression<Value>` or between other compatible types:
+
+```rust
+use vantage_expressions::{Expression, ExpressiveEnum, expression::mapping::ExpressionMap};
+use serde_json::Value;
+
+// Create expression with String parameters
+let string_expr: Expression<String> = Expression::new(
+    "SELECT * FROM users WHERE name = {}",
+    vec![ExpressiveEnum::Scalar("John".to_string())],
+);
+
+// Convert to Expression<Value> using the map() method
+let value_expr: Expression<Value> = string_expr.map();
+```
+
+Type mapping handles all expression components automatically:
+
+- **Scalar values** are converted using the `Into` trait
+- **Nested expressions** are converted recursively
+- **Deferred values** are wrapped in conversion closures that execute at runtime
+
+This enables seamless interoperability between different expression types while maintaining type safety.
+
+### Cross-Database Queries with Type Mapping
+
+Type mapping becomes particularly powerful when combined with deferred queries across databases with incompatible value types:
+
+```rust
+use vantage_expressions::{expr, protocol::datasource::QuerySource, expression::mapping::ExpressionMap};
+
+// Database 1 uses String values, Database 2 uses JSON Values
+let db1 = StringDatabase::new("connection1");
+let db2 = JsonDatabase::new("connection2");
+
+// Create query for db1 and defer its execution
+let string_query = expr!("SELECT user_ids FROM active_users WHERE department = {}", "engineering");
+let deferred_query = db1.defer(string_query);
+
+// Map the deferred String query to JSON Value and execute on db2
+let result = db2.execute(&deferred_query.map()).await;
+```
+
+The deferred query from `db1` is automatically converted from `Expression<String>` to `Expression<Value>` when mapped, enabling cross-database operations even when the databases use incompatible value types.
 
 ## Executing and Deferring Expressions
 

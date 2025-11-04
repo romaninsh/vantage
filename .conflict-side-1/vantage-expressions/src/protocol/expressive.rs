@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 
 use crate::expression::owned::Expression;
 
-type DeferredFuture<T> = Pin<Box<dyn Future<Output = ExpressiveEnum<T>> + Send>>;
-type DeferredCallback<T> = Arc<dyn Fn() -> DeferredFuture<T> + Send + Sync>;
+pub type DeferredFuture<T> = Pin<Box<dyn Future<Output = ExpressiveEnum<T>> + Send>>;
+pub type DeferredCallback<T> = Arc<dyn Fn() -> DeferredFuture<T> + Send + Sync>;
 
 #[derive(Clone)]
 pub struct DeferredFn<T> {

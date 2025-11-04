@@ -223,7 +223,7 @@ async fn test_mutex_deferred_function() {
 
     // 2. Create expression with deferred mutex value
     let deferred_count = DeferredFn::from_mutex(counter.clone());
-    let query = expr!("SELECT * FROM items LIMIT {}", [deferred_count]);
+    let query = expr!("SELECT * FROM items LIMIT {}", { deferred_count });
 
     // 3. Change value after query construction
     *counter.lock().unwrap() = 25;
