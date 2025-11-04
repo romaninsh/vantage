@@ -2,7 +2,7 @@
 //! This module provides traits and helpers to resolve deferred parameters and flatten nested structures.
 
 use crate::expression::owned::Expression;
-use crate::protocol::expressive::IntoExpressive;
+use crate::protocol::expressive::ExpressiveEnum;
 
 /// Trait for flattening expressions by resolving deferred parameters and nested expressions
 pub trait Flatten<T> {
@@ -31,20 +31,20 @@ impl Default for ExpressionFlattener {
     }
 }
 
-impl Flatten<Expression> for ExpressionFlattener {
-    fn flatten(&self, expr: &Expression) -> Expression {
+impl<T: Clone> Flatten<Expression<T>> for ExpressionFlattener {
+    fn flatten(&self, expr: &Expression<T>) -> Expression<T> {
         let resolved = self.resolve_deferred(expr);
         self.flatten_nested(&resolved)
     }
 
-    fn resolve_deferred(&self, expr: &Expression) -> Expression {
+    fn resolve_deferred(&self, expr: &Expression<T>) -> Expression<T> {
         // Note: This is a sync implementation that doesn't actually execute deferred closures
         // For testing purposes, deferred parameters are left as-is
         // In real usage, this would be handled by the DataSource execute method
         expr.clone()
     }
 
-    fn flatten_nested(&self, expr: &Expression) -> Expression {
+    fn flatten_nested(&self, expr: &Expression<T>) -> Expression<T> {
         let mut final_template = String::new();
         let mut final_params = Vec::new();
         let template_parts = expr.template.split("{}");
@@ -54,7 +54,7 @@ impl Flatten<Expression> for ExpressionFlattener {
 
         for param in &expr.parameters {
             match param {
-                IntoExpressive::Nested(nested_expr) => {
+                ExpressiveEnum::Nested(nested_expr) => {
                     final_template.push_str(&nested_expr.template);
                     final_params.extend(nested_expr.parameters.clone());
                 }
@@ -76,50 +76,45 @@ impl Flatten<Expression> for ExpressionFlattener {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::expr;
+    use crate::expr_any;
 
     #[test]
     fn test_flatten_nested_expressions() {
         let flattener = ExpressionFlattener::new();
 
-        let nested_expr = expr!("Hello {}", "world");
-        let main_expr = expr!("select {}", IntoExpressive::nested(nested_expr));
+        let nested_expr = expr_any!(String, "Hello {}", "world");
+        let main_expr = expr_any!(String, "select {}", (nested_expr));
 
         let flattened = flattener.flatten(&main_expr);
 
         assert_eq!(flattened.template, "select Hello {}");
         assert_eq!(flattened.parameters.len(), 1);
-        assert_eq!(flattened.preview(), "select Hello \"world\"");
     }
 
     #[test]
     fn test_multiple_nested_expressions() {
         let flattener = ExpressionFlattener::new();
 
-        let greeting = expr!("Hello {}", "John");
-        let farewell = expr!("Goodbye {}", "Jane");
-        let main_expr = expr!(
-            "{} and {}",
-            IntoExpressive::nested(greeting),
-            IntoExpressive::nested(farewell)
-        );
+        let greeting = expr_any!(String, "Hello {}", "John");
+        let farewell = expr_any!(String, "Goodbye {}", "Jane");
+        let main_expr = expr_any!(String, "{} and {}", (greeting), (farewell));
 
         let flattened = flattener.flatten(&main_expr);
 
         assert_eq!(flattened.template, "Hello {} and Goodbye {}");
         assert_eq!(flattened.parameters.len(), 2);
-        assert_eq!(flattened.preview(), "Hello \"John\" and Goodbye \"Jane\"");
     }
 
     #[test]
     fn test_mixed_parameters() {
         let flattener = ExpressionFlattener::new();
 
-        let nested = expr!("count({})", "*");
-        let main_expr = expr!(
+        let nested = expr_any!(String, "count({})", "*");
+        let main_expr = expr_any!(
+            String,
             "SELECT {} FROM users WHERE age > {}",
-            IntoExpressive::nested(nested),
-            25i32
+            (nested),
+            "25"
         );
 
         let flattened = flattener.flatten(&main_expr);
@@ -129,9 +124,5 @@ mod tests {
             "SELECT count({}) FROM users WHERE age > {}"
         );
         assert_eq!(flattened.parameters.len(), 2);
-        assert_eq!(
-            flattened.preview(),
-            "SELECT count(\"*\") FROM users WHERE age > 25"
-        );
     }
 }

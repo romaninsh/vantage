@@ -1,8 +1,8 @@
 use serde_json::Value;
 use std::future::Future;
-use std::pin::Pin;
 
 use crate::Selectable;
+use crate::protocol::expressive::DeferredFn;
 use vantage_core::Result;
 
 pub trait DataSource: Send + Sync {}
@@ -10,30 +10,20 @@ pub trait DataSource: Send + Sync {}
 /// Datasource implements a basic query interface for expression engine T
 /// that allow queries to be executed instantly (async) or convert them
 /// into closure, that can potentially be used in a different query.
-pub trait QuerySource<T>: DataSource {
-    fn execute(&self, expr: &T) -> impl Future<Output = Value> + Send;
+pub trait QuerySource<T = Value>: DataSource {
+    fn execute(&self, expr: &crate::Expression<T>) -> impl Future<Output = T> + Send;
 
-    fn defer(
-        &self,
-        expr: T,
-    ) -> impl Fn() -> Pin<Box<dyn Future<Output = Value> + Send>> + Send + Sync + 'static;
+    fn defer(&self, expr: crate::Expression<T>) -> DeferredFn<T>
+    where
+        T: Clone + Send + Sync + 'static;
 }
 
-pub trait SelectSource<Ex = crate::Expression>: DataSource {
-    type Select<E>: Selectable<Ex>
-    where
-        E: crate::Entity;
+pub trait SelectSource<T = Value>: DataSource {
+    type Select: Selectable<T>;
 
-    // Return SelectQuery with entity type information
-    fn select<E>(&self) -> Self::Select<E>
-    where
-        E: crate::Entity;
+    // Return SelectQuery
+    fn select(&self) -> Self::Select;
 
     // Execute select query directly
-    fn execute_select<E>(
-        &self,
-        select: &Self::Select<E>,
-    ) -> impl Future<Output = Result<Vec<E>>> + Send
-    where
-        E: crate::Entity;
+    fn execute_select(&self, select: &Self::Select) -> impl Future<Output = Result<Vec<T>>> + Send;
 }
