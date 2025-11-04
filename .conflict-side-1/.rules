@@ -1,0 +1,412 @@
+in this project I'm building a data entity persistence and abstraction framework.
+
+using rust types, you can define entities such as:
+ - bakery
+ - client
+ - order
+ - product
+ - orderlineitem
+
+Each type is native to rust, so can be used in any possible way. Normal ORMs
+allow saving/loading types like that into database, but Vantage is a bit different.
+
+Vantage introduces an abstract concept of DataSet. Just like Vec<Bakery> allows
+you to have multiple bakeries in memory, DataSet<Bakery> allows you to have
+multiple bakeries in a remote data store - such as SQL, MongoDB or SurrealDB.
+
+When you create dataset - it does not need to load records. You simply define
+structure, conditions, relations and so on. You can even perform operations
+on an extended data-set, such as "delete" or "map". Other operations are
+aggregation - allowing you to calculate sum, averages or combine values of a
+certain field into a list.
+
+Vantage has a concept of Table, which is like a DataSet, but also has
+support for columns and defines conditions around columns.
+
+Vantage understands that records for a DataSet live in a DataSource. Some data
+sources allow only basic operations (such as CSV) while others are quite
+advanced and allow Vantage to translate intent into queries.
+
+Vantage solves problem of relations, expressions, column mapping, aggregated
+and calculated columns entirely by cleverly building queries. What's even more
+impressive is that it's done without the need for a user to understand which
+DataSource is used.
+
+## rewrite
+
+Vantage is under rewrite. The vantage/ folder contains version 0.2. It had some
+limitation, so it's undergoing a rewrite and restructure, majority of crates
+(vantage-surrealdb, vantage-expressions, etc) are part of 0.3 rewrite.
+
+Eventually all the features of vantage/ will be migrated into appropriate crates.
+
+## Example
+
+Version 0.2 had a example "model" in bakery_model/ crate. It defined entity
+structure and mapping rules:
+
+```rust
+impl Bakery {
+    pub fn static_table() -> &'static Table<Postgres, Bakery> {
+        static TABLE: OnceLock<Table<Postgres, Bakery>> = OnceLock::new();
+
+        TABLE.get_or_init(|| {
+            Table::new_with_entity("bakery", postgres())
+                .with_id_column("id")
+                .with_column("name")
+                .with_column("profit_margin")
+                .with_many("clients", "bakery_id", || Box::new(Client::table()))
+                .with_many("products", "bakery_id", || Box::new(Product::table()))
+        })
+    }
+}
+impl Entity for Bakery {}
+```
+
+Table is effectively a structured dataset, so working with a table would be
+like this:
+
+```rust
+    println!("In this example, we will be interacting with the records and testing conditions");
+    let products = Product::table();
+
+    println!(
+        "We are starting with {} products",
+        products.count().get_one_untyped().await?
+    );
+
+    println!("");
+    println!("Adding a single new product");
+    let id = products
+        .insert(Product {
+            name: "Nuclear Sandwich".to_string(),
+            calories: 100,
+            bakery_id: 1,
+            price: 120,
+        })
+        .await?;
+
+    println!(
+        "After adding \"Nuclear Sandwich\" (id={}) we are left with {} products",
+        id.unwrap(),
+        products.count().get_one_untyped().await?
+    );
+```
+
+But Vantage allows you to traverse between tables and do some pretty awesome
+stuff:
+
+```rust
+    let set_of_clients = Client::table();
+
+    // As you would expect, you can iterate over clients easily.
+    for client in set_of_clients.get().await? {
+        println!("id: {}, client: {}", client.id, client.name);
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////////
+    println!("-------------------------------------------------------------------------------");
+    /////////////////////////////////////////////////////////////////////////////////////////
+
+    // Create and apply conditions to create a new set:
+    let condition = set_of_clients.is_paying_client().eq(&true);
+    let paying_clients = set_of_clients.with_condition(condition);
+
+    // Generate count() Query from Table<Postgres, Client> and execute it:
+    println!(
+        "Count of paying clients: {}",
+        paying_clients.count().get_one_untyped().await?
+    );
+
+    /////////////////////////////////////////////////////////////////////////////////////////
+    println!("-------------------------------------------------------------------------------");
+    /////////////////////////////////////////////////////////////////////////////////////////
+
+    // Traverse relationships to create order set:
+    let orders = paying_clients.ref_orders();
+
+    // Lets pay attention to the type here:
+    //  set_of_cilents = Table<Postgres, Client>
+    //  paying_clients = Table<Postgres, Client>
+    //  orders         = Table<Postgres, Order>
+
+    // Execute my custom method on Table<Postgres, Order> from bakery_model/src/order.rs:
+    let report = orders.generate_report().await?;
+```
+
+## What changes in 0.3
+
+I started rewrite of vantage/ in order to add support for multiple databases,
+async nested queries, support for query return types and better implementation
+of protocols. Also rather than having a monolithic library, we now support
+datasource crates (e.g. vantage-surrealdb) which provide comprehensive
+extension across multiple Vantage features. This is done by implementing
+protocols such as trait Selectable - interface for querybuilders or trait
+Expressionable.
+
+Basically with version 0.3 it's possible to have a generic table usage (through
+a dyn box) but you can also declare it using structs if you are certain about
+specific database use. Benefits of structs is access to some vendor-specific
+features. Dyn box though allows to create generic code that would work with any
+query builder, any table or any datasource.
+
+### Migration Status (0.2 → 0.3)
+
+**bakery_model3** demonstrates complete migration path from 0.2 to 0.3:
+- ✅ Entity definitions adapted for SurrealDB (string IDs, embedded documents)
+- ✅ Table trait patterns established using vantage-table
+- ✅ Expression system integrated via vantage-expressions
+- ✅ Field accessor methods returning expressions instead of column objects
+- ✅ Database connection initialization (DSN pattern implemented, working)
+- ✅ Query building and execution (SurrealTableExt methods working)
+- ✅ Basic data retrieval (select_surreal(), select_surreal_column() working)
+- ✅ CRUD operations (.get(), .insert(), .count() methods working)
+- ✅ Condition system (.with_condition(), field comparisons working)
+- ✅ Relationship traversal (.ref_orders(), .with_many(), .with_one() implemented)
+- ✅ Dynamic entity loading (.get_some_as::<T>() working)
+- ✅ AnyTable type erasure for generic table handling
+- ✅ Reference downcasting (.get_ref_as() working)
+- ✅ AnyTable implements TableLike, ReadableValueSet, WritableValueSet (full trait support)
+- ✅ AnyTable is Clone, Send, Sync for use in async contexts
+- ✅ AnyExpression type erasure using ExpressionLike trait in vantage-expressions
+- ✅ Temporary condition system (.temp_add_condition(), .temp_remove_condition())
+- ✅ Search expressions (.search_expression() in TableSource, vendor-specific implementations)
+- ✅ models! macro generates all_tables() -> IndexMap<String, AnyTable>
+- ⏳ Condition propagation in references (WHERE clauses for related queries)
+- ⏳ get_linked_table for JOIN scenarios
+
+Key architectural changes:
+- Table definitions now use builder pattern instead of static initialization
+- Field accessors return Expression instead of typed column objects
+- Database-specific features (like SurrealDB embedded docs) properly supported
+- Connection management moved to dedicated client libraries (surreal-client)
+- DSN connection pattern adopted (ws://user:pass@host:port/namespace/database)
+- SurrealTableExt provides database-specific query execution methods
+- Query execution uses ds.get(query) pattern instead of table.get().await
+- AnyTable replaces Box<dyn SqlTable> for type-erased tables with downcasting
+- AnyTable uses clone_box() pattern for object-safe cloning via TableLike trait
+- AnyExpression wraps any T: Clone + Send + Sync via ExpressionLike trait
+- Condition methods moved to TableLike trait using AnyExpression for type erasure
+- TableSource::search_expression() enables vendor-specific search (LIKE, CONTAINS, etc.)
+- References use closure factories returning concrete tables (converted to AnyTable)
+- Relationships defined with .with_one() and .with_many() builder methods
+- models! macro auto-generates all_tables() function for easy access to type-erased tables
+
+## Where is this going?
+
+All of the work in this Vantage Framework is to create a "vantage app". It
+won't be in this folder, but it would provide an interface (like data grid or
+forms) which will work with any dyn Table. A data grid like that could display
+data produced from multiple datasources, through complex queries and mapping
+rules.
+
+Also - use of structs makes Vantage Framework into a pretty awesome SDK, that
+creates abstraction layer for your databases. This is really useful for large
+organisations, where there are many databases and business logic rules are
+complex.
+
+vantage-ui-adapters contain some glue code, which create data grids (and
+potentially other UI elements) in various rust UI frameworks based on generic
+data that Table<> and DataSet<> types provide us with.
+
+## Other integrations
+
+I plan to add more features - some of those already exist in old vantage/ such
+as Join support for tables. Other features like local result caching and async
+insert/update would allow to have responsive UI or even introduce multiple
+datasources for a trait - for instance - reading data from an SQL table, but
+adding new records through kafka topic.
+
+Once tables are defined, we can start introducing table traits, for example -
+"EventTable" could be a table that refers to set of events. This trait can
+bring some scheduling capabilities, like
+
+find_nearest_free_time(calendar1: EventTable, calendar2: EventTable)
+
+given the generic nature of tables, integrating with Axum will also be easy.
+Some implementation already exist in bakery_api/.
+
+## Error Handling
+
+All Vantage code MUST use VantageError from vantage-core. Key patterns:
+
+**DO:**
+```rust
+use vantage_core::{error, util::error::Context, Result};
+
+// Simple context
+some_operation().context("Failed to load config")?;
+
+// Rich context with parameters
+some_operation()
+    .with_context(|| error!("Failed to connect", dsn = &dsn, timeout = 30))?;
+
+// Creating errors directly
+return Err(error!("Invalid state", entity_name = name).into());
+
+// Function signatures
+pub fn my_function() -> Result<String> { ... }
+```
+
+**DON'T:**
+```rust
+// Never use Box<dyn Error>
+pub fn bad() -> Result<T, Box<dyn std::error::Error>> { ... }
+
+// Never use map_err for simple errors
+.map_err(|e| format!("Error: {}", e))?
+
+// Never use in library code (except bakery example or when error is logically impossible)
+config.unwrap()
+```
+
+**Converting from std::result::Result:**
+When dealing with functions that return `std::result::Result<T, E>`:
+- Use `.context("message")` for simple errors
+- Use `.with_context(|| error!("message", key = value))` for rich errors
+
+## Code Generation instructions
+
+In this project some code is generated through AI agent, which follows
+the following rules:
+
+ - be concise in communication, use short sentences, slang and abbreviation
+ - don't add tests or docs, unless asked.
+ - after performing change, run test suite once.
+ - when request cannot be done or there is ambiguity - stop and ask how to
+   proceed.
+ - if agent attempts to create a solution, but runs into a architectural
+   limitation stop and explain situation to me (briefly), asking how to proceed.
+ - there will generally be one README.md file per crate, but no need to create
+   it.
+ - avoid using head, tail, and grep when executing terminal commands - see full
+   output instead.
+ - agent will automatically update the following section to reflect contents of
+   this repository, keeping it clean and short, add important notes and
+   learnings from chat sessions, if you think those are essential later.
+
+## List of sub-crates and very brief description for each:
+
+### Core Framework Crates
+
+**vantage-expressions** forms the foundation of the entire query building
+system. It provides the expr! macro for creating SQL-injection-safe
+expressions, the DataSource trait for database connections, and the Selectable
+trait for standardized select operations. The crate enables cross-database
+compatibility by allowing the same query building patterns to work with SQL,
+SurrealDB, MongoDB, and other backends.
+
+**vantage-surrealdb** bridges the low-level surreal-client with Vantage's query
+building ecosystem. It provides type-safe SurrealDB operations while
+maintaining compatibility with the broader Vantage framework, allowing
+SurrealDB queries to be used in cross-database scenarios.
+
+**vantage-mongodb** generates native MongoDB JSON queries using Vantage
+patterns. It supports full CRUD operations and all common MongoDB operators
+($gt, $lt, $in, $or, $regex, etc.) through a fluent Document builder API that
+feels natural to MongoDB developers.
+
+**vantage-dataset** defines internal traits that categorize different data
+source capabilities. ReadableDataSet handles read-only sources like CSV files,
+InsertableDataSet supports append-only sources like message queues,
+WritableDataSet provides full CRUD operations, and IndexableDataSet handles
+key-value stores.
+
+**vantage-live** provides in-memory caching with async backend persistence for
+building responsive UIs. LiveTable acts as a synchronization layer between fast
+cache (ImTable, ReDB, Redis) and permanent backend (SurrealDB, PostgreSQL,
+MongoDB). RecordEdit manages editing sessions with snapshot-based change
+tracking, field-level diffing, and conflict detection. Manual save gives users
+control over persistence timing while async operations keep UI responsive.
+Implements all DataSet traits as drop-in replacement for regular tables.
+
+**surreal-client** is a comprehensive SurrealDB client library featuring both
+HTTP and WebSocket connections, immutable client design for thread safety,
+builder pattern configuration, multiple authentication methods, connection
+pooling, and tight integration with Vantage query builders.
+
+### UI Integration Framework
+
+**vantage-ui-adapters** provides universal table adapters that bridge between
+data sources and major UI frameworks. It implements smart caching, async data
+loading, and framework-specific optimizations for egui, GPUI, Slint, Tauri,
+Ratatui, and Cursive. The adapter pattern allows the same data layer to work
+across all supported UI frameworks.
+
+### UI Framework Examples
+
+The example crates demonstrate practical integrations with different UI
+frameworks. **example_egui** showcases professional table functionality with
+egui-data-table integration, featuring click-to-edit cells, undo/redo support,
+and keyboard navigation. **example_gpui** provides native desktop table
+implementation following Zed's GPUI patterns with proper theming and async data
+loading.
+
+**example_slint** demonstrates declarative UI table creation using Slint's
+StandardTableView with reactive architecture and type-safe bindings.
+**example_tauri** shows web-based desktop applications with HTML tables and
+Rust backend commands.
+
+For terminal interfaces, **example_tui** (ratatui) provides keyboard navigation
+with vim-like controls and scrollbar support, while **example_cursive** offers
+interactive terminal tables with sortable columns, row selection dialogs, and
+embedded Tokio runtime for async operations.
+
+### Application Examples
+
+**bakery_model** preserves the example entity structure from Vantage v0.2,
+demonstrating the static_table() pattern and relationship definitions that will
+eventually be migrated to the new architecture.
+
+**bakery_model3** shows complete 0.3 migration of bakery_model, using
+vantage-table + vantage-surrealdb instead of monolithic vantage crate. Entities
+adapted for SurrealDB (string IDs, embedded documents), with commented
+placeholders showing exactly what 0.2 functionality needs implementing in 0.3.
+Includes working 0-intro.rs example that successfully connects to SurrealDB,
+executes queries, and retrieves real data using SurrealTableExt methods,
+demonstrating current capabilities and migration roadmap. Future integration
+with vantage-live will demonstrate responsive form editing with conflict
+detection.
+
+**bakery_api** illustrates Axum web framework integration, showing how Vantage
+tables can power HTTP APIs and generic data grid capabilities for web
+applications.
+
+**bakery_model4** demonstrates dynamic entity loading from YAML configuration
+files instead of compile-time struct definitions. Uses vantage-config to parse
+entity schemas (tables, columns, types, rules) at runtime and creates
+Table<SurrealDB, EmptyEntity> instances dynamically. Includes cli4 example that
+provides full CLI interface for any entity defined in config.yaml, supporting
+list, get, and field filtering operations. Shows how Vantage can work without
+predefined entity types using get_values() for data retrieval.
+
+### Summary
+
+**vantage-config** provides YAML-based configuration parsing for dynamic entity
+definitions. Supports entity schemas with table names, columns (with types like
+int, float, decimal, string, bool, datetime, duration, any), validation rules
+(email, min, max), optional/nullable fields, default values, and relationships.
+Includes get_table() method that dynamically builds Table instances from config
+at runtime, including .with_one() and .with_many() relationships. Enables
+building data applications where entity schemas are defined in config files
+rather than Rust code. Relations can be traversed via CLI commands like
+`cli bakery name="X" ref products list`.
+
+**vantage-table** provides the core Table<DataSource, Entity> abstraction in
+0.3, replacing the monolithic table implementation from 0.2. Supports table
+definition with columns, conditions, ordering, and relationships. Includes
+AnyTable for type erasure with downcasting capability (stores TypeId and type
+names for debugging). Reference system using ReferenceOne/ReferenceMany traits
+enables relationship traversal with .get_ref() returning AnyTable and
+.get_ref_as() for automatic downcasting. Database-specific extensions like
+SurrealTableExt provide query execution methods. The .with_id_column() helper
+simplifies ID column definition.
+
+The Vantage 0.3 ecosystem consists of three main layers: core query building
+framework (expressions, database-specific builders), data management (dataset
+traits, caching, adapters), and UI integration (framework adapters and
+examples). This architecture enables building data applications that work
+across multiple databases and UI frameworks while maintaining type safety and
+performance. The 0.3 rewrite prioritizes protocol-based design over
+inheritance, enabling better cross-database compatibility but requiring
+significant API changes from 0.2.
