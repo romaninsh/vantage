@@ -48,8 +48,11 @@ impl StaticDataSource {
 
 impl DataSource for StaticDataSource {}
 impl QuerySource<serde_json::Value> for StaticDataSource {
-    async fn execute(&self, _expr: &crate::Expression<serde_json::Value>) -> serde_json::Value {
-        self.value.clone()
+    async fn execute(
+        &self,
+        _expr: &crate::Expression<serde_json::Value>,
+    ) -> Result<serde_json::Value> {
+        Ok(self.value.clone())
     }
 
     fn defer(&self, _expr: crate::Expression<serde_json::Value>) -> DeferredFn<serde_json::Value>
@@ -59,7 +62,7 @@ impl QuerySource<serde_json::Value> for StaticDataSource {
         let value = self.value.clone();
         DeferredFn::new(move || {
             let value = value.clone();
-            Box::pin(async move { ExpressiveEnum::Scalar(value) })
+            Box::pin(async move { Ok(ExpressiveEnum::Scalar(value)) })
         })
     }
 }
@@ -92,7 +95,7 @@ mod tests {
         let mock = StaticDataSource::new(json!({"status": "ok"}));
         let expr = expr!("SELECT * FROM anything");
 
-        let result = mock.execute(&expr).await;
+        let result = mock.execute(&expr).await.unwrap();
         assert_eq!(result, json!({"status": "ok"}));
     }
 
@@ -104,7 +107,7 @@ mod tests {
         ]));
         let expr = expr!("SELECT * FROM users");
 
-        let result = mock.execute(&expr).await;
+        let result = mock.execute(&expr).await.unwrap();
         assert_eq!(result[0]["name"], "Alice");
         assert_eq!(result[1]["name"], "Bob");
         assert_eq!(result.as_array().unwrap().len(), 2);

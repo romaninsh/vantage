@@ -2,12 +2,14 @@
 //!
 //! Maps query patterns to specific responses with expression flattening support.
 
+use crate::Expression;
 use crate::QuerySource;
 use crate::expression::flatten::{ExpressionFlattener, Flatten};
 use crate::protocol::datasource::DataSource;
 use crate::protocol::expressive::{DeferredFn, ExpressiveEnum};
 use serde_json::Value;
 use std::collections::HashMap;
+use vantage_core::Result;
 
 /// Expression PatternDataSource with flattening enabled
 #[derive(Debug, Clone)]
@@ -38,10 +40,10 @@ impl FlatteningPatternDataSource {
     }
 
     /// Execute deferred parameters and flatten nested expressions recursively
-    async fn execute_and_flatten_expression(
+    pub async fn execute_and_flatten_expression(
         &self,
-        expr: &crate::Expression<serde_json::Value>,
-    ) -> crate::Expression<serde_json::Value> {
+        expr: &Expression<serde_json::Value>,
+    ) -> Result<Expression<serde_json::Value>> {
         let mut expr = expr.clone();
         let flattener = ExpressionFlattener::new();
         let mut max_iterations = 10; // Prevent infinite loops
@@ -53,7 +55,7 @@ impl FlatteningPatternDataSource {
             // Execute all deferred parameters at current level
             for param in &mut expr.parameters {
                 if let crate::ExpressiveEnum::Deferred(f) = param {
-                    *param = f.call().await;
+                    *param = f.call().await?;
                     has_deferred = true;
                 }
             }
@@ -77,7 +79,7 @@ impl FlatteningPatternDataSource {
             }
         }
 
-        expr
+        Ok(expr)
     }
 }
 
@@ -95,10 +97,13 @@ impl QuerySource<serde_json::Value> for FlatteningPatternDataSource {
     //     crate::mocks::selectable::MockSelect
     // }
 
-    async fn execute(&self, expr: &crate::Expression<serde_json::Value>) -> serde_json::Value {
-        let processed_expr = self.execute_and_flatten_expression(expr).await;
+    async fn execute(
+        &self,
+        expr: &crate::Expression<serde_json::Value>,
+    ) -> Result<serde_json::Value> {
+        let processed_expr = self.execute_and_flatten_expression(expr).await?;
         let query = processed_expr.preview();
-        self.find_match(&query)
+        Ok(self.find_match(&query))
     }
 
     fn defer(&self, expr: crate::Expression<serde_json::Value>) -> DeferredFn<serde_json::Value>
@@ -110,10 +115,10 @@ impl QuerySource<serde_json::Value> for FlatteningPatternDataSource {
             let mock = mock.clone();
             let expr = expr.clone();
             Box::pin(async move {
-                let processed_expr = mock.execute_and_flatten_expression(&expr).await;
+                let processed_expr = mock.execute_and_flatten_expression(&expr).await?;
                 let query = processed_expr.preview();
                 let result = mock.find_match(&query);
-                ExpressiveEnum::Scalar(result)
+                Ok(ExpressiveEnum::Scalar(result))
             })
         })
     }
@@ -132,6 +137,6 @@ mod tests {
 
         let greeting = expr!("hello {}", "world");
         let result = mock.execute(&greeting).await;
-        assert_eq!(result, json!("greeting_world"));
+        assert_eq!(result.unwrap(), json!("greeting_world"));
     }
 }

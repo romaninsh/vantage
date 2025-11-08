@@ -11,7 +11,7 @@ pub trait DataSource: Send + Sync {}
 /// that allow queries to be executed instantly (async) or convert them
 /// into closure, that can potentially be used in a different query.
 pub trait QuerySource<T = Value>: DataSource {
-    fn execute(&self, expr: &crate::Expression<T>) -> impl Future<Output = T> + Send;
+    fn execute(&self, expr: &crate::Expression<T>) -> impl Future<Output = Result<T>> + Send;
 
     fn defer(&self, expr: crate::Expression<T>) -> DeferredFn<T>
     where

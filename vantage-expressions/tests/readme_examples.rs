@@ -146,12 +146,12 @@ async fn test_querysource_example() {
     let query = expr!("SELECT COUNT(*) FROM users WHERE age > {}", 21);
 
     // Execute immediately - returns result now
-    let count = db.execute(&query).await;
+    let count = db.execute(&query).await.unwrap();
     assert_eq!(count, serde_json::json!(42));
 
-    // Defer execution - returns DeferredFn
+    // Defer execution - returns DeferredFn that can be called later
     let deferred_query = db.defer(query);
-    let count = deferred_query.call().await; // Execute when needed
+    let count = deferred_query.call().await.unwrap(); // Execute when needed
     match count {
         ExpressiveEnum::Scalar(val) => assert_eq!(val, serde_json::json!(42)),
         _ => panic!("Expected scalar result"),
@@ -196,8 +196,8 @@ async fn test_closure_syntax() {
 
     // Test that {closure} syntax still works with .into()
     let closure =
-        move || -> Pin<Box<dyn Future<Output = ExpressiveEnum<serde_json::Value>> + Send>> {
-            Box::pin(async move { ExpressiveEnum::Scalar(serde_json::json!(42)) })
+        move || -> Pin<Box<dyn Future<Output = vantage_core::Result<ExpressiveEnum<serde_json::Value>>> + Send>> {
+            Box::pin(async move { Ok(ExpressiveEnum::Scalar(serde_json::json!(42))) })
         };
 
     let query = expr!("SELECT * FROM test WHERE value = {}", { closure });
@@ -230,7 +230,7 @@ async fn test_mutex_deferred_function() {
 
     // 4. Execute expression (simulate by calling the deferred function)
     if let ExpressiveEnum::Deferred(deferred_fn) = &query.parameters[0] {
-        let result = deferred_fn.call().await;
+        let result = deferred_fn.call().await.unwrap();
         match result {
             ExpressiveEnum::Scalar(val) => {
                 assert_eq!(val, serde_json::json!(25)); // Should use updated value, not original
@@ -244,6 +244,207 @@ async fn test_mutex_deferred_function() {
     // Verify the query structure
     assert_eq!(query.template, "SELECT * FROM items LIMIT {}");
     assert_eq!(query.parameters.len(), 1);
+}
+
+#[test]
+fn test_type_mapping() {
+    use serde_json::Value;
+    use vantage_expressions::{
+        Expression, expression::mapping::ExpressionMap, protocol::expressive::ExpressiveEnum,
+    };
+
+    // Create expression with String parameters
+    let string_expr: Expression<String> = Expression::new(
+        "SELECT * FROM users WHERE name = {}".to_string(),
+        vec![ExpressiveEnum::Scalar("John".to_string())],
+    );
+
+    // Convert to Expression<Value> using the map() method
+    let value_expr: Expression<Value> = string_expr.map();
+
+    // Verify the conversion worked
+    assert_eq!(value_expr.template, "SELECT * FROM users WHERE name = {}");
+    assert_eq!(value_expr.parameters.len(), 1);
+
+    // Check that the parameter was converted
+    match &value_expr.parameters[0] {
+        ExpressiveEnum::Scalar(val) => {
+            assert_eq!(val, &serde_json::json!("John"));
+        }
+        _ => panic!("Expected scalar parameter"),
+    }
+}
+
+#[tokio::test]
+async fn test_immediate_vs_deferred_execution() {
+    use vantage_expressions::mocks::StaticDataSource;
+    use vantage_expressions::protocol::datasource::QuerySource;
+    use vantage_expressions::protocol::expressive::ExpressiveEnum;
+
+    // Create a mock database that returns a fixed value
+    let db = StaticDataSource::new(serde_json::json!(42));
+
+    // Create a query expression
+    let query = expr!("SELECT COUNT(*) FROM users WHERE age > {}", 21);
+
+    // Immediate execution - execute now and get result
+    let count = db.execute(&query).await;
+    assert_eq!(count.unwrap(), serde_json::json!(42));
+
+    // Deferred execution - create a closure for later execution
+    let deferred_query = db.defer(query.clone());
+
+    // Execute the deferred query when needed
+    let count_later = deferred_query.call().await.unwrap();
+    match count_later {
+        ExpressiveEnum::Scalar(value) => {
+            assert_eq!(value, serde_json::json!(42));
+        }
+        _ => panic!("Expected scalar result"),
+    }
+}
+
+#[test]
+fn test_cross_database_type_mapping_concept() {
+    use serde_json::Value;
+    use vantage_expressions::{
+        Expression, expression::mapping::ExpressionMap, protocol::expressive::ExpressiveEnum,
+    };
+
+    // Simulate a deferred query that returns String type
+    let string_query: Expression<String> = Expression::new(
+        "SELECT user_ids FROM active_users WHERE department = {}".to_string(),
+        vec![ExpressiveEnum::Scalar("engineering".to_string())],
+    );
+
+    // Map it to Value type for cross-database compatibility
+    let value_query: Expression<Value> = string_query.map();
+
+    // Verify the mapping preserved the structure and converted types
+    assert_eq!(
+        value_query.template,
+        "SELECT user_ids FROM active_users WHERE department = {}"
+    );
+    assert_eq!(value_query.parameters.len(), 1);
+
+    // Check that the parameter was converted from String to Value
+    match &value_query.parameters[0] {
+        ExpressiveEnum::Scalar(val) => {
+            assert_eq!(val, &serde_json::json!("engineering"));
+        }
+        _ => panic!("Expected scalar parameter"),
+    }
+}
+
+#[tokio::test]
+async fn test_cross_database_api_integration() {
+    use vantage_expressions::mocks::StaticDataSource;
+    use vantage_expressions::protocol::datasource::QuerySource;
+    use vantage_expressions::protocol::expressive::{DeferredFn, ExpressiveEnum};
+
+    // API call that fetches user IDs asynchronously
+    async fn get_user_ids() -> vantage_core::Result<serde_json::Value> {
+        // Simulate API call - fetch from external service
+        Ok(serde_json::json!([1, 2, 3, 4, 5]))
+    }
+
+    // Build query synchronously - no async needed here!
+    let query = expr!("SELECT * FROM orders WHERE user_id = ANY({})", {
+        DeferredFn::from_fn(get_user_ids)
+    });
+
+    // Verify the query structure
+    assert_eq!(
+        query.template,
+        "SELECT * FROM orders WHERE user_id = ANY({})"
+    );
+    assert_eq!(query.parameters.len(), 1);
+
+    // The parameter should be a deferred expression
+    match &query.parameters[0] {
+        ExpressiveEnum::Deferred(deferred_fn) => {
+            // Execute the deferred function to test the API integration
+            let result = deferred_fn.call().await.unwrap();
+            match result {
+                ExpressiveEnum::Scalar(value) => {
+                    assert_eq!(value, serde_json::json!([1, 2, 3, 4, 5]));
+                }
+                _ => panic!("Expected scalar result from API call"),
+            }
+        }
+        _ => panic!("Expected deferred parameter"),
+    }
+
+    // Test with mock database execution
+    let db = StaticDataSource::new(serde_json::json!([{"id": 1, "amount": 100}]));
+    let orders = db.execute(&query).await.unwrap();
+    assert_eq!(orders, serde_json::json!([{"id": 1, "amount": 100}]));
+}
+
+#[tokio::test]
+async fn test_deferred_fn_from_fn() {
+    use vantage_expressions::protocol::expressive::{DeferredFn, ExpressiveEnum};
+
+    // Simple async function that returns a value
+    async fn get_number() -> vantage_core::Result<i32> {
+        Ok(42)
+    }
+
+    // Create deferred function using from_fn
+    let deferred_num = DeferredFn::from_fn(get_number);
+    let query = expr!("SELECT * FROM test WHERE id = {}", { deferred_num });
+
+    // Verify the query structure
+    assert_eq!(query.template, "SELECT * FROM test WHERE id = {}");
+    assert_eq!(query.parameters.len(), 1);
+
+    // The parameter should be a deferred expression
+    match &query.parameters[0] {
+        ExpressiveEnum::Deferred(deferred_fn) => {
+            // Execute the deferred function
+            let result = deferred_fn.call().await.unwrap();
+            match result {
+                ExpressiveEnum::Scalar(value) => {
+                    assert_eq!(value, serde_json::json!(42));
+                }
+                _ => panic!("Expected scalar result"),
+            }
+        }
+        _ => panic!("Expected deferred parameter"),
+    }
+}
+
+#[tokio::test]
+async fn test_error_handling_in_deferred_functions() {
+    use vantage_core::error;
+    use vantage_expressions::protocol::expressive::{DeferredFn, ExpressiveEnum};
+
+    // API call that can fail
+    async fn failing_api_call() -> vantage_core::Result<serde_json::Value> {
+        Err(error!("API connection failed").into())
+    }
+
+    // Create deferred function that wraps a failing API call
+    let deferred_failing = DeferredFn::from_fn(failing_api_call);
+    let query = expr!("SELECT * FROM orders WHERE user_id = {}", {
+        deferred_failing
+    });
+
+    // Verify the query structure
+    assert_eq!(query.template, "SELECT * FROM orders WHERE user_id = {}");
+    assert_eq!(query.parameters.len(), 1);
+
+    // The parameter should be a deferred expression
+    match &query.parameters[0] {
+        ExpressiveEnum::Deferred(deferred_fn) => {
+            // Execute the deferred function - should return an error
+            let result = deferred_fn.call().await;
+            assert!(result.is_err());
+            let error = result.unwrap_err();
+            assert!(error.to_string().contains("API connection failed"));
+        }
+        _ => panic!("Expected deferred parameter"),
+    }
 }
 
 #[tokio::test]
@@ -275,8 +476,8 @@ async fn test_union_extensibility() {
         }
     }
 
-    // Usage example
-    let users_query = expr!("SELECT name FROM users WHERE active = {}", true);
+    // Usage example with nested queries and stored procedure
+    let users_query = expr!("CALL get_active_users_by_dept({})", "engineering");
     let admins_query = expr!("SELECT name FROM admins WHERE role = {}", "super");
 
     let union = Union::new(users_query, admins_query);
@@ -295,7 +496,7 @@ async fn test_union_extensibility() {
             // Both parameters should be nested expressions
             match (&union_expr.parameters[0], &union_expr.parameters[1]) {
                 (ExpressiveEnum::Nested(left), ExpressiveEnum::Nested(right)) => {
-                    assert_eq!(left.template, "SELECT name FROM users WHERE active = {}");
+                    assert_eq!(left.template, "CALL get_active_users_by_dept({})");
                     assert_eq!(right.template, "SELECT name FROM admins WHERE role = {}");
                 }
                 _ => panic!("Expected nested expressions for both union parts"),
@@ -306,6 +507,6 @@ async fn test_union_extensibility() {
 
     // Test preview functionality to see the rendered query
     let preview = final_query.preview();
-    let expected = "SELECT DISTINCT name FROM (SELECT name FROM users WHERE active = true UNION SELECT name FROM admins WHERE role = \"super\")";
+    let expected = "SELECT DISTINCT name FROM (CALL get_active_users_by_dept(\"engineering\") UNION SELECT name FROM admins WHERE role = \"super\")";
     assert_eq!(preview, expected);
 }
