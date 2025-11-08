@@ -1,3 +1,0 @@
-ancestorEntries = ["vantage-expressions/README.md", "vantage-expressions/src/expression/owned.rs", "vantage-expressions/src/protocol/expressive.rs"]
-ourEntries = ["vantage-expressions/README.md", "vantage-expressions/src/expression/owned.rs", "vantage-expressions/src/protocol/expressive.rs", "vantage-expressions/tests/readme_examples.rs"]
-theirEntries = ["vantage-expressions/README.md", "vantage-expressions/src/expression/owned.rs", "vantage-expressions/src/protocol/expressive.rs", "vantage-expressions/tests/readme_examples.rs"]
