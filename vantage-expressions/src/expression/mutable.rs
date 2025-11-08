@@ -27,10 +27,14 @@ mod tests {
             let shared_clone = shared_clone.clone();
             Box::pin(async move {
                 let value = shared_clone.lock().unwrap().clone();
-                ExpressiveEnum::Scalar(value)
+                Ok(ExpressiveEnum::Scalar(value))
             })
                 as std::pin::Pin<
-                    Box<dyn std::future::Future<Output = ExpressiveEnum<String>> + Send>,
+                    Box<
+                        dyn std::future::Future<
+                                Output = vantage_core::Result<ExpressiveEnum<String>>,
+                            > + Send,
+                    >,
                 >
         };
 

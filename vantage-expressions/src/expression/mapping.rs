@@ -53,8 +53,8 @@ where
     DeferredFn::new(move || {
         let deferred = deferred.clone();
         Box::pin(async move {
-            let result = deferred.call().await;
-            map_expressive_enum(result)
+            let result = deferred.call().await?;
+            Ok(map_expressive_enum(result))
         }) as DeferredFuture<To>
     })
 }
@@ -84,7 +84,7 @@ mod tests {
     use crate::protocol::datasource::{DataSource, QuerySource};
     use crate::protocol::expressive::{DeferredFn, ExpressiveEnum};
     use serde_json::Value;
-    use std::future::Future;
+    use vantage_core::Result;
 
     // Mock String database
     #[derive(Clone)]
@@ -101,9 +101,8 @@ mod tests {
     impl DataSource for StringDatabase {}
 
     impl QuerySource<String> for StringDatabase {
-        fn execute(&self, _expr: &Expression<String>) -> impl Future<Output = String> + Send {
-            let result = self.result.clone();
-            async move { result }
+        async fn execute(&self, _expr: &Expression<String>) -> Result<String> {
+            Ok(self.result.clone())
         }
 
         fn defer(&self, _expr: Expression<String>) -> DeferredFn<String>
@@ -113,7 +112,7 @@ mod tests {
             let result = self.result.clone();
             DeferredFn::new(move || {
                 let result = result.clone();
-                Box::pin(async move { ExpressiveEnum::Scalar(result) })
+                Box::pin(async move { Ok(ExpressiveEnum::Scalar(result)) })
             })
         }
     }
@@ -133,9 +132,8 @@ mod tests {
     impl DataSource for JsonDatabase {}
 
     impl QuerySource<Value> for JsonDatabase {
-        fn execute(&self, _expr: &Expression<Value>) -> impl Future<Output = Value> + Send {
-            let result = self.result.clone();
-            async move { result }
+        async fn execute(&self, _expr: &Expression<Value>) -> Result<Value> {
+            Ok(self.result.clone())
         }
 
         fn defer(&self, _expr: Expression<Value>) -> DeferredFn<Value>
@@ -145,7 +143,7 @@ mod tests {
             let result = self.result.clone();
             DeferredFn::new(move || {
                 let result = result.clone();
-                Box::pin(async move { ExpressiveEnum::Scalar(result) })
+                Box::pin(async move { Ok(ExpressiveEnum::Scalar(result)) })
             })
         }
     }
@@ -180,7 +178,7 @@ mod tests {
     #[tokio::test]
     async fn test_deferred_mapping() {
         let deferred_string =
-            DeferredFn::new(|| Box::pin(async { ExpressiveEnum::Scalar("test".to_string()) }));
+            DeferredFn::new(|| Box::pin(async { Ok(ExpressiveEnum::Scalar("test".to_string())) }));
 
         let string_expr: Expression<String> = Expression::new(
             "SELECT * WHERE name = {}",
@@ -194,7 +192,7 @@ mod tests {
 
         // Test that the deferred function still works after mapping
         if let ExpressiveEnum::Deferred(ref deferred) = value_expr.parameters[0] {
-            let result = deferred.call().await;
+            let result = deferred.call().await.unwrap();
             match result {
                 ExpressiveEnum::Scalar(Value::String(s)) => assert_eq!(s, "test"),
                 _ => panic!("Expected string value"),
@@ -223,8 +221,8 @@ mod tests {
         let mapped_deferred = DeferredFn::new(move || {
             let deferred_query = deferred_query.clone();
             Box::pin(async move {
-                let result = deferred_query.call().await;
-                map_expressive_enum(result)
+                let result = deferred_query.call().await?;
+                Ok(map_expressive_enum(result))
             })
         });
 
@@ -234,6 +232,6 @@ mod tests {
         );
 
         let result = db2.execute(&json_expr).await;
-        assert_eq!(result, Value::String("processed".to_string()));
+        assert_eq!(result.unwrap(), Value::String("processed".to_string()));
     }
 }
