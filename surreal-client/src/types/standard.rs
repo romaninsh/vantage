@@ -2,7 +2,7 @@
 
 use super::{
     SurrealType, SurrealTypeAnyMarker, SurrealTypeBoolMarker, SurrealTypeDateTimeMarker,
-    SurrealTypeDurationMarker, SurrealTypeFloatMarker, SurrealTypeIntMarker, SurrealTypeRIdMarker,
+    SurrealTypeDurationMarker, SurrealTypeFloatMarker, SurrealTypeIntMarker,
     SurrealTypeStringMarker,
 };
 use ciborium::value::Value as CborValue;
@@ -54,9 +54,10 @@ impl SurrealType for chrono::DateTime<chrono::Utc> {
                         {
                             let seconds = i128::from(*secs) as i64;
                             let nanos = i128::from(*nanos) as u32;
-                            let system_time = std::time::UNIX_EPOCH
-                                + std::time::Duration::new(seconds as u64, nanos);
-                            return Some(system_time.into());
+                            // Use chrono's timestamp_opt which handles negative timestamps properly
+                            if let Some(dt) = chrono::DateTime::from_timestamp(seconds, nanos) {
+                                return Some(dt);
+                            }
                         }
                     }
                 }
@@ -93,10 +94,10 @@ impl SurrealType for std::time::SystemTime {
                         {
                             let seconds = i128::from(*secs) as i64;
                             let nanos = i128::from(*nanos) as u32;
-                            return Some(
-                                std::time::UNIX_EPOCH
-                                    + std::time::Duration::new(seconds as u64, nanos),
-                            );
+                            // Use chrono's timestamp which handles negative timestamps properly
+                            if let Some(dt) = chrono::DateTime::from_timestamp(seconds, nanos) {
+                                return Some(dt.into());
+                            }
                         }
                     }
                 }
@@ -446,7 +447,7 @@ impl std::fmt::Display for RId {
 }
 
 impl SurrealType for RId {
-    type Target = SurrealTypeRIdMarker;
+    type Target = SurrealTypeStringMarker;
 
     fn to_cbor(&self) -> CborValue {
         CborValue::Text(self.to_string())
@@ -484,9 +485,12 @@ impl SurrealType for std::time::Duration {
                         if let (CborValue::Integer(secs), CborValue::Integer(nanos)) =
                             (&arr[0], &arr[1])
                         {
-                            let seconds = i128::from(*secs) as u64;
+                            let seconds = i128::from(*secs);
                             let nanos = i128::from(*nanos) as u32;
-                            return Some(std::time::Duration::new(seconds, nanos));
+                            // std::time::Duration cannot represent negative durations
+                            if seconds >= 0 {
+                                return Some(std::time::Duration::new(seconds as u64, nanos));
+                            }
                         }
                     }
                 }
@@ -521,12 +525,12 @@ impl SurrealType for chrono::Duration {
                             (&arr[0], &arr[1])
                         {
                             let seconds = i128::from(*secs);
-                            let _nanos = i128::from(*nanos);
-                            return chrono::Duration::from_std(std::time::Duration::new(
-                                seconds as u64,
-                                0,
-                            ))
-                            .ok();
+                            let nanos = i128::from(*nanos);
+                            // chrono::Duration can handle negative values directly
+                            return Some(
+                                chrono::Duration::seconds(seconds as i64)
+                                    + chrono::Duration::nanoseconds(nanos as i64),
+                            );
                         }
                     }
                 }
@@ -592,5 +596,110 @@ mod tests {
         let restored = Any::from_cbor(cbor).unwrap();
         // Any should round-trip successfully
         assert_eq!(format!("{:?}", any), format!("{:?}", restored));
+    }
+
+    #[test]
+    fn test_rid_type_uses_string_marker() {
+        let rid = RId::new("user", "123");
+        let cbor = rid.to_cbor();
+
+        // RId should serialize as CBOR text
+        assert_eq!(cbor, CborValue::Text("user:123".to_string()));
+
+        // Should round-trip correctly
+        let restored = RId::from_cbor(cbor).unwrap();
+        assert_eq!(rid, restored);
+        assert_eq!(rid.table, "user");
+        assert_eq!(rid.id, "123");
+        assert_eq!(rid.to_string(), "user:123");
+
+        // Should also parse from string format
+        let from_string = RId::from_string("product:abc").unwrap();
+        assert_eq!(from_string.table, "product");
+        assert_eq!(from_string.id, "abc");
+    }
+
+    #[test]
+    fn test_chrono_duration_precision() {
+        // Test that nanosecond precision is preserved
+        let dur = chrono::Duration::nanoseconds(1_234_567_890); // 1.23456789 seconds
+        let cbor = dur.to_cbor();
+        let restored = chrono::Duration::from_cbor(cbor).unwrap();
+
+        // Should preserve the nanosecond precision
+        assert_eq!(dur.num_nanoseconds(), restored.num_nanoseconds());
+        assert_eq!(dur.num_seconds(), restored.num_seconds());
+    }
+
+    #[test]
+    fn test_negative_timestamp_handling() {
+        use chrono::{TimeZone, Timelike};
+
+        // Test date before Unix epoch (1960-01-01)
+        let past_date = chrono::Utc.with_ymd_and_hms(1960, 1, 1, 0, 0, 0).unwrap();
+        let cbor = past_date.to_cbor();
+        let restored = chrono::DateTime::<chrono::Utc>::from_cbor(cbor).unwrap();
+
+        // Should preserve the date even though timestamp is negative
+        assert_eq!(past_date.timestamp(), restored.timestamp());
+        assert_eq!(past_date, restored);
+
+        // Test date with nanoseconds before Unix epoch
+        let past_date_nanos = chrono::Utc
+            .with_ymd_and_hms(1969, 12, 31, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(500_000_000)
+            .unwrap();
+        let cbor_nanos = past_date_nanos.to_cbor();
+        let restored_nanos = chrono::DateTime::<chrono::Utc>::from_cbor(cbor_nanos).unwrap();
+
+        // Should preserve nanosecond precision for negative timestamps
+        assert_eq!(past_date_nanos.timestamp(), restored_nanos.timestamp());
+        assert_eq!(
+            past_date_nanos.timestamp_nanos_opt(),
+            restored_nanos.timestamp_nanos_opt()
+        );
+        assert_eq!(past_date_nanos, restored_nanos);
+
+        // Test SystemTime with negative timestamp
+        let system_time_past = std::time::UNIX_EPOCH - std::time::Duration::from_secs(315_360_000); // ~1960
+        let cbor_st = system_time_past.to_cbor();
+        let restored_st = std::time::SystemTime::from_cbor(cbor_st).unwrap();
+
+        // Should preserve the time even for dates before epoch
+        assert!(
+            system_time_past
+                .duration_since(std::time::UNIX_EPOCH)
+                .is_err()
+        ); // Negative duration
+        assert_eq!(system_time_past, restored_st);
+    }
+
+    #[test]
+    fn test_negative_duration_handling() {
+        // Test that negative durations are rejected for std::time::Duration
+        use ciborium::value::Value as CborValue;
+
+        // Create CBOR for negative duration
+        let negative_duration_cbor = CborValue::Tag(
+            14,
+            Box::new(CborValue::Array(vec![
+                CborValue::Integer((-30i64).into()), // -30 seconds
+                CborValue::Integer(0i64.into()),
+            ])),
+        );
+
+        // Should return None for negative std::time::Duration
+        let result = std::time::Duration::from_cbor(negative_duration_cbor);
+        assert!(
+            result.is_none(),
+            "Negative duration should be rejected for std::time::Duration"
+        );
+
+        // But chrono::Duration should handle negative values
+        let chrono_negative = chrono::Duration::seconds(-30);
+        let cbor = chrono_negative.to_cbor();
+        let restored = chrono::Duration::from_cbor(cbor).unwrap();
+        assert_eq!(chrono_negative.num_seconds(), restored.num_seconds());
     }
 }

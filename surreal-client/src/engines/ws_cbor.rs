@@ -51,6 +51,8 @@ pub struct WsCborEngine {
     msg_id: AtomicU64,
     /// Pending requests awaiting responses
     pending_requests: Arc<Mutex<HashMap<String, oneshot::Sender<CborValue>>>>,
+    /// Handle for the message processing task
+    task_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl WsCborEngine {
@@ -83,19 +85,21 @@ impl WsCborEngine {
 
         let (sink, stream) = stream.split();
 
-        let engine = Self {
+        let mut engine = Self {
             sink: Arc::new(Mutex::new(sink)),
             stream: Arc::new(Mutex::new(stream)),
             msg_id: AtomicU64::new(0),
             pending_requests: Arc::new(Mutex::new(HashMap::new())),
+            task_handle: None,
         };
 
-        engine.handle_messages();
+        let task_handle = engine.handle_messages();
+        engine.task_handle = Some(task_handle);
         Ok(engine)
     }
 
     /// Start the message handling loop for incoming WebSocket messages
-    fn handle_messages(&self) {
+    fn handle_messages(&self) -> tokio::task::JoinHandle<()> {
         let stream = Arc::clone(&self.stream);
         let pending_requests = Arc::clone(&self.pending_requests);
 
@@ -176,7 +180,7 @@ impl WsCborEngine {
                     _ => {}
                 }
             }
-        });
+        })
     }
 }
 
@@ -262,5 +266,13 @@ impl Engine for WsCborEngine {
 
     fn supports_cbor(&self) -> bool {
         true
+    }
+}
+
+impl Drop for WsCborEngine {
+    fn drop(&mut self) {
+        if let Some(handle) = self.task_handle.take() {
+            handle.abort();
+        }
     }
 }

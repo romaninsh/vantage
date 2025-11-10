@@ -10,7 +10,7 @@ vantage_type_system! {
     type_trait: SurrealType,
     method_name: cbor,
     value_type: ciborium::Value,
-    type_variants: [Any, RId, Int, Float, Decimal, String, Bool, DateTime, Duration, Json, Geo]
+    type_variants: [Any, Int, Float, Decimal, String, Bool, DateTime, Duration, Json, Geo]
 }
 
 // The macro generates these types automatically - no need to re-export
@@ -24,17 +24,7 @@ impl SurrealTypeVariants {
             Bool(_) => Some(SurrealTypeVariants::Bool),
             Integer(_) => Some(SurrealTypeVariants::Int),
             Float(_) => Some(SurrealTypeVariants::Float),
-            Text(s) => {
-                // Check if it's a record reference (table:id format)
-                if s.contains(':')
-                    && s.chars()
-                        .all(|c| c.is_alphanumeric() || c == ':' || c == '_')
-                {
-                    Some(SurrealTypeVariants::RId)
-                } else {
-                    Some(SurrealTypeVariants::String)
-                }
-            }
+            Text(_s) => Some(SurrealTypeVariants::String),
             Bytes(_) => Some(SurrealTypeVariants::String), // Convert bytes to hex string
             Array(_) => Some(SurrealTypeVariants::Json),
             Map(_) => Some(SurrealTypeVariants::Json),
@@ -88,7 +78,7 @@ mod tests {
         );
         assert_eq!(
             SurrealTypeVariants::from_cbor(&Text("user:123".to_string())),
-            Some(SurrealTypeVariants::RId)
+            Some(SurrealTypeVariants::String)
         );
         assert_eq!(
             SurrealTypeVariants::from_cbor(&Integer(42.into())),
