@@ -4,12 +4,15 @@ A comprehensive SurrealDB client library for Rust with support for both HTTP and
 
 ## Features
 
-- **Dual Protocol Support**: Connect via HTTP or WebSocket
+- **CBOR Websocket engine**: Communicates with SurrealDB over CBOR WS, no JSON (unless you need)
+- **Native types support**: Implementation for native types at binary level (like Decimal or Geometry)
+- **Type protocol and type-erasing**: Store and retrieve native rust types through type-erased interface
 - **Immutable Client Design**: Thread-safe, cloneable client with unique sessions
 - **Builder Pattern Connection**: Intuitive connection configuration
+- **Debug mode support**: Outputs requests/responses - for debugging
 - **Multiple Authentication Methods**: Root, namespace, database, scope, and JWT token auth
 - **Full CRUD Operations**: Create, read, update, delete with type safety
-- **Query Interface**: Execute raw SurrealQL with parameter binding
+- **Query Interface**: Execute raw SurrealQL with parameter binding (supporting all Surreal types natively)
 - **Session Management**: Variables and state management per client
 - **Relation Support**: Create and query record relationships
 - **Transaction Support**: Execute multi-statement transactions

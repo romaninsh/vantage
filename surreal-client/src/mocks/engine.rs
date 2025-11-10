@@ -3,10 +3,11 @@
 //! Provides a simplified mock implementation that requires exact matching of method calls
 //! and parameters, making it predictable and easy to debug.
 
+use crate::{Engine, error::Result};
 use async_trait::async_trait;
+use ciborium::Value as CborValue;
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use surreal_client::{Engine, error::Result};
 
 /// A mock SurrealDB engine that requires exact matching of requests
 #[derive(Debug, Clone)]
@@ -52,7 +53,7 @@ impl MockSurrealEngine {
 
     /// Add a response for a query method with specific query string
     pub fn with_query_response(mut self, query: impl Into<String>, response: Value) -> Self {
-        let params = json!([query.into(), {}]);
+        let params = json!([query.into()]);
         self.exact_matches
             .insert(("query".to_string(), params), response);
         self
@@ -106,6 +107,14 @@ impl Default for MockSurrealEngine {
 impl Engine for MockSurrealEngine {
     async fn send_message(&mut self, method: &str, params: Value) -> Result<Value> {
         Ok(self.find_response(method, &params))
+    }
+
+    async fn send_message_cbor(&mut self, _method: &str, _params: CborValue) -> Result<CborValue> {
+        todo!("CBOR not supported in mock engine")
+    }
+
+    fn supports_cbor(&self) -> bool {
+        false
     }
 }
 
@@ -167,13 +176,9 @@ impl SurrealMockBuilder {
         self
     }
 
-    /// Build the SurrealDB instance with the configured mock
-    pub fn build(self) -> crate::SurrealDB {
-        use surreal_client::SurrealClient;
-
-        let client = SurrealClient::new(Box::new(self.engine), self.namespace, self.database);
-
-        crate::SurrealDB::new(client)
+    /// Build the SurrealClient instance with the configured mock engine
+    pub fn build(self) -> crate::SurrealClient {
+        crate::SurrealClient::new(Box::new(self.engine), self.namespace, self.database)
     }
 }
 
@@ -187,7 +192,6 @@ impl Default for SurrealMockBuilder {
 mod tests {
     use super::*;
     use serde_json::json;
-    use vantage_expressions::QuerySource;
 
     #[tokio::test]
     #[should_panic(
@@ -222,7 +226,7 @@ mod tests {
             .with_query_response("SELECT * FROM users", json!([{"type": "user"}]));
 
         let result = engine
-            .send_message("query", json!(["SELECT * FROM users", {}]))
+            .send_message("query", json!(["SELECT * FROM users"]))
             .await
             .unwrap();
         assert_eq!(result, json!([{"type": "user"}]));
@@ -260,15 +264,13 @@ mod tests {
             .build();
 
         // Test that we can execute the exact matching query
-        let result = db
-            .execute(&vantage_expressions::expr!("SELECT * FROM users"))
-            .await;
+        let result = db.query("SELECT * FROM users", None).await.unwrap();
         assert_eq!(result, json!([{"name": "Alice"}]));
     }
 
     #[tokio::test]
     #[should_panic(
-        expected = "executed method query([\"SELECT * FROM posts\",{}]), but allowed patterns are"
+        expected = "executed method query([\"SELECT * FROM posts\"]), but allowed patterns are"
     )]
     async fn test_surreal_mock_builder_panics_on_unmatch() {
         let db = SurrealMockBuilder::new()
@@ -276,9 +278,7 @@ mod tests {
             .build();
 
         // This should panic because we're querying "posts" but only "users" is configured
-        let _result = db
-            .execute(&vantage_expressions::expr!("SELECT * FROM posts"))
-            .await;
+        let _result = db.query("SELECT * FROM posts", None).await.unwrap();
     }
 
     #[test]
@@ -291,9 +291,9 @@ mod tests {
             );
 
         // Test that only exact matches work
-        let key1 = ("query".to_string(), json!(["SELECT name FROM users", {}]));
-        let key2 = ("query".to_string(), json!(["SELECT * FROM users", {}]));
-        let key3 = ("query".to_string(), json!(["SELECT name FROM posts", {}]));
+        let key1 = ("query".to_string(), json!(["SELECT name FROM users"]));
+        let key2 = ("query".to_string(), json!(["SELECT * FROM users"]));
+        let key3 = ("query".to_string(), json!(["SELECT name FROM posts"]));
 
         assert!(engine.exact_matches.contains_key(&key1));
         assert!(engine.exact_matches.contains_key(&key2));

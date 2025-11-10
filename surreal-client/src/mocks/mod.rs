@@ -14,10 +14,10 @@
 //! ## Quick Start
 //!
 //! ```rust
-//! use vantage_surrealdb::mocks::SurrealMockBuilder;
+//! use surreal_client::mocks::SurrealMockBuilder;
 //! use serde_json::json;
 //!
-//! let db = SurrealMockBuilder::new()
+//! let client = SurrealMockBuilder::new()
 //!     .with_query_response("SELECT * FROM users", json!([{"name": "Alice"}]))
 //!     .with_method_response("create", json!({"id": "new_record"}))
 //!     .build();
@@ -28,18 +28,18 @@
 //! ### Exact Response Matching
 //!
 //! ```rust
-//! use vantage_surrealdb::mocks::SurrealMockBuilder;
+//! use surreal_client::mocks::SurrealMockBuilder;
 //! use serde_json::json;
 //!
 //! // Exact query matching - query string must match exactly
-//! let db = SurrealMockBuilder::new()
+//! let client = SurrealMockBuilder::new()
 //!     .with_query_response("SELECT name, email FROM users", json!([{"name": "John", "email": "john@example.com"}]))
 //!     .with_query_response("SELECT name, email FROM ONLY users", json!({"name": "Active User", "email": "active@example.com"}))
 //!     .with_query_response("SELECT VALUE email FROM users", json!(["john@example.com", "jane@example.com"]))
 //!     .build();
 //!
 //! // Method-specific responses with exact parameter matching
-//! let advanced_db = SurrealMockBuilder::new()
+//! let advanced_client = SurrealMockBuilder::new()
 //!     .with_method_response("create", json!({"id": "new_record"}))
 //!     .with_exact_response("count", json!({"table": "users"}), json!(42))
 //!     .with_debug(true) // Enable debug logging
