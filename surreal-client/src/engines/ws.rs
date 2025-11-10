@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use ciborium::Value as CborValue;
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -149,5 +150,15 @@ impl Engine for WsEngine {
             .clone();
 
         Ok(result)
+    }
+
+    async fn send_message_cbor(&mut self, _method: &str, _params: CborValue) -> Result<CborValue> {
+        Err(SurrealError::Protocol(
+            "CBOR not supported by regular WebSocket engine. Use ws_cbor:// scheme.".to_string(),
+        ))
+    }
+
+    fn supports_cbor(&self) -> bool {
+        false
     }
 }
