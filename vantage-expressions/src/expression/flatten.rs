@@ -1,8 +1,32 @@
 //! Flattening functionality for expressions with deferred parameters and nested expressions.
 //! This module provides traits and helpers to resolve deferred parameters and flatten nested structures.
+//!
+//! Flattening is essential for database query preparation, converting nested expression hierarchies
+//! into flat templates suitable for parameter binding. Database drivers can then safely bind
+//! parameters without SQL injection risks.
+//!
+//! # Example: SurrealDB Parameter Binding
+//!
+//! ```rust
+//! use vantage_expressions::prelude::*;
+//!
+//! // Build nested query structure
+//! let where_clause = expr!("age > {} AND department = {}", 25, "engineering");
+//! let select_query = expr!("SELECT * FROM employees WHERE {}", (where_clause));
+//!
+//! // Flatten for database execution
+//! let flattener = ExpressionFlattener::new();
+//! let flattened = flattener.flatten(&select_query);
+//!
+//! // Result: template = "SELECT * FROM employees WHERE age > {} AND department = {}"
+//! //         parameters = [25, "engineering"]
+//! // Database driver converts {} to $_arg1, $_arg2 for safe parameter binding
+//! ```
+//!
+//! This pattern allows complex query composition while maintaining parameter safety during execution.
 
-use crate::expression::owned::Expression;
-use crate::protocol::expressive::ExpressiveEnum;
+use crate::expression::expression::Expression;
+use crate::traits::expressive::ExpressiveEnum;
 
 /// Trait for flattening expressions by resolving deferred parameters and nested expressions
 pub trait Flatten<T> {
@@ -17,6 +41,7 @@ pub trait Flatten<T> {
 }
 
 /// Default implementation for Expression flattening
+#[derive(Debug, Clone)]
 pub struct ExpressionFlattener;
 
 impl ExpressionFlattener {
@@ -76,14 +101,14 @@ impl<T: Clone> Flatten<Expression<T>> for ExpressionFlattener {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::expr_any;
+    use crate::expr_as;
 
     #[test]
     fn test_flatten_nested_expressions() {
         let flattener = ExpressionFlattener::new();
 
-        let nested_expr = expr_any!(String, "Hello {}", "world");
-        let main_expr = expr_any!(String, "select {}", (nested_expr));
+        let nested_expr = expr_as!(String, "Hello {}", "world");
+        let main_expr = expr_as!(String, "select {}", (nested_expr));
 
         let flattened = flattener.flatten(&main_expr);
 
@@ -95,9 +120,9 @@ mod tests {
     fn test_multiple_nested_expressions() {
         let flattener = ExpressionFlattener::new();
 
-        let greeting = expr_any!(String, "Hello {}", "John");
-        let farewell = expr_any!(String, "Goodbye {}", "Jane");
-        let main_expr = expr_any!(String, "{} and {}", (greeting), (farewell));
+        let greeting = expr_as!(String, "Hello {}", "John");
+        let farewell = expr_as!(String, "Goodbye {}", "Jane");
+        let main_expr = expr_as!(String, "{} and {}", (greeting), (farewell));
 
         let flattened = flattener.flatten(&main_expr);
 
@@ -109,8 +134,8 @@ mod tests {
     fn test_mixed_parameters() {
         let flattener = ExpressionFlattener::new();
 
-        let nested = expr_any!(String, "count({})", "*");
-        let main_expr = expr_any!(
+        let nested = expr_as!(String, "count({})", "*");
+        let main_expr = expr_as!(
             String,
             "SELECT {} FROM users WHERE age > {}",
             (nested),

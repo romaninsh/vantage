@@ -7,24 +7,28 @@ well suited for large distributed code-bases and enterprise-level migration / re
 
 ## Example Use
 
-```rust
+```rust,ignore
 use vantage_expressions::expr;
 
 let where_expr = expr!("age > {} AND status = {}", 21, "active");
 let query_expr = expr!("SELECT * FROM users WHERE {}", (where_expr));
 ```
 
-The `expr!` macro keeps your parameters separate from the query template, preventing SQL injection
+The [`expr!`] macro keeps your parameters separate from the query template, preventing SQL injection
 while maintaining readability.
+
+For a complete example with testing using mockbuilder,
+[see expression module documentation](crate::expression::expression).
 
 ## Features
 
-- **`expr!` macro**: SQL-injection safe query building with great support for Rust native types
-- **Dynamic query construction**: Compose queries conditionally using `Expression::from_vec()`
-- **Deferred execution**: Embed async API calls or Mutexes directly in queries with `DeferredFn`
+- **[`expr!`] macro**: SQL-injection safe query building with great support for Rust native types
+- **Dynamic query construction**: Compose queries conditionally using [`Expression::from_vec()`]
+- **Deferred execution**: Embed async API calls or Mutexes directly in queries with [`DeferredFn`]
 - **Cross-database type mapping**: Handle type conversion when query crosses persistence boundaries.
-- **Custom SQL constructs**: Implement `Expressive` trait for UNION, CTE, or vendor-specific syntax
-- **Standardized SELECT builders**: `Selectable` trait works across SQL, SurrealDB, MongoDB
+- **Custom SQL constructs**: Implement [`Expressive`] trait for UNION, CTE, or vendor-specific
+  syntax
+- **Standardized SELECT builders**: [`Selectable`] trait works across SQL, SurrealDB, MongoDB
 
 A design goal for Vantage Expressions is to assist with Enterprise refactoring - providing powerful
 mechanisms to perform persistence refactoring without breaking model API and affectign existing
@@ -44,12 +48,12 @@ Expressions are just one part of Vantage framework. I recommend also looking int
 
 ## Rust Type Support
 
-Expressions can carry any universal type of your choosing. The `expr!` macro defaults to
-`serde_json::Value` for maximum compatibility, but you can use `Expression<T>` with any type that
+Expressions can carry any universal type of your choosing. The [`expr!`] macro defaults to
+`serde_json::Value` for maximum compatibility, but you can use [`Expression<T>`] with any type that
 suits your database. Use CBOR values for binary protocols, SurrealDB's native types for SurrealQL,
 or design custom enum-style types optimized for your specific database's type system.
 
-```rust
+```rust,ignore
 use vantage_expressions::expr_any;
 use surrealdb::sql::Value as SurrealValue;
 use std::time::Duration;
@@ -68,10 +72,10 @@ must be provided at-once and without abstraction.
 ## Dynamic Query Building
 
 Expressions can be built dynamically at runtime, allowing for flexible query construction based on
-your application logic. use `Expression::from_vec` to join multiple expressions with a separator,
+your application logic. use [`Expression::from_vec`] to join multiple expressions with a separator,
 preserving order of all parameters stored within.
 
-```rust
+```rust,ignore
 let mut conditions = Vec::new();
 
 // Conditionally build WHERE conditions
@@ -146,9 +150,9 @@ If your database engine uses a custom type system (e.g. SurrealType) but under t
 CBOR it is sufficient for you to implement `Into<cborium::Value>`. Now any expression defined for
 your custom type can be mapped into cborium::Value automatically.
 
-Here is example of mapping `Expression<String>` into `Expression<Value>`:
+Here is example of mapping [`Expression<String>`] into [`Expression<Value>`]:
 
-```rust
+```rust,ignore
 // Create expression with String parameters
 let string_expr: Expression<String> = Expression::new(
     "SELECT * FROM users WHERE name = {}",
@@ -165,13 +169,13 @@ and each database could be implementing their own type system.
 ### Immediate vs deferred execution
 
 `vantage-expression` does not require you to implement database SDK in a certain way, however, by
-implementing a trait `QuerySource` your SDK would have 2 foundational methods:
+implementing a trait [`QuerySource`] your SDK would have 2 foundational methods:
 
-- `async db.execute(expr) -> result` - Execute an `Expression<V>` now and return `Result<V>`.
+- `async db.execute(expr) -> result` - Execute an [`Expression<V>`] now and return `Result<V>`.
 - `db.defer(expr) -> DeferredFn` - Wrap query execution into a closure which can be executed with
   `fn.call()`
 
-```rust
+```rust,ignore
 // Create a query expression
 let query = expr!("SELECT COUNT(*) FROM users WHERE age > {}", 21);
 
@@ -193,13 +197,13 @@ match count_later {
 ## Other kinds of `DeferredFn`
 
 A sharp-eyeed reader would notice that `count_later` actually contains
-`ExpressiveEnum::Scalar(value)`. As it turns out - resolving deferred query can also return nested
+[`ExpressiveEnum::Scalar(value)`]. As it turns out - resolving deferred query can also return nested
 expressions, once return results are known. I'll explore the powerful implications of non-scalar
 return types later.
 
-There are also other ways to obtain DeferredFn, for instance you can create it from a mutex:
+There are also other ways to obtain [`DeferredFn`], for instance you can create it from a mutex:
 
-```rust
+```rust,ignore
 // Shared state that can change over time
 let counter = Arc::new(Mutex::new(10));
 
@@ -229,7 +233,7 @@ would require async API fetch.
 
 Vantage uses deferred queries to solve this problem:
 
-```rust
+```rust,ignore
 // API call that fetches user IDs asynchronously
 async fn get_user_ids() -> vantage_core::Result<serde_json::Value> {
     // Simulate API call - fetch from external service
@@ -252,11 +256,11 @@ enabling seamless cross-database operations. Result is passed into db.execute() 
 
 ## Extensibility
 
-Create custom SQL constructs by implementing the `Expressive` trait:
+Create custom SQL constructs by implementing the [`Expressive`] trait:
 
 The `execute()` method handles all deferred operations and resolves them into final values. This design allows the use of shared state like `Arc<Mutex<T>>` inside callbacks, enabling dynamic query parameters that can change between query construction and execution.
 
-```rust
+```rust,ignore
 /// A UNION SQL construct
 #[derive(Clone)]
 pub struct Union<T> {
@@ -294,11 +298,11 @@ types like `Table`, `Aggregation`, `Sum`, and even implement operations like com
 A most sophisticated construct usually is a `SELECT` builder. There can be a separate `INSERT` or
 combined builder - that's up to a DB vendor, but a `SELECT` builder usually is quite common.
 
-The `Selectable` trait provides a standardized interface for building SELECT-style queries across
+The [`Selectable`] trait provides a standardized interface for building SELECT-style queries across
 different database backends. It defines common operations like filtering, sorting, field selection,
 and pagination that are universal to most query languages.
 
-```rust
+```rust,ignore
 use vantage_expressions::{expr, protocol::selectable::Selectable};
 use vantage_surrealdb::select::SurrealSelect;
 
@@ -322,9 +326,9 @@ let query_expr: Expression = select.into();
 let result = db.execute(&query_expr).await?;
 ```
 
-The `Selectable` trait also provides fluent builder-style methods for chaining operations:
+The [`Selectable`] trait also provides fluent builder-style methods for chaining operations:
 
-```rust
+```rust,ignore
 let query = SurrealSelect::new()
     .with_source(expr!("products"))
     .with_field("name")
@@ -336,15 +340,15 @@ let query = SurrealSelect::new()
 let results = db.execute(&query.expr()).await?;
 ```
 
-Database-specific implementations like `SurrealSelect` implement the `Selectable` trait while
+Database-specific implementations like `SurrealSelect` implement the [`Selectable`] trait while
 providing their own syntax and features. This allows the same query building patterns to work across
 SQL, SurrealDB, MongoDB, and other backends while maintaining database-specific optimizations.
 
-## Use of `Expressions` across Vantage framework
+## Use of [`Expression`] across Vantage framework
 
-As you have probably noticed - Selectable trait makes use of nested expressions quite deliberatly.
-Vantage framework treats expressions as a first class citizen and therefore we want to expose
-interface which is powerful and extensive.
+As you have probably noticed - [`Selectable`] trait makes use of nested expressions quite
+deliberatly. Vantage framework treats expressions as a first class citizen and therefore we want to
+expose interface which is powerful and extensive.
 
 This extensibility makes Vantage a cohesive framework, suitable for the use in the Enterprise
 setting.

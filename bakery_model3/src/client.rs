@@ -9,6 +9,7 @@ pub struct Client {
     pub email: String,
     pub contact_details: String,
     pub is_paying_client: bool,
+    pub balance: rust_decimal::Decimal,
     pub bakery: String, // Record ID for bakery
     pub metadata: Option<serde_json::Value>,
 }
@@ -29,6 +30,7 @@ impl Client {
             .with_column_of::<String>("email")
             .with_column_of::<String>("contact_details")
             .with_column_of::<bool>("is_paying_client")
+            .with_column_of::<rust_decimal::Decimal>("balance")
             .with_column_of::<String>("bakery")
             .with_column("metadata")
             .with_one("bakery", "bakery", move || Bakery::table(db2.clone()))
@@ -40,6 +42,7 @@ impl Client {
 pub trait ClientTable {
     fn ref_bakery(&self) -> Table<SurrealDB, crate::Bakery>;
     fn ref_orders(&self) -> Table<SurrealDB, crate::Order>;
+    fn get_paying_balance(&self) -> impl std::future::Future<Output = vantage_core::Result<rust_decimal::Decimal>> + Send;
 }
 
 impl ClientTable for Table<SurrealDB, Client> {
@@ -49,5 +52,20 @@ impl ClientTable for Table<SurrealDB, Client> {
 
     fn ref_orders(&self) -> Table<SurrealDB, crate::Order> {
         self.get_ref_as("orders").unwrap()
+    }
+
+    async fn get_paying_balance(&self) -> vantage_core::Result<rust_decimal::Decimal> {
+        use vantage_surrealdb::prelude::*;
+
+        // Create condition for paying clients
+        let paying = self.clone().with_condition(self.is_paying_client().eq(true));
+
+        // Create sum expression
+        let sum_expr = paying.select().as_sum();
+
+        // Execute and get result
+        let sum = sum_expr.execute(self.data_source()).await?;
+
+        Ok(sum)
     }
 }

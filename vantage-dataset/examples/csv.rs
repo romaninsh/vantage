@@ -1,10 +1,12 @@
 use serde::{Deserialize, Serialize};
-use vantage_dataset::dataset::ReadableDataSet;
+use vantage_dataset::traits::ReadableDataSet;
+use vantage_types::persistence_serde;
 
 mod mocks;
 use mocks::csv_mock::{CsvFile, MockCsv};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[persistence_serde]
 struct User {
     id: u32,
     name: String,

@@ -1,0 +1,13 @@
+[package]
+name = "cbor-test"
+version = "0.1.0"
+edition = "2021"
+
+
+
+[dependencies]
+ciborium = { version = "0.2", features = ["std"] }
+serde = { version = "1.0", features = ["derive"] }
+url = "2.5"
+paste = "1.0"
+serde_json = "1.0.145"

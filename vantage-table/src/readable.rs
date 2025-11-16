@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use vantage_dataset::dataset::{Id, ReadableAsDataSet, ReadableDataSet, ReadableValueSet, Result};
+use vantage_dataset::dataset::{ReadableDataSet, ReadableValueSet, Result};
 
 use crate::{Entity, Table, TableSource};
 
@@ -11,7 +11,7 @@ where
     T: TableSource,
     E: Entity,
 {
-    async fn get(&self) -> Result<Vec<E>> {
+    async fn list(&self) -> Result<Vec<E>> {
         let results = self.data_source().get_table_data(self).await?;
         Ok(results.into_iter().map(|(_, entity)| entity).collect())
     }
@@ -21,7 +21,7 @@ where
         Ok(result.map(|(_, entity)| entity))
     }
 
-    async fn get_id(&self, id: impl Id) -> Result<E> {
+    async fn get(&self, id: impl Id) -> Result<E> {
         self.data_source().get_table_data_by_id(self, id).await
     }
 }
@@ -33,11 +33,11 @@ where
     T: TableSource,
     E: Entity,
 {
-    async fn get_values(&self) -> Result<Vec<serde_json::Value>> {
+    async fn list_values(&self) -> Result<Vec<serde_json::Value>> {
         self.data_source().get_table_data_as_value(self).await
     }
 
-    async fn get_id_value(&self, id: &str) -> Result<serde_json::Value> {
+    async fn get_value(&self, id: &str) -> Result<serde_json::Value> {
         self.data_source()
             .get_table_data_as_value_by_id(self, id)
             .await

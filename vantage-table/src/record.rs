@@ -7,7 +7,7 @@ use crate::{Entity, Table, TableSource};
 use async_trait::async_trait;
 use serde::{Serialize, de::DeserializeOwned};
 use std::ops::{Deref, DerefMut};
-use vantage_dataset::dataset::{Id, Result, WritableDataSet};
+use vantage_dataset::dataset::{Result, WritableDataSet};
 
 /// A record represents a single entity with its ID, providing save functionality
 pub struct Record<'a, E, T>

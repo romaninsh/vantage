@@ -50,7 +50,7 @@ impl RedbColumn {
         data: &(impl ReadableDataSet<serde_json::Value> + ReadableValueSet),
         write_txn: &WriteTransaction,
     ) -> Result<()> {
-        let values = data.get_values().await?;
+        let values = data.list_values().await?;
 
         // Group records by column value - each value maps to a list of IDs
         let mut index: HashMap<String, Vec<String>> = HashMap::new();

@@ -1,3 +1,4 @@
+disabled
 [package]
 edition = "2024"
 name = "vantage-surrealdb"
@@ -10,14 +11,20 @@ homepage = "https://romaninsh.github.io/vantage"
 repository = "https://github.com/romaninsh/vantage"
 readme = "../README.md"
 
+[features]
+default = ["decimal"]
+decimal = ["surreal-client/decimal", "rust_decimal"]
 
 [dependencies]
 async-trait = "0.1"
 vantage-core = { path = "../vantage-core" }
-vantage-expressions = { path = "../vantage-expressions" }
+vantage-expressions = { path = "../vantage-expressions", features = ["chrono"] }
 vantage-table = { path = "../vantage-table" }
 vantage-dataset = { path = "../vantage-dataset" }
 surreal-client = { path = "../surreal-client" }
+
+ciborium = "0.2"
+hex = "0.4"
 indexmap = { version = "2.12.0", features = ["serde"] }
 serde_json = { version = "1", features = [
     "preserve_order",
@@ -30,3 +37,6 @@ tokio = { version = "1.48", features = ["full"] }
 base64 = "0.22"
 md5 = "0.8"
 serde_path_to_error = "0.1"
+rust_decimal = { version = "1.39", optional = true }
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }

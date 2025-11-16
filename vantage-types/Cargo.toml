@@ -3,16 +3,22 @@ name = "vantage-types"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+serde = ["dep:serde", "dep:serde_json", "vantage-types-persistence/serde"]
+
 
 
 [dependencies]
 paste = "1.0"
 vantage-types-persistence = { path = "./persistence" }
+indexmap = "2.0"
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0.145", optional = true }
+vantage-core = { path = "../vantage-core" }
 
 [dev-dependencies]
 ciborium = { version = "0.2", features = ["std"] }
 serde = { version = "1.0", features = ["derive"] }
 url = { version = "2.5", features = ["serde"] }
 serde_json = "1.0.145"
-indexmap = "2.0"
 rust_decimal = "1.0"

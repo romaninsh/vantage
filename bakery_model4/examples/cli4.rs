@@ -12,7 +12,8 @@ use vantage_table::{prelude::WritableValueSet, TableLike};
 #[tokio::main]
 async fn main() {
     if let Err(e) = run().await {
-        eprintln!("{}", e);
+        use std::process::Termination;
+        e.report();
         std::process::exit(1);
     }
 }
@@ -274,7 +275,7 @@ fn handle_commands(
 
                     // Insert using AnyTable's insert_id_value
                     table
-                        .insert_id_value(id, record)
+                        .insert_value(id, record)
                         .await
                         .with_context(|| error!("Failed to insert record", id = id))?;
 
@@ -293,7 +294,7 @@ fn handle_commands(
 
                     // Delete using AnyTable's delete_id
                     table
-                        .delete_id(id)
+                        .delete(id)
                         .await
                         .with_context(|| error!("Failed to delete record", id = id))?;
 

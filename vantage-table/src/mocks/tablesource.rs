@@ -1,11 +1,18 @@
-use super::MockColumn;
-use crate::{TableLike, TableSource, tablesource::ColumnLike};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use vantage_core::util::error::{Context, vantage_error};
-use vantage_dataset::{dataset::Result, prelude::VantageError};
-use vantage_expressions::protocol::datasource::DataSource;
+use vantage_core::{
+    Entity,
+    util::error::{Context, vantage_error},
+};
+use vantage_dataset::{prelude::VantageError, traits::Result};
+use vantage_expressions::{
+    Expression, expr_any,
+    mocks::select::MockSelect,
+    traits::datasource::{DataSource, SelectSource},
+};
+
+use crate::{table::Table, traits::table_like::TableLike, traits::table_source::TableSource};
 
 #[derive(Clone)]
 pub struct MockTableSource {
@@ -36,44 +43,56 @@ impl Default for MockTableSource {
 
 impl DataSource for MockTableSource {}
 
+impl SelectSource<serde_json::Value> for MockTableSource {
+    type Select = MockSelect;
+
+    fn select(&self) -> Self::Select {
+        MockSelect::new()
+    }
+
+    async fn execute_select(
+        &self,
+        _select: &Self::Select,
+    ) -> vantage_core::Result<Vec<serde_json::Value>> {
+        Ok(vec![serde_json::json!({"mock": "select_result"})])
+    }
+}
+
 #[async_trait]
 impl TableSource for MockTableSource {
-    type Column = MockColumn;
-    type Expr = vantage_expressions::Expression;
+    type Column = crate::column::column::Column;
+    type Value = serde_json::Value;
+    type Id = String;
 
     fn create_column(&self, name: &str, _table: impl TableLike) -> Self::Column {
-        MockColumn::new(name)
+        Self::Column::new(name)
     }
 
     fn expr(
         &self,
         template: impl Into<String>,
-        parameters: Vec<vantage_expressions::protocol::expressive::IntoExpressive<Self::Expr>>,
-    ) -> Self::Expr {
-        vantage_expressions::Expression::new(template, parameters)
+        parameters: Vec<vantage_expressions::traits::expressive::ExpressiveEnum<Self::Value>>,
+    ) -> Expression<Self::Value> {
+        Expression::new(template, parameters)
     }
 
-    fn search_expression(&self, table: &impl TableLike, search_value: &str) -> Self::Expr {
+    fn search_expression(
+        &self,
+        table: &impl TableLike,
+        search_value: &str,
+    ) -> Expression<Self::Value> {
         // Mock implementation: search in "name" field if it exists
         let columns = table.columns();
         if columns.contains_key("name") {
-            vantage_expressions::Expression::new(
-                "name LIKE {}",
-                vec![format!("%{}%", search_value).into()],
-            )
+            expr_any!("name LIKE '%{}%'", search_value)
         } else {
-            // Default to searching first column
-            if let Some((_, _)) = columns.first() {
-                vantage_expressions::Expression::new("true", vec![])
-            } else {
-                vantage_expressions::Expression::new("true", vec![])
-            }
+            panic!("Mock can only search column `name` as fulltext search")
         }
     }
 
-    async fn get_table_data<E>(&self, table: &crate::Table<Self, E>) -> Result<Vec<(String, E)>>
+    async fn get_table_data<E>(&self, table: &Table<Self, E>) -> Result<Vec<(String, E)>>
     where
-        E: crate::Entity,
+        E: Entity,
         Self: Sized,
     {
         let values = self.get_table_data_as_value(table).await?;
@@ -101,12 +120,9 @@ impl TableSource for MockTableSource {
         Ok(results)
     }
 
-    async fn get_table_data_some<E>(
-        &self,
-        table: &crate::Table<Self, E>,
-    ) -> Result<Option<(String, E)>>
+    async fn get_table_data_some<E>(&self, table: &Table<Self, E>) -> Result<Option<(String, E)>>
     where
-        E: crate::Entity,
+        E: Entity,
         Self: Sized,
     {
         let values = self.get_table_data_as_value(table).await?;
@@ -133,13 +149,13 @@ impl TableSource for MockTableSource {
 
     async fn get_table_data_as_value<E>(
         &self,
-        _table: &crate::Table<Self, E>,
+        _table: &Table<Self, E>,
     ) -> Result<Vec<serde_json::Value>>
     where
-        E: crate::Entity,
+        E: Entity,
         Self: Sized,
     {
-        match self.data.lock().unwrap().get(&_table.table_name) {
+        match self.data.lock().unwrap().get(_table.table_name()) {
             Some(data) => Ok(data.clone()),
             None => Ok(vec![]),
         }
@@ -147,15 +163,17 @@ impl TableSource for MockTableSource {
 
     async fn get_table_data_as_value_by_id<E>(
         &self,
-        table: &crate::Table<Self, E>,
+        table: &Table<Self, E>,
         id: &str,
     ) -> Result<serde_json::Value>
     where
-        E: crate::Entity,
+        E: Entity,
         Self: Sized,
     {
         let data = self.data.lock().unwrap();
-        let vec = data.get(&table.table_name).ok_or(VantageError::no_data())?;
+        let vec = data
+            .get(table.table_name())
+            .ok_or(VantageError::no_data())?;
 
         for value in vec {
             if let Some(record_id) = value.get("id") {
@@ -177,13 +195,13 @@ impl TableSource for MockTableSource {
 
     async fn get_table_data_as_value_some<E>(
         &self,
-        table: &crate::Table<Self, E>,
+        table: &Table<Self, E>,
     ) -> Result<Option<serde_json::Value>>
     where
-        E: crate::Entity,
+        E: Entity,
         Self: Sized,
     {
-        match self.data.lock().unwrap().get(&table.table_name) {
+        match self.data.lock().unwrap().get(table.table_name()) {
             Some(data) => Ok(data.first().cloned()),
             None => Ok(None),
         }
@@ -191,16 +209,16 @@ impl TableSource for MockTableSource {
 
     async fn insert_table_data<E>(
         &self,
-        table: &crate::Table<Self, E>,
+        table: &Table<Self, E>,
         record: E,
     ) -> Result<Option<String>>
     where
-        E: crate::Entity + serde::Serialize,
+        E: Entity + serde::Serialize,
         Self: Sized,
     {
         let mut data = self.data.lock().unwrap();
         let vec = data
-            .get_mut(&table.table_name)
+            .get_mut(table.table_name())
             .ok_or(VantageError::no_data())?;
         let id = vec.len();
         let value = serde_json::to_value(record).context("Failed to serialize record")?;
@@ -210,12 +228,12 @@ impl TableSource for MockTableSource {
 
     async fn insert_table_data_with_id<E>(
         &self,
-        _table: &crate::Table<Self, E>,
-        _id: impl vantage_dataset::dataset::Id,
+        _table: &Table<Self, E>,
+        _id: String,
         _record: E,
     ) -> Result<()>
     where
-        E: crate::Entity + serde::Serialize,
+        E: Entity + serde::Serialize,
         Self: Sized,
     {
         Err(vantage_error!(
@@ -225,18 +243,18 @@ impl TableSource for MockTableSource {
 
     async fn replace_table_data_with_id<E>(
         &self,
-        table: &crate::Table<Self, E>,
-        id: impl vantage_dataset::dataset::Id,
+        table: &Table<Self, E>,
+        id: String,
         record: E,
     ) -> Result<()>
     where
-        E: crate::Entity + serde::Serialize,
+        E: Entity + serde::Serialize,
         Self: Sized,
     {
-        let id_str = id.into();
+        let id_str = id;
         let mut data = self.data.lock().unwrap();
         let vec = data
-            .get_mut(&table.table_name)
+            .get_mut(table.table_name())
             .ok_or(VantageError::no_data())?;
 
         // Find the record with matching ID
@@ -267,12 +285,12 @@ impl TableSource for MockTableSource {
 
     async fn patch_table_data_with_id<E>(
         &self,
-        _table: &crate::Table<Self, E>,
-        _id: impl vantage_dataset::dataset::Id,
+        _table: &Table<Self, E>,
+        _id: String,
         _partial: serde_json::Value,
     ) -> Result<()>
     where
-        E: crate::Entity,
+        E: Entity,
         Self: Sized,
     {
         Err(vantage_error!(
@@ -280,13 +298,9 @@ impl TableSource for MockTableSource {
         ))
     }
 
-    async fn delete_table_data_with_id<E>(
-        &self,
-        _table: &crate::Table<Self, E>,
-        _id: impl vantage_dataset::dataset::Id,
-    ) -> Result<()>
+    async fn delete_table_data_with_id<E>(&self, _table: &Table<Self, E>, _id: String) -> Result<()>
     where
-        E: crate::Entity,
+        E: Entity,
         Self: Sized,
     {
         Err(vantage_error!(
@@ -294,34 +308,26 @@ impl TableSource for MockTableSource {
         ))
     }
 
-    async fn update_table_data<E, F>(
-        &self,
-        _table: &crate::Table<Self, E>,
-        _callback: F,
-    ) -> Result<()>
+    async fn update_table_data<E, F>(&self, _table: &Table<Self, E>, _callback: F) -> Result<()>
     where
-        E: crate::Entity,
+        E: Entity,
         F: Fn(&mut E) + Send + Sync,
         Self: Sized,
     {
         Err(vantage_error!("update_table_data not implemented in mock"))
     }
 
-    async fn delete_table_data<E>(&self, _table: &crate::Table<Self, E>) -> Result<()>
+    async fn delete_table_data<E>(&self, _table: &Table<Self, E>) -> Result<()>
     where
-        E: crate::Entity,
+        E: Entity,
         Self: Sized,
     {
         Err(vantage_error!("delete_table_data not implemented in mock"))
     }
 
-    async fn get_table_data_by_id<E>(
-        &self,
-        _table: &crate::Table<Self, E>,
-        _id: impl vantage_dataset::dataset::Id,
-    ) -> Result<E>
+    async fn get_table_data_by_id<E>(&self, _table: &Table<Self, E>, _id: String) -> Result<E>
     where
-        E: crate::Entity,
+        E: Entity,
         Self: Sized,
     {
         Err(vantage_error!(
@@ -331,17 +337,17 @@ impl TableSource for MockTableSource {
 
     async fn insert_table_data_with_id_value<E>(
         &self,
-        table: &crate::Table<Self, E>,
+        table: &Table<Self, E>,
         id: &str,
         record: serde_json::Value,
     ) -> Result<()>
     where
-        E: crate::Entity,
+        E: Entity,
         Self: Sized,
     {
         let mut data = self.data.lock().unwrap();
         let vec = data
-            .get_mut(&table.table_name)
+            .get_mut(table.table_name())
             .ok_or(VantageError::no_data())?;
 
         // Check if ID already exists
@@ -366,17 +372,17 @@ impl TableSource for MockTableSource {
 
     async fn replace_table_data_with_id_value<E>(
         &self,
-        table: &crate::Table<Self, E>,
+        table: &Table<Self, E>,
         id: &str,
         record: serde_json::Value,
     ) -> Result<()>
     where
-        E: crate::Entity,
+        E: Entity,
         Self: Sized,
     {
         let mut data = self.data.lock().unwrap();
         let vec = data
-            .get_mut(&table.table_name)
+            .get_mut(table.table_name())
             .ok_or(VantageError::no_data())?;
 
         // Find and replace the record with matching ID
@@ -407,19 +413,15 @@ impl TableSource for MockTableSource {
         Ok(())
     }
 
-    async fn update_table_data_value<E, F>(
-        &self,
-        table: &crate::Table<Self, E>,
-        callback: F,
-    ) -> Result<()>
+    async fn update_table_data_value<E, F>(&self, table: &Table<Self, E>, callback: F) -> Result<()>
     where
-        E: crate::Entity,
+        E: Entity,
         F: Fn(&mut serde_json::Value) + Send + Sync,
         Self: Sized,
     {
         let mut data = self.data.lock().unwrap();
         let vec = data
-            .get_mut(&table.table_name)
+            .get_mut(table.table_name())
             .ok_or(VantageError::no_data())?;
 
         for value in vec.iter_mut() {
@@ -429,18 +431,18 @@ impl TableSource for MockTableSource {
         Ok(())
     }
 
-    async fn get_count<E>(&self, table: &crate::Table<Self, E>) -> Result<i64>
+    async fn get_count<E>(&self, table: &Table<Self, E>) -> Result<i64>
     where
-        E: crate::Entity,
+        E: Entity,
         Self: Sized,
     {
         let values = self.get_table_data_as_value(table).await?;
         Ok(values.len() as i64)
     }
 
-    async fn get_sum<E>(&self, table: &crate::Table<Self, E>, column: &Self::Column) -> Result<i64>
+    async fn get_sum<E>(&self, table: &Table<Self, E>, column: &Self::Column) -> Result<i64>
     where
-        E: crate::Entity,
+        E: Entity,
         Self: Sized,
     {
         let values = self.get_table_data_as_value(table).await?;
@@ -484,7 +486,8 @@ mod tests {
             ],
         );
 
-        let table = crate::Table::new("users", mock).into_entity::<TestUser>();
+        let table =
+            Table::<MockTableSource, TestUser>::new("users", mock).into_entity::<TestUser>();
         let users_with_ids: Vec<(String, TestUser)> =
             table.data_source().get_table_data(&table).await.unwrap();
         assert_eq!(users_with_ids.len(), 2);

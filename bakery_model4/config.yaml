@@ -46,6 +46,9 @@ tables:
       - name: is_paying_client
         type: bool
         default: false
+      - name: balance
+        type: decimal
+        default: 0
       - name: bakery
         type: string
         flags: [mandatory]

@@ -1,34 +1,32 @@
-//! Mock implementations for testing
+//! Mock implementations for testing database operations.
 //!
-//! This module provides standardized mock implementations that can be used across
-//! all Vantage crates for testing purposes. Instead of duplicating mock code in
-//! every test file, use these reusable patterns.
+//! Modules:
+//! - [`datasource`] - DataSource trait mock implementations
+//! - [`select`] - MockSelect query builder
+//! - [`mockbuilder`] - Pattern-based mock builder
 //!
-//! ## Available Mock Types
+//! ## Mock Testing
 //!
-//! ### DataSource Mocks
+//! QuerySource implementation that returns configurable values for testing query execution.
+//! Also available: MockDataSource (basic DataSource marker) and MockSelectSource (for select builders).
 //!
-//! #### 1. StaticDataSource - Always returns the same value
 //! ```rust
-//! use vantage_expressions::mocks::StaticDataSource;
+//! use vantage_expressions::prelude::*;
+//! use vantage_expressions::mocks::*;
 //! use serde_json::json;
 //!
-//! let mock = StaticDataSource::new(json!({"status": "ok"}));
-//! // Any query will return {"status": "ok"}
-//! ```
-//!
-//! #### 2. PatternDataSource - Maps query patterns to responses
-//! ```rust
-//! use vantage_expressions::mocks::PatternDataSource;
-//! use serde_json::json;
-//!
-//! let mock = PatternDataSource::new()
-//!     .with_pattern("SELECT * FROM users", json!([{"name": "Alice"}]))
-//!     .with_pattern("SELECT COUNT(*) FROM orders", json!(42));
-//! // Matches exact queries and returns mapped responses
+//! # tokio_test::block_on(async {
+//! let mock = MockQuerySource::new(json!({"destination_year": 1885}));
+//! let query = expr!("CALL time_travel_destination('doc_brown')");
+//! let result = mock.execute(&query).await.unwrap();
+//! assert_eq!(result, json!({"destination_year": 1885}));
+//! # });
 //! ```
 
 pub mod datasource;
-pub mod selectable;
+pub mod mockbuilder;
+pub mod select;
 
-pub use datasource::{FlatteningPatternDataSource, StaticDataSource};
+pub use datasource::{MockDataSource, MockQuerySource, MockSelectSource};
+pub use mockbuilder::MockBuilder;
+pub use select::MockSelect;

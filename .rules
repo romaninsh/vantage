@@ -292,9 +292,14 @@ the following rules:
 **vantage-expressions** forms the foundation of the entire query building
 system. It provides the expr! macro for creating SQL-injection-safe
 expressions, the DataSource trait for database connections, and the Selectable
-trait for standardized select operations. The crate enables cross-database
-compatibility by allowing the same query building patterns to work with SQL,
-SurrealDB, MongoDB, and other backends.
+trait for standardized select operations. Features type mapping functionality
+that allows converting expressions between compatible types (e.g., String to
+JSON Value), enabling cross-database queries with defer().map() patterns where
+one database's deferred query can be mapped and executed on another database
+with incompatible value types. The crate enables cross-database compatibility
+by allowing the same query building patterns to work with SQL, SurrealDB,
+MongoDB, and other backends while maintaining type safety throughout the
+conversion process.
 
 **vantage-surrealdb** bridges the low-level surreal-client with Vantage's query
 building ecosystem. It provides type-safe SurrealDB operations while

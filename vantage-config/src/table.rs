@@ -86,8 +86,7 @@ impl VantageConfig {
                     // Decimal type - requires decimal feature
                     #[cfg(feature = "decimal")]
                     {
-                        let mut col =
-                            SurrealColumn::<surreal_client::types::Decimal>::new(&column.name);
+                        let mut col = SurrealColumn::<rust_decimal::Decimal>::new(&column.name);
                         if !flags.is_empty() {
                             col = col.with_flags(&flags);
                         }

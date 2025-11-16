@@ -24,7 +24,7 @@ impl<T: SurrealType> TypedExpression<T> {
 
     /// Get the type name
     pub fn type_name(&self) -> &'static str {
-        T::type_name()
+        T::type_name_static()
     }
 
     /// Get the underlying expression
@@ -158,8 +158,8 @@ impl<T: SurrealType> crate::operation::Expressive for TypedExpression<T> {
 impl<T: SurrealType> std::fmt::Debug for TypedExpression<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TypedExpression")
-            .field("type", &T::type_name())
-            .field("expr", &self.expr)
+            .field("expression", &self.expr)
+            .field("type", &T::type_name_static())
             .finish()
     }
 }

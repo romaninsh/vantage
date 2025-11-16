@@ -1,8 +1,8 @@
-use crate::{SurrealDB, thing::Thing};
+use crate::{SurrealDB, SurrealInsert, thing::Thing};
 use async_trait::async_trait;
 use vantage_core::{error, util::error::Context};
 use vantage_expressions::{Expression, expr};
-use vantage_table::Table;
+use vantage_table::{ColumnLike, Table};
 
 #[async_trait]
 impl vantage_table::TableSource for SurrealDB {
@@ -419,12 +419,96 @@ impl vantage_table::TableSource for SurrealDB {
         E: vantage_core::Entity,
         Self: Sized,
     {
-        let thing = Thing::new(table.table_name(), id.to_string());
-        let record_id: surreal_client::RecordId = thing.into();
+        let mut insert = SurrealInsert::new(table.table_name()).with_id(id);
 
-        let client = self.inner.lock().await;
-        client
-            .create(&record_id.to_string(), Some(record))
+        // Use table columns to set fields with proper type conversion
+        let columns = table.columns();
+        for (column_name, column) in columns {
+            // Use column type information to set field appropriately
+            if let Some(value) = record.get(column_name) {
+                match column.get_type() {
+                    "string" => {
+                        if let Some(s) = value.as_str() {
+                            insert = insert.set_field(column_name, s.to_string());
+                        }
+                    }
+                    "int" => {
+                        if let Some(i) = value.as_i64() {
+                            insert = insert.set_field(column_name, i);
+                        }
+                    }
+                    "float" => {
+                        if let Some(f) = value.as_f64() {
+                            insert = insert.set_field(column_name, f);
+                        }
+                    }
+                    "bool" => {
+                        if let Some(b) = value.as_bool() {
+                            insert = insert.set_field(column_name, b);
+                        }
+                    }
+                    "decimal" => {
+                        #[cfg(feature = "decimal")]
+                        {
+                            if let Some(s) = value.as_str() {
+                                if let Ok(decimal) = s.parse::<rust_decimal::Decimal>() {
+                                    insert = insert.set_field(column_name, decimal);
+                                    continue;
+                                }
+                            }
+                            if let Some(f) = value.as_f64() {
+                                if let Ok(decimal) = rust_decimal::Decimal::try_from(f) {
+                                    insert = insert.set_field(column_name, decimal);
+                                    continue;
+                                }
+                            }
+                        }
+                        // Fallback to string
+                        if let Some(s) = value.as_str() {
+                            insert = insert.set_field(column_name, s.to_string());
+                        }
+                    }
+                    _ => {
+                        // For unknown types, store as JSON string
+                        insert = insert.set_field(column_name, value.to_string());
+                    }
+                }
+            }
+        }
+
+        // Handle any fields in the record that don't have corresponding columns
+        if let serde_json::Value::Object(map) = &record {
+            for (key, value) in map {
+                if !columns.contains_key(key) {
+                    // No column definition, set field directly with JSON conversion
+                    match value {
+                        serde_json::Value::String(s) => {
+                            insert = insert.set_field(key, s.clone());
+                        }
+                        serde_json::Value::Number(n) => {
+                            if let Some(i) = n.as_i64() {
+                                insert = insert.set_field(key, i);
+                            } else if let Some(f) = n.as_f64() {
+                                insert = insert.set_field(key, f);
+                            }
+                        }
+                        serde_json::Value::Bool(b) => {
+                            insert = insert.set_field(key, *b);
+                        }
+                        serde_json::Value::Null => {
+                            insert = insert.set_field(key, surreal_client::types::Any);
+                        }
+                        _ => {
+                            // For complex types, store as string
+                            insert = insert.set_field(key, value.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        insert
+            .execute(self)
             .await
             .context("Failed to insert record with ID using value")?;
 

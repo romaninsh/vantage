@@ -3,8 +3,9 @@
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use vantage_core::{Entity, util::error::Context};
-use vantage_dataset::dataset::{DataSet, InsertableDataSet, Result, ValueSet};
+use vantage_core::util::error::Context;
+use vantage_dataset::traits::{DataSet, InsertableDataSet, Result, ValueSet};
+use vantage_types::Entity;
 
 /// MockQueue collects all messages from all topics
 #[derive(Debug, Clone)]
@@ -87,9 +88,9 @@ impl<E> DataSet<E> for Topic<E> where E: Entity {}
 #[async_trait::async_trait]
 impl<E> InsertableDataSet<E> for Topic<E>
 where
-    E: Entity + Serialize + Send + Sync,
+    E: Entity + Serialize,
 {
-    async fn insert_return_id(&self, record: E) -> Result<Self::Id> {
+    async fn insert_return_id(&self, record: &E) -> Result<Self::Id> {
         let value = serde_json::to_value(record).context("Failed to serialize record")?;
 
         self.queue.push_message(&self.topic_name, value);

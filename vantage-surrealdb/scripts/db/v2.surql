@@ -20,6 +20,7 @@ DEFINE FIELD email ON client TYPE string ASSERT string::is::email($value);
 DEFINE FIELD name ON client TYPE string;
 DEFINE FIELD contact_details ON client TYPE string;
 DEFINE FIELD is_paying_client ON client TYPE bool DEFAULT false;
+DEFINE FIELD balance ON client TYPE decimal DEFAULT 0;
 DEFINE FIELD bakery ON client TYPE record<bakery>; -- Direct link to bakery
 DEFINE FIELD metadata ON client FLEXIBLE TYPE option<object>; -- For future extensibility
 DEFINE INDEX unique_email ON client FIELDS email UNIQUE;
@@ -63,6 +64,7 @@ CREATE client:marty SET
     email = 'marty@gmail.com',
     contact_details = '555-1955',
     is_paying_client = true,
+    balance = 150.00,
     bakery = bakery:hill_valley;
 
 CREATE client:doc SET
@@ -70,6 +72,7 @@ CREATE client:doc SET
     email = 'doc@brown.com',
     contact_details = '555-1885',
     is_paying_client = true,
+    balance = 500.50,
     bakery = bakery:hill_valley;
 
 CREATE client:biff SET
@@ -77,6 +80,7 @@ CREATE client:biff SET
     email = 'biff-3293@hotmail.com',
     contact_details = '555-1955',
     is_paying_client = false,
+    balance = -50.25,
     bakery = bakery:hill_valley,
     metadata = {
         notes: "Often late with payments",

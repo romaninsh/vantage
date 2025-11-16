@@ -1,0 +1,202 @@
+use serde_json::Value as JsonValue;
+use vantage_types::{persistence, vantage_record_conversions, vantage_type_system, Record};
+
+// Create a CBOR-based type system
+vantage_type_system! {
+    type_trait: CborType,
+    method_name: cbor,
+    value_type: ciborium::Value,
+    type_variants: [String, Int]
+}
+
+// Create a JSON-based type system
+vantage_type_system! {
+    type_trait: JsonType,
+    method_name: json,
+    value_type: serde_json::Value,
+    type_variants: [String, Int]
+}
+
+// Implement CBOR type system
+impl CborTypeVariants {
+    pub fn from_cbor(value: &ciborium::Value) -> Option<Self> {
+        match value {
+            ciborium::Value::Text(_) => Some(CborTypeVariants::String),
+            ciborium::Value::Integer(_) => Some(CborTypeVariants::Int),
+            _ => None,
+        }
+    }
+}
+
+impl CborType for String {
+    type Target = CborTypeStringMarker;
+    fn to_cbor(&self) -> ciborium::Value {
+        ciborium::Value::Text(self.clone())
+    }
+    fn from_cbor(value: ciborium::Value) -> Option<Self> {
+        match value {
+            ciborium::Value::Text(s) => Some(s),
+            _ => None,
+        }
+    }
+}
+
+impl CborType for i32 {
+    type Target = CborTypeIntMarker;
+    fn to_cbor(&self) -> ciborium::Value {
+        ciborium::Value::Integer((*self).into())
+    }
+    fn from_cbor(value: ciborium::Value) -> Option<Self> {
+        match value {
+            ciborium::Value::Integer(i) => i.try_into().ok(),
+            _ => None,
+        }
+    }
+}
+
+// Implement JSON type system
+impl JsonTypeVariants {
+    pub fn from_json(value: &serde_json::Value) -> Option<Self> {
+        match value {
+            serde_json::Value::String(_) => Some(JsonTypeVariants::String),
+            serde_json::Value::Number(n) if n.is_i64() => Some(JsonTypeVariants::Int),
+            _ => None,
+        }
+    }
+}
+
+impl JsonType for String {
+    type Target = JsonTypeStringMarker;
+    fn to_json(&self) -> serde_json::Value {
+        serde_json::Value::String(self.clone())
+    }
+    fn from_json(value: serde_json::Value) -> Option<Self> {
+        match value {
+            serde_json::Value::String(s) => Some(s),
+            _ => None,
+        }
+    }
+}
+
+impl JsonType for i32 {
+    type Target = JsonTypeIntMarker;
+    fn to_json(&self) -> serde_json::Value {
+        serde_json::Value::Number((*self).into())
+    }
+    fn from_json(value: serde_json::Value) -> Option<Self> {
+        match value {
+            serde_json::Value::Number(n) => n.as_i64().and_then(|i| i.try_into().ok()),
+            _ => None,
+        }
+    }
+}
+
+// Test structs
+#[derive(Debug, PartialEq)]
+#[persistence(CborType)]
+#[persistence(JsonType)]
+struct User {
+    name: String,
+    age: i32,
+}
+
+// Add Into/From implementations for User
+vantage_record_conversions!(User, CborType, ciborium::Value);
+vantage_record_conversions!(User, JsonType, serde_json::Value);
+
+// Mock function that expects JSON values
+fn process_json_record(record: Record<JsonValue>) -> usize {
+    record.len()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_json_type_conversion() {
+        let user = User {
+            name: "Alice".to_string(),
+            age: 30,
+        };
+
+        // Direct conversion when value types match using Into
+        let json_record: Record<JsonValue> = user.into();
+
+        assert_eq!(json_record.len(), 2);
+        assert_eq!(json_record["name"], JsonValue::String("Alice".to_string()));
+        assert_eq!(json_record["age"], JsonValue::Number(30.into()));
+
+        // Can be passed to function expecting JSON record
+        assert_eq!(process_json_record(json_record), 2);
+    }
+
+    #[test]
+    fn test_cbor_type_conversion() {
+        let user = User {
+            name: "Bob".to_string(),
+            age: 25,
+        };
+
+        // Test CBOR type conversion
+        let cbor_record: Record<AnyCborType> = user.into();
+
+        assert_eq!(cbor_record.len(), 2);
+
+        // Verify CBOR types
+        assert_eq!(
+            cbor_record["name"].type_variant(),
+            Some(CborTypeVariants::String)
+        );
+        assert_eq!(
+            cbor_record["age"].type_variant(),
+            Some(CborTypeVariants::Int)
+        );
+
+        // Extract values to verify they're correct
+        let name: String = cbor_record["name"].try_get().unwrap();
+        let age: i32 = cbor_record["age"].try_get().unwrap();
+        assert_eq!(name, "Bob");
+        assert_eq!(age, 25);
+    }
+
+    #[test]
+    fn test_record_to_struct_conversion() {
+        let user = User {
+            name: "Charlie".to_string(),
+            age: 35,
+        };
+
+        // Round-trip: struct -> record -> struct using Into/TryFrom
+        let record: Record<AnyJsonType> = user.into();
+        let restored_user: User = record.try_into().unwrap();
+
+        assert_eq!(
+            restored_user,
+            User {
+                name: "Charlie".to_string(),
+                age: 35,
+            }
+        );
+    }
+
+    #[test]
+    fn test_value_extraction() {
+        let user = User {
+            name: "David".to_string(),
+            age: 40,
+        };
+
+        // Convert to typed record using Into
+        let typed_record: Record<AnyJsonType> = user.into();
+
+        // Extract raw values
+        let raw_record: Record<JsonValue> = typed_record
+            .into_iter()
+            .map(|(k, v)| (k, v.into_value()))
+            .collect();
+
+        assert_eq!(raw_record["name"], JsonValue::String("David".to_string()));
+        assert_eq!(raw_record["age"], JsonValue::Number(40.into()));
+    }
+}

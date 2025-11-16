@@ -3,20 +3,23 @@
 use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use vantage_types::Record;
 
 pub mod dataset_insertable;
 pub mod dataset_readable;
 pub mod dataset_writable;
-pub mod table;
+pub mod im_table;
+
+pub mod valueset_insertable;
 pub mod valueset_readable;
 pub mod valueset_writable;
-pub use table::ImTable;
+pub use im_table::ImTable;
 
 /// ImDataSource stores tables in memory using IndexMap for ordered iteration
 #[derive(Debug, Clone)]
 pub struct ImDataSource {
-    // table_name -> IndexMap<id, serialized_record>
-    tables: Arc<Mutex<HashMap<String, IndexMap<String, serde_json::Value>>>>,
+    // table_name -> IndexMap<id, record>
+    tables: Arc<Mutex<HashMap<String, IndexMap<String, Record<serde_json::Value>>>>>,
 }
 
 impl ImDataSource {
@@ -26,12 +29,12 @@ impl ImDataSource {
         }
     }
 
-    fn get_or_create_table(&self, table_name: &str) -> IndexMap<String, serde_json::Value> {
+    fn get_or_create_table(&self, table_name: &str) -> IndexMap<String, Record<serde_json::Value>> {
         let mut tables = self.tables.lock().unwrap();
         tables.entry(table_name.to_string()).or_default().clone()
     }
 
-    fn update_table(&self, table_name: &str, table: IndexMap<String, serde_json::Value>) {
+    fn update_table(&self, table_name: &str, table: IndexMap<String, Record<serde_json::Value>>) {
         let mut tables = self.tables.lock().unwrap();
         tables.insert(table_name.to_string(), table);
     }

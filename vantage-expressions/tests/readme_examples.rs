@@ -3,8 +3,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
 use vantage_expressions::{
-    Expression, Flatten, expr, expr_any, expression::flatten::ExpressionFlattener,
-    protocol::expressive::ExpressiveEnum,
+    Expression, Flatten, expr, expr_as, expression::flatten::ExpressionFlattener,
+    traits::expressive::ExpressiveEnum,
 };
 
 #[test]
@@ -21,7 +21,7 @@ fn test_basic_composition_example() {
 fn test_surreal_duration_example() {
     // Test that the expr_any macro works with Value type
     let duration_secs = Duration::from_secs(3600).as_secs();
-    let surreal_query = expr_any!(
+    let surreal_query = expr_as!(
         Value,
         "SELECT * FROM session WHERE created_at > time::now() - {}",
         duration_secs
@@ -138,11 +138,11 @@ fn test_flattening_behavior() {
 
 #[tokio::test]
 async fn test_querysource_example() {
-    use vantage_expressions::mocks::StaticDataSource;
-    use vantage_expressions::protocol::datasource::QuerySource;
+    use vantage_expressions::mocks::MockQuerySource;
+    use vantage_expressions::traits::datasource::QuerySource;
 
     // Create a mock database that returns a fixed value
-    let db = StaticDataSource::new(serde_json::json!(42));
+    let db = MockQuerySource::new(serde_json::json!(42));
     let query = expr!("SELECT COUNT(*) FROM users WHERE age > {}", 21);
 
     // Execute immediately - returns result now
@@ -160,12 +160,12 @@ async fn test_querysource_example() {
 
 #[tokio::test]
 async fn test_deferred_as_parameters() {
-    use vantage_expressions::mocks::StaticDataSource;
-    use vantage_expressions::protocol::datasource::QuerySource;
-    use vantage_expressions::protocol::expressive::ExpressiveEnum;
+    use vantage_expressions::mocks::MockQuerySource;
+    use vantage_expressions::traits::datasource::QuerySource;
+    use vantage_expressions::traits::expressive::ExpressiveEnum;
 
     // Mock SurrealDB returning user IDs
-    let surreal_db = StaticDataSource::new(serde_json::json!([1, 2, 3]));
+    let surreal_db = MockQuerySource::new(serde_json::json!([1, 2, 3]));
     let user_ids_query = expr!("SELECT id FROM user WHERE status = {}", "active");
 
     // Create deferred query - defer() now returns DeferredFn directly
@@ -192,7 +192,7 @@ async fn test_deferred_as_parameters() {
 
 #[tokio::test]
 async fn test_closure_syntax() {
-    use vantage_expressions::protocol::expressive::ExpressiveEnum;
+    use vantage_expressions::traits::expressive::ExpressiveEnum;
 
     // Test that {closure} syntax still works with .into()
     let closure =
@@ -216,7 +216,7 @@ async fn test_closure_syntax() {
 #[tokio::test]
 async fn test_mutex_deferred_function() {
     use std::sync::{Arc, Mutex};
-    use vantage_expressions::protocol::expressive::{DeferredFn, ExpressiveEnum};
+    use vantage_expressions::traits::expressive::{DeferredFn, ExpressiveEnum};
 
     // 1. Set mutex value
     let counter = Arc::new(Mutex::new(10i32));
@@ -250,7 +250,7 @@ async fn test_mutex_deferred_function() {
 fn test_type_mapping() {
     use serde_json::Value;
     use vantage_expressions::{
-        Expression, expression::mapping::ExpressionMap, protocol::expressive::ExpressiveEnum,
+        Expression, expression::mapping::ExpressionMap, traits::expressive::ExpressiveEnum,
     };
 
     // Create expression with String parameters
@@ -277,12 +277,12 @@ fn test_type_mapping() {
 
 #[tokio::test]
 async fn test_immediate_vs_deferred_execution() {
-    use vantage_expressions::mocks::StaticDataSource;
-    use vantage_expressions::protocol::datasource::QuerySource;
-    use vantage_expressions::protocol::expressive::ExpressiveEnum;
+    use vantage_expressions::mocks::MockQuerySource;
+    use vantage_expressions::traits::datasource::QuerySource;
+    use vantage_expressions::traits::expressive::ExpressiveEnum;
 
     // Create a mock database that returns a fixed value
-    let db = StaticDataSource::new(serde_json::json!(42));
+    let db = MockQuerySource::new(serde_json::json!(42));
 
     // Create a query expression
     let query = expr!("SELECT COUNT(*) FROM users WHERE age > {}", 21);
@@ -308,7 +308,7 @@ async fn test_immediate_vs_deferred_execution() {
 fn test_cross_database_type_mapping_concept() {
     use serde_json::Value;
     use vantage_expressions::{
-        Expression, expression::mapping::ExpressionMap, protocol::expressive::ExpressiveEnum,
+        Expression, expression::mapping::ExpressionMap, traits::expressive::ExpressiveEnum,
     };
 
     // Simulate a deferred query that returns String type
@@ -338,9 +338,9 @@ fn test_cross_database_type_mapping_concept() {
 
 #[tokio::test]
 async fn test_cross_database_api_integration() {
-    use vantage_expressions::mocks::StaticDataSource;
-    use vantage_expressions::protocol::datasource::QuerySource;
-    use vantage_expressions::protocol::expressive::{DeferredFn, ExpressiveEnum};
+    use vantage_expressions::mocks::MockQuerySource;
+    use vantage_expressions::traits::datasource::QuerySource;
+    use vantage_expressions::traits::expressive::{DeferredFn, ExpressiveEnum};
 
     // API call that fetches user IDs asynchronously
     async fn get_user_ids() -> vantage_core::Result<serde_json::Value> {
@@ -376,14 +376,14 @@ async fn test_cross_database_api_integration() {
     }
 
     // Test with mock database execution
-    let db = StaticDataSource::new(serde_json::json!([{"id": 1, "amount": 100}]));
+    let db = MockQuerySource::new(serde_json::json!([{"id": 1, "amount": 100}]));
     let orders = db.execute(&query).await.unwrap();
     assert_eq!(orders, serde_json::json!([{"id": 1, "amount": 100}]));
 }
 
 #[tokio::test]
 async fn test_deferred_fn_from_fn() {
-    use vantage_expressions::protocol::expressive::{DeferredFn, ExpressiveEnum};
+    use vantage_expressions::traits::expressive::{DeferredFn, ExpressiveEnum};
 
     // Simple async function that returns a value
     async fn get_number() -> vantage_core::Result<i32> {
@@ -417,7 +417,7 @@ async fn test_deferred_fn_from_fn() {
 #[tokio::test]
 async fn test_error_handling_in_deferred_functions() {
     use vantage_core::error;
-    use vantage_expressions::protocol::expressive::{DeferredFn, ExpressiveEnum};
+    use vantage_expressions::traits::expressive::{DeferredFn, ExpressiveEnum};
 
     // API call that can fail
     async fn failing_api_call() -> vantage_core::Result<serde_json::Value> {
@@ -449,7 +449,7 @@ async fn test_error_handling_in_deferred_functions() {
 
 #[tokio::test]
 async fn test_union_extensibility() {
-    use vantage_expressions::protocol::expressive::{Expressive, ExpressiveEnum};
+    use vantage_expressions::traits::expressive::{Expressive, ExpressiveEnum};
 
     /// A UNION SQL construct that combines two SELECT expressions
     #[derive(Clone)]

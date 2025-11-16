@@ -1,83 +1,71 @@
 use async_trait::async_trait;
-use vantage_core::Entity;
+use vantage_types::{Entity, Record};
 
-use crate::{
-    dataset::{Result, WritableValueSet},
-    im::ImTable,
-};
+use crate::{im::ImTable, traits::WritableValueSet};
 
 #[async_trait]
 impl<E> WritableValueSet for ImTable<E>
 where
     E: Entity,
 {
-    async fn insert_value(&self, id: &Self::Id, record: Self::Value) -> Result<()> {
+    async fn insert_value(
+        &self,
+        id: &Self::Id,
+        record: &Record<Self::Value>,
+    ) -> crate::traits::Result<Record<Self::Value>> {
         let mut table = self.data_source.get_or_create_table(&self.table_name);
 
-        // Check if ID already exists - insert should be idempotent
-        if table.contains_key(id) {
-            return Ok(());
+        // Check if record already exists (idempotent behavior)
+        if let Some(existing_record) = table.get(id) {
+            return Ok(existing_record.clone());
         }
 
-        // Remove id field from the stored record since it's in the key
-        let mut value = record;
-        if let serde_json::Value::Object(ref mut map) = value {
-            map.remove("id");
-        }
-
-        table.insert(id.clone(), value);
+        table.insert(id.clone(), record.clone());
         self.data_source.update_table(&self.table_name, table);
-        Ok(())
+
+        Ok(record.clone())
     }
 
-    async fn replace_value(&self, id: &Self::Id, record: Self::Value) -> Result<()> {
+    async fn replace_value(
+        &self,
+        id: &Self::Id,
+        record: &Record<Self::Value>,
+    ) -> crate::traits::Result<Record<Self::Value>> {
         let mut table = self.data_source.get_or_create_table(&self.table_name);
 
-        // Remove id field from the stored record since it's in the key
-        let mut value = record;
-        if let serde_json::Value::Object(ref mut map) = value {
-            map.remove("id");
-        }
-
-        table.insert(id.clone(), value);
+        table.insert(id.clone(), record.clone());
         self.data_source.update_table(&self.table_name, table);
-        Ok(())
+
+        Ok(record.clone())
     }
 
-    async fn patch_value(&self, id: &Self::Id, partial: Self::Value) -> Result<()> {
+    async fn patch_value(
+        &self,
+        id: &Self::Id,
+        partial: &Record<Self::Value>,
+    ) -> crate::traits::Result<Record<Self::Value>> {
         let mut table = self.data_source.get_or_create_table(&self.table_name);
 
         // Check if record exists
-        let existing_value = table
+        let mut existing_record = table
             .get(id)
             .ok_or_else(|| {
                 vantage_core::util::error::vantage_error!("Record with id '{}' not found", id)
             })?
             .clone();
 
-        // Merge the partial update with existing record
-        let mut merged = existing_value;
-        if let (serde_json::Value::Object(existing_obj), serde_json::Value::Object(partial_obj)) =
-            (&mut merged, partial)
-        {
-            for (key, value) in partial_obj {
-                if key != "id" {
-                    // Don't allow patching the id field
-                    existing_obj.insert(key, value);
-                }
-            }
-        } else {
-            return Err(vantage_core::util::error::vantage_error!(
-                "Cannot patch non-object records"
-            ));
+        // Merge the partial fields into the existing record
+        for (key, value) in partial.iter() {
+            existing_record.insert(key.clone(), value.clone());
         }
 
-        table.insert(id.clone(), merged);
+        table.insert(id.clone(), existing_record.clone());
         self.data_source.update_table(&self.table_name, table);
-        Ok(())
+
+        Ok(existing_record)
     }
 
-    async fn delete(&self, id: &Self::Id) -> Result<()> {
+    async fn delete(&self, id: &Self::Id) -> crate::traits::Result<()> {
         let mut table = self.data_source.get_or_create_table(&self.table_name);
 
         // Delete is idempotent - success even if record doesn't exist
@@ -87,7 +75,7 @@ where
         Ok(())
     }
 
-    async fn delete_all(&self) -> Result<()> {
+    async fn delete_all(&self) -> crate::traits::Result<()> {
         let mut table = self.data_source.get_or_create_table(&self.table_name);
         table.clear();
         self.data_source.update_table(&self.table_name, table);
@@ -100,30 +88,13 @@ mod tests {
     use super::*;
     use crate::im::ImDataSource;
     use serde::{Deserialize, Serialize};
+    use vantage_types::persistence_serde;
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+    #[persistence_serde]
     struct User {
         id: Option<String>,
         name: String,
-    }
-
-    #[tokio::test]
-    async fn test_insert_value() {
-        let ds = ImDataSource::new();
-        let table = ImTable::<User>::new(&ds, "users");
-
-        let value = serde_json::json!({"name": "Alice"});
-        table
-            .insert_value(&"user1".to_string(), value)
-            .await
-            .unwrap();
-
-        // Second insert with same ID should be idempotent
-        let value2 = serde_json::json!({"name": "Bob"});
-        table
-            .insert_value(&"user1".to_string(), value2)
-            .await
-            .unwrap();
     }
 
     #[tokio::test]
@@ -131,9 +102,13 @@ mod tests {
         let ds = ImDataSource::new();
         let table = ImTable::<User>::new(&ds, "users");
 
-        let value = serde_json::json!({"name": "Alice"});
+        let mut record = Record::new();
+        record.insert(
+            "name".to_string(),
+            serde_json::Value::String("Alice".to_string()),
+        );
         table
-            .replace_value(&"user1".to_string(), value)
+            .replace_value(&"user1".to_string(), &record)
             .await
             .unwrap();
     }
@@ -144,8 +119,12 @@ mod tests {
         let table = ImTable::<User>::new(&ds, "users");
 
         // Patch non-existent record should fail
-        let patch = serde_json::json!({"name": "Updated"});
-        let result = table.patch_value(&"nonexistent".to_string(), patch).await;
+        let mut patch = Record::new();
+        patch.insert(
+            "name".to_string(),
+            serde_json::Value::String("Updated".to_string()),
+        );
+        let result = table.patch_value(&"nonexistent".to_string(), &patch).await;
         assert!(result.is_err());
     }
 

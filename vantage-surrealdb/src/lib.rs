@@ -33,9 +33,10 @@
 
 pub mod associated_query;
 pub mod conditional;
+
 pub mod field_projection;
 pub mod identifier;
-pub mod mocks;
+pub mod insert;
 pub mod operation;
 pub mod protocol;
 pub mod sum;
@@ -53,9 +54,26 @@ pub mod variable;
 
 pub use associated_query::{SurrealAssociated, SurrealAssociatedQueryable};
 pub use column::SurrealColumn;
+pub use insert::SurrealInsert;
 pub use select::SurrealSelect;
 pub use surrealdb::SurrealDB;
 pub use table::{SurrealTableCore, SurrealTableExt};
 pub use typed_expression::TypedExpression;
+
+// SurrealDB expression support using vantage-expressions with AnySurrealType
+pub use surreal_client::types::AnySurrealType;
+pub type Expr = vantage_expressions::Expression<AnySurrealType>;
+
+/// Macro to create SurrealDB expressions with AnySurrealType
+/// Usage: expr!("template", arg1, arg2)
+#[macro_export]
+macro_rules! expr {
+    ($template:expr) => {
+        vantage_expressions::expr_any!(surreal_client::types::AnySurrealType, $template)
+    };
+    ($template:expr, $($param:tt),*) => {
+        vantage_expressions::expr_any!(surreal_client::types::AnySurrealType, $template, $($param),*)
+    };
+}
 
 // Re-export main SurrealDB types for convenience

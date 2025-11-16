@@ -1,9 +1,11 @@
-use crate::expression::owned::Expression;
-use crate::protocol::expressive::{DeferredFn, DeferredFuture, ExpressiveEnum};
+//! Module for mapping Expression types between different value types recursively
+
+use crate::expression::expression::Expression;
+use crate::traits::expressive::{DeferredFn, DeferredFuture, ExpressiveEnum};
 
 /// Trait for mapping Expression from one type to another
 pub trait ExpressionMapper<From, To> {
-    /// Convert Expression<From> to Expression<To>
+    /// Convert `Expression<From>` to `Expression<To>`
     fn map_expression(expr: Expression<From>) -> Expression<To>
     where
         From: Into<To> + Send + Clone + 'static,
@@ -81,8 +83,8 @@ impl<From> ExpressionMap<From> for Expression<From> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::datasource::{DataSource, QuerySource};
-    use crate::protocol::expressive::{DeferredFn, ExpressiveEnum};
+    use crate::traits::datasource::{DataSource, QuerySource};
+    use crate::traits::expressive::{DeferredFn, ExpressiveEnum};
     use serde_json::Value;
     use vantage_core::Result;
 

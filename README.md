@@ -5,17 +5,86 @@
 Vantage is an **Entity Framework** for Rust. With Vantage you can represent
 your business entities (Client, Order, Invoice, Lead) with native Rust types. Business
 logic implementation in Vantage and Rust is type-safe and is very ergonomic for large
-code-bases.
+code-bases. Ideal for creating facade services, middlewares and microservices or low-code
+backend UI.
 
-Given a sample entity `struct Client { .. }`, your business code can operate with:
+Given your client record:
 
-- `ReadableDataSet<Client>` - An arbitrary Database, CSV files or API can implement this trait - allowing to read `Client` records from remote DataSource.
-- `Insertable<Client>` - Queue iterfaces, JSONP files and other
-- `WritableDataSet<Client>` - Patch(update), Replace or Delete remote operations
-- `DataSet<Client>` - Trait that implements 3 of the above operations.
+```rust
+// Implemented in shared Business Model Library
 
-DataSet represents collection of records stored remotely. In practice DataSets are usually massive and can
-contain millions of records. This is a typical Enterprise use-case:
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+struct Client {
+    name: String,
+    surname: Option<String>,
+    gender: GenderEnum,
+    email: Email(String),
+    is_paying_client: bool,
+    balance: Decimal,
+}
+```
+
+Vantage offers the following features out of the box:
+
+- `impl DataSet<E>` - Interface for a low-level persistence for an entity. There are some
+  internal implementation like `CsvFile<E>` or `Queue<E>` which implement DataSet, but more
+  importantly - you can use 3rd party implementations or build your own.
+
+- `impl ValueSet<V>` - Interface for a uniform persistence without an entity. While this is
+  very similar to strong-typed variant, ValueSet can use `serde_json::Value` or `ciborium::Value`
+  to work with schema-less persistences. Example like `CsvFile` would implement `ReadableValueSet<String>`
+  while `Queue` would implement `InsertableValueSet<Value>`.
+
+- `Table<E, D>` - Struct for storing structured data with some columns. Can be used with NoSQL/SQL
+  database engines, which implement interfaces for `TableSource`, `QuerySource` and `SelectSource`.
+  Table auto-implements `DataSet<E>` and `ValueSet<D::Value>`.
+- `Expression<V>` - Universal mechanism for constructing query builders. Expressions implement
+  cross-database integration as well as define `Selectable` interface for minimalistic implementation
+  of a query-builder (SQL-compatible).
+- `Record<E>` and `ValueRecord<V>` - Implementation of ActiveRecord pattern, load the record, pass
+  it around, modify and call `record.save()` when you are done.
+
+With all of the fundamental blocks and interfaces in place, Vantage can be extended in several ways.
+First - persistence implementation:
+
+- `vantage-surrealdb` - Implements all interfaces to interact with this powerful multi-modal database with
+  support for custom types, schemaless tables, graph-based queries and live tables. Brings `SurrealSelect`,
+  `SurrealColumn` types and also makes use of `SurrealType` that include Geospatial, 128-bit `Decimal` and
+  other advanced types.
+- `vantage-sql` - Implementation utilising SQLx and providing support for MySQL, PostgreSQL and SQLite.
+- `vantage-mongo` - Implementation for MongoDB database.
+- `vantage-redb` - Implementation for Redb embedded database, providing some basic features. Perfect a local cache.
+
+On the other end, Vantage offers some adapters. Those would work with `Table` / `AnyTable` and implement
+generic UI or API component:
+
+- vantage-ui-adaptors - Implement DataGrid for Tauri, EGui, Cursive, GPUI, RatatUI and Slint frameworks.
+- vantage-axum`*` - Implements builder for Axum supporting use of typed or generic tables.
+- vantage-config - Reads Entity definitions from `yaml` file, creating type-erased `AnyTable`s.
+- Vantage Admin`*` - Desktop Application for Entity management based on `yaml` config.
+
+(`*` indicate commercial component)
+
+Vantage `0.3` is almost here. Remaining features include:
+
+- References`(implemented)` allowing to traverse between `Table<Client>` into `Table<Order>`, even if those
+  tables are stored in different databases.
+- Expressions`(0.3)` allow Table columns to be calculated based on subqueries and references.
+- Hooks`(0.3)` attach 3rd party code plugins into Tables.
+- Validation`(0.3)` use standard and advanced validation through a hook mechanism.
+- Audit`(0.3)` capture modifications automatically and store in same or a different persistence.
+
+Vantage is planning to add the following features before `1.0`:
+
+- Aggregators. Use database-vendor specific extensions to build reports declaratively.
+- GraphQL API adaptor. Build GraphQL APIs on top of Vantage Tables.
+- Live Tables. Connect CDC or Live events provided by databases with UI adapters or WS APIs.
+
+## Example
+
+Vantage is an opinionated framework, which means it will provide a guidance on how to
+describe your businses objects in the Rust code. Here is a slightly expanded example,
+which describes how a Client entity can be used with various persistences.
 
 ```rust
 // Implemented in shared Business Model Library
@@ -31,33 +100,73 @@ struct Client {
 impl Client {
     fn new(){ /* ... */};
 
-    fn registration_queue() -> impl Insertable<Client> {}
+    fn registration_queue() -> impl InsertableDataSet<Client> {}
     fn admin_api() -> impl DataSet<Client> {}
     fn read_csv(filename: String) -> impl ReadableDataSet<Client> {}
     fn mock() -> MockDataSet<Client> {}
+
+    fn table() -> Table<SurrealDB, Client> {
+        Table::new("client", surrealdb())
+            .with_column_of::<bool>("is_paying_client")
+            .with_many("orders", "client", move || Order::table(surrealdb()))
+    }
 }
 
-/////////////////////////////////////////
-// In any of your 1000s microservices:
+// This is our way to implement Client Table specific features:
+pub trait ClientTable {
+    fn ref_orders(&self) -> Table<SurrealDB, crate::Order>;
+}
+impl ClientTable for Table<SurrealDB, Client> {
+    fn ref_orders(&self) -> Table<SurrealDB, crate::Order> {
+        self.get_ref_as("orders").unwrap()
+    }
+}
+```
 
+Definitions of your entities can be stored in your own crate, versioned and shared
+by many other services within your organisations. Here is how a typical service
+might make use of Client entity:
+
+```rust
 use model::Client;
 
 async fn register_new_client(client: Client) -> Result<()> {
     let queue = Client::registration_queue(); // Probably KafkaTopic<Client>
-    let id = uuid::Uuid::new_v4().to_string(); // Idempotent ID generation
-    queue.insert(id, client).await
+    queue.insert(client).await?;
+    Ok(())
+}
+
+async fn remove_stale_client_orders() -> Result<()> {
+    let clients = Client::table()
+        .with_condition(clients.is_paying_client().eq(false));
+
+    // Delete orders of affected clients first (stored in MongoDB)
+    clients.ref_orders().delete_all();
+
+    // next delete clients (stored in SurrealDB)
+    clients.delete_all();
+
+    Ok(())
 }
 ```
 
-Enterprise software employes hundreds of developers, and anyone can make use of type
-safety, without knowing implementation details. In example above - individual engineers
-do not need to know if `registration_queue()` is implemented by Kafka topic, SQL or Rest API,
-interface in SDK remains the same.
+Enterprise software employs hundreds of developers, and anyone can make use of type
+safety without knowing implementation details. Behind a simple interface of `clients` and
+`orders` - extensions of Vantage allow to embed additional features:
+
+- record any operations automatically into audit tables
+- handle CDC for change tracking or perform necessary validations
+- use multi-record operations efficiently, like in the case above - MongoDB will permorm
+  delition with a single request.
+- developer does not need to be mindful, where client table is stored.
+
+Finally - thanks to the amazing Rust type system, `client` type will not only
+implement Client-specific extensions (like `ref_order()`) but will also implement SurrealDB
+extensions like `search_query(q)`
 
 ## Vantage features
 
-Introduction above covered 3% of entire Vantage features set. Framework consist of over 10
-crates and implementing a wide range of features like:
+A more comprehensive feature list:
 
 - Standard CRUD operations with persistence-abstraction
 - Implementation of DataSource-specific extensions
@@ -206,9 +315,10 @@ Previous example created `order` table like this:
 let order: Table<Order, MongoDB>
 ```
 
-If MongoDB `impl DataSource`, then Vantage implements `DataSet<E>` for
+If MongoDB `impl TableSource`, then Vantage will implement `DataSet<E>` for
 `Table<E, _: TableSource>` automatically. In other words - any table
-implements `DataSet` and `ValueSet` traits automatically.
+is also a DataSet. Method `import()` accepts `ReadableDataSet` so we can
+conveniently pass MongoDB Table as an argument.
 
 Lets populate our In-memory cache from MongoDB:
 
@@ -220,8 +330,6 @@ let im_orders = ImTable::<Order>::new(&in_memory_cache, "orders");
 
 im_orders.import(&mongo_orders).await?;
 ```
-
-Software engineres love consistency, and Vantage delivers consistency!
 
 ## SelectSource and Queries
 
@@ -429,6 +537,8 @@ as well and that happens transparently, without change to model API.
 
 Reference methods do not necessarily have to return Table, they can also respond with
 DataSet or even something more specific like ReadableDataSet.
+
+(Idea: create ReadableDataSet on top of arbitrary Select query - just neet do add type)
 
 ## Associated Records
 

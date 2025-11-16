@@ -3,11 +3,9 @@
 use csv::ReaderBuilder;
 use indexmap::IndexMap;
 use std::collections::HashMap;
-use vantage_core::Entity;
 use vantage_core::util::error::{Context, vantage_error};
-use vantage_dataset::dataset::{
-    DataSet, ReadableDataSet, ReadableValueSet, Result, ValueSet, VantageError,
-};
+use vantage_dataset::traits::{DataSet, ReadableDataSet, ReadableValueSet, Result, ValueSet};
+use vantage_types::{Entity, Record};
 
 /// MockCsv contains hardcoded CSV data as strings
 #[derive(Debug, Clone)]
@@ -148,7 +146,7 @@ impl<T> ReadableValueSet for CsvFile<T>
 where
     T: Entity,
 {
-    async fn list_values(&self) -> Result<IndexMap<Self::Id, Self::Value>> {
+    async fn list_values(&self) -> Result<IndexMap<Self::Id, Record<Self::Value>>> {
         let content = self
             .csv_ds
             .get_file_content(&self.filename)
@@ -158,14 +156,15 @@ where
         let mut records = IndexMap::new();
 
         for (idx, result) in reader.deserialize::<serde_json::Value>().enumerate() {
-            let record = result.context("Failed to deserialize CSV record")?;
+            let value = result.context("Failed to deserialize CSV record")?;
+            let record: Record<serde_json::Value> = value.into();
             records.insert(idx, record);
         }
 
         Ok(records)
     }
 
-    async fn get_value(&self, id: &Self::Id) -> Result<Self::Value> {
+    async fn get_value(&self, id: &Self::Id) -> Result<Record<Self::Value>> {
         let content = self
             .csv_ds
             .get_file_content(&self.filename)
@@ -175,7 +174,8 @@ where
 
         for (idx, result) in reader.deserialize::<serde_json::Value>().enumerate() {
             if idx == *id {
-                let record = result.context("Failed to deserialize CSV record")?;
+                let value = result.context("Failed to deserialize CSV record")?;
+                let record: Record<serde_json::Value> = value.into();
                 return Ok(record);
             }
         }
@@ -183,7 +183,7 @@ where
         Err(vantage_error!("Record with index {} not found", id))
     }
 
-    async fn get_some_value(&self) -> Result<Option<(Self::Id, Self::Value)>> {
+    async fn get_some_value(&self) -> Result<Option<(Self::Id, Record<Self::Value>)>> {
         let values = self.list_values().await?;
         Ok(values.into_iter().next())
     }
