@@ -1,143 +1,109 @@
 use async_trait::async_trait;
-use serde::{Serialize, de::DeserializeOwned};
-use vantage_core::Entity;
+use vantage_types::{Entity, Record};
 
 use crate::{
-    dataset::{Result, WritableDataSet},
     im::ImTable,
+    traits::{Result, WritableDataSet},
 };
-use vantage_core::util::error::Context;
 
 #[async_trait]
 impl<E> WritableDataSet<E> for ImTable<E>
 where
-    E: Entity + Serialize + DeserializeOwned + Send + Sync,
+    E: Entity + Clone + Send + Sync,
+    <E as TryFrom<Record<serde_json::Value>>>::Error: std::fmt::Debug,
 {
-    async fn insert(&self, id: &Self::Id, record: E) -> Result<()> {
+    async fn insert(&self, id: &Self::Id, entity: &E) -> Result<E> {
         let mut table = self.data_source.get_or_create_table(&self.table_name);
 
-        // Check if ID already exists - insert should be idempotent
-        if table.contains_key(id) {
-            return Ok(());
+        // Check if record already exists (idempotent behavior)
+        if let Some(existing_record) = table.get(id) {
+            // Return existing entity
+            let mut record_with_id = existing_record.clone();
+            record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
+
+            let existing_entity = E::try_from(record_with_id).map_err(|e| {
+                vantage_core::util::error::vantage_error!(
+                    "Failed to convert record to entity: {:?}",
+                    e
+                )
+            })?;
+            return Ok(existing_entity);
         }
 
-        // Serialize record to JSON and remove id field since it's in the key
-        let mut value = serde_json::to_value(record).context("Failed to serialize record")?;
-        if let serde_json::Value::Object(ref mut map) = value {
-            map.remove("id");
-        }
+        // Convert entity to record for storage (remove id field since it's in the key)
+        let mut record: Record<serde_json::Value> = entity.clone().into();
+        record.shift_remove("id");
 
-        table.insert(id.clone(), value);
+        table.insert(id.clone(), record);
         self.data_source.update_table(&self.table_name, table);
-        Ok(())
+
+        Ok(entity.clone())
     }
 
-    async fn replace(&self, id: &Self::Id, record: E) -> Result<()> {
+    async fn replace(&self, id: &Self::Id, entity: &E) -> Result<E> {
         let mut table = self.data_source.get_or_create_table(&self.table_name);
 
-        // Serialize record to JSON and remove id field since it's in the key
-        let mut value = serde_json::to_value(record).context("Failed to serialize record")?;
-        if let serde_json::Value::Object(ref mut map) = value {
-            map.remove("id");
-        }
+        // Convert entity to record for storage (remove id field since it's in the key)
+        let mut record: Record<serde_json::Value> = entity.clone().into();
+        record.shift_remove("id");
 
-        table.insert(id.clone(), value);
+        table.insert(id.clone(), record);
         self.data_source.update_table(&self.table_name, table);
-        Ok(())
+
+        Ok(entity.clone())
     }
 
-    async fn patch(&self, id: &Self::Id, partial: E) -> Result<()> {
+    async fn patch(&self, id: &Self::Id, partial: &E) -> Result<E> {
         let mut table = self.data_source.get_or_create_table(&self.table_name);
 
         // Check if record exists
-        let existing_value = table
+        let mut existing_record = table
             .get(id)
             .ok_or_else(|| {
                 vantage_core::util::error::vantage_error!("Record with id '{}' not found", id)
             })?
             .clone();
 
-        // Serialize partial record to get update fields
-        let partial_value =
-            serde_json::to_value(partial).context("Failed to serialize partial record")?;
+        // Convert partial entity to record
+        let partial_record: Record<serde_json::Value> = partial.clone().into();
 
-        // Merge the partial update with existing record
-        let mut merged = existing_value;
-        if let (serde_json::Value::Object(existing_obj), serde_json::Value::Object(partial_obj)) =
-            (&mut merged, partial_value)
-        {
-            for (key, value) in partial_obj {
-                if key != "id" {
-                    // Don't allow patching the id field
-                    existing_obj.insert(key, value);
-                }
+        // Merge the partial fields into the existing record
+        for (key, value) in partial_record.iter() {
+            if key != "id" {
+                // Don't allow patching the id field
+                existing_record.insert(key.clone(), value.clone());
             }
-        } else {
-            return Err(vantage_core::util::error::vantage_error!(
-                "Cannot patch non-object records"
-            ));
         }
 
-        table.insert(id.clone(), merged);
+        table.insert(id.clone(), existing_record.clone());
+        self.data_source.update_table(&self.table_name, table);
+
+        // Return the merged entity
+        let mut record_with_id = existing_record;
+        record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
+
+        let merged_entity = E::try_from(record_with_id).map_err(|e| {
+            vantage_core::util::error::vantage_error!("Failed to convert record to entity: {:?}", e)
+        })?;
+        Ok(merged_entity)
+    }
+
+    async fn delete(&self, id: &Self::Id) -> Result<()> {
+        let mut table = self.data_source.get_or_create_table(&self.table_name);
+
+        // Delete is idempotent - success even if record doesn't exist
+        table.shift_remove(id);
+
+        self.data_source.update_table(&self.table_name, table);
+        Ok(())
+    }
+
+    async fn delete_all(&self) -> Result<()> {
+        let mut table = self.data_source.get_or_create_table(&self.table_name);
+        table.clear();
         self.data_source.update_table(&self.table_name, table);
         Ok(())
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::im::ImDataSource;
-    use serde::{Deserialize, Serialize};
-
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-    struct User {
-        id: Option<String>,
-        name: String,
-    }
-
-    #[tokio::test]
-    async fn test_insert() {
-        let ds = ImDataSource::new();
-        let table = ImTable::<User>::new(&ds, "users");
-
-        let user = User {
-            id: None,
-            name: "Alice".to_string(),
-        };
-        table.insert(&"user1".to_string(), user).await.unwrap();
-
-        // Second insert with same ID should be idempotent
-        let user2 = User {
-            id: None,
-            name: "Bob".to_string(),
-        };
-        table.insert(&"user1".to_string(), user2).await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_replace() {
-        let ds = ImDataSource::new();
-        let table = ImTable::<User>::new(&ds, "users");
-
-        let user = User {
-            id: None,
-            name: "Alice".to_string(),
-        };
-        table.replace(&"user1".to_string(), user).await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_patch() {
-        let ds = ImDataSource::new();
-        let table = ImTable::<User>::new(&ds, "users");
-
-        // Patch non-existent record should fail
-        let user = User {
-            id: None,
-            name: "Alice".to_string(),
-        };
-        let result = table.patch(&"nonexistent".to_string(), user).await;
-        assert!(result.is_err());
-    }
-}
+// Tests are in tests/im_dataset.rs integration tests

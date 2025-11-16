@@ -1,7 +1,6 @@
-use serde::{Serialize, de::DeserializeOwned};
 use uuid::Uuid;
 
-use crate::{dataset::ValueSet, im::ImDataSource};
+use crate::{im::ImDataSource, traits::ValueSet};
 
 /// Table represents a typed table in the ImDataSource
 pub struct ImTable<E> {
@@ -10,10 +9,7 @@ pub struct ImTable<E> {
     _phantom: std::marker::PhantomData<E>,
 }
 
-impl<E> ImTable<E>
-where
-    E: Serialize + DeserializeOwned,
-{
+impl<E> ImTable<E> {
     pub fn new(data_source: &ImDataSource, table_name: &str) -> Self {
         Self {
             data_source: data_source.clone(),

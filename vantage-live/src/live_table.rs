@@ -170,7 +170,7 @@ impl<E: Entity> WritableValueSet for LiveTable<E> {
 
 #[async_trait]
 impl<E: Entity> InsertableDataSet<E> for LiveTable<E> {
-    async fn insert(&self, entity: E) -> Result<Option<String>> {
+    async fn insert_return_id(&self, entity: &E) -> Result<String> {
         todo!()
     }
 }

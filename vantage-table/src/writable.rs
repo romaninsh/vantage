@@ -7,7 +7,7 @@
 use crate::{Entity, Table, TableSource};
 use async_trait::async_trait;
 use serde::{Serialize, de::DeserializeOwned};
-use vantage_dataset::dataset::{Id, Result, WritableDataSet, WritableValueSet};
+use vantage_dataset::dataset::{Result, WritableDataSet, WritableValueSet};
 
 // Implementation for WritableDataSet<E>
 #[async_trait]
@@ -43,25 +43,25 @@ where
     T: TableSource + Send + Sync,
     E: Entity + Send + Sync,
 {
-    async fn insert_id_value(&self, id: &str, record: serde_json::Value) -> Result<()> {
+    async fn insert_value(&self, id: &str, record: serde_json::Value) -> Result<()> {
         self.data_source
             .insert_table_data_with_id_value(self, id, record)
             .await
     }
 
-    async fn replace_id_value(&self, id: &str, record: serde_json::Value) -> Result<()> {
+    async fn replace_value(&self, id: &str, record: serde_json::Value) -> Result<()> {
         self.data_source
             .replace_table_data_with_id_value(self, id, record)
             .await
     }
 
-    async fn patch_id(&self, id: &str, partial: serde_json::Value) -> Result<()> {
+    async fn patch_value(&self, id: &str, partial: serde_json::Value) -> Result<()> {
         self.data_source
             .patch_table_data_with_id(self, id, partial)
             .await
     }
 
-    async fn delete_id(&self, id: &str) -> Result<()> {
+    async fn delete(&self, id: &str) -> Result<()> {
         self.data_source.delete_table_data_with_id(self, id).await
     }
 

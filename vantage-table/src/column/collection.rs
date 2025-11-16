@@ -1,9 +1,8 @@
-//! Extension trait for filtering column collections
-
-use indexmap::IndexMap;
 use std::sync::Arc;
 
-use crate::{ColumnFlag, ColumnLike};
+use indexmap::IndexMap;
+
+use crate::{column::flags::ColumnFlag, traits::column_like::ColumnLike};
 
 /// Extension trait for filtering collections of columns
 ///
@@ -72,8 +71,9 @@ impl ColumnCollectionExt for Arc<IndexMap<String, Arc<dyn ColumnLike>>> {
 
 #[cfg(test)]
 mod tests {
+    use crate::column::column::Column;
+
     use super::*;
-    use crate::Column;
 
     #[test]
     fn test_only_filter() {

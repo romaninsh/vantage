@@ -81,13 +81,35 @@ macro_rules! vantage_type_system {
                         None
                     }
                 }
+
+                pub fn into_value(self) -> $value_type {
+                    self.value
+                }
             }
 
             // Persistence trait for structs
             pub trait [<$trait_name Persistence>]: Sized {
                 fn [<to_ $trait_name:lower _map>](&self) -> indexmap::IndexMap<String, [<Any $trait_name>]>;
                 fn [<from_ $trait_name:lower _map>](map: indexmap::IndexMap<String, [<Any $trait_name>]>) -> Option<Self>;
+
+                // Convenient conversion methods that don't conflict with orphan rules
+                fn [<to_ $trait_name:lower _record>](&self) -> vantage_types::Record<[<Any $trait_name>]> {
+                    self.[<to_ $trait_name:lower _map>]().into()
+                }
+
+                fn [<to_ $trait_name:lower _values>](&self) -> vantage_types::Record<$value_type> {
+                    self.[<to_ $trait_name:lower _map>]()
+                        .into_iter()
+                        .map(|(k, v)| (k, v.into_value()))
+                        .collect()
+                }
+
+                fn [<from_ $trait_name:lower _record>](map: vantage_types::Record<[<Any $trait_name>]>) -> Option<Self> {
+                    Self::[<from_ $trait_name:lower _map>](map.into_inner())
+                }
             }
+
+
 
             // Helper functions similar to cbor.rs
             pub fn [<to_ $method_name _value>]<T: serde::Serialize>(value: &T) -> $value_type {
@@ -122,10 +144,34 @@ macro_rules! vantage_type_system {
     };
 }
 
-// Example usage:
-// vantage_type_system! {
-//     type_trait: Type3,
-//     method_name: cbor,
-//     value_type: ciborium::Value,
-//     type_variants: [String, Email, Number]
-// }
+/// Adds Into/From implementations for specific structs with Record conversions
+///
+/// Use this for specific struct types to avoid orphan rules
+#[macro_export]
+macro_rules! vantage_record_conversions {
+    ($struct_name:ty, $trait_name:ident, $value_type:ty) => {
+        paste::paste! {
+            // Into implementations for specific struct
+            impl Into<vantage_types::Record<[<Any $trait_name>]>> for $struct_name {
+                fn into(self) -> vantage_types::Record<[<Any $trait_name>]> {
+                    self.[<to_ $trait_name:lower _record>]()
+                }
+            }
+
+            impl Into<vantage_types::Record<$value_type>> for $struct_name {
+                fn into(self) -> vantage_types::Record<$value_type> {
+                    self.[<to_ $trait_name:lower _values>]()
+                }
+            }
+
+            // TryFrom for reverse conversion
+            impl TryFrom<vantage_types::Record<[<Any $trait_name>]>> for $struct_name {
+                type Error = ();
+
+                fn try_from(value: vantage_types::Record<[<Any $trait_name>]>) -> Result<Self, Self::Error> {
+                    Self::[<from_ $trait_name:lower _record>](value).ok_or(())
+                }
+            }
+        }
+    };
+}

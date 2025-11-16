@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-vantage-config = { path = "../vantage-config" }
+vantage-config = { path = "../vantage-config", features = ["decimal"] }
 vantage-surrealdb = { path = "../vantage-surrealdb" }
-surreal-client = { path = "../surreal-client" }
+surreal-client = { path = "../surreal-client", features = ["decimal"] }
 vantage-table = { path = "../vantage-table" }
 vantage-core = { path = "../vantage-core" }
 vantage-expressions = { path = "../vantage-expressions" }

@@ -4,20 +4,23 @@ mod mocks;
 use mocks::queue_mock::{MockQueue, Topic};
 
 use serde::{Deserialize, Serialize};
+use vantage_types::persistence_serde;
 
-use vantage_dataset::dataset::InsertableDataSet;
+use vantage_dataset::traits::InsertableDataSet;
 
 // This is example implementation of a Queue with multiple topics
 // using vantage-dataset pattern. Queue integration is in mocks/, but
 // developer would only need to define types to operate with.
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[persistence_serde]
 struct Signup {
     email: String,
     password: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[persistence_serde]
 struct ResetPassword {
     email: String,
 }

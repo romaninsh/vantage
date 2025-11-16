@@ -12,7 +12,7 @@ name = "generate-schema"
 path = "bin/generate-schema.rs"
 
 [features]
-decimal = ["surreal-client/decimal"]
+decimal = ["surreal-client/decimal", "dep:rust_decimal"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -24,6 +24,7 @@ vantage-core = { path = "../vantage-core" }
 vantage-table = { path = "../vantage-table" }
 vantage-surrealdb = { path = "../vantage-surrealdb" }
 surreal-client = { path = "../surreal-client" }
+rust_decimal = { version = "1.36", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["full"] }

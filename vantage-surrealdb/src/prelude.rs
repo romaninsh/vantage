@@ -8,11 +8,20 @@
 //! ```
 
 // Core database types
+pub use crate::insert::SurrealInsert;
 pub use crate::select::SurrealSelect;
 pub use crate::surrealdb::SurrealDB;
 
 // Essential traits
 pub use crate::operation::{Expressive, RefOperation};
+
+// New generic expression system
+pub use crate::expression::field::Field;
+pub use crate::expression::ref_operation::SurrealRefOperation;
+pub use crate::expression::{
+    Expressive as SurrealExpressive, IntoExpression, IntoSurrealExpr, SurrealExpr,
+    SurrealExpression,
+};
 
 // SurrealDB-specific types
 pub use crate::identifier::Identifier;

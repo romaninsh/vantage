@@ -23,7 +23,7 @@ async fn test_table_like_get_values() {
     let table_like: Box<dyn TableLike> = Box::new(table);
 
     // Test get_values() method
-    let values = table_like.get_values().await.unwrap();
+    let values = table_like.list_values().await.unwrap();
 
     assert_eq!(values.len(), 2);
     assert_eq!(values[0]["name"], "Alice");
@@ -41,6 +41,6 @@ async fn test_table_like_get_values_empty() {
 
     let table_like: Box<dyn TableLike> = Box::new(table);
 
-    let values = table_like.get_values().await.unwrap();
+    let values = table_like.list_values().await.unwrap();
     assert_eq!(values.len(), 0);
 }

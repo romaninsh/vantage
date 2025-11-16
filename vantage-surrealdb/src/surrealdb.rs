@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use ciborium::Value as CborValue;
+use indexmap::IndexMap;
 use serde_json::Value;
 
 use vantage_expressions::protocol::datasource::DataSource;
@@ -32,17 +34,156 @@ impl SurrealDB {
     }
 
     pub async fn get(&self, into_query: impl Expressive) -> Value {
-        self.execute(&into_query.expr()).await
+        let result = self.execute(&into_query.expr()).await;
+        eprintln!("DEBUG: Get result: {:?}", result);
+        result
     }
 
-    pub async fn query(&self, query: String, params: Value) -> Result<Vec<Value>> {
+    pub async fn query(
+        &self,
+        query: String,
+        params: Vec<crate::AnySurrealType>,
+    ) -> Result<Vec<IndexMap<String, crate::AnySurrealType>>> {
         let client = self.inner.lock().await;
-        let result = client.query(&query, Some(params)).await?;
 
-        // Convert single Value to Vec<Value> for compatibility
-        match result {
-            Value::Array(vec) => Ok(vec),
-            other => Ok(vec![other]),
+        // Convert AnySurrealType parameters to CBOR
+        let cbor_params: Vec<CborValue> = params.iter().map(|p| p.cborify()).collect();
+        let cbor_map = if cbor_params.is_empty() {
+            None
+        } else {
+            // Create a CBOR map with parameter names
+            let mut map = Vec::new();
+            for (i, cbor_val) in cbor_params.into_iter().enumerate() {
+                map.push((CborValue::Text(format!("_arg{}", i + 1)), cbor_val));
+            }
+            Some(CborValue::Map(map))
+        };
+
+        let cbor_result = client.query_cbor(&query, cbor_map).await?;
+
+        // Convert CBOR result to Vec<IndexMap<String, AnySurrealType>>
+        match cbor_result {
+            CborValue::Array(arr) => {
+                let mut results = Vec::new();
+                for item in arr {
+                    if let CborValue::Map(map) = item {
+                        let mut index_map = IndexMap::new();
+                        for (k, v) in map {
+                            let key = match k {
+                                CborValue::Text(s) => s,
+                                _ => format!("{:?}", k),
+                            };
+                            index_map.insert(key, crate::AnySurrealType::from_cbor(&v));
+                        }
+                        results.push(index_map);
+                    } else {
+                        // For non-map results, create a single-entry map
+                        let mut index_map = IndexMap::new();
+                        index_map.insert(
+                            "result".to_string(),
+                            crate::AnySurrealType::from_cbor(&item),
+                        );
+                        results.push(index_map);
+                    }
+                }
+                Ok(results)
+            }
+            other => {
+                // For non-array results, create a single-item vector
+                let mut index_map = IndexMap::new();
+                index_map.insert(
+                    "result".to_string(),
+                    crate::AnySurrealType::from_cbor(&other),
+                );
+                Ok(vec![index_map])
+            }
+        }
+    }
+
+    /// Direct CBOR query method for native type support
+    pub async fn query_cbor(&self, query: &str, params: Option<CborValue>) -> Result<CborValue> {
+        let client = self.inner.lock().await;
+        let result = client.query_cbor(query, params).await?;
+        Ok(result)
+    }
+
+    /// Helper function to convert JSON to CBOR
+    fn json_to_cbor(json: &Value) -> Result<CborValue> {
+        match json {
+            Value::Null => Ok(CborValue::Null),
+            Value::Bool(b) => Ok(CborValue::Bool(*b)),
+            Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    Ok(CborValue::Integer(i.into()))
+                } else if let Some(f) = n.as_f64() {
+                    Ok(CborValue::Float(f))
+                } else {
+                    Err(surreal_client::SurrealError::Protocol("Invalid number".to_string()).into())
+                }
+            }
+            Value::String(s) => Ok(CborValue::Text(s.clone())),
+            Value::Array(arr) => {
+                let cbor_arr: Result<Vec<CborValue>> = arr.iter().map(Self::json_to_cbor).collect();
+                Ok(CborValue::Array(cbor_arr?))
+            }
+            Value::Object(obj) => {
+                let cbor_map: Result<Vec<(CborValue, CborValue)>> = obj
+                    .iter()
+                    .map(|(k, v)| Ok((CborValue::Text(k.clone()), Self::json_to_cbor(v)?)))
+                    .collect();
+                Ok(CborValue::Map(cbor_map?))
+            }
+        }
+    }
+
+    /// Helper function to convert CBOR to JSON
+    fn cbor_to_json(cbor: &CborValue) -> Result<Value> {
+        match cbor {
+            CborValue::Null => Ok(Value::Null),
+            CborValue::Bool(b) => Ok(Value::Bool(*b)),
+            CborValue::Integer(i) => {
+                let num = i128::from(*i);
+                if let Ok(i64_val) = i64::try_from(num) {
+                    Ok(Value::Number(i64_val.into()))
+                } else {
+                    Ok(Value::String(num.to_string()))
+                }
+            }
+            CborValue::Float(f) => {
+                if let Some(num) = serde_json::Number::from_f64(*f) {
+                    Ok(Value::Number(num))
+                } else {
+                    Err(
+                        surreal_client::SurrealError::Protocol("Invalid float value".to_string())
+                            .into(),
+                    )
+                }
+            }
+            CborValue::Text(s) => Ok(Value::String(s.clone())),
+            CborValue::Bytes(b) => Ok(Value::String(hex::encode(b))),
+            CborValue::Array(arr) => {
+                let json_arr: Result<Vec<Value>> = arr.iter().map(Self::cbor_to_json).collect();
+                Ok(Value::Array(json_arr?))
+            }
+            CborValue::Map(map) => {
+                let mut json_obj = serde_json::Map::new();
+                for (k, v) in map {
+                    let key = match k {
+                        CborValue::Text(s) => s.clone(),
+                        CborValue::Integer(i) => i128::from(*i).to_string(),
+                        _ => {
+                            return Err(surreal_client::SurrealError::Protocol(
+                                "Invalid map key type".to_string(),
+                            )
+                            .into());
+                        }
+                    };
+                    json_obj.insert(key, Self::cbor_to_json(v)?);
+                }
+                Ok(Value::Object(json_obj))
+            }
+            CborValue::Tag(_tag, value) => Self::cbor_to_json(value),
+            _ => Ok(Value::String(format!("{:?}", cbor))),
         }
     }
 
@@ -113,37 +254,12 @@ mod tests {
         protocol::{expressive::IntoExpressive, selectable::Selectable},
     };
 
-    struct MockEngine;
-
-    #[async_trait::async_trait]
-    impl Engine for MockEngine {
-        async fn send_message(&mut self, _method: &str, _params: Value) -> Result<Value> {
-            Ok(serde_json::Value::Null)
-        }
-    }
-
-    async fn setup_test_db() -> SurrealDB {
-        // This is a placeholder - in real usage, create via Connection::connect()
-        // For now, we'll create a mock client for testing
-
-        let db = SurrealClient::new(
-            Box::new(MockEngine),
-            Some("bakery".to_string()),
-            Some("v1".to_string()),
-        );
-
-        // Connection and authentication would be handled by Connection builder pattern
-        // For testing, we'll skip these steps
-
-        SurrealDB::new(db)
-    }
-
     #[tokio::test]
     async fn test_select_with_thing_reference() {
         let shared_db = setup_test_db().await;
         let mut select = SurrealSelect::new();
         select.set_source("product", None);
-        select.add_where_condition(expr!("bakery = {}", Thing::new("bakery", "hill_valley")));
+        select.add_where_condition(expr!("bakery = {}", (Thing::new("bakery", "hill_valley"))));
         select.add_where_condition(expr!("is_deleted = {}", false));
         select.add_order_by(expr!("name"), true);
 
@@ -206,7 +322,7 @@ mod tests {
         main_select.add_field("name");
         main_select.add_field("email");
         main_select.set_source("client", None);
-        main_select.add_where_condition(expr!("id IN ({})", IntoExpressive::nested(subquery)));
+        main_select.add_where_condition(expr!("id IN ({})", (subquery)));
 
         let result = shared_db.execute(&main_select.expr()).await;
         println!("✅ Complex nested query: {:?}", result);
@@ -244,10 +360,7 @@ mod tests {
         let db = SurrealDB::new(SurrealClient::new(Box::new(MockEngine), None, None));
 
         let nested = expr!("SELECT id FROM client WHERE active = {}", true);
-        let main_expr = expr!(
-            "SELECT * FROM product WHERE owner IN ({})",
-            IntoExpressive::nested(nested)
-        );
+        let main_expr = expr!("SELECT * FROM product WHERE owner IN ({})", (nested));
 
         let (query, params) = db.prepare_query(&main_expr);
 

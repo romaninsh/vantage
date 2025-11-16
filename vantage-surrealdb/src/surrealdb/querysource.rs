@@ -9,6 +9,9 @@ impl QuerySource<Expression> for SurrealDB {
         let (query_str, params) = self.prepare_query(expr);
         let params_json = serde_json::to_value(params).unwrap_or(serde_json::json!({}));
 
+        eprintln!("DEBUG: Executing query: {}", query_str);
+        eprintln!("DEBUG: Query params: {:?}", params_json);
+
         match self.query(query_str, params_json).await {
             Ok(results) => {
                 // SurrealDB returns query results, each result may have a wrapper
@@ -32,9 +35,14 @@ impl QuerySource<Expression> for SurrealDB {
                 }
 
                 // Always return array for SELECT queries since they can return multiple records
-                Value::Array(extracted_results)
+                let final_result = Value::Array(extracted_results);
+                eprintln!("DEBUG: Final execute result: {:?}", final_result);
+                final_result
             }
-            Err(_) => Value::Null,
+            Err(e) => {
+                eprintln!("DEBUG: Query error: {:?}", e);
+                Value::Null
+            }
         }
     }
 

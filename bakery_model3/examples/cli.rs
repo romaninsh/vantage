@@ -144,7 +144,7 @@ where
 
         match command.as_str() {
             "list" => {
-                let records = table.get().await?;
+                let records = table.list().await?;
                 let record_count = records.len();
                 let columns = table.columns();
                 let display_columns: Vec<(&String, &dyn vantage_table::ColumnLike)> = columns

@@ -2,13 +2,11 @@
 //!
 //! Provides a simple column implementation that can be used across all mock DataSources.
 
-use crate::Column;
-use crate::ColumnFlag;
-use crate::ColumnLike;
-use crate::Expression;
+use crate::column::column::Column;
+use crate::column::flags::ColumnFlag;
+use crate::traits::column_like::ColumnLike;
 use std::collections::HashSet;
-use vantage_expressions::IntoExpressive;
-use vantage_expressions::expr;
+use vantage_expressions::{Expression, expr};
 
 /// Simple column implementation for testing mocks
 #[derive(Debug, Clone)]
@@ -36,10 +34,6 @@ impl ColumnLike for MockColumn {
         None
     }
 
-    fn expr(&self) -> Expression {
-        expr!(self.name.clone())
-    }
-
     fn flags(&self) -> HashSet<ColumnFlag> {
         self.flags.clone()
     }
@@ -48,20 +42,16 @@ impl ColumnLike for MockColumn {
         self
     }
 
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+
     fn get_type(&self) -> &'static str {
         "any"
     }
-}
 
-impl From<MockColumn> for IntoExpressive<Expression> {
-    fn from(val: MockColumn) -> Self {
-        IntoExpressive::nested(val.expr())
-    }
-}
-
-impl From<&MockColumn> for IntoExpressive<Expression> {
-    fn from(val: &MockColumn) -> Self {
-        IntoExpressive::nested(val.expr())
+    fn clone_box(&self) -> Box<dyn ColumnLike> {
+        Box::new(self.clone())
     }
 }
 
@@ -107,7 +97,7 @@ mod tests {
     #[test]
     fn test_mock_column_expr() {
         let col = MockColumn::new("test_field");
-        let expr = col.expr();
+        let expr = expr!(col.name.clone());
         assert_eq!(expr.preview(), "test_field");
     }
 

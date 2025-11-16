@@ -3,142 +3,66 @@
 //! This module provides relationship management between tables, similar to 0.2 but
 //! using the new 0.3 architecture with AnyTable and generic TableSource.
 
-use std::marker::PhantomData;
 use std::sync::Arc;
+use std::{any::Any, marker::PhantomData};
 
-use crate::{ColumnLike, Entity, Table, TableSource, any::AnyTable};
-use vantage_core::{Result, error};
-use vantage_expressions::{IntoExpressive, protocol::selectable::Selectable};
+use vantage_core::{Entity, Result, error};
+use vantage_expressions::{Expressive, prelude::*, traits::selectable::Selectable};
 
-/// Trait for applying relationship conditions to tables
-/// Works with concrete Table types to enable proper condition application
+use crate::{
+    any::AnyTable,
+    table::Table,
+    traits::{column_like::ColumnLike, table_source::TableSource},
+};
+
+pub mod one;
+
+/// Trait that references between Tables must implement. It's common for a table-specific
+/// trait to downcast related table reference.
 pub trait RelatedTable: Send + Sync {
-    /// Get related table with conditions for fetching related records
-    /// Uses IN (SELECT ...) subquery pattern
-    fn get_related_table(&self, source_table: &dyn std::any::Any) -> Result<AnyTable>;
+    /// For a source_table return related table having necessary conditions applied
+    fn get_related_table(&self, source_table: &dyn Any) -> Result<Box<dyn Any>>;
 
-    /// Get linked table with conditions for JOINs/subqueries
-    /// Uses direct column equality pattern
-    fn get_linked_table(&self, source_table: &dyn std::any::Any) -> Result<AnyTable>;
-}
+    /// Link table to current selection, making it appropriate to join both tables
+    fn get_linked_table(&self, source_table: &dyn Any) -> Result<Box<dyn Any>>;
 
-/// One-to-one relationship reference
-///
-/// Example: Client has one Bakery (via bakery_id)
-/// - foreign_key: "bakery_id" (column on Client table)
-/// - get_table: returns Table<SurrealDB, Bakery>
-pub struct ReferenceOne<T: TableSource, SourceE: Entity, TargetE: Entity> {
-    /// Foreign key column name on the source table
-    our_foreign_key: String,
-    /// Factory function that creates the target table
-    get_table: Arc<dyn Fn() -> Table<T, TargetE> + Send + Sync>,
-    _phantom: PhantomData<(T, SourceE, TargetE)>,
-}
-
-impl<T: TableSource + 'static, SourceE: Entity + 'static, TargetE: Entity + 'static>
-    ReferenceOne<T, SourceE, TargetE>
-{
-    /// Create a new one-to-one reference
-    ///
-    /// # Arguments
-    /// * `our_foreign_key` - Column name on source table (e.g., "bakery_id")
-    /// * `get_table` - Closure that returns the target table
-    pub fn new(
-        our_foreign_key: impl Into<String>,
-        get_table: impl Fn() -> Table<T, TargetE> + Send + Sync + 'static,
-    ) -> Self {
-        Self {
-            our_foreign_key: our_foreign_key.into(),
-            get_table: Arc::new(get_table),
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<T: TableSource, SourceE: Entity, TargetE: Entity> std::fmt::Debug
-    for ReferenceOne<T, SourceE, TargetE>
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ReferenceOne")
-            .field("our_foreign_key", &self.our_foreign_key)
-            .finish()
-    }
-}
-
-impl<T: TableSource, SourceE: Entity, TargetE: Entity> Clone for ReferenceOne<T, SourceE, TargetE> {
-    fn clone(&self) -> Self {
-        Self {
-            our_foreign_key: self.our_foreign_key.clone(),
-            get_table: self.get_table.clone(),
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<T: TableSource + 'static, SourceE: Entity + 'static, TargetE: Entity + 'static> RelatedTable
-    for ReferenceOne<T, SourceE, TargetE>
-where
-    T::Column: ColumnLike,
-    T: vantage_expressions::SelectSource<T::Expr>,
-    T::Select<SourceE>: Into<T::Expr>,
-{
-    fn get_related_table(&self, source_table: &dyn std::any::Any) -> Result<AnyTable> {
-        let source = source_table
-            .downcast_ref::<Table<T, SourceE>>()
-            .ok_or_else(|| error!("Source table type mismatch in ReferenceOne"))?;
-        let mut target = (self.get_table)();
-
-        let target_id = target
-            .column("id")
-            .ok_or_else(|| error!("Target table must have 'id' column"))?;
-        let source_fk = source.column(&self.our_foreign_key).ok_or_else(|| {
-            error!(
-                "Foreign key not found on source table",
-                column = self.our_foreign_key.as_str()
-            )
-        })?;
-
-        // Build subquery: SELECT fk FROM source WHERE <source conditions>
-        let mut subquery = source.select();
-        subquery.clear_fields();
-        subquery.add_field(source_fk.name());
-
-        let condition = target.data_source().expr(
-            format!("{} IN ({})", target_id.name(), "{}"),
-            vec![IntoExpressive::nested(subquery.into())],
-        );
-        target.add_condition(condition);
-        Ok(AnyTable::new(target))
+    /// Try to downcast the related table to AnyTable (serde_json::Value)
+    /// Alternatively you can use as_table (defined in RelatedTableExt)
+    fn as_any_table(&self, source_table: &dyn Any) -> Result<AnyTable> {
+        let any = self.get_related_table(source_table)?;
+        any.downcast::<AnyTable>()
+            .map(|boxed| *boxed)
+            .map_err(|_| error!("Cannot downcast to AnyTable"))
     }
 
-    fn get_linked_table(&self, source_table: &dyn std::any::Any) -> Result<AnyTable> {
-        let source = source_table
-            .downcast_ref::<Table<T, SourceE>>()
-            .ok_or_else(|| error!("Source table type mismatch in ReferenceOne"))?;
-        let mut target = (self.get_table)();
+    /// Get the type name of the table this reference creates
+    fn target_type_name(&self) -> &'static str;
+}
 
-        let target_id = target
-            .column("id")
-            .ok_or_else(|| error!("Target table must have 'id' column"))?;
-        let source_fk = source.column(&self.our_foreign_key).ok_or_else(|| {
-            error!(
-                "Foreign key not found on source table",
-                column = self.our_foreign_key.as_str()
-            )
-        })?;
+/// Extension trait for RelatedTable with generic methods
+pub trait RelatedTableExt {
+    /// Try to downcast the related table to a specific Table<T, E> type
+    fn as_table<T: TableSource + 'static, E: Entity + 'static>(
+        &self,
+        source_table: &dyn Any,
+    ) -> Result<Table<T, E>>;
+}
 
-        let condition = target.data_source().expr(
-            format!(
-                "{}.{} = {}.{}",
-                target.table_name(),
-                target_id.name(),
-                source.table_name(),
-                source_fk.name()
-            ),
-            vec![],
-        );
-        target.add_condition(condition);
-        Ok(AnyTable::new(target))
+impl<R: RelatedTable + ?Sized> RelatedTableExt for R {
+    fn as_table<T: TableSource + 'static, E: Entity + 'static>(
+        &self,
+        source_table: &dyn Any,
+    ) -> Result<Table<T, E>> {
+        let any = self.get_related_table(source_table)?;
+        any.downcast::<Table<T, E>>()
+            .map(|boxed| *boxed)
+            .map_err(|_| {
+                error!(
+                    "Cannot downcast to Table",
+                    target_type = std::any::type_name::<T>(),
+                    entity_type = std::any::type_name::<E>()
+                )
+            })
     }
 }
 
@@ -155,9 +79,7 @@ pub struct ReferenceMany<T: TableSource, SourceE: Entity, TargetE: Entity> {
     _phantom: PhantomData<(T, SourceE, TargetE)>,
 }
 
-impl<T: TableSource + 'static, SourceE: Entity + 'static, TargetE: Entity + 'static>
-    ReferenceMany<T, SourceE, TargetE>
-{
+impl<T: TableSource, SourceE: Entity, TargetE: Entity> ReferenceMany<T, SourceE, TargetE> {
     /// Create a new one-to-many reference
     ///
     /// # Arguments
@@ -197,14 +119,14 @@ impl<T: TableSource, SourceE: Entity, TargetE: Entity> Clone
     }
 }
 
-impl<T: TableSource + 'static, SourceE: Entity + 'static, TargetE: Entity + 'static> RelatedTable
+impl<T: TableSource, SourceE: Entity, TargetE: Entity> RelatedTable
     for ReferenceMany<T, SourceE, TargetE>
 where
     T::Column: ColumnLike,
-    T: vantage_expressions::SelectSource<T::Expr>,
-    T::Select<SourceE>: Into<T::Expr>,
+    T: SelectSource + Expressive<T::Value>,
+    T::Value: Clone + Send + Sync + 'static,
 {
-    fn get_related_table(&self, source_table: &dyn std::any::Any) -> Result<AnyTable> {
+    fn get_related_table(&self, source_table: &dyn Any) -> Result<Box<dyn Any>> {
         let source = source_table
             .downcast_ref::<Table<T, SourceE>>()
             .ok_or_else(|| error!("Source table type mismatch in ReferenceMany"))?;
@@ -227,13 +149,13 @@ where
 
         let condition = target.data_source().expr(
             format!("{} IN ({})", target_fk.name(), "{}"),
-            vec![IntoExpressive::nested(subquery.into())],
+            vec![Expressive::nested(subquery.into())],
         );
         target.add_condition(condition);
-        Ok(AnyTable::new(target))
+        Ok(Box::new(target))
     }
 
-    fn get_linked_table(&self, source_table: &dyn std::any::Any) -> Result<AnyTable> {
+    fn get_linked_table(&self, source_table: &dyn Any) -> Result<Box<dyn Any>> {
         let source = source_table
             .downcast_ref::<Table<T, SourceE>>()
             .ok_or_else(|| error!("Source table type mismatch in ReferenceMany"))?;
@@ -260,9 +182,10 @@ where
             vec![],
         );
         target.add_condition(condition);
-        Ok(AnyTable::new(target))
+        Ok(Box::new(target))
+    }
+
+    fn target_type_name(&self) -> &'static str {
+        std::any::type_name::<Table<T, TargetE>>()
     }
 }
-
-// Tests disabled - MockTableSource doesn't implement SelectSource
-// Reference functionality is tested via bakery_model4 CLI examples

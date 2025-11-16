@@ -1,6 +1,4 @@
-use super::{Entity, Table, TableSource};
-use vantage_core::{Result, error};
-use vantage_expressions::Expression;
+//! Sorting-related support data-types
 
 /// Sort direction for ordering
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,87 +34,17 @@ impl<E> OrderBy<E> {
 
 /// Handle for temporary order clauses that can be removed
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OrderHandle(i64);
-
-impl<T: TableSource, E: Entity> Table<T, E> {
-    /// Add a permanent order clause
-    pub fn add_order(&mut self, order: OrderBy<T::Expr>) {
-        let id = -self.next_order_id;
-        self.next_order_id += 1;
-        self.order_by
-            .insert(id, (order.expression, order.direction));
-    }
-
-    /// Add a temporary order clause that can be removed later
-    pub fn temp_add_order(&mut self, order: OrderBy<T::Expr>) -> OrderHandle {
-        let id = self.next_order_id;
-        self.next_order_id += 1;
-        self.order_by
-            .insert(id, (order.expression, order.direction));
-        OrderHandle(id)
-    }
-
-    /// Remove a temporary order clause by its handle
-    ///
-    /// # Errors
-    ///
-    /// Returns error if the handle refers to a permanent order (added via `add_order`)
-    pub fn temp_remove_order(&mut self, handle: OrderHandle) -> Result<()> {
-        if handle.0 <= 0 {
-            return Err(error!("Cannot remove permanent order"));
-        }
-        self.order_by.shift_remove(&handle.0);
-        Ok(())
-    }
-
-    /// Get all order clauses
-    pub fn orders(&self) -> impl Iterator<Item = &(T::Expr, SortDirection)> {
-        self.order_by.values()
-    }
-
-    /// Add an order clause using the builder pattern
-    pub fn with_order(mut self, order: OrderBy<T::Expr>) -> Self {
-        self.add_order(order);
-        self
-    }
-}
-
-/// Extension trait for creating OrderBy from expressions and columns
-pub trait OrderByExt {
-    /// Create an ascending order specification
-    fn ascending(&self) -> OrderBy<Expression>;
-
-    /// Create a descending order specification
-    fn descending(&self) -> OrderBy<Expression>;
-}
-
-// Blanket implementation for anything that implements ColumnLike
-impl<T: crate::ColumnLike> OrderByExt for T {
-    fn ascending(&self) -> OrderBy<Expression> {
-        OrderBy::ascending(self.expr())
-    }
-
-    fn descending(&self) -> OrderBy<Expression> {
-        OrderBy::descending(self.expr())
-    }
-}
-
-// Direct implementation for Expression
-impl OrderByExt for Expression {
-    fn ascending(&self) -> OrderBy<Expression> {
-        OrderBy::ascending(self.clone())
-    }
-
-    fn descending(&self) -> OrderBy<Expression> {
-        OrderBy::descending(self.clone())
-    }
-}
+pub struct OrderHandle(pub(super) i64);
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        mocks::tablesource::MockTableSource,
+        table::{Table, sorting::OrderByExt},
+    };
+
     use super::*;
-    use crate::EmptyEntity;
-    use crate::mocks::MockTableSource;
+    use vantage_core::EmptyEntity;
     use vantage_expressions::expr;
 
     #[test]

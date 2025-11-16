@@ -72,3 +72,39 @@ pub fn persistence(args: TokenStream, input: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
+#[cfg(feature = "serde")]
+#[proc_macro_attribute]
+pub fn persistence_serde(_args: TokenStream, input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = &input.ident;
+
+    let expanded = quote! {
+        #input
+
+        // Add Into implementation for Record<serde_json::Value>
+        impl Into<vantage_types::Record<serde_json::Value>> for #name {
+            fn into(self) -> vantage_types::Record<serde_json::Value> {
+                vantage_types::Record::from_serializable(self).expect("Failed to serialize to JSON")
+            }
+        }
+
+        // Add TryFrom implementation for reverse conversion
+        impl TryFrom<vantage_types::Record<serde_json::Value>> for #name {
+            type Error = serde_json::Error;
+
+            fn try_from(record: vantage_types::Record<serde_json::Value>) -> Result<Self, Self::Error> {
+                record.to_deserializable()
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
+}
+
+#[cfg(not(feature = "serde"))]
+#[proc_macro_attribute]
+pub fn persistence_serde(_args: TokenStream, input: TokenStream) -> TokenStream {
+    // When serde feature is disabled, just return the original struct
+    input
+}
