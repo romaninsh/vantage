@@ -1,11 +1,12 @@
-use std::fmt::{Debug, Formatter, Result};
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use vantage_core::Result;
 
 use crate::expression::owned::Expression;
 
-pub type DeferredFuture<T> = Pin<Box<dyn Future<Output = ExpressiveEnum<T>> + Send>>;
+pub type DeferredFuture<T> = Pin<Box<dyn Future<Output = Result<ExpressiveEnum<T>>> + Send>>;
 pub type DeferredCallback<T> = Arc<dyn Fn() -> DeferredFuture<T> + Send + Sync>;
 
 #[derive(Clone)]
@@ -21,7 +22,7 @@ impl<T> DeferredFn<T> {
         Self { func: Arc::new(f) }
     }
 
-    pub async fn call(&self) -> ExpressiveEnum<T> {
+    pub async fn call(&self) -> Result<ExpressiveEnum<T>> {
         (self.func)().await
     }
 
@@ -35,14 +36,34 @@ impl<T> DeferredFn<T> {
             let mutex = mutex.clone();
             Box::pin(async move {
                 let value = mutex.lock().unwrap().clone();
-                ExpressiveEnum::Scalar(value.into())
+                Ok(ExpressiveEnum::Scalar(value.into()))
+            })
+        })
+    }
+
+    /// Create a DeferredFn from an async function, hiding the Pin logic
+    pub fn from_fn<F, Fut, U>(f: F) -> Self
+    where
+        F: Fn() -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<U>> + Send + 'static,
+        U: Into<T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let f = Arc::new(f);
+        Self::new(move || {
+            let f = f.clone();
+            Box::pin(async move {
+                match f().await {
+                    Ok(result) => Ok(ExpressiveEnum::Scalar(result.into())),
+                    Err(e) => Err(e),
+                }
             })
         })
     }
 }
 
 impl<T: Debug + std::fmt::Display> Debug for DeferredFn<T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_tuple("DeferredFn").field(&"<closure>").finish()
     }
 }
@@ -54,7 +75,7 @@ pub enum ExpressiveEnum<T> {
 }
 
 impl<T: Debug + std::fmt::Display> Debug for ExpressiveEnum<T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             ExpressiveEnum::Scalar(val) => f.debug_tuple("Scalar").field(val).finish(),
             ExpressiveEnum::Nested(val) => f.debug_tuple("Nested").field(val).finish(),

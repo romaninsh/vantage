@@ -1,10 +1,9 @@
 # Vantage Expressions
 
 A composable database-agnostic expression framework for Rust that enables building
-SQL-injection-safe queries using templates and parameters.
-Provides the foundation for creating
-advanced query builders that can implement any query language and database
-flavor.
+SQL-injection-safe queries using templates and parameters. Provides the foundation for creating
+advanced query builders that can implement any query language and database flavor. Implementation is
+well suited for large distributed code-bases and enterprise-level migration / refactoring projects.
 
 ## Example Use
 
@@ -15,22 +14,40 @@ let where_expr = expr!("age > {} AND status = {}", 21, "active");
 let query_expr = expr!("SELECT * FROM users WHERE {}", (where_expr));
 ```
 
-The `expr!` macro keeps your parameters separate from the query template, preventing SQL injection while maintaining readability.
+The `expr!` macro keeps your parameters separate from the query template, preventing SQL injection
+while maintaining readability.
 
 ## Features
 
-- **SQL Injection Safe**: Parameters are kept separate from templates using the `expr!` macro
-- **Composable**: Expressions can contain other expressions for modular query building
-- **Deferred Execution**: Closures can be embedded that resolve at query execution time
-- **Cross-Database**: Same expression types work with SQL, MongoDB, SurrealDB and more
-- **Type Safe**: Built-in support for Rust types through `ExpressiveEnum`
-- **Type Mapping**: Convert expressions between compatible types (e.g., `String` to `Value`)
-- **Async Ready**: Designed for async/await patterns with `QuerySource` trait
-- **Extensible**: Implement `Selectable` trait to standardize query builders across backends
+- **`expr!` macro**: SQL-injection safe query building with great support for Rust native types
+- **Dynamic query construction**: Compose queries conditionally using `Expression::from_vec()`
+- **Deferred execution**: Embed async API calls or Mutexes directly in queries with `DeferredFn`
+- **Cross-database type mapping**: Handle type conversion when query crosses persistence boundaries.
+- **Custom SQL constructs**: Implement `Expressive` trait for UNION, CTE, or vendor-specific syntax
+- **Standardized SELECT builders**: `Selectable` trait works across SQL, SurrealDB, MongoDB
+
+A design goal for Vantage Expressions is to assist with Enterprise refactoring - providing powerful
+mechanisms to perform persistence refactoring without breaking model API and affectign existing
+code.
+
+Expressions are just one part of Vantage framework. I recommend also looking into:
+
+- vantage-surrealdb - Implements SurrealDB client SDK by integrating it into Vantage, providing many
+  `Expressive` constructs, `Selectable` implementation, Precise type system.
+- vantage-dataset - Although not directly related to Expressions - DataSet crate provides similar
+  abstraction for abstractign CRUD operatons on remote data sources.
+- vantage-table - Provides abstract implementation with schema-compliant data-sources. Although
+  `Table` does not rely on expressions directly - it makes sense to implement those through
+  `Selectable` query building.
+- vantage-core - Implements `VantageError`, `Return` and some other useful things shared across
+  Vantage crates.
 
 ## Rust Type Support
 
-Expressions can carry any universal type of your choosing. The `expr!` macro defaults to `serde_json::Value` for maximum compatibility, but you can use `Expression<T>` with any type that suits your database. Use CBOR values for binary protocols, SurrealDB's native types for SurrealQL, or design custom enum-style types optimized for your specific database's type system.
+Expressions can carry any universal type of your choosing. The `expr!` macro defaults to
+`serde_json::Value` for maximum compatibility, but you can use `Expression<T>` with any type that
+suits your database. Use CBOR values for binary protocols, SurrealDB's native types for SurrealQL,
+or design custom enum-style types optimized for your specific database's type system.
 
 ```rust
 use vantage_expressions::expr_any;
@@ -38,31 +55,31 @@ use surrealdb::sql::Value as SurrealValue;
 use std::time::Duration;
 
 // Using SurrealDB native types with Duration
-let surreal_query = expr_any!(SurrealValue, "SELECT * FROM session WHERE created_at > time::now() - {}", Duration::from_secs(3600));
+let surreal_query = expr_any!(
+    SurrealValue,
+    "SELECT * FROM session WHERE created_at > time::now() - {}",
+    Duration::from_secs(3600)
+);
 ```
 
-SurrealDB has excellent support for duration types that are directly compatible with Rust's native `std::time::Duration`, enabling seamless time calculations in queries.
+This approach is different from a "type binding" employed in crates like SQLx, where all parameters
+must be provided at-once and without abstraction.
 
 ## Dynamic Query Building
 
-Expressions can be built dynamically at runtime, allowing for flexible query construction based on conditions:
+Expressions can be built dynamically at runtime, allowing for flexible query construction based on
+your application logic. use `Expression::from_vec` to join multiple expressions with a separator,
+preserving order of all parameters stored within.
 
 ```rust
-use vantage_expressions::{expr, Expression, expression::flatten::ExpressionFlattener, Flatten};
-use serde_json::Value;
-
-let mut conditions = Vec::<Expression<Value>>::new();
+let mut conditions = Vec::new();
 
 // Conditionally build WHERE conditions
-let min_age = Some(25);
-let status = Some("premium");
-let active_only = true;
-
 if let Some(age) = min_age {
     conditions.push(expr!("age >= {}", age));
 }
-if let Some(s) = status {
-    conditions.push(expr!("status = {}", s));
+if let Some(status) = status {
+    conditions.push(expr!("status = {}", status));
 }
 if active_only {
     conditions.push(expr!("last_login > NOW() - INTERVAL 30 DAY"));
@@ -71,15 +88,10 @@ if active_only {
 // Combine conditions using from_vec
 let where_clause = Expression::from_vec(conditions, " AND ");
 let final_query = expr!("SELECT * FROM users WHERE {}", (where_clause));
-
-// Flatten to see the final structure
-let flattener = ExpressionFlattener::new();
-let flattened = flattener.flatten(&final_query);
-println!("Template: {}", flattened.template);
-println!("Parameters: {:?}", flattened.parameters);
 ```
 
-This demonstrates dynamic query construction where conditions are built conditionally and combined using `from_vec()`. The flattening process reveals how nested expressions are organized into the final query structure.
+If you design a query builder for a custom query language, you want maximum freedom, even allowing
+your API to accept user-supplied expression.
 
 ## Type Mapping
 
@@ -128,96 +140,128 @@ let result = db2.execute(&deferred_query.map()).await;
 
 The deferred query from `db1` is automatically converted from `Expression<String>` to `Expression<Value>` when mapped, enabling cross-database operations even when the databases use incompatible value types.
 
-## Executing and Deferring Expressions
+## Type Mapping
 
-By implementing `QuerySource`, your database can execute expressions immediately or defer them for later execution:
+If your database engine uses a custom type system (e.g. SurrealType) but under the hood it would use
+CBOR it is sufficient for you to implement `Into<cborium::Value>`. Now any expression defined for
+your custom type can be mapped into cborium::Value automatically.
 
-```rust
-use vantage_expressions::{expr, protocol::datasource::QuerySource};
-
-// Assume you've implemented QuerySource for your database
-let db = MyDatabase::new("connection_string");
-let query = expr!("SELECT COUNT(*) FROM users WHERE age > {}", 21);
-
-// Execute immediately - returns result now
-let count = db.execute(&query).await;
-
-// Defer execution - returns closure that can be called later
-let deferred_query = db.defer(query);
-let count = deferred_query().await; // Execute when needed
-```
-
-Deferred expressions enable powerful patterns like cross-database queries where one database's result becomes a parameter in another database's query.
-
-## Deferred Queries as Parameters
-
-Deferred queries can be embedded directly as parameters in other expressions, creating powerful cross-database query patterns:
+Here is example of mapping `Expression<String>` into `Expression<Value>`:
 
 ```rust
-use vantage_expressions::expr;
-
-// Get active user IDs from SurrealDB
-let user_ids_query = expr!("SELECT id FROM user WHERE status = {}", "active");
-let surreal_db = SurrealConnection::new();
-let deferred_users = surreal_db.defer(user_ids_query);
-
-// Use those IDs in a PostgreSQL query - [deferred] syntax for DeferredFn
-let orders_query = expr!(
-    "SELECT * FROM orders WHERE user_id = ANY({})",
-    {deferred_users}
+// Create expression with String parameters
+let string_expr: Expression<String> = Expression::new(
+    "SELECT * FROM users WHERE name = {}",
+    vec![ExpressiveEnum::Scalar("John".to_string())],
 );
 
-let postgres_db = PostgresConnection::new();
-let orders = postgres_db.execute(&orders_query).await;
+// Convert to Expression<Value> using the map() method
+let value_expr: Expression<Value> = string_expr.map();
 ```
 
-The `defer()` method returns a `DeferredFn` that can be used directly with the `[deferred]` syntax in expressions. The deferred SurrealDB query executes automatically when the PostgreSQL query needs the user IDs, enabling seamless cross-database operations without manual coordination.
+Ability to map expression values is important when system must operate across different databases
+and each database could be implementing their own type system.
 
-## Async Control
+### Immediate vs deferred execution
 
-In typical applications, query building is done synchronously. The `defer()` mechanism enables creating interdependencies between different databases without introducing async complexity during the building phase. You can construct complex multi-database queries using regular synchronous code, while all async operations are handled automatically when `execute()` is called.
+`vantage-expression` does not require you to implement database SDK in a certain way, however, by
+implementing a trait `QuerySource` your SDK would have 2 foundational methods:
 
-The `execute()` method handles all deferred operations and resolves them into final values. This design allows the use of shared state like `Arc<Mutex<T>>` inside callbacks, enabling dynamic query parameters that can change between query construction and execution.
+- `async db.execute(expr) -> result` - Execute an `Expression<V>` now and return `Result<V>`.
+- `db.defer(expr) -> DeferredFn` - Wrap query execution into a closure which can be executed with
+  `fn.call()`
 
 ```rust
-use std::sync::{Arc, Mutex};
-use vantage_expressions::{expr, protocol::expressive::DeferredFn};
+// Create a query expression
+let query = expr!("SELECT COUNT(*) FROM users WHERE age > {}", 21);
 
+// Immediate execution - execute now and get result
+let count: serde_json::Value = db.execute(&query).await?;
+println!("User count: {}", count);
+
+// Deferred execution - create a closure for later execution
+let deferred_query = db.defer(query.clone());
+
+// Execute the deferred query when needed
+let count_later = deferred_query.call().await?;
+match count_later {
+    ExpressiveEnum::Scalar(value) => println!("Deferred count: {}", value),
+    _ => println!("Unexpected result type"),
+}
+```
+
+## Other kinds of `DeferredFn`
+
+A sharp-eyeed reader would notice that `count_later` actually contains
+`ExpressiveEnum::Scalar(value)`. As it turns out - resolving deferred query can also return nested
+expressions, once return results are known. I'll explore the powerful implications of non-scalar
+return types later.
+
+There are also other ways to obtain DeferredFn, for instance you can create it from a mutex:
+
+```rust
 // Shared state that can change over time
 let counter = Arc::new(Mutex::new(10));
 
-// Create deferred function from mutex - will read current value when executed
+// Create deferred function from mutex - reads current value when executed
 let deferred_count = DeferredFn::from_mutex(counter.clone());
-
 let query = expr!("SELECT * FROM items LIMIT {}", { deferred_count });
 
 // Change the value after query construction
 *counter.lock().unwrap() = 25;
 
-// When executed, the query will use the current value (25), not the original (10)
-let result = db.execute(&query).await;
+// When executed, the query uses the current value (25), not the original (10)
+let result = db.execute(&query).await?;
 ```
 
-This pattern enables building responsive applications where query parameters can be updated by other parts of the application while queries are being prepared for execution.
+## Cross-database query-building
+
+The main purpose of deferred queries is to enable cross-database query building. Assume we start
+with this query:
+
+```sql
+SELECT * FROM orders WHERE user_id IN (SELECT id FROM user WHERE status = 'active');
+```
+
+Converting this query into Expression is a sync operations. However if during your database refactor
+`user` table migrates to an external API, this would break significant portion of your code as it
+would require async API fetch.
+
+Vantage uses deferred queries to solve this problem:
+
+```rust
+// API call that fetches user IDs asynchronously
+async fn get_user_ids() -> vantage_core::Result<serde_json::Value> {
+    // Simulate API call - fetch from external service
+    Ok(serde_json::json!([1, 2, 3, 4, 5]))
+}
+
+// Build query synchronously - no async needed here!
+let query = expr!("SELECT * FROM orders WHERE user_id = ANY({})", { DeferredFn::from_fn(get_user_ids) });
+
+// Execute the query - API call happens automatically during execution
+let orders = db.execute(&query).await?;
+```
+
+The query building remains synchronous even though `get_user_ids()` is an async API call. The API is
+only invoked when the query is executed, maintaining clean separation between query construction and
+execution phases.
+
+The deferred SurrealDB query executes automatically when the PostgreSQL query needs the user IDs,
+enabling seamless cross-database operations. Result is passed into db.execute() as a bind.
 
 ## Extensibility
 
-You can create custom SQL constructs by implementing the `Expressive` trait. This allows building reusable, type-safe query components that integrate seamlessly with the expression system.
+Create custom SQL constructs by implementing the `Expressive` trait:
+
+The `execute()` method handles all deferred operations and resolves them into final values. This design allows the use of shared state like `Arc<Mutex<T>>` inside callbacks, enabling dynamic query parameters that can change between query construction and execution.
 
 ```rust
-use vantage_expressions::{expr, Expression, protocol::expressive::{Expressive, ExpressiveEnum}};
-
-/// A UNION SQL construct that combines two SELECT expressions
+/// A UNION SQL construct
 #[derive(Clone)]
 pub struct Union<T> {
     left: Expression<T>,
     right: Expression<T>,
-}
-
-impl<T> Union<T> {
-    pub fn new(left: Expression<T>, right: Expression<T>) -> Self {
-        Self { left, right }
-    }
 }
 
 impl<T: Clone> Expressive<T> for Union<T> {
@@ -232,18 +276,75 @@ impl<T: Clone> Expressive<T> for Union<T> {
     }
 }
 
-// Usage example
-let users_query = expr!("SELECT name FROM users WHERE active = {}", true);
+// Usage example with nested queries and stored procedure
+let users_query = expr!("CALL get_active_users_by_dept({})", "engineering");
 let admins_query = expr!("SELECT name FROM admins WHERE role = {}", "super");
 
 let union = Union::new(users_query, admins_query);
 let final_query = expr!("SELECT DISTINCT name FROM ({})", (union.expr()));
 ```
 
-Custom constructs like `Union` can be nested within other expressions, creating a composable query building system where complex SQL can be built from reusable components.
+Vantage-expressions provides a solid foundation for implementing query builders for any dialect or
+database language. Query builders can implement builders like `Select` or `Insert`, use composable
+types like `Table`, `Aggregation`, `Sum`, and even implement operations like comparison methods
+`eq()` or `ne()`.
 
-## Query Language Builders
+## Selectable Trait
 
-Vantage-expressions provides a solid foundation for implementing query builders for any dialect or database language. Query builders can implement builders like `Select` or `Insert`, use composable types like `Table`, `Aggregation`, `Sum`, and even implement operations like comparison methods `eq()` or `ne()`.
+A most sophisticated construct usually is a `SELECT` builder. There can be a separate `INSERT` or
+combined builder - that's up to a DB vendor, but a `SELECT` builder usually is quite common.
 
-Other crates in `Vantage` framework take full advancage of `vantage-expressions`, so expect most types to implement expressionable.
+The `Selectable` trait provides a standardized interface for building SELECT-style queries across
+different database backends. It defines common operations like filtering, sorting, field selection,
+and pagination that are universal to most query languages.
+
+```rust
+use vantage_expressions::{expr, protocol::selectable::Selectable};
+use vantage_surrealdb::select::SurrealSelect;
+
+// Create a new select query builder
+let mut select = SurrealSelect::new();
+
+// Build query using Selectable trait methods
+select.set_source(expr!("users"), None);
+select.add_field("name".to_string());
+select.add_field("email".to_string());
+select.add_expression(expr!("age * 2"), Some("double_age".to_string()));
+select.add_where_condition(expr!("age > {}", 18));
+select.add_where_condition(expr!("active = {}", true));
+select.add_order_by(expr!("name"), true);
+select.add_group_by(expr!("department"));
+select.set_distinct(true);
+select.set_limit(Some(10), Some(5));
+
+// Convert to expression and execute
+let query_expr: Expression = select.into();
+let result = db.execute(&query_expr).await?;
+```
+
+The `Selectable` trait also provides fluent builder-style methods for chaining operations:
+
+```rust
+let query = SurrealSelect::new()
+    .with_source(expr!("products"))
+    .with_field("name")
+    .with_field("price")
+    .with_condition(expr!("price > {}", 100))
+    .with_order(expr!("price"), false)
+    .with_limit(Some(5), None);
+
+let results = db.execute(&query.expr()).await?;
+```
+
+Database-specific implementations like `SurrealSelect` implement the `Selectable` trait while
+providing their own syntax and features. This allows the same query building patterns to work across
+SQL, SurrealDB, MongoDB, and other backends while maintaining database-specific optimizations.
+
+## Use of `Expressions` across Vantage framework
+
+As you have probably noticed - Selectable trait makes use of nested expressions quite deliberatly.
+Vantage framework treats expressions as a first class citizen and therefore we want to expose
+interface which is powerful and extensive.
+
+This extensibility makes Vantage a cohesive framework, suitable for the use in the Enterprise
+setting.
