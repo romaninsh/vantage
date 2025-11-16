@@ -2,7 +2,7 @@ use serde_json::Value;
 use std::future::Future;
 
 use crate::Selectable;
-use crate::protocol::expressive::DeferredFn;
+use crate::traits::expressive::DeferredFn;
 use vantage_core::Result;
 
 pub trait DataSource: Send + Sync {}

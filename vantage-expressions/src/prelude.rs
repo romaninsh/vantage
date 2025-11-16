@@ -16,8 +16,12 @@ pub use crate::{AnyExpression, ExpressionLike};
 // Query source traits
 pub use crate::{QuerySource, SelectSource};
 
-// Essential protocol traits
-pub use crate::protocol::selectable::Selectable;
+// Essential traits
+pub use crate::traits::expressive::{DeferredFn, ExpressiveEnum};
+pub use crate::traits::selectable::Selectable;
 
-// Expression creation macro
-pub use crate::expr;
+// Expression creation macros
+pub use crate::{expr, expr_any, expr_as};
+
+// Expression mapping and flattening
+pub use crate::{ExpressionFlattener, ExpressionMap, Flatten};
