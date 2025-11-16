@@ -1,6 +1,6 @@
 //! Connection builder for SurrealDB with authentication and engine creation
 
-use crate::{Engine, Result, SurrealClient, SurrealError, WsEngine};
+use crate::{DebugEngine, Engine, Result, SurrealClient, SurrealError, WsCborEngine, WsEngine};
 
 use serde_json::{Value, json};
 use url::Url;
@@ -72,7 +72,8 @@ impl SurrealConnection {
         // Store the URL without user credentials and path/query
         let base_url = format!("{}://{}", url.scheme(), url.host_str().unwrap());
         let port = url.port().map(|p| format!(":{}", p)).unwrap_or_default();
-        conn.url = Some(format!("{}{}", base_url, port));
+        let final_url = format!("{}{}", base_url, port);
+        conn.url = Some(final_url);
 
         // Extract user credentials for root auth
         if !url.username().is_empty() {
@@ -200,7 +201,7 @@ impl SurrealConnection {
     //     self
     // }
 
-    pub async fn init_ws_engine(&self, engine: &mut WsEngine) -> Result<()> {
+    pub async fn init_ws_engine(&self, engine: &mut dyn Engine) -> Result<()> {
         match self.auth.as_ref().ok_or(SurrealError::Connection(
             "Attempted to connect without auth".to_string(),
         ))? {
@@ -255,6 +256,88 @@ impl SurrealConnection {
         Ok(())
     }
 
+    pub async fn init_cbor_engine(&self, engine: &mut crate::WsCborEngine) -> Result<()> {
+        use ciborium::Value as CborValue;
+
+        match self.auth.as_ref().ok_or(SurrealError::Connection(
+            "Attempted to connect without auth".to_string(),
+        ))? {
+            AuthParams::Root { username, password } => {
+                let auth_params = CborValue::Array(vec![CborValue::Map(vec![
+                    (
+                        CborValue::Text("user".to_string()),
+                        CborValue::Text(username.clone()),
+                    ),
+                    (
+                        CborValue::Text("pass".to_string()),
+                        CborValue::Text(password.clone()),
+                    ),
+                ])]);
+                engine.send_message_cbor("signin", auth_params).await?;
+            }
+            AuthParams::Namespace { username, password } => {
+                let namespace = self.namespace.clone().ok_or(SurrealError::Connection(
+                    "Namespace is required for namespace auth".to_string(),
+                ))?;
+                let auth_params = CborValue::Array(vec![CborValue::Map(vec![
+                    (
+                        CborValue::Text("user".to_string()),
+                        CborValue::Text(username.clone()),
+                    ),
+                    (
+                        CborValue::Text("pass".to_string()),
+                        CborValue::Text(password.clone()),
+                    ),
+                    (
+                        CborValue::Text("NS".to_string()),
+                        CborValue::Text(namespace),
+                    ),
+                ])]);
+                engine.send_message_cbor("signin", auth_params).await?;
+            }
+            AuthParams::Database { username, password } => {
+                let namespace = self.namespace.clone().ok_or(SurrealError::Connection(
+                    "Namespace is required for database auth".to_string(),
+                ))?;
+                let database = self.database.clone().ok_or(SurrealError::Connection(
+                    "Database is required for database auth".to_string(),
+                ))?;
+                let auth_params = CborValue::Array(vec![CborValue::Map(vec![
+                    (
+                        CborValue::Text("user".to_string()),
+                        CborValue::Text(username.clone()),
+                    ),
+                    (
+                        CborValue::Text("pass".to_string()),
+                        CborValue::Text(password.clone()),
+                    ),
+                    (
+                        CborValue::Text("NS".to_string()),
+                        CborValue::Text(namespace),
+                    ),
+                    (CborValue::Text("DB".to_string()), CborValue::Text(database)),
+                ])]);
+                engine.send_message_cbor("signin", auth_params).await?;
+            }
+            _ => {
+                return Err(SurrealError::Connection(
+                    "Unsupported authentication method for CBOR WebSocket".to_string(),
+                ));
+            }
+        }
+
+        // After authentication, set namespace and database
+        if let Some(namespace) = &self.namespace {
+            let use_params = CborValue::Array(vec![
+                CborValue::Text(namespace.clone()),
+                CborValue::Text(self.database.as_ref().unwrap_or(&String::new()).clone()),
+            ]);
+            engine.send_message_cbor("use", use_params).await?;
+        }
+
+        Ok(())
+    }
+
     /// Connect to SurrealDB and return an immutable client
     pub async fn connect(self) -> Result<SurrealClient> {
         let url_str = self
@@ -264,15 +347,26 @@ impl SurrealConnection {
         let url = Url::parse(url_str)
             .map_err(|e| SurrealError::Connection(format!("Invalid URL: {}", e)))?;
 
-        let engine: Box<dyn Engine> = match url.scheme() {
+        let mut engine: Box<dyn Engine> = match url.scheme() {
             "ws" | "wss" => Box::new(WsEngine::from_connection(&self).await?),
+            "cbor" => {
+                let mut cbor_engine = WsCborEngine::from_connection(&self).await?;
+                self.init_cbor_engine(&mut cbor_engine).await?;
+                Box::new(cbor_engine)
+            }
             // "http" | "https" => Box::new(HttpEngine::new(url_str)?),
             _ => {
                 return Err(SurrealError::Protocol(
-                    "Unsupported protocol. Use ws://, wss://, http://, or https://".to_string(),
+                    "Unsupported protocol. Use ws://, wss://, cbor://, http://, or https://"
+                        .to_string(),
                 ));
             }
         };
+
+        // Wrap with debug engine if debug mode is enabled
+        if self.debug {
+            engine = DebugEngine::new(engine);
+        }
 
         // Connect to the database
         // engine.connect().await?;

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use ciborium::Value as CborValue;
 use serde_json::{Value, json};
 
 use crate::{Engine, RecordId, RecordRange, Result, SessionState, SurrealError, Table};
@@ -104,6 +105,12 @@ impl SurrealClient {
     /// Check if debug mode is enabled
     pub fn is_debug(&self) -> bool {
         self.debug
+    }
+
+    /// Check if this client supports native CBOR
+    pub async fn supports_cbor(&self) -> bool {
+        let engine = self.engine.lock().await;
+        engine.supports_cbor()
     }
 
     /// Set a parameter for the session
@@ -451,6 +458,36 @@ impl SurrealClient {
             "ML export is not supported in minimal engine implementation".to_string(),
         ))
     }
+
+    /// Execute a custom SurrealQL query with CBOR parameters
+    pub async fn query_cbor(&self, sql: &str, variables: Option<CborValue>) -> Result<CborValue> {
+        if self.debug {
+            if let Some(ref vars) = variables {
+                println!("🔍 Query CBOR: {} with variables: {:?}", sql, vars);
+            } else {
+                println!("🔍 Query CBOR: {}", sql);
+            }
+        }
+
+        let mut engine = self.engine.lock().await;
+
+        let params = if let Some(vars) = variables {
+            CborValue::Array(vec![CborValue::Text(sql.to_string()), vars])
+        } else {
+            CborValue::Array(vec![
+                CborValue::Text(sql.to_string()),
+                CborValue::Map(vec![]), // Empty object for variables
+            ])
+        };
+
+        let response = engine.send_message_cbor("query", params).await?;
+
+        if self.debug {
+            println!("✅ CBOR Response: {:?}", response);
+        }
+
+        Ok(response)
+    }
 }
 
 #[cfg(test)]
@@ -465,6 +502,14 @@ mod tests {
     impl Engine for MockEngine {
         async fn send_message(&mut self, _method: &str, _params: Value) -> Result<Value> {
             Ok(Value::String("mock_response".to_string()))
+        }
+
+        async fn send_message_cbor(
+            &mut self,
+            _method: &str,
+            _params: CborValue,
+        ) -> Result<CborValue> {
+            Ok(CborValue::Text("mock_response".to_string()))
         }
     }
 
