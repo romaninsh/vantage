@@ -14,16 +14,17 @@ pub mod value;
 // pub use expression::lazy::LazyExpression;
 pub use any_expression::{AnyExpression, ExpressionLike};
 pub use expression::flatten::{ExpressionFlattener, Flatten};
+pub use expression::mapping::{ExpressionMap, ExpressionMapper};
 pub use expression::owned::Expression;
 pub use protocol::associated_queryable::AssociatedQueryable;
 pub use protocol::datasource::QuerySource;
 pub use protocol::datasource::SelectSource;
-pub use protocol::expressive::IntoExpressive;
+pub use protocol::expressive::{DeferredFn, ExpressiveEnum};
 pub use protocol::queryable::Queryable;
 pub use protocol::selectable::Selectable;
 pub use vantage_core::Entity;
 
 pub use protocol::result;
 
-/// Short type alias for `IntoExpressive<Expression>`
-pub type Expr = IntoExpressive<Expression>;
+/// Short type alias for `ExpressiveEnum<serde_json::Value>`
+pub type Expr = ExpressiveEnum<serde_json::Value>;

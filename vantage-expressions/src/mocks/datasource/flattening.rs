@@ -2,15 +2,12 @@
 //!
 //! Maps query patterns to specific responses with expression flattening support.
 
-use crate::Expression;
-use crate::IntoExpressive;
 use crate::QuerySource;
 use crate::expression::flatten::{ExpressionFlattener, Flatten};
 use crate::protocol::datasource::DataSource;
+use crate::protocol::expressive::{DeferredFn, ExpressiveEnum};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::future::Future;
-use std::pin::Pin;
 
 /// Expression PatternDataSource with flattening enabled
 #[derive(Debug, Clone)]
@@ -41,7 +38,10 @@ impl FlatteningPatternDataSource {
     }
 
     /// Execute deferred parameters and flatten nested expressions recursively
-    async fn execute_and_flatten_expression(&self, expr: &Expression) -> Expression {
+    async fn execute_and_flatten_expression(
+        &self,
+        expr: &crate::Expression<serde_json::Value>,
+    ) -> crate::Expression<serde_json::Value> {
         let mut expr = expr.clone();
         let flattener = ExpressionFlattener::new();
         let mut max_iterations = 10; // Prevent infinite loops
@@ -52,8 +52,8 @@ impl FlatteningPatternDataSource {
 
             // Execute all deferred parameters at current level
             for param in &mut expr.parameters {
-                if let IntoExpressive::Deferred(f) = param {
-                    *param = f().await;
+                if let crate::ExpressiveEnum::Deferred(f) = param {
+                    *param = f.call().await;
                     has_deferred = true;
                 }
             }
@@ -65,7 +65,7 @@ impl FlatteningPatternDataSource {
             let still_has_deferred = expr
                 .parameters
                 .iter()
-                .any(|p| matches!(p, IntoExpressive::Deferred(_)));
+                .any(|p| matches!(p, crate::ExpressiveEnum::Deferred(_)));
 
             if !has_deferred && !still_has_deferred {
                 break;
@@ -88,33 +88,34 @@ impl Default for FlatteningPatternDataSource {
 }
 
 impl DataSource for FlatteningPatternDataSource {}
-impl QuerySource<Expression> for FlatteningPatternDataSource {
+impl QuerySource<serde_json::Value> for FlatteningPatternDataSource {
     // type Column = crate::mocks::MockColumn;
 
     // fn select(&self) -> impl Selectable {
     //     crate::mocks::selectable::MockSelect
     // }
 
-    async fn execute(&self, expr: &Expression) -> Value {
+    async fn execute(&self, expr: &crate::Expression<serde_json::Value>) -> serde_json::Value {
         let processed_expr = self.execute_and_flatten_expression(expr).await;
         let query = processed_expr.preview();
         self.find_match(&query)
     }
 
-    fn defer(
-        &self,
-        expr: Expression,
-    ) -> impl Fn() -> Pin<Box<dyn Future<Output = Value> + Send>> + Send + Sync + 'static {
+    fn defer(&self, expr: crate::Expression<serde_json::Value>) -> DeferredFn<serde_json::Value>
+    where
+        serde_json::Value: Clone + Send + Sync + 'static,
+    {
         let mock = self.clone();
-        move || {
+        DeferredFn::new(move || {
             let mock = mock.clone();
             let expr = expr.clone();
             Box::pin(async move {
                 let processed_expr = mock.execute_and_flatten_expression(&expr).await;
                 let query = processed_expr.preview();
-                mock.find_match(&query)
+                let result = mock.find_match(&query);
+                ExpressiveEnum::Scalar(result)
             })
-        }
+        })
     }
 }
 
