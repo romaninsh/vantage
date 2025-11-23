@@ -130,35 +130,3 @@ macro_rules! vantage_type_system {
         }
     };
 }
-
-/// Adds Into/From implementations for specific structs with Record conversions
-///
-/// Use this for specific struct types to avoid orphan rules
-#[macro_export]
-macro_rules! vantage_record_conversions {
-    ($struct_name:ty, $trait_name:ident, $value_type:ty) => {
-        paste::paste! {
-            // Into implementations for specific struct
-            impl Into<vantage_types::Record<[<Any $trait_name>]>> for $struct_name {
-                fn into(self) -> vantage_types::Record<[<Any $trait_name>]> {
-                    self.[<to_ $trait_name:lower _record>]()
-                }
-            }
-
-            impl Into<vantage_types::Record<$value_type>> for $struct_name {
-                fn into(self) -> vantage_types::Record<$value_type> {
-                    self.[<to_ $trait_name:lower _values>]()
-                }
-            }
-
-            // TryFrom for reverse conversion
-            impl TryFrom<vantage_types::Record<[<Any $trait_name>]>> for $struct_name {
-                type Error = vantage_core::VantageError;
-
-                fn try_from(value: vantage_types::Record<[<Any $trait_name>]>) -> vantage_core::Result<Self> {
-                    Self::[<from_ $trait_name:lower _record>](value)
-                }
-            }
-        }
-    };
-}

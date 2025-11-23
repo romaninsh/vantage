@@ -24,3 +24,11 @@ serde_json = "1.0.145"
 rust_decimal = "1.0"
 csv = "1.1"
 tokio = { version = "1.0", features = ["rt", "macros"] }
+
+[[example]]
+name = "test_serde_record"
+required-features = ["serde"]
+
+[[example]]
+name = "test_combined_conversions"
+required-features = ["serde"]

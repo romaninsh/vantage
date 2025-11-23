@@ -129,40 +129,6 @@ impl<'a, V> IntoIterator for &'a mut Record<V> {
     }
 }
 
-// Serde compatibility for Record<serde_json::Value>
-#[cfg(feature = "serde")]
-impl Record<serde_json::Value> {
-    /// Convert a serializable type into a Record
-    pub fn from_serializable<T: serde::Serialize>(value: T) -> Result<Self, serde_json::Error> {
-        let json_value = serde_json::to_value(value)?;
-
-        match json_value {
-            serde_json::Value::Object(map) => Ok(map.into_iter().collect()),
-            _ => {
-                // Handle non-object values by wrapping them
-                let mut record = Record::new();
-                record.insert("value".to_string(), json_value);
-                Ok(record)
-            }
-        }
-    }
-
-    /// Convert Record to a deserializable type
-    pub fn to_deserializable<T: serde::de::DeserializeOwned>(
-        &self,
-    ) -> Result<T, serde_json::Error> {
-        // Convert Record to JSON object
-        let json_object: serde_json::Map<String, serde_json::Value> = self
-            .inner
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-
-        let json_value = serde_json::Value::Object(json_object);
-        serde_json::from_value(json_value)
-    }
-}
-
 // Direct conversion from serde_json::Value to Record
 #[cfg(feature = "serde")]
 impl From<serde_json::Value> for Record<serde_json::Value> {
@@ -235,7 +201,17 @@ where
     T: serde::Serialize,
 {
     fn into_record(self) -> Record<serde_json::Value> {
-        Record::from_serializable(self).expect("Failed to serialize to JSON")
+        let json_value = serde_json::to_value(self).expect("Failed to serialize to JSON");
+
+        match json_value {
+            serde_json::Value::Object(map) => map.into_iter().collect(),
+            _ => {
+                // Handle non-object values by wrapping them
+                let mut record = Record::new();
+                record.insert("value".to_string(), json_value);
+                record
+            }
+        }
     }
 }
 
@@ -247,6 +223,11 @@ where
     type Error = serde_json::Error;
 
     fn from_record(record: Record<serde_json::Value>) -> Result<Self, Self::Error> {
-        record.to_deserializable()
+        // Convert Record to JSON object
+        let json_object: serde_json::Map<String, serde_json::Value> =
+            record.inner.into_iter().collect();
+
+        let json_value = serde_json::Value::Object(json_object);
+        serde_json::from_value(json_value)
     }
 }

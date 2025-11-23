@@ -45,6 +45,7 @@ impl MyTypeVariants {
 }
 
 // Struct with persistence macro (uses type system)
+#[derive(Debug, PartialEq, Clone)]
 #[persistence(MyType)]
 struct TypeSystemStruct {
     name: String,
@@ -52,7 +53,7 @@ struct TypeSystemStruct {
 }
 
 // Plain struct with serde (uses JSON)
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 struct SerdeStruct {
     title: String,
     active: bool,
@@ -85,14 +86,14 @@ fn main() {
     let ts_any_record: Record<AnyMyType> = ts_struct.into_record();
     println!("   ✅ TypeSystemStruct -> Record<AnyMyType>");
 
-    // Record<AnyMyType> -> Record<String> (via blanket)
+    // Record<AnyMyType> -> Record<String> (via IntoRecord trait)
     let ts_string_record: Record<String> = ts_any_record.clone().into_record();
     println!("   ✅ Record<AnyMyType> -> Record<String>");
     println!("   String record: {:?}", ts_string_record);
 
     // Round trip back
-    let ts_any_back: Record<AnyMyType> = Record::try_from_record(&ts_string_record).unwrap();
-    let ts_back: TypeSystemStruct = TypeSystemStruct::try_from_record(&ts_any_back).unwrap();
+    let ts_any_back: Record<AnyMyType> = Record::from_record(ts_string_record).unwrap();
+    let ts_back = TypeSystemStruct::from_record(ts_any_back).unwrap();
     println!(
         "   ✅ Round trip: name={}, count={}",
         ts_back.name, ts_back.count
@@ -104,13 +105,13 @@ fn main() {
     println!("2. Serde Struct Conversions:");
     println!("   Original: {:?}", serde_struct);
 
-    // SerdeStruct -> Record<serde_json::Value> (via blanket serde impl)
-    let serde_json_record: Record<serde_json::Value> = serde_struct.into_record();
+    // SerdeStruct -> Record<serde_json::Value> (via serde methods)
+    let serde_json_record: Record<serde_json::Value> = serde_struct.clone().into_record();
     println!("   ✅ SerdeStruct -> Record<serde_json::Value>");
     println!("   JSON record: {:?}", serde_json_record);
 
     // Round trip back
-    let serde_back: SerdeStruct = SerdeStruct::try_from_record(&serde_json_record).unwrap();
+    let serde_back: SerdeStruct = SerdeStruct::from_record(serde_json_record).unwrap();
     println!("   ✅ Round trip: {:?}", serde_back);
 
     println!();
@@ -119,7 +120,7 @@ fn main() {
     println!("3. Cross-Conversion via String:");
 
     // Create a simple struct that implements both
-    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
     #[persistence(MyType)]
     struct HybridStruct {
         label: String,
@@ -134,17 +135,13 @@ fn main() {
     println!("   Original hybrid: {:?}", hybrid);
 
     // Path 1: via Type System
-    let hybrid_any: Record<AnyMyType> = hybrid.into_record();
+    let hybrid_any: Record<AnyMyType> = hybrid.clone().into_record();
     let hybrid_string_via_ts: Record<String> = hybrid_any.into_record();
     println!("   ✅ HybridStruct -> Record<AnyMyType> -> Record<String>");
     println!("   Via type system: {:?}", hybrid_string_via_ts);
 
     // Path 2: via Serde
-    let hybrid2 = HybridStruct {
-        label: "test".to_string(),
-        value: "123".to_string(),
-    };
-    let hybrid_json: Record<serde_json::Value> = hybrid2.into_record();
+    let hybrid_json: Record<serde_json::Value> = hybrid.clone().into_record();
 
     // Convert serde_json::Value to String (need manual conversion for this)
     let hybrid_string_via_serde: Record<String> = hybrid_json
@@ -174,12 +171,8 @@ fn main() {
     };
 
     // Show that the same struct can go through different conversion paths
-    let path1: Record<AnyMyType> = flexible_struct.into_record(); // Type system path
-    let path2 = HybridStruct {
-        label: "flexible".to_string(),
-        value: "999".to_string(),
-    };
-    let path2_record: Record<serde_json::Value> = path2.into_record(); // Serde path
+    let path1: Record<AnyMyType> = flexible_struct.clone().into_record(); // Type system path
+    let path2_record: Record<serde_json::Value> = flexible_struct.clone().into_record(); // Serde path
 
     println!("   Same struct, different paths:");
     println!("   Type system path: {:?}", path1);

@@ -51,7 +51,7 @@ AnyType3 is exported by an SDK and ensures type safety:
 
 ```rust
 // AnyType3 can store either String or Email
-let field_value = AnyType3::new(String::form("Hello, World!"));
+let field_value = AnyType3::new(String::from("Hello, World!"));
 
 // Back to string:
 let hello: String = field_value.try_get().unwrap();
@@ -79,10 +79,10 @@ let user = User {
 };
 
 // Convert to type-erased format for generic processing:
-let values: IndexMap<String, AnyType3> = user.to_type3_map();
+let values: Record<AnyType3> = user.into_record();
 
 // Restore back when reading from database:
-let restored = User::from_type3_map(values).unwrap();
+let restored = User::from_record(values).unwrap();
 ```
 
 Now if user attempts to load data a record that has incompatible types:
@@ -93,7 +93,7 @@ struct BadUser {
     name: String,
     email: String
 }
-let user_fail = BadUser::from_type3_map(values); // Fails, email field type mismatch
+let user_fail = BadUser::from_record(values); // Fails, email field type mismatch
 ```
 
 ## Type System Generation
@@ -257,12 +257,12 @@ let doc = Document {
 };
 
 // Automatic conversion to storage format
-let storage_map: IndexMap<String, AnyType3> = doc.to_type3_map();
+let storage_record: Record<AnyType3> = doc.into_record();
 
 // Each field is stored as AnyType3 with proper type information
-assert_eq!(storage_map.get("title").unwrap().type_variant(), Some(Type3Variants::String));
-assert_eq!(storage_map.get("subtitle").unwrap().type_variant(), Some(Type3Variants::String));
-assert_eq!(storage_map.get("author").unwrap().type_variant(), Some(Type3Variants::Email));
+assert_eq!(storage_record.get("title").unwrap().type_variant(), Some(Type3Variants::String));
+assert_eq!(storage_record.get("subtitle").unwrap().type_variant(), Some(Type3Variants::String));
+assert_eq!(storage_record.get("author").unwrap().type_variant(), Some(Type3Variants::Email));
 
 // Test with None subtitle
 let doc_no_subtitle = Document {
@@ -272,11 +272,11 @@ let doc_no_subtitle = Document {
     published: false,
 };
 
-let storage_none = doc_no_subtitle.to_type3_map();
+let storage_none: Record<AnyType3> = doc_no_subtitle.into_record();
 assert_eq!(storage_none.get("subtitle").unwrap().type_variant(), None); // None values have no variant
 
 // Perfect round-trip conversion
-let restored = Document::from_type3_map(storage_map).unwrap();
+let restored = Document::from_record(storage_record).unwrap();
 assert_eq!(doc, restored);
 ```
 
@@ -320,12 +320,12 @@ let user = User {
 };
 
 // Store to both formats
-let surreal_storage = user.to_surrealtype_map();
-let postgres_storage = user.to_postgrestype_map();
+let surreal_storage: Record<AnySurrealType> = user.clone().into_record();
+let postgres_storage: Record<AnyPostgresType> = user.clone().into_record();
 
 // Both can be restored perfectly
-let from_surreal = User::from_surrealtype_map(surreal_storage).unwrap();
-let from_postgres = User::from_postgrestype_map(postgres_storage).unwrap();
+let from_surreal = User::from_record(surreal_storage).unwrap();
+let from_postgres = User::from_record(postgres_storage).unwrap();
 ```
 
 ## Integration with Vantage Framework
@@ -343,7 +343,7 @@ maintaining type safety and automatic conversions.
 ## Implementing Persistence Engines with Record<T>
 
 When building a persistence engine (like CSV, SurrealDB, or MongoDB adapters), `Record<T>` provides
-a standardized interface for handling both structured and unstructured data. Vatage allows you to
+a standardized interface for handling both structured and unstructured data. Vantage allows you to
 implement a "glue" between underlying implementation and universal interface the rest of Vantage
 ecosystem can use.
 
@@ -366,7 +366,7 @@ Additionally - those methods will use `Result` from `vantage-core` for uniform e
 
 ### CSV Type System
 
-CSV file only works with text, so we define a singel type_variant: Text and use `String` as the
+CSV file only works with text, so we define a single type_variant: Text and use `String` as the
 underlying value type.
 
 ```rust
@@ -433,8 +433,8 @@ impl CsvType for Email {
 ```
 
 All types implementing `CsvType` trait will become first-class citizens - with consistent storage
-and retrieval behavior. We using single-variant "Text" - because of soft boundaries between types,
-but your persistence logic can be more complex if needed.
+and retrieval behavior. We are using single-variant "Text" - because of soft boundaries between
+types, but your persistence logic can be more complex if needed.
 
 ### Implementing interaction with records
 
@@ -442,8 +442,6 @@ Your interface will need to work with Records and Entities (user-defined structs
 struct `Record<CsvType>` and traits `IntoRecord<CsvType>` / `TryFromRecord<CsvType>` for this.
 
 ```rust
-
-// Layer 1: Low-level persistence operations (implement these for your storage) fn
 async fn actually_read_csv_contents() -> Result<Vec<IndexMap<String, String>>, std::io::Error>;
 async fn actually_insert_csv_record(data: IndexMap<String, String>) -> Result<(), std::io::Error>;
 ```
@@ -501,14 +499,14 @@ insert_csv_record(User {
 }).await?;
 
 
-records = read_csv_contents().await?;
+let records = read_csv_contents().await?;
 for record in records {
 
     let user: User = User::try_from_record(&record).unwrap();
     println!("User: {} ({})", user.name, user.email);
 
     // alternatively:
-    println!("User: {} ({})", record["name"], record["email"]);
+    println!("User: {} ({})", record["name"].value(), record["email"].value());
 }
 
 ```

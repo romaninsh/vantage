@@ -1,5 +1,5 @@
 use url::Url;
-use vantage_types::{persistence, vantage_type_system};
+use vantage_types::{persistence, vantage_type_system, IntoRecord, TryFromRecord};
 
 // Generate Type3 system using the macro
 vantage_type_system! {
@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn test1_record() {
-        #[derive(PartialEq, Eq, Debug)]
+        #[derive(PartialEq, Eq, Debug, Clone)]
         #[persistence(Type3)]
         struct Record {
             name: String,
@@ -148,7 +148,7 @@ mod tests {
             email: Email::new("user", "example.com"),
         };
 
-        let values = record.to_type3_map();
+        let values: vantage_types::Record<AnyType3> = record.clone().into_record();
         assert_eq!(
             values.get("name").unwrap().type_variant(),
             Some(Type3Variants::String),
@@ -163,7 +163,7 @@ mod tests {
         );
 
         // Test round-trip conversion
-        let value = Record::from_type3_map(values).unwrap();
+        let value = Record::from_record(values).unwrap();
         assert_eq!(
             value,
             Record {

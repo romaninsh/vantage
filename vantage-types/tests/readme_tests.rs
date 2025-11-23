@@ -89,7 +89,7 @@ impl Type3Variants {
 }
 
 // Typed record example
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 #[persistence(Type3)]
 struct User {
     name: String,
@@ -276,7 +276,7 @@ impl OptionalTypeVariants {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 #[persistence(OptionalType)]
 struct Document {
     title: String,
@@ -426,6 +426,7 @@ struct CrossDbUser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use vantage_types::{IntoRecord, TryFromRecord};
 
     #[test]
     fn test_basic_single_field_value() {
@@ -449,10 +450,10 @@ mod tests {
         };
 
         // Convert to type-erased format for generic processing:
-        let values: IndexMap<String, AnyType3> = user.to_type3_map();
+        let values: vantage_types::Record<AnyType3> = user.clone().into_record();
 
         // Restore back when reading from database:
-        let restored = User::from_type3_map(values).unwrap();
+        let restored = User::from_record(values).unwrap();
         assert_eq!(user, restored);
     }
 
@@ -485,13 +486,13 @@ mod tests {
         };
 
         // Automatic conversion to storage format
-        let storage_map: IndexMap<String, AnyOptionalType> = doc.to_optionaltype_map();
+        let storage_record: vantage_types::Record<AnyOptionalType> = doc.clone().into_record();
 
         // Each field is stored as AnyOptionalType with proper type information
-        assert!(storage_map.contains_key("title"));
-        assert!(storage_map.contains_key("subtitle"));
-        assert!(storage_map.contains_key("author"));
-        assert!(storage_map.contains_key("published"));
+        assert!(storage_record.contains_key("title"));
+        assert!(storage_record.contains_key("subtitle"));
+        assert!(storage_record.contains_key("author"));
+        assert!(storage_record.contains_key("published"));
 
         // Test with None subtitle
         let doc_no_subtitle = Document {
@@ -501,12 +502,12 @@ mod tests {
             published: false,
         };
 
-        let storage_none = doc_no_subtitle.to_optionaltype_map();
+        let storage_none: vantage_types::Record<AnyOptionalType> = doc_no_subtitle.into_record();
         // For None values, just check the field exists
         assert!(storage_none.contains_key("subtitle"));
 
         // Perfect round-trip conversion
-        let restored = Document::from_optionaltype_map(storage_map).unwrap();
+        let restored = Document::from_record(storage_record).unwrap();
         assert_eq!(doc, restored);
     }
 
@@ -518,12 +519,12 @@ mod tests {
         };
 
         // Store to both formats
-        let surreal_storage = user.to_surrealtype_map();
-        let postgres_storage = user.to_postgrestype_map();
+        let surreal_storage: vantage_types::Record<AnySurrealType> = user.clone().into_record();
+        let postgres_storage: vantage_types::Record<AnyPostgresType> = user.clone().into_record();
 
         // Both can be restored perfectly
-        let from_surreal = CrossDbUser::from_surrealtype_map(surreal_storage).unwrap();
-        let from_postgres = CrossDbUser::from_postgrestype_map(postgres_storage).unwrap();
+        let from_surreal = CrossDbUser::from_record(surreal_storage).unwrap();
+        let from_postgres = CrossDbUser::from_record(postgres_storage).unwrap();
 
         assert_eq!(user, from_surreal);
         assert_eq!(user, from_postgres);
@@ -634,7 +635,7 @@ mod tests {
         {
             let vantage_record = record.into_record();
 
-            // Convetr to underlying value type
+            // Convert to underlying value type
             let string_record: Record<String> = vantage_record.into_record();
 
             // Convert Record<AnyCsvType> into IndexMap<String, String>
