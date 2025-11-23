@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-serde = ["dep:serde", "dep:serde_json", "vantage-types-persistence/serde"]
+serde = ["dep:serde", "dep:serde_json", "vantage-types-entity/serde"]
 
 
 
 [dependencies]
 paste = "1.0"
-vantage-types-persistence = { path = "./persistence" }
+vantage-types-entity = { path = "./entity" }
 indexmap = "2.0"
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0.145", optional = true }

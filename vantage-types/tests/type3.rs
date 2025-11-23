@@ -1,5 +1,5 @@
 use url::Url;
-use vantage_types::{persistence, vantage_type_system, IntoRecord, TryFromRecord};
+use vantage_types::{entity, vantage_type_system, IntoRecord, TryFromRecord};
 
 // Generate Type3 system using the macro
 vantage_type_system! {
@@ -135,7 +135,7 @@ mod tests {
     #[test]
     fn test1_record() {
         #[derive(PartialEq, Eq, Debug, Clone)]
-        #[persistence(Type3)]
+        #[entity(Type3)]
         struct Record {
             name: String,
             website: Url,

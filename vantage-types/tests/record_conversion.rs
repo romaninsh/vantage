@@ -1,5 +1,5 @@
 use serde_json::Value as JsonValue;
-use vantage_types::{persistence, vantage_type_system, IntoRecord, Record, TryFromRecord};
+use vantage_types::{entity, vantage_type_system, IntoRecord, Record, TryFromRecord};
 
 // Create a CBOR-based type system
 vantage_type_system! {
@@ -93,8 +93,8 @@ impl JsonType for i32 {
 
 // Test structs
 #[derive(Debug, PartialEq, Clone)]
-#[persistence(CborType)]
-#[persistence(JsonType)]
+#[entity(JsonType)]
+#[entity(CborType)]
 struct User {
     name: String,
     age: i32,

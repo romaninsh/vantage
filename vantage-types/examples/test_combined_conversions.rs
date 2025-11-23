@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use vantage_types::prelude::*;
 use vantage_types::vantage_type_system;
+use vantage_types_entity::entity;
 
 // Define a type system
 vantage_type_system! {
@@ -44,9 +45,9 @@ impl MyTypeVariants {
     }
 }
 
-// Struct with persistence macro (uses type system)
+// Struct with entity macro (uses type system)
 #[derive(Debug, PartialEq, Clone)]
-#[persistence(MyType)]
+#[entity(MyType)]
 struct TypeSystemStruct {
     name: String,
     count: i32,
@@ -121,7 +122,7 @@ fn main() {
 
     // Create a simple struct that implements both
     #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-    #[persistence(MyType)]
+    #[entity(MyType)]
     struct HybridStruct {
         label: String,
         value: String,

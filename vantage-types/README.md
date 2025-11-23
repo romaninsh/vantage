@@ -63,11 +63,11 @@ let hello_fail: Option<Email> = field_value.try_get::<Email>(); // Returns None
 ## Typed record example
 
 When loading data from database, use of incorrect fields can cause hidden issues. `vantage-types`
-implements `#[persistence]` attribute macro, enabling type-safe serialization and deserialization of
+implements `#[entity]` attribute macro, enabling type-safe serialization and deserialization of
 record data:
 
 ```rust
-#[persistence(Type3)]
+#[entity(Type3)]
 struct User {
     name: String,
     email: Email,
@@ -115,7 +115,6 @@ This generates:
 - `MyTypeVariants` enum for runtime type identification. You must implement
   `MyTypeVariants::from_json()` for type detection.
 - `AnyMyType` wrapper for type erasure
-- `MyTypePersistence` trait for struct mapping
 - Type marker structs for compile-time safety
 
 ## Custom Type Implementation
@@ -235,13 +234,15 @@ impl Type3Variants {
 This approach allows nullable fields in structs while maintaining type safety and proper
 serialization.
 
-## Automatic Struct Persistence
+## Entity macro
 
-The `#[persistence]` attribute generates automatic mapping between structs and type-erased storage:
+The `#[entity]` macro generates implementations of the Entity trait for your structure, which otherwise would require
+you to convert all fields into/from Record<AnyType3>. Record relies on IndexMap and preserves field
+order.
 
 ```rust
 #[derive(Debug, PartialEq)]
-#[persistence(Type3)]
+#[entity(Type3)]
 struct Document {
     title: String,
     subtitle: Option<String>,
@@ -280,9 +281,16 @@ let restored = Document::from_record(storage_record).unwrap();
 assert_eq!(doc, restored);
 ```
 
+## Serde Integration
+
+If you enable `serde` feature, vantage-types will automatically implement
+`Entity<serde_json::Value>` if your structure implements `Serialize` and `Deserialize`. This means
+no extra boiler plate for any persistence that uses JSON as underlying format.
+
 ## Cross-Database Type Systems
 
-Different persistence backends can use different value types while maintaining the same API:
+Multiple type systems can be defined and Entity can be implemented for several types - for different
+value types:
 
 ```rust
 // For SurrealDB with CBOR
@@ -301,10 +309,10 @@ vantage_type_system! {
     type_variants: [String, Decimal, Uuid]
 }
 
-// Same struct, dual persistence support
+// Same struct, dual Entity support
 #[derive(Debug, PartialEq, Clone)]
-#[persistence(SurrealType)]
-#[persistence(PostgresType)]
+#[entity(SurrealType)]
+#[entity(PostgresType)]
 struct User {
     name: String,
     balance: Decimal,
@@ -480,14 +488,15 @@ where
 }
 ```
 
-### Using persistence methods
+### Using Entities
 
-Users of your persistence crate can now use those methods in a type-safe manner with both structured
-and unstructured data:
+If your crate uses serde_json::Value as underlying value type - enable the serde feature in
+`vantage-types` crate. However, if you use a more nuanced type system - users can use
+`#[entity(YourType)]` macro to automatically implement `IntoRecord<AnyCsvType>` and
+`TryFromRecord<AnyCsvType>` for their structs.
 
 ```rust
-
-#[persistence(CsvType)]
+#[entity(CsvType)]
 struct User {
     name: String,
     email: Email,
@@ -508,5 +517,7 @@ for record in records {
     // alternatively:
     println!("User: {} ({})", record["name"].value(), record["email"].value());
 }
-
 ```
+
+This can further be abstracted by type generics - that's what `vantage-table` does quite extensively
+by using explicit entity implementations.

@@ -2,7 +2,7 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
 use vantage_types::vantage_type_system;
-use vantage_types_persistence::persistence;
+use vantage_types_entity::entity;
 
 // Basic example - single field value
 vantage_type_system! {
@@ -90,7 +90,7 @@ impl Type3Variants {
 
 // Typed record example
 #[derive(Debug, PartialEq, Clone)]
-#[persistence(Type3)]
+#[entity(Type3)]
 struct User {
     name: String,
     email: Email,
@@ -277,7 +277,7 @@ impl OptionalTypeVariants {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-#[persistence(OptionalType)]
+#[entity(OptionalType)]
 struct Document {
     title: String,
     subtitle: Option<String>,
@@ -416,8 +416,8 @@ impl PostgresTypeVariants {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-#[persistence(SurrealType)]
-#[persistence(PostgresType)]
+#[entity(SurrealType)]
+#[entity(PostgresType)]
 struct CrossDbUser {
     name: String,
     balance: Decimal,
@@ -581,7 +581,7 @@ mod tests {
         }
 
         #[derive(Debug, PartialEq)]
-        #[persistence(CsvType)]
+        #[entity(CsvType)]
         struct User {
             name: String,
             email: Email,

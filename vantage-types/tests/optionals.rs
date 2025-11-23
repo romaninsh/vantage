@@ -1,5 +1,5 @@
 use url::Url;
-use vantage_types::{persistence, vantage_type_system, IntoRecord, TryFromRecord};
+use vantage_types::{entity, vantage_type_system, IntoRecord, TryFromRecord};
 
 // Generate Type3 system using the macro with None type for optionals
 vantage_type_system! {
@@ -161,7 +161,7 @@ mod tests {
     #[test]
     fn test_record_with_optionals() {
         #[derive(PartialEq, Eq, Debug, Clone)]
-        #[persistence(Type3)]
+        #[entity(Type3)]
         struct UserRecord {
             name: String,
             nickname: Option<String>,
