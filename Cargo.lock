@@ -2280,18 +2280,20 @@ name = "vantage-types"
 version = "0.1.0"
 dependencies = [
  "ciborium",
+ "csv",
  "indexmap",
  "paste",
  "rust_decimal",
  "serde",
  "serde_json",
+ "tokio",
  "url",
  "vantage-core",
- "vantage-types-persistence",
+ "vantage-types-entity",
 ]
 
 [[package]]
-name = "vantage-types-persistence"
+name = "vantage-types-entity"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",

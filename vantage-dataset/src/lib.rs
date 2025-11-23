@@ -5,9 +5,11 @@ pub mod traits;
 pub mod record;
 
 pub mod im;
+pub mod mocks;
 pub mod prelude;
 
 pub use im::{ImDataSource, ImTable};
+pub use mocks::csv::{AnyCsvType, CsvType, CsvTypePersistence};
 pub use record::RecordEntity;
 pub use traits::{
     DataSet, InsertableDataSet, InsertableValueSet, ReadableDataSet, ReadableValueSet,
