@@ -1,10 +1,10 @@
-// examples/queue_mock.rs
+//! Queue mock implementation for testing and examples
 
+use crate::traits::{DataSet, InsertableDataSet, Result, ValueSet};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use vantage_core::util::error::Context;
-use vantage_dataset::traits::{DataSet, InsertableDataSet, Result, ValueSet};
 use vantage_types::Entity;
 
 /// MockQueue collects all messages from all topics

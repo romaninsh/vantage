@@ -47,10 +47,8 @@ mod tests {
     use super::*;
     use crate::im::ImDataSource;
     use serde::{Deserialize, Serialize};
-    use vantage_types::persistence_serde;
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-    #[persistence_serde]
     struct User {
         id: Option<String>,
         name: String,

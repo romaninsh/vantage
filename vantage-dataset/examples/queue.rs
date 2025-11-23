@@ -1,10 +1,8 @@
 // examples/queue.rs
 
-mod mocks;
-use mocks::queue_mock::{MockQueue, Topic};
+use vantage_dataset::mocks::{MockQueue, Topic};
 
 use serde::{Deserialize, Serialize};
-use vantage_types::persistence_serde;
 
 use vantage_dataset::traits::InsertableDataSet;
 
@@ -13,14 +11,12 @@ use vantage_dataset::traits::InsertableDataSet;
 // developer would only need to define types to operate with.
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[persistence_serde]
 struct Signup {
     email: String,
     password: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[persistence_serde]
 struct ResetPassword {
     email: String,
 }
@@ -38,21 +34,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Insert some messages into different topics
     new_signup
-        .insert_return_id(Signup {
+        .insert_return_id(&Signup {
             email: "john".to_string(),
             password: "secret".to_string(),
         })
         .await?;
 
     new_signup
-        .insert_return_id(Signup {
+        .insert_return_id(&Signup {
             email: "jane".to_string(),
             password: "password123".to_string(),
         })
         .await?;
 
     reset_password
-        .insert_return_id(ResetPassword {
+        .insert_return_id(&ResetPassword {
             email: "john".to_string(),
         })
         .await?;

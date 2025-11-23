@@ -19,7 +19,6 @@ pub use traits::datasource::QuerySource;
 pub use traits::datasource::SelectSource;
 pub use traits::expressive::{DeferredFn, Expressive, ExpressiveEnum};
 pub use traits::selectable::Selectable;
-pub use vantage_core::Entity;
 
 pub use traits::result;
 

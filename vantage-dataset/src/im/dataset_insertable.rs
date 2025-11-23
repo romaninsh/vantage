@@ -10,7 +10,7 @@ where
 {
     async fn insert_return_id(&self, entity: &E) -> crate::traits::Result<Self::Id> {
         // Convert entity to record
-        let mut record: Record<serde_json::Value> = entity.clone().into();
+        let mut record: Record<serde_json::Value> = entity.clone().into_record();
 
         // Extract ID from record if present, otherwise generate random ID
         let id = if let Some(record_id) = record.get("id") {

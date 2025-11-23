@@ -99,7 +99,9 @@ your API to accept user-supplied expression.
 
 ## Type Mapping
 
-Expressions can be converted between compatible types using the mapping functionality. This is useful when you need to convert `Expression<String>` to `Expression<Value>` or between other compatible types:
+Expressions can be converted between compatible types using the mapping functionality. This is
+useful when you need to convert `Expression<String>` to `Expression<Value>` or between other
+compatible types:
 
 ```rust
 use vantage_expressions::{Expression, ExpressiveEnum, expression::mapping::ExpressionMap};
@@ -121,13 +123,15 @@ Type mapping handles all expression components automatically:
 - **Nested expressions** are converted recursively
 - **Deferred values** are wrapped in conversion closures that execute at runtime
 
-This enables seamless interoperability between different expression types while maintaining type safety.
+This enables seamless interoperability between different expression types while maintaining type
+safety.
 
 ### Cross-Database Queries with Type Mapping
 
-Type mapping becomes particularly powerful when combined with deferred queries across databases with incompatible value types:
+Type mapping becomes particularly powerful when combined with deferred queries across databases with
+incompatible value types:
 
-```rust
+```rust,ignore
 use vantage_expressions::{expr, protocol::datasource::QuerySource, expression::mapping::ExpressionMap};
 
 // Database 1 uses String values, Database 2 uses JSON Values
@@ -142,7 +146,9 @@ let deferred_query = db1.defer(string_query);
 let result = db2.execute(&deferred_query.map()).await;
 ```
 
-The deferred query from `db1` is automatically converted from `Expression<String>` to `Expression<Value>` when mapped, enabling cross-database operations even when the databases use incompatible value types.
+The deferred query from `db1` is automatically converted from `Expression<String>` to
+`Expression<Value>` when mapped, enabling cross-database operations even when the databases use
+incompatible value types.
 
 ## Type Mapping
 
@@ -258,7 +264,9 @@ enabling seamless cross-database operations. Result is passed into db.execute() 
 
 Create custom SQL constructs by implementing the [`Expressive`] trait:
 
-The `execute()` method handles all deferred operations and resolves them into final values. This design allows the use of shared state like `Arc<Mutex<T>>` inside callbacks, enabling dynamic query parameters that can change between query construction and execution.
+The `execute()` method handles all deferred operations and resolves them into final values. This
+design allows the use of shared state like `Arc<Mutex<T>>` inside callbacks, enabling dynamic query
+parameters that can change between query construction and execution.
 
 ```rust,ignore
 /// A UNION SQL construct

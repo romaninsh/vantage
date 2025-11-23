@@ -4,11 +4,10 @@ use vantage_dataset::{
     im::{ImDataSource, ImTable},
     traits::{InsertableDataSet, ReadableDataSet, WritableDataSet},
 };
-use vantage_types::persistence_serde;
 
 // Simple test entities with serde Record conversion
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-#[persistence_serde]
+
 struct User {
     id: Option<String>,
     name: String,
@@ -17,7 +16,6 @@ struct User {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-#[persistence_serde]
 struct Product {
     id: Option<String>,
     name: String,
@@ -55,7 +53,7 @@ async fn test_insertable_dataset() {
         age: 30,
         active: true,
     };
-    let id = table.insert_return_id(user.clone()).await.unwrap();
+    let id = table.insert_return_id(&user).await.unwrap();
     assert!(!id.is_empty());
 
     // Test insert with existing ID - should use it
@@ -65,7 +63,7 @@ async fn test_insertable_dataset() {
         age: 25,
         active: false,
     };
-    let id = table.insert_return_id(user_with_id).await.unwrap();
+    let id = table.insert_return_id(&user_with_id).await.unwrap();
     assert_eq!(id, "user-123");
 
     // Test insert with empty ID - should generate one
@@ -75,7 +73,7 @@ async fn test_insertable_dataset() {
         age: 35,
         active: true,
     };
-    let id = table.insert_return_id(user_empty_id).await.unwrap();
+    let id = table.insert_return_id(&user_empty_id).await.unwrap();
     assert!(!id.is_empty());
     assert_ne!(id, "");
 }
@@ -93,10 +91,7 @@ async fn test_writable_dataset() {
     };
 
     // Test insert (idempotent)
-    let result = table
-        .insert(&"user-1".to_string(), user.clone())
-        .await
-        .unwrap();
+    let result = table.insert(&"user-1".to_string(), &user).await.unwrap();
     assert_eq!(result, user);
 
     // Test insert again - should return existing
@@ -106,7 +101,7 @@ async fn test_writable_dataset() {
         age: 25,
         active: false,
     };
-    let result = table.insert(&"user-1".to_string(), user2).await.unwrap();
+    let result = table.insert(&"user-1".to_string(), &user2).await.unwrap();
     assert_eq!(result, user); // Should return original, not new data
 
     // Test replace
@@ -117,7 +112,7 @@ async fn test_writable_dataset() {
         active: false,
     };
     let result = table
-        .replace(&"user-1".to_string(), updated_user.clone())
+        .replace(&"user-1".to_string(), &updated_user)
         .await
         .unwrap();
     assert_eq!(result, updated_user);
@@ -130,7 +125,7 @@ async fn test_writable_dataset() {
         active: true,
     };
     let result = table
-        .patch(&"user-1".to_string(), patch_user)
+        .patch(&"user-1".to_string(), &patch_user)
         .await
         .unwrap();
     assert_eq!(result.name, "Alice Patched");
@@ -143,14 +138,8 @@ async fn test_writable_dataset() {
     assert!(result.is_err());
 
     // Test delete_all
-    let _ = table
-        .insert(&"user-2".to_string(), user.clone())
-        .await
-        .unwrap();
-    let _ = table
-        .insert(&"user-3".to_string(), user.clone())
-        .await
-        .unwrap();
+    let _ = table.insert(&"user-2".to_string(), &user).await.unwrap();
+    let _ = table.insert(&"user-3".to_string(), &user).await.unwrap();
 
     table.delete_all().await.unwrap();
     let result = table.list().await.unwrap();
@@ -169,10 +158,7 @@ async fn test_full_crud_cycle() {
         price: 1200,
         available: true,
     };
-    let result = table
-        .insert(&"prod-1".to_string(), product.clone())
-        .await
-        .unwrap();
+    let result = table.insert(&"prod-1".to_string(), &product).await.unwrap();
     assert_eq!(result, product);
 
     // Read
@@ -187,7 +173,7 @@ async fn test_full_crud_cycle() {
         available: true,
     };
     let result = table
-        .replace(&"prod-1".to_string(), updated_product.clone())
+        .replace(&"prod-1".to_string(), &updated_product)
         .await
         .unwrap();
     assert_eq!(result, updated_product);
@@ -217,10 +203,7 @@ async fn test_record_field_handling() {
     };
 
     // Insert user
-    table
-        .insert(&"test-user".to_string(), user.clone())
-        .await
-        .unwrap();
+    table.insert(&"test-user".to_string(), &user).await.unwrap();
 
     // Retrieve and verify ID is properly restored
     let retrieved = table.get(&"test-user".to_string()).await.unwrap();
@@ -237,7 +220,7 @@ async fn test_record_field_handling() {
         active: false,
     };
 
-    let patched = table.patch(&"test-user".to_string(), patch).await.unwrap();
+    let patched = table.patch(&"test-user".to_string(), &patch).await.unwrap();
     assert_eq!(patched.id, Some("test-user".to_string())); // ID should remain unchanged
     assert_eq!(patched.name, "Patched Name");
     assert_eq!(patched.age, 43);
@@ -256,7 +239,7 @@ async fn test_error_conditions() {
         age: 30,
         active: true,
     };
-    let result = table.patch(&"nonexistent".to_string(), user).await;
+    let result = table.patch(&"nonexistent".to_string(), &user).await;
     assert!(result.is_err());
 
     // Test get on non-existent record
@@ -286,11 +269,11 @@ async fn test_multiple_tables() {
     };
 
     user_table
-        .insert(&"user-1".to_string(), user.clone())
+        .insert(&"user-1".to_string(), &user)
         .await
         .unwrap();
     product_table
-        .insert(&"prod-1".to_string(), product.clone())
+        .insert(&"prod-1".to_string(), &product)
         .await
         .unwrap();
 

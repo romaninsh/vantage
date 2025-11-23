@@ -1,10 +1,8 @@
 use serde::{Deserialize, Serialize};
 use vantage_dataset::im::{ImDataSource, ImTable};
 use vantage_dataset::traits::{InsertableDataSet, ReadableDataSet};
-use vantage_types::persistence_serde;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[persistence_serde]
 struct User {
     id: Option<String>,
     name: String,
@@ -19,7 +17,7 @@ async fn main() -> vantage_core::Result<()> {
 
     // Insert some users
     let user1_id = users
-        .insert_return_id(User {
+        .insert_return_id(&User {
             id: Some("user-1".to_string()),
             name: "Alice".to_string(),
             email: "alice@example.com".to_string(),
@@ -28,7 +26,7 @@ async fn main() -> vantage_core::Result<()> {
         .await?;
 
     let user2_id = users
-        .insert_return_id(User {
+        .insert_return_id(&User {
             id: None,
             name: "Bob".to_string(),
             email: "bob@example.com".to_string(),

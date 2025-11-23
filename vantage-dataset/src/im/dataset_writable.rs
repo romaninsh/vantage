@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use vantage_types::{Entity, Record};
+use vantage_types::{Entity, Record, TryFromRecord};
 
 use crate::{
     im::ImTable,
@@ -10,7 +10,7 @@ use crate::{
 impl<E> WritableDataSet<E> for ImTable<E>
 where
     E: Entity + Clone + Send + Sync,
-    <E as TryFrom<Record<serde_json::Value>>>::Error: std::fmt::Debug,
+    <E as TryFromRecord<serde_json::Value>>::Error: std::fmt::Debug,
 {
     async fn insert(&self, id: &Self::Id, entity: &E) -> Result<E> {
         let mut table = self.data_source.get_or_create_table(&self.table_name);
@@ -18,10 +18,11 @@ where
         // Check if record already exists (idempotent behavior)
         if let Some(existing_record) = table.get(id) {
             // Return existing entity
+            // Add the id field to the record for conversion
             let mut record_with_id = existing_record.clone();
             record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
 
-            let existing_entity = E::try_from(record_with_id).map_err(|e| {
+            let existing_entity = E::try_from_record(&record_with_id).map_err(|e| {
                 vantage_core::util::error::vantage_error!(
                     "Failed to convert record to entity: {:?}",
                     e
@@ -31,7 +32,7 @@ where
         }
 
         // Convert entity to record for storage (remove id field since it's in the key)
-        let mut record: Record<serde_json::Value> = entity.clone().into();
+        let mut record: Record<serde_json::Value> = entity.clone().into_record();
         record.shift_remove("id");
 
         table.insert(id.clone(), record);
@@ -44,7 +45,7 @@ where
         let mut table = self.data_source.get_or_create_table(&self.table_name);
 
         // Convert entity to record for storage (remove id field since it's in the key)
-        let mut record: Record<serde_json::Value> = entity.clone().into();
+        let mut record: Record<serde_json::Value> = entity.clone().into_record();
         record.shift_remove("id");
 
         table.insert(id.clone(), record);
@@ -65,7 +66,7 @@ where
             .clone();
 
         // Convert partial entity to record
-        let partial_record: Record<serde_json::Value> = partial.clone().into();
+        let partial_record: Record<serde_json::Value> = partial.clone().into_record();
 
         // Merge the partial fields into the existing record
         for (key, value) in partial_record.iter() {
@@ -82,7 +83,7 @@ where
         let mut record_with_id = existing_record;
         record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
 
-        let merged_entity = E::try_from(record_with_id).map_err(|e| {
+        let merged_entity = E::try_from_record(&record_with_id).map_err(|e| {
             vantage_core::util::error::vantage_error!("Failed to convert record to entity: {:?}", e)
         })?;
         Ok(merged_entity)

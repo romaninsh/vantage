@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use indexmap::IndexMap;
 
-use vantage_types::{Entity, Record};
+use vantage_types::{Entity, TryFromRecord};
 
 use crate::{
     im::ImTable,
@@ -16,7 +16,7 @@ impl<E> DataSet<E> for ImTable<E> where E: Entity {}
 impl<E> ReadableDataSet<E> for ImTable<E>
 where
     E: Entity,
-    <E as TryFrom<Record<serde_json::Value>>>::Error: std::fmt::Debug,
+    <E as TryFromRecord<serde_json::Value>>::Error: std::fmt::Debug,
 {
     async fn list(&self) -> Result<IndexMap<Self::Id, E>> {
         let table = self.data_source.get_or_create_table(&self.table_name);
@@ -27,7 +27,7 @@ where
             let mut record_with_id = record.clone();
             record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
 
-            let entity: E = E::try_from(record_with_id)
+            let entity: E = E::try_from_record(&record_with_id)
                 .map_err(|e| vantage_error!("Failed to convert record to entity: {:?}", e))?;
             records.insert(id.clone(), entity);
         }
@@ -44,7 +44,7 @@ where
                 let mut record_with_id = record.clone();
                 record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
 
-                E::try_from(record_with_id)
+                E::try_from_record(&record_with_id)
                     .map_err(|e| vantage_error!("Failed to convert record to entity: {:?}", e))
             }
             None => Err(vantage_error!("Record with id '{}' not found", id)),
@@ -59,7 +59,7 @@ where
             let mut record_with_id = record.clone();
             record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
 
-            let entity: E = E::try_from(record_with_id)
+            let entity: E = E::try_from_record(&record_with_id)
                 .map_err(|e| vantage_error!("Failed to convert record to entity: {:?}", e))?;
             Ok(Some((id.clone(), entity)))
         } else {

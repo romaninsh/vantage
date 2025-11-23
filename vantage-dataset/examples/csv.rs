@@ -1,17 +1,16 @@
-use serde::{Deserialize, Serialize};
+use vantage_dataset::AnyCsvType;
 use vantage_dataset::traits::ReadableDataSet;
-use vantage_types::persistence_serde;
+use vantage_types::entity;
 
-mod mocks;
-use mocks::csv_mock::{CsvFile, MockCsv};
+use vantage_dataset::mocks::{CsvFile, MockCsv};
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[persistence_serde]
+#[derive(Debug, Clone, Default)]
+#[entity(CsvType)]
 struct User {
-    id: u32,
+    id: String,
     name: String,
     email: String,
-    age: u32,
+    age: i64,
 }
 
 #[tokio::main]
