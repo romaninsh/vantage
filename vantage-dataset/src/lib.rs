@@ -10,8 +10,8 @@ pub mod prelude;
 
 pub use im::{ImDataSource, ImTable};
 pub use mocks::csv::{AnyCsvType, CsvType, CsvTypePersistence};
-pub use record::RecordEntity;
+pub use record::ActiveEntity;
 pub use traits::{
-    DataSet, InsertableDataSet, InsertableValueSet, ReadableDataSet, ReadableValueSet,
-    RecordValueSet, ValueSet, WritableDataSet, WritableValueSet,
+    ActiveRecordSet, DataSet, InsertableDataSet, InsertableValueSet, ReadableDataSet,
+    ReadableValueSet, ValueSet, WritableDataSet, WritableValueSet,
 };

@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use mockall::mock;
 use serde_json::Value;
 use std::ops::Deref;
-use vantage_core::{Entity, Result};
+use vantage_core::Result;
 use vantage_dataset::traits::Result as DatasetResult;
 use vantage_expressions::{
     Expression,
@@ -18,6 +18,7 @@ use vantage_expressions::{
         expressive::{DeferredFn, ExpressiveEnum},
     },
 };
+use vantage_types::{Entity, Record};
 
 use crate::{
     mocks::column::MockColumn,
@@ -201,14 +202,11 @@ impl TableSource for MockBuilder {
                 .unwrap_or("unknown")
                 .to_string();
 
-            match serde_json::from_value::<E>(value) {
+            let record = Record::from(value);
+            match E::from_record(record) {
                 Ok(item) => results.push((id, item)),
-                Err(e) => {
-                    return Err(vantage_core::error!(
-                        "Failed to deserialize entity",
-                        error = e.to_string()
-                    )
-                    .into());
+                Err(_) => {
+                    return Err(vantage_core::error!("Failed to convert record to entity").into());
                 }
             }
         }
@@ -235,13 +233,10 @@ impl TableSource for MockBuilder {
                 .unwrap_or("unknown")
                 .to_string();
 
-            match serde_json::from_value::<E>(value) {
+            let record = Record::from(value);
+            match E::from_record(record) {
                 Ok(item) => Ok(Some((id, item))),
-                Err(e) => Err(vantage_core::error!(
-                    "Failed to deserialize entity",
-                    error = e.to_string()
-                )
-                .into()),
+                Err(_) => Err(vantage_core::error!("Failed to convert record to entity").into()),
             }
         } else {
             Ok(None)

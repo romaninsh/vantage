@@ -1,16 +1,14 @@
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use vantage_core::{
-    Entity,
-    util::error::{Context, vantage_error},
-};
+use vantage_core::util::error::{Context, vantage_error};
 use vantage_dataset::{prelude::VantageError, traits::Result};
 use vantage_expressions::{
     Expression, expr_any,
     mocks::select::MockSelect,
     traits::datasource::{DataSource, SelectSource},
 };
+use vantage_types::{Entity, Record};
 
 use crate::{table::Table, traits::table_like::TableLike, traits::table_source::TableSource};
 
@@ -109,10 +107,11 @@ impl TableSource for MockTableSource {
                 })
                 .unwrap_or_else(|| "unknown".to_string());
 
-            match serde_json::from_value::<E>(value) {
+            let record = Record::from(value);
+            match E::from_record(record) {
                 Ok(item) => results.push((id, item)),
-                Err(e) => {
-                    return Err(vantage_error!("Failed to deserialize entity: {}", e));
+                Err(_) => {
+                    return Err(vantage_error!("Failed to convert record to entity"));
                 }
             }
         }
@@ -138,9 +137,10 @@ impl TableSource for MockTableSource {
                 })
                 .unwrap_or_else(|| "unknown".to_string());
 
-            match serde_json::from_value::<E>(first_value) {
+            let record = Record::from(first_value);
+            match E::from_record(record) {
                 Ok(item) => Ok(Some((id, item))),
-                Err(e) => Err(vantage_error!("Failed to deserialize entity: {}", e)),
+                Err(_) => Err(vantage_error!("Failed to convert record to entity")),
             }
         } else {
             Ok(None)

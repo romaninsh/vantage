@@ -6,7 +6,6 @@ use crate::column::column::Column;
 use crate::column::flags::ColumnFlag;
 use crate::traits::column_like::ColumnLike;
 use std::collections::HashSet;
-use vantage_expressions::{Expression, expr};
 
 /// Simple column implementation for testing mocks
 #[derive(Debug, Clone)]
@@ -78,6 +77,8 @@ impl From<Column> for MockColumn {
 
 #[cfg(test)]
 mod tests {
+    use vantage_expressions::expr;
+
     use super::*;
 
     #[test]

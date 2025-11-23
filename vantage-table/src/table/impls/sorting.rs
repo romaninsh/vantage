@@ -1,5 +1,6 @@
-use vantage_core::{Entity, Result, error};
+use vantage_core::{Result, error};
 use vantage_expressions::Expression;
+use vantage_types::Entity;
 
 use crate::{sorting::*, table::Table, traits::table_source::TableSource};
 

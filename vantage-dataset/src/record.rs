@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 use vantage_types::{IntoRecord, Record, TryFromRecord};
 
 /// A record represents a single entity with its ID, providing save functionality
-pub struct RecordEntity<'a, D, E>
+pub struct ActiveEntity<'a, D, E>
 where
     D: WritableDataSet<E> + ?Sized,
     E: IntoRecord<D::Value> + TryFromRecord<D::Value> + Send + Sync + Clone,
@@ -13,7 +13,7 @@ where
     dataset: &'a D,
 }
 
-impl<'a, D, E> RecordEntity<'a, D, E>
+impl<'a, D, E> ActiveEntity<'a, D, E>
 where
     D: WritableDataSet<E> + ?Sized,
     E: IntoRecord<D::Value> + TryFromRecord<D::Value> + Send + Sync + Clone,
@@ -33,7 +33,7 @@ where
     }
 }
 
-impl<'a, D, E> Deref for RecordEntity<'a, D, E>
+impl<'a, D, E> Deref for ActiveEntity<'a, D, E>
 where
     D: WritableDataSet<E> + ?Sized,
     E: IntoRecord<D::Value> + TryFromRecord<D::Value> + Send + Sync + Clone,
@@ -45,7 +45,7 @@ where
     }
 }
 
-impl<'a, D, E> DerefMut for RecordEntity<'a, D, E>
+impl<'a, D, E> DerefMut for ActiveEntity<'a, D, E>
 where
     D: WritableDataSet<E> + ?Sized,
     E: IntoRecord<D::Value> + TryFromRecord<D::Value> + Send + Sync + Clone,
@@ -57,7 +57,7 @@ where
 
 /// A wrapper for a data record represented by a Record, implementing save() method
 /// for saving record into WritableValueSet after it's modified
-pub struct RecordValue<'a, D>
+pub struct ActiveRecord<'a, D>
 where
     D: WritableValueSet + ?Sized,
 {
@@ -66,7 +66,7 @@ where
     dataset: &'a D,
 }
 
-impl<'a, D> RecordValue<'a, D>
+impl<'a, D> ActiveRecord<'a, D>
 where
     D: WritableValueSet + ?Sized,
 {
@@ -85,7 +85,7 @@ where
     }
 }
 
-impl<'a, D> Deref for RecordValue<'a, D>
+impl<'a, D> Deref for ActiveRecord<'a, D>
 where
     D: WritableValueSet + ?Sized,
 {
@@ -96,7 +96,7 @@ where
     }
 }
 
-impl<'a, D> DerefMut for RecordValue<'a, D>
+impl<'a, D> DerefMut for ActiveRecord<'a, D>
 where
     D: WritableValueSet + ?Sized,
 {
