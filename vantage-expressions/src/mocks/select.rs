@@ -3,9 +3,9 @@
 //! This module provides a minimalistic mock implementation of the Selectable trait
 //! that uses the expr! macro pattern for building queries.
 
-use crate::Expression;
 use crate::traits::expressive::ExpressiveEnum;
 use crate::traits::selectable::{Selectable, SourceRef};
+use crate::{Expression, expr};
 
 /// Minimalistic mock implementation of Selectable trait
 ///
@@ -213,11 +213,13 @@ impl Selectable<serde_json::Value> for MockSelect {
     }
 
     fn as_count(&self) -> Expression<serde_json::Value> {
-        panic!("Not implemented in this mock")
+        let source = self.source.as_ref().unwrap().as_str();
+        expr!("SELECT COUNT(*) FROM {}", source)
     }
 
-    fn as_sum(&self, _column: Expression<serde_json::Value>) -> Expression<serde_json::Value> {
-        panic!("Not implemented in thsi mock")
+    fn as_sum(&self, column: Expression<serde_json::Value>) -> Expression<serde_json::Value> {
+        let source = self.source.as_ref().unwrap().as_str();
+        expr!("SELECT SUM({}) FROM {}", (column), source)
     }
 }
 

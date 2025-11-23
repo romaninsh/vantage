@@ -12,8 +12,9 @@ use vantage_dataset::{
 };
 use vantage_expressions::{
     Expression, expr_any,
+    mocks::datasource::{MockQuerySource, MockSelectSource},
     mocks::select::MockSelect,
-    traits::datasource::{DataSource, SelectSource},
+    traits::datasource::{DataSource, QuerySource, SelectSource},
 };
 use vantage_types::{Entity, Record};
 
@@ -23,6 +24,8 @@ use crate::{table::Table, traits::table_like::TableLike, traits::table_source::T
 pub struct MockTableSource {
     data: Arc<Mutex<HashMap<String, Vec<serde_json::Value>>>>,
     im_data_source: ImDataSource,
+    select_source: Option<MockSelectSource>,
+    query_source: Option<MockQuerySource>,
 }
 
 impl MockTableSource {
@@ -30,6 +33,8 @@ impl MockTableSource {
         Self {
             data: Arc::new(Mutex::new(HashMap::new())),
             im_data_source: ImDataSource::new(),
+            select_source: None,
+            query_source: None,
         }
     }
 
@@ -46,9 +51,22 @@ impl MockTableSource {
         for value in data {
             if let Some(id) = value.get("id").and_then(|v| v.as_str()) {
                 let record = Record::from(value.clone());
-                let _ = im_table.replace_value(&id.to_string(), &record).await;
+                let _ = im_table
+                    .replace_value(&id.to_string(), &record)
+                    .await
+                    .unwrap();
             }
         }
+        self
+    }
+
+    pub fn with_select_source(mut self, select_source: MockSelectSource) -> Self {
+        self.select_source = Some(select_source);
+        self
+    }
+
+    pub fn with_query_source(mut self, query_source: MockQuerySource) -> Self {
+        self.query_source = Some(query_source);
         self
     }
 }
@@ -61,18 +79,57 @@ impl Default for MockTableSource {
 
 impl DataSource for MockTableSource {}
 
+impl QuerySource<serde_json::Value> for MockTableSource {
+    async fn execute(
+        &self,
+        expr: &Expression<serde_json::Value>,
+    ) -> vantage_core::Result<serde_json::Value> {
+        if let Some(ref query_source) = self.query_source {
+            query_source.execute(expr).await
+        } else {
+            panic!("MockTableSource query source not set. Use with_query_source() to configure it.")
+        }
+    }
+
+    fn defer(
+        &self,
+        expr: Expression<serde_json::Value>,
+    ) -> vantage_expressions::traits::expressive::DeferredFn<serde_json::Value>
+    where
+        serde_json::Value: Clone + Send + Sync + 'static,
+    {
+        if let Some(ref query_source) = self.query_source {
+            query_source.defer(expr)
+        } else {
+            panic!("MockTableSource query source not set. Use with_query_source() to configure it.")
+        }
+    }
+}
+
 impl SelectSource<serde_json::Value> for MockTableSource {
     type Select = MockSelect;
 
     fn select(&self) -> Self::Select {
-        MockSelect::new()
+        if let Some(ref select_source) = self.select_source {
+            select_source.select()
+        } else {
+            panic!(
+                "MockTableSource select source not set. Use with_select_source() to configure it."
+            )
+        }
     }
 
     async fn execute_select(
         &self,
-        _select: &Self::Select,
+        select: &Self::Select,
     ) -> vantage_core::Result<Vec<serde_json::Value>> {
-        Ok(vec![serde_json::json!({"mock": "select_result"})])
+        if let Some(ref select_source) = self.select_source {
+            select_source.execute_select(select).await
+        } else {
+            panic!(
+                "MockTableSource select source not set. Use with_select_source() to configure it."
+            )
+        }
     }
 }
 
