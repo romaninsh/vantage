@@ -7,7 +7,6 @@ use vantage_dataset::{
 
 // Simple test entities with serde Record conversion
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-
 struct User {
     id: Option<String>,
     name: String,
