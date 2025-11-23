@@ -1,5 +1,6 @@
-use vantage_core::{Entity, Result, error};
+use vantage_core::{Result, error};
 use vantage_expressions::Expression;
+use vantage_types::Entity;
 
 use crate::{conditions::ConditionHandle, table::Table, traits::table_source::TableSource};
 
@@ -45,8 +46,8 @@ mod tests {
     use crate::mocks::tablesource::MockTableSource;
 
     use super::*;
-    use vantage_core::EmptyEntity;
     use vantage_expressions::expr_any;
+    use vantage_types::EmptyEntity;
 
     #[test]
     fn test_temp_conditions() {

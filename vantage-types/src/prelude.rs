@@ -18,3 +18,6 @@ pub use vantage_types_entity::entity;
 
 #[cfg(feature = "serde")]
 pub use crate::Entity;
+
+// Re-export EmptyEntity
+pub use crate::EmptyEntity;

@@ -1,4 +1,4 @@
-use crate::{RecordEntity, traits::ValueSet};
+use crate::{ActiveEntity, traits::ValueSet};
 
 use super::Result;
 use async_trait::async_trait;
@@ -311,7 +311,7 @@ where
 /// }
 /// ```
 #[async_trait]
-pub trait EntityDataSet<E>: ReadableDataSet<E> + WritableDataSet<E>
+pub trait ActiveEntitySet<E>: ReadableDataSet<E> + WritableDataSet<E>
 where
     E: Entity<Self::Value>,
 {
@@ -325,9 +325,9 @@ where
     /// - `Ok(Some(entity))`: Entity wrapper with change tracking
     /// - `Ok(None)`: entity doesn't exist
     /// - `Err`: Storage or deserialization error
-    async fn get_entity(&self, id: &Self::Id) -> Result<Option<RecordEntity<'_, Self, E>>> {
+    async fn get_entity(&self, id: &Self::Id) -> Result<Option<ActiveEntity<'_, Self, E>>> {
         match self.get(id).await {
-            Ok(data) => Ok(Some(RecordEntity::new(id.clone(), data, self))),
+            Ok(data) => Ok(Some(ActiveEntity::new(id.clone(), data, self))),
             Err(_) => Ok(None),
         }
     }
@@ -341,17 +341,17 @@ where
     ///
     /// This loads and deserializes all entities into memory. Consider pagination
     /// or streaming approaches for large datasets.
-    async fn list_entities(&self) -> Result<Vec<RecordEntity<'_, Self, E>>> {
+    async fn list_entities(&self) -> Result<Vec<ActiveEntity<'_, Self, E>>> {
         let items = self.list().await?;
 
         Ok(items
             .into_iter()
-            .map(|(id, data)| RecordEntity::new(id, data, self))
+            .map(|(id, data)| ActiveEntity::new(id, data, self))
             .collect::<Vec<_>>())
     }
 }
 // Auto-implement for any type that has both readable and writable traits
-impl<T, E> EntityDataSet<E> for T
+impl<T, E> ActiveEntitySet<E> for T
 where
     T: ReadableDataSet<E> + WritableDataSet<E>,
     E: Entity<T::Value>,

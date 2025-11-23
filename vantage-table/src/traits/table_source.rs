@@ -1,9 +1,9 @@
 use async_trait::async_trait;
-use vantage_core::Entity;
 use vantage_dataset::traits::Result;
 use vantage_expressions::{
     Expression, traits::datasource::DataSource, traits::expressive::ExpressiveEnum,
 };
+use vantage_types::Entity;
 
 use crate::{
     table::Table,

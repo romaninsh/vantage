@@ -6,8 +6,11 @@
 
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use vantage_core::Entity;
-use vantage_expressions::{Expression, expr, traits::expressive::ExpressiveEnum};
+use vantage_expressions::{
+    Expression, expr,
+    traits::datasource::{QuerySource, SelectSource},
+    traits::expressive::ExpressiveEnum,
+};
 
 // Simple test entity
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default)]
@@ -17,7 +20,7 @@ struct User {
     email: String,
 }
 
-impl Entity for User {}
+// Entity is automatically implemented via blanket impl
 
 // Simplified mockbuilder to demonstrate the concept works
 #[derive(Debug, Clone)]
@@ -49,15 +52,20 @@ impl SimpleMockBuilder {
 impl vantage_expressions::traits::datasource::DataSource for SimpleMockBuilder {}
 
 // Implement QuerySource trait (trait #2)
-#[async_trait::async_trait]
 impl vantage_expressions::traits::datasource::QuerySource<Value> for SimpleMockBuilder {
-    async fn execute(&self, expr: &Expression<Value>) -> vantage_core::Result<Value> {
+    fn execute(
+        &self,
+        expr: &Expression<Value>,
+    ) -> impl std::future::Future<Output = vantage_core::Result<Value>> + Send {
         let query_str = expr.preview();
+        let response = self.patterns.get(&query_str).cloned();
 
-        if let Some(response) = self.patterns.get(&query_str) {
-            Ok(response.clone())
-        } else {
-            Err(vantage_core::error!("No pattern found", query = query_str).into())
+        async move {
+            if let Some(response) = response {
+                Ok(response)
+            } else {
+                Err(vantage_core::error!("No pattern found", query = query_str).into())
+            }
         }
     }
 
@@ -69,6 +77,8 @@ impl vantage_expressions::traits::datasource::QuerySource<Value> for SimpleMockB
         let response = self.patterns.get(&query_str).cloned();
 
         vantage_expressions::traits::expressive::DeferredFn::new(move || {
+            let response = response.clone();
+            let query_str = query_str.clone();
             Box::pin(async move {
                 match response {
                     Some(value) => Ok(ExpressiveEnum::Scalar(value)),
@@ -124,7 +134,10 @@ async fn main() -> vantage_core::Result<()> {
     println!("\n1. Testing Expression Query Capabilities:");
     let query = expr!("SELECT * FROM users");
     let result = mock.execute(&query).await?;
-    println!("Query result: {}", serde_json::to_string_pretty(&result)?);
+    println!(
+        "Query result: {}",
+        serde_json::to_string_pretty(&result).unwrap()
+    );
 
     // Test SelectSource trait
     println!("\n2. Testing Select Source Capabilities:");

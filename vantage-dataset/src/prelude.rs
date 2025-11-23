@@ -17,7 +17,7 @@ pub use crate::traits::{
 pub use crate::im::{ImDataSource, ImTable};
 
 // Record functionality
-pub use crate::record::{RecordEntity, RecordValue};
+pub use crate::record::{ActiveEntity, ActiveRecord};
 
 // Re-export commonly used external dependencies
 pub use async_trait::async_trait;

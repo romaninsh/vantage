@@ -1,4 +1,4 @@
-use crate::record::RecordValue;
+use crate::record::ActiveRecord;
 
 use super::Result;
 use async_trait::async_trait;
@@ -182,7 +182,7 @@ pub trait InsertableValueSet: ValueSet {
 ///
 /// See documentation for [`ValueSet`] for implementation example.
 #[async_trait]
-pub trait RecordValueSet: ReadableValueSet + WritableValueSet {
+pub trait ActiveRecordSet: ReadableValueSet + WritableValueSet {
     /// Retrieve a record wrapped for change tracking and deferred persistence.
     ///
     /// The returned [`RecordValue`] can be modified in-place and will track all
@@ -192,7 +192,7 @@ pub trait RecordValueSet: ReadableValueSet + WritableValueSet {
     ///
     /// - `Ok(RecordValue)`: Record wrapper with change tracking
     /// - `Err`: If record doesn't exist or cannot be loaded
-    async fn get_value_record(&self, id: &Self::Id) -> Result<RecordValue<'_, Self>>;
+    async fn get_value_record(&self, id: &Self::Id) -> Result<ActiveRecord<'_, Self>>;
 
     /// Retrieve all records wrapped for change tracking.
     ///
@@ -203,26 +203,26 @@ pub trait RecordValueSet: ReadableValueSet + WritableValueSet {
     ///
     /// This loads all records into memory. Consider pagination or streaming
     /// approaches for large datasets.
-    async fn list_value_records(&self) -> Result<Vec<RecordValue<'_, Self>>>;
+    async fn list_value_records(&self) -> Result<Vec<ActiveRecord<'_, Self>>>;
 }
 
 // Auto-implement for any type that has both readable and writable traits
 #[async_trait]
-impl<T> RecordValueSet for T
+impl<T> ActiveRecordSet for T
 where
     T: ReadableValueSet + WritableValueSet + Sync,
 {
-    async fn get_value_record(&self, id: &Self::Id) -> Result<RecordValue<'_, Self>> {
+    async fn get_value_record(&self, id: &Self::Id) -> Result<ActiveRecord<'_, Self>> {
         let record = self.get_value(id).await?;
-        Ok(RecordValue::new(id.clone(), record, self))
+        Ok(ActiveRecord::new(id.clone(), record, self))
     }
 
-    async fn list_value_records(&self) -> Result<Vec<RecordValue<'_, Self>>> {
+    async fn list_value_records(&self) -> Result<Vec<ActiveRecord<'_, Self>>> {
         let items = self.list_values().await?;
 
         Ok(items
             .into_iter()
-            .map(|(id, record)| RecordValue::new(id, record, self))
+            .map(|(id, record)| ActiveRecord::new(id, record, self))
             .collect::<Vec<_>>())
     }
 }

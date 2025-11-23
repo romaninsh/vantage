@@ -1738,6 +1738,7 @@ dependencies = [
  "tokio-tungstenite",
  "url",
  "uuid",
+ "vantage-core",
  "vantage-types",
 ]
 
@@ -2273,6 +2274,7 @@ dependencies = [
  "vantage-core",
  "vantage-dataset",
  "vantage-expressions",
+ "vantage-types",
 ]
 
 [[package]]

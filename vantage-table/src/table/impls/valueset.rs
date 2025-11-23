@@ -1,10 +1,9 @@
 use async_trait::async_trait;
 use indexmap::IndexMap;
-use vantage_core::Entity;
 use vantage_core::Result;
 use vantage_dataset::prelude::WritableValueSet;
 use vantage_dataset::{prelude::ReadableValueSet, traits::ValueSet};
-use vantage_types::Record;
+use vantage_types::{Entity, Record};
 
 use crate::{table::Table, traits::table_source::TableSource};
 
@@ -38,7 +37,7 @@ impl<T: TableSource, E: Entity> WritableValueSet for Table<T, E> {
     async fn insert_value(
         &self,
         _id: &Self::Id,
-        _record: Record<Self::Value>,
+        _record: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>> {
         // TODO: Implement using data source mutation capabilities
         todo!("Implement insert_value using TableSource")
@@ -47,7 +46,7 @@ impl<T: TableSource, E: Entity> WritableValueSet for Table<T, E> {
     async fn replace_value(
         &self,
         _id: &Self::Id,
-        _record: Record<Self::Value>,
+        _record: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>> {
         // TODO: Implement using data source mutation capabilities
         todo!("Implement replace_value using TableSource")
@@ -56,7 +55,7 @@ impl<T: TableSource, E: Entity> WritableValueSet for Table<T, E> {
     async fn patch_value(
         &self,
         _id: &Self::Id,
-        _partial: Record<Self::Value>,
+        _partial: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>> {
         // TODO: Implement using data source mutation capabilities
         todo!("Implement patch_value using TableSource")

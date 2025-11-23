@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use indexmap::IndexMap;
-use vantage_core::{Entity, Result, error};
+use vantage_core::{Result, error};
 use vantage_expressions::{AnyExpression, Expression};
+use vantage_types::Entity;
 
 use crate::{
     conditions::ConditionHandle,
@@ -13,7 +14,7 @@ use crate::{
 };
 
 #[async_trait]
-impl<T: TableSource + 'static, E: Entity> TableLike for Table<T, E>
+impl<T: TableSource + 'static, E: Entity + 'static> TableLike for Table<T, E>
 where
     T: TableSource + Send + Sync,
     T::Column: ColumnLike + Clone + 'static,

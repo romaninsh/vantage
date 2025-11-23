@@ -1,8 +1,8 @@
-use std::{marker::PhantomData, sync::Arc};
+use std::marker::PhantomData;
 
 use indexmap::IndexMap;
-use vantage_core::Entity;
 use vantage_expressions::Expression;
+use vantage_types::Entity;
 
 use crate::{
     pagination::Pagination, /* references::RelatedTable, */ sorting::SortDirection,

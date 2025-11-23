@@ -44,8 +44,8 @@ mod tests {
     };
 
     use super::*;
-    use vantage_core::EmptyEntity;
     use vantage_expressions::expr;
+    use vantage_types::EmptyEntity;
 
     #[test]
     fn test_temp_orders() {

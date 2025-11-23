@@ -1,29 +1,44 @@
-pub use crate::Column;
+//! Prelude module for vantage-table
+//!
+//! This module re-exports commonly used traits and types for convenient importing.
 
-pub use crate::ColumnCollectionExt;
-pub use crate::ColumnFlag;
-pub use crate::ColumnLike;
-pub use crate::EmptyEntity;
-pub use crate::Entity;
-pub use crate::Table;
-pub use crate::TableLike;
-pub use crate::TableSource;
+// Core table types
+pub use crate::table::Table;
 
-// Dataset traits
-pub use vantage_dataset::dataset::{ReadableValueSet, WritableValueSet};
+// Column functionality
+pub use crate::column::collection::ColumnCollectionExt;
+pub use crate::column::column::Column;
+pub use crate::column::flags::ColumnFlag;
+
+// Traits
+pub use crate::traits::column_like::ColumnLike;
+pub use crate::traits::table_like::TableLike;
+pub use crate::traits::table_source::TableSource;
+
+// External traits and types
+pub use vantage_dataset::prelude::{ReadableValueSet, WritableValueSet};
+pub use vantage_types::{EmptyEntity, Entity};
 
 // Ordering functionality
-pub use crate::with_ordering::{OrderBy, OrderByExt, SortDirection};
+pub use crate::sorting::{OrderBy, SortDirection};
+pub use crate::table::sorting::OrderByExt;
 
 // Pagination functionality
-pub use crate::Pagination;
+pub use crate::pagination::Pagination;
 
+// Conditions
+pub use crate::conditions::ConditionHandle;
+
+// Mock functionality for testing
+pub use crate::mocks::tablesource::MockTableSource;
+
+// TODO: Re-enable these when modules are implemented
 // Record functionality
-pub use crate::record::{Record, RecordTable};
+// pub use crate::record::{Record, RecordTable};
 
 // Reference functionality
-pub use crate::any::AnyTable;
-pub use crate::references::{ReferenceMany, ReferenceOne, RelatedTable};
+// pub use crate::any::AnyTable;
+// pub use crate::references::{ReferenceMany, ReferenceOne, RelatedTable};
 
 // Model macros
-pub use crate::models;
+// pub use crate::models;

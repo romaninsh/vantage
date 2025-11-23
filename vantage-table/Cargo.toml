@@ -2,8 +2,12 @@
 name = "vantage-table"
 version = "0.1.0"
 edition = "2024"
-autoexamples = true
+autoexamples = false
 autotests = false
+
+[[example]]
+name = "mockbuilder_demo"
+path = "examples/mockbuilder_demo.rs"
 
 [lib]
 doctest = false
@@ -11,6 +15,7 @@ doctest = false
 
 [dependencies]
 vantage-core = { path = "../vantage-core" }
+vantage-types = { path = "../vantage-types" }
 vantage-expressions = { path = "../vantage-expressions" }
 vantage-dataset = { path = "../vantage-dataset" }
 async-trait = "0.1"
