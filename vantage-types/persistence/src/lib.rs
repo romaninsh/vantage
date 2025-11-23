@@ -39,7 +39,7 @@ pub fn persistence(args: TokenStream, input: TokenStream) -> TokenStream {
         let field_name = field.ident.as_ref().unwrap();
         let field_name_str = field_name.to_string();
         quote! {
-            map.insert(#field_name_str.to_string(), crate::#any_type::new(self.#field_name.clone()));
+            map.insert(#field_name_str.to_string(), #any_type::new(self.#field_name.clone()));
         }
     });
 
@@ -48,7 +48,10 @@ pub fn persistence(args: TokenStream, input: TokenStream) -> TokenStream {
         let field_name_str = field_name.to_string();
         let field_type = &field.ty;
         quote! {
-            #field_name: map.get(#field_name_str)?.try_get::<#field_type>()?
+            #field_name: map.get(#field_name_str)
+                .ok_or_else(|| vantage_core::error!("Missing field", field = #field_name_str))?
+                .try_get::<#field_type>()
+                .ok_or_else(|| vantage_core::error!("Failed to convert field", field = #field_name_str))?
         }
     });
 
@@ -56,18 +59,34 @@ pub fn persistence(args: TokenStream, input: TokenStream) -> TokenStream {
         #input
 
         impl #trait_name for #name {
-            fn #to_method(&self) -> indexmap::IndexMap<String, crate::#any_type> {
+            fn #to_method(&self) -> indexmap::IndexMap<String, #any_type> {
                 let mut map = indexmap::IndexMap::new();
                 #(#field_insertions)*
                 map
             }
 
-            fn #from_method(map: indexmap::IndexMap<String, crate::#any_type>) -> Option<Self> {
-                Some(Self {
+            fn #from_method(map: indexmap::IndexMap<String, #any_type>) -> vantage_core::Result<Self> {
+                Ok(Self {
                     #(#field_extractions),*
                 })
             }
         }
+
+        // Add IntoRecord/FromRecord implementations for clean record conversions
+        impl vantage_types::IntoRecord<#any_type> for #name {
+            fn into_record(self) -> vantage_types::Record<#any_type> {
+                <Self as #trait_name>::#to_method(&self).into()
+            }
+        }
+
+        impl vantage_types::TryFromRecord<#any_type> for #name {
+            type Error = vantage_core::VantageError;
+
+            fn from_record(record: vantage_types::Record<#any_type>) -> vantage_core::Result<Self> {
+                <Self as #trait_name>::#from_method(record.into_inner())
+            }
+        }
+
     };
 
     TokenStream::from(expanded)

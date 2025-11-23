@@ -41,6 +41,11 @@ impl<V> Record<V> {
         }
     }
 
+    /// Create a record from an IndexMap
+    pub fn from_indexmap(map: IndexMap<String, V>) -> Self {
+        Self { inner: map }
+    }
+
     /// Convert into the underlying IndexMap
     pub fn into_inner(self) -> IndexMap<String, V> {
         self.inner
@@ -180,5 +185,68 @@ impl Into<serde_json::Value> for Record<serde_json::Value> {
     fn into(self) -> serde_json::Value {
         let map: serde_json::Map<String, serde_json::Value> = self.inner.into_iter().collect();
         serde_json::Value::Object(map)
+    }
+}
+
+// Clean record conversion traits
+pub trait IntoRecord<T> {
+    fn into_record(self) -> Record<T>;
+}
+
+pub trait TryFromRecord<T: Clone>: Sized {
+    type Error;
+    fn from_record(record: Record<T>) -> Result<Self, Self::Error>;
+    fn try_from_record(record: &Record<T>) -> Result<Self, Self::Error> {
+        Self::from_record(record.clone())
+    }
+}
+
+// Blanket implementations for Record conversion
+impl<T, U> IntoRecord<U> for Record<T>
+where
+    T: Into<U>,
+{
+    fn into_record(self) -> Record<U> {
+        self.into_iter().map(|(k, v)| (k, v.into())).collect()
+    }
+}
+
+impl<T, U> TryFromRecord<U> for Record<T>
+where
+    T: TryFrom<U>,
+    U: Clone,
+{
+    type Error = T::Error;
+
+    fn from_record(record: Record<U>) -> Result<Self, Self::Error> {
+        let mut result = Record::new();
+        for (key, value) in record.into_iter() {
+            let converted_value = T::try_from(value)?;
+            result.insert(key, converted_value);
+        }
+        Ok(result)
+    }
+}
+
+// Blanket implementations for serde types
+#[cfg(feature = "serde")]
+impl<T> IntoRecord<serde_json::Value> for T
+where
+    T: serde::Serialize,
+{
+    fn into_record(self) -> Record<serde_json::Value> {
+        Record::from_serializable(self).expect("Failed to serialize to JSON")
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<T> TryFromRecord<serde_json::Value> for T
+where
+    T: serde::de::DeserializeOwned,
+{
+    type Error = serde_json::Error;
+
+    fn from_record(record: Record<serde_json::Value>) -> Result<Self, Self::Error> {
+        record.to_deserializable()
     }
 }

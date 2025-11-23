@@ -164,7 +164,7 @@ mod tests {
 
         // Attempt to restore as StringRecord should fail
         let failed_restore = StringRecord::from_mytype_map(storage_map);
-        assert!(failed_restore.is_none());
+        assert!(failed_restore.is_err());
     }
 
     #[test]

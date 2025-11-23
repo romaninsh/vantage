@@ -2,11 +2,11 @@
 pub use vantage_types_persistence::{persistence, persistence_serde};
 
 // Include type_system module with regular macros
+pub mod prelude;
 pub mod record;
 pub mod type_system;
 
-// Re-export Record type at crate root
-pub use record::Record;
+pub use record::{IntoRecord, Record, TryFromRecord};
 
 /// Entity trait with conversion requirements and default Value type
 ///

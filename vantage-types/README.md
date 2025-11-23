@@ -8,9 +8,9 @@ Serde does not enforce types. A `Decimal` can deserialize into a `String`, and a
 deserialize into a number. This rules out Serde as a serialization framework when storing data into
 a complex SQL database.
 
-With many different databases around, each database client now must implement it's own type handling
-system. Those are often hard to use and inconsistent. For `Vantage` to be capable having uniform
-interraction with different databases - a type system should be robust and precise.
+With many different databases around, each database client now must implement its own type handling
+system. Those are often hard to use and inconsistent. For `Vantage` to be capable of having uniform
+interaction with different databases - a type system should be robust and precise.
 
 `vantage-types` implements exactly this kind of type system:
 
@@ -44,7 +44,7 @@ Now SDK can use type-erased arguments to preserve type for both query parameters
 type.
 
 ```rust
-fn query(template: &str, parameters: Vec<AnyType3>) -> Result<Vec<IndexMap<AnyType3>>>;
+fn query(template: &str, parameters: Vec<AnyType3>) -> Result<Vec<IndexMap<String, AnyType3>>>;
 ```
 
 AnyType3 is exported by an SDK and ensures type safety:
@@ -57,7 +57,7 @@ let field_value = AnyType3::new(String::form("Hello, World!"));
 let hello: String = field_value.try_get().unwrap();
 
 // This would fail, because type is important!
-let hello_fail: Email = field_value.try_into;
+let hello_fail: Option<Email> = field_value.try_get::<Email>(); // Returns None
 ```
 
 ## Typed record example
@@ -93,7 +93,7 @@ struct BadUser {
     name: String,
     email: String
 }
-let user_fail = BadUser::from_type3_map(values); // Fails, email is not String
+let user_fail = BadUser::from_type3_map(values); // Fails, email field type mismatch
 ```
 
 ## Type System Generation
@@ -112,8 +112,8 @@ vantage_type_system! {
 This generates:
 
 - `MyType` trait with `to_json()` and `from_json()` methods
-- `MyTypeVariants` enum for runtime type identification. We will have to implement
-  MyTypeVariants::from_json() for type detection.
+- `MyTypeVariants` enum for runtime type identification. You must implement
+  `MyTypeVariants::from_json()` for type detection.
 - `AnyMyType` wrapper for type erasure
 - `MyTypePersistence` trait for struct mapping
 - Type marker structs for compile-time safety
@@ -225,7 +225,7 @@ impl Type3Variants {
         match value {
             ciborium::Value::Text(_) => Some(Type3Variants::String),
             ciborium::Value::Tag(1000, _) => Some(Type3Variants::Email),
-            ciborium::Value::Tag(6, _) => None, // Null values bypass variant check
+            ciborium::Value::Tag(6, _) => Some(Type3Variants::Null),
             _ => None,
         }
     }
@@ -257,7 +257,7 @@ let doc = Document {
 };
 
 // Automatic conversion to storage format
-let storage_map = doc.to_type3_map();
+let storage_map: IndexMap<String, AnyType3> = doc.to_type3_map();
 
 // Each field is stored as AnyType3 with proper type information
 assert_eq!(storage_map.get("title").unwrap().type_variant(), Some(Type3Variants::String));
@@ -339,3 +339,176 @@ Vantage Types provides the foundation for type handling across the framework:
 
 This unified approach enables applications to work seamlessly across different databases while
 maintaining type safety and automatic conversions.
+
+## Implementing Persistence Engines with Record<T>
+
+When building a persistence engine (like CSV, SurrealDB, or MongoDB adapters), `Record<T>` provides
+a standardized interface for handling both structured and unstructured data. Vatage allows you to
+implement a "glue" between underlying implementation and universal interface the rest of Vantage
+ecosystem can use.
+
+### Implementing CSV file handling - Vantage-way
+
+To make CSV a valid persistence in Vantage - you would need to implement traits such as
+`InsertableValueSet` and `ReadableValueSet`. Lets go through implementation scenario.
+
+1. Creating a clear type system, that your persistent supports.
+2. Implement type conversions for well-known types.
+3. Allow users to implement Type conversions for additional types.
+4. Implement methods required by traits from `vantage-dataset` / `vantage-table` crates.
+
+In example below, we will implement two methods:
+
+- `read_csv_contents() -> Result<Vec<Record<AnyCsvType>>>`
+- `insert_csv_record(record: impl IntoRecord<AnyCsvType>>) -> Result<()>`
+
+Additionally - those methods will use `Result` from `vantage-core` for uniform error handling.
+
+### CSV Type System
+
+CSV file only works with text, so we define a singel type_variant: Text and use `String` as the
+underlying value type.
+
+```rust
+// Define your persistence-specific type system
+vantage_type_system! {
+    type_trait: CsvType,
+    method_name: csv_string,
+    value_type: String,
+    type_variants: [Text]
+}
+
+impl CsvType for String {
+    type Target = CsvTypeTextMarker;
+
+    fn to_csv_string(&self) -> String {
+        self.clone()
+    }
+
+    fn from_csv_string(value: String) -> Option<Self> {
+        Some(value)
+    }
+}
+```
+
+If your CSV file implementation has some specific convention for storing other types - you can
+implement CsvType for those types:
+
+```rust
+impl CsvType for Date {
+    type Target = CsvTypeTextMarker;
+
+    fn to_csv_string(&self) -> String {
+        self.format("%Y-%m-%d").to_string()
+    }
+
+    fn from_csv_string(value: String) -> Option<Self> {
+        Date::parse_from_str(&value, "%Y-%m-%d").ok()
+    }
+}
+```
+
+User of your persistence may also implement CsvType for their own types:
+
+```rust
+impl CsvType for Email {
+    type Target = CsvTypeTextMarker;
+
+    fn to_csv_string(&self) -> String {
+        format!("{}@{}", self.local_part, self.domain)
+    }
+
+    fn from_csv_string(value: String) -> Option<Self> {
+        let parts: Vec<&str> = value.split('@').collect();
+        if parts.len() == 2 {
+            Some(Email {
+                local_part: parts[0].to_string(),
+                domain: parts[1].to_string(),
+            })
+        } else {
+            None
+        }
+    }
+}
+```
+
+All types implementing `CsvType` trait will become first-class citizens - with consistent storage
+and retrieval behavior. We using single-variant "Text" - because of soft boundaries between types,
+but your persistence logic can be more complex if needed.
+
+### Implementing interaction with records
+
+Your interface will need to work with Records and Entities (user-defined structs). You can use
+struct `Record<CsvType>` and traits `IntoRecord<CsvType>` / `TryFromRecord<CsvType>` for this.
+
+```rust
+
+// Layer 1: Low-level persistence operations (implement these for your storage) fn
+async fn actually_read_csv_contents() -> Result<Vec<IndexMap<String, String>>, std::io::Error>;
+async fn actually_insert_csv_record(data: IndexMap<String, String>) -> Result<(), std::io::Error>;
+```
+
+Lets wrap those methods for vantage:
+
+```rust
+use vantage_core::{Result, Context};
+use vantage_types::prelude::*;
+
+async fn read_csv_contents() -> Result<Vec<Record<AnyCsvType>>> {
+    // convert error into VantageError
+    let contents = actually_read_csv_contents().await.context("Failed to read CSV contents")?;
+
+    // Convert each row into Record<AnyCsvType>
+    Ok(contents.into_iter().map(|row| {
+        let record = Record::from_indexmap(row); // Record<String>
+        Record::<AnyCsvType>::try_from_record(&record).unwrap() // convert to Record<AnyCsvType>
+    }).collect())
+}
+
+async fn insert_csv_record<T>(record: T) -> Result<()>
+where
+    T: IntoRecord<AnyCsvType>,
+{
+    let vantage_record = record.into_record();
+
+    // Convert to underlying value type
+    let string_record: Record<String> = vantage_record.into_record();
+
+    // Convert Record<AnyCsvType> into IndexMap<String, String>
+    let indexmap = string_record.into_inner();
+
+    // Convert error into VantageError
+    actually_insert_csv_record(indexmap).await.context("Failed to insert CSV record")
+}
+```
+
+### Using persistence methods
+
+Users of your persistence crate can now use those methods in a type-safe manner with both structured
+and unstructured data:
+
+```rust
+
+#[persistence(CsvType)]
+struct User {
+    name: String,
+    email: Email,
+}
+
+insert_csv_record(User {
+    name: "John Doe".to_string(),
+    email: Email::new("john", "example.com"),
+}).await?;
+
+
+records = read_csv_contents().await?;
+for record in records {
+
+    let user: User = User::try_from_record(&record).unwrap();
+    println!("User: {} ({})", user.name, user.email);
+
+    // alternatively:
+    println!("User: {} ({})", record["name"], record["email"]);
+}
+
+```

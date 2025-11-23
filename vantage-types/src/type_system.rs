@@ -2,8 +2,8 @@
 ///
 /// vantage_type_system! {
 ///     type_trait: Type3,
-///     method_name: cbor,
-///     value_type: ciborium::value::Value,
+///     method_name: my_value,
+///     value_type: MyValueType,
 ///     type_variants: [String, Email]
 /// }
 #[macro_export]
@@ -43,7 +43,7 @@ macro_rules! vantage_type_system {
             }
 
             // Any type wrapper
-            #[derive(Clone)]
+            #[derive(Clone, Debug)]
             pub struct [<Any $trait_name>] {
                 value: $value_type,
                 type_variant: Option<[<$trait_name Variants>]>,
@@ -87,10 +87,25 @@ macro_rules! vantage_type_system {
                 }
             }
 
+            // Into/From trait implementations for AnyType ↔ ValueType
+            impl From<[<Any $trait_name>]> for $value_type {
+                fn from(any_value: [<Any $trait_name>]) -> Self {
+                    any_value.into_value()
+                }
+            }
+
+            impl TryFrom<$value_type> for [<Any $trait_name>] {
+                type Error = vantage_core::VantageError;
+
+                fn try_from(value: $value_type) -> vantage_core::Result<Self> {
+                    Self::[<from_ $method_name>](&value).ok_or_else(|| vantage_core::error!("Failed to convert value to type"))
+                }
+            }
+
             // Persistence trait for structs
             pub trait [<$trait_name Persistence>]: Sized {
                 fn [<to_ $trait_name:lower _map>](&self) -> indexmap::IndexMap<String, [<Any $trait_name>]>;
-                fn [<from_ $trait_name:lower _map>](map: indexmap::IndexMap<String, [<Any $trait_name>]>) -> Option<Self>;
+                fn [<from_ $trait_name:lower _map>](map: indexmap::IndexMap<String, [<Any $trait_name>]>) -> vantage_core::Result<Self>;
 
                 // Convenient conversion methods that don't conflict with orphan rules
                 fn [<to_ $trait_name:lower _record>](&self) -> vantage_types::Record<[<Any $trait_name>]> {
@@ -104,42 +119,14 @@ macro_rules! vantage_type_system {
                         .collect()
                 }
 
-                fn [<from_ $trait_name:lower _record>](map: vantage_types::Record<[<Any $trait_name>]>) -> Option<Self> {
+                fn [<from_ $trait_name:lower _record>](map: vantage_types::Record<[<Any $trait_name>]>) -> vantage_core::Result<Self> {
                     Self::[<from_ $trait_name:lower _map>](map.into_inner())
                 }
             }
 
 
 
-            // Helper functions similar to cbor.rs
-            pub fn [<to_ $method_name _value>]<T: serde::Serialize>(value: &T) -> $value_type {
-                [<to_ $method_name _value_result>](value).unwrap()
-            }
 
-            pub fn [<to_ $method_name _value_result>]<T: serde::Serialize>(
-                value: &T,
-            ) -> Result<$value_type, ciborium::ser::Error<std::io::Error>> {
-                let mut buffer = Vec::new();
-                ciborium::ser::into_writer(value, &mut buffer)?;
-                let cbor_value: $value_type = ciborium::de::from_reader(&buffer[..]).map_err(|_| {
-                    ciborium::ser::Error::Io(std::io::Error::from(std::io::ErrorKind::InvalidData))
-                })?;
-                Ok(cbor_value)
-            }
-
-            pub fn [<from_ $method_name _value>]<T: for<'de> serde::Deserialize<'de>>(value: $value_type) -> T {
-                [<from_ $method_name _value_result>](value).unwrap()
-            }
-
-            pub fn [<from_ $method_name _value_result>]<T: for<'de> serde::Deserialize<'de>>(
-                value: $value_type,
-            ) -> Result<T, ciborium::de::Error<std::io::Error>> {
-                let mut buffer = Vec::new();
-                ciborium::ser::into_writer(&value, &mut buffer).map_err(|_| {
-                    ciborium::de::Error::Io(std::io::Error::from(std::io::ErrorKind::InvalidData))
-                })?;
-                ciborium::de::from_reader(&buffer[..])
-            }
         }
     };
 }
@@ -166,10 +153,10 @@ macro_rules! vantage_record_conversions {
 
             // TryFrom for reverse conversion
             impl TryFrom<vantage_types::Record<[<Any $trait_name>]>> for $struct_name {
-                type Error = ();
+                type Error = vantage_core::VantageError;
 
-                fn try_from(value: vantage_types::Record<[<Any $trait_name>]>) -> Result<Self, Self::Error> {
-                    Self::[<from_ $trait_name:lower _record>](value).ok_or(())
+                fn try_from(value: vantage_types::Record<[<Any $trait_name>]>) -> vantage_core::Result<Self> {
+                    Self::[<from_ $trait_name:lower _record>](value)
                 }
             }
         }
