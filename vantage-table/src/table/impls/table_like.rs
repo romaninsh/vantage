@@ -14,7 +14,7 @@ use crate::{
 };
 
 #[async_trait]
-impl<T: TableSource + 'static, E: Entity + 'static> TableLike for Table<T, E>
+impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> TableLike for Table<T, E>
 where
     T: TableSource + Send + Sync,
     T::Column: ColumnLike + Clone + 'static,

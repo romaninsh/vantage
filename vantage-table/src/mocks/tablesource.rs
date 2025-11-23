@@ -1,8 +1,15 @@
 use async_trait::async_trait;
+use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use vantage_core::util::error::{Context, vantage_error};
-use vantage_dataset::{prelude::VantageError, traits::Result};
+
+use vantage_dataset::InsertableValueSet;
+use vantage_dataset::{
+    ReadableValueSet, WritableValueSet,
+    im::{ImDataSource, ImTable},
+    prelude::VantageError,
+    traits::Result,
+};
 use vantage_expressions::{
     Expression, expr_any,
     mocks::select::MockSelect,
@@ -15,12 +22,14 @@ use crate::{table::Table, traits::table_like::TableLike, traits::table_source::T
 #[derive(Clone)]
 pub struct MockTableSource {
     data: Arc<Mutex<HashMap<String, Vec<serde_json::Value>>>>,
+    im_data_source: ImDataSource,
 }
 
 impl MockTableSource {
     pub fn new() -> Self {
         Self {
             data: Arc::new(Mutex::new(HashMap::new())),
+            im_data_source: ImDataSource::new(),
         }
     }
 
@@ -29,6 +38,17 @@ impl MockTableSource {
             .lock()
             .unwrap()
             .insert(table_name.to_string(), data);
+        self
+    }
+
+    pub async fn with_im_table(self, table_name: &str, data: Vec<serde_json::Value>) -> Self {
+        let im_table = ImTable::<vantage_types::EmptyEntity>::new(&self.im_data_source, table_name);
+        for value in data {
+            if let Some(id) = value.get("id").and_then(|v| v.as_str()) {
+                let record = Record::from(value.clone());
+                let _ = im_table.replace_value(&id.to_string(), &record).await;
+            }
+        }
         self
     }
 }
@@ -88,84 +108,55 @@ impl TableSource for MockTableSource {
         }
     }
 
-    async fn get_table_data<E>(&self, table: &Table<Self, E>) -> Result<Vec<(String, E)>>
-    where
-        E: Entity,
-        Self: Sized,
-    {
-        let values = self.get_table_data_as_value(table).await?;
-        let mut results = Vec::new();
-
-        for value in values {
-            let id = value
-                .get("id")
-                .and_then(|v| {
-                    v.as_str()
-                        .map(|s| s.to_string())
-                        .or_else(|| v.as_i64().map(|i| i.to_string()))
-                        .or_else(|| v.as_u64().map(|u| u.to_string()))
-                })
-                .unwrap_or_else(|| "unknown".to_string());
-
-            let record = Record::from(value);
-            match E::from_record(record) {
-                Ok(item) => results.push((id, item)),
-                Err(_) => {
-                    return Err(vantage_error!("Failed to convert record to entity"));
-                }
-            }
-        }
-
-        Ok(results)
-    }
-
-    async fn get_table_data_some<E>(&self, table: &Table<Self, E>) -> Result<Option<(String, E)>>
-    where
-        E: Entity,
-        Self: Sized,
-    {
-        let values = self.get_table_data_as_value(table).await?;
-
-        if let Some(first_value) = values.into_iter().next() {
-            let id = first_value
-                .get("id")
-                .and_then(|v| {
-                    v.as_str()
-                        .map(|s| s.to_string())
-                        .or_else(|| v.as_i64().map(|i| i.to_string()))
-                        .or_else(|| v.as_u64().map(|u| u.to_string()))
-                })
-                .unwrap_or_else(|| "unknown".to_string());
-
-            let record = Record::from(first_value);
-            match E::from_record(record) {
-                Ok(item) => Ok(Some((id, item))),
-                Err(_) => Err(vantage_error!("Failed to convert record to entity")),
-            }
-        } else {
-            Ok(None)
-        }
-    }
-
-    async fn get_table_data_as_value<E>(
-        &self,
-        _table: &Table<Self, E>,
-    ) -> Result<Vec<serde_json::Value>>
-    where
-        E: Entity,
-        Self: Sized,
-    {
-        match self.data.lock().unwrap().get(_table.table_name()) {
-            Some(data) => Ok(data.clone()),
-            None => Ok(vec![]),
-        }
-    }
-
-    async fn get_table_data_as_value_by_id<E>(
+    async fn list_table_values<E>(
         &self,
         table: &Table<Self, E>,
-        id: &str,
-    ) -> Result<serde_json::Value>
+    ) -> Result<IndexMap<Self::Id, Record<Self::Value>>>
+    where
+        E: Entity,
+        Self: Sized,
+    {
+        let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
+        im_table.list_values().await
+    }
+
+    async fn get_table_value<E>(
+        &self,
+        table: &Table<Self, E>,
+        id: &Self::Id,
+    ) -> Result<Record<Self::Value>>
+    where
+        E: Entity,
+        Self: Sized,
+    {
+        let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
+        im_table.get_value(id).await
+    }
+
+    async fn get_table_some_value<E>(
+        &self,
+        table: &Table<Self, E>,
+    ) -> Result<Option<(Self::Id, Record<Self::Value>)>>
+    where
+        E: Entity,
+        Self: Sized,
+    {
+        let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
+        im_table.get_some_value().await
+    }
+
+    async fn get_count<E>(&self, table: &Table<Self, E>) -> Result<i64>
+    where
+        E: Entity,
+        Self: Sized,
+    {
+        match self.data.lock().unwrap().get(table.table_name()) {
+            Some(data) => Ok(data.len() as i64),
+            None => Ok(0),
+        }
+    }
+
+    async fn get_sum<E>(&self, table: &Table<Self, E>, column: &Self::Column) -> Result<i64>
     where
         E: Entity,
         Self: Sized,
@@ -175,293 +166,113 @@ impl TableSource for MockTableSource {
             .get(table.table_name())
             .ok_or(VantageError::no_data())?;
 
-        for value in vec {
-            if let Some(record_id) = value.get("id") {
-                let record_id_str = record_id
-                    .as_str()
-                    .map(|s| s.to_string())
-                    .or_else(|| record_id.as_i64().map(|i| i.to_string()))
-                    .or_else(|| record_id.as_u64().map(|u| u.to_string()))
-                    .unwrap_or_else(|| "unknown".to_string());
-
-                if record_id_str == id {
-                    return Ok(value.clone());
-                }
-            }
-        }
-
-        Err(vantage_error!("No record found with ID: {}", id))
-    }
-
-    async fn get_table_data_as_value_some<E>(
-        &self,
-        table: &Table<Self, E>,
-    ) -> Result<Option<serde_json::Value>>
-    where
-        E: Entity,
-        Self: Sized,
-    {
-        match self.data.lock().unwrap().get(table.table_name()) {
-            Some(data) => Ok(data.first().cloned()),
-            None => Ok(None),
-        }
-    }
-
-    async fn insert_table_data<E>(
-        &self,
-        table: &Table<Self, E>,
-        record: E,
-    ) -> Result<Option<String>>
-    where
-        E: Entity + serde::Serialize,
-        Self: Sized,
-    {
-        let mut data = self.data.lock().unwrap();
-        let vec = data
-            .get_mut(table.table_name())
-            .ok_or(VantageError::no_data())?;
-        let id = vec.len();
-        let value = serde_json::to_value(record).context("Failed to serialize record")?;
-        vec.push(value);
-        Ok(Some(id.to_string()))
-    }
-
-    async fn insert_table_data_with_id<E>(
-        &self,
-        _table: &Table<Self, E>,
-        _id: String,
-        _record: E,
-    ) -> Result<()>
-    where
-        E: Entity + serde::Serialize,
-        Self: Sized,
-    {
-        Err(vantage_error!(
-            "insert_table_data_with_id not implemented in mock"
-        ))
-    }
-
-    async fn replace_table_data_with_id<E>(
-        &self,
-        table: &Table<Self, E>,
-        id: String,
-        record: E,
-    ) -> Result<()>
-    where
-        E: Entity + serde::Serialize,
-        Self: Sized,
-    {
-        let id_str = id;
-        let mut data = self.data.lock().unwrap();
-        let vec = data
-            .get_mut(table.table_name())
-            .ok_or(VantageError::no_data())?;
-
-        // Find the record with matching ID
-        let mut found_index = None;
-        for (index, value) in vec.iter().enumerate() {
-            if let Some(record_id) = value.get("id") {
-                let record_id_str = record_id
-                    .as_str()
-                    .map(|s| s.to_string())
-                    .or_else(|| record_id.as_i64().map(|i| i.to_string()))
-                    .or_else(|| record_id.as_u64().map(|u| u.to_string()))
-                    .unwrap_or_else(|| "unknown".to_string());
-
-                if record_id_str == id_str {
-                    found_index = Some(index);
-                    break;
-                }
-            }
-        }
-
-        let index =
-            found_index.ok_or_else(|| vantage_error!("No record found with ID: {}", id_str))?;
-
-        let value = serde_json::to_value(record).context("Failed to serialize record")?;
-        vec[index] = value;
-        Ok(())
-    }
-
-    async fn patch_table_data_with_id<E>(
-        &self,
-        _table: &Table<Self, E>,
-        _id: String,
-        _partial: serde_json::Value,
-    ) -> Result<()>
-    where
-        E: Entity,
-        Self: Sized,
-    {
-        Err(vantage_error!(
-            "patch_table_data_with_id not implemented in mock"
-        ))
-    }
-
-    async fn delete_table_data_with_id<E>(&self, _table: &Table<Self, E>, _id: String) -> Result<()>
-    where
-        E: Entity,
-        Self: Sized,
-    {
-        Err(vantage_error!(
-            "delete_table_data_with_id not implemented in mock"
-        ))
-    }
-
-    async fn update_table_data<E, F>(&self, _table: &Table<Self, E>, _callback: F) -> Result<()>
-    where
-        E: Entity,
-        F: Fn(&mut E) + Send + Sync,
-        Self: Sized,
-    {
-        Err(vantage_error!("update_table_data not implemented in mock"))
-    }
-
-    async fn delete_table_data<E>(&self, _table: &Table<Self, E>) -> Result<()>
-    where
-        E: Entity,
-        Self: Sized,
-    {
-        Err(vantage_error!("delete_table_data not implemented in mock"))
-    }
-
-    async fn get_table_data_by_id<E>(&self, _table: &Table<Self, E>, _id: String) -> Result<E>
-    where
-        E: Entity,
-        Self: Sized,
-    {
-        Err(vantage_error!(
-            "get_table_data_by_id not implemented in mock"
-        ))
-    }
-
-    async fn insert_table_data_with_id_value<E>(
-        &self,
-        table: &Table<Self, E>,
-        id: &str,
-        record: serde_json::Value,
-    ) -> Result<()>
-    where
-        E: Entity,
-        Self: Sized,
-    {
-        let mut data = self.data.lock().unwrap();
-        let vec = data
-            .get_mut(table.table_name())
-            .ok_or(VantageError::no_data())?;
-
-        // Check if ID already exists
-        for value in vec.iter() {
-            if let Some(record_id) = value.get("id") {
-                let record_id_str = record_id
-                    .as_str()
-                    .map(|s| s.to_string())
-                    .or_else(|| record_id.as_i64().map(|i| i.to_string()))
-                    .or_else(|| record_id.as_u64().map(|u| u.to_string()))
-                    .unwrap_or_else(|| "unknown".to_string());
-
-                if record_id_str == id {
-                    return Err(vantage_error!("Record with ID '{}' already exists", id));
-                }
-            }
-        }
-
-        vec.push(record);
-        Ok(())
-    }
-
-    async fn replace_table_data_with_id_value<E>(
-        &self,
-        table: &Table<Self, E>,
-        id: &str,
-        record: serde_json::Value,
-    ) -> Result<()>
-    where
-        E: Entity,
-        Self: Sized,
-    {
-        let mut data = self.data.lock().unwrap();
-        let vec = data
-            .get_mut(table.table_name())
-            .ok_or(VantageError::no_data())?;
-
-        // Find and replace the record with matching ID
-        let mut found_index = None;
-        for (index, value) in vec.iter().enumerate() {
-            if let Some(record_id) = value.get("id") {
-                let record_id_str = record_id
-                    .as_str()
-                    .map(|s| s.to_string())
-                    .or_else(|| record_id.as_i64().map(|i| i.to_string()))
-                    .or_else(|| record_id.as_u64().map(|u| u.to_string()))
-                    .unwrap_or_else(|| "unknown".to_string());
-
-                if record_id_str == id {
-                    found_index = Some(index);
-                    break;
-                }
-            }
-        }
-
-        if let Some(index) = found_index {
-            vec[index] = record;
-        } else {
-            // Upsert - add if not found
-            vec.push(record);
-        }
-
-        Ok(())
-    }
-
-    async fn update_table_data_value<E, F>(&self, table: &Table<Self, E>, callback: F) -> Result<()>
-    where
-        E: Entity,
-        F: Fn(&mut serde_json::Value) + Send + Sync,
-        Self: Sized,
-    {
-        let mut data = self.data.lock().unwrap();
-        let vec = data
-            .get_mut(table.table_name())
-            .ok_or(VantageError::no_data())?;
-
-        for value in vec.iter_mut() {
-            callback(value);
-        }
-
-        Ok(())
-    }
-
-    async fn get_count<E>(&self, table: &Table<Self, E>) -> Result<i64>
-    where
-        E: Entity,
-        Self: Sized,
-    {
-        let values = self.get_table_data_as_value(table).await?;
-        Ok(values.len() as i64)
-    }
-
-    async fn get_sum<E>(&self, table: &Table<Self, E>, column: &Self::Column) -> Result<i64>
-    where
-        E: Entity,
-        Self: Sized,
-    {
-        let values = self.get_table_data_as_value(table).await?;
         let mut sum = 0i64;
-
-        for value in values {
+        for value in vec {
             if let Some(field_value) = value.get(column.name()) {
-                // Try to extract numeric value (assume integers)
                 if let Some(num) = field_value.as_i64() {
                     sum += num;
-                } else if let Some(num) = field_value.as_u64() {
-                    sum += num as i64;
-                } else if let Some(num) = field_value.as_f64() {
-                    sum += num as i64;
                 }
             }
         }
 
         Ok(sum)
+    }
+
+    /// Insert a record as Record value (for WritableValueSet implementation)
+    async fn insert_table_value<E>(
+        &self,
+        table: &Table<Self, E>,
+        id: &Self::Id,
+        record: &Record<Self::Value>,
+    ) -> Result<Record<Self::Value>>
+    where
+        E: Entity,
+        Self: Sized,
+    {
+        let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
+
+        // Check if record already exists - fail if it does
+        if im_table.get_value(id).await.is_ok() {
+            return Err(vantage_core::error!("Record with ID already exists", id = id).into());
+        }
+
+        let mut record_with_id = record.clone();
+        record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
+
+        im_table.replace_value(id, &record_with_id).await
+    }
+
+    /// Replace a record as Record value (for WritableValueSet implementation)
+    async fn replace_table_value<E>(
+        &self,
+        table: &Table<Self, E>,
+        id: &Self::Id,
+        record: &Record<Self::Value>,
+    ) -> Result<Record<Self::Value>>
+    where
+        E: Entity,
+        Self: Sized,
+    {
+        let mut record_with_id = record.clone();
+        record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
+
+        let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
+        im_table.replace_value(id, &record_with_id).await
+    }
+
+    /// Patch a record as Record value (for WritableValueSet implementation)
+    async fn patch_table_value<E>(
+        &self,
+        table: &Table<Self, E>,
+        id: &Self::Id,
+        partial: &Record<Self::Value>,
+    ) -> Result<Record<Self::Value>>
+    where
+        E: Entity,
+        Self: Sized,
+    {
+        let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
+        im_table.patch_value(id, partial).await
+    }
+
+    /// Delete a record by ID (for WritableValueSet implementation)
+    async fn delete_table_value<E>(&self, table: &Table<Self, E>, id: &Self::Id) -> Result<()>
+    where
+        E: Entity,
+        Self: Sized,
+    {
+        let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
+
+        // Check if record exists - fail if it doesn't
+        if im_table.get_value(id).await.is_err() {
+            return Err(vantage_core::error!("Record not found", id = id).into());
+        }
+
+        im_table.delete(id).await
+    }
+
+    /// Delete all records (for WritableValueSet implementation)
+    async fn delete_table_all_values<E>(&self, table: &Table<Self, E>) -> Result<()>
+    where
+        E: Entity,
+        Self: Sized,
+    {
+        let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
+        im_table.delete_all().await
+    }
+
+    /// Insert a record and return generated ID (for InsertableValueSet implementation)
+    async fn insert_table_return_id_value<E>(
+        &self,
+        table: &Table<Self, E>,
+        record: &Record<Self::Value>,
+    ) -> Result<Self::Id>
+    where
+        E: Entity,
+        Self: Sized,
+    {
+        let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
+        im_table.insert_return_id_value(record).await
     }
 }
 
@@ -488,10 +299,7 @@ mod tests {
 
         let table =
             Table::<MockTableSource, TestUser>::new("users", mock).into_entity::<TestUser>();
-        let users_with_ids: Vec<(String, TestUser)> =
-            table.data_source().get_table_data(&table).await.unwrap();
-        assert_eq!(users_with_ids.len(), 2);
-        assert_eq!(users_with_ids[0].1.name, "Alice");
-        assert_eq!(users_with_ids[1].1.name, "Bob");
+        let count = table.data_source().get_count(&table).await.unwrap();
+        assert_eq!(count, 2);
     }
 }

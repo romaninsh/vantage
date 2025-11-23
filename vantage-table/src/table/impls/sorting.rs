@@ -4,7 +4,7 @@ use vantage_types::Entity;
 
 use crate::{sorting::*, table::Table, traits::table_source::TableSource};
 
-impl<T: TableSource, E: Entity> Table<T, E> {
+impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// Add a permanent order clause
     pub fn add_order(&mut self, order: OrderBy<Expression<T::Value>>) {
         let id = -self.next_order_id;

@@ -13,7 +13,7 @@ use crate::{
 pub struct Table<T, E>
 where
     T: TableSource,
-    E: Entity,
+    E: Entity<T::Value>,
 {
     pub(super) data_source: T,
     pub(super) _phantom: PhantomData<E>,
@@ -29,7 +29,7 @@ where
     pub(super) id_field: Option<String>,
 }
 
-impl<T: TableSource, E: Entity> Table<T, E> {
+impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// Create a new Table with the given table name and data source
     pub fn new(table_name: impl Into<String>, data_source: T) -> Self {
         Self {
@@ -49,7 +49,7 @@ impl<T: TableSource, E: Entity> Table<T, E> {
     }
 
     /// Convert this table to use a different entity type
-    pub fn into_entity<E2: Entity>(self) -> Table<T, E2> {
+    pub fn into_entity<E2: Entity<T::Value>>(self) -> Table<T, E2> {
         Table {
             data_source: self.data_source,
             _phantom: PhantomData,
@@ -110,7 +110,7 @@ impl<T: TableSource, E: Entity> Table<T, E> {
     }
 }
 
-impl<T: TableSource, E: Entity> std::fmt::Debug for Table<T, E> {
+impl<T: TableSource, E: Entity<T::Value>> std::fmt::Debug for Table<T, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Table")
             .field("table_name", &self.table_name)

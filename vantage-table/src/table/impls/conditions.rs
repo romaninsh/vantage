@@ -4,7 +4,7 @@ use vantage_types::Entity;
 
 use crate::{conditions::ConditionHandle, table::Table, traits::table_source::TableSource};
 
-impl<T: TableSource, E: Entity> Table<T, E> {
+impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// Add a permanent condition to limit what records the table represents
     pub fn add_condition(&mut self, condition: Expression<T::Value>) {
         let id = -self.next_condition_id;
