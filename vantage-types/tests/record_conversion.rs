@@ -1,5 +1,5 @@
 use serde_json::Value as JsonValue;
-use vantage_types::{persistence, vantage_record_conversions, vantage_type_system, Record};
+use vantage_types::{persistence, vantage_type_system, IntoRecord, Record, TryFromRecord};
 
 // Create a CBOR-based type system
 vantage_type_system! {
@@ -92,7 +92,7 @@ impl JsonType for i32 {
 }
 
 // Test structs
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 #[persistence(CborType)]
 #[persistence(JsonType)]
 struct User {
@@ -100,9 +100,8 @@ struct User {
     age: i32,
 }
 
-// Add Into/From implementations for User
-vantage_record_conversions!(User, CborType, ciborium::Value);
-vantage_record_conversions!(User, JsonType, serde_json::Value);
+// User already has IntoRecord/TryFromRecord from #[persistence] macros
+// No additional implementations needed
 
 // Mock function that expects JSON values
 fn process_json_record(record: Record<JsonValue>) -> usize {
@@ -120,8 +119,9 @@ mod tests {
             age: 30,
         };
 
-        // Direct conversion when value types match using Into
-        let json_record: Record<JsonValue> = user.into();
+        // Convert to raw JSON values
+        let typed_record: Record<AnyJsonType> = user.clone().into_record();
+        let json_record: Record<JsonValue> = typed_record.into_record();
 
         assert_eq!(json_record.len(), 2);
         assert_eq!(json_record["name"], JsonValue::String("Alice".to_string()));
@@ -139,7 +139,7 @@ mod tests {
         };
 
         // Test CBOR type conversion
-        let cbor_record: Record<AnyCborType> = user.into();
+        let cbor_record: Record<AnyCborType> = user.into_record();
 
         assert_eq!(cbor_record.len(), 2);
 
@@ -167,9 +167,9 @@ mod tests {
             age: 35,
         };
 
-        // Round-trip: struct -> record -> struct using Into/TryFrom
-        let record: Record<AnyJsonType> = user.into();
-        let restored_user: User = record.try_into().unwrap();
+        // Round-trip: struct -> record -> struct using IntoRecord/TryFromRecord
+        let record: Record<AnyJsonType> = user.clone().into_record();
+        let restored_user: User = User::from_record(record).unwrap();
 
         assert_eq!(
             restored_user,
@@ -187,14 +187,11 @@ mod tests {
             age: 40,
         };
 
-        // Convert to typed record using Into
-        let typed_record: Record<AnyJsonType> = user.into();
+        // Convert to typed record using IntoRecord
+        let typed_record: Record<AnyJsonType> = user.into_record();
 
         // Extract raw values
-        let raw_record: Record<JsonValue> = typed_record
-            .into_iter()
-            .map(|(k, v)| (k, v.into_value()))
-            .collect();
+        let raw_record: Record<JsonValue> = typed_record.into_record();
 
         assert_eq!(raw_record["name"], JsonValue::String("David".to_string()));
         assert_eq!(raw_record["age"], JsonValue::Number(40.into()));

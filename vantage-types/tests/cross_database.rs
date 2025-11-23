@@ -1,6 +1,6 @@
 use rust_decimal::Decimal;
 use serde_json::Value as JsonValue;
-use vantage_types::{persistence, vantage_type_system};
+use vantage_types::{persistence, vantage_type_system, IntoRecord, TryFromRecord};
 
 // SurrealDB type system with CBOR
 vantage_type_system! {
@@ -205,7 +205,7 @@ mod tests {
         };
 
         // Store to SurrealDB format
-        let surreal_storage = user.to_surrealtype_map();
+        let surreal_storage: vantage_types::Record<AnySurrealType> = user.clone().into_record();
 
         // Verify SurrealDB storage format
         let name_cbor = surreal_storage.get("name").unwrap().value();
@@ -215,7 +215,7 @@ mod tests {
         assert!(matches!(balance_cbor, ciborium::Value::Tag(200, _)));
 
         // Store to PostgreSQL format
-        let postgres_storage = user.to_postgrestype_map();
+        let postgres_storage: vantage_types::Record<AnyPostgresType> = user.clone().into_record();
 
         // Verify PostgreSQL storage format
         let name_json = postgres_storage.get("name").unwrap().value();
@@ -225,10 +225,10 @@ mod tests {
         assert_eq!(balance_json, &serde_json::json!({"decimal": "1234.56"}));
 
         // Test round-trip for both systems
-        let restored_surreal = User::from_surrealtype_map(surreal_storage).unwrap();
+        let restored_surreal = User::from_record(surreal_storage).unwrap();
         assert_eq!(user, restored_surreal);
 
-        let restored_postgres = User::from_postgrestype_map(postgres_storage).unwrap();
+        let restored_postgres = User::from_record(postgres_storage).unwrap();
         assert_eq!(user, restored_postgres);
     }
 

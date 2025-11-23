@@ -1,5 +1,5 @@
 use url::Url;
-use vantage_types::{persistence, vantage_type_system};
+use vantage_types::{persistence, vantage_type_system, IntoRecord, TryFromRecord};
 
 // Generate Type3 system using the macro with None type for optionals
 vantage_type_system! {
@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn test_record_with_optionals() {
-        #[derive(PartialEq, Eq, Debug)]
+        #[derive(PartialEq, Eq, Debug, Clone)]
         #[persistence(Type3)]
         struct UserRecord {
             name: String,
@@ -175,8 +175,8 @@ mod tests {
             email: Email::new("john", "example.com"),
         };
 
-        let values = record_with_nick.to_type3_map();
-        let restored = UserRecord::from_type3_map(values).unwrap();
+        let values: vantage_types::Record<AnyType3> = record_with_nick.clone().into_record();
+        let restored = UserRecord::from_record(values).unwrap();
         assert_eq!(record_with_nick, restored);
 
         // Test with None nickname
@@ -186,7 +186,7 @@ mod tests {
             email: Email::new("jane", "example.com"),
         };
 
-        let values_none = record_no_nick.to_type3_map();
+        let values_none: vantage_types::Record<AnyType3> = record_no_nick.clone().into_record();
         let cborize = values_none
             .into_iter()
             .map(|(k, v)| (k, v.value().clone()))
@@ -198,7 +198,7 @@ mod tests {
         );
 
         // Test round-trip with None
-        let restored_none = UserRecord::from_type3_map(cborize).unwrap();
+        let restored_none = UserRecord::from_record(cborize.into()).unwrap();
         assert_eq!(record_no_nick, restored_none);
     }
 }

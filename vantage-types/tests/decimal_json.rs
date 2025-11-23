@@ -1,6 +1,6 @@
 use rust_decimal::Decimal;
 use serde_json::Value;
-use vantage_types::{persistence, vantage_type_system};
+use vantage_types::{persistence, vantage_type_system, IntoRecord, TryFromRecord};
 
 // Generate MyType system using JSON value type
 vantage_type_system! {
@@ -131,7 +131,7 @@ mod tests {
 
     #[test]
     fn test_record_persistence() {
-        #[derive(Debug, PartialEq)]
+        #[derive(Debug, PartialEq, Clone)]
         #[persistence(MyType)]
         struct Record {
             amount: Decimal,
@@ -142,17 +142,17 @@ mod tests {
         };
 
         // Store record
-        let storage_map = record.to_mytype_map();
+        let storage_record = record.clone().into_record();
 
         // Verify stored value format
-        let amount_json = storage_map.get("amount").unwrap().value();
+        let amount_json = storage_record.get("amount").unwrap().value();
         assert_eq!(
             amount_json,
             &serde_json::json!({"decimal": "123123123.123123123"})
         );
 
         // Restore record back
-        let restored = Record::from_mytype_map(storage_map.clone()).unwrap();
+        let restored = Record::from_record(storage_record.clone()).unwrap();
         assert_eq!(record, restored);
 
         // Attempt to convert into record where amount is String - confirm it fails
@@ -163,7 +163,7 @@ mod tests {
         }
 
         // Attempt to restore as StringRecord should fail
-        let failed_restore = StringRecord::from_mytype_map(storage_map);
+        let failed_restore = StringRecord::from_record(storage_record);
         assert!(failed_restore.is_err());
     }
 

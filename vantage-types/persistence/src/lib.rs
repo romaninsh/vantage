@@ -20,7 +20,6 @@ pub fn persistence(args: TokenStream, input: TokenStream) -> TokenStream {
     let name = &input.ident;
 
     let persistence_type = &args.type_name;
-    let type_lower = persistence_type.to_string().to_lowercase();
 
     let fields = match &input.data {
         Data::Struct(data_struct) => match &data_struct.fields {
@@ -31,9 +30,6 @@ pub fn persistence(args: TokenStream, input: TokenStream) -> TokenStream {
     };
 
     let any_type = quote::format_ident!("Any{}", persistence_type);
-    let trait_name = quote::format_ident!("{}Persistence", persistence_type);
-    let to_method = quote::format_ident!("to_{}_map", type_lower);
-    let from_method = quote::format_ident!("from_{}_map", type_lower);
 
     let field_insertions = fields.iter().map(|field| {
         let field_name = field.ident.as_ref().unwrap();
@@ -48,7 +44,7 @@ pub fn persistence(args: TokenStream, input: TokenStream) -> TokenStream {
         let field_name_str = field_name.to_string();
         let field_type = &field.ty;
         quote! {
-            #field_name: map.get(#field_name_str)
+            #field_name: record.get(#field_name_str)
                 .ok_or_else(|| vantage_core::error!("Missing field", field = #field_name_str))?
                 .try_get::<#field_type>()
                 .ok_or_else(|| vantage_core::error!("Failed to convert field", field = #field_name_str))?
@@ -58,24 +54,11 @@ pub fn persistence(args: TokenStream, input: TokenStream) -> TokenStream {
     let expanded = quote! {
         #input
 
-        impl #trait_name for #name {
-            fn #to_method(&self) -> indexmap::IndexMap<String, #any_type> {
-                let mut map = indexmap::IndexMap::new();
-                #(#field_insertions)*
-                map
-            }
-
-            fn #from_method(map: indexmap::IndexMap<String, #any_type>) -> vantage_core::Result<Self> {
-                Ok(Self {
-                    #(#field_extractions),*
-                })
-            }
-        }
-
-        // Add IntoRecord/FromRecord implementations for clean record conversions
         impl vantage_types::IntoRecord<#any_type> for #name {
             fn into_record(self) -> vantage_types::Record<#any_type> {
-                <Self as #trait_name>::#to_method(&self).into()
+                let mut map = indexmap::IndexMap::new();
+                #(#field_insertions)*
+                map.into()
             }
         }
 
@@ -83,7 +66,9 @@ pub fn persistence(args: TokenStream, input: TokenStream) -> TokenStream {
             type Error = vantage_core::VantageError;
 
             fn from_record(record: vantage_types::Record<#any_type>) -> vantage_core::Result<Self> {
-                <Self as #trait_name>::#from_method(record.into_inner())
+                Ok(Self {
+                    #(#field_extractions),*
+                })
             }
         }
 

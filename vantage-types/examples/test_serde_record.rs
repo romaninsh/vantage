@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use vantage_types::prelude::*;
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 struct Person {
     name: String,
     age: u32,
@@ -9,7 +9,7 @@ struct Person {
     is_active: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 struct Company {
     name: String,
     employees: u32,
@@ -37,17 +37,17 @@ fn main() {
     println!("Original company: {:?}", company);
 
     // Test: Person -> Record<serde_json::Value>
-    let person_record: Record<serde_json::Value> = person.into_record();
+    let person_record: Record<serde_json::Value> = person.clone().into_record();
     println!("\nPerson -> Record<serde_json::Value>: SUCCESS");
     println!("Person record: {:?}", person_record);
 
     // Test: Company -> Record<serde_json::Value>
-    let company_record: Record<serde_json::Value> = company.into_record();
+    let company_record: Record<serde_json::Value> = company.clone().into_record();
     println!("\nCompany -> Record<serde_json::Value>: SUCCESS");
     println!("Company record: {:?}", company_record);
 
     // Test reverse conversion: Record<serde_json::Value> -> Person
-    let person_back: Result<Person, _> = Person::try_from_record(&person_record);
+    let person_back: Result<Person, _> = Person::from_record(person_record.clone());
     match person_back {
         Ok(p) => {
             println!("\nRecord<serde_json::Value> -> Person: SUCCESS");
@@ -69,7 +69,7 @@ fn main() {
     }
 
     // Test reverse conversion: Record<serde_json::Value> -> Company
-    let company_back: Result<Company, _> = Company::try_from_record(&company_record);
+    let company_back: Result<Company, _> = Company::from_record(company_record.clone());
     match company_back {
         Ok(c) => {
             println!("\nRecord<serde_json::Value> -> Company: SUCCESS");
@@ -90,7 +90,7 @@ fn main() {
     }
 
     // Test with nested structures
-    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
     struct Department {
         name: String,
         head: Person,
@@ -112,10 +112,10 @@ fn main() {
     println!("Original department: {:?}", department);
 
     // Department -> Record<serde_json::Value> -> Department
-    let dept_record: Record<serde_json::Value> = department.into_record();
+    let dept_record: Record<serde_json::Value> = department.clone().into_record();
     println!("\nDepartment -> Record<serde_json::Value>: SUCCESS");
 
-    let dept_back: Result<Department, _> = Department::try_from_record(&dept_record);
+    let dept_back: Result<Department, _> = Department::from_record(dept_record);
     match dept_back {
         Ok(d) => {
             println!("Record<serde_json::Value> -> Department: SUCCESS");
