@@ -1,5 +1,5 @@
 use vantage_types::{vantage_type_system, IntoRecord, Record, TryFromRecord};
-use vantage_types_persistence::persistence;
+use vantage_types_entity::entity;
 
 vantage_type_system! {
     type_trait: TestType,
@@ -26,7 +26,7 @@ impl TestTypeVariants {
     }
 }
 
-#[persistence(TestType)]
+#[entity(TestType)]
 struct MyStruct {
     name: String,
     city: String,
@@ -89,5 +89,5 @@ fn main() {
         }
     }
 
-    println!("All persistence conversions work correctly!");
+    println!("All entity conversions work correctly!");
 }

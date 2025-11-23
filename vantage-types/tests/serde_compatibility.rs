@@ -2,11 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use vantage_types::{persistence_serde, Record};
+use vantage_types::{IntoRecord, Record, TryFromRecord};
 
-// Test structs - using serde instead of persistence macro
+// Test structs - using automatic serde conversions (no macro needed)
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
-#[persistence_serde]
 struct User {
     name: String,
     age: i32,
@@ -28,8 +27,8 @@ mod tests {
             age: 30,
         };
 
-        // Direct conversion when value types match using Into
-        let json_record: Record<JsonValue> = user.into();
+        // Direct conversion using automatic serde implementation
+        let json_record: Record<JsonValue> = user.into_record();
 
         assert_eq!(json_record.len(), 2);
         assert_eq!(json_record["name"], JsonValue::String("Alice".to_string()));
@@ -46,9 +45,9 @@ mod tests {
             age: 35,
         };
 
-        // Round-trip: struct -> record -> struct using Into/TryFrom
-        let record: Record<JsonValue> = user.clone().into();
-        let restored_user: User = record.try_into().unwrap();
+        // Round-trip: struct -> record -> struct using automatic serde implementations
+        let record: Record<JsonValue> = user.clone().into_record();
+        let restored_user: User = User::from_record(record).unwrap();
 
         assert_eq!(restored_user, user);
     }
@@ -60,8 +59,8 @@ mod tests {
             age: 40,
         };
 
-        // Convert to typed record using Into
-        let record: Record<JsonValue> = user.into();
+        // Convert to typed record using automatic serde implementation
+        let record: Record<JsonValue> = user.into_record();
 
         // Direct access to raw values
         assert_eq!(record["name"], JsonValue::String("David".to_string()));
@@ -71,14 +70,12 @@ mod tests {
     #[test]
     fn test_nested_structures() {
         #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
-        #[persistence_serde]
         struct Address {
             street: String,
             city: String,
         }
 
         #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
-        #[persistence_serde]
         struct Person {
             name: String,
             address: Address,
@@ -92,14 +89,14 @@ mod tests {
             },
         };
 
-        // Convert nested structure
-        let record: Record<JsonValue> = person.clone().into();
+        // Convert nested structure using automatic serde implementation
+        let record: Record<JsonValue> = person.clone().into_record();
 
         assert_eq!(record["name"], JsonValue::String("Bob".to_string()));
         assert!(record["address"].is_object());
 
         // Round-trip
-        let restored_person: Person = record.try_into().unwrap();
+        let restored_person: Person = Person::from_record(record).unwrap();
         assert_eq!(restored_person, person);
     }
 
@@ -113,7 +110,7 @@ mod tests {
         ); // Wrong type
 
         // Should fail to convert due to type mismatch
-        let result: Result<User, _> = record.try_into();
+        let result = User::from_record(record);
         assert!(result.is_err());
     }
 
@@ -125,10 +122,10 @@ mod tests {
         };
 
         // Struct -> Record -> JSON Value -> Record -> Struct
-        let record: Record<JsonValue> = user.clone().into();
+        let record: Record<JsonValue> = user.clone().into_record();
         let json_value: JsonValue = record.into();
         let record_again: Record<JsonValue> = json_value.into();
-        let user_again: User = record_again.try_into().unwrap();
+        let user_again: User = User::from_record(record_again).unwrap();
 
         assert_eq!(user, user_again);
     }

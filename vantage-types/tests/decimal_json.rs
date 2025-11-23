@@ -1,6 +1,6 @@
 use rust_decimal::Decimal;
 use serde_json::Value;
-use vantage_types::{persistence, vantage_type_system, IntoRecord, TryFromRecord};
+use vantage_types::{entity, vantage_type_system, IntoRecord, TryFromRecord};
 
 // Generate MyType system using JSON value type
 vantage_type_system! {
@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn test_record_persistence() {
         #[derive(Debug, PartialEq, Clone)]
-        #[persistence(MyType)]
+        #[entity(MyType)]
         struct Record {
             amount: Decimal,
         }
@@ -157,7 +157,7 @@ mod tests {
 
         // Attempt to convert into record where amount is String - confirm it fails
         #[derive(Debug)]
-        #[persistence(MyType)]
+        #[entity(MyType)]
         struct StringRecord {
             amount: String,
         }

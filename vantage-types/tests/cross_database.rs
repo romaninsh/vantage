@@ -1,6 +1,6 @@
 use rust_decimal::Decimal;
 use serde_json::Value as JsonValue;
-use vantage_types::{persistence, vantage_type_system, IntoRecord, TryFromRecord};
+use vantage_types::{entity, vantage_type_system, IntoRecord, TryFromRecord};
 
 // SurrealDB type system with CBOR
 vantage_type_system! {
@@ -186,8 +186,8 @@ impl PostgresTypeVariants {
 
 // User struct with dual persistence support
 #[derive(Debug, PartialEq, Clone)]
-#[persistence(SurrealType)]
-#[persistence(PostgresType)]
+#[entity(SurrealType)]
+#[entity(PostgresType)]
 struct User {
     name: String,
     balance: Decimal,

@@ -2,34 +2,34 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse::Parse, parse::ParseStream, parse_macro_input, Data, DeriveInput, Fields, Ident};
 
-struct PersistenceArgs {
+struct EntityArgs {
     type_name: Ident,
 }
 
-impl Parse for PersistenceArgs {
+impl Parse for EntityArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let type_name: Ident = input.parse()?;
-        Ok(PersistenceArgs { type_name })
+        Ok(EntityArgs { type_name })
     }
 }
 
 #[proc_macro_attribute]
-pub fn persistence(args: TokenStream, input: TokenStream) -> TokenStream {
-    let args = parse_macro_input!(args as PersistenceArgs);
+pub fn entity(args: TokenStream, input: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(args as EntityArgs);
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
 
-    let persistence_type = &args.type_name;
+    let entity_type = &args.type_name;
 
     let fields = match &input.data {
         Data::Struct(data_struct) => match &data_struct.fields {
             Fields::Named(fields) => &fields.named,
-            _ => panic!("Persistence only supports structs with named fields"),
+            _ => panic!("Entity only supports structs with named fields"),
         },
-        _ => panic!("Persistence only supports structs"),
+        _ => panic!("Entity only supports structs"),
     };
 
-    let any_type = quote::format_ident!("Any{}", persistence_type);
+    let any_type = quote::format_ident!("Any{}", entity_type);
 
     let field_insertions = fields.iter().map(|field| {
         let field_name = field.ident.as_ref().unwrap();
@@ -75,40 +75,4 @@ pub fn persistence(args: TokenStream, input: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(expanded)
-}
-
-#[cfg(feature = "serde")]
-#[proc_macro_attribute]
-pub fn persistence_serde(_args: TokenStream, input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    let name = &input.ident;
-
-    let expanded = quote! {
-        #input
-
-        // Add Into implementation for Record<serde_json::Value>
-        impl Into<vantage_types::Record<serde_json::Value>> for #name {
-            fn into(self) -> vantage_types::Record<serde_json::Value> {
-                vantage_types::Record::from_serializable(self).expect("Failed to serialize to JSON")
-            }
-        }
-
-        // Add TryFrom implementation for reverse conversion
-        impl TryFrom<vantage_types::Record<serde_json::Value>> for #name {
-            type Error = serde_json::Error;
-
-            fn try_from(record: vantage_types::Record<serde_json::Value>) -> Result<Self, Self::Error> {
-                record.to_deserializable()
-            }
-        }
-    };
-
-    TokenStream::from(expanded)
-}
-
-#[cfg(not(feature = "serde"))]
-#[proc_macro_attribute]
-pub fn persistence_serde(_args: TokenStream, input: TokenStream) -> TokenStream {
-    // When serde feature is disabled, just return the original struct
-    input
 }

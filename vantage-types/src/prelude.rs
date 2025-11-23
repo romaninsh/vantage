@@ -14,7 +14,7 @@ pub use crate::record::{IntoRecord, Record, TryFromRecord};
 pub use crate::vantage_type_system;
 
 // Re-export proc-macros
-pub use vantage_types_persistence::{persistence, persistence_serde};
+pub use vantage_types_entity::entity;
 
 #[cfg(feature = "serde")]
 pub use crate::Entity;
