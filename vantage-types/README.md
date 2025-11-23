@@ -236,7 +236,7 @@ serialization.
 
 ## Entity macro
 
-The `#[entity]` generates implements Entity trait for your structure, which otherwise would require
+The `#[entity]` macro generates implementations of the Entity trait for your structure, which otherwise would require
 you to convert all fields into/from Record<AnyType3>. Record relies on IndexMap and preserves field
 order.
 
@@ -289,7 +289,7 @@ no extra boiler plate for any persistence that uses JSON as underlying format.
 
 ## Cross-Database Type Systems
 
-Multiple type systems can be defined and Entity can be implemented several types - for different
+Multiple type systems can be defined and Entity can be implemented for several types - for different
 value types:
 
 ```rust
@@ -490,7 +490,7 @@ where
 
 ### Using Entities
 
-If your crate uses serde_json::Value as underlying value type - enable serde feature in
+If your crate uses serde_json::Value as underlying value type - enable the serde feature in
 `vantage-types` crate. However, if you use a more nuanced type system - users can use
 `#[entity(YourType)]` macro to automatically implement `IntoRecord<AnyCsvType>` and
 `TryFromRecord<AnyCsvType>` for their structs.

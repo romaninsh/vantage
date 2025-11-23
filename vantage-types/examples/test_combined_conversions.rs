@@ -45,7 +45,7 @@ impl MyTypeVariants {
     }
 }
 
-// Struct with persistence macro (uses type system)
+// Struct with entity macro (uses type system)
 #[derive(Debug, PartialEq, Clone)]
 #[entity(MyType)]
 struct TypeSystemStruct {
