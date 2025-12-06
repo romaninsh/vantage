@@ -224,6 +224,50 @@ let query = expr!("SELECT * FROM items LIMIT {}", { deferred_count });
 let result = db.execute(&query).await?;
 ```
 
+## Associated Expressions
+
+While deferred execution provides powerful async capabilities, sometimes you need a middle ground
+between immediate execution and full deferral.
+
+Associated expressions combine 3 things - Expression, DataSource reference and Expected type. For
+example - imagine a method, `get_authenticated_users_email`. Should it query and return email or
+return Expression? Thin can be both now:
+
+```rust,ignore
+use vantage_expressions::{expr, ExprDataSource, AssociatedExpression};
+
+// Get authenticated user's email with type safety
+fn get_authenticated_users_email(ds: &impl ExprDataSource<serde_json::Value>)
+    -> AssociatedExpression<'_, _, serde_json::Value, Email> {
+    let query = expr!(
+        "SELECT email FROM users WHERE id = (SELECT user_id FROM sessions WHERE token = current_session())"
+    );
+    ds.associate::<Email>(query)
+}
+```
+
+This can now be used to get Email directly or inside expressions. Also - We using a custom type for
+Email, so we don't loose on type-safety (check vantage_types) for more info on type mapping support.
+
+```rust,ignore
+// Direct execution with type safety
+let email: Email = get_authenticated_users_email(&db).get().await?;
+println!("User: {}@{}", email.name, email.domain);
+```
+
+Using as part of other query:
+
+```rust,ignore
+// Use in other queries via composition
+let balance_query = expr!(
+    "SELECT balance FROM accounts WHERE email = {}",
+    (get_authenticated_users_email(&db))
+);
+let balance = db.execute(&balance_query).await?;
+```
+
+Unlike DeferredFn - you will need a proper data source for AssociatedExpression.
+
 ## Cross-database query-building
 
 The main purpose of deferred queries is to enable cross-database query building. Assume we start

@@ -14,7 +14,7 @@ pub use crate::Expression;
 pub use crate::{AnyExpression, ExpressionLike};
 
 // Query source traits
-pub use crate::{QuerySource, SelectSource};
+pub use crate::{ExprDataSource, SelectableDataSource};
 
 // Essential traits
 pub use crate::traits::expressive::{DeferredFn, ExpressiveEnum};

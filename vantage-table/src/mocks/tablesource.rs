@@ -12,9 +12,9 @@ use vantage_dataset::{
 };
 use vantage_expressions::{
     Expression, expr_any,
-    mocks::datasource::{MockQuerySource, MockSelectSource},
+    mocks::datasource::{MockExprDataSource, MockSelectableDataSource},
     mocks::select::MockSelect,
-    traits::datasource::{DataSource, QuerySource, SelectSource},
+    traits::datasource::{DataSource, ExprDataSource, SelectableDataSource},
 };
 use vantage_types::{Entity, Record};
 
@@ -24,8 +24,8 @@ use crate::{table::Table, traits::table_like::TableLike, traits::table_source::T
 pub struct MockTableSource {
     data: Arc<Mutex<HashMap<String, Vec<serde_json::Value>>>>,
     im_data_source: ImDataSource,
-    select_source: Option<MockSelectSource>,
-    query_source: Option<MockQuerySource>,
+    select_source: Option<MockSelectableDataSource>,
+    query_source: Option<MockExprDataSource>,
 }
 
 impl MockTableSource {
@@ -60,12 +60,12 @@ impl MockTableSource {
         self
     }
 
-    pub fn with_select_source(mut self, select_source: MockSelectSource) -> Self {
+    pub fn with_select_source(mut self, select_source: MockSelectableDataSource) -> Self {
         self.select_source = Some(select_source);
         self
     }
 
-    pub fn with_query_source(mut self, query_source: MockQuerySource) -> Self {
+    pub fn with_query_source(mut self, query_source: MockExprDataSource) -> Self {
         self.query_source = Some(query_source);
         self
     }
@@ -79,7 +79,7 @@ impl Default for MockTableSource {
 
 impl DataSource for MockTableSource {}
 
-impl QuerySource<serde_json::Value> for MockTableSource {
+impl ExprDataSource<serde_json::Value> for MockTableSource {
     async fn execute(
         &self,
         expr: &Expression<serde_json::Value>,
@@ -106,7 +106,7 @@ impl QuerySource<serde_json::Value> for MockTableSource {
     }
 }
 
-impl SelectSource<serde_json::Value> for MockTableSource {
+impl SelectableDataSource<serde_json::Value> for MockTableSource {
     type Select = MockSelect;
 
     fn select(&self) -> Self::Select {

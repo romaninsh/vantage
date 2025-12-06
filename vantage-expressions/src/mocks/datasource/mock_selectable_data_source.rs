@@ -29,26 +29,26 @@
 //! ```
 
 use crate::mocks::select::MockSelect;
-use crate::traits::datasource::{DataSource, SelectSource};
+use crate::traits::datasource::{DataSource, SelectableDataSource};
 use serde_json::Value;
 use vantage_core::Result;
 
 /// Mock DataSource that implements SelectSource with configurable return values
 #[derive(Debug, Clone)]
-pub struct MockSelectSource {
+pub struct MockSelectableDataSource {
     value: Value,
 }
 
-impl MockSelectSource {
+impl MockSelectableDataSource {
     /// Create a new MockSelectSource that returns the given value
     pub fn new(value: Value) -> Self {
         Self { value }
     }
 }
 
-impl DataSource for MockSelectSource {}
+impl DataSource for MockSelectableDataSource {}
 
-impl SelectSource<serde_json::Value> for MockSelectSource {
+impl SelectableDataSource<serde_json::Value> for MockSelectableDataSource {
     type Select = MockSelect;
 
     fn select(&self) -> Self::Select {
@@ -73,7 +73,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_select_source_with_array() {
-        let mock = MockSelectSource::new(json!([
+        let mock = MockSelectableDataSource::new(json!([
             {"id": 1, "name": "Alice"},
             {"id": 2, "name": "Bob"}
         ]));
@@ -90,7 +90,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_select_source_with_single_value() {
-        let mock = MockSelectSource::new(json!({"count": 42}));
+        let mock = MockSelectableDataSource::new(json!({"count": 42}));
 
         let select = mock.select();
         let results = mock.execute_select(&select).await.unwrap();
@@ -100,7 +100,7 @@ mod tests {
 
     #[test]
     fn test_mock_select_creation() {
-        let mock = MockSelectSource::new(json!([]));
+        let mock = MockSelectableDataSource::new(json!([]));
         let select = mock.select();
 
         // Verify MockSelect implements Selectable

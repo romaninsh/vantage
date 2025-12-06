@@ -1,12 +1,12 @@
 use vantage_core::Result;
-use vantage_expressions::{Expression, Expressive, SelectSource, Selectable};
+use vantage_expressions::{Expression, Expressive, Selectable, SelectableDataSource};
 use vantage_types::Entity;
 
 use crate::{table::Table, traits::column_like::ColumnLike, traits::table_source::TableSource};
 
 impl<T, E> Table<T, E>
 where
-    T: SelectSource<T::Value> + TableSource,
+    T: SelectableDataSource<T::Value> + TableSource,
     T::Select: Selectable<T::Value>,
     T::Value: From<String>, // that's because table is specified as a string
     T::Column: Expressive<T::Value>,
@@ -72,9 +72,9 @@ where
 // Specific implementation for serde_json::Value that can use QuerySource
 impl<T, E> Table<T, E>
 where
-    T: SelectSource<serde_json::Value>
+    T: SelectableDataSource<serde_json::Value>
         + TableSource<Value = serde_json::Value>
-        + vantage_expressions::traits::datasource::QuerySource<serde_json::Value>,
+        + vantage_expressions::traits::datasource::ExprDataSource<serde_json::Value>,
     T::Select: Selectable<serde_json::Value>,
     T::Column: Expressive<serde_json::Value>,
     E: Entity<serde_json::Value>,
@@ -100,17 +100,17 @@ mod tests {
     use super::*;
     use crate::mocks::tablesource::MockTableSource;
     use serde_json::json;
-    use vantage_expressions::mocks::datasource::{MockQuerySource, MockSelectSource};
-    use vantage_expressions::traits::datasource::QuerySource;
+    use vantage_expressions::mocks::datasource::{MockExprDataSource, MockSelectableDataSource};
+    use vantage_expressions::traits::datasource::ExprDataSource;
 
     #[tokio::test]
     async fn test_selectable_functionality() {
-        let mock_select_source = MockSelectSource::new(json!([
+        let mock_select_source = MockSelectableDataSource::new(json!([
             {"id": "1", "name": "Alice", "age": 30},
             {"id": "2", "name": "Bob", "age": 25}
         ]));
 
-        let mock_query_source = MockQuerySource::new(json!({"count": 42}));
+        let mock_query_source = MockExprDataSource::new(json!({"count": 42}));
 
         let table = MockTableSource::new()
             .with_data(

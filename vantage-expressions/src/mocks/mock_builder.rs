@@ -49,7 +49,7 @@
 use crate::Expression;
 use crate::expression::flatten::{ExpressionFlattener, Flatten};
 use crate::mocks::select::MockSelect;
-use crate::traits::datasource::{DataSource, QuerySource, SelectSource};
+use crate::traits::datasource::{DataSource, ExprDataSource, SelectableDataSource};
 use crate::traits::expressive::{DeferredFn, ExpressiveEnum};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -127,7 +127,7 @@ impl Default for MockBuilder {
 
 impl DataSource for MockBuilder {}
 
-impl QuerySource<Value> for MockBuilder {
+impl ExprDataSource<Value> for MockBuilder {
     async fn execute(&self, expr: &Expression<Value>) -> Result<Value> {
         // First resolve any deferred functions
         let resolved_expr = self.resolve_deferred_expression(expr).await?;
@@ -171,7 +171,7 @@ impl QuerySource<Value> for MockBuilder {
     }
 }
 
-impl SelectSource<Value> for MockBuilder {
+impl SelectableDataSource<Value> for MockBuilder {
     type Select = MockSelect;
 
     fn select(&self) -> Self::Select {
