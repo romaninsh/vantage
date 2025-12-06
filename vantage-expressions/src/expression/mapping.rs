@@ -83,7 +83,7 @@ impl<From> ExpressionMap<From> for Expression<From> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::traits::datasource::{DataSource, QuerySource};
+    use crate::traits::datasource::{DataSource, ExprDataSource};
     use crate::traits::expressive::{DeferredFn, ExpressiveEnum};
     use serde_json::Value;
     use vantage_core::Result;
@@ -102,7 +102,7 @@ mod tests {
 
     impl DataSource for StringDatabase {}
 
-    impl QuerySource<String> for StringDatabase {
+    impl ExprDataSource<String> for StringDatabase {
         async fn execute(&self, _expr: &Expression<String>) -> Result<String> {
             Ok(self.result.clone())
         }
@@ -133,7 +133,7 @@ mod tests {
 
     impl DataSource for JsonDatabase {}
 
-    impl QuerySource<Value> for JsonDatabase {
+    impl ExprDataSource<Value> for JsonDatabase {
         async fn execute(&self, _expr: &Expression<Value>) -> Result<Value> {
             Ok(self.result.clone())
         }

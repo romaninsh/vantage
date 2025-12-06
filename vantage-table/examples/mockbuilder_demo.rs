@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use vantage_expressions::{
     Expression, expr,
-    traits::datasource::{QuerySource, SelectSource},
+    traits::datasource::{ExprDataSource, SelectableDataSource},
     traits::expressive::ExpressiveEnum,
 };
 
@@ -52,7 +52,7 @@ impl SimpleMockBuilder {
 impl vantage_expressions::traits::datasource::DataSource for SimpleMockBuilder {}
 
 // Implement QuerySource trait (trait #2)
-impl vantage_expressions::traits::datasource::QuerySource<Value> for SimpleMockBuilder {
+impl vantage_expressions::traits::datasource::ExprDataSource<Value> for SimpleMockBuilder {
     fn execute(
         &self,
         expr: &Expression<Value>,
@@ -90,7 +90,7 @@ impl vantage_expressions::traits::datasource::QuerySource<Value> for SimpleMockB
 }
 
 // Implement SelectSource trait (trait #3)
-impl vantage_expressions::traits::datasource::SelectSource<Value> for SimpleMockBuilder {
+impl vantage_expressions::traits::datasource::SelectableDataSource<Value> for SimpleMockBuilder {
     type Select = vantage_expressions::mocks::select::MockSelect;
 
     fn select(&self) -> Self::Select {

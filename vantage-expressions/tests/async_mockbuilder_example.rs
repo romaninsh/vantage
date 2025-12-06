@@ -2,7 +2,7 @@
 
 use serde_json::json;
 use vantage_expressions::{
-    expr, mocks::mockbuilder, traits::datasource::QuerySource, traits::expressive::DeferredFn,
+    expr, mocks::mock_builder, traits::datasource::ExprDataSource, traits::expressive::DeferredFn,
 };
 
 // API call that fetches user IDs asynchronously
@@ -15,7 +15,7 @@ async fn get_user_ids() -> vantage_core::Result<serde_json::Value> {
 async fn test_async_example_from_expression_docs() {
     // Set up mock to handle the constructed query after flattening
     // When flattened, the deferred function result replaces the placeholder
-    let mock = mockbuilder::new().with_flattening().on_exact_select(
+    let mock = mock_builder::new().with_flattening().on_exact_select(
         "SELECT * FROM orders WHERE user_id = ANY([1,2,3,4,5])",
         json!([
             {"id": 1, "user_id": 1, "amount": 99.99},
@@ -46,7 +46,7 @@ async fn test_async_example_from_expression_docs() {
 
 #[tokio::test]
 async fn test_multiple_patterns_with_flattening() {
-    let mock = mockbuilder::new()
+    let mock = mock_builder::new()
         .with_flattening()
         .on_exact_select("SELECT COUNT(*) FROM users WHERE active = true", json!(42))
         .on_exact_select(
@@ -69,7 +69,7 @@ async fn test_multiple_patterns_with_flattening() {
 
 #[tokio::test]
 async fn test_nested_expression_flattening() {
-    let mock = mockbuilder::new()
+    let mock = mock_builder::new()
         .with_flattening()
         .on_exact_select(
             "SELECT * FROM orders WHERE user_id IN (SELECT id FROM users WHERE department = \"engineering\")",
@@ -93,7 +93,7 @@ async fn test_nested_expression_flattening() {
 
 #[tokio::test]
 async fn test_error_handling_no_match() {
-    let mock = mockbuilder::new().on_exact_select("SELECT * FROM users", json!([]));
+    let mock = mock_builder::new().on_exact_select("SELECT * FROM users", json!([]));
 
     let query = expr!("SELECT * FROM products");
     let result = mock.execute(&query).await;

@@ -14,9 +14,10 @@ pub use any_expression::{AnyExpression, ExpressionLike};
 pub use expression::expression::Expression;
 pub use expression::flatten::{ExpressionFlattener, Flatten};
 pub use expression::mapping::{ExpressionMap, ExpressionMapper};
+pub use traits::associated_expressions::AssociatedExpression;
 pub use traits::associated_queryable::AssociatedQueryable;
-pub use traits::datasource::QuerySource;
-pub use traits::datasource::SelectSource;
+pub use traits::datasource::ExprDataSource;
+pub use traits::datasource::SelectableDataSource;
 pub use traits::expressive::{DeferredFn, Expressive, ExpressiveEnum};
 pub use traits::selectable::Selectable;
 

@@ -24,27 +24,27 @@
 //! }
 //! ```
 
-use crate::traits::datasource::{DataSource, QuerySource};
+use crate::traits::datasource::{DataSource, ExprDataSource};
 use crate::traits::expressive::{DeferredFn, ExpressiveEnum};
 use serde_json::Value;
 use vantage_core::Result;
 
 /// Mock DataSource that implements QuerySource with configurable return value
 #[derive(Debug, Clone)]
-pub struct MockQuerySource {
+pub struct MockExprDataSource {
     value: Value,
 }
 
-impl MockQuerySource {
+impl MockExprDataSource {
     /// Create a new MockQuerySource that returns the given value
     pub fn new(value: Value) -> Self {
         Self { value }
     }
 }
 
-impl DataSource for MockQuerySource {}
+impl DataSource for MockExprDataSource {}
 
-impl QuerySource<serde_json::Value> for MockQuerySource {
+impl ExprDataSource<serde_json::Value> for MockExprDataSource {
     async fn execute(
         &self,
         _expr: &crate::Expression<serde_json::Value>,
@@ -72,7 +72,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_query_source() {
-        let mock = MockQuerySource::new(json!({"status": "ok"}));
+        let mock = MockExprDataSource::new(json!({"status": "ok"}));
         let expr = expr!("SELECT * FROM anything");
 
         let result = mock.execute(&expr).await.unwrap();
@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn test_mock_query_source_defer() {
-        let mock = MockQuerySource::new(json!({"deferred": "value"}));
+        let mock = MockExprDataSource::new(json!({"deferred": "value"}));
         let expr = expr!("SELECT COUNT(*)");
 
         let _deferred = mock.defer(expr);

@@ -138,11 +138,11 @@ fn test_flattening_behavior() {
 
 #[tokio::test]
 async fn test_querysource_example() {
-    use vantage_expressions::mocks::MockQuerySource;
-    use vantage_expressions::traits::datasource::QuerySource;
+    use vantage_expressions::mocks::MockExprDataSource;
+    use vantage_expressions::traits::datasource::ExprDataSource;
 
     // Create a mock database that returns a fixed value
-    let db = MockQuerySource::new(serde_json::json!(42));
+    let db = MockExprDataSource::new(serde_json::json!(42));
     let query = expr!("SELECT COUNT(*) FROM users WHERE age > {}", 21);
 
     // Execute immediately - returns result now
@@ -160,12 +160,12 @@ async fn test_querysource_example() {
 
 #[tokio::test]
 async fn test_deferred_as_parameters() {
-    use vantage_expressions::mocks::MockQuerySource;
-    use vantage_expressions::traits::datasource::QuerySource;
+    use vantage_expressions::mocks::MockExprDataSource;
+    use vantage_expressions::traits::datasource::ExprDataSource;
     use vantage_expressions::traits::expressive::ExpressiveEnum;
 
     // Mock SurrealDB returning user IDs
-    let surreal_db = MockQuerySource::new(serde_json::json!([1, 2, 3]));
+    let surreal_db = MockExprDataSource::new(serde_json::json!([1, 2, 3]));
     let user_ids_query = expr!("SELECT id FROM user WHERE status = {}", "active");
 
     // Create deferred query - defer() now returns DeferredFn directly
@@ -277,12 +277,12 @@ fn test_type_mapping() {
 
 #[tokio::test]
 async fn test_immediate_vs_deferred_execution() {
-    use vantage_expressions::mocks::MockQuerySource;
-    use vantage_expressions::traits::datasource::QuerySource;
+    use vantage_expressions::mocks::MockExprDataSource;
+    use vantage_expressions::traits::datasource::ExprDataSource;
     use vantage_expressions::traits::expressive::ExpressiveEnum;
 
     // Create a mock database that returns a fixed value
-    let db = MockQuerySource::new(serde_json::json!(42));
+    let db = MockExprDataSource::new(serde_json::json!(42));
 
     // Create a query expression
     let query = expr!("SELECT COUNT(*) FROM users WHERE age > {}", 21);
@@ -338,8 +338,8 @@ fn test_cross_database_type_mapping_concept() {
 
 #[tokio::test]
 async fn test_cross_database_api_integration() {
-    use vantage_expressions::mocks::MockQuerySource;
-    use vantage_expressions::traits::datasource::QuerySource;
+    use vantage_expressions::mocks::MockExprDataSource;
+    use vantage_expressions::traits::datasource::ExprDataSource;
     use vantage_expressions::traits::expressive::{DeferredFn, ExpressiveEnum};
 
     // API call that fetches user IDs asynchronously
@@ -376,7 +376,7 @@ async fn test_cross_database_api_integration() {
     }
 
     // Test with mock database execution
-    let db = MockQuerySource::new(serde_json::json!([{"id": 1, "amount": 100}]));
+    let db = MockExprDataSource::new(serde_json::json!([{"id": 1, "amount": 100}]));
     let orders = db.execute(&query).await.unwrap();
     assert_eq!(orders, serde_json::json!([{"id": 1, "amount": 100}]));
 }
