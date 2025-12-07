@@ -2,14 +2,16 @@ use vantage_core::Result;
 use vantage_expressions::{Expression, Expressive, Selectable, SelectableDataSource};
 use vantage_types::Entity;
 
-use crate::{table::Table, traits::column_like::ColumnLike, traits::table_source::TableSource};
+use crate::{
+    column::column::ColumnType, table::Table, traits::column_like::ColumnLike,
+    traits::table_source::TableSource,
+};
 
 impl<T, E> Table<T, E>
 where
     T: SelectableDataSource<T::Value> + TableSource,
     T::Select: Selectable<T::Value>,
     T::Value: From<String>, // that's because table is specified as a string
-    T::Column: Expressive<T::Value>,
     E: Entity<T::Value>,
 {
     /// Create a select query with table configuration applied
@@ -54,7 +56,10 @@ where
     }
 
     /// Get sum of a column in the table
-    pub async fn get_sum(&self, column: &T::Column) -> Result<i64> {
+    pub async fn get_sum<Type>(&self, column: &T::Column<Type>) -> Result<Type>
+    where
+        Type: ColumnType,
+    {
         self.data_source.get_sum(self, column).await
     }
 
@@ -64,7 +69,11 @@ where
     }
 
     /// Create a sum query expression for a column (does not execute)
-    pub fn get_sum_query(&self, column: &T::Column) -> Expression<T::Value> {
+    pub fn get_sum_query<Type>(&self, column: &T::Column<Type>) -> Expression<T::Value>
+    where
+        Type: ColumnType,
+        T::Column<Type>: Expressive<T::Value>,
+    {
         self.select().as_sum(column.expr())
     }
 }
@@ -76,7 +85,6 @@ where
         + TableSource<Value = serde_json::Value>
         + vantage_expressions::traits::datasource::ExprDataSource<serde_json::Value>,
     T::Select: Selectable<serde_json::Value>,
-    T::Column: Expressive<serde_json::Value>,
     E: Entity<serde_json::Value>,
 {
     /// Get count using QuerySource for serde_json::Value
@@ -137,7 +145,7 @@ mod tests {
         assert_eq!(count_query.preview(), "SELECT COUNT(*) FROM \"users\"");
 
         // Test sum query generation
-        let age_column = table.data_source().create_column("age", table.clone());
+        let age_column = table.data_source().create_column::<i64>("age");
         let sum_query = table.get_sum_query(&age_column);
         assert_eq!(sum_query.preview(), "SELECT SUM(age) FROM \"users\"");
 

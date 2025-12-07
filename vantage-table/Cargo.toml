@@ -3,7 +3,6 @@ name = "vantage-table"
 version = "0.1.0"
 edition = "2024"
 autoexamples = false
-autotests = false
 
 [[example]]
 name = "mockbuilder_demo"
