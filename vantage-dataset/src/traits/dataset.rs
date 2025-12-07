@@ -370,6 +370,42 @@ where
             None => Ok(None),
         }
     }
+
+    /// Create a new entity with the provided data.
+    ///
+    /// This method creates a new entity and returns it wrapped as an ActiveEntity.
+    /// The entity is not automatically saved - call `.save()` to persist it.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: The ID for the new entity
+    /// - `entity`: The entity data
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(ActiveEntity)`: New entity wrapper ready for modification and saving
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let mut user = table.get_entity(&"user123".to_string()).await?
+    ///     .unwrap_or_else(|| table.new_entity("user123".to_string(), User {
+    ///         id: Some("user123".to_string()),
+    ///         name: "Default User".to_string(),
+    ///         active: false,
+    ///     }));
+    ///
+    /// user.active = true;
+    /// user.save().await?;
+    /// ```
+    ///
+    /// # Note
+    ///
+    /// This method does not check if an entity with the given ID already exists.
+    /// Use in combination with `get_entity()` for get-or-create patterns.
+    fn new_entity(&self, id: Self::Id, entity: E) -> ActiveEntity<'_, Self, E> {
+        ActiveEntity::new(id, entity, self)
+    }
 }
 // Auto-implement for any type that has both readable and writable traits
 impl<T, E> ActiveEntitySet<E> for T

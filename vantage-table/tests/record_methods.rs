@@ -51,11 +51,24 @@ async fn test_get_some_record_modify_workflow() {
         "users",
         vec![
             serde_json::json!({"id": "1", "name": "Alice", "email": "alice@test.com", "active": false}),
+            serde_json::json!({"id": "2", "name": "Bob", "email": "bob@test.com", "active": true}),
         ],
     );
 
     let table =
         Table::<MockTableSource, EmptyEntity>::new("users", mock.await).into_entity::<TestUser>();
+
+    // Test get_entity by ID - existing entity
+    let mut alice = table.get_entity(&"1".to_string()).await.unwrap().unwrap();
+    assert_eq!(alice.name, "Alice");
+    assert_eq!(alice.id(), "1");
+    assert!(!alice.active);
+
+    // Test get_entity by ID - non-existent entity
+    let missing = table.get_entity(&"999".to_string()).await.unwrap();
+    assert!(missing.is_none());
+
+    // Test get_some_entity (any entity)
     let mut record = table.get_some_entity().await.unwrap().unwrap();
 
     // Verify initial state
@@ -78,8 +91,8 @@ async fn test_get_some_record_modify_workflow() {
     // Save the record (should now succeed with MockTableSource)
     record.save().await.unwrap();
 
-    // Verify changes persisted by fetching the record again
-    let updated_record = table.get_some_entity().await.unwrap().unwrap();
+    // Verify changes persisted by fetching the record again using get_entity
+    let updated_record = table.get_entity(&"1".to_string()).await.unwrap().unwrap();
     assert_eq!(updated_record.name, "Alice Updated");
     assert_eq!(updated_record.email, "alice.new@test.com");
     assert!(updated_record.active);
@@ -194,4 +207,39 @@ async fn test_empty_table_record_methods() {
     // get_entity should return None
     let record = table.get_some_entity().await.unwrap();
     assert!(record.is_none());
+
+    // Test get_entity or new_entity pattern
+    let mut user = table
+        .get_entity(&"new_user".to_string())
+        .await
+        .unwrap()
+        .unwrap_or_else(|| {
+            table.new_entity(
+                "new_user".to_string(),
+                TestUser {
+                    id: Some("new_user".to_string()),
+                    name: "New User".to_string(),
+                    email: "new@example.com".to_string(),
+                    active: false,
+                },
+            )
+        });
+
+    // Modify the new entity
+    user.active = true;
+    user.email = "updated@example.com".to_string();
+
+    // Save the new entity
+    user.save().await.unwrap();
+
+    // Verify it was created and saved
+    let saved_user = table
+        .get_entity(&"new_user".to_string())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(saved_user.name, "New User");
+    assert_eq!(saved_user.email, "updated@example.com");
+    assert!(saved_user.active);
+    assert_eq!(saved_user.id(), "new_user");
 }
