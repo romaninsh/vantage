@@ -57,15 +57,21 @@ impl MockTableSource {
 
         // Also store in ImDataSource for value operations
         let im_table = ImTable::<vantage_types::EmptyEntity>::new(&self.im_data_source, table_name);
-        for value in data {
-            if let Some(id) = value.get("id").and_then(|v| v.as_str()) {
+        for value in data.iter() {
+            if let Some(id_value) = value.get("id") {
+                let id_str = match id_value {
+                    Value::String(s) => s.clone(),
+                    Value::Number(n) => n.to_string(),
+                    _ => {
+                        println!("[DEBUG] ID field is not a string or number: {:?}", id_value);
+                        continue;
+                    }
+                };
                 let record = Record::from(value.clone());
-                let _ = im_table
-                    .replace_value(&id.to_string(), &record)
-                    .await
-                    .unwrap();
+                let _ = im_table.replace_value(&id_str, &record).await;
             }
         }
+
         self
     }
 

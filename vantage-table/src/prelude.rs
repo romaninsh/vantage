@@ -15,10 +15,6 @@ pub use crate::traits::column_like::ColumnLike;
 pub use crate::traits::table_like::TableLike;
 pub use crate::traits::table_source::TableSource;
 
-// External traits and types
-pub use vantage_dataset::prelude::{ReadableValueSet, WritableValueSet};
-pub use vantage_types::{EmptyEntity, Entity};
-
 // Ordering functionality
 pub use crate::sorting::{OrderBy, SortDirection};
 pub use crate::table::sorting::OrderByExt;

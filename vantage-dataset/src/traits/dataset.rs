@@ -313,7 +313,12 @@ where
 #[async_trait]
 pub trait ActiveEntitySet<E>: ReadableDataSet<E> + WritableDataSet<E>
 where
-    E: Entity<Self::Value>,
+    E: Entity<Self::Value>
+        + vantage_types::IntoRecord<Self::Value>
+        + vantage_types::TryFromRecord<Self::Value>
+        + Send
+        + Sync
+        + Clone,
 {
     /// Retrieve an entity wrapped for change tracking and deferred persistence.
     ///
@@ -349,12 +354,69 @@ where
             .map(|(id, data)| ActiveEntity::new(id, data, self))
             .collect::<Vec<_>>())
     }
+
+    /// Retrieve some entity wrapped for change tracking and deferred persistence.
+    ///
+    /// This is equivalent to get_some() but returns an ActiveEntity wrapper.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Some(entity))`: Entity wrapper with change tracking
+    /// - `Ok(None)`: no entities exist in the dataset
+    /// - `Err`: Storage or deserialization error
+    async fn get_some_entity(&self) -> Result<Option<ActiveEntity<'_, Self, E>>> {
+        match self.get_some().await? {
+            Some((id, data)) => Ok(Some(ActiveEntity::new(id, data, self))),
+            None => Ok(None),
+        }
+    }
+
+    /// Create a new entity with the provided data.
+    ///
+    /// This method creates a new entity and returns it wrapped as an ActiveEntity.
+    /// The entity is not automatically saved - call `.save()` to persist it.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: The ID for the new entity
+    /// - `entity`: The entity data
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(ActiveEntity)`: New entity wrapper ready for modification and saving
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let mut user = table.get_entity(&"user123".to_string()).await?
+    ///     .unwrap_or_else(|| table.new_entity("user123".to_string(), User {
+    ///         id: Some("user123".to_string()),
+    ///         name: "Default User".to_string(),
+    ///         active: false,
+    ///     }));
+    ///
+    /// user.active = true;
+    /// user.save().await?;
+    /// ```
+    ///
+    /// # Note
+    ///
+    /// This method does not check if an entity with the given ID already exists.
+    /// Use in combination with `get_entity()` for get-or-create patterns.
+    fn new_entity(&self, id: Self::Id, entity: E) -> ActiveEntity<'_, Self, E> {
+        ActiveEntity::new(id, entity, self)
+    }
 }
 // Auto-implement for any type that has both readable and writable traits
 impl<T, E> ActiveEntitySet<E> for T
 where
     T: ReadableDataSet<E> + WritableDataSet<E>,
-    E: Entity<T::Value>,
+    E: Entity<T::Value>
+        + vantage_types::IntoRecord<T::Value>
+        + vantage_types::TryFromRecord<T::Value>
+        + Send
+        + Sync
+        + Clone,
 {
 }
 

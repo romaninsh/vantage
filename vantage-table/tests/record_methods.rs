@@ -1,10 +1,12 @@
 use serde::{Deserialize, Serialize};
-use vantage_table::mocks::MockTableSource;
-use vantage_table::{Table, record::RecordTable};
+use vantage_dataset::prelude::*;
+use vantage_table::prelude::MockTableSource;
+use vantage_table::table::Table;
+use vantage_types::EmptyEntity;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 struct TestUser {
-    id: i32,
+    id: Option<String>,
     name: String,
     email: String,
     active: bool,
@@ -12,7 +14,7 @@ struct TestUser {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 struct VipUser {
-    id: i32,
+    id: Option<String>,
     name: String,
     email: String,
     vip_level: Option<String>,
@@ -23,20 +25,21 @@ async fn test_iter_records_modify_and_save() {
     let mock = MockTableSource::new().with_data(
         "users",
         vec![
-            serde_json::json!({"id": 1, "name": "Alice", "email": "alice@test.com", "active": false}),
-            serde_json::json!({"id": 2, "name": "Bob", "email": "bob@test.com", "active": false}),
+            serde_json::json!({"id": "1", "name": "Alice", "email": "alice@test.com", "active": false}),
+            serde_json::json!({"id": "2", "name": "Bob", "email": "bob@test.com", "active": false}),
         ],
     );
 
-    let table = Table::new("users", mock).into_entity::<TestUser>();
-    for mut record in table.iter_records().await.unwrap() {
+    let table =
+        Table::<MockTableSource, EmptyEntity>::new("users", mock.await).into_entity::<TestUser>();
+    for mut record in table.list_entities().await.unwrap() {
         record.active = true;
         // MockTableSource now supports save, so this should succeed
         record.save().await.unwrap();
     }
 
     // Verify that modifications persisted
-    let records = table.iter_records().await.unwrap();
+    let records = table.list_entities().await.unwrap();
     for record in records {
         assert!(record.active); // Should now be true after save
     }
@@ -47,12 +50,26 @@ async fn test_get_some_record_modify_workflow() {
     let mock = MockTableSource::new().with_data(
         "users",
         vec![
-            serde_json::json!({"id": 1, "name": "Alice", "email": "alice@test.com", "active": false}),
+            serde_json::json!({"id": "1", "name": "Alice", "email": "alice@test.com", "active": false}),
+            serde_json::json!({"id": "2", "name": "Bob", "email": "bob@test.com", "active": true}),
         ],
     );
 
-    let table = Table::new("users", mock).into_entity::<TestUser>();
-    let mut record = table.get_some_record().await.unwrap().unwrap();
+    let table =
+        Table::<MockTableSource, EmptyEntity>::new("users", mock.await).into_entity::<TestUser>();
+
+    // Test get_entity by ID - existing entity
+    let mut alice = table.get_entity(&"1".to_string()).await.unwrap().unwrap();
+    assert_eq!(alice.name, "Alice");
+    assert_eq!(alice.id(), "1");
+    assert!(!alice.active);
+
+    // Test get_entity by ID - non-existent entity
+    let missing = table.get_entity(&"999".to_string()).await.unwrap();
+    assert!(missing.is_none());
+
+    // Test get_some_entity (any entity)
+    let mut record = table.get_some_entity().await.unwrap().unwrap();
 
     // Verify initial state
     assert_eq!(record.name, "Alice");
@@ -74,8 +91,8 @@ async fn test_get_some_record_modify_workflow() {
     // Save the record (should now succeed with MockTableSource)
     record.save().await.unwrap();
 
-    // Verify changes persisted by fetching the record again
-    let updated_record = table.get_some_record().await.unwrap().unwrap();
+    // Verify changes persisted by fetching the record again using get_entity
+    let updated_record = table.get_entity(&"1".to_string()).await.unwrap().unwrap();
     assert_eq!(updated_record.name, "Alice Updated");
     assert_eq!(updated_record.email, "alice.new@test.com");
     assert!(updated_record.active);
@@ -86,17 +103,23 @@ async fn test_get_some_record_modify_workflow() {
 async fn test_record_type_conversion_workflow() {
     let mock = MockTableSource::new().with_data(
         "users",
-        vec![serde_json::json!({"id": 1, "name": "Alice", "email": "alice@test.com", "active": true})],
+        vec![serde_json::json!({"id": "1", "name": "Alice", "email": "alice@test.com", "active": true})],
     );
 
-    let table = Table::new("users", mock).into_entity::<TestUser>();
-    let record = table.get_some_record().await.unwrap().unwrap();
+    let table =
+        Table::<MockTableSource, EmptyEntity>::new("users", mock.await).into_entity::<TestUser>();
+    let record = table.get_some_entity().await.unwrap().unwrap();
 
-    // Convert TestUser record to VipUser
-    let vip_user: VipUser = record.into_entity();
+    // Convert TestUser record to VipUser (accessing the underlying entity)
+    let vip_user = VipUser {
+        id: record.id.clone(),
+        name: record.name.clone(),
+        email: record.email.clone(),
+        vip_level: None,
+    };
 
     // Verify the conversion worked and preserved data
-    assert_eq!(vip_user.id, 1);
+    assert_eq!(vip_user.id, record.id);
     assert_eq!(vip_user.name, "Alice");
     assert_eq!(vip_user.email, "alice@test.com");
     // New field should have default value
@@ -108,14 +131,15 @@ async fn test_bulk_record_processing() {
     let mock = MockTableSource::new().with_data(
         "users",
         vec![
-            serde_json::json!({"id": 1, "name": "Alice", "email": "alice@old.com", "active": false}),
-            serde_json::json!({"id": 2, "name": "Bob", "email": "bob@old.com", "active": true}),
-            serde_json::json!({"id": 3, "name": "Charlie", "email": "charlie@old.com", "active": false}),
+            serde_json::json!({"id": "1", "name": "Alice", "email": "alice@old.com", "active": false}),
+            serde_json::json!({"id": "2", "name": "Bob", "email": "bob@old.com", "active": true}),
+            serde_json::json!({"id": "3", "name": "Charlie", "email": "charlie@old.com", "active": false}),
         ],
     );
 
-    let table = Table::new("users", mock).into_entity::<TestUser>();
-    let mut records = table.iter_records().await.unwrap();
+    let table =
+        Table::<MockTableSource, EmptyEntity>::new("users", mock.await).into_entity::<TestUser>();
+    let mut records = table.list_entities().await.unwrap();
 
     // Bulk operation: activate inactive users and update their emails
     let mut modified_count = 0;
@@ -153,7 +177,7 @@ async fn test_bulk_record_processing() {
     }
 
     // Verify changes persisted by fetching records again
-    let updated_records = table.iter_records().await.unwrap();
+    let updated_records = table.list_entities().await.unwrap();
     let alice = updated_records.iter().find(|r| r.name == "Alice").unwrap();
     assert!(alice.active);
     assert_eq!(alice.email, "alice@new.com");
@@ -173,13 +197,49 @@ async fn test_bulk_record_processing() {
 #[tokio::test]
 async fn test_empty_table_record_methods() {
     let mock = MockTableSource::new().with_data("users", vec![]);
-    let table = Table::new("users", mock).into_entity::<TestUser>();
+    let table =
+        Table::<MockTableSource, EmptyEntity>::new("users", mock.await).into_entity::<TestUser>();
 
-    // iter_records should return empty vector
-    let records = table.iter_records().await.unwrap();
+    // list_entities should return empty vector
+    let records = table.list_entities().await.unwrap();
     assert_eq!(records.len(), 0);
 
-    // get_some_record should return None
-    let record = table.get_some_record().await.unwrap();
+    // get_entity should return None
+    let record = table.get_some_entity().await.unwrap();
     assert!(record.is_none());
+
+    // Test get_entity or new_entity pattern
+    let mut user = table
+        .get_entity(&"new_user".to_string())
+        .await
+        .unwrap()
+        .unwrap_or_else(|| {
+            table.new_entity(
+                "new_user".to_string(),
+                TestUser {
+                    id: Some("new_user".to_string()),
+                    name: "New User".to_string(),
+                    email: "new@example.com".to_string(),
+                    active: false,
+                },
+            )
+        });
+
+    // Modify the new entity
+    user.active = true;
+    user.email = "updated@example.com".to_string();
+
+    // Save the new entity
+    user.save().await.unwrap();
+
+    // Verify it was created and saved
+    let saved_user = table
+        .get_entity(&"new_user".to_string())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(saved_user.name, "New User");
+    assert_eq!(saved_user.email, "updated@example.com");
+    assert!(saved_user.active);
+    assert_eq!(saved_user.id(), "new_user");
 }
