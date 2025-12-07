@@ -313,7 +313,12 @@ where
 #[async_trait]
 pub trait ActiveEntitySet<E>: ReadableDataSet<E> + WritableDataSet<E>
 where
-    E: Entity<Self::Value>,
+    E: Entity<Self::Value>
+        + vantage_types::IntoRecord<Self::Value>
+        + vantage_types::TryFromRecord<Self::Value>
+        + Send
+        + Sync
+        + Clone,
 {
     /// Retrieve an entity wrapped for change tracking and deferred persistence.
     ///
@@ -349,12 +354,33 @@ where
             .map(|(id, data)| ActiveEntity::new(id, data, self))
             .collect::<Vec<_>>())
     }
+
+    /// Retrieve some entity wrapped for change tracking and deferred persistence.
+    ///
+    /// This is equivalent to get_some() but returns an ActiveEntity wrapper.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Some(entity))`: Entity wrapper with change tracking
+    /// - `Ok(None)`: no entities exist in the dataset
+    /// - `Err`: Storage or deserialization error
+    async fn get_some_entity(&self) -> Result<Option<ActiveEntity<'_, Self, E>>> {
+        match self.get_some().await? {
+            Some((id, data)) => Ok(Some(ActiveEntity::new(id, data, self))),
+            None => Ok(None),
+        }
+    }
 }
 // Auto-implement for any type that has both readable and writable traits
 impl<T, E> ActiveEntitySet<E> for T
 where
     T: ReadableDataSet<E> + WritableDataSet<E>,
-    E: Entity<T::Value>,
+    E: Entity<T::Value>
+        + vantage_types::IntoRecord<T::Value>
+        + vantage_types::TryFromRecord<T::Value>
+        + Send
+        + Sync
+        + Clone,
 {
 }
 
