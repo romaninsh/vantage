@@ -1,7 +1,10 @@
 use async_trait::async_trait;
 use indexmap::IndexMap;
+use rust_decimal::Decimal;
+use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use vantage_dataset::InsertableValueSet;
 use vantage_dataset::{
     ReadableValueSet, WritableValueSet,
@@ -11,14 +14,16 @@ use vantage_dataset::{
 };
 use vantage_expressions::{
     Expression, expr_any,
-    mocks::datasource::{MockExprDataSource, MockSelectableDataSource},
+    mocks::datasource::MockSelectableDataSource,
     mocks::select::MockSelect,
     traits::datasource::{DataSource, ExprDataSource, SelectableDataSource},
+    traits::expressive::{DeferredFn, ExpressiveEnum},
 };
 use vantage_types::{Entity, Record};
 
 use crate::column::column::ColumnType;
 use crate::mocks::mock_column::MockColumn;
+use crate::mocks::mock_type_system::AnyMockType;
 use crate::traits::table_expr_source::TableExprSource;
 use crate::{
     table::Table,
@@ -27,10 +32,10 @@ use crate::{
 
 #[derive(Clone)]
 pub struct MockTableSource {
-    data: Arc<Mutex<HashMap<String, Vec<serde_json::Value>>>>,
+    data: Arc<Mutex<HashMap<String, Vec<Value>>>>,
     im_data_source: ImDataSource,
     select_source: Option<MockSelectableDataSource>,
-    query_source: Option<MockExprDataSource>,
+    query_source: Option<Arc<Mutex<vantage_expressions::mocks::mock_builder::MockBuilder>>>,
 }
 
 impl MockTableSource {
@@ -43,15 +48,14 @@ impl MockTableSource {
         }
     }
 
-    pub fn with_data(self, table_name: &str, data: Vec<serde_json::Value>) -> Self {
+    pub async fn with_data(self, table_name: &str, data: Vec<Value>) -> Self {
+        // Store in HashMap for count operations
         self.data
             .lock()
-            .unwrap()
-            .insert(table_name.to_string(), data);
-        self
-    }
+            .await
+            .insert(table_name.to_string(), data.clone());
 
-    pub async fn with_im_table(self, table_name: &str, data: Vec<serde_json::Value>) -> Self {
+        // Also store in ImDataSource for value operations
         let im_table = ImTable::<vantage_types::EmptyEntity>::new(&self.im_data_source, table_name);
         for value in data {
             if let Some(id) = value.get("id").and_then(|v| v.as_str()) {
@@ -70,8 +74,11 @@ impl MockTableSource {
         self
     }
 
-    pub fn with_query_source(mut self, query_source: MockExprDataSource) -> Self {
-        self.query_source = Some(query_source);
+    pub fn with_query_source(
+        mut self,
+        query_source: vantage_expressions::mocks::mock_builder::MockBuilder,
+    ) -> Self {
+        self.query_source = Some(Arc::new(Mutex::new(query_source)));
         self
     }
 }
@@ -84,110 +91,52 @@ impl Default for MockTableSource {
 
 impl DataSource for MockTableSource {}
 
-impl ExprDataSource<serde_json::Value> for MockTableSource {
-    async fn execute(
-        &self,
-        expr: &Expression<serde_json::Value>,
-    ) -> vantage_core::Result<serde_json::Value> {
-        if let Some(ref query_source) = self.query_source {
-            query_source.execute(expr).await
-        } else {
-            panic!("MockTableSource query source not set. Use with_query_source() to configure it.")
-        }
-    }
-
-    fn defer(
-        &self,
-        expr: Expression<serde_json::Value>,
-    ) -> vantage_expressions::traits::expressive::DeferredFn<serde_json::Value>
-    where
-        serde_json::Value: Clone + Send + Sync + 'static,
-    {
-        if let Some(ref query_source) = self.query_source {
-            query_source.defer(expr)
-        } else {
-            panic!("MockTableSource query source not set. Use with_query_source() to configure it.")
-        }
-    }
-}
-
-impl SelectableDataSource<serde_json::Value> for MockTableSource {
-    type Select = MockSelect;
-
-    fn select(&self) -> Self::Select {
-        if let Some(ref select_source) = self.select_source {
-            select_source.select()
-        } else {
-            panic!(
-                "MockTableSource select source not set. Use with_select_source() to configure it."
-            )
-        }
-    }
-
-    async fn execute_select(
-        &self,
-        select: &Self::Select,
-    ) -> vantage_core::Result<Vec<serde_json::Value>> {
-        if let Some(ref select_source) = self.select_source {
-            select_source.execute_select(select).await
-        } else {
-            panic!(
-                "MockTableSource select source not set. Use with_select_source() to configure it."
-            )
-        }
-    }
-}
-
-impl TableExprSource for MockTableSource {
-    fn get_table_expr_count<E: Entity<Self::Value>>(
-        &self,
-        table: &Table<Self, E>,
-    ) -> vantage_expressions::AssociatedExpression<'_, Self, Self::Value, usize> {
-        let table_name = table.table_name();
-        let expr = expr_any!("select count() from {}", table_name);
-        vantage_expressions::AssociatedExpression::new(expr, self)
-    }
-
-    fn get_table_expr_max<E: Entity<Self::Value>, R: ColumnType>(
-        &self,
-        _table: &Table<Self, E>,
-        column: &Self::Column<R>,
-    ) -> vantage_expressions::AssociatedExpression<'_, Self, Self::Value, R> {
-        let column_name = column.name();
-        let expr = expr_any!("select max({})", column_name);
-        vantage_expressions::AssociatedExpression::new(expr, self)
-    }
-}
-
 #[async_trait]
 impl TableSource for MockTableSource {
     type Column<Type>
         = MockColumn<Type>
     where
-        Type: crate::column::column::ColumnType;
-    type AnyType = serde_json::Value;
-    type Value = serde_json::Value;
+        Type: ColumnType;
+    type AnyType = AnyMockType;
+    type Value = Value;
     type Id = String;
 
-    fn create_column<Type: crate::column::column::ColumnType>(
-        &self,
-        name: &str,
-    ) -> Self::Column<Type> {
+    fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
+        use std::any::TypeId;
+        let type_id = TypeId::of::<Type>();
+
+        if type_id != TypeId::of::<String>()
+            && type_id != TypeId::of::<i64>()
+            && type_id != TypeId::of::<f64>()
+            && type_id != TypeId::of::<Decimal>()
+            && type_id != TypeId::of::<bool>()
+            && type_id != TypeId::of::<Option<String>>()
+            && type_id != TypeId::of::<Option<i64>>()
+            && type_id != TypeId::of::<Option<f64>>()
+            && type_id != TypeId::of::<Option<Decimal>>()
+            && type_id != TypeId::of::<Option<bool>>()
+        {
+            panic!(
+                "Type {:?} is not compatible with mock_type_system. Only String, i64, f64, Decimal, bool and their Optionals are supported.",
+                std::any::type_name::<Type>()
+            );
+        }
+
         MockColumn::new(name)
     }
 
-    fn to_any_column<Type: crate::column::column::ColumnType>(
+    fn to_any_column<Type: ColumnType>(
         &self,
         column: Self::Column<Type>,
     ) -> Self::Column<Self::AnyType> {
-        MockColumn::new(column.name())
+        column.into_type()
     }
 
-    fn from_any_column<Type: crate::column::column::ColumnType>(
+    fn from_any_column<Type: ColumnType>(
         &self,
-        any_column: &Self::Column<Self::AnyType>,
+        any_column: Self::Column<Self::AnyType>,
     ) -> Option<Self::Column<Type>> {
-        Some(MockColumn::new(any_column.name()))
+        Some(any_column.into_type())
     }
 
     fn expr(
@@ -254,13 +203,13 @@ impl TableSource for MockTableSource {
         E: Entity,
         Self: Sized,
     {
-        match self.data.lock().unwrap().get(table.table_name()) {
+        match self.data.lock().await.get(table.table_name()) {
             Some(data) => Ok(data.len() as i64),
             None => Ok(0),
         }
     }
 
-    async fn get_sum<E, Type: crate::column::column::ColumnType>(
+    async fn get_sum<E, Type: ColumnType>(
         &self,
         table: &Table<Self, E>,
         _column: &Self::Column<Type>,
@@ -269,7 +218,7 @@ impl TableSource for MockTableSource {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        let data = self.data.lock().unwrap();
+        let data = self.data.lock().await;
         let _vec = data
             .get(table.table_name())
             .ok_or(VantageError::no_data())?;
@@ -297,7 +246,7 @@ impl TableSource for MockTableSource {
         }
 
         let mut record_with_id = record.clone();
-        record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
+        record_with_id.insert("id".to_string(), Value::String(id.clone()));
 
         im_table.replace_value(id, &record_with_id).await
     }
@@ -314,7 +263,7 @@ impl TableSource for MockTableSource {
         Self: Sized,
     {
         let mut record_with_id = record.clone();
-        record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
+        record_with_id.insert("id".to_string(), Value::String(id.clone()));
 
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
         im_table.replace_value(id, &record_with_id).await
@@ -376,6 +325,122 @@ impl TableSource for MockTableSource {
     }
 }
 
+impl ExprDataSource<Value> for MockTableSource {
+    async fn execute(&self, expr: &Expression<Value>) -> vantage_core::Result<Value> {
+        if let Some(ref query_source) = self.query_source {
+            let source = {
+                let guard = query_source.lock().await;
+                guard.clone()
+            };
+            source.execute(expr).await
+        } else {
+            panic!("MockTableSource query source not set. Use with_query_source() to configure it.")
+        }
+    }
+
+    fn defer(
+        &self,
+        expr: Expression<Value>,
+    ) -> vantage_expressions::traits::expressive::DeferredFn<Value>
+    where
+        Value: Clone + Send + Sync + 'static,
+    {
+        if let Some(ref query_source) = self.query_source {
+            let query_source_clone = query_source.clone();
+            let expr_clone = expr.clone();
+            DeferredFn::new(move || {
+                let query_source = query_source_clone.clone();
+                let expr = expr_clone.clone();
+                Box::pin(async move {
+                    let source = query_source.lock().await;
+                    match source.execute(&expr).await {
+                        Ok(value) => Ok(ExpressiveEnum::Scalar(value)),
+                        Err(e) => Err(e),
+                    }
+                })
+            })
+        } else {
+            panic!("MockTableSource query source not set. Use with_query_source() to configure it.")
+        }
+    }
+}
+
+impl SelectableDataSource<Value> for MockTableSource {
+    type Select = MockSelect;
+
+    fn select(&self) -> Self::Select {
+        if let Some(ref select_source) = self.select_source {
+            select_source.select()
+        } else {
+            panic!(
+                "MockTableSource select source not set. Use with_select_source() to configure it."
+            )
+        }
+    }
+
+    async fn execute_select(&self, select: &Self::Select) -> vantage_core::Result<Vec<Value>> {
+        if let Some(ref select_source) = self.select_source {
+            select_source.execute_select(select).await
+        } else {
+            panic!(
+                "MockTableSource select source not set. Use with_select_source() to configure it."
+            )
+        }
+    }
+}
+
+impl TableExprSource for MockTableSource {
+    fn get_table_expr_count<E: Entity<Self::Value>>(
+        &self,
+        table: &Table<Self, E>,
+    ) -> vantage_expressions::AssociatedExpression<'_, Self, Self::Value, usize> {
+        let table_name = table.table_name();
+
+        // Pre-calculate the count from our data
+        let count = tokio::runtime::Handle::try_current()
+            .map(|handle| {
+                handle.block_on(async {
+                    self.data
+                        .lock()
+                        .await
+                        .get(table_name)
+                        .map(|data| data.len())
+                        .unwrap_or(0)
+                })
+            })
+            .unwrap_or_else(|_| {
+                // Fallback if no runtime is available
+                0
+            });
+
+        // Configure the query source to return this count for the exact query
+        let query_str = format!("select count() from {}", table_name);
+        if let Some(ref query_source) = self.query_source {
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.block_on(async {
+                    let mut source = query_source.lock().await;
+                    *source = source
+                        .clone()
+                        .on_exact_select(&query_str, serde_json::json!(count));
+                });
+            }
+        }
+
+        let expr = expr_any!("select count() from {}", table_name);
+        vantage_expressions::AssociatedExpression::new(expr, self)
+    }
+
+    fn get_table_expr_max<E: Entity<Self::Value>, R: ColumnType>(
+        &self,
+        _table: &Table<Self, E>,
+        column: &Self::Column<R>,
+    ) -> vantage_expressions::AssociatedExpression<'_, Self, Self::Value, R> {
+        let column_name = column.name();
+        let expr = expr_any!("select max({})", column_name);
+        vantage_expressions::AssociatedExpression::new(expr, self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -389,13 +454,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_table_source_with_data() {
-        let mock = MockTableSource::new().with_data(
-            "users",
-            vec![
-                json!({"id": 1, "name": "Alice"}),
-                json!({"id": 2, "name": "Bob"}),
-            ],
-        );
+        let mock = MockTableSource::new()
+            .with_data(
+                "users",
+                vec![
+                    json!({"id": "1", "name": "Alice"}),
+                    json!({"id": "2", "name": "Bob"}),
+                ],
+            )
+            .await;
 
         let table =
             Table::<MockTableSource, TestUser>::new("users", mock).into_entity::<TestUser>();

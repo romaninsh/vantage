@@ -37,7 +37,7 @@ pub trait TableSource: DataSource + Clone + 'static {
     /// Attempt to convert a type-erased column back to typed column
     fn from_any_column<Type: ColumnType>(
         &self,
-        any_column: &Self::Column<Self::AnyType>,
+        any_column: Self::Column<Self::AnyType>,
     ) -> Option<Self::Column<Type>>;
 
     /// Create an expression from a template and parameters, similar to Expression::new

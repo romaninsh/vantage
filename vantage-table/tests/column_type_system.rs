@@ -1,4 +1,28 @@
-//! Type-specific column implementation using Type3 system from vantage-types
+//! This example illustrates the usage of `vantage-type` type system with a custom TableSource
+//!
+//! I borrow example of Type3 system, which support only 3 types: String, Url (as String variant),
+//! and custom Email type. Variants are stored in CBOR format using ciborium::Value, which
+//! guarantees that we would never mix up "String" and "Email" types. On other hand -
+//! Url and String do not have a type boundary - therefore email stored as string can be
+//! loaded as string and vice-versa.
+//!
+//! Table Column is crucial and it would allow definition of type-specific columns. Columns
+//! do not operate with Type variants (String/Email) but rather operate with Rust traits.
+//! This means you can change between String/Url for your column definition, it would not
+//! affect actual storage type. A use-case for this is introducing more user-friendly
+//! types, which are stored as Strings, which works without storage type refactoring.
+//!
+//! Column types introduce type safety when you use conditions, so a good application
+//! interface is needed when types are defined. Here is how we define columns:
+//!
+//! ```rust
+//! let mut table = Table::<Type3TableSource, EmptyEntity>::new("test",
+//!    Type3TableSource::new());
+//! table.add_column_of::<String>("name");
+//! table.add_column_of::<Email>("email");
+//! table.add_column_of::<Url>("website");
+//! ```
+//!
 
 use async_trait::async_trait;
 use indexmap::IndexMap;
@@ -196,6 +220,20 @@ impl TableSource for Type3TableSource {
     type Id = usize;
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
+        // Runtime check for Type3 compatibility
+        use std::any::TypeId;
+        let type_id = TypeId::of::<Type>();
+
+        if type_id != TypeId::of::<String>()
+            && type_id != TypeId::of::<Email>()
+            && type_id != TypeId::of::<Url>()
+        {
+            panic!(
+                "Type {:?} is not compatible with Type3 system. Only String, Email, and Url are supported.",
+                std::any::type_name::<Type>()
+            );
+        }
+
         Type3Column::new(name)
     }
 
@@ -212,7 +250,7 @@ impl TableSource for Type3TableSource {
 
     fn from_any_column<Type: ColumnType>(
         &self,
-        any_column: &Self::Column<Self::AnyType>,
+        any_column: Self::Column<Self::AnyType>,
     ) -> Option<Self::Column<Type>> {
         Some(Type3Column {
             name: any_column.name.clone(),
@@ -420,7 +458,7 @@ mod tests {
 
         let typed_col = ds.create_column::<String>("name");
         let any_col = ds.to_any_column(typed_col);
-        let back_to_typed = ds.from_any_column::<String>(&any_col).unwrap();
+        let back_to_typed = ds.from_any_column::<String>(any_col.clone()).unwrap();
 
         assert_eq!(any_col.name(), "name");
         assert_eq!(back_to_typed.name(), "name");
@@ -439,5 +477,44 @@ mod tests {
         assert_eq!(name_any.type_variant(), Some(Type3Variants::String));
         assert_eq!(email_any.type_variant(), Some(Type3Variants::Email));
         assert_eq!(website_any.type_variant(), Some(Type3Variants::String));
+    }
+
+    #[test]
+    fn test_incompatible_type_usage() {
+        let ds = Type3TableSource::new();
+        let mut table = Table::<Type3TableSource, EmptyEntity>::new("test", ds);
+
+        // These should work fine - compatible types
+        table.add_column_of::<String>("name");
+        table.add_column_of::<Email>("email");
+        table.add_column_of::<Url>("website");
+
+        // This should panic at runtime because i32 is not Type3-compatible:
+        let result = std::panic::catch_unwind(|| {
+            let mut test_table =
+                Table::<Type3TableSource, EmptyEntity>::new("test2", Type3TableSource::new());
+            test_table.add_column_of::<i32>("age");
+        });
+        assert!(result.is_err()); // Should panic
+
+        // Only Type3-compatible types work:
+        assert!(table.columns().contains_key("name"));
+        assert!(table.columns().contains_key("email"));
+        assert!(table.columns().contains_key("website"));
+
+        // The real issue would appear when trying to use Type3 conversion:
+        // AnyType3::new(42i32) would fail to compile because i32 doesn't implement Type3
+
+        // Demonstrate that non-Type3 types can't be used with AnyType3:
+        let string_val = String::from("test");
+        let _any_string = AnyType3::new(string_val); // This works
+
+        let email_val = Email::new("test", "example.com");
+        let _any_email = AnyType3::new(email_val); // This works
+
+        // let int_val = 42i32;
+        // let _any_int = AnyType3::new(int_val); // This would NOT compile!
+
+        assert_eq!(table.columns().len(), 3); // Only the 3 compatible types
     }
 }

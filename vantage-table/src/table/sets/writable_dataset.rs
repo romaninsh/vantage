@@ -82,7 +82,7 @@ mod tests {
         ];
 
         let mock_source = MockTableSource::new()
-            .with_im_table("test_table", mock_data)
+            .with_data("test_table", mock_data)
             .await;
         let table = Table::<MockTableSource, TestUser>::new("test_table", mock_source);
 
@@ -174,7 +174,7 @@ mod tests {
         let mock_data = vec![json!({"id": "1", "name": "Alice", "age": 30})];
 
         let mock_source = MockTableSource::new()
-            .with_im_table("test_table", mock_data)
+            .with_data("test_table", mock_data)
             .await;
         let table = Table::<MockTableSource, TestUser>::new("test_table", mock_source);
 

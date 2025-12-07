@@ -68,7 +68,7 @@ mod tests {
         ];
 
         let mock_source = MockTableSource::new()
-            .with_im_table("test_table", mock_data)
+            .with_data("test_table", mock_data)
             .await;
         let table = Table::<MockTableSource, TestUser>::new("test_table", mock_source);
 
@@ -108,7 +108,7 @@ mod tests {
 
         // Test get_some() with empty table
         let empty_source = MockTableSource::new()
-            .with_im_table("empty_table", vec![])
+            .with_data("empty_table", vec![])
             .await;
         let empty_table = Table::<MockTableSource, TestUser>::new("empty_table", empty_source);
         let empty_result = empty_table.get_some().await.unwrap();
@@ -123,7 +123,7 @@ mod tests {
         ];
 
         let mock_source = MockTableSource::new()
-            .with_im_table("invalid_table", invalid_mock_data)
+            .with_data("invalid_table", invalid_mock_data)
             .await;
         let table = Table::<MockTableSource, TestUser>::new("invalid_table", mock_source);
 
