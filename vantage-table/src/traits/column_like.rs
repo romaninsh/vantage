@@ -1,15 +1,22 @@
+use serde_json::Value;
 use std::collections::HashSet;
 
-use crate::column::flags::ColumnFlag;
+use crate::column::{column::ColumnType, flags::ColumnFlag};
 
-/// Trait defines a minimal implementation for a Table column
+/// Trait defines a minimal implementation for a Table column with type information
 ///
-pub trait ColumnLike: Send + Sync + std::fmt::Debug {
+pub trait ColumnLike<T = Value>: Send + Sync + std::fmt::Debug
+where
+    T: ColumnType,
+{
     fn name(&self) -> &str;
-    fn alias(&self) -> Option<&str>;
+    fn alias(&self) -> Option<&str> {
+        None
+    }
     fn flags(&self) -> HashSet<ColumnFlag>;
     fn as_any(&self) -> &dyn std::any::Any;
     fn into_any(self: Box<Self>) -> Box<dyn std::any::Any>;
-    fn get_type(&self) -> &'static str;
-    fn clone_box(&self) -> Box<dyn ColumnLike>;
+    fn get_type(&self) -> &'static str {
+        std::any::type_name::<T>()
+    }
 }

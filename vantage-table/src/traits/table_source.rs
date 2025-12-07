@@ -9,6 +9,7 @@ use vantage_expressions::{
 use vantage_types::{Entity, Record};
 
 use crate::{
+    column::column::ColumnType,
     table::Table,
     traits::{column_like::ColumnLike, table_like::TableLike},
 };
@@ -17,12 +18,27 @@ use crate::{
 /// TableSource represents a data source that can create and manage tables
 #[async_trait]
 pub trait TableSource: DataSource + Clone + 'static {
-    type Column: ColumnLike + Clone + 'static;
+    type Column<Type>: ColumnLike<Type> + Clone
+    where
+        Type: ColumnType;
+    type AnyType: ColumnType;
     type Value: Clone + Send + Sync + 'static;
     type Id: Send + Sync + Clone + Hash + Eq + 'static;
 
     /// Create a new column with the given name
-    fn create_column(&self, name: &str, table: impl TableLike) -> Self::Column;
+    fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type>;
+
+    /// Convert a typed column to type-erased column
+    fn to_any_column<Type: ColumnType>(
+        &self,
+        column: Self::Column<Type>,
+    ) -> Self::Column<Self::AnyType>;
+
+    /// Attempt to convert a type-erased column back to typed column
+    fn from_any_column<Type: ColumnType>(
+        &self,
+        any_column: &Self::Column<Self::AnyType>,
+    ) -> Option<Self::Column<Type>>;
 
     /// Create an expression from a template and parameters, similar to Expression::new
     fn expr(
@@ -80,7 +96,11 @@ pub trait TableSource: DataSource + Clone + 'static {
         Self: Sized;
 
     /// Get sum of a column in the table
-    async fn get_sum<E>(&self, table: &Table<Self, E>, column: &Self::Column) -> Result<i64>
+    async fn get_sum<E, Type: ColumnType>(
+        &self,
+        table: &Table<Self, E>,
+        column: &Self::Column<Type>,
+    ) -> Result<Type>
     where
         E: Entity<Self::Value>,
         Self: Sized;

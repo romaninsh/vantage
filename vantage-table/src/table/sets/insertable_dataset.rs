@@ -25,7 +25,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mocks::tablesource::MockTableSource;
+    use crate::mocks::mock_table_source::MockTableSource;
     use serde::{Deserialize, Serialize};
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
