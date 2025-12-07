@@ -18,7 +18,7 @@ use vantage_expressions::{
 use vantage_types::{Entity, Record};
 
 use crate::column::column::ColumnType;
-use crate::mocks::column::MockColumn;
+use crate::mocks::mock_column::MockColumn;
 use crate::traits::table_expr_source::TableExprSource;
 use crate::{
     table::Table,
@@ -165,7 +165,7 @@ impl TableSource for MockTableSource {
         = MockColumn<Type>
     where
         Type: crate::column::column::ColumnType;
-    type AnyColumn = MockColumn<serde_json::Value>;
+    type AnyType = serde_json::Value;
     type Value = serde_json::Value;
     type Id = String;
 
@@ -179,13 +179,13 @@ impl TableSource for MockTableSource {
     fn to_any_column<Type: crate::column::column::ColumnType>(
         &self,
         column: Self::Column<Type>,
-    ) -> Self::AnyColumn {
+    ) -> Self::Column<Self::AnyType> {
         MockColumn::new(column.name())
     }
 
     fn from_any_column<Type: crate::column::column::ColumnType>(
         &self,
-        any_column: &Self::AnyColumn,
+        any_column: &Self::Column<Self::AnyType>,
     ) -> Option<Self::Column<Type>> {
         Some(MockColumn::new(any_column.name()))
     }
@@ -200,12 +200,12 @@ impl TableSource for MockTableSource {
 
     fn search_expression(
         &self,
-        table: &impl TableLike,
+        _table: &impl TableLike,
         search_value: &str,
     ) -> Expression<Self::Value> {
         // Mock implementation: search in "name" field if it exists
-        let columns = table.columns();
-        if columns.contains_key("name") {
+        // Simple mock - search in name field if exists (mock implementation)
+        if true {
             expr_any!("name LIKE '%{}%'", search_value)
         } else {
             panic!("Mock can only search column `name` as fulltext search")
@@ -263,25 +263,19 @@ impl TableSource for MockTableSource {
     async fn get_sum<E, Type: crate::column::column::ColumnType>(
         &self,
         table: &Table<Self, E>,
-        column: &Self::Column<Type>,
+        _column: &Self::Column<Type>,
     ) -> Result<Type>
     where
         E: Entity<Self::Value>,
         Self: Sized,
     {
         let data = self.data.lock().unwrap();
-        let vec = data
+        let _vec = data
             .get(table.table_name())
             .ok_or(VantageError::no_data())?;
 
-        // Mock implementation - just return default value
-        // Real implementation would sum values from the specified column
-        let _total = vec.len(); // Use data to avoid unused warning
-
-        // For mock, return zero-equivalent (unsafe but needed for mock)
-        use std::mem;
-        let result: Type = unsafe { mem::zeroed() };
-        Ok(result)
+        // Mock implementation - sum not supported
+        Err(vantage_core::error!("Sum not implemented for MockTableSource").into())
     }
 
     /// Insert a record as Record value (for WritableValueSet implementation)

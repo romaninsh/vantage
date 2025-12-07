@@ -95,9 +95,7 @@ where
         self
     }
 
-    fn get_type(&self) -> &'static str {
-        "column"
-    }
+    // get_type() uses the trait default implementation: std::any::type_name::<T>()
 }
 
 impl<T> Expressive<T> for Column<T>

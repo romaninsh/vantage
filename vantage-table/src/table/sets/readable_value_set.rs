@@ -25,7 +25,7 @@ impl<T: TableSource, E: Entity<T::Value>> ReadableValueSet for Table<T, E> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mocks::tablesource::MockTableSource;
+    use crate::mocks::mock_table_source::MockTableSource;
     use serde_json::json;
     use vantage_types::EmptyEntity;
 

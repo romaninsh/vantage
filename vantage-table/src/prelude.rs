@@ -30,7 +30,7 @@ pub use crate::pagination::Pagination;
 pub use crate::conditions::ConditionHandle;
 
 // Mock functionality for testing
-pub use crate::mocks::tablesource::MockTableSource;
+pub use crate::mocks::mock_table_source::MockTableSource;
 
 // TODO: Re-enable these when modules are implemented
 // Record functionality

@@ -10,9 +10,13 @@ where
     T: ColumnType,
 {
     fn name(&self) -> &str;
-    fn alias(&self) -> Option<&str>;
+    fn alias(&self) -> Option<&str> {
+        None
+    }
     fn flags(&self) -> HashSet<ColumnFlag>;
     fn as_any(&self) -> &dyn std::any::Any;
     fn into_any(self: Box<Self>) -> Box<dyn std::any::Any>;
-    fn get_type(&self) -> &'static str;
+    fn get_type(&self) -> &'static str {
+        std::any::type_name::<T>()
+    }
 }

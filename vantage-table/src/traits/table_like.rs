@@ -1,20 +1,14 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use indexmap::IndexMap;
 use vantage_core::Result;
 use vantage_dataset::prelude::{ReadableValueSet, WritableValueSet};
 use vantage_expressions::AnyExpression;
 
-use crate::{conditions::ConditionHandle, pagination::Pagination, traits::column_like::ColumnLike};
+use crate::{conditions::ConditionHandle, pagination::Pagination};
 
 /// Dyn-safe trait for table operations.
 #[async_trait]
 pub trait TableLike: ReadableValueSet + WritableValueSet + Send + Sync {
-    /// Get all columns as boxed ColumnLike trait objects
-    fn columns(&self) -> Arc<IndexMap<String, Arc<dyn ColumnLike>>>;
-    fn get_column(&self, name: &str) -> Option<Arc<dyn ColumnLike>>;
-
     fn table_name(&self) -> &str;
     fn table_alias(&self) -> &str;
 
@@ -46,13 +40,4 @@ pub trait TableLike: ReadableValueSet + WritableValueSet + Send + Sync {
 
     /// Get count of records in the table
     async fn get_count(&self) -> Result<i64>;
-
-    /// Get sum of a column in the table
-    async fn get_sum(&self, column: &dyn ColumnLike) -> Result<i64>;
-
-    /// Get the title field column if set
-    fn title_field(&self) -> Option<Arc<dyn ColumnLike>>;
-
-    /// Get the id field column if set
-    fn id_field(&self) -> Option<Arc<dyn ColumnLike>>;
 }

@@ -8,6 +8,7 @@ use crate::traits::column_like::ColumnLike;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::marker::PhantomData;
+use vantage_expressions::{Expression, Expressive, expr_any};
 
 /// Simple column implementation for testing mocks
 #[derive(Debug, Clone)]
@@ -36,10 +37,6 @@ impl<T: ColumnType> ColumnLike<T> for MockColumn<T> {
         &self.name
     }
 
-    fn alias(&self) -> Option<&str> {
-        None
-    }
-
     fn flags(&self) -> HashSet<ColumnFlag> {
         self.flags.clone()
     }
@@ -50,10 +47,6 @@ impl<T: ColumnType> ColumnLike<T> for MockColumn<T> {
 
     fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
-    }
-
-    fn get_type(&self) -> &'static str {
-        "any"
     }
 }
 

@@ -18,7 +18,7 @@ where
     pub(super) data_source: T,
     pub(super) _phantom: PhantomData<E>,
     pub(super) table_name: String,
-    pub(super) columns: IndexMap<String, T::AnyColumn>,
+    pub(super) columns: IndexMap<String, T::Column<T::AnyType>>,
     pub(super) conditions: IndexMap<i64, Expression<T::Value>>,
     pub(super) next_condition_id: i64,
     pub(super) order_by: IndexMap<i64, (Expression<T::Value>, SortDirection)>,
@@ -96,41 +96,27 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     }
 
     /// Get the title field column if set
-    pub fn title_field(&self) -> Option<&T::AnyColumn> {
+    pub fn title_field(&self) -> Option<&T::Column<T::AnyType>> {
         self.title_field
             .as_ref()
             .and_then(|name| self.columns.get(name))
     }
 
     /// Get the id field column if set
-    pub fn id_field(&self) -> Option<&T::AnyColumn> {
+    pub fn id_field(&self) -> Option<&T::Column<T::AnyType>> {
         self.id_field
             .as_ref()
             .and_then(|name| self.columns.get(name))
     }
 
-    /// Get all columns as type-erased columns
-    pub fn columns(&self) -> &IndexMap<String, T::AnyColumn> {
-        &self.columns
-    }
-
-    /// Get a column by name as type-erased column
-    pub fn column(&self, name: &str) -> Option<&T::AnyColumn> {
-        self.columns.get(name)
-    }
-
-    /// Get a typed column by converting from stored AnyColumn
-    pub fn get_column<Type>(&self, name: &str) -> Option<T::Column<Type>>
-    where
-        Type: crate::column::column::ColumnType,
-    {
-        let any_column = self.columns.get(name)?;
-        self.data_source.from_any_column::<Type>(any_column)
-    }
+    // /// Get a column by name as type-erased column
+    // pub fn column(&self, name: &str) -> Option<&T::Column<T::AnyType>> {
+    //     self.columns.get(name)
+    // }
 }
 
 impl<T: TableSource, E: Entity<T::Value>> std::ops::Index<&str> for Table<T, E> {
-    type Output = T::AnyColumn;
+    type Output = T::Column<T::AnyType>;
 
     fn index(&self, index: &str) -> &Self::Output {
         &self.columns[index]

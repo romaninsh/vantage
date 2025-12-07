@@ -2265,12 +2265,15 @@ name = "vantage-table"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "ciborium",
  "indexmap",
  "mockall",
+ "paste",
  "serde",
  "serde_json",
  "surreal-client",
  "tokio",
+ "url",
  "vantage-core",
  "vantage-dataset",
  "vantage-expressions",

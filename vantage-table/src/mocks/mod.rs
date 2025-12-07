@@ -1,7 +1,4 @@
-pub mod column;
-pub mod mock_typed_table_source;
-pub mod tablesource;
-pub mod type_column;
+pub mod mock_column;
+pub mod mock_table_source;
 
-pub use column::MockColumn;
-pub use mock_typed_table_source::MockTypedTableSource;
+pub use mock_column::MockColumn;

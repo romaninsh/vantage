@@ -1,7 +1,4 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
-use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_expressions::{AnyExpression, Expression};
 use vantage_types::Entity;
@@ -10,7 +7,7 @@ use crate::{
     conditions::ConditionHandle,
     pagination::Pagination,
     table::Table,
-    traits::{column_like::ColumnLike, table_like::TableLike, table_source::TableSource},
+    traits::{table_like::TableLike, table_source::TableSource},
 };
 
 #[async_trait]
@@ -19,21 +16,6 @@ where
     T: TableSource + Send + Sync,
     E: Send + Sync,
 {
-    fn columns(&self) -> Arc<IndexMap<String, Arc<dyn ColumnLike>>> {
-        let arc_columns: IndexMap<String, Arc<dyn ColumnLike>> = self
-            .columns
-            .iter()
-            .map(|(k, v)| (k.clone(), Arc::new(v.clone()) as Arc<dyn ColumnLike>))
-            .collect();
-        Arc::new(arc_columns)
-    }
-
-    fn get_column(&self, name: &str) -> Option<Arc<dyn ColumnLike>> {
-        self.columns
-            .get(name)
-            .map(|col| Arc::new(col.clone()) as Arc<dyn ColumnLike>)
-    }
-
     fn table_alias(&self) -> &str {
         self.table_name()
     }
@@ -83,7 +65,7 @@ where
     }
 
     fn clone_box(&self) -> Box<dyn TableLike<Value = Self::Value, Id = Self::Id>> {
-        Box::new(self.clone())
+        Box::new((*self).clone())
     }
 
     fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
@@ -104,25 +86,5 @@ where
 
     async fn get_count(&self) -> Result<i64> {
         self.data_source().get_count(self).await
-    }
-
-    async fn get_sum(&self, column: &dyn ColumnLike) -> Result<i64> {
-        // For AnyColumn, we need to find the original column and downcast it
-        let any_column = self
-            .columns
-            .get(column.name())
-            .ok_or_else(|| error!("Column not found", column = column.name()))?;
-
-        // This is a mock implementation - real implementations would need to handle
-        // type-specific sum operations based on the column's actual type
-        Ok(0)
-    }
-
-    fn title_field(&self) -> Option<Arc<dyn ColumnLike>> {
-        Table::title_field(self).map(|col| Arc::new(col.clone()) as Arc<dyn ColumnLike>)
-    }
-
-    fn id_field(&self) -> Option<Arc<dyn ColumnLike>> {
-        Table::id_field(self).map(|col| Arc::new(col.clone()) as Arc<dyn ColumnLike>)
     }
 }

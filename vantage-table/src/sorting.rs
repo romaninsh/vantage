@@ -39,7 +39,7 @@ pub struct OrderHandle(pub(super) i64);
 #[cfg(test)]
 mod tests {
     use crate::{
-        mocks::tablesource::MockTableSource,
+        mocks::mock_table_source::MockTableSource,
         table::{Table, sorting::OrderByExt},
     };
 

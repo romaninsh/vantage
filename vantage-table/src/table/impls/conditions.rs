@@ -43,7 +43,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
 
 #[cfg(test)]
 mod tests {
-    use crate::mocks::tablesource::MockTableSource;
+    use crate::mocks::mock_table_source::MockTableSource;
 
     use super::*;
     use vantage_expressions::expr_any;
