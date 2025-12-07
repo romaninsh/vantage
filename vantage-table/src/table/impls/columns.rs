@@ -65,7 +65,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         Type: crate::column::column::ColumnType,
     {
         let any_column = self.columns.get(name)?;
-        self.data_source.from_any_column::<Type>(any_column)
+        self.data_source.from_any_column::<Type>(any_column.clone())
     }
 }
 

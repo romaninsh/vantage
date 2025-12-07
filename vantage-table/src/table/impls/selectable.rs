@@ -108,7 +108,7 @@ mod tests {
     use super::*;
     use crate::mocks::mock_table_source::MockTableSource;
     use serde_json::json;
-    use vantage_expressions::mocks::datasource::{MockExprDataSource, MockSelectableDataSource};
+    use vantage_expressions::mocks::datasource::MockSelectableDataSource;
     use vantage_expressions::traits::datasource::ExprDataSource;
 
     #[tokio::test]
@@ -118,7 +118,8 @@ mod tests {
             {"id": "2", "name": "Bob", "age": 25}
         ]));
 
-        let mock_query_source = MockExprDataSource::new(json!({"count": 42}));
+        let mock_query_source = vantage_expressions::mocks::mock_builder::new()
+            .on_exact_select("SELECT COUNT(*) FROM \"users\"", json!(42));
 
         let table = MockTableSource::new()
             .with_data(
@@ -128,6 +129,7 @@ mod tests {
                     json!({"id": "2", "name": "Bob", "age": 25}),
                 ],
             )
+            .await
             .with_select_source(mock_select_source)
             .with_query_source(mock_query_source);
         let table = Table::<_, vantage_types::EmptyEntity>::new("users", table);

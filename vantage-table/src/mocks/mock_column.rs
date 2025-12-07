@@ -8,7 +8,6 @@ use crate::traits::column_like::ColumnLike;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::marker::PhantomData;
-use vantage_expressions::{Expression, Expressive, expr_any};
 
 /// Simple column implementation for testing mocks
 #[derive(Debug, Clone)]
@@ -27,6 +26,17 @@ impl<T: ColumnType> MockColumn<T> {
         Self {
             name: name.into(),
             flags: HashSet::new(),
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn into_type<T2: ColumnType>(self) -> MockColumn<T2>
+    where
+        T: ColumnType,
+    {
+        MockColumn::<T2> {
+            name: self.name,
+            flags: self.flags,
             _phantom: PhantomData,
         }
     }

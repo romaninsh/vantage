@@ -24,9 +24,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insertable_value_set_implementation() {
-        let mock_source = MockTableSource::new()
-            .with_im_table("test_table", vec![])
-            .await;
+        let mock_source = MockTableSource::new().with_data("test_table", vec![]).await;
         let table = Table::<MockTableSource, EmptyEntity>::new("test_table", mock_source);
 
         // Test insert_return_id_value with no ID in record

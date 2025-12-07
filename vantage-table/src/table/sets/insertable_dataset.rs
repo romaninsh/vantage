@@ -38,7 +38,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insertable_dataset_implementation() {
-        let mock_source = MockTableSource::new().with_im_table("events", vec![]).await;
+        let mock_source = MockTableSource::new().with_data("events", vec![]).await;
         let table = Table::<MockTableSource, TestEvent>::new("events", mock_source);
 
         // Test insert_return_id with entity without ID (should generate new ID)
@@ -98,7 +98,7 @@ mod tests {
     #[tokio::test]
     async fn test_entity_conversion_for_insert() {
         let mock_source = MockTableSource::new()
-            .with_im_table("test_events", vec![])
+            .with_data("test_events", vec![])
             .await;
         let table = Table::<MockTableSource, TestEvent>::new("test_events", mock_source);
 
