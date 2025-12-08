@@ -49,35 +49,43 @@ Vantage offers the following features out of the box:
 With all of the fundamental blocks and interfaces in place, Vantage can be extended in several ways.
 First - persistence implementation:
 
-- `vantage-surrealdb` - Implements all interfaces to interact with this powerful multi-modal
-  database with support for custom types, schemaless tables, graph-based queries and live tables.
-  Brings `SurrealSelect`, `SurrealColumn` types and also makes use of `SurrealType` that include
-  Geospatial, 128-bit `Decimal` and other advanced types.
-- `vantage-sql` - Implementation utilising SQLx and providing support for MySQL, PostgreSQL and
-  SQLite.
-- `vantage-mongo` - Implementation for MongoDB database.
+- [`vantage-surrealdb`](vantage-surrealdb/README.md) - Implements all interfaces to interact with
+  this powerful multi-modal database with support for custom types, schemaless tables, graph-based
+  queries and live tables. Brings `SurrealSelect`, `SurrealColumn` types and also makes use of
+  `SurrealType` that include Geospatial, 128-bit `Decimal` and other advanced types. Built on
+  [`surreal-client`](surreal-client/README.md).
+
 - `vantage-redb` - Implementation for Redb embedded database, providing some basic features. Perfect
   a local cache.
 
 On the other end, Vantage offers some adapters. Those would work with `Table` / `AnyTable` and
 implement generic UI or API component:
 
-- vantage-ui-adaptors - Implement DataGrid for Tauri, EGui, Cursive, GPUI, RatatUI and Slint
-  frameworks.
+- [`vantage-ui-adapters`](vantage-ui-adapters/README.md) - Implement DataGrid for Tauri, EGui,
+  Cursive, GPUI, RatatUI and Slint frameworks.
 - vantage-axum`*` - Implements builder for Axum supporting use of typed or generic tables.
 - vantage-config - Reads Entity definitions from `yaml` file, creating type-erased `AnyTable`s.
 - Vantage Admin`*` - Desktop Application for Entity management based on `yaml` config.
 
 (`*` indicate commercial component)
 
-Vantage `0.3` is almost here. Remaining features include:
+Vantage `0.4` is almost here. New features include:
 
+- **Full type system overhaul** - Complete redesign of the type mapping system for better database
+  compatibility
+- **Cross-database integration** - Seamless queries and operations across different database types
+- **Binary CBOR support** - Migrated SurrealDB client from JSON to binary CBOR for improved
+  performance
 - References`(implemented)` allowing to traverse between `Table<Client>` into `Table<Order>`, even
   if those tables are stored in different databases.
-- Expressions`(0.3)` allow Table columns to be calculated based on subqueries and references.
-- Hooks`(0.3)` attach 3rd party code plugins into Tables.
-- Validation`(0.3)` use standard and advanced validation through a hook mechanism.
-- Audit`(0.3)` capture modifications automatically and store in same or a different persistence.
+- Expressions`(implemented)` allow Table columns to be calculated based on subqueries and
+  references.
+
+Features planned for `0.5`:
+
+- **Hooks** - Attach 3rd party code plugins into Tables.
+- **Validation** - Use standard and advanced validation through a hook mechanism.
+- **Audit** - Capture modifications automatically and store in same or a different persistence.
 
 Vantage is planning to add the following features before `1.0`:
 
@@ -633,14 +641,22 @@ API response for `GET /orders?client_id=2&page=1`
 ]
 ```
 
+## What's Coming in v0.5
+
+Work-in-progress features for the next release:
+
+- [`vantage-sql`](vantage-sql/README.md) - Implementation utilising SQLx and providing support for
+  MySQL, PostgreSQL and SQLite.
+- [`vantage-mongodb`](vantage-mongodb/README.md) - Implementation for MongoDB database.
+- **Live Tables** - Mutexed tables with real-time updates and CDC integration.
+
 ## Roadmap
 
 Vantage needs a bit more work. Large number of features is already implemented, but some notable
 features are still missing:
 
-- Joins - were present in 0.2, but not yet implemented in 0.3 (read and write)
-- Live Table - Mutexed table with real-time updates
-- Aggregate columns - were in 0.2, but not yet implemented in 0.3
+- Joins - were present in 0.2, but not yet implemented in 0.4 (read and write)
+- Aggregate columns - were in 0.2, but not yet implemented in 0.4
 - Column hooks - allowing field mappings and custom calculation is still TODO.
 - Cleanups - still missing some Any\* types.
 - Interface consistency - more methods must return (id, E) tuple.
@@ -648,7 +664,6 @@ features are still missing:
 - Type support for SQL
 - Oracle, because why not!
 - Graph relations - implement hasMany support for Graph databases
-- More love for Mongo
 - Consider Neq4ql crate
 - Implement some RestAPI adaptors (e.g. GitLab)
 - Aggregators (grouping queries) for SQL and SurrealDB
