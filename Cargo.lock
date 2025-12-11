@@ -902,6 +902,8 @@ checksum = "6717a8d2a5a929a1a2eb43a12812498ed141a0bcfb7e8f7844fbdbe4303bba9f"
 dependencies = [
  "equivalent",
  "hashbrown 0.16.0",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -974,6 +976,12 @@ name = "log"
 version = "0.4.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
+
+[[package]]
+name = "md5"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae960838283323069879657ca3de837e9f7bbb4c7bf6ea7f1b290d5e9476d2e0"
 
 [[package]]
 name = "memchr"
@@ -1632,9 +1640,21 @@ version = "1.0.145"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "402a6f66d8c709116cf22f558eab210f5a50187f702eb4d7e5ef38d9a7f1c79c"
 dependencies = [
+ "indexmap",
  "itoa",
  "memchr",
  "ryu",
+ "serde",
+ "serde_core",
+]
+
+[[package]]
+name = "serde_path_to_error"
+version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10a9ff822e371bb5403e391ecd83e182e0e77ba7f6fe0160b795797109d1b457"
+dependencies = [
+ "itoa",
  "serde",
  "serde_core",
 ]
@@ -2269,6 +2289,31 @@ dependencies = [
  "tokio-test",
  "vantage-core",
  "vantage-dataset",
+]
+
+[[package]]
+name = "vantage-surrealdb"
+version = "0.3.0"
+dependencies = [
+ "async-trait",
+ "base64",
+ "chrono",
+ "ciborium",
+ "hex",
+ "indexmap",
+ "md5",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "surreal-client",
+ "thiserror 2.0.17",
+ "tokio",
+ "uuid",
+ "vantage-core",
+ "vantage-dataset",
+ "vantage-expressions",
+ "vantage-table",
 ]
 
 [[package]]
