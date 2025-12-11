@@ -12,16 +12,6 @@ use vantage_expressions::{
     traits::expressive::ExpressiveEnum,
 };
 
-// Simple test entity
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default)]
-struct User {
-    id: String,
-    name: String,
-    email: String,
-}
-
-// Entity is automatically implemented via blanket impl
-
 // Simplified mockbuilder to demonstrate the concept works
 #[derive(Debug, Clone)]
 struct SimpleMockBuilder {
