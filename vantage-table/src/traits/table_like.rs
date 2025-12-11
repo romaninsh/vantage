@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use indexmap::IndexMap;
 use vantage_core::Result;
 use vantage_dataset::prelude::{ReadableValueSet, WritableValueSet};
 use vantage_expressions::AnyExpression;

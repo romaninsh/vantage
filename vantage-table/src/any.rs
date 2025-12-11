@@ -7,19 +7,25 @@ use std::any::TypeId;
 
 use async_trait::async_trait;
 use indexmap::IndexMap;
-use vantage_core::{Entity, Result, error};
+use serde_json::Value;
+use vantage_core::{Result, error};
 use vantage_dataset::traits::{ReadableValueSet, ValueSet, WritableValueSet};
+use vantage_types::{Entity, Record};
+
+// Type alias for cleaner code
+pub type AnyRecord = Record<Value>;
 
 use crate::{
     conditions::ConditionHandle,
     pagination::Pagination,
     table::Table,
-    traits::{column_like::ColumnLike, table_like::TableLike, table_source::TableSource},
+    traits::{table_like::TableLike, table_source::TableSource},
 };
 
 /// Type-erased table that can be downcast to concrete `Table<T, E>`
+/// Works with AnyRecord (which uses serde_json::Value)
 pub struct AnyTable {
-    inner: Box<dyn TableLike<Value = serde_json::Value, Id = String>>,
+    inner: Box<dyn TableLike<Value = Value, Id = String>>,
     datasource_type_id: TypeId,
     entity_type_id: TypeId,
     datasource_name: &'static str,
@@ -29,7 +35,7 @@ pub struct AnyTable {
 impl AnyTable {
     /// Create a new AnyTable from a concrete table
     /// Only works with tables that use serde_json::Value as their Value type
-    pub fn new<T: TableSource<Value = serde_json::Value> + 'static, E: Entity + 'static>(
+    pub fn new<T: TableSource<Value = Value, Id = String> + 'static, E: Entity<Value> + 'static>(
         table: Table<T, E>,
     ) -> Self {
         Self {
@@ -44,7 +50,12 @@ impl AnyTable {
     /// Attempt to downcast to a concrete `Table<T, E>`
     ///
     /// Returns `Err(self)` if the type doesn't match, allowing recovery
-    pub fn downcast<T: TableSource + 'static, E: Entity + 'static>(self) -> Result<Table<T, E>> {
+    pub fn downcast<
+        T: TableSource<Value = Value, Id = String> + 'static,
+        E: Entity<Value> + 'static,
+    >(
+        self,
+    ) -> Result<Table<T, E>> {
         // Check TypeIds for better error messages
         if self.datasource_type_id != TypeId::of::<T>() {
             let expected = std::any::type_name::<T>();
@@ -92,7 +103,7 @@ impl AnyTable {
     }
 
     /// Check if this table matches the given types
-    pub fn is_type<T: TableSource + 'static, E: Entity + 'static>(&self) -> bool {
+    pub fn is_type<T: TableSource + 'static, E: Entity<Value> + 'static>(&self) -> bool {
         self.datasource_type_id == TypeId::of::<T>() && self.entity_type_id == TypeId::of::<E>()
     }
 }
@@ -121,21 +132,21 @@ impl std::fmt::Debug for AnyTable {
 // Implement ValueSet first
 impl ValueSet for AnyTable {
     type Id = String;
-    type Value = serde_json::Value;
+    type Value = Value;
 }
 
 // Implement ReadableValueSet by delegating to inner TableLike
 #[async_trait]
 impl ReadableValueSet for AnyTable {
-    async fn list_values(&self) -> Result<IndexMap<Self::Id, Self::Value>> {
+    async fn list_values(&self) -> Result<IndexMap<Self::Id, Record<Self::Value>>> {
         self.inner.list_values().await
     }
 
-    async fn get_value(&self, id: &Self::Id) -> Result<Self::Value> {
+    async fn get_value(&self, id: &Self::Id) -> Result<Record<Self::Value>> {
         self.inner.get_value(id).await
     }
 
-    async fn get_some_value(&self) -> Result<Option<(Self::Id, Self::Value)>> {
+    async fn get_some_value(&self) -> Result<Option<(Self::Id, Record<Self::Value>)>> {
         self.inner.get_some_value().await
     }
 }
@@ -143,15 +154,27 @@ impl ReadableValueSet for AnyTable {
 // Implement WritableValueSet by delegating to inner TableLike
 #[async_trait]
 impl WritableValueSet for AnyTable {
-    async fn insert_value(&self, id: &Self::Id, record: Self::Value) -> Result<()> {
+    async fn insert_value(
+        &self,
+        id: &Self::Id,
+        record: &Record<Self::Value>,
+    ) -> Result<Record<Self::Value>> {
         self.inner.insert_value(id, record).await
     }
 
-    async fn replace_value(&self, id: &Self::Id, record: Self::Value) -> Result<()> {
+    async fn replace_value(
+        &self,
+        id: &Self::Id,
+        record: &Record<Self::Value>,
+    ) -> Result<Record<Self::Value>> {
         self.inner.replace_value(id, record).await
     }
 
-    async fn patch_value(&self, id: &Self::Id, partial: Self::Value) -> Result<()> {
+    async fn patch_value(
+        &self,
+        id: &Self::Id,
+        partial: &Record<Self::Value>,
+    ) -> Result<Record<Self::Value>> {
         self.inner.patch_value(id, partial).await
     }
 
@@ -164,17 +187,83 @@ impl WritableValueSet for AnyTable {
     }
 }
 
+impl AnyTable {
+    /// Get all values as raw serde_json::Value (complete record objects)
+    pub async fn get_values(&self) -> Result<Vec<Value>> {
+        let records = self.list_values().await?;
+        Ok(records
+            .into_values()
+            .map(|record| self.record_to_value(record))
+            .collect())
+    }
+
+    /// Get a specific value by ID as raw serde_json::Value (complete record object)
+    pub async fn get_value_as_json(&self, id: &str) -> Result<Value> {
+        let record = self.get_value(&id.to_string()).await?;
+        Ok(self.record_to_value(record))
+    }
+
+    /// Get some value as raw serde_json::Value (complete record object)
+    pub async fn get_some_value_as_json(&self) -> Result<Option<(String, Value)>> {
+        if let Some((id, record)) = self.get_some_value().await? {
+            let value = self.record_to_value(record);
+            Ok(Some((id, value)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Insert a value by ID (value should be a complete record object)
+    pub async fn insert_value_from_json(&self, id: &str, value: Value) -> Result<()> {
+        let record = self.value_to_record(value)?;
+        self.insert_value(&id.to_string(), &record).await?;
+        Ok(())
+    }
+
+    /// Replace a value by ID (value should be a complete record object)
+    pub async fn replace_value_from_json(&self, id: &str, value: Value) -> Result<()> {
+        let record = self.value_to_record(value)?;
+        self.replace_value(&id.to_string(), &record).await?;
+        Ok(())
+    }
+
+    /// Patch a value by ID (value should be a complete record object)
+    pub async fn patch_value_from_json(&self, id: &str, value: Value) -> Result<()> {
+        let record = self.value_to_record(value)?;
+        self.patch_value(&id.to_string(), &record).await?;
+        Ok(())
+    }
+
+    /// Delete a value by ID
+    pub async fn delete_by_str(&self, id: &str) -> Result<()> {
+        self.delete(&id.to_string()).await
+    }
+
+    /// Helper to convert serde_json::Value to Record<serde_json::Value>
+    fn value_to_record(&self, value: Value) -> Result<AnyRecord> {
+        match value {
+            Value::Object(map) => {
+                let mut record = Record::new();
+                for (key, val) in map {
+                    record.insert(key, val);
+                }
+                Ok(record)
+            }
+            _ => Err(error!("Value must be an object to convert to record")),
+        }
+    }
+
+    /// Helper to convert Record<serde_json::Value> to serde_json::Value
+    fn record_to_value(&self, record: AnyRecord) -> Value {
+        let map: IndexMap<String, Value> = record.into_inner();
+        let json_map: serde_json::Map<String, Value> = map.into_iter().collect();
+        Value::Object(json_map)
+    }
+}
+
 // Implement TableLike by delegating to inner
 #[async_trait]
 impl TableLike for AnyTable {
-    fn columns(&self) -> std::sync::Arc<IndexMap<String, std::sync::Arc<dyn ColumnLike>>> {
-        self.inner.columns()
-    }
-
-    fn get_column(&self, name: &str) -> Option<std::sync::Arc<dyn ColumnLike>> {
-        self.inner.get_column(name)
-    }
-
     fn table_name(&self) -> &str {
         self.inner.table_name()
     }
@@ -225,18 +314,6 @@ impl TableLike for AnyTable {
     async fn get_count(&self) -> vantage_core::Result<i64> {
         self.inner.get_count().await
     }
-
-    async fn get_sum(&self, column: &dyn ColumnLike) -> vantage_core::Result<i64> {
-        self.inner.get_sum(column).await
-    }
-
-    fn title_field(&self) -> Option<std::sync::Arc<dyn ColumnLike>> {
-        self.inner.title_field()
-    }
-
-    fn id_field(&self) -> Option<std::sync::Arc<dyn ColumnLike>> {
-        self.inner.id_field()
-    }
 }
 
 impl AnyTable {
@@ -253,7 +330,7 @@ impl AnyTable {
 
 #[cfg(test)]
 mod tests {
-    use crate::mocks::tablesource::MockTableSource;
+    use crate::mocks::mock_table_source::MockTableSource;
 
     use super::*;
 

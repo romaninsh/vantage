@@ -59,7 +59,7 @@ async fn test_get_some_record_modify_workflow() {
         Table::<MockTableSource, EmptyEntity>::new("users", mock.await).into_entity::<TestUser>();
 
     // Test get_entity by ID - existing entity
-    let mut alice = table.get_entity(&"1".to_string()).await.unwrap().unwrap();
+    let alice = table.get_entity(&"1".to_string()).await.unwrap().unwrap();
     assert_eq!(alice.name, "Alice");
     assert_eq!(alice.id(), "1");
     assert!(!alice.active);

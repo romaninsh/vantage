@@ -32,8 +32,11 @@ pub use crate::mocks::mock_table_source::MockTableSource;
 // Record functionality
 // pub use crate::record::{Record, RecordTable};
 
+// Type aliases
+pub use crate::any::AnyRecord;
+
 // Reference functionality
-// pub use crate::any::AnyTable;
+pub use crate::any::AnyTable;
 // pub use crate::references::{ReferenceMany, ReferenceOne, RelatedTable};
 
 // Model macros
