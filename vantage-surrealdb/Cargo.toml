@@ -21,11 +21,13 @@ vantage-core = { path = "../vantage-core" }
 vantage-expressions = { path = "../vantage-expressions", features = ["chrono"] }
 vantage-table = { path = "../vantage-table" }
 vantage-dataset = { path = "../vantage-dataset" }
+vantage-types = { path = "../vantage-types", features = ["serde"] }
 surreal-client = { path = "../surreal-client" }
 
 ciborium = "0.2"
 hex = "0.4"
 indexmap = { version = "2.12.0", features = ["serde"] }
+paste = "1.0"
 serde_json = { version = "1", features = [
     "preserve_order",
     "raw_value",

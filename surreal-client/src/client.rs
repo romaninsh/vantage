@@ -460,26 +460,15 @@ impl SurrealClient {
     }
 
     /// Execute a custom SurrealQL query with CBOR parameters
-    pub async fn query_cbor(&self, sql: &str, variables: Option<CborValue>) -> Result<CborValue> {
-        if self.debug {
-            if let Some(ref vars) = variables {
-                println!("🔍 Query CBOR: {} with variables: {:?}", sql, vars);
-            } else {
-                println!("🔍 Query CBOR: {}", sql);
-            }
-        }
-
+    pub async fn query_cbor(&self, sql: &str, variables: CborValue) -> Result<CborValue> {
         let mut engine = self.engine.lock().await;
 
-        let params = if let Some(vars) = variables {
-            CborValue::Array(vec![CborValue::Text(sql.to_string()), vars])
-        } else {
-            CborValue::Array(vec![
-                CborValue::Text(sql.to_string()),
-                CborValue::Map(vec![]), // Empty object for variables
-            ])
-        };
+        if self.debug {
+            println!("SQL: {}", sql);
+            println!("Params: {:?}", variables);
+        }
 
+        let params = CborValue::Array(vec![CborValue::Text(sql.to_string()), variables]);
         let response = engine.send_message_cbor("query", params).await?;
 
         if self.debug {

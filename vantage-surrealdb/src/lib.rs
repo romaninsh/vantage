@@ -41,7 +41,8 @@
 // pub mod protocol;
 // pub mod sum;
 // pub mod surreal_return;
-// pub mod surrealdb;
+pub mod macros;
+pub mod surrealdb;
 // pub mod prelude;
 // pub mod column;
 // pub mod select;
@@ -74,4 +75,9 @@
 //     };
 // }
 
+// Add types module
+pub mod types;
+pub use types::*;
+
 // Re-export main SurrealDB types for convenience
+pub use types::{AnySurrealType, SurrealType, SurrealTypeVariants};
