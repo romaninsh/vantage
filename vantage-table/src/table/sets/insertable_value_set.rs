@@ -10,7 +10,7 @@ use crate::{prelude::TableSource, table::Table};
 impl<T: TableSource, E: Entity<T::Value>> InsertableValueSet for Table<T, E> {
     async fn insert_return_id_value(&self, record: &Record<Self::Value>) -> Result<Self::Id> {
         self.data_source()
-            .insert_table_return_id_value(&self, record)
+            .insert_table_return_id_value(self, record)
             .await
     }
 }

@@ -52,7 +52,7 @@
 //! // Template becomes: "SELECT * FROM users WHERE age > {} AND status = {}"
 //! ```
 
-pub mod expression;
+pub mod core;
 pub mod flatten;
 pub mod macros;
 pub mod mapping;

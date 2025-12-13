@@ -14,7 +14,7 @@ impl<T: TableSource, E: Entity<T::Value>> WritableValueSet for Table<T, E> {
         record: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>> {
         self.data_source()
-            .insert_table_value(&self, id, record)
+            .insert_table_value(self, id, record)
             .await
     }
 
@@ -24,7 +24,7 @@ impl<T: TableSource, E: Entity<T::Value>> WritableValueSet for Table<T, E> {
         record: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>> {
         self.data_source()
-            .replace_table_value(&self, id, record)
+            .replace_table_value(self, id, record)
             .await
     }
 
@@ -34,16 +34,16 @@ impl<T: TableSource, E: Entity<T::Value>> WritableValueSet for Table<T, E> {
         partial: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>> {
         self.data_source()
-            .patch_table_value(&self, id, partial)
+            .patch_table_value(self, id, partial)
             .await
     }
 
     async fn delete(&self, id: &Self::Id) -> Result<()> {
-        self.data_source().delete_table_value(&self, id).await
+        self.data_source().delete_table_value(self, id).await
     }
 
     async fn delete_all(&self) -> Result<()> {
-        self.data_source().delete_table_all_values(&self).await
+        self.data_source().delete_table_all_values(self).await
     }
 }
 

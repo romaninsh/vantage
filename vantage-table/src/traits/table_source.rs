@@ -9,7 +9,7 @@ use vantage_expressions::{
 use vantage_types::{Entity, Record};
 
 use crate::{
-    column::column::ColumnType,
+    column::core::ColumnType,
     table::Table,
     traits::{column_like::ColumnLike, table_like::TableLike},
 };
@@ -35,7 +35,7 @@ pub trait TableSource: DataSource + Clone + 'static {
     ) -> Self::Column<Self::AnyType>;
 
     /// Attempt to convert a type-erased column back to typed column
-    fn from_any_column<Type: ColumnType>(
+    fn convert_any_column<Type: ColumnType>(
         &self,
         any_column: Self::Column<Self::AnyType>,
     ) -> Option<Self::Column<Type>>;

@@ -27,7 +27,7 @@ async fn setup() -> (surreal_client::SurrealClient, String) {
 
 async fn cleanup(client: &surreal_client::SurrealClient, table_name: &str) {
     let drop_query = format!("REMOVE TABLE {}", table_name);
-    let _result = client.query_cbor(&drop_query, Some(CborValue::Null)).await;
+    let _result = client.query_cbor(&drop_query, CborValue::Null).await;
     println!("Table {} dropped", table_name);
 }
 
@@ -58,7 +58,7 @@ async fn test_cbor_datetime_types() {
     ]);
 
     let create_result = client
-        .query_cbor(&create_query, Some(params))
+        .query_cbor(&create_query, params)
         .await
         .expect("Create failed");
     println!("Create result: {:?}", create_result);
@@ -66,7 +66,7 @@ async fn test_cbor_datetime_types() {
     // Select the record back
     let select_query = format!("SELECT * FROM {}:datetime_test", table_name);
     let select_result = client
-        .query_cbor(&select_query, None)
+        .query_cbor(&select_query, CborValue::Null)
         .await
         .expect("Select failed");
 
@@ -169,7 +169,7 @@ async fn test_cbor_duration_types() {
     ]);
 
     let create_result = client
-        .query_cbor(&create_query, Some(params))
+        .query_cbor(&create_query, params)
         .await
         .expect("Create failed");
     println!("Create result: {:?}", create_result);
@@ -177,7 +177,7 @@ async fn test_cbor_duration_types() {
     // Select the record back
     let select_query = format!("SELECT * FROM {}:duration_test", table_name);
     let select_result = client
-        .query_cbor(&select_query, None)
+        .query_cbor(&select_query, CborValue::Null)
         .await
         .expect("Select failed");
 
@@ -253,7 +253,7 @@ async fn test_cbor_mixed_datetime_duration() {
     ]);
 
     let create_result = client
-        .query_cbor(&create_query, Some(params))
+        .query_cbor(&create_query, params)
         .await
         .expect("Create failed");
     println!("Create result: {:?}", create_result);
@@ -261,7 +261,7 @@ async fn test_cbor_mixed_datetime_duration() {
     // Select the record back
     let select_query = format!("SELECT * FROM {}:mixed_test", table_name);
     let select_result = client
-        .query_cbor(&select_query, None)
+        .query_cbor(&select_query, CborValue::Null)
         .await
         .expect("Select failed");
 
@@ -343,7 +343,7 @@ async fn test_cbor_precision_preservation() {
     ]);
 
     let create_result = client
-        .query_cbor(&create_query, Some(params))
+        .query_cbor(&create_query, params)
         .await
         .expect("Create failed");
     println!("Create result: {:?}", create_result);
@@ -351,7 +351,7 @@ async fn test_cbor_precision_preservation() {
     // Select back and verify precision
     let select_query = format!("SELECT * FROM {}:precision_test", table_name);
     let select_result = client
-        .query_cbor(&select_query, None)
+        .query_cbor(&select_query, CborValue::Null)
         .await
         .expect("Select failed");
 
@@ -431,7 +431,7 @@ async fn test_cbor_type_erasure() {
     ]);
 
     let create_result = client
-        .query_cbor(&create_query, Some(params))
+        .query_cbor(&create_query, params)
         .await
         .expect("Create failed");
     println!("Create result: {:?}", create_result);
@@ -439,7 +439,7 @@ async fn test_cbor_type_erasure() {
     // Select the record back
     let select_query = format!("SELECT * FROM {}:type_erased", table_name);
     let select_result = client
-        .query_cbor(&select_query, None)
+        .query_cbor(&select_query, CborValue::Null)
         .await
         .expect("Select failed");
 

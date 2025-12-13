@@ -41,7 +41,6 @@ type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 /// which allows sending and receiving data in native CBOR format without
 /// JSON conversion overhead. It preserves type fidelity for complex types
 /// like datetime and duration through CBOR tags.
-
 pub struct WsCborEngine {
     /// WebSocket sink for sending messages
     sink: Arc<Mutex<SplitSink<WsStream, Message>>>,
@@ -253,39 +252,39 @@ impl Engine for WsCborEngine {
         // Check for error in CBOR response
         if let CborValue::Map(map) = &response {
             for (key, value) in map {
-                if let CborValue::Text(k) = key {
-                    if k == "error" {
-                        // Try to parse structured server error
-                        if let CborValue::Map(error_map) = value {
-                            let mut code = -1;
-                            let mut message = String::new();
+                if let CborValue::Text(k) = key
+                    && k == "error"
+                {
+                    // Try to parse structured server error
+                    if let CborValue::Map(error_map) = value {
+                        let mut code = -1;
+                        let mut message = String::new();
 
-                            for (error_key, error_value) in error_map {
-                                if let CborValue::Text(error_k) = error_key {
-                                    match error_k.as_str() {
-                                        "code" => {
-                                            if let CborValue::Integer(c) = error_value {
-                                                code = c.clone().try_into().unwrap_or(-1);
-                                            }
+                        for (error_key, error_value) in error_map {
+                            if let CborValue::Text(error_k) = error_key {
+                                match error_k.as_str() {
+                                    "code" => {
+                                        if let CborValue::Integer(c) = error_value {
+                                            code = (*c).try_into().unwrap_or(-1);
                                         }
-                                        "message" => {
-                                            if let CborValue::Text(m) = error_value {
-                                                message = m.clone();
-                                            }
-                                        }
-                                        _ => {}
                                     }
+                                    "message" => {
+                                        if let CborValue::Text(m) = error_value {
+                                            message = m.clone();
+                                        }
+                                    }
+                                    _ => {}
                                 }
-                            }
-
-                            if !message.is_empty() {
-                                return Err(SurrealError::ServerError { code, message });
                             }
                         }
 
-                        // Fallback to generic protocol error
-                        return Err(SurrealError::Protocol(format!("Server error: {:?}", value)));
+                        if !message.is_empty() {
+                            return Err(SurrealError::ServerError { code, message });
+                        }
                     }
+
+                    // Fallback to generic protocol error
+                    return Err(SurrealError::Protocol(format!("Server error: {:?}", value)));
                 }
             }
         }

@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use vantage_core::Result;
 
-use crate::expression::expression::Expression;
+use crate::expression::core::Expression;
 
 pub type DeferredFuture<T> = Pin<Box<dyn Future<Output = Result<ExpressiveEnum<T>>> + Send>>;
 pub type DeferredCallback<T> = Arc<dyn Fn() -> DeferredFuture<T> + Send + Sync>;

@@ -15,11 +15,14 @@ pub mod valueset_readable;
 pub mod valueset_writable;
 pub use im_table::ImTable;
 
+/// Type alias for the complex table storage structure
+type TableStorage = Arc<Mutex<HashMap<String, IndexMap<String, Record<serde_json::Value>>>>>;
+
 /// ImDataSource stores tables in memory using IndexMap for ordered iteration
 #[derive(Debug, Clone)]
 pub struct ImDataSource {
     // table_name -> IndexMap<id, record>
-    tables: Arc<Mutex<HashMap<String, IndexMap<String, Record<serde_json::Value>>>>>,
+    tables: TableStorage,
 }
 
 impl ImDataSource {

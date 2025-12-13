@@ -141,8 +141,7 @@ impl ExprDataSource<Value> for MockBuilder {
             None => Err(vantage_core::error!(
                 "No matching pattern found for query",
                 query = query_str
-            )
-            .into()),
+            )),
         }
     }
 
@@ -163,8 +162,7 @@ impl ExprDataSource<Value> for MockBuilder {
                     None => Err(vantage_core::error!(
                         "No matching pattern found for deferred query",
                         query = query_str
-                    )
-                    .into()),
+                    )),
                 }
             })
         })

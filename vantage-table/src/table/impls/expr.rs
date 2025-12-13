@@ -9,7 +9,7 @@ use vantage_expressions::{AssociatedExpression, traits::datasource::ExprDataSour
 use vantage_types::Entity;
 
 use crate::{
-    column::column::ColumnType,
+    column::core::ColumnType,
     table::Table,
     traits::{table_expr_source::TableExprSource, table_source::TableSource},
 };
@@ -25,7 +25,7 @@ where
     where
         T::Value: From<String>,
     {
-        self.data_source().get_table_expr_count(&self)
+        self.data_source().get_table_expr_count(self)
         /*
         let table_name = self.table_name().to_string();
         let query = self.data_source.expr(
@@ -42,6 +42,6 @@ where
         &self,
         column: &T::Column<R>,
     ) -> AssociatedExpression<'_, T, T::Value, R> {
-        self.data_source().get_table_expr_max(&self, column)
+        self.data_source().get_table_expr_max(self, column)
     }
 }

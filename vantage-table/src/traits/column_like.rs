@@ -1,7 +1,7 @@
 use serde_json::Value;
 use std::collections::HashSet;
 
-use crate::column::{column::ColumnType, flags::ColumnFlag};
+use crate::column::{core::ColumnType, flags::ColumnFlag};
 
 /// Trait defines a minimal implementation for a Table column with type information
 ///

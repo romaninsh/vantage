@@ -2,9 +2,8 @@
 //!
 //! doc wip
 
-use vantage_expressions::{Expression, IntoExpressive, expr};
-
-use crate::operation::Expressive;
+use crate::surreal_expr;
+use vantage_expressions::Expressive;
 
 /// SurrealDB identifier with automatic escaping
 ///
@@ -38,8 +37,8 @@ impl Identifier {
         }
     }
 
-    pub fn dot(self, other: impl Into<String>) -> Expression {
-        expr!("{}.{}", self, Identifier::new(other.into()))
+    pub fn dot(self, other: impl Into<String>) -> crate::Expr {
+        surreal_expr!("{}.{}", (self), (Identifier::new(other.into())))
     }
 
     /// Determines if identifier needs escaping
@@ -58,24 +57,19 @@ impl Identifier {
     }
 }
 
-impl From<Identifier> for Expression {
+impl From<Identifier> for crate::Expr {
     fn from(val: Identifier) -> Self {
         val.expr()
     }
 }
 
-impl From<Identifier> for IntoExpressive<Expression> {
-    fn from(id: Identifier) -> Self {
-        IntoExpressive::nested(id.into())
-    }
-}
-
-impl Expressive for Identifier {
-    fn expr(&self) -> Expression {
+impl Expressive<crate::AnySurrealType> for Identifier {
+    fn expr(&self) -> crate::Expr {
+        use vantage_expressions::Expression;
         if self.needs_escaping() {
-            expr!(format!("⟨{}⟩", self.identifier))
+            Expression::new(format!("⟨{}⟩", self.identifier), vec![])
         } else {
-            expr!(self.identifier.clone())
+            Expression::new(self.identifier.clone(), vec![])
         }
     }
 }

@@ -35,7 +35,7 @@
 // pub mod conditional;
 
 // pub mod field_projection;
-// pub mod identifier;
+pub mod identifier;
 // pub mod insert;
 // pub mod operation;
 // pub mod protocol;
@@ -59,9 +59,8 @@ pub mod surrealdb;
 // pub use table::{SurrealTableCore, SurrealTableExt};
 // pub use typed_expression::TypedExpression;
 
-// // SurrealDB expression support using vantage-expressions with AnySurrealType
-// pub use surreal_client::types::AnySurrealType;
-// pub type Expr = vantage_expressions::Expression<AnySurrealType>;
+// SurrealDB expression support using vantage-expressions with AnySurrealType
+pub type Expr = vantage_expressions::Expression<AnySurrealType>;
 
 // /// Macro to create SurrealDB expressions with AnySurrealType
 // /// Usage: expr!("template", arg1, arg2)

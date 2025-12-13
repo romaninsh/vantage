@@ -18,7 +18,7 @@ where
 
         let result_record = self
             .data_source()
-            .insert_table_value(&self, id, &record)
+            .insert_table_value(self, id, &record)
             .await?;
 
         E::try_from_record(&result_record)
@@ -30,7 +30,7 @@ where
 
         let result_record = self
             .data_source()
-            .replace_table_value(&self, id, &record)
+            .replace_table_value(self, id, &record)
             .await?;
 
         E::try_from_record(&result_record)
@@ -42,7 +42,7 @@ where
 
         let result_record = self
             .data_source()
-            .patch_table_value(&self, id, &partial_record)
+            .patch_table_value(self, id, &partial_record)
             .await?;
 
         E::try_from_record(&result_record)
@@ -50,11 +50,11 @@ where
     }
 
     async fn delete(&self, id: &Self::Id) -> Result<()> {
-        self.data_source().delete_table_value(&self, id).await
+        self.data_source().delete_table_value(self, id).await
     }
 
     async fn delete_all(&self) -> Result<()> {
-        self.data_source().delete_table_all_values(&self).await
+        self.data_source().delete_table_all_values(self).await
     }
 }
 

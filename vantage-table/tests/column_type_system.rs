@@ -33,7 +33,7 @@ use vantage_dataset::traits::Result;
 use vantage_expressions::{
     Expression, traits::datasource::DataSource, traits::expressive::ExpressiveEnum,
 };
-use vantage_table::column::column::ColumnType;
+use vantage_table::column::core::ColumnType;
 use vantage_table::column::flags::ColumnFlag;
 use vantage_table::table::Table;
 use vantage_table::traits::column_like::ColumnLike;
@@ -248,7 +248,7 @@ impl TableSource for Type3TableSource {
         }
     }
 
-    fn from_any_column<Type: ColumnType>(
+    fn convert_any_column<Type: ColumnType>(
         &self,
         any_column: Self::Column<Self::AnyType>,
     ) -> Option<Self::Column<Type>> {
@@ -458,7 +458,7 @@ mod tests {
 
         let typed_col = ds.create_column::<String>("name");
         let any_col = ds.to_any_column(typed_col);
-        let back_to_typed = ds.from_any_column::<String>(any_col.clone()).unwrap();
+        let back_to_typed = ds.convert_any_column::<String>(any_col.clone()).unwrap();
 
         assert_eq!(any_col.name(), "name");
         assert_eq!(back_to_typed.name(), "name");

@@ -47,18 +47,16 @@ impl SurrealType for chrono::DateTime<chrono::Utc> {
     fn from_cbor(cbor: CborValue) -> Option<Self> {
         match cbor {
             CborValue::Tag(12, boxed_value) => {
-                if let CborValue::Array(arr) = boxed_value.as_ref() {
-                    if arr.len() == 2 {
-                        if let (CborValue::Integer(secs), CborValue::Integer(nanos)) =
-                            (&arr[0], &arr[1])
-                        {
-                            let seconds = i128::from(*secs) as i64;
-                            let nanos = i128::from(*nanos) as u32;
-                            // Use chrono's timestamp_opt which handles negative timestamps properly
-                            if let Some(dt) = chrono::DateTime::from_timestamp(seconds, nanos) {
-                                return Some(dt);
-                            }
-                        }
+                if let CborValue::Array(arr) = boxed_value.as_ref()
+                    && arr.len() == 2
+                    && let (CborValue::Integer(secs), CborValue::Integer(nanos)) =
+                        (&arr[0], &arr[1])
+                {
+                    let seconds = i128::from(*secs) as i64;
+                    let nanos = i128::from(*nanos) as u32;
+                    // Use chrono's timestamp_opt which handles negative timestamps properly
+                    if let Some(dt) = chrono::DateTime::from_timestamp(seconds, nanos) {
+                        return Some(dt);
                     }
                 }
                 None
@@ -87,18 +85,16 @@ impl SurrealType for std::time::SystemTime {
     fn from_cbor(cbor: CborValue) -> Option<Self> {
         match cbor {
             CborValue::Tag(12, boxed_value) => {
-                if let CborValue::Array(arr) = boxed_value.as_ref() {
-                    if arr.len() == 2 {
-                        if let (CborValue::Integer(secs), CborValue::Integer(nanos)) =
-                            (&arr[0], &arr[1])
-                        {
-                            let seconds = i128::from(*secs) as i64;
-                            let nanos = i128::from(*nanos) as u32;
-                            // Use chrono's timestamp which handles negative timestamps properly
-                            if let Some(dt) = chrono::DateTime::from_timestamp(seconds, nanos) {
-                                return Some(dt.into());
-                            }
-                        }
+                if let CborValue::Array(arr) = boxed_value.as_ref()
+                    && arr.len() == 2
+                    && let (CborValue::Integer(secs), CborValue::Integer(nanos)) =
+                        (&arr[0], &arr[1])
+                {
+                    let seconds = i128::from(*secs) as i64;
+                    let nanos = i128::from(*nanos) as u32;
+                    // Use chrono's timestamp which handles negative timestamps properly
+                    if let Some(dt) = chrono::DateTime::from_timestamp(seconds, nanos) {
+                        return Some(dt.into());
                     }
                 }
                 None
@@ -212,7 +208,7 @@ impl SurrealType for i64 {
     type Target = SurrealTypeIntMarker;
 
     fn to_cbor(&self) -> CborValue {
-        CborValue::Integer((*self as i64).into())
+        CborValue::Integer((*self).into())
     }
 
     fn from_cbor(cbor: CborValue) -> Option<Self> {
@@ -322,7 +318,7 @@ impl SurrealType for u64 {
     type Target = SurrealTypeIntMarker;
 
     fn to_cbor(&self) -> CborValue {
-        CborValue::Integer((*self as u64).into())
+        CborValue::Integer((*self).into())
     }
 
     fn from_cbor(cbor: CborValue) -> Option<Self> {
@@ -434,10 +430,6 @@ impl RId {
             None
         }
     }
-
-    pub fn to_string(&self) -> String {
-        format!("{}:{}", self.table, self.id)
-    }
 }
 
 impl std::fmt::Display for RId {
@@ -480,18 +472,16 @@ impl SurrealType for std::time::Duration {
     fn from_cbor(cbor: CborValue) -> Option<Self> {
         match cbor {
             CborValue::Tag(14, boxed_value) => {
-                if let CborValue::Array(arr) = boxed_value.as_ref() {
-                    if arr.len() == 2 {
-                        if let (CborValue::Integer(secs), CborValue::Integer(nanos)) =
-                            (&arr[0], &arr[1])
-                        {
-                            let seconds = i128::from(*secs);
-                            let nanos = i128::from(*nanos) as u32;
-                            // std::time::Duration cannot represent negative durations
-                            if seconds >= 0 {
-                                return Some(std::time::Duration::new(seconds as u64, nanos));
-                            }
-                        }
+                if let CborValue::Array(arr) = boxed_value.as_ref()
+                    && arr.len() == 2
+                    && let (CborValue::Integer(secs), CborValue::Integer(nanos)) =
+                        (&arr[0], &arr[1])
+                {
+                    let seconds = i128::from(*secs);
+                    let nanos = i128::from(*nanos) as u32;
+                    // std::time::Duration cannot represent negative durations
+                    if seconds >= 0 {
+                        return Some(std::time::Duration::new(seconds as u64, nanos));
                     }
                 }
                 None
@@ -519,20 +509,17 @@ impl SurrealType for chrono::Duration {
     fn from_cbor(cbor: CborValue) -> Option<Self> {
         match cbor {
             CborValue::Tag(14, boxed_value) => {
-                if let CborValue::Array(arr) = boxed_value.as_ref() {
-                    if arr.len() == 2 {
-                        if let (CborValue::Integer(secs), CborValue::Integer(nanos)) =
-                            (&arr[0], &arr[1])
-                        {
-                            let seconds = i128::from(*secs);
-                            let nanos = i128::from(*nanos);
-                            // chrono::Duration can handle negative values directly
-                            return Some(
-                                chrono::Duration::seconds(seconds as i64)
-                                    + chrono::Duration::nanoseconds(nanos as i64),
-                            );
-                        }
-                    }
+                if let CborValue::Array(arr) = boxed_value.as_ref()
+                    && arr.len() == 2
+                    && let (CborValue::Integer(secs), CborValue::Integer(nanos)) =
+                        (&arr[0], &arr[1])
+                {
+                    let seconds = i128::from(*secs);
+                    let nanos = i128::from(*nanos) as i32;
+                    return Some(
+                        chrono::Duration::seconds(seconds as i64)
+                            + chrono::Duration::nanoseconds(nanos as i64),
+                    );
                 }
                 None
             }
@@ -581,12 +568,12 @@ mod tests {
         let b = true;
         let cbor = b.to_cbor();
         let restored = bool::from_cbor(cbor).unwrap();
-        assert_eq!(restored, true);
+        assert!(restored);
 
         let b2 = false;
         let cbor = b2.to_cbor();
         let restored = bool::from_cbor(cbor).unwrap();
-        assert_eq!(restored, false);
+        assert!(!restored);
     }
 
     #[test]

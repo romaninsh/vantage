@@ -3,7 +3,7 @@ use vantage_expressions::{Expression, Expressive, Selectable, SelectableDataSour
 use vantage_types::Entity;
 
 use crate::{
-    column::column::ColumnType, table::Table, traits::column_like::ColumnLike,
+    column::core::ColumnType, table::Table, traits::column_like::ColumnLike,
     traits::table_source::TableSource,
 };
 

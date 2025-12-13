@@ -6,7 +6,7 @@ use vantage_expressions::{
 };
 use vantage_types::Entity;
 
-use crate::{column::column::ColumnType, prelude::TableSource, table::Table};
+use crate::{column::core::ColumnType, prelude::TableSource, table::Table};
 
 /// Trait for table data sources that defines column type separate from execution
 /// TableSource represents a data source that can create and manage tables

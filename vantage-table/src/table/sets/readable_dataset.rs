@@ -15,7 +15,7 @@ where
     E: Entity<T::Value>,
 {
     async fn list(&self) -> Result<IndexMap<Self::Id, E>> {
-        let records = self.data_source().list_table_values(&self).await?;
+        let records = self.data_source().list_table_values(self).await?;
         let mut entities = IndexMap::new();
 
         for (id, record) in records {
@@ -28,13 +28,13 @@ where
     }
 
     async fn get(&self, id: &Self::Id) -> Result<E> {
-        let record = self.data_source().get_table_value(&self, id).await?;
+        let record = self.data_source().get_table_value(self, id).await?;
         E::try_from_record(&record)
             .map_err(|_| vantage_core::error!("Failed to convert record to entity"))
     }
 
     async fn get_some(&self) -> Result<Option<(Self::Id, E)>> {
-        if let Some((id, record)) = self.data_source().get_table_some_value(&self).await? {
+        if let Some((id, record)) = self.data_source().get_table_some_value(self).await? {
             let entity: E = E::try_from_record(&record)
                 .map_err(|_| vantage_core::error!("Failed to convert record to entity"))?;
             Ok(Some((id, entity)))
