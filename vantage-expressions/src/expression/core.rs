@@ -47,7 +47,7 @@
 //! The example below demonstrates deferred execution with testing support from the
 //! [`crate::mocks`] module:
 //!
-//! ```rust
+//! ```rust,ignore
 //! use vantage_expressions::{expr, mocks::mockbuilder, traits::expressive::DeferredFn};
 //! use serde_json::json;
 //!

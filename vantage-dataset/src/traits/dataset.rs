@@ -383,7 +383,7 @@ where
     ///
     /// # Returns
     ///
-    /// - `Ok(ActiveEntity)`: New entity wrapper ready for modification and saving
+    /// - `ActiveEntity`: New entity wrapper ready for modification and saving
     ///
     /// # Example
     ///

@@ -11,6 +11,7 @@ impl SurrealType for JsonValue {
 
     fn to_cbor(&self) -> CborValue {
         // Convert JSON value to CBOR using serde
+        // TODO: silently replaces value with null, hope thats ok.
         ciborium::value::Value::serialized(self).unwrap_or(CborValue::Null)
     }
 

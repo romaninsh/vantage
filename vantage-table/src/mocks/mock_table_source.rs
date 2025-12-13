@@ -63,12 +63,14 @@ impl MockTableSource {
                     Value::String(s) => s.clone(),
                     Value::Number(n) => n.to_string(),
                     _ => {
-                        println!("[DEBUG] ID field is not a string or number: {:?}", id_value);
-                        continue;
+                        panic!("[DEBUG] ID field is not a string or number: {:?}", id_value);
                     }
                 };
                 let record = Record::from(value.clone());
-                let _ = im_table.replace_value(&id_str, &record).await;
+                let _ = im_table
+                    .replace_value(&id_str, &record)
+                    .await
+                    .expect("Unable to replace value in im_table");
             }
         }
 
@@ -410,6 +412,7 @@ impl TableExprSource for MockTableSource {
         // Pre-calculate the count from our data
         let count = tokio::runtime::Handle::try_current()
             .map(|handle| {
+                // TODO: we shouldn't use block_on here
                 handle.block_on(async {
                     self.data
                         .lock()

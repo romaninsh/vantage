@@ -204,7 +204,7 @@ async fn test_empty_table_record_methods() {
     let records = table.list_entities().await.unwrap();
     assert_eq!(records.len(), 0);
 
-    // get_entity should return None
+    // get_some_entity should return None
     let record = table.get_some_entity().await.unwrap();
     assert!(record.is_none());
 

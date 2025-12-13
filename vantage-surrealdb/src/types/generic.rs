@@ -63,7 +63,7 @@ impl<T: SurrealType> SurrealType for Option<T> {
     fn from_cbor(cbor: ciborium::Value) -> Option<Self> {
         match cbor {
             ciborium::Value::Tag(6, _) => Some(None),
-            s => Some(T::from_cbor(s)),
+            s => T::from_cbor(s).map(Some),
         }
     }
 }

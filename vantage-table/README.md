@@ -157,16 +157,6 @@ Building a custom data source adapter involves:
 - **Add Table extensions**: Support for full-text search, graph operations, or vendor-specific
   features
 
-## Data Source Support
-
-Compatible with any data source implementing the required traits:
-
-- **vantage-surrealdb**: Native SurrealDB integration
-- **vantage-mongodb**: MongoDB document operations
-- **SQL databases**: Via compatible adapters
-- **In-memory**: For testing and caching
-- **Custom sources**: Implement `TableSource` trait
-
 ## Integration
 
 Part of the Vantage framework:

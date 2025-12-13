@@ -192,13 +192,18 @@ impl SurrealType for f32 {
     type Target = SurrealTypeFloatMarker;
 
     fn to_cbor(&self) -> CborValue {
-        CborValue::Float(*self as f64)
+        CborValue::Float((*self).into())
     }
 
     fn from_cbor(cbor: CborValue) -> Option<Self> {
         match cbor {
-            CborValue::Float(f) => Some(f as f32),
-            CborValue::Integer(i) => Some(i128::from(i) as f32),
+            CborValue::Float(f) => {
+                if f.is_finite() && f >= f32::MIN as f64 && f <= f32::MAX as f64 {
+                    Some(f as f32)
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }
@@ -214,7 +219,6 @@ impl SurrealType for f64 {
     fn from_cbor(cbor: CborValue) -> Option<Self> {
         match cbor {
             CborValue::Float(f) => Some(f),
-            CborValue::Integer(i) => Some(i128::from(i) as f64),
             _ => None,
         }
     }
