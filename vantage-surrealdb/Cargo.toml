@@ -86,3 +86,7 @@ path = "tests/queries.rs"
 test = false
 
 # Examples disabled during 0.3 migration (files moved to .disabled)
+
+[[example]]
+name = "expr"
+path = "examples/expr.rs"

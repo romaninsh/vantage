@@ -255,6 +255,35 @@ impl Engine for WsCborEngine {
             for (key, value) in map {
                 if let CborValue::Text(k) = key {
                     if k == "error" {
+                        // Try to parse structured server error
+                        if let CborValue::Map(error_map) = value {
+                            let mut code = -1;
+                            let mut message = String::new();
+
+                            for (error_key, error_value) in error_map {
+                                if let CborValue::Text(error_k) = error_key {
+                                    match error_k.as_str() {
+                                        "code" => {
+                                            if let CborValue::Integer(c) = error_value {
+                                                code = c.clone().try_into().unwrap_or(-1);
+                                            }
+                                        }
+                                        "message" => {
+                                            if let CborValue::Text(m) = error_value {
+                                                message = m.clone();
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+
+                            if !message.is_empty() {
+                                return Err(SurrealError::ServerError { code, message });
+                            }
+                        }
+
+                        // Fallback to generic protocol error
                         return Err(SurrealError::Protocol(format!("Server error: {:?}", value)));
                     }
                 }
