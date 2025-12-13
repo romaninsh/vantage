@@ -15,6 +15,9 @@ pub enum SurrealError {
     #[error("Serialization error: {0}")]
     Serialization(String),
 
+    #[error("SurrealDB server error (code: {code}): {message}")]
+    ServerError { code: i32, message: String },
+
     #[error("Protocol error: {0}")]
     Protocol(String),
 

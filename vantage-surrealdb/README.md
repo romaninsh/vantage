@@ -1,59 +1,85 @@
 # Vantage SurrealDB
 
-Vantage integration for SurrealDB, providing query builder functionality and ORM-like features for SurrealDB databases.
-
-This crate bridges the `surreal-client` (low-level SurrealDB client) with the Vantage query building ecosystem.
-
-## Features
-
-- **Query Builder Integration**: Use Vantage query builders with SurrealDB
-- **Cross-Database Queries**: Combine SurrealDB queries with other databases
-- **Expression Support**: Full support for Vantage expressions and parameters
-- **Type Safety**: Rust type system integration with SurrealDB operations
-- **Deferred Queries**: Support for lazy query execution
+SurrealDB integration for the Vantage framework with expression execution and comprehensive error
+handling.
 
 ## Quick Start
 
 ```rust
 use surreal_client::SurrealConnection;
-use vantage_surrealdb::prelude::*;
-use vantage_expressions::expr;
+use vantage_surrealdb::{surreal_expr, surrealdb::SurrealDB};
+use vantage_expressions::ExprDataSource;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Connect using surreal-client
-    let db = SurrealConnection::dsn("ws://root:root@localhost:8000/bakery/v1")?
-        .connect()
-        .await?;
+// Connect
+let client = SurrealConnection::new()
+    .url("ws://localhost:8000/rpc")
+    .namespace("test").database("test")
+    .auth_root("root", "root")
+    .connect().await?;
 
-    // Create Vantage data source
-    let ds = SurrealDB::new(db);
+let db = SurrealDB::new(client);
 
-    // Use Vantage query builders
-    let select = SurrealSelect::new()
-        .with_source("client")
-        .with_field("name")
-        .with_condition(expr!("bakery = {}", Thing::new("bakery", "hill_valley")))
-        .with_order_by("name", true);
+// Execute expressions
+let result = db.execute(&surreal_expr!("RETURN {}", 42)).await?;
+println!("Result: {:?}", result.value());
+```
 
-    // Execute with query builder
-    let data = ds.get(select).await?;
+## Expression Execution
 
-    // Or create deferred query for use in other expressions
-    let deferred = ds.defer(select).await?;
+```rust
+// Simple queries
+let users = db.execute(&surreal_expr!("SELECT * FROM users")).await?;
 
-    Ok(())
+// Parameterized queries
+let user = db.execute(&surreal_expr!(
+    "CREATE user:test SET name = {}, age = {}",
+    "Alice", 25
+)).await?;
+
+// Different result types
+let names = db.execute(&surreal_expr!("SELECT VALUE name FROM users")).await?;   // Array of values
+let single = db.execute(&surreal_expr!("SELECT * FROM ONLY user:1")).await?;    // Single object
+let count = db.execute(&surreal_expr!("RETURN count(SELECT * FROM users)")).await?; // Direct value
+```
+
+## Error Handling
+
+```rust
+// Query errors (ERR status from SurrealDB)
+let duplicate = surreal_expr!("CREATE user:1 SET name = 'duplicate'");
+match db.execute(&duplicate).await {
+    Err(e) if e.to_string().contains("SurrealDB query failed") => {
+        println!("Database error: {}", e);
+    }
+    _ => {}
+}
+
+// Parse errors (invalid syntax)
+let invalid = surreal_expr!("SELECT =======");
+match db.execute(&invalid).await {
+    Err(e) if e.to_string().contains("Parse error") => {
+        println!("Syntax error: {}", e);
+    }
+    _ => {}
 }
 ```
 
-## Development
+## Features
 
-Tests require a running SurrealDB instance. See `surreal-client` documentation for setup instructions.
+- **Type-safe expressions** with `surreal_expr!` macro
+- **Automatic result extraction** from SurrealDB response format
+- **Rich error handling** for both query and protocol failures
+- **CBOR protocol** for high performance
+- **Integration** with vantage-expressions for cross-database queries
+
+## Testing
 
 ```bash
+# Start SurrealDB
+surreal start --bind 0.0.0.0:8000 --user root --pass root memory
+
+# Run tests
 cargo test -p vantage-surrealdb
 ```
 
-## License
-
-This project is licensed under the MIT OR Apache-2.0 license.
+See `examples/expr.rs` for comprehensive usage patterns.

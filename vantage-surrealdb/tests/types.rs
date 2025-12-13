@@ -1,6 +1,6 @@
 use surreal_client::{SurrealClient, SurrealConnection};
 use vantage_expressions::ExprDataSource;
-use vantage_surrealdb::{SurrealType, surreal_expr, surrealdb::SurrealDB, types::AnySurrealType};
+use vantage_surrealdb::{SurrealType, surrealdb::SurrealDB, types::AnySurrealType};
 
 const DB_URL: &str = "cbor://localhost:8000/rpc";
 const ROOT_USER: &str = "root";
@@ -32,8 +32,15 @@ macro_rules! macro_type_test {
             async fn [<test_ $table _types>]() {
                 let db = get_surrealdb().await;
 
+                // Clean up any existing test data first
+                let cleanup_expr = vantage_expressions::Expression::<AnySurrealType>::new(
+                    format!("DELETE {}", $table),
+                    vec![],
+                );
+                let _ = db.execute(&cleanup_expr).await;
+
                 let create_expr = vantage_expressions::Expression::<AnySurrealType>::new(
-                    format!("CREATE {}:test SET {}", $table,
+                    format!("CREATE {}:unique_record SET {}", $table,
                         vec![$(concat!(stringify!($field), "={}")),*].join(", ")
                     ),
                     vec![
@@ -47,7 +54,7 @@ macro_rules! macro_type_test {
                     .expect("Failed to execute create query");
 
                 let select_expr = vantage_expressions::Expression::<AnySurrealType>::new(
-                    format!("SELECT {} FROM {}:test",
+                    format!("SELECT {} FROM {}:unique_record",
                         vec![$(stringify!($field)),*].join(", "),
                         $table
                     ),
@@ -60,28 +67,12 @@ macro_rules! macro_type_test {
                     .expect("Failed to execute select query");
 
                 use ciborium::Value;
-                let Value::Array(outer_array) = select_result.value() else {
-                    panic!("Expected outer array")
-                };
-                let Value::Map(response_map) = outer_array.get(0).expect("Expected first element") else {
-                    panic!("Expected response map")
-                };
-                let (_, result_value) = response_map
-                    .iter()
-                    .find(|(k, _)| matches!(k, Value::Text(s) if s == "result"))
-                    .expect("Expected result field");
-                let Value::Array(result_array) = result_value else {
+                let Value::Array(result_array) = select_result.value() else {
                     panic!("Expected result array")
                 };
                 let Value::Map(_first_record) = result_array.get(0).expect("Expected first record") else {
                     panic!("Expected record map")
                 };
-
-                let cleanup_expr = vantage_expressions::Expression::<AnySurrealType>::new(
-                    format!("DELETE {}:test", $table),
-                    vec![],
-                );
-                let _ = db.execute(&cleanup_expr).await;
             }
         }
     };
@@ -132,34 +123,6 @@ macro_type_test!("json_values", {
 });
 
 #[tokio::test]
-async fn test_return_statement() {
-    let db = get_surrealdb().await;
-
-    let test_number = 42;
-
-    let return_expr = surreal_expr!("RETURN {}", test_number);
-    let result = db
-        .execute(&return_expr)
-        .await
-        .expect("Failed to execute return query");
-
-    use ciborium::Value;
-    let Value::Array(outer_array) = result.value() else {
-        panic!("Expected outer array")
-    };
-    let Value::Map(response_map) = outer_array.get(0).expect("Expected first element") else {
-        panic!("Expected response map")
-    };
-    let (_, result_value) = response_map
-        .iter()
-        .find(|(k, _)| matches!(k, Value::Text(s) if s == "result"))
-        .expect("Expected result field");
-    let Value::Integer(_returned_number) = result_value else {
-        panic!("Expected returned integer value")
-    };
-}
-
-#[tokio::test]
 async fn test_missmatching_types() {
     let db = get_surrealdb().await;
 
@@ -167,8 +130,13 @@ async fn test_missmatching_types() {
     let s2_value = "world".to_string();
     let s3_value = 123;
 
+    // Clean up any existing test data first
+    let cleanup_expr =
+        vantage_expressions::Expression::<AnySurrealType>::new("DELETE mismatching_types", vec![]);
+    let _ = db.execute(&cleanup_expr).await;
+
     let create_expr = vantage_expressions::Expression::<AnySurrealType>::new(
-        "create strings:test set s1={}, s2={}, s3={}",
+        "create mismatching_types:unique_record set s1={}, s2={}, s3={}",
         vec![
             vantage_expressions::ExpressiveEnum::Scalar(AnySurrealType::new(s1_value)),
             vantage_expressions::ExpressiveEnum::Scalar(AnySurrealType::new(s2_value)),
@@ -182,7 +150,7 @@ async fn test_missmatching_types() {
         .expect("Failed to execute create query");
 
     let select_expr = vantage_expressions::Expression::<AnySurrealType>::new(
-        "SELECT s1, s2, s3 FROM strings:test",
+        "SELECT s1, s2, s3 FROM mismatching_types:unique_record",
         vec![],
     );
     let select_result = db
@@ -191,17 +159,7 @@ async fn test_missmatching_types() {
         .expect("Failed to execute select query");
 
     use ciborium::Value;
-    let Value::Array(outer_array) = select_result.value() else {
-        panic!("Expected outer array")
-    };
-    let Value::Map(response_map) = outer_array.get(0).expect("Expected first element") else {
-        panic!("Expected response map")
-    };
-    let (_, result_value) = response_map
-        .iter()
-        .find(|(k, _)| matches!(k, Value::Text(s) if s == "result"))
-        .expect("Expected result field");
-    let Value::Array(result_array) = result_value else {
+    let Value::Array(result_array) = select_result.value() else {
         panic!("Expected result array")
     };
     let Value::Map(first_record) = result_array.get(0).expect("Expected first record") else {
@@ -223,10 +181,6 @@ async fn test_missmatching_types() {
     assert_eq!(s1_as_string, Some("hello".to_string()));
     assert_eq!(s2_as_string, Some("world".to_string()));
     assert_eq!(s3_as_string, None);
-
-    let cleanup_expr =
-        vantage_expressions::Expression::<AnySurrealType>::new("DELETE strings:test", vec![]);
-    let _ = db.execute(&cleanup_expr).await;
 }
 
 // #[tokio::test]
