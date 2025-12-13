@@ -40,7 +40,7 @@ impl vantage_table::TableSource for SurrealDB {
         // Build search conditions for each searchable column using @@ operator
         let conditions: Vec<Expression> = searchable_columns
             .iter()
-            .map(|(_col_name, col)| expr!("{} @@ {}", col.expr(), search_value))
+            .map(|(_col_name, col)| expr!("{} @@ {}", (col.expr()), search_value))
             .collect();
 
         // Combine all conditions with OR
