@@ -348,7 +348,9 @@ impl TableSource for Type3TableSource {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(vantage_core::error!("Sum not implemented for Type3TableSource"))
+        Err(vantage_core::error!(
+            "Sum not implemented for Type3TableSource"
+        ))
     }
 
     async fn insert_table_value<E>(
