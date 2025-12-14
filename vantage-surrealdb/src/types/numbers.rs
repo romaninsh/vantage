@@ -3,7 +3,7 @@
 //! This module provides implementations of the SurrealType trait for all standard Rust numeric types.
 
 use crate::types::{SurrealType, SurrealTypeFloatMarker, SurrealTypeIntMarker};
-use ciborium::{Value as CborValue, value::Integer};
+use ciborium::Value as CborValue;
 
 // Signed integers
 impl SurrealType for i8 {
