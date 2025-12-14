@@ -325,6 +325,20 @@ where
     /// The returned [`entity`] can be modified in-place and will track all
     /// changes for efficient persistence when `save()` is called.
     ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let mut user = table.get_entity(&"user123".to_string()).await?
+    ///     .unwrap_or_else(|| table.new_entity("user123".to_string(), User {
+    ///         id: Some("user123".to_string()),
+    ///         name: "Default User".to_string(),
+    ///         active: false,
+    ///     }));
+    ///
+    /// user.active = true;
+    /// user.save().await?;
+    /// ```
+    ///
     /// # Returns
     ///
     /// - `Ok(Some(entity))`: Entity wrapper with change tracking
@@ -383,7 +397,7 @@ where
     ///
     /// # Returns
     ///
-    /// - `Ok(ActiveEntity)`: New entity wrapper ready for modification and saving
+    /// - `ActiveEntity`: New entity wrapper ready for modification and saving
     ///
     /// # Example
     ///

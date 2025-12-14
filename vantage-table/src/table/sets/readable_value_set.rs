@@ -10,15 +10,15 @@ use crate::{table::Table, traits::table_source::TableSource};
 #[async_trait]
 impl<T: TableSource, E: Entity<T::Value>> ReadableValueSet for Table<T, E> {
     async fn list_values(&self) -> Result<IndexMap<Self::Id, Record<Self::Value>>> {
-        self.data_source().list_table_values(&self).await
+        self.data_source().list_table_values(self).await
     }
 
     async fn get_value(&self, id: &Self::Id) -> Result<Record<Self::Value>> {
-        self.data_source().get_table_value(&self, id).await
+        self.data_source().get_table_value(self, id).await
     }
 
     async fn get_some_value(&self) -> Result<Option<(Self::Id, Record<Self::Value>)>> {
-        self.data_source().get_table_some_value(&self).await
+        self.data_source().get_table_some_value(self).await
     }
 }
 

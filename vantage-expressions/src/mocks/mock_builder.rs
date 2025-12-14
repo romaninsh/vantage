@@ -141,8 +141,7 @@ impl ExprDataSource<Value> for MockBuilder {
             None => Err(vantage_core::error!(
                 "No matching pattern found for query",
                 query = query_str
-            )
-            .into()),
+            )),
         }
     }
 
@@ -163,8 +162,7 @@ impl ExprDataSource<Value> for MockBuilder {
                     None => Err(vantage_core::error!(
                         "No matching pattern found for deferred query",
                         query = query_str
-                    )
-                    .into()),
+                    )),
                 }
             })
         })
@@ -265,8 +263,6 @@ mod tests {
 
         let query = expr!("SELECT COUNT(*)");
         let _deferred = mock.defer(query);
-        // Just test that it creates without panicking
-        assert!(true);
     }
 
     #[tokio::test]

@@ -21,7 +21,7 @@ use vantage_expressions::{
 };
 use vantage_types::{Entity, Record};
 
-use crate::column::column::ColumnType;
+use crate::column::core::ColumnType;
 use crate::mocks::mock_column::MockColumn;
 use crate::mocks::mock_type_system::AnyMockType;
 use crate::traits::table_expr_source::TableExprSource;
@@ -63,12 +63,14 @@ impl MockTableSource {
                     Value::String(s) => s.clone(),
                     Value::Number(n) => n.to_string(),
                     _ => {
-                        println!("[DEBUG] ID field is not a string or number: {:?}", id_value);
-                        continue;
+                        panic!("[DEBUG] ID field is not a string or number: {:?}", id_value);
                     }
                 };
                 let record = Record::from(value.clone());
-                let _ = im_table.replace_value(&id_str, &record).await;
+                let _ = im_table
+                    .replace_value(&id_str, &record)
+                    .await
+                    .expect("Unable to replace value in im_table");
             }
         }
 
@@ -138,7 +140,7 @@ impl TableSource for MockTableSource {
         column.into_type()
     }
 
-    fn from_any_column<Type: ColumnType>(
+    fn convert_any_column<Type: ColumnType>(
         &self,
         any_column: Self::Column<Self::AnyType>,
     ) -> Option<Self::Column<Type>> {
@@ -230,7 +232,9 @@ impl TableSource for MockTableSource {
             .ok_or(VantageError::no_data())?;
 
         // Mock implementation - sum not supported
-        Err(vantage_core::error!("Sum not implemented for MockTableSource").into())
+        Err(vantage_core::error!(
+            "Sum not implemented for MockTableSource"
+        ))
     }
 
     /// Insert a record as Record value (for WritableValueSet implementation)
@@ -248,7 +252,10 @@ impl TableSource for MockTableSource {
 
         // Check if record already exists - fail if it does
         if im_table.get_value(id).await.is_ok() {
-            return Err(vantage_core::error!("Record with ID already exists", id = id).into());
+            return Err(vantage_core::error!(
+                "Record with ID already exists",
+                id = id
+            ));
         }
 
         let mut record_with_id = record.clone();
@@ -300,7 +307,7 @@ impl TableSource for MockTableSource {
 
         // Check if record exists - fail if it doesn't
         if im_table.get_value(id).await.is_err() {
-            return Err(vantage_core::error!("Record not found", id = id).into());
+            return Err(vantage_core::error!("Record not found", id = id));
         }
 
         im_table.delete(id).await
@@ -405,6 +412,7 @@ impl TableExprSource for MockTableSource {
         // Pre-calculate the count from our data
         let count = tokio::runtime::Handle::try_current()
             .map(|handle| {
+                // TODO: we shouldn't use block_on here
                 handle.block_on(async {
                     self.data
                         .lock()
@@ -421,15 +429,15 @@ impl TableExprSource for MockTableSource {
 
         // Configure the query source to return this count for the exact query
         let query_str = format!("select count() from {}", table_name);
-        if let Some(ref query_source) = self.query_source {
-            if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                handle.block_on(async {
-                    let mut source = query_source.lock().await;
-                    *source = source
-                        .clone()
-                        .on_exact_select(&query_str, serde_json::json!(count));
-                });
-            }
+        if let Some(ref query_source) = self.query_source
+            && let Ok(handle) = tokio::runtime::Handle::try_current()
+        {
+            handle.block_on(async {
+                let mut source = query_source.lock().await;
+                *source = source
+                    .clone()
+                    .on_exact_select(&query_str, serde_json::json!(count));
+            });
         }
 
         let expr = expr_any!("select count() from {}", table_name);

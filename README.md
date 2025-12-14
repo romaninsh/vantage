@@ -5,7 +5,7 @@
 Vantage is an **Entity Framework** for Rust. With Vantage you can represent your business entities
 (Client, Order, Invoice, Lead) with native Rust types. Business logic implementation in Vantage and
 Rust is type-safe and very ergonomic for large code-bases. Ideal for creating facade services,
-middleware and microservices or low-code backend UI.
+middlewares and microservices or low-code backend UI.
 
 Given your client record:
 
@@ -56,7 +56,7 @@ First - persistence implementation:
   [`surreal-client`](surreal-client/README.md).
 
 - `vantage-redb` - Implementation for Redb embedded database, providing some basic features. Perfect
-  a local cache.
+  as a local cache.
 
 On the other end, Vantage offers some adapters. Those would work with `Table` / `AnyTable` and
 implement generic UI or API component:
@@ -664,7 +664,7 @@ features are still missing:
 - Type support for SQL
 - Oracle, because why not!
 - Graph relations - implement hasMany support for Graph databases
-- Consider Neq4ql crate
+- Consider Neo4j
 - Implement some RestAPI adaptors (e.g. GitLab)
 - Aggregators (grouping queries) for SQL and SurrealDB
 

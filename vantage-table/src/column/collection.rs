@@ -71,7 +71,7 @@ impl ColumnCollectionExt for Arc<IndexMap<String, Arc<dyn ColumnLike>>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::column::column::Column;
+    use crate::column::core::Column;
 
     use super::*;
 

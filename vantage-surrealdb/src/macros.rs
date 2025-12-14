@@ -36,6 +36,7 @@ macro_rules! surreal_param {
     // Nested expression: (expr) -> ExpressiveEnum::Nested(expr)
     (($expr:expr)) => {
         vantage_expressions::ExpressiveEnum::Nested({
+            #[allow(unused_imports)]
             use vantage_expressions::Expressive;
             $expr.expr()
         })

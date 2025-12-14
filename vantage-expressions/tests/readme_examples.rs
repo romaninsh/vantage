@@ -421,7 +421,7 @@ async fn test_error_handling_in_deferred_functions() {
 
     // API call that can fail
     async fn failing_api_call() -> vantage_core::Result<serde_json::Value> {
-        Err(error!("API connection failed").into())
+        Err(error!("API connection failed"))
     }
 
     // Create deferred function that wraps a failing API call

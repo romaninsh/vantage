@@ -6,7 +6,7 @@ impl<T: SurrealType> SurrealType for Vec<T> {
     type Target = SurrealTypeArrayMarker;
 
     fn to_cbor(&self) -> CborValue {
-        CborValue::Array(self.into_iter().map(T::to_cbor).collect())
+        CborValue::Array(self.iter().map(T::to_cbor).collect())
     }
 
     fn from_cbor(cbor: CborValue) -> Option<Self> {
@@ -63,7 +63,7 @@ impl<T: SurrealType> SurrealType for Option<T> {
     fn from_cbor(cbor: ciborium::Value) -> Option<Self> {
         match cbor {
             ciborium::Value::Tag(6, _) => Some(None),
-            s => Some(T::from_cbor(s)),
+            s => T::from_cbor(s).map(Some),
         }
     }
 }

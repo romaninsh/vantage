@@ -12,7 +12,9 @@ use std::env;
 use surreal_client::SurrealConnection;
 use vantage_core::Context;
 use vantage_expressions::ExprDataSource;
-use vantage_surrealdb::{surreal_expr, surrealdb::SurrealDB, types::AnySurrealType};
+use vantage_surrealdb::{
+    identifier::Identifier, surreal_expr, surrealdb::SurrealDB, types::AnySurrealType,
+};
 
 async fn setup_db() -> vantage_core::Result<SurrealDB> {
     let client = SurrealConnection::new()
@@ -47,8 +49,8 @@ async fn execute_field_query(
     db: &SurrealDB,
     field_name: &str,
 ) -> vantage_core::Result<AnySurrealType> {
-    let query = format!("SELECT VALUE {} FROM ONLY demo_user:1", field_name);
-    let expr = vantage_expressions::Expression::<AnySurrealType>::new(query, vec![]);
+    let field_id = Identifier::new(field_name);
+    let expr = surreal_expr!("SELECT VALUE {} FROM ONLY demo_user:1", (field_id));
 
     let result = db.execute(&expr).await?;
     Ok(result)
@@ -61,11 +63,13 @@ async fn query_field(db: &SurrealDB, field_name: &str) -> vantage_core::Result<(
         .await
         .with_context(|| error!("Failed to access field", field = field_name))?;
 
-    handle_result_value(field_name, result);
+    handle_result_value(field_name, result)
+        .with_context(|| error!("Failed to handle field result", field = field_name))?;
     Ok(())
 }
 
-fn handle_result_value(field_name: &str, value: AnySurrealType) {
+fn handle_result_value(field_name: &str, value: AnySurrealType) -> vantage_core::Result<()> {
+    use vantage_core::error;
     use vantage_surrealdb::types::SurrealTypeVariants;
 
     println!("Field '{}' found:", field_name);
@@ -96,14 +100,22 @@ fn handle_result_value(field_name: &str, value: AnySurrealType) {
             }
         }
         Some(other) => {
-            println!("  Type: {:?}", other);
-            println!("  Value: {:?}", value.value());
+            return Err(error!(
+                "Unsupported field type",
+                field = field_name,
+                type_variant = format!("{:?}", other),
+                value = format!("{:?}", value.value())
+            ));
         }
         None => {
-            println!("  Type: Unknown");
-            println!("  Value: {:?}", value.value());
+            return Err(error!(
+                "Field not found or has null value",
+                field = field_name,
+                value = format!("{:?}", value.value())
+            ));
         }
     }
+    Ok(())
 }
 
 #[tokio::main]

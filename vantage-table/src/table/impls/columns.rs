@@ -2,8 +2,7 @@ use indexmap::IndexMap;
 use vantage_types::Entity;
 
 use crate::{
-    column::column::ColumnType, prelude::ColumnLike, table::Table,
-    traits::table_source::TableSource,
+    column::core::ColumnType, prelude::ColumnLike, table::Table, traits::table_source::TableSource,
 };
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
@@ -62,10 +61,11 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// Get a typed column by converting from stored Column<AnyType>
     pub fn get_column<Type>(&self, name: &str) -> Option<T::Column<Type>>
     where
-        Type: crate::column::column::ColumnType,
+        Type: ColumnType,
     {
         let any_column = self.columns.get(name)?;
-        self.data_source.from_any_column::<Type>(any_column.clone())
+        self.data_source
+            .convert_any_column::<Type>(any_column.clone())
     }
 }
 

@@ -13,7 +13,7 @@ pub struct DebugEngine {
 
 impl DebugEngine {
     /// Create a new DebugEngine wrapping an existing engine
-    pub fn new(engine: Box<dyn Engine>) -> Box<dyn Engine> {
+    pub fn wrap(engine: Box<dyn Engine>) -> Box<dyn Engine> {
         Box::new(Self { inner: engine })
     }
 
@@ -103,7 +103,7 @@ mod tests {
     #[tokio::test]
     async fn test_debug_engine_wraps_correctly() {
         let mock = Box::new(MockEngine);
-        let mut debug_engine = DebugEngine::new(mock);
+        let mut debug_engine = DebugEngine::wrap(mock);
 
         let result = debug_engine
             .send_message("test", serde_json::json!(["param1"]))

@@ -2,7 +2,7 @@
 //!
 //! Provides a simple column implementation that can be used across all mock DataSources.
 
-use crate::column::column::ColumnType;
+use crate::column::core::ColumnType;
 use crate::column::flags::ColumnFlag;
 use crate::traits::column_like::ColumnLike;
 use serde_json::Value;

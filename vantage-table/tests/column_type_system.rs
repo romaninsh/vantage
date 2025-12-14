@@ -33,7 +33,7 @@ use vantage_dataset::traits::Result;
 use vantage_expressions::{
     Expression, traits::datasource::DataSource, traits::expressive::ExpressiveEnum,
 };
-use vantage_table::column::column::ColumnType;
+use vantage_table::column::core::ColumnType;
 use vantage_table::column::flags::ColumnFlag;
 use vantage_table::table::Table;
 use vantage_table::traits::column_like::ColumnLike;
@@ -123,7 +123,7 @@ impl Type3 for Email {
             return None;
         };
 
-        let name = match arr.get(0)? {
+        let name = match arr.first()? {
             ciborium::value::Value::Text(s) => s,
             _ => return None,
         };
@@ -248,7 +248,7 @@ impl TableSource for Type3TableSource {
         }
     }
 
-    fn from_any_column<Type: ColumnType>(
+    fn convert_any_column<Type: ColumnType>(
         &self,
         any_column: Self::Column<Self::AnyType>,
     ) -> Option<Self::Column<Type>> {
@@ -310,7 +310,7 @@ impl TableSource for Type3TableSource {
         if let Some(row) = self.data.get(*id) {
             Ok(Record::from_indexmap(row.clone()))
         } else {
-            Err(vantage_core::error!("Record not found", id = id).into())
+            Err(vantage_core::error!("Record not found", id = id))
         }
     }
 
@@ -348,7 +348,9 @@ impl TableSource for Type3TableSource {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(vantage_core::error!("Sum not implemented for Type3TableSource").into())
+        Err(vantage_core::error!(
+            "Sum not implemented for Type3TableSource"
+        ))
     }
 
     async fn insert_table_value<E>(
@@ -361,7 +363,7 @@ impl TableSource for Type3TableSource {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(vantage_core::error!("Insert operations not supported").into())
+        Err(vantage_core::error!("Insert operations not supported"))
     }
 
     async fn replace_table_value<E>(
@@ -374,7 +376,7 @@ impl TableSource for Type3TableSource {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(vantage_core::error!("Replace operations not supported").into())
+        Err(vantage_core::error!("Replace operations not supported"))
     }
 
     async fn patch_table_value<E>(
@@ -387,7 +389,7 @@ impl TableSource for Type3TableSource {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(vantage_core::error!("Patch operations not supported").into())
+        Err(vantage_core::error!("Patch operations not supported"))
     }
 
     async fn delete_table_value<E>(&self, _table: &Table<Self, E>, _id: &Self::Id) -> Result<()>
@@ -395,7 +397,7 @@ impl TableSource for Type3TableSource {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(vantage_core::error!("Delete operations not supported").into())
+        Err(vantage_core::error!("Delete operations not supported"))
     }
 
     async fn delete_table_all_values<E>(&self, _table: &Table<Self, E>) -> Result<()>
@@ -403,7 +405,7 @@ impl TableSource for Type3TableSource {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(vantage_core::error!("Delete operations not supported").into())
+        Err(vantage_core::error!("Delete operations not supported"))
     }
 
     async fn insert_table_return_id_value<E>(
@@ -415,7 +417,7 @@ impl TableSource for Type3TableSource {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(vantage_core::error!("Insert operations not supported").into())
+        Err(vantage_core::error!("Insert operations not supported"))
     }
 }
 
@@ -458,7 +460,7 @@ mod tests {
 
         let typed_col = ds.create_column::<String>("name");
         let any_col = ds.to_any_column(typed_col);
-        let back_to_typed = ds.from_any_column::<String>(any_col.clone()).unwrap();
+        let back_to_typed = ds.convert_any_column::<String>(any_col.clone()).unwrap();
 
         assert_eq!(any_col.name(), "name");
         assert_eq!(back_to_typed.name(), "name");

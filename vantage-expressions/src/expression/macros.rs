@@ -7,12 +7,12 @@
 macro_rules! expr_as {
     // Simple template without parameters: expr_as!(T, "age")
     ($t:ty, $template:expr) => {
-        $crate::expression::expression::Expression::<$t>::new($template, vec![])
+        $crate::expression::core::Expression::<$t>::new($template, vec![])
     };
 
     // Template with parameters
     ($t:ty, $template:expr, $($param:tt),*) => {
-        $crate::expression::expression::Expression::<$t>::new(
+        $crate::expression::core::Expression::<$t>::new(
             $template,
             vec![
                 $(
@@ -32,12 +32,12 @@ macro_rules! expr_as {
 macro_rules! expr_any {
     // Simple template without parameters: expr_any!("age")
     ($template:expr) => {
-        $crate::expression::expression::Expression::new($template, vec![])
+        $crate::expression::core::Expression::new($template, vec![])
     };
 
     // Template with parameters
     ($template:expr, $($param:tt),*) => {
-        $crate::expression::expression::Expression::new(
+        $crate::expression::core::Expression::new(
             $template,
             vec![
                 $(

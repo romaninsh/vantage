@@ -123,7 +123,7 @@ macro_type_test!("json_values", {
 });
 
 #[tokio::test]
-async fn test_missmatching_types() {
+async fn test_mismatching_types() {
     let db = get_surrealdb().await;
 
     let s1_value = "hello";

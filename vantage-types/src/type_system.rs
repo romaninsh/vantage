@@ -57,6 +57,7 @@ macro_rules! vantage_type_system {
                     }
                 }
 
+                #[allow(clippy::ptr_arg)]
                 pub fn [<from_ $method_name>](value: &$value_type) -> Option<Self> {
                     let type_variant = [<$trait_name Variants>]::[<from_ $method_name>](value);
                     let value = value.clone();

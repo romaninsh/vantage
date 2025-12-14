@@ -187,15 +187,16 @@ impl WritableValueSet for AnyTable {
     }
 }
 
+// TODO: review methods here, some are duplicating things
 impl AnyTable {
-    /// Get all values as raw serde_json::Value (complete record objects)
-    pub async fn get_values(&self) -> Result<Vec<Value>> {
-        let records = self.list_values().await?;
-        Ok(records
-            .into_values()
-            .map(|record| self.record_to_value(record))
-            .collect())
-    }
+    // /// Get all values as raw serde_json::Value (complete record objects)
+    // pub async fn get_all_values(&self) -> Result<Vec<Value>> {
+    //     let records = self.list_values().await?;
+    //     Ok(records
+    //         .into_values()
+    //         .map(|record| self.record_to_value(record))
+    //         .collect())
+    // }
 
     /// Get a specific value by ID as raw serde_json::Value (complete record object)
     pub async fn get_value_as_json(&self, id: &str) -> Result<Value> {

@@ -69,7 +69,7 @@ impl MockSelect {
         if self.fields.is_empty() {
             query.push_str(" *");
         } else {
-            query.push_str(" ");
+            query.push(' ');
             query.push_str(&self.fields.join(", "));
         }
 

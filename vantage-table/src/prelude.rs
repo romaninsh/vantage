@@ -7,7 +7,7 @@ pub use crate::table::Table;
 
 // Column functionality
 pub use crate::column::collection::ColumnCollectionExt;
-pub use crate::column::column::Column;
+pub use crate::column::core::Column;
 pub use crate::column::flags::ColumnFlag;
 
 // Traits

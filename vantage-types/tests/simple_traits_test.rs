@@ -29,16 +29,14 @@ impl TestType for Label {
     }
 
     fn from_test_value(value: String) -> Option<Self> {
-        if value.starts_with("label:") {
-            Some(Label(value[6..].to_string()))
-        } else {
-            None
-        }
+        value
+            .strip_prefix("label:")
+            .map(|stripped| Label(stripped.to_string()))
     }
 }
 
 impl TestTypeVariants {
-    pub fn from_test_value(value: &String) -> Option<Self> {
+    pub fn from_test_value(value: &str) -> Option<Self> {
         if value.starts_with("label:") {
             Some(TestTypeVariants::Label)
         } else {

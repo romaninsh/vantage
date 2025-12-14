@@ -53,6 +53,12 @@ pub struct MockCsv {
     files: HashMap<String, String>,
 }
 
+impl Default for MockCsv {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockCsv {
     pub fn new() -> Self {
         let mut files = HashMap::new();

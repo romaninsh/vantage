@@ -1,10 +1,10 @@
 //! Data/Value Sets are like a `Vec<E>`, but E are stored remotely and only fetched when needed.
 //!
 //! 1. When we operate with DataSet, we do not know how many rows are in it.
-//! An example dataset could contain all the orders placed by a client.
+//!    An example dataset could contain all the orders placed by a client.
 //!
 //! 2. Remotely stored data can be modified externally, for instance if multiple application
-//! instances are operating in parallel.
+//!    instances are operating in parallel.
 //!
 //! 3. Data loaded from DataSet may be incomplete - some columns may be inaccessible.
 //!

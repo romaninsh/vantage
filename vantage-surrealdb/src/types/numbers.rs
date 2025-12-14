@@ -15,10 +15,7 @@ impl SurrealType for i8 {
 
     fn from_cbor(cbor: CborValue) -> Option<Self> {
         match cbor {
-            CborValue::Integer(i) => {
-                let val = i128::from(i);
-                i8::try_from(val).ok()
-            }
+            CborValue::Integer(i) => i8::try_from(i).ok(),
             _ => None,
         }
     }
@@ -33,10 +30,7 @@ impl SurrealType for i16 {
 
     fn from_cbor(cbor: CborValue) -> Option<Self> {
         match cbor {
-            CborValue::Integer(i) => {
-                let val = i128::from(i);
-                i16::try_from(val).ok()
-            }
+            CborValue::Integer(i) => i16::try_from(i).ok(),
             _ => None,
         }
     }
@@ -51,10 +45,7 @@ impl SurrealType for i32 {
 
     fn from_cbor(cbor: CborValue) -> Option<Self> {
         match cbor {
-            CborValue::Integer(i) => {
-                let val = i128::from(i);
-                i32::try_from(val).ok()
-            }
+            CborValue::Integer(i) => i32::try_from(i).ok(),
             _ => None,
         }
     }
@@ -69,10 +60,7 @@ impl SurrealType for i64 {
 
     fn from_cbor(cbor: CborValue) -> Option<Self> {
         match cbor {
-            CborValue::Integer(i) => {
-                let val = i128::from(i);
-                i64::try_from(val).ok()
-            }
+            CborValue::Integer(i) => i64::try_from(i).ok(),
             _ => None,
         }
     }
@@ -87,10 +75,7 @@ impl SurrealType for isize {
 
     fn from_cbor(cbor: CborValue) -> Option<Self> {
         match cbor {
-            CborValue::Integer(i) => {
-                let val = i128::from(i);
-                isize::try_from(val).ok()
-            }
+            CborValue::Integer(i) => isize::try_from(i).ok(),
             _ => None,
         }
     }
@@ -106,10 +91,7 @@ impl SurrealType for u8 {
 
     fn from_cbor(cbor: CborValue) -> Option<Self> {
         match cbor {
-            CborValue::Integer(i) => {
-                let val = i128::from(i);
-                u8::try_from(val).ok()
-            }
+            CborValue::Integer(i) => u8::try_from(i).ok(),
             _ => None,
         }
     }
@@ -124,10 +106,7 @@ impl SurrealType for u16 {
 
     fn from_cbor(cbor: CborValue) -> Option<Self> {
         match cbor {
-            CborValue::Integer(i) => {
-                let val = i128::from(i);
-                u16::try_from(val).ok()
-            }
+            CborValue::Integer(i) => u16::try_from(i).ok(),
             _ => None,
         }
     }
@@ -142,10 +121,7 @@ impl SurrealType for u32 {
 
     fn from_cbor(cbor: CborValue) -> Option<Self> {
         match cbor {
-            CborValue::Integer(i) => {
-                let val = i128::from(i);
-                u32::try_from(val).ok()
-            }
+            CborValue::Integer(i) => u32::try_from(i).ok(),
             _ => None,
         }
     }
@@ -160,10 +136,7 @@ impl SurrealType for u64 {
 
     fn from_cbor(cbor: CborValue) -> Option<Self> {
         match cbor {
-            CborValue::Integer(i) => {
-                let val = i128::from(i);
-                u64::try_from(val).ok()
-            }
+            CborValue::Integer(i) => u64::try_from(i).ok(),
             _ => None,
         }
     }
@@ -178,10 +151,7 @@ impl SurrealType for usize {
 
     fn from_cbor(cbor: CborValue) -> Option<Self> {
         match cbor {
-            CborValue::Integer(i) => {
-                let val = i128::from(i);
-                usize::try_from(val).ok()
-            }
+            CborValue::Integer(i) => usize::try_from(i).ok(),
             _ => None,
         }
     }
@@ -192,13 +162,12 @@ impl SurrealType for f32 {
     type Target = SurrealTypeFloatMarker;
 
     fn to_cbor(&self) -> CborValue {
-        CborValue::Float(*self as f64)
+        CborValue::Float((*self).into())
     }
 
     fn from_cbor(cbor: CborValue) -> Option<Self> {
         match cbor {
             CborValue::Float(f) => Some(f as f32),
-            CborValue::Integer(i) => Some(i128::from(i) as f32),
             _ => None,
         }
     }
@@ -214,7 +183,6 @@ impl SurrealType for f64 {
     fn from_cbor(cbor: CborValue) -> Option<Self> {
         match cbor {
             CborValue::Float(f) => Some(f),
-            CborValue::Integer(i) => Some(i128::from(i) as f64),
             _ => None,
         }
     }

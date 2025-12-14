@@ -17,7 +17,7 @@ where
         let record = entity.clone().into_record();
 
         self.data_source()
-            .insert_table_return_id_value(&self, &record)
+            .insert_table_return_id_value(self, &record)
             .await
     }
 }

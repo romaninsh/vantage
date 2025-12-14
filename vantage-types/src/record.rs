@@ -147,9 +147,9 @@ impl From<serde_json::Value> for Record<serde_json::Value> {
 
 // Reverse conversion from Record to serde_json::Value
 #[cfg(feature = "serde")]
-impl Into<serde_json::Value> for Record<serde_json::Value> {
-    fn into(self) -> serde_json::Value {
-        let map: serde_json::Map<String, serde_json::Value> = self.inner.into_iter().collect();
+impl From<Record<serde_json::Value>> for serde_json::Value {
+    fn from(val: Record<serde_json::Value>) -> Self {
+        let map: serde_json::Map<String, serde_json::Value> = val.inner.into_iter().collect();
         serde_json::Value::Object(map)
     }
 }

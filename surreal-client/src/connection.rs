@@ -365,7 +365,7 @@ impl SurrealConnection {
 
         // Wrap with debug engine if debug mode is enabled
         if self.debug {
-            engine = DebugEngine::new(engine);
+            engine = DebugEngine::wrap(engine);
         }
 
         // Connect to the database

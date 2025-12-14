@@ -1,6 +1,6 @@
 //! Module for mapping Expression types between different value types recursively
 
-use crate::expression::expression::Expression;
+use crate::expression::core::Expression;
 use crate::traits::expressive::{DeferredFn, DeferredFuture, ExpressiveEnum};
 
 /// Trait for mapping Expression from one type to another

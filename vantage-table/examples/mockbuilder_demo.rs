@@ -54,7 +54,7 @@ impl vantage_expressions::traits::datasource::ExprDataSource<Value> for SimpleMo
             if let Some(response) = response {
                 Ok(response)
             } else {
-                Err(vantage_core::error!("No pattern found", query = query_str).into())
+                Err(vantage_core::error!("No pattern found", query = query_str))
             }
         }
     }
@@ -72,7 +72,7 @@ impl vantage_expressions::traits::datasource::ExprDataSource<Value> for SimpleMo
             Box::pin(async move {
                 match response {
                     Some(value) => Ok(ExpressiveEnum::Scalar(value)),
-                    None => Err(vantage_core::error!("No pattern found", query = query_str).into()),
+                    None => Err(vantage_core::error!("No pattern found", query = query_str)),
                 }
             })
         })

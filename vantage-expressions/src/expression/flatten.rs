@@ -25,7 +25,7 @@
 //!
 //! This pattern allows complex query composition while maintaining parameter safety during execution.
 
-use crate::expression::expression::Expression;
+use crate::expression::core::Expression;
 use crate::traits::expressive::ExpressiveEnum;
 
 /// Trait for flattening expressions by resolving deferred parameters and nested expressions
