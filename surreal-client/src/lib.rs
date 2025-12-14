@@ -15,7 +15,6 @@ pub mod pool;
 pub mod record;
 pub mod rpc;
 pub mod session;
-pub mod types;
 
 // Re-export the main client from the parent module
 pub use client::SurrealClient;
@@ -28,4 +27,3 @@ pub use mocks::{MockSurrealEngine, SurrealMockBuilder};
 pub use record::{RecordId, RecordIdValue, RecordRange, Table};
 pub use rpc::{RpcMessage, RpcResponse};
 pub use session::SessionState;
-pub use types::{Any, AnySurrealType, RId, SurrealType, SurrealTypeVariants};
