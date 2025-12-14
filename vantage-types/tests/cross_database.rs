@@ -59,6 +59,12 @@ impl Uuid {
     }
 }
 
+impl Default for Uuid {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PostgresType for Uuid {
     type Target = PostgresTypeUuidMarker;
 

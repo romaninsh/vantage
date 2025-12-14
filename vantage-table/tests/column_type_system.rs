@@ -123,7 +123,7 @@ impl Type3 for Email {
             return None;
         };
 
-        let name = match arr.get(0)? {
+        let name = match arr.first()? {
             ciborium::value::Value::Text(s) => s,
             _ => return None,
         };
@@ -310,7 +310,7 @@ impl TableSource for Type3TableSource {
         if let Some(row) = self.data.get(*id) {
             Ok(Record::from_indexmap(row.clone()))
         } else {
-            Err(vantage_core::error!("Record not found", id = id).into())
+            Err(vantage_core::error!("Record not found", id = id))
         }
     }
 
@@ -348,7 +348,7 @@ impl TableSource for Type3TableSource {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(vantage_core::error!("Sum not implemented for Type3TableSource").into())
+        Err(vantage_core::error!("Sum not implemented for Type3TableSource"))
     }
 
     async fn insert_table_value<E>(
@@ -361,7 +361,7 @@ impl TableSource for Type3TableSource {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(vantage_core::error!("Insert operations not supported").into())
+        Err(vantage_core::error!("Insert operations not supported"))
     }
 
     async fn replace_table_value<E>(
@@ -374,7 +374,7 @@ impl TableSource for Type3TableSource {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(vantage_core::error!("Replace operations not supported").into())
+        Err(vantage_core::error!("Replace operations not supported"))
     }
 
     async fn patch_table_value<E>(
@@ -387,7 +387,7 @@ impl TableSource for Type3TableSource {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(vantage_core::error!("Patch operations not supported").into())
+        Err(vantage_core::error!("Patch operations not supported"))
     }
 
     async fn delete_table_value<E>(&self, _table: &Table<Self, E>, _id: &Self::Id) -> Result<()>
@@ -395,7 +395,7 @@ impl TableSource for Type3TableSource {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(vantage_core::error!("Delete operations not supported").into())
+        Err(vantage_core::error!("Delete operations not supported"))
     }
 
     async fn delete_table_all_values<E>(&self, _table: &Table<Self, E>) -> Result<()>
@@ -403,7 +403,7 @@ impl TableSource for Type3TableSource {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(vantage_core::error!("Delete operations not supported").into())
+        Err(vantage_core::error!("Delete operations not supported"))
     }
 
     async fn insert_table_return_id_value<E>(
@@ -415,7 +415,7 @@ impl TableSource for Type3TableSource {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(vantage_core::error!("Insert operations not supported").into())
+        Err(vantage_core::error!("Insert operations not supported"))
     }
 }
 

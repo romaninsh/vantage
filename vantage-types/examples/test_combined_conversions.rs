@@ -36,7 +36,7 @@ impl MyType for i32 {
 }
 
 impl MyTypeVariants {
-    pub fn from_my_value(value: &String) -> Option<Self> {
+    pub fn from_my_value(value: &str) -> Option<Self> {
         if value.parse::<i32>().is_ok() {
             Some(MyTypeVariants::Number)
         } else {

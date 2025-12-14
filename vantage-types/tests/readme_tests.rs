@@ -66,7 +66,7 @@ impl Type3 for Email {
         let ciborium::value::Value::Array(arr) = boxed_value.as_ref() else {
             return None;
         };
-        let name = match arr.get(0)? {
+        let name = match arr.first()? {
             ciborium::value::Value::Text(s) => s,
             _ => return None,
         };
@@ -234,7 +234,7 @@ impl OptionalType for Email {
         let ciborium::value::Value::Array(arr) = boxed_value.as_ref() else {
             return None;
         };
-        let name = match arr.get(0)? {
+        let name = match arr.first()? {
             ciborium::value::Value::Text(s) => s,
             _ => return None,
         };
@@ -460,7 +460,7 @@ mod tests {
     #[test]
     fn test_custom_decimal_implementation() {
         let decimal = Decimal::from_str_exact("1234.5678").unwrap();
-        let _any_decimal = AnyMyType::new(decimal.clone());
+        let _any_decimal = AnyMyType::new(decimal);
 
         // Test serialization
         let json_value = decimal.to_json();

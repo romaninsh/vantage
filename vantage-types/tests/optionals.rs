@@ -81,7 +81,7 @@ impl Type3 for Email {
             return None;
         };
 
-        let name = match arr.get(0)? {
+        let name = match arr.first()? {
             ciborium::value::Value::Text(s) => s,
             _ => return None,
         };

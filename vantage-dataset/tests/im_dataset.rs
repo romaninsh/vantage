@@ -129,7 +129,7 @@ async fn test_writable_dataset() {
         .unwrap();
     assert_eq!(result.name, "Alice Patched");
     assert_eq!(result.age, 32);
-    assert_eq!(result.active, true);
+    assert!(result.active);
 
     // Test delete
     table.delete(&"user-1".to_string()).await.unwrap();
@@ -209,7 +209,7 @@ async fn test_record_field_handling() {
     assert_eq!(retrieved.id, Some("test-user".to_string()));
     assert_eq!(retrieved.name, "Test User");
     assert_eq!(retrieved.age, 42);
-    assert_eq!(retrieved.active, true);
+    assert!(retrieved.active);
 
     // Test patch doesn't affect ID
     let patch = User {
@@ -223,7 +223,7 @@ async fn test_record_field_handling() {
     assert_eq!(patched.id, Some("test-user".to_string())); // ID should remain unchanged
     assert_eq!(patched.name, "Patched Name");
     assert_eq!(patched.age, 43);
-    assert_eq!(patched.active, false);
+    assert!(!patched.active);
 }
 
 #[tokio::test]
