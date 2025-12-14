@@ -263,8 +263,6 @@ mod tests {
 
         let query = expr!("SELECT COUNT(*)");
         let _deferred = mock.defer(query);
-        // Just test that it creates without panicking
-        assert!(true);
     }
 
     #[tokio::test]

@@ -85,7 +85,5 @@ mod tests {
         let expr = expr!("SELECT COUNT(*)");
 
         let _deferred = mock.defer(expr);
-        // Just test that it creates without panicking
-        assert!(true);
     }
 }
