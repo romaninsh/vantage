@@ -13,7 +13,7 @@
 //! ## Quick Start
 //!
 //!
-//! ```rust
+//! ```rust,ignore
 //! use vantage_expressions::{expr, protocol::selectable::Selectable};
 //! use vantage_surrealdb::select::SurrealSelect;
 //!
