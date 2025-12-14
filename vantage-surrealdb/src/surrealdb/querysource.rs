@@ -4,6 +4,7 @@ use vantage_expressions::{DeferredFn, ExprDataSource, Expression};
 use crate::{AnySurrealType, SurrealType, surrealdb::SurrealDB};
 
 impl ExprDataSource<AnySurrealType> for SurrealDB {
+    // TODO: this implementation is too crude, might need to make it more elegant
     async fn execute(&self, expr: &Expression<AnySurrealType>) -> Result<AnySurrealType> {
         let (query_str, params) = self.prepare_query(expr);
         let params_cbor = params.to_cbor();
