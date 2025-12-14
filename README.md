@@ -664,7 +664,7 @@ features are still missing:
 - Type support for SQL
 - Oracle, because why not!
 - Graph relations - implement hasMany support for Graph databases
-- Consider Neq4j
+- Consider Neo4j
 - Implement some RestAPI adaptors (e.g. GitLab)
 - Aggregators (grouping queries) for SQL and SurrealDB
 
