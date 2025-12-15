@@ -1,7 +1,3 @@
-//! # SurrealDB Thing (Record ID)
-//!
-//! doc wip
-
 use std::str::FromStr;
 
 use vantage_expressions::{Expression, Expressive};
@@ -13,16 +9,33 @@ use crate::{
 
 /// SurrealDB Thing (record ID) representation
 ///
-/// doc wip
+/// Thing types enable relational queries between tables in SurrealDB.
+/// They use proper CBOR Tag(8) encoding for seamless relationship navigation.
 ///
 /// # Examples
 ///
-/// ```rust
-/// use vantage_surrealdb::thing::Thing;
+/// ```ignore
+/// use vantage_surrealdb::{thing::Thing, surreal_expr};
 ///
-/// // doc wip
-/// let thing = Thing::new("users".to_string(), "john".to_string());
-/// let parsed = "users:john".parse::<Thing>();
+/// // Create a Thing reference
+/// let latvia = Thing::new("country", "lv");
+///
+/// // Use in queries for relationships
+/// db.execute(&surreal_expr!("CREATE country:lv SET name = {}", "Latvia")).await?;
+/// db.execute(&surreal_expr!(
+///     "CREATE user:test_user SET name = {}, country = {}",
+///     "Test User",
+///     latvia
+/// )).await?;
+///
+/// // Query with relationship navigation
+/// let result = db.execute(&surreal_expr!(
+///     "SELECT VALUE [name, country.name] FROM ONLY user:test_user"
+/// )).await?;
+///
+/// let names: Vec<String> = result.try_get()?;
+/// assert_eq!(names[0], "Test User");
+/// assert_eq!(names[1], "Latvia");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Thing {
@@ -33,12 +46,10 @@ pub struct Thing {
 impl Thing {
     /// Creates a new Thing with table and ID
     ///
-    /// doc wip
-    ///
     /// # Arguments
     ///
-    /// * `table` - doc wip
-    /// * `id` - doc wip
+    /// * `table` - Table name
+    /// * `id` - Record identifier
     pub fn new(table: impl Into<String>, id: impl Into<String>) -> Self {
         Self {
             table: table.into(),
