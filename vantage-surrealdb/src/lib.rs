@@ -47,7 +47,7 @@ pub mod surrealdb;
 // pub mod column;
 // pub mod select;
 // pub mod table;
-// pub mod thing;
+pub mod thing;
 // pub mod typed_expression;
 // pub mod variable;
 

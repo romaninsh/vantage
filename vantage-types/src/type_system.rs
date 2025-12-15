@@ -57,6 +57,13 @@ macro_rules! vantage_type_system {
                     }
                 }
 
+                pub fn new_ref<T: $trait_name>(value: &T) -> Self {
+                    Self {
+                        value: value.[<to_ $method_name>](),
+                        type_variant: Some(T::Target::TYPE_ENUM),
+                    }
+                }
+
                 #[allow(clippy::ptr_arg)]
                 pub fn [<from_ $method_name>](value: &$value_type) -> Option<Self> {
                     let type_variant = [<$trait_name Variants>]::[<from_ $method_name>](value);

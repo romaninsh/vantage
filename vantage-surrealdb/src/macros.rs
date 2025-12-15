@@ -47,8 +47,8 @@ macro_rules! surreal_param {
         vantage_expressions::ExpressiveEnum::Deferred($deferred)
     };
 
-    // Regular scalar: expr -> ExpressiveEnum::Scalar(AnySurrealType::new(expr))
+    // Regular scalar: expr -> ExpressiveEnum::Scalar(AnySurrealType::new_ref(&expr))
     ($param:expr) => {
-        vantage_expressions::ExpressiveEnum::Scalar($crate::AnySurrealType::new($param))
+        vantage_expressions::ExpressiveEnum::Scalar($crate::AnySurrealType::new_ref(&$param))
     };
 }

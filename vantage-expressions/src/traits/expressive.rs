@@ -321,6 +321,17 @@ pub trait Expressive<T> {
     /// Types implementing this trait can be used directly in the `expr!` macro
     /// with parentheses syntax: `(identifier)` - the conversion happens automatically.
     fn expr(&self) -> Expression<T>;
+
+    /// Preview the expression as a formatted string.
+    ///
+    /// This method provides a convenient way to preview expressions without
+    /// needing to call `expr().preview()` explicitly.
+    fn preview(&self) -> String
+    where
+        T: std::fmt::Debug + std::fmt::Display,
+    {
+        self.expr().preview()
+    }
 }
 
 impl<T: Clone> Clone for ExpressiveEnum<T> {
