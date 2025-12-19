@@ -9,22 +9,25 @@ pub mod target;
 
 use std::marker::PhantomData;
 
+use crate::AnySurrealType;
+
 use field::Field;
 use select_field::SelectField;
-use serde_json::Value;
 use target::Target;
+use vantage_core::Result;
 
 use crate::{
-    SurrealDB,
+    Expr,
     identifier::Identifier,
-    operation::Expressive,
     sum::{Fx, Sum},
+    surreal_expr,
     surreal_return::SurrealReturn,
+    surrealdb::SurrealDB,
 };
 use vantage_expressions::{
-    Expr, Expression, QuerySource, expr,
-    protocol::selectable::Selectable,
+    ExprDataSource, Expression, Expressive, ExpressiveEnum,
     result::{self, QueryResult},
+    traits::selectable::{Selectable, SourceRef},
 };
 
 /// SurrealDB SELECT query builder
@@ -50,9 +53,9 @@ pub struct SurrealSelect<T = result::Rows> {
     from_only: bool,
     pub from: Vec<Target>, // FROM clause targets
     pub from_omit: bool,
-    pub where_conditions: Vec<Expression>,
-    pub order_by: Vec<(Expression, bool)>,
-    pub group_by: Vec<Expression>,
+    pub where_conditions: Vec<Expr>,
+    pub order_by: Vec<(Expr, bool)>,
+    pub group_by: Vec<Expr>,
     pub distinct: bool,
     pub limit: Option<i64>,
     pub skip: Option<i64>,
@@ -60,59 +63,38 @@ pub struct SurrealSelect<T = result::Rows> {
 }
 
 impl SurrealSelect<result::Single> {
-    pub async fn get(&self, db: &SurrealDB) -> Value {
-        match db.execute(&self.expr()).await {
-            Value::Array(arr) if !arr.is_empty() => arr[0].clone(),
-            other => other,
-        }
+    pub async fn get(&self, db: &SurrealDB) -> Result<AnySurrealType> {
+        db.execute(&self.expr()).await
     }
 }
 
 impl SurrealSelect<result::List> {
-    pub async fn get(&self, db: &SurrealDB) -> Vec<Value> {
-        match db.execute(&self.expr()).await {
-            Value::Array(list) => list,
-            _ => panic!("Expected array from database query"),
-        }
+    pub async fn get(&self, db: &SurrealDB) -> Result<Vec<AnySurrealType>> {
+        db.execute(&self.expr())
+            .await?
+            .try_get()
+            .ok_or_else(|| vantage_core::error!("Expected array from database query"))
     }
 }
 
 impl SurrealSelect<result::Rows> {
-    pub async fn get(&self, db: &SurrealDB) -> Vec<serde_json::Map<String, Value>> {
-        match db.execute(&self.expr()).await {
-            Value::Array(rows) => rows
-                .into_iter()
-                .map(|item| match item {
-                    Value::Object(map) => map,
-                    _ => panic!("Expected object in result set"),
-                })
-                .collect(),
-            _ => panic!("Expected array from database query"),
-        }
+    pub async fn get(
+        &self,
+        db: &SurrealDB,
+    ) -> Result<Vec<indexmap::IndexMap<String, AnySurrealType>>> {
+        db.execute(&self.expr())
+            .await?
+            .try_get()
+            .ok_or_else(|| vantage_core::error!("Expected array of objects from database query"))
     }
 }
 
 impl SurrealSelect<result::SingleRow> {
-    pub async fn get(&self, db: &SurrealDB) -> serde_json::Map<String, Value> {
-        match db.execute(&self.expr()).await {
-            Value::Array(arr) if !arr.is_empty() => match &arr[0] {
-                Value::Object(map) => map.clone(),
-                _ => panic!("Expected object in result set"),
-            },
-            Value::Object(map) => map,
-            _ => panic!("Expected object or array from database query"),
-        }
-    }
-
-    pub async fn try_get(&self, db: &SurrealDB) -> Option<serde_json::Map<String, Value>> {
-        match db.execute(&self.expr()).await {
-            Value::Array(arr) if !arr.is_empty() => match &arr[0] {
-                Value::Object(map) => Some(map.clone()),
-                _ => None,
-            },
-            Value::Object(map) => Some(map),
-            _ => None,
-        }
+    pub async fn get(&self, db: &SurrealDB) -> Result<indexmap::IndexMap<String, AnySurrealType>> {
+        db.execute(&self.expr())
+            .await?
+            .try_get()
+            .ok_or_else(|| vantage_core::error!("Expected object from database query"))
     }
 }
 
@@ -171,14 +153,28 @@ impl<T: QueryResult> SurrealSelect<T> {
         self.single_value = true;
         self
     }
+
+    pub fn with_expression(mut self, expression: Expr, alias: Option<String>) -> Self {
+        let mut field = SelectField::new(expression);
+        if let Some(alias) = alias {
+            field = field.with_alias(alias);
+        }
+        self.fields.push(field);
+        self
+    }
+
+    pub fn with_field(mut self, field: impl Into<String>) -> Self {
+        self.fields.push(SelectField::new(Identifier::new(field)));
+        self
+    }
     /// Renders the SELECT fields clause
     ///
     /// doc wip
-    fn render_fields(&self) -> Expression {
+    fn render_fields(&self) -> Expr {
         if self.fields.is_empty() {
-            expr!("*")
+            surreal_expr!("*")
         } else {
-            let field_expressions: Vec<Expression> = self
+            let field_expressions: Vec<Expr> = self
                 .fields
                 .iter()
                 .map(|field| field.clone().into())
@@ -190,18 +186,18 @@ impl<T: QueryResult> SurrealSelect<T> {
     /// Renders the FROM clause
     ///
     /// doc wip
-    fn render_from(&self) -> Expression {
+    fn render_from(&self) -> Expr {
         if self.from.is_empty() {
-            expr!("")
+            surreal_expr!("")
         } else {
-            let from_expressions: Vec<Expression> = self
+            let from_expressions: Vec<Expr> = self
                 .from
                 .iter()
                 .map(|target| target.clone().into())
                 .collect();
-            expr!(
+            surreal_expr!(
                 format!(" FROM {}{{}}", if self.from_only { "ONLY " } else { "" }),
-                Expression::from_vec(from_expressions, ", ")
+                (Expression::from_vec(from_expressions, ", "))
             )
         }
     }
@@ -209,27 +205,27 @@ impl<T: QueryResult> SurrealSelect<T> {
     /// Renders the WHERE clause
     ///
     /// doc wip
-    fn render_where(&self) -> Expression {
+    fn render_where(&self) -> Expr {
         if self.where_conditions.is_empty() {
-            expr!("")
+            surreal_expr!("")
         } else {
             // Combine multiple conditions with AND
             let combined = Expression::from_vec(self.where_conditions.clone(), " AND ");
-            expr!(" WHERE {}", combined)
+            surreal_expr!(" WHERE {}", (combined))
         }
     }
 
     /// Renders the GROUP BY clause
     ///
     /// doc wip
-    fn render_group_by(&self) -> Expression {
+    fn render_group_by(&self) -> Expr {
         if self.group_by.is_empty() {
-            expr!("")
+            surreal_expr!("")
         } else {
-            let group_expressions: Vec<Expression> = self.group_by.to_vec();
-            expr!(
+            let group_expressions: Vec<Expr> = self.group_by.to_vec();
+            surreal_expr!(
                 " GROUP BY {}",
-                Expression::from_vec(group_expressions, ", ")
+                (Expression::from_vec(group_expressions, ", "))
             )
         }
     }
@@ -237,53 +233,53 @@ impl<T: QueryResult> SurrealSelect<T> {
     /// Renders the ORDER BY clause
     ///
     /// doc wip
-    fn render_order_by(&self) -> Expression {
+    fn render_order_by(&self) -> Expr {
         if self.order_by.is_empty() {
-            expr!("")
+            surreal_expr!("")
         } else {
-            let order_expressions: Vec<Expression> = self
+            let order_expressions: Vec<Expr> = self
                 .order_by
                 .iter()
                 .map(|(expression, ascending)| {
                     if *ascending {
-                        expr!("{}", expression.clone())
+                        surreal_expr!("{}", (expression.clone()))
                     } else {
-                        expr!("{} DESC", expression.clone())
+                        surreal_expr!("{} DESC", (expression.clone()))
                     }
                 })
                 .collect();
             let combined = Expression::from_vec(order_expressions, ", ");
-            expr!(" ORDER BY {}", combined)
+            surreal_expr!(" ORDER BY {}", (combined))
         }
     }
 
     /// Renders the LIMIT and START clauses
     ///
     /// doc wip
-    fn render_limit(&self) -> Expression {
+    fn render_limit(&self) -> Expr {
         match (self.limit, self.skip) {
-            (Some(limit), Some(skip)) => expr!(" LIMIT {} START {}", limit, skip),
-            (Some(limit), None) => expr!(" LIMIT {}", limit),
-            (None, Some(skip)) => expr!(" START {}", skip),
-            (None, None) => expr!(""),
+            (Some(limit), Some(skip)) => surreal_expr!(" LIMIT {} START {}", limit, skip),
+            (Some(limit), None) => surreal_expr!(" LIMIT {}", limit),
+            (None, Some(skip)) => surreal_expr!(" START {}", skip),
+            (None, None) => surreal_expr!(""),
         }
     }
 
     /// Renders entire statement into an expression
-    fn render(&self) -> Expression {
-        expr!(
+    fn render(&self) -> Expr {
+        surreal_expr!(
             "SELECT {}{}{}{}{}{}{}",
-            if self.single_value {
-                expr!("VALUE ")
+            (if self.single_value {
+                surreal_expr!("VALUE ")
             } else {
-                expr!("")
-            },
-            self.render_fields(),
-            self.render_from(),
-            self.render_where(),
-            self.render_group_by(),
-            self.render_order_by(),
-            self.render_limit()
+                surreal_expr!("")
+            }),
+            (self.render_fields()),
+            (self.render_from()),
+            (self.render_where()),
+            (self.render_group_by()),
+            (self.render_order_by()),
+            (self.render_limit())
         )
     }
 
@@ -294,8 +290,8 @@ impl<T: QueryResult> SurrealSelect<T> {
     }
 }
 
-impl<T: QueryResult> Expressive for SurrealSelect<T> {
-    fn expr(&self) -> Expression {
+impl<T: QueryResult> Expressive<AnySurrealType> for SurrealSelect<T> {
+    fn expr(&self) -> Expr {
         self.render()
     }
 }
@@ -306,17 +302,25 @@ impl<T: QueryResult> Expressive for SurrealSelect<T> {
 //     }
 // }
 
-impl<T: QueryResult> From<SurrealSelect<T>> for Expression {
-    fn from(val: SurrealSelect<T>) -> Self {
-        val.render()
-    }
-}
-
-impl<T: QueryResult> Selectable for SurrealSelect<T> {
-    fn set_source(&mut self, source: impl Into<Expr>, _alias: Option<String>) {
-        let source_expr = match source.into() {
-            Expr::Scalar(Value::String(s)) => Identifier::new(s).into(),
-            other => expr!("({})", other),
+impl<T: QueryResult> Selectable<crate::AnySurrealType> for SurrealSelect<T> {
+    fn set_source(
+        &mut self,
+        source: impl Into<SourceRef<crate::AnySurrealType>>,
+        _alias: Option<String>,
+    ) {
+        use vantage_expressions::ExpressiveEnum;
+        let source_ref = source.into();
+        let source_expr = match source_ref.into_expressive_enum() {
+            ExpressiveEnum::Scalar(s) => {
+                let source = s
+                    .try_get::<String>()
+                    .unwrap_or_else(|_| panic!("Source must be a string, found {:?}", s));
+                Identifier::new(source).expr()
+            }
+            ExpressiveEnum::Nested(expr) => surreal_expr!("({})", (expr)),
+            ExpressiveEnum::Deferred(_deferred_fn) => {
+                panic!("Cannot use deferred as select source")
+            }
         };
         self.from = vec![Target::new(source_expr)];
     }
@@ -325,7 +329,7 @@ impl<T: QueryResult> Selectable for SurrealSelect<T> {
         self.fields.push(SelectField::new(Identifier::new(field)));
     }
 
-    fn add_expression(&mut self, expression: Expression, alias: Option<String>) {
+    fn add_expression(&mut self, expression: Expr, alias: Option<String>) {
         let mut field = SelectField::new(expression);
         if let Some(alias) = alias {
             field = field.with_alias(alias);
@@ -333,7 +337,7 @@ impl<T: QueryResult> Selectable for SurrealSelect<T> {
         self.fields.push(field);
     }
 
-    fn add_where_condition(&mut self, condition: Expression) {
+    fn add_where_condition(&mut self, condition: Expr) {
         self.where_conditions.push(condition);
     }
 
@@ -341,11 +345,11 @@ impl<T: QueryResult> Selectable for SurrealSelect<T> {
         self.distinct = distinct;
     }
 
-    fn add_order_by(&mut self, expression: Expression, ascending: bool) {
+    fn add_order_by(&mut self, expression: Expr, ascending: bool) {
         self.order_by.push((expression, ascending));
     }
 
-    fn add_group_by(&mut self, expression: Expression) {
+    fn add_group_by(&mut self, expression: Expr) {
         self.group_by.push(expression);
     }
 
@@ -398,15 +402,15 @@ impl<T: QueryResult> Selectable for SurrealSelect<T> {
         self.skip
     }
 
-    fn as_count(&self) -> Expression {
+    fn as_count(&self) -> Expr {
         use crate::sum::Fx;
 
         // SurrealDB syntax: count(id) wrapped in function call
-        let id_expr = expr!("id");
+        let id_expr = surreal_expr!("id");
         Fx::new("count", vec![id_expr]).into()
     }
 
-    fn as_sum(&self, column: Expression) -> Expression {
+    fn as_sum(&self, column: Expr) -> Expr {
         use crate::sum::Sum;
 
         // SurrealDB syntax: math::sum(column)
@@ -415,21 +419,21 @@ impl<T: QueryResult> Selectable for SurrealSelect<T> {
 }
 
 impl SurrealSelect<result::Rows> {
-    pub fn as_sum(self, field_or_expr: impl Into<Expr>) -> SurrealReturn {
+    pub fn as_sum(self, field_or_expr: impl Into<ExpressiveEnum<AnySurrealType>>) -> SurrealReturn {
         let query = self.without_fields();
         let query = match field_or_expr.into() {
-            Expr::Scalar(Value::String(s)) => query.only_column(s),
-            Expr::Nested(e) => query.only_expression(e),
-            other => query.only_expression(expr!("{}", other)),
+            ExpressiveEnum::Scalar(s) => query.only_column(s.try_get::<String>().unwrap()),
+            ExpressiveEnum::Nested(e) => query.only_expression(e),
+            _ => panic!("Only scalar string or nested is acceptable"),
         };
 
         SurrealReturn::new(Sum::new(query.expr()).into())
     }
     pub fn as_count(self) -> SurrealReturn {
-        let result = self.only_expression(expr!("id"));
+        let result = self.only_expression(surreal_expr!("id"));
         SurrealReturn::new(Fx::new("count", vec![result.expr()]).into())
     }
-    pub fn only_expression(self, expr: Expression) -> SurrealSelect<result::List> {
+    pub fn only_expression(self, expr: Expr) -> SurrealSelect<result::List> {
         self.without_fields()
             .with_expression(expr, None)
             .into_list()
@@ -515,7 +519,7 @@ impl SurrealSelect<result::List> {
 }
 
 impl SurrealSelect<result::SingleRow> {
-    pub fn only_expression(self, expr: Expression) -> SurrealSelect<result::Single> {
+    pub fn only_expression(self, expr: Expr) -> SurrealSelect<result::Single> {
         self.without_fields()
             .with_expression(expr, None)
             .as_single_value()
@@ -559,7 +563,7 @@ impl SurrealSelect<result::SingleRow> {
     // }
 }
 
-impl<T> crate::protocol::SurrealQueriable for SurrealSelect<T> {}
+// impl crate::protocol::SurrealQueriable for SurrealSelect<T> {}
 
 #[cfg(test)]
 mod tests {
@@ -575,20 +579,18 @@ mod tests {
                 SelectField::new(Field::new("name")),
                 SelectField::new(Field::new("set")),
             ])
-            .from(vec![Target::new(expr!("users"))]);
+            .from(vec![Target::new(surreal_expr!("users"))]);
 
-        let expr: Expression = select.into();
-        let sql = expr.preview();
+        let sql = select.preview();
 
         assert_eq!(sql, "SELECT name, ⟨set⟩ FROM users");
     }
 
     #[test]
     fn test_select_all() {
-        let select = SurrealSelect::new().from(vec![Target::new(expr!("users"))]);
+        let select = SurrealSelect::new().from(vec![Target::new(surreal_expr!("users"))]);
 
-        let expr: Expression = select.into();
-        let sql = expr.preview();
+        let sql = select.preview();
 
         assert_eq!(sql, "SELECT * FROM users");
     }
@@ -598,10 +600,9 @@ mod tests {
         let mut select = SurrealSelect::new();
         select.set_source("users", None);
         select.add_field("name".to_string());
-        select.add_where_condition(expr!("age > 18"));
+        select.add_where_condition(surreal_expr!("age > 18"));
 
-        let expr: Expression = select.into();
-        let sql = expr.preview();
+        let sql = select.preview();
 
         assert_eq!(sql, "SELECT name FROM users WHERE age > 18");
     }
@@ -611,11 +612,10 @@ mod tests {
         let mut select = SurrealSelect::new();
         select.set_source("users", None);
         select.add_field("name".to_string());
-        select.add_where_condition(expr!("age > 18"));
-        select.add_where_condition(expr!("active = true"));
+        select.add_where_condition(surreal_expr!("age > 18"));
+        select.add_where_condition(surreal_expr!("active = true"));
 
-        let expr: Expression = select.into();
-        let sql = expr.preview();
+        let sql = select.preview();
 
         assert_eq!(
             sql,
@@ -628,10 +628,9 @@ mod tests {
         let mut select = SurrealSelect::new();
         select.set_source("users", None);
         select.add_field("name".to_string());
-        select.add_order_by(expr!("name"), true);
+        select.add_order_by(surreal_expr!("name"), true);
 
-        let expr: Expression = select.into();
-        let sql = expr.preview();
+        let sql = select.preview();
 
         assert_eq!(sql, "SELECT name FROM users ORDER BY name");
     }
@@ -641,10 +640,9 @@ mod tests {
         let mut select = SurrealSelect::new();
         select.set_source("users", None);
         select.add_field("name".to_string());
-        select.add_order_by(expr!("created_at"), false);
+        select.add_order_by(surreal_expr!("created_at"), false);
 
-        let expr: Expression = select.into();
-        let sql = expr.preview();
+        let sql = select.preview();
 
         assert_eq!(sql, "SELECT name FROM users ORDER BY created_at DESC");
     }
@@ -654,11 +652,10 @@ mod tests {
         let mut select = SurrealSelect::new();
         select.set_source("users", None);
         select.add_field("department".to_string());
-        select.add_expression(expr!("count()"), Some("count".to_string()));
-        select.add_group_by(expr!("department"));
+        select.add_expression(surreal_expr!("count()"), Some("count".to_string()));
+        select.add_group_by(surreal_expr!("department"));
 
-        let expr: Expression = select.into();
-        let sql = expr.preview();
+        let sql = select.preview();
 
         assert_eq!(
             sql,
@@ -673,8 +670,7 @@ mod tests {
         select.add_field("name".to_string());
         select.set_limit(Some(10), None);
 
-        let expr: Expression = select.into();
-        let sql = expr.preview();
+        let sql = select.preview();
 
         assert_eq!(sql, "SELECT name FROM users LIMIT 10");
     }
@@ -686,8 +682,7 @@ mod tests {
         select.add_field("name".to_string());
         select.set_limit(Some(10), Some(20));
 
-        let expr: Expression = select.into();
-        let sql = expr.preview();
+        let sql = select.preview();
 
         assert_eq!(sql, "SELECT name FROM users LIMIT 10 START 20");
     }
@@ -697,14 +692,16 @@ mod tests {
         let mut select = SurrealSelect::new();
         select.set_source("orders", None);
         select.add_field("customer_id".to_string());
-        select.add_expression(expr!("SUM(total)"), Some("total_amount".to_string()));
-        select.add_where_condition(expr!("status = 'completed'"));
-        select.add_group_by(expr!("customer_id"));
-        select.add_order_by(expr!("total_amount"), false);
+        select.add_expression(
+            surreal_expr!("SUM(total)"),
+            Some("total_amount".to_string()),
+        );
+        select.add_where_condition(surreal_expr!("status = 'completed'"));
+        select.add_group_by(surreal_expr!("customer_id"));
+        select.add_order_by(surreal_expr!("total_amount"), false);
         select.set_limit(Some(5), None);
 
-        let expr: Expression = select.into();
-        let sql = expr.preview();
+        let sql = select.preview();
 
         assert_eq!(
             sql,
@@ -717,13 +714,13 @@ mod tests {
         let mut select = SurrealSelect::new();
 
         // Test Selectable trait methods
-        select.set_source(expr!("users"), None);
+        select.set_source("users", None);
         select.add_field("name".to_string());
         select.add_field("email".to_string());
-        select.add_expression(expr!("age * 2"), Some("double_age".to_string()));
-        select.add_where_condition(expr!("age > 18"));
-        select.add_order_by(expr!("name"), true);
-        select.add_group_by(expr!("department"));
+        select.add_expression(surreal_expr!("age * 2"), Some("double_age".to_string()));
+        select.add_where_condition(surreal_expr!("age > 18"));
+        select.add_order_by(surreal_expr!("name"), true);
+        select.add_group_by(surreal_expr!("department"));
         select.set_limit(Some(10), Some(5));
         select.set_distinct(true);
 

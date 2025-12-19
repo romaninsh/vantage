@@ -2,9 +2,9 @@
 //!
 //! doc wip
 
-use vantage_expressions::{Expression, expr};
+use vantage_expressions::{Expression, Expressive};
 
-use crate::{identifier::Identifier, operation::Expressive};
+use crate::{AnySurrealType, Expr, identifier::Identifier, surreal_expr};
 
 /// SurrealDB identifier with automatic escaping
 ///
@@ -21,7 +21,7 @@ use crate::{identifier::Identifier, operation::Expressive};
 /// ```
 #[derive(Debug, Clone)]
 pub struct Sum {
-    expr: Expression,
+    expr: Expr,
 }
 
 impl Sum {
@@ -32,20 +32,20 @@ impl Sum {
     /// # Arguments
     ///
     /// * `identifier` - doc wip
-    pub fn new(expr: Expression) -> Self {
+    pub fn new(expr: Expr) -> Self {
         Self {
-            expr: expr!("math::sum({})", expr),
+            expr: surreal_expr!("math::sum({})", (expr)),
         }
     }
 }
 
-impl Expressive for Sum {
-    fn expr(&self) -> Expression {
+impl Expressive<AnySurrealType> for Sum {
+    fn expr(&self) -> Expr {
         self.expr.clone()
     }
 }
 
-impl From<Sum> for Expression {
+impl From<Sum> for Expr {
     fn from(val: Sum) -> Self {
         val.expr()
     }
@@ -54,7 +54,7 @@ impl From<Sum> for Expression {
 #[derive(Debug, Clone)]
 pub struct Fx {
     name: String,
-    expr: Vec<Expression>,
+    expr: Vec<Expr>,
 }
 
 impl Fx {
@@ -65,7 +65,7 @@ impl Fx {
     /// # Arguments
     ///
     /// * `identifier` - doc wip
-    pub fn new(name: impl Into<String>, expr: Vec<Expression>) -> Self {
+    pub fn new(name: impl Into<String>, expr: Vec<Expr>) -> Self {
         Self {
             name: name.into(),
             expr,
@@ -73,17 +73,17 @@ impl Fx {
     }
 }
 
-impl Expressive for Fx {
-    fn expr(&self) -> Expression {
-        expr!(
+impl Expressive<AnySurrealType> for Fx {
+    fn expr(&self) -> Expr {
+        surreal_expr!(
             "{}({})",
-            Identifier::new(self.name.clone()),
-            Expression::from_vec(self.expr.clone(), ", ")
+            (Identifier::new(self.name.clone())),
+            (Expression::from_vec(self.expr.clone(), ", "))
         )
     }
 }
 
-impl From<Fx> for Expression {
+impl From<Fx> for Expr {
     fn from(val: Fx) -> Self {
         val.expr()
     }

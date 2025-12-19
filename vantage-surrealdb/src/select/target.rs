@@ -2,7 +2,7 @@
 //!
 //! doc wip
 
-use vantage_expressions::Expression;
+use crate::Expr;
 
 /// Represents a target in a FROM clause
 ///
@@ -20,7 +20,7 @@ use vantage_expressions::Expression;
 
 #[derive(Debug, Clone)]
 pub struct Target {
-    target: Expression,
+    target: Expr,
 }
 
 impl Target {
@@ -31,14 +31,14 @@ impl Target {
     /// # Arguments
     ///
     /// * `target` - doc wip
-    pub fn new(target: impl Into<Expression>) -> Self {
+    pub fn new(target: impl Into<Expr>) -> Self {
         Self {
             target: target.into(),
         }
     }
 }
 
-impl From<Target> for Expression {
+impl From<Target> for Expr {
     fn from(val: Target) -> Self {
         val.target
     }

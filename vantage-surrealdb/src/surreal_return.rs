@@ -4,10 +4,9 @@
 
 use std::{marker::PhantomData, ops::Deref};
 
-use serde_json::Value;
-use vantage_expressions::{Expression, QuerySource, expr, result};
+use vantage_expressions::{Expressive, result};
 
-use crate::{SurrealDB, operation::Expressive, protocol::SurrealQueriable};
+use crate::{AnySurrealType, Expr, surreal_expr};
 
 /// SurrealDB identifier with automatic escaping
 ///
@@ -24,7 +23,7 @@ use crate::{SurrealDB, operation::Expressive, protocol::SurrealQueriable};
 /// ```
 #[derive(Debug, Clone)]
 pub struct SurrealReturn<T = result::Single> {
-    expr: Expression,
+    expr: Expr,
     _phantom: PhantomData<T>,
 }
 
@@ -36,36 +35,30 @@ impl SurrealReturn {
     /// # Arguments
     ///
     /// * `identifier` - doc wip
-    pub fn new(expr: Expression) -> Self {
+    pub fn new(expr: Expr) -> Self {
         Self {
-            expr: expr!("RETURN {}", expr),
+            expr: surreal_expr!("RETURN {}", (expr)),
             _phantom: PhantomData,
         }
     }
 }
 
-impl SurrealReturn<result::Single> {
-    pub async fn get(&self, db: &SurrealDB) -> Value {
-        db.execute(&self.expr()).await
-    }
-}
+// impl SurrealReturn<result::Single> {
+//     pub async fn get(&self, db: &SurrealDB) -> Value {
+//         db.execute(&self.expr()).await
+//     }
+// }
 
 impl Deref for SurrealReturn {
-    type Target = Expression;
+    type Target = Expr;
 
     fn deref(&self) -> &Self::Target {
         &self.expr
     }
 }
-impl SurrealQueriable for SurrealReturn {}
-impl Expressive for SurrealReturn {
-    fn expr(&self) -> Expression {
+// impl SurrealQueriable for SurrealReturn {}
+impl Expressive<AnySurrealType> for SurrealReturn {
+    fn expr(&self) -> Expr {
         self.expr.clone()
-    }
-}
-
-impl From<SurrealReturn> for Expression {
-    fn from(val: SurrealReturn) -> Self {
-        val.expr()
     }
 }
