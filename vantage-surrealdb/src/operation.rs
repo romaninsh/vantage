@@ -2,16 +2,17 @@
 //!
 //! This module provides operations that extend expressions with SurrealDB-specific functionality.
 
-use vantage_expressions::{Expr, Expression, expr};
+use vantage_expressions::Expressive;
 
-/// Trait for types that can be converted to Expression
-pub trait Expressive: Into<Expression> {
-    /// Convert to Expression
-    fn expr(&self) -> Expression;
-}
+use crate::{AnySurrealType, Expr, identifier::Identifier, surreal_expr};
+
+// Use the pre-defined ExprArguments enum from lib.rs
+use crate::SurrealExprArgs;
+
+// ExprArguments now automatically gets Expressive blanket impl from fn_args! macro
 
 /// Extension trait to add reference traversal methods to expressions
-pub trait RefOperation: Expressive {
+pub trait RefOperation: Expressive<AnySurrealType> {
     /// Creates a right reference traversal expression in the format: self->ref->table
     ///
     /// # Arguments
@@ -22,7 +23,7 @@ pub trait RefOperation: Expressive {
     /// # Returns
     ///
     /// An expression that renders as "self->reference->table"
-    fn rref(&self, reference: impl Into<String>, table: impl Into<String>) -> Expression;
+    fn rref(&self, reference: impl Into<String>, table: impl Into<String>) -> Expr;
 
     /// Creates a left reference traversal expression in the format: self<-ref<-table
     ///
@@ -34,142 +35,126 @@ pub trait RefOperation: Expressive {
     /// # Returns
     ///
     /// An expression that renders as "self<-reference<-table"
-    fn lref(&self, reference: impl Into<String>, table: impl Into<String>) -> Expression;
-    fn eq(&self, other: impl Into<Expr>) -> Expression;
-    fn sub(&self, other: impl Into<Expr>) -> Expression;
-    fn contains(&self, other: impl Into<Expr>) -> Expression;
-    fn in_(&self, other: impl Into<Expr>) -> Expression;
+    fn lref(&self, reference: impl Into<String>, table: impl Into<String>) -> Expr;
+    fn eq(&self, other: impl Into<SurrealExprArgs>) -> Expr;
+    fn sub(&self, other: impl Into<SurrealExprArgs>) -> Expr;
+    fn contains(&self, other: impl Into<SurrealExprArgs>) -> Expr;
+    fn in_(&self, other: impl Into<SurrealExprArgs>) -> Expr;
 }
 
 // Default implementations for RefOperation
 impl<T> RefOperation for T
 where
-    T: Expressive,
+    T: Expressive<AnySurrealType>,
 {
-    fn rref(&self, reference: impl Into<String>, table: impl Into<String>) -> Expression {
-        expr!(
+    fn rref(&self, reference: impl Into<String>, table: impl Into<String>) -> Expr {
+        surreal_expr!(
             "{}->{}->{}",
-            self.expr(),
-            Expression::new(reference.into(), vec![]),
-            Expression::new(table.into(), vec![])
+            self,
+            Identifier::new(reference),
+            Identifier::new(table)
         )
     }
 
-    fn lref(&self, reference: impl Into<String>, table: impl Into<String>) -> Expression {
-        expr!(
+    fn lref(&self, reference: impl Into<String>, table: impl Into<String>) -> Expr {
+        surreal_expr!(
             "{}<-{}<-{}",
-            self.expr(),
-            Expression::new(reference.into(), vec![]),
-            Expression::new(table.into(), vec![])
+            self,
+            Identifier::new(reference),
+            Identifier::new(table)
         )
     }
 
-    fn eq(&self, other: impl Into<Expr>) -> Expression {
-        expr!("{} = {}", self.expr(), other.into())
+    fn eq(&self, other: impl Into<SurrealExprArgs>) -> Expr {
+        surreal_expr!("{} = {}", self, other.into())
     }
 
-    fn sub(&self, other: impl Into<Expr>) -> Expression {
-        expr!("{} - {}", self.expr(), other.into())
+    fn sub(&self, other: impl Into<SurrealExprArgs>) -> Expr {
+        surreal_expr!("{} - {}", self, other.into())
     }
 
-    fn contains(&self, other: impl Into<Expr>) -> Expression {
-        expr!("{} CONTAINS {}", self.expr(), other.into())
+    fn contains(&self, other: impl Into<SurrealExprArgs>) -> Expr {
+        surreal_expr!("{} CONTAINS {}", self, other.into())
     }
 
-    fn in_(&self, other: impl Into<Expr>) -> Expression {
-        expr!("{} IN {}", self.expr(), other.into())
-    }
-}
-
-impl Expressive for Expression {
-    fn expr(&self) -> Expression {
-        self.clone()
+    fn in_(&self, other: impl Into<SurrealExprArgs>) -> Expr {
+        surreal_expr!("{} IN {}", self, other.into())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vantage_expressions::expr;
 
     #[test]
-    fn test_rref_operation_basic() {
-        let expr = expr!("bakery");
-        let trav = expr.rref("owns", "product");
-
-        let result = trav.preview();
-        assert_eq!(result, "bakery->owns->product");
-    }
-
-    #[test]
-    fn test_lref_operation_basic() {
-        let expr = expr!("bakery");
-        let trav = expr.lref("owns", "product");
-
-        let result = trav.preview();
-        assert_eq!(result, "bakery<-owns<-product");
-    }
-
-    #[test]
-    fn test_rref_operation_with_complex_expr() {
-        let expr = expr!("bakery:hill_valley");
-        let trav = expr.rref("owns", "product");
-
-        let result = trav.preview();
-        assert_eq!(result, "bakery:hill_valley->owns->product");
-    }
-
-    #[test]
-    fn test_lref_operation_with_complex_expr() {
-        let expr = expr!("product:1");
-        let trav = expr.lref("owns", "bakery");
-
-        let result = trav.preview();
-        assert_eq!(result, "product:1<-owns<-bakery");
-    }
-
-    #[test]
-    fn test_rref_operation_chaining() {
-        let expr = expr!("user");
-        let trav = expr.rref("owns", "company").rref("has", "employees");
-
-        let result = trav.preview();
-        assert_eq!(result, "user->owns->company->has->employees");
-    }
-
-    #[test]
-    fn test_mixed_ref_operation_chaining() {
-        let expr = expr!("product:1");
-        let trav = expr.lref("owns", "bakery").rref("located_in", "city");
-
-        let result = trav.preview();
-        assert_eq!(result, "product:1<-owns<-bakery->located_in->city");
-    }
-
-    #[test]
-    fn test_comprehensive_api_usage() {
-        use crate::thing::Thing;
-
-        // Test with expressions
-        let bakery_expr = expr!("bakery");
-        let product_traversal = bakery_expr.rref("owns", "product");
-        assert_eq!(product_traversal.preview(), "bakery->owns->product");
-
-        // Test with Thing
-        let bakery_thing = Thing::new("bakery", "hill_valley");
-        let product_from_thing = bakery_thing.rref("owns", "product");
+    fn test_reference_operations() {
+        // Test basic right and left references
+        let expr = surreal_expr!("bakery");
         assert_eq!(
-            product_from_thing.preview(),
+            expr.rref("owns", "product").preview(),
+            "bakery->owns->product"
+        );
+        assert_eq!(
+            expr.lref("owns", "product").preview(),
+            "bakery<-owns<-product"
+        );
+
+        // Test with complex identifiers
+        let complex_expr = surreal_expr!("bakery:hill_valley");
+        assert_eq!(
+            complex_expr.rref("owns", "product").preview(),
             "bakery:hill_valley->owns->product"
         );
 
-        // Test left reference
-        let product_expr = expr!("product:1");
-        let bakery_from_product = product_expr.lref("owns", "bakery");
-        assert_eq!(bakery_from_product.preview(), "product:1<-owns<-bakery");
+        let id_expr = surreal_expr!("product:1");
+        assert_eq!(
+            id_expr.lref("owns", "bakery").preview(),
+            "product:1<-owns<-bakery"
+        );
+    }
 
-        // Test chaining
-        let complex_traversal = expr!("user")
+    #[test]
+    fn test_reference_chaining() {
+        // Test right reference chaining
+        let user_expr = surreal_expr!("user");
+        assert_eq!(
+            user_expr
+                .rref("owns", "company")
+                .rref("has", "employees")
+                .preview(),
+            "user->owns->company->has->employees"
+        );
+
+        // Test mixed chaining
+        let product_expr = surreal_expr!("product:1");
+        assert_eq!(
+            product_expr
+                .lref("owns", "bakery")
+                .rref("located_in", "city")
+                .preview(),
+            "product:1<-owns<-bakery->located_in->city"
+        );
+    }
+
+    #[test]
+    fn test_comprehensive_api() {
+        use crate::thing::Thing;
+
+        // Test different expression types
+        let bakery_expr = surreal_expr!("bakery");
+        assert_eq!(
+            bakery_expr.rref("owns", "product").preview(),
+            "bakery->owns->product"
+        );
+
+        let bakery_thing = Thing::new("bakery", "hill_valley");
+        assert_eq!(
+            bakery_thing.rref("owns", "product").preview(),
+            "bakery:hill_valley->owns->product"
+        );
+
+        // Test complex chaining across different types
+        let complex_traversal = surreal_expr!("user")
             .rref("owns", "company")
             .lref("employs", "employee")
             .rref("lives_in", "city");
@@ -177,5 +162,34 @@ mod tests {
             complex_traversal.preview(),
             "user->owns->company<-employs<-employee->lives_in->city"
         );
+    }
+
+    #[test]
+    fn test_comparison_operations() {
+        let field = surreal_expr!("age");
+
+        // Test eq with scalar value
+        let eq_scalar = field.eq(25i32);
+        assert_eq!(eq_scalar.preview(), "age = 25");
+
+        // Test eq with expression
+        let other_field = surreal_expr!("max_age");
+        let eq_expr = field.eq(other_field);
+        assert_eq!(eq_expr.preview(), "age = max_age");
+
+        // Test sub operation
+        let sub_result = field.sub(10i32);
+        assert_eq!(sub_result.preview(), "age - 10");
+
+        // Test contains operation
+        let tags_field = surreal_expr!("tags");
+        let contains_result = tags_field.contains("bakery".to_string());
+        assert_eq!(contains_result.preview(), r#"tags CONTAINS "bakery""#);
+
+        // Test in_ operation with expression
+        let status_field = surreal_expr!("status");
+        let values_expr = surreal_expr!(r#"["active", "pending"]"#);
+        let in_result = status_field.in_(values_expr);
+        assert_eq!(in_result.preview(), r#"status IN ["active", "pending"]"#);
     }
 }

@@ -67,15 +67,3 @@ impl<T: SurrealType> SurrealType for Option<T> {
         }
     }
 }
-
-impl SurrealType for crate::AnySurrealType {
-    type Target = SurrealTypeObjectMarker; // Use object marker as default
-
-    fn to_cbor(&self) -> CborValue {
-        self.value().clone()
-    }
-
-    fn from_cbor(cbor: CborValue) -> Option<Self> {
-        Self::from_cbor(&cbor)
-    }
-}

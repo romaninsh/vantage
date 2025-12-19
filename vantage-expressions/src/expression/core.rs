@@ -86,12 +86,6 @@ pub struct Expression<T> {
     pub parameters: Vec<ExpressiveEnum<T>>,
 }
 
-impl<T: Clone> Expressive<T> for Expression<T> {
-    fn expr(&self) -> Expression<T> {
-        self.clone()
-    }
-}
-
 impl<T> From<Expression<T>> for ExpressiveEnum<T> {
     fn from(expr: Expression<T>) -> Self {
         ExpressiveEnum::Nested(expr)

@@ -2,9 +2,9 @@
 //!
 //! doc wip
 
-use vantage_expressions::Expression;
+use vantage_expressions::Expressive;
 
-use crate::{identifier::Identifier, operation::Expressive};
+use crate::{AnySurrealType, Expr, identifier::Identifier};
 
 /// Represents a database field
 ///
@@ -38,19 +38,13 @@ impl Field {
         }
     }
 
-    pub fn dot(&self, field: impl Into<String>) -> Expression {
+    pub fn dot(&self, field: impl Into<String>) -> Expr {
         Identifier::new(self.field.clone()).dot(field.into())
     }
 }
 
-impl From<Field> for Expression {
-    fn from(val: Field) -> Self {
-        val.expr()
-    }
-}
-
-impl Expressive for Field {
-    fn expr(&self) -> Expression {
+impl Expressive<AnySurrealType> for Field {
+    fn expr(&self) -> Expr {
         Identifier::new(self.field.clone()).into()
     }
 }

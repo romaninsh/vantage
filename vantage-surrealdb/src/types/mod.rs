@@ -139,8 +139,6 @@ impl SurrealTypeVariants {
     }
 }
 
-// The macro generates AnySurrealType, SurrealType, and SurrealTypeVariants
-
 // Type implementations are organized in separate modules
 mod bool;
 mod decimal;
@@ -164,3 +162,14 @@ mod value;
 //         AnySurrealType::new(value)
 //     }
 // }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_any_surreal_type_display() {
+        let bool_val = AnySurrealType::from_cbor(&ciborium::Value::Bool(true)).unwrap();
+        assert_eq!(format!("{}", bool_val), "true");
+    }
+}

@@ -37,15 +37,15 @@
 // pub mod field_projection;
 pub mod identifier;
 // pub mod insert;
-// pub mod operation;
+pub mod operation;
 // pub mod protocol;
-// pub mod sum;
-// pub mod surreal_return;
 pub mod macros;
+pub mod sum;
+pub mod surreal_return;
 pub mod surrealdb;
 // pub mod prelude;
 // pub mod column;
-// pub mod select;
+pub mod select;
 // pub mod table;
 pub mod thing;
 // pub mod typed_expression;
@@ -54,7 +54,7 @@ pub mod thing;
 // pub use associated_query::{SurrealAssociated, SurrealAssociatedQueryable};
 // pub use column::SurrealColumn;
 // pub use insert::SurrealInsert;
-// pub use select::SurrealSelect;
+pub use select::SurrealSelect;
 // pub use surrealdb::SurrealDB;
 // pub use table::{SurrealTableCore, SurrealTableExt};
 // pub use typed_expression::TypedExpression;
@@ -62,17 +62,9 @@ pub mod thing;
 // SurrealDB expression support using vantage-expressions with AnySurrealType
 pub type Expr = vantage_expressions::Expression<AnySurrealType>;
 
-// /// Macro to create SurrealDB expressions with AnySurrealType
-// /// Usage: expr!("template", arg1, arg2)
-// #[macro_export]
-// macro_rules! expr {
-//     ($template:expr) => {
-//         vantage_expressions::expr_any!(surreal_client::types::AnySurrealType, $template)
-//     };
-//     ($template:expr, $($param:tt),*) => {
-//         vantage_expressions::expr_any!(surreal_client::types::AnySurrealType, $template, $($param),*)
-//     };
-// }
+fn_args!(AllSurrealTypes: T(AnySurrealType));
+fn_args!(AllSurrealTypesOrExpr: T(AnySurrealType), E(Expression<AnySurrealType>));
+fn_args!(SurrealExprArgs: T(AnySurrealType), E(Expression<AnySurrealType>), D(DeferredFn<AnySurrealType>));
 
 // Add types module
 pub mod types;
@@ -80,3 +72,4 @@ pub use types::*;
 
 // Re-export main SurrealDB types for convenience
 pub use types::{AnySurrealType, SurrealType, SurrealTypeVariants};
+use vantage_expressions::{DeferredFn, Expression};
