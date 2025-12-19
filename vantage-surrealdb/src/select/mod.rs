@@ -311,7 +311,12 @@ impl<T: QueryResult> Selectable<crate::AnySurrealType> for SurrealSelect<T> {
         use vantage_expressions::ExpressiveEnum;
         let source_ref = source.into();
         let source_expr = match source_ref.into_expressive_enum() {
-            ExpressiveEnum::Scalar(s) => Identifier::new(s.try_get::<String>().unwrap()).expr(),
+            ExpressiveEnum::Scalar(s) => {
+                let source = s
+                    .try_get::<String>()
+                    .unwrap_or_else(|_| panic!("Source must be a string, found {:?}", s));
+                Identifier::new(source).expr()
+            }
             ExpressiveEnum::Nested(expr) => surreal_expr!("({})", (expr)),
             ExpressiveEnum::Deferred(_deferred_fn) => {
                 panic!("Cannot use deferred as select source")
