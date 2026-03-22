@@ -11,6 +11,7 @@ use vantage_table::traits::table_like::TableLike;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
+use crate::condition::apply_condition;
 use crate::type_system::AnyCsvType;
 use crate::Csv;
 
@@ -68,7 +69,13 @@ impl TableSource for Csv {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        self.read_csv(table.table_name(), table.columns())
+        let mut records = self.read_csv(table.table_name(), table.columns())?;
+
+        for condition in table.conditions() {
+            records = apply_condition(records, condition).await?;
+        }
+
+        Ok(records)
     }
 
     async fn get_table_value<E>(
@@ -360,4 +367,5 @@ mod tests {
         let result = table.list_values().await;
         assert!(result.is_err());
     }
+
 }

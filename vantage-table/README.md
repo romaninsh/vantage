@@ -149,19 +149,53 @@ Vantage Table works with a wide range of data sources through modular adapter cr
 
 - **vantage-sql**: PostgreSQL, MySQL, SQLite support via SQL generation (TODO)
 
-### Create Your Own Vendor Support
+### Create Your Own Persistence Adapter
 
-Building a custom data source adapter involves:
+A persistence backend plugs into the Vantage framework by implementing traits at two levels.
+Once implemented, `Table<T, E>` automatically bridges these into the full `ReadableValueSet`,
+`WritableValueSet`, `ReadableDataSet<E>`, and `WritableDataSet<E>` trait families — you do not
+need to implement those yourself.
 
-- **Use vantage-types**: Define accurate persistence type mapping for all popular Rust types
-- **Use vantage-expressions**: Design your own query builder primitives supporting nesting and
-  cross-database operations
-- **Implement [`TableSource`]**: Allow tables to persist in your database
-- **Rely on vantage-core**: Unified error handling across the ecosystem
-- **Create custom Column types**: Add advanced features specific to your database (or use the
-  built-in `Column<T>` which preserves original type info through type-erasure)
-- **Add Table extensions**: Support for full-text search, graph operations, or vendor-specific
-  features
+#### Required Traits
+
+| Trait | Crate | Purpose |
+|---|---|---|
+| **`TableSource`** | vantage-table | The core trait. Defines associated types (`Column`, `AnyType`, `Value`, `Id`) and all CRUD + aggregation methods: `list_table_values`, `get_table_value`, `insert_table_value`, `replace_table_value`, `patch_table_value`, `delete_table_value`, `get_count`, `get_sum`, column creation, and expression support. |
+| **`ColumnLike<AnyType>`** | vantage-table | Column metadata for your persistence's column type (`name`, `alias`, `flags`, `get_type`). You can use the built-in `Column<T>` which preserves original type info through type-erasure, or create a custom column type. |
+
+#### Optional Traits (for query-language backends)
+
+| Trait | Crate | Purpose |
+|---|---|---|
+| **`TableExprSource`** | vantage-table | Expression-returning aggregations (`get_table_expr_count`, `get_table_expr_max`) for use in subqueries or deferred execution. |
+| **`TableQuerySource`** | vantage-table | SELECT query builder support (`get_table_select_query`) for backends that can compose structured queries. |
+| **`ExprDataSource`** | vantage-expressions | Execute arbitrary expressions against the backend. Required by query-language backends like SurrealDB. |
+
+#### What You Get for Free
+
+Once `TableSource` is implemented, `Table<T, E>` provides:
+
+- **`ReadableValueSet`** / **`WritableValueSet`** — raw record CRUD (delegates to your TableSource)
+- **`ReadableDataSet<E>`** / **`WritableDataSet<E>`** — typed entity CRUD with automatic Record ↔ Entity conversion
+- **`ActiveEntitySet<E>`** — change-tracked entity wrappers with `.save()`
+- **`TableLike`** — dyn-safe interface with conditions, pagination, ordering, and search
+- **`AnyTable`** — type-erased wrapper for heterogeneous table collections
+
+#### Supporting Crates
+
+- **vantage-types**: Define your persistence type system with `vantage_type_system!` macro
+- **vantage-expressions**: Build query primitives supporting nesting and cross-database operations
+- **vantage-core**: Unified error handling across the ecosystem
+
+#### Simple Alternative: Direct DataSet Implementation
+
+For backends that don't need table/column abstractions (e.g. in-memory stores), you can
+implement the vantage-dataset traits directly:
+
+- `ReadableValueSet` + `WritableValueSet` + `InsertableValueSet` (raw record layer)
+- `ReadableDataSet<E>` + `WritableDataSet<E>` + `InsertableDataSet<E>` (typed entity layer)
+
+See `ImTable` in vantage-dataset for a reference implementation of this approach.
 
 ## Upcoming Features
 
