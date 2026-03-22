@@ -48,16 +48,20 @@ pub(crate) async fn apply_condition(
                 .collect())
         }
         operation::OP_IN => {
-            // param[1] resolves to a comma-separated list or similar;
-            // for now we resolve the deferred/nested and collect values
             let resolved = resolve_param(&params[1]).await?;
-            let match_values: Vec<&str> = resolved.value().split(',').collect();
+            // Try to extract as Vec<AnyCsvType> (List variant)
+            let match_values: Vec<AnyCsvType> = resolved
+                .try_get::<Vec<AnyCsvType>>()
+                .unwrap_or_else(|| {
+                    // Fallback: treat as single value
+                    vec![resolved.clone()]
+                });
             Ok(records
                 .into_iter()
                 .filter(|(_id, record)| {
                     record
                         .get(&field_name)
-                        .map(|v| match_values.contains(&v.value().as_str()))
+                        .map(|v| match_values.iter().any(|m| m.value() == v.value()))
                         .unwrap_or(false)
                 })
                 .collect())
@@ -69,7 +73,7 @@ pub(crate) async fn apply_condition(
 /// Resolve an expression parameter to a concrete `AnyCsvType` value.
 /// Scalars pass through, Deferred closures are called, Nested expressions
 /// are recursively resolved.
-fn resolve_param(
+pub(crate) fn resolve_param(
     param: &ExpressiveEnum<AnyCsvType>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<AnyCsvType>> + Send + '_>> {
     Box::pin(async move {
@@ -168,5 +172,38 @@ mod tests {
         let values = table.list_values().await.unwrap();
         assert_eq!(values.len(), 1);
         assert!(values.contains_key("flux_cupcake"));
+    }
+
+    #[tokio::test]
+    async fn test_in_condition_with_column_values() {
+        use vantage_expressions::Expressive;
+        use vantage_table::traits::table_source::TableSource;
+
+        let csv = test_csv();
+
+        // Build a source table of paying clients
+        let mut clients = Table::<Csv, EmptyEntity>::new("client", csv.clone())
+            .with_column_of::<String>("name")
+            .with_column_of::<bool>("is_paying_client");
+        clients.add_condition(clients["is_paying_client"].eq(true));
+
+        // Get paying client names as AssociatedExpression
+        let name_col = csv.create_column::<String>("name");
+        let paying_names = csv.column_values_expression(&clients, &name_col);
+
+        // Use IN condition — AssociatedExpression implements Expressive,
+        // so we can nest it via (paying_names) syntax
+        let mut all_clients = Table::<Csv, EmptyEntity>::new("client", csv.clone())
+            .with_column_of::<String>("name")
+            .with_column_of::<bool>("is_paying_client");
+
+        all_clients.add_condition(all_clients["name"].in_(
+            vantage_expressions::traits::expressive::ExpressiveEnum::Nested(paying_names.expr()),
+        ));
+
+        let values = all_clients.list_values().await.unwrap();
+        assert_eq!(values.len(), 2);
+        assert!(values.contains_key("marty"));
+        assert!(values.contains_key("doc"));
     }
 }

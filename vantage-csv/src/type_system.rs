@@ -7,7 +7,7 @@ vantage_type_system! {
     type_trait: CsvType,
     method_name: csv_string,
     value_type: String,
-    type_variants: [String, Int, Float, Bool, Json, Animal]
+    type_variants: [String, Int, Float, Bool, Json, Animal, List]
 }
 
 // Variant detection from raw CSV string (used when no column type is known)
@@ -106,6 +106,55 @@ where
     }
 }
 
+impl CsvType for Vec<AnyCsvType> {
+    type Target = CsvTypeListMarker;
+
+    fn to_csv_string(&self) -> String {
+        // Encode each element as "variant_index\tvalue" separated by newlines
+        self.iter()
+            .map(|v| {
+                let variant_idx = match v.type_variant() {
+                    Some(CsvTypeVariants::String) => "0",
+                    Some(CsvTypeVariants::Int) => "1",
+                    Some(CsvTypeVariants::Float) => "2",
+                    Some(CsvTypeVariants::Bool) => "3",
+                    Some(CsvTypeVariants::Json) => "4",
+                    Some(CsvTypeVariants::Animal) => "5",
+                    Some(CsvTypeVariants::List) => "6",
+                    None => "N",
+                };
+                format!("{}\t{}", variant_idx, v.value())
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn from_csv_string(value: String) -> Option<Self> {
+        if value.is_empty() {
+            return Some(Vec::new());
+        }
+        let items: Vec<AnyCsvType> = value
+            .lines()
+            .filter_map(|line| {
+                let (variant_str, val) = line.split_once('\t')?;
+                let variant = match variant_str {
+                    "0" => Some(CsvTypeVariants::String),
+                    "1" => Some(CsvTypeVariants::Int),
+                    "2" => Some(CsvTypeVariants::Float),
+                    "3" => Some(CsvTypeVariants::Bool),
+                    "4" => Some(CsvTypeVariants::Json),
+                    "5" => Some(CsvTypeVariants::Animal),
+                    "6" => Some(CsvTypeVariants::List),
+                    "N" => None,
+                    _ => return None,
+                };
+                Some(parse_with_type(val, variant))
+            })
+            .collect();
+        Some(items)
+    }
+}
+
 /// Parse a raw CSV string into an `AnyCsvType` using the column's type variant.
 ///
 /// If `variant` is `None`, the value is stored as a plain string.
@@ -153,6 +202,14 @@ pub fn parse_with_type(raw: &str, variant: Option<CsvTypeVariants>) -> AnyCsvTyp
             value: raw.to_string(),
             type_variant: Some(CsvTypeVariants::Animal),
         },
+        Some(CsvTypeVariants::List) => {
+            // Lists are stored in encoded form; parse via CsvType impl
+            if let Some(list) = Vec::<AnyCsvType>::from_csv_string(raw.to_string()) {
+                AnyCsvType::new(list)
+            } else {
+                AnyCsvType::new(raw.to_string())
+            }
+        }
         Some(CsvTypeVariants::String) | None => AnyCsvType::new(raw.to_string()),
     }
 }
@@ -176,6 +233,10 @@ impl From<AnyCsvType> for serde_json::Value {
             Some(CsvTypeVariants::Json) => csv
                 .try_get::<serde_json::Value>()
                 .unwrap_or(serde_json::Value::String(csv.into_value())),
+            Some(CsvTypeVariants::List) => {
+                let items = csv.try_get::<Vec<AnyCsvType>>().unwrap_or_default();
+                serde_json::Value::Array(items.into_iter().map(serde_json::Value::from).collect())
+            }
             Some(CsvTypeVariants::String) | Some(CsvTypeVariants::Animal) => {
                 serde_json::Value::String(csv.into_value())
             }
@@ -344,6 +405,23 @@ mod tests {
             variant_from_type_name("serde_json::value::Value"),
             Some(CsvTypeVariants::Json)
         );
+    }
+
+    #[test]
+    fn test_roundtrip_list() {
+        let list = vec![
+            AnyCsvType::new("hello".to_string()),
+            AnyCsvType::new(42_i64),
+            AnyCsvType::new(true),
+        ];
+        let any = AnyCsvType::new(list);
+        assert_eq!(any.type_variant(), Some(CsvTypeVariants::List));
+
+        let recovered = any.try_get::<Vec<AnyCsvType>>().unwrap();
+        assert_eq!(recovered.len(), 3);
+        assert_eq!(recovered[0].try_get::<String>(), Some("hello".to_string()));
+        assert_eq!(recovered[1].try_get::<i64>(), Some(42));
+        assert_eq!(recovered[2].try_get::<bool>(), Some(true));
     }
 
     #[test]

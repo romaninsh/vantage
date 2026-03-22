@@ -6,7 +6,7 @@
 //! can peel apart and evaluate in memory.
 
 use vantage_expressions::traits::expressive::ExpressiveEnum;
-use vantage_expressions::{Expression, Expressive};
+use vantage_expressions::{Expression, Expressive, expr_any};
 
 use crate::type_system::{AnyCsvType, CsvType};
 
@@ -50,13 +50,8 @@ where
     T: Expressive<AnyCsvType>,
 {
     fn eq(&self, value: impl CsvType) -> Expression<AnyCsvType> {
-        Expression::new(
-            OP_EQ,
-            vec![
-                ExpressiveEnum::Nested(self.expr()),
-                ExpressiveEnum::Scalar(AnyCsvType::new(value)),
-            ],
-        )
+        let scalar = AnyCsvType::new(value);
+        expr_any!(OP_EQ, (self), scalar)
     }
 
     fn in_(&self, values: ExpressiveEnum<AnyCsvType>) -> Expression<AnyCsvType> {

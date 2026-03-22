@@ -2,18 +2,19 @@ use async_trait::async_trait;
 use indexmap::IndexMap;
 use vantage_core::error;
 use vantage_dataset::traits::Result;
-use vantage_expressions::traits::datasource::DataSource;
-use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_expressions::Expression;
+use vantage_expressions::traits::associated_expressions::AssociatedExpression;
+use vantage_expressions::traits::datasource::DataSource;
+use vantage_expressions::traits::expressive::{DeferredFn, ExpressiveEnum};
 use vantage_table::column::core::{Column, ColumnType};
 use vantage_table::table::Table;
 use vantage_table::traits::table_like::TableLike;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
+use crate::Csv;
 use crate::condition::apply_condition;
 use crate::type_system::AnyCsvType;
-use crate::Csv;
 
 impl DataSource for Csv {}
 
@@ -193,6 +194,44 @@ impl TableSource for Csv {
     {
         Err(error!("CSV is a read-only data source"))
     }
+
+    fn column_values_expression<'a, E, Type: ColumnType>(
+        &'a self,
+        table: &Table<Self, E>,
+        column: &Self::Column<Type>,
+    ) -> AssociatedExpression<'a, Self, Self::Value, Vec<Type>>
+    where
+        E: Entity<Self::Value> + 'static,
+        Self: Sized,
+    {
+        use vantage_expressions::{
+            expr_any,
+            traits::{associated_expressions::AssociatedExpression, datasource::ExprDataSource},
+        };
+
+        let table_clone = table.clone();
+        let col = column.name().to_string();
+        let csv = self.clone();
+
+        let inner = expr_any!("{}", {
+            DeferredFn::new(move || {
+                let csv = csv.clone();
+                let table = table_clone.clone();
+                let col = col.clone();
+                Box::pin(async move {
+                    let records = csv.list_table_values(&table).await?;
+                    let values: Vec<AnyCsvType> = records
+                        .values()
+                        .filter_map(|r| r.get(&col).cloned())
+                        .collect();
+                    Ok(ExpressiveEnum::Scalar(AnyCsvType::new(values)))
+                })
+            })
+        });
+
+        let expr = expr_any!("{}", { self.defer(inner) });
+        AssociatedExpression::new(expr, self)
+    }
 }
 
 #[cfg(test)]
@@ -243,10 +282,7 @@ mod tests {
 
         let biff = &values["biff"];
         assert_eq!(biff["is_paying_client"].try_get::<bool>().unwrap(), false);
-        assert_eq!(
-            biff["metadata"].type_variant(),
-            Some(CsvTypeVariants::Json)
-        );
+        assert_eq!(biff["metadata"].type_variant(), Some(CsvTypeVariants::Json));
     }
 
     #[tokio::test]
@@ -271,9 +307,7 @@ mod tests {
         assert_eq!(cupcake["price"].try_get::<i64>().unwrap(), 120);
         assert_eq!(cupcake["is_deleted"].try_get::<bool>().unwrap(), false);
 
-        let inv = cupcake["inventory"]
-            .try_get::<serde_json::Value>()
-            .unwrap();
+        let inv = cupcake["inventory"].try_get::<serde_json::Value>().unwrap();
         assert_eq!(inv["stock"], serde_json::json!(50));
     }
 
@@ -318,8 +352,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_some_value() {
         let csv = test_csv();
-        let table = Table::<Csv, EmptyEntity>::new("bakery", csv)
-            .with_column_of::<String>("name");
+        let table = Table::<Csv, EmptyEntity>::new("bakery", csv).with_column_of::<String>("name");
 
         let result = table.get_some_value().await.unwrap();
         assert!(result.is_some());
@@ -367,5 +400,4 @@ mod tests {
         let result = table.list_values().await;
         assert!(result.is_err());
     }
-
 }

@@ -31,7 +31,9 @@ use std::marker::PhantomData;
 use url::Url;
 use vantage_dataset::traits::Result;
 use vantage_expressions::{
-    Expression, traits::datasource::DataSource, traits::expressive::ExpressiveEnum,
+    Expression,
+    traits::datasource::{DataSource, ExprDataSource},
+    traits::expressive::ExpressiveEnum,
 };
 use vantage_table::column::core::ColumnType;
 use vantage_table::column::flags::ColumnFlag;
@@ -208,6 +210,22 @@ impl Default for Type3TableSource {
 }
 
 impl DataSource for Type3TableSource {}
+
+impl ExprDataSource<ciborium::Value> for Type3TableSource {
+    async fn execute(
+        &self,
+        _expr: &Expression<ciborium::Value>,
+    ) -> vantage_core::Result<ciborium::Value> {
+        unimplemented!("Type3 does not support expression execution")
+    }
+
+    fn defer(
+        &self,
+        _expr: Expression<ciborium::Value>,
+    ) -> vantage_expressions::traits::expressive::DeferredFn<ciborium::Value> {
+        unimplemented!("Type3 does not support deferred expressions")
+    }
+}
 
 #[async_trait]
 impl TableSource for Type3TableSource {
@@ -418,6 +436,23 @@ impl TableSource for Type3TableSource {
         Self: Sized,
     {
         Err(vantage_core::error!("Insert operations not supported"))
+    }
+
+    fn column_values_expression<'a, E, Type: ColumnType>(
+        &'a self,
+        _table: &Table<Self, E>,
+        _column: &Self::Column<Type>,
+    ) -> vantage_expressions::traits::associated_expressions::AssociatedExpression<
+        'a,
+        Self,
+        Self::Value,
+        Vec<Type>,
+    >
+    where
+        E: Entity<Self::Value> + 'static,
+        Self: Sized,
+    {
+        unimplemented!("Type3 does not support column_values_expression")
     }
 }
 
