@@ -10,8 +10,8 @@ use vantage_expressions::Expression;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_types::Record;
 
-use crate::operation;
 use crate::type_system::AnyCsvType;
+use vantage_table::operation::{OP_EQ, OP_IN};
 
 /// Evaluate a single condition expression against a set of records,
 /// returning only the records that match.
@@ -34,7 +34,7 @@ pub(crate) async fn apply_condition(
     };
 
     match condition.template.as_str() {
-        operation::OP_EQ => {
+        OP_EQ => {
             // param[1] is Scalar(value) or Deferred
             let expected = resolve_param(&params[1]).await?;
             Ok(records
@@ -47,7 +47,7 @@ pub(crate) async fn apply_condition(
                 })
                 .collect())
         }
-        operation::OP_IN => {
+        OP_IN => {
             let resolved = resolve_param(&params[1]).await?;
             // Try to extract as Vec<AnyCsvType> (List variant)
             let match_values: Vec<AnyCsvType> = resolved
@@ -102,7 +102,8 @@ pub(crate) fn resolve_param(
 
 #[cfg(test)]
 mod tests {
-    use crate::{Csv, CsvOperation};
+    use crate::{Csv, AnyCsvType};
+    use vantage_table::operation::Operation;
     use vantage_dataset::prelude::ReadableValueSet;
     use vantage_table::table::Table;
     use vantage_types::EmptyEntity;
@@ -119,7 +120,7 @@ mod tests {
             .with_column_of::<bool>("is_paying_client");
 
         // Filter to paying clients only
-        table.add_condition(table["is_paying_client"].eq(true));
+        table.add_condition(table["is_paying_client"].eq(AnyCsvType::new(true)));
 
         let values = table.list_values().await.unwrap();
         // Marty and Doc are paying, Biff is not
@@ -136,7 +137,7 @@ mod tests {
             .with_column_of::<String>("name")
             .with_column_of::<String>("email");
 
-        table.add_condition(table["name"].eq("Doc Brown".to_string()));
+        table.add_condition(table["name"].eq(AnyCsvType::new("Doc Brown".to_string())));
 
         let values = table.list_values().await.unwrap();
         assert_eq!(values.len(), 1);
@@ -150,7 +151,7 @@ mod tests {
             .with_column_of::<String>("name")
             .with_column_of::<i64>("calories");
 
-        table.add_condition(table["calories"].eq(300_i64));
+        table.add_condition(table["calories"].eq(AnyCsvType::new(300_i64)));
 
         let values = table.list_values().await.unwrap();
         assert_eq!(values.len(), 1);
@@ -166,8 +167,8 @@ mod tests {
             .with_column_of::<bool>("is_deleted");
 
         // Chain: not deleted AND calories = 300
-        table.add_condition(table["is_deleted"].eq(false));
-        table.add_condition(table["calories"].eq(300_i64));
+        table.add_condition(table["is_deleted"].eq(AnyCsvType::new(false)));
+        table.add_condition(table["calories"].eq(AnyCsvType::new(300_i64)));
 
         let values = table.list_values().await.unwrap();
         assert_eq!(values.len(), 1);
@@ -185,7 +186,7 @@ mod tests {
         let mut clients = Table::<Csv, EmptyEntity>::new("client", csv.clone())
             .with_column_of::<String>("name")
             .with_column_of::<bool>("is_paying_client");
-        clients.add_condition(clients["is_paying_client"].eq(true));
+        clients.add_condition(clients["is_paying_client"].eq(AnyCsvType::new(true)));
 
         // Get paying client names as AssociatedExpression
         let name_col = csv.create_column::<String>("name");
@@ -197,9 +198,7 @@ mod tests {
             .with_column_of::<String>("name")
             .with_column_of::<bool>("is_paying_client");
 
-        all_clients.add_condition(all_clients["name"].in_(
-            vantage_expressions::traits::expressive::ExpressiveEnum::Nested(paying_names.expr()),
-        ));
+        all_clients.add_condition(all_clients["name"].in_(paying_names.expr()));
 
         let values = all_clients.list_values().await.unwrap();
         assert_eq!(values.len(), 2);

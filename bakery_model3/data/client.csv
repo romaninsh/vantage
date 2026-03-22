@@ -1,4 +1,4 @@
-id,name,email,contact_details,is_paying_client,metadata
-marty,Marty McFly,marty@gmail.com,555-1955,true,
-doc,Doc Brown,doc@brown.com,555-1885,true,
-biff,Biff Tannen,biff-3293@hotmail.com,555-1955,false,"{""notes"":""Often late with payments"",""credit_limit"":500}"
+id,name,email,contact_details,is_paying_client,bakery_id,metadata
+marty,Marty McFly,marty@gmail.com,555-1955,true,hill_valley,
+doc,Doc Brown,doc@brown.com,555-1885,true,hill_valley,
+biff,Biff Tannen,biff-3293@hotmail.com,555-1955,false,hill_valley,"{""notes"":""Often late with payments"",""credit_limit"":500}"

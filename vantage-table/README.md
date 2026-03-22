@@ -163,13 +163,19 @@ need to implement those yourself.
 | **`TableSource`** | vantage-table | The core trait. Defines associated types (`Column`, `AnyType`, `Value`, `Id`) and all CRUD + aggregation methods: `list_table_values`, `get_table_value`, `insert_table_value`, `replace_table_value`, `patch_table_value`, `delete_table_value`, `get_count`, `get_sum`, column creation, and expression support. |
 | **`ColumnLike<AnyType>`** | vantage-table | Column metadata for your persistence's column type (`name`, `alias`, `flags`, `get_type`). You can use the built-in `Column<T>` which preserves original type info through type-erasure, or create a custom column type. |
 
+#### Required for Relationships
+
+| Trait | Crate | Purpose |
+|---|---|---|
+| **`ExprDataSource`** | vantage-expressions | Execute expressions and create deferred closures. Required for `with_one`/`with_many` relationship traversal. |
+| **`Operation`** | vantage-table | Provides `eq()` and `in_()` condition builders on columns. Each backend implements this for its column type. |
+
 #### Optional Traits (for query-language backends)
 
 | Trait | Crate | Purpose |
 |---|---|---|
 | **`TableExprSource`** | vantage-table | Expression-returning aggregations (`get_table_expr_count`, `get_table_expr_max`) for use in subqueries or deferred execution. |
 | **`TableQuerySource`** | vantage-table | SELECT query builder support (`get_table_select_query`) for backends that can compose structured queries. |
-| **`ExprDataSource`** | vantage-expressions | Execute arbitrary expressions against the backend. Required by query-language backends like SurrealDB. |
 
 #### What You Get for Free
 
@@ -180,6 +186,7 @@ Once `TableSource` is implemented, `Table<T, E>` provides:
 - **`ActiveEntitySet<E>`** — change-tracked entity wrappers with `.save()`
 - **`TableLike`** — dyn-safe interface with conditions, pagination, ordering, and search
 - **`AnyTable`** — type-erased wrapper for heterogeneous table collections
+- **Relationship traversal** — `with_one()`, `with_many()`, `get_ref_as()` for navigating between related tables
 
 #### Supporting Crates
 
@@ -199,7 +206,6 @@ See `ImTable` in vantage-dataset for a reference implementation of this approach
 
 ## Upcoming Features
 
-- **Relationship traversal**: Reference support for navigating between related tables (TODO)
 - **Pagination**: Limit/offset support in Table operations (TODO)
 - **Comparison operators**: `.gt()`, `.lt()`, `.gte()`, `.lte()` for conditions (TODO)
 

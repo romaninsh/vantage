@@ -79,14 +79,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_column_values_with_condition() {
-        use crate::CsvOperation;
+        use vantage_table::operation::Operation;
 
         let csv = test_csv();
         let mut table = Table::<Csv, EmptyEntity>::new("client", csv.clone())
             .with_column_of::<String>("name")
             .with_column_of::<bool>("is_paying_client");
 
-        table.add_condition(table["is_paying_client"].eq(true));
+        table.add_condition(table["is_paying_client"].eq(AnyCsvType::new(true)));
 
         let name_col = csv.create_column::<String>("name");
         let associated = csv.column_values_expression(&table, &name_col);

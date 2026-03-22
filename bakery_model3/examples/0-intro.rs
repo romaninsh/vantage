@@ -1,7 +1,8 @@
 use bakery_model3::*;
 use vantage_core::{Result, error, util::error::Context};
-use vantage_csv::Csv;
+use vantage_csv::{AnyCsvType, Csv};
 use vantage_dataset::prelude::ReadableDataSet;
+use vantage_table::operation::Operation;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -9,49 +10,48 @@ async fn main() -> Result<()> {
 
     let set_of_clients = Client::csv_table(csv.clone());
 
-    println!("-[ get entity values out of any table ]------------------------------------");
+    println!("-[ all clients ]------------------------------------");
     for client in set_of_clients
         .list()
         .await
         .with_context(|| error!("Failed to retrieve clients"))?
         .values()
     {
-        println!("email: {}, client: {}", client.email, client.name);
-    }
-
-    println!("-[ get products ]------------------------------------");
-    let products = Product::csv_table(csv.clone());
-
-    for product in products
-        .list()
-        .await
-        .with_context(|| error!("Failed to retrieve products"))?
-        .values()
-    {
         println!(
-            "product: {}, calories: {}, price: {}",
-            product.name, product.calories, product.price
+            "  {} ({}) - paying: {}",
+            client.name, client.email, client.is_paying_client
         );
     }
 
-    println!("-[ get bakeries ]------------------------------------");
-    let bakeries = Bakery::csv_table(csv.clone());
+    println!("\n-[ paying clients only (condition) ]------------------------------------");
+    let mut paying_clients = Client::csv_table(csv.clone());
+    paying_clients.add_condition(paying_clients["is_paying_client"].eq(AnyCsvType::new(true)));
 
-    for bakery in bakeries
+    for client in paying_clients
         .list()
         .await
-        .with_context(|| error!("Failed to retrieve bakeries"))?
+        .with_context(|| error!("Failed to retrieve paying clients"))?
+        .values()
+    {
+        println!("  {} ({})", client.name, client.email);
+    }
+
+    println!("\n-[ orders for paying clients (traversal) ]------------------------------------");
+    let orders_for_paying = paying_clients.get_ref_as::<Csv, Order>("orders")?;
+    for order in orders_for_paying
+        .list()
+        .await
+        .with_context(|| error!("Failed to retrieve orders"))?
         .values()
     {
         println!(
-            "bakery: {}, profit_margin: {}",
-            bakery.name, bakery.profit_margin
+            "  client_id={}, is_deleted={}, lines={}",
+            order.client_id, order.is_deleted, order.lines
         );
     }
 
-    println!("-[ get orders ]------------------------------------");
+    println!("\n-[ all orders ]------------------------------------");
     let orders = Order::csv_table(csv.clone());
-
     for order in orders
         .list()
         .await
@@ -59,14 +59,10 @@ async fn main() -> Result<()> {
         .values()
     {
         println!(
-            "order: is_deleted={}, lines={}",
-            order.is_deleted, order.lines
+            "  client_id={}, is_deleted={}",
+            order.client_id, order.is_deleted
         );
     }
-
-    // TODO: conditions, count, relationships — coming soon
-    // let paying = set_of_clients.clone()
-    //     .with_condition(set_of_clients["is_paying_client"].eq(true));
 
     Ok(())
 }

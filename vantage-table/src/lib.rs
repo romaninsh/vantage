@@ -36,6 +36,7 @@ pub mod traits;
 pub mod mocks;
 
 pub mod conditions;
+pub mod operation;
 pub mod pagination;
 pub mod prelude;
 pub mod references;
