@@ -1,0 +1,6 @@
+id,name,calories,price,is_deleted,inventory,sticker
+flux_cupcake,Flux Capacitor Cupcake,300,120,false,"{""stock"":50}",cat
+delorean_donut,DeLorean Doughnut,250,135,false,"{""stock"":30}",dog
+time_tart,Time Traveler Tart,200,220,false,"{""stock"":20}",
+sea_pie,Enchantment Under the Sea Pie,350,299,false,"{""stock"":15}",pig
+hover_cookies,Hoverboard Cookies,150,199,false,"{""stock"":40}",chicken

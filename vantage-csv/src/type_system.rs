@@ -1,0 +1,360 @@
+use vantage_types::vantage_type_system;
+
+// CSV type system — values are stored as strings with type variant tags.
+// Mirrors SurrealDB's pattern (`AnySurrealType` / `ciborium::Value`)
+// but uses `String` as the underlying storage since CSV is text-based.
+vantage_type_system! {
+    type_trait: CsvType,
+    method_name: csv_string,
+    value_type: String,
+    type_variants: [String, Int, Float, Bool, Json, Animal]
+}
+
+// Variant detection from raw CSV string (used when no column type is known)
+impl CsvTypeVariants {
+    pub fn from_csv_string(_value: &String) -> Option<Self> {
+        // Without column type info, everything is a string
+        Some(CsvTypeVariants::String)
+    }
+}
+
+// --- Type implementations ---
+
+impl CsvType for String {
+    type Target = CsvTypeStringMarker;
+
+    fn to_csv_string(&self) -> String {
+        self.clone()
+    }
+
+    fn from_csv_string(value: String) -> Option<Self> {
+        Some(value)
+    }
+}
+
+impl CsvType for i64 {
+    type Target = CsvTypeIntMarker;
+
+    fn to_csv_string(&self) -> String {
+        self.to_string()
+    }
+
+    fn from_csv_string(value: String) -> Option<Self> {
+        value.parse().ok()
+    }
+}
+
+impl CsvType for f64 {
+    type Target = CsvTypeFloatMarker;
+
+    fn to_csv_string(&self) -> String {
+        self.to_string()
+    }
+
+    fn from_csv_string(value: String) -> Option<Self> {
+        value.parse().ok()
+    }
+}
+
+impl CsvType for bool {
+    type Target = CsvTypeBoolMarker;
+
+    fn to_csv_string(&self) -> String {
+        self.to_string()
+    }
+
+    fn from_csv_string(value: String) -> Option<Self> {
+        match value.as_str() {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => None,
+        }
+    }
+}
+
+impl CsvType for serde_json::Value {
+    type Target = CsvTypeJsonMarker;
+
+    fn to_csv_string(&self) -> String {
+        serde_json::to_string(self).unwrap_or_default()
+    }
+
+    fn from_csv_string(value: String) -> Option<Self> {
+        serde_json::from_str(&value).ok()
+    }
+}
+
+impl<T> CsvType for Option<T>
+where
+    T: CsvType,
+{
+    type Target = T::Target;
+
+    fn to_csv_string(&self) -> String {
+        match self {
+            Some(v) => v.to_csv_string(),
+            None => String::new(),
+        }
+    }
+
+    fn from_csv_string(value: String) -> Option<Self> {
+        if value.is_empty() {
+            Some(None)
+        } else {
+            T::from_csv_string(value).map(Some)
+        }
+    }
+}
+
+/// Parse a raw CSV string into an `AnyCsvType` using the column's type variant.
+///
+/// If `variant` is `None`, the value is stored as a plain string.
+pub fn parse_with_type(raw: &str, variant: Option<CsvTypeVariants>) -> AnyCsvType {
+    if raw.is_empty() {
+        return AnyCsvType {
+            value: String::new(),
+            type_variant: None,
+        };
+    }
+
+    match variant {
+        Some(CsvTypeVariants::Int) => {
+            if let Some(n) = i64::from_csv_string(raw.to_string()) {
+                AnyCsvType::new(n)
+            } else {
+                // Parse failed — store as string
+                AnyCsvType::new(raw.to_string())
+            }
+        }
+        Some(CsvTypeVariants::Float) => {
+            if let Some(n) = f64::from_csv_string(raw.to_string()) {
+                AnyCsvType::new(n)
+            } else {
+                AnyCsvType::new(raw.to_string())
+            }
+        }
+        Some(CsvTypeVariants::Bool) => {
+            if let Some(b) = bool::from_csv_string(raw.to_string()) {
+                AnyCsvType::new(b)
+            } else {
+                AnyCsvType::new(raw.to_string())
+            }
+        }
+        Some(CsvTypeVariants::Json) => {
+            if let Some(v) = serde_json::Value::from_csv_string(raw.to_string()) {
+                AnyCsvType::new(v)
+            } else {
+                AnyCsvType::new(raw.to_string())
+            }
+        }
+        // HACK: Animal stored as string with Animal variant tag.
+        // TODO: Make extensible at compile time.
+        Some(CsvTypeVariants::Animal) => AnyCsvType {
+            value: raw.to_string(),
+            type_variant: Some(CsvTypeVariants::Animal),
+        },
+        Some(CsvTypeVariants::String) | None => AnyCsvType::new(raw.to_string()),
+    }
+}
+
+/// Convert `AnyCsvType` to `serde_json::Value` for interop with JSON-based tools.
+impl From<AnyCsvType> for serde_json::Value {
+    fn from(csv: AnyCsvType) -> Self {
+        match csv.type_variant() {
+            Some(CsvTypeVariants::Int) => csv
+                .try_get::<i64>()
+                .map(|n| serde_json::Value::Number(n.into()))
+                .unwrap_or(serde_json::Value::String(csv.into_value())),
+            Some(CsvTypeVariants::Float) => csv
+                .try_get::<f64>()
+                .and_then(|n| serde_json::Number::from_f64(n).map(serde_json::Value::Number))
+                .unwrap_or(serde_json::Value::String(csv.into_value())),
+            Some(CsvTypeVariants::Bool) => csv
+                .try_get::<bool>()
+                .map(serde_json::Value::Bool)
+                .unwrap_or(serde_json::Value::String(csv.into_value())),
+            Some(CsvTypeVariants::Json) => csv
+                .try_get::<serde_json::Value>()
+                .unwrap_or(serde_json::Value::String(csv.into_value())),
+            Some(CsvTypeVariants::String) | Some(CsvTypeVariants::Animal) => {
+                serde_json::Value::String(csv.into_value())
+            }
+            None => {
+                if csv.value().is_empty() {
+                    serde_json::Value::Null
+                } else {
+                    serde_json::Value::String(csv.into_value())
+                }
+            }
+        }
+    }
+}
+
+/// Convert `Record<AnyCsvType>` to `Record<serde_json::Value>`.
+pub fn record_to_json(
+    record: vantage_types::Record<AnyCsvType>,
+) -> vantage_types::Record<serde_json::Value> {
+    record
+        .into_iter()
+        .map(|(k, v)| (k, serde_json::Value::from(v)))
+        .collect()
+}
+
+use vantage_types::TerminalRender;
+
+impl TerminalRender for AnyCsvType {
+    fn render(&self) -> String {
+        match self.type_variant() {
+            // HACK: Animal is domain-specific, hardcoded here for now.
+            // TODO: Make custom type rendering extensible at compile time.
+            Some(CsvTypeVariants::Animal) => match self.value().as_str() {
+                "cat" => "🐱",
+                "dog" => "🐶",
+                "pig" => "🐷",
+                "cow" => "🐮",
+                "chicken" => "🐔",
+                other => return other.to_string(),
+            }
+            .to_string(),
+            None if self.value().is_empty() => "-".to_string(),
+            _ => self.value().clone(),
+        }
+    }
+
+    fn color_hint(&self) -> Option<&'static str> {
+        match self.type_variant() {
+            Some(CsvTypeVariants::Bool) => {
+                if self.value() == "true" {
+                    Some("green")
+                } else {
+                    Some("red")
+                }
+            }
+            None if self.value().is_empty() => Some("dim"),
+            _ => None,
+        }
+    }
+}
+
+/// Map a Rust type name (from `ColumnLike::get_type()`) to a `CsvTypeVariants`.
+///
+/// This is used to look up column types when parsing CSV rows.
+pub fn variant_from_type_name(type_name: &str) -> Option<CsvTypeVariants> {
+    // get_type() returns std::any::type_name which gives full paths
+    match type_name {
+        s if s.contains("i64") || s.contains("i32") || s.contains("u64") || s.contains("u32") => {
+            Some(CsvTypeVariants::Int)
+        }
+        s if s.contains("f64") || s.contains("f32") => Some(CsvTypeVariants::Float),
+        s if s.contains("bool") => Some(CsvTypeVariants::Bool),
+        s if s.contains("Value") || s.contains("Json") => Some(CsvTypeVariants::Json),
+        s if s.contains("String") || s.contains("str") => Some(CsvTypeVariants::String),
+        // HACK: Animal is a domain-specific type hardcoded here for now.
+        // TODO: Make custom type registration extensible at compile time.
+        s if s.contains("Animal") => Some(CsvTypeVariants::Animal),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_roundtrip_string() {
+        let any = AnyCsvType::new("hello".to_string());
+        assert_eq!(any.type_variant(), Some(CsvTypeVariants::String));
+        assert_eq!(any.try_get::<String>(), Some("hello".to_string()));
+    }
+
+    #[test]
+    fn test_roundtrip_int() {
+        let any = AnyCsvType::new(42_i64);
+        assert_eq!(any.type_variant(), Some(CsvTypeVariants::Int));
+        assert_eq!(any.try_get::<i64>(), Some(42));
+        assert_eq!(any.value(), "42");
+    }
+
+    #[test]
+    fn test_roundtrip_float() {
+        let any = AnyCsvType::new(3.14_f64);
+        assert_eq!(any.type_variant(), Some(CsvTypeVariants::Float));
+        assert!(any.try_get::<f64>().is_some());
+    }
+
+    #[test]
+    fn test_roundtrip_bool() {
+        let any = AnyCsvType::new(true);
+        assert_eq!(any.type_variant(), Some(CsvTypeVariants::Bool));
+        assert_eq!(any.try_get::<bool>(), Some(true));
+        assert_eq!(any.value(), "true");
+    }
+
+    #[test]
+    fn test_roundtrip_json() {
+        let obj = serde_json::json!({"stock": 50});
+        let any = AnyCsvType::new(obj.clone());
+        assert_eq!(any.type_variant(), Some(CsvTypeVariants::Json));
+        assert_eq!(any.try_get::<serde_json::Value>(), Some(obj));
+    }
+
+    #[test]
+    fn test_parse_with_type_int() {
+        let any = parse_with_type("300", Some(CsvTypeVariants::Int));
+        assert_eq!(any.type_variant(), Some(CsvTypeVariants::Int));
+        assert_eq!(any.try_get::<i64>(), Some(300));
+    }
+
+    #[test]
+    fn test_parse_with_type_bool() {
+        let any = parse_with_type("true", Some(CsvTypeVariants::Bool));
+        assert_eq!(any.try_get::<bool>(), Some(true));
+    }
+
+    #[test]
+    fn test_parse_with_type_json() {
+        let any = parse_with_type(r#"{"stock":50}"#, Some(CsvTypeVariants::Json));
+        assert_eq!(any.type_variant(), Some(CsvTypeVariants::Json));
+        let v = any.try_get::<serde_json::Value>().unwrap();
+        assert_eq!(v["stock"], serde_json::json!(50));
+    }
+
+    #[test]
+    fn test_parse_with_type_none_is_string() {
+        let any = parse_with_type("42", None);
+        assert_eq!(any.type_variant(), Some(CsvTypeVariants::String));
+        assert_eq!(any.try_get::<String>(), Some("42".to_string()));
+    }
+
+    #[test]
+    fn test_parse_empty_is_null() {
+        let any = parse_with_type("", Some(CsvTypeVariants::Int));
+        assert_eq!(any.type_variant(), None);
+    }
+
+    #[test]
+    fn test_variant_from_type_name_lookup() {
+        assert_eq!(variant_from_type_name("i64"), Some(CsvTypeVariants::Int));
+        assert_eq!(
+            variant_from_type_name("alloc::string::String"),
+            Some(CsvTypeVariants::String)
+        );
+        assert_eq!(variant_from_type_name("bool"), Some(CsvTypeVariants::Bool));
+        assert_eq!(
+            variant_from_type_name("serde_json::value::Value"),
+            Some(CsvTypeVariants::Json)
+        );
+    }
+
+    #[test]
+    fn test_option_roundtrip() {
+        let some_val: Option<i64> = Some(42);
+        let any = AnyCsvType::new(some_val);
+        assert_eq!(any.type_variant(), Some(CsvTypeVariants::Int));
+        assert_eq!(any.try_get::<Option<i64>>(), Some(Some(42)));
+
+        let none_val: Option<i64> = None;
+        let any = AnyCsvType::new(none_val);
+        assert_eq!(any.value(), "");
+    }
+}

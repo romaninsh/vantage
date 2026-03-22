@@ -11,7 +11,7 @@ well suited for large distributed code-bases and enterprise-level migration / re
 use vantage_expressions::expr;
 
 let where_expr = expr!("age > {} AND status = {}", 21, "active");
-let query_expr = expr!("SELECT * FROM users WHERE {}", (where_expr));
+let query_expr = expr!("SELECT * FROM users WHERE {}", where_expr);
 ```
 
 The [`expr!`] macro keeps your parameters separate from the query template, preventing SQL injection

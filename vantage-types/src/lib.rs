@@ -4,8 +4,10 @@ pub use vantage_types_entity::entity;
 // Include type_system module with regular macros
 pub mod prelude;
 pub mod record;
+pub mod terminal_render;
 pub mod type_system;
 
+pub use terminal_render::TerminalRender;
 pub use record::{IntoRecord, Record, TryFromRecord};
 
 /// Empty entity type for testing and dynamic table scenarios

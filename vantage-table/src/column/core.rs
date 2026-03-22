@@ -11,7 +11,11 @@ pub trait ColumnType: Sync + Send + std::fmt::Debug + Clone + 'static {}
 // Blanket implementation for any type that satisfies the requirements
 impl<T> ColumnType for T where T: Sync + Send + std::fmt::Debug + Clone + 'static {}
 
-/// Represents a table column with optional alias and flags
+/// Represents a table column with optional alias and flags.
+///
+/// The `original_type` field captures `std::any::type_name::<T>()` at construction
+/// time so that the original type name survives through type-erasure (e.g. when
+/// `Column<i64>` is converted to `Column<AnyType>`).
 #[derive(Debug, Clone)]
 pub struct Column<T = Value>
 where
@@ -20,6 +24,7 @@ where
     name: String,
     alias: Option<String>,
     flags: HashSet<ColumnFlag>,
+    original_type: &'static str,
     _phantom: PhantomData<T>,
 }
 
@@ -33,6 +38,19 @@ where
             name: name.into(),
             alias: None,
             flags: HashSet::new(),
+            original_type: std::any::type_name::<T>(),
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Create a column converting from a different type parameter,
+    /// preserving name, alias, flags, and the original type name.
+    pub fn from_column<U: ColumnType>(other: Column<U>) -> Self {
+        Self {
+            name: other.name,
+            alias: other.alias,
+            flags: other.flags,
+            original_type: other.original_type,
             _phantom: PhantomData,
         }
     }
@@ -95,7 +113,9 @@ where
         self
     }
 
-    // get_type() uses the trait default implementation: std::any::type_name::<T>()
+    fn get_type(&self) -> &'static str {
+        self.original_type
+    }
 }
 
 impl<T> Expressive<T> for Column<T>
