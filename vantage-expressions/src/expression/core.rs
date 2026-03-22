@@ -126,6 +126,12 @@ impl<T> Expression<T> {
     }
 }
 
+impl<T: Clone> Expressive<T> for Expression<T> {
+    fn expr(&self) -> Expression<T> {
+        self.clone()
+    }
+}
+
 impl<T: std::fmt::Display + std::fmt::Debug> Expression<T> {
     pub fn preview(&self) -> String {
         let mut preview = self.template.clone();
