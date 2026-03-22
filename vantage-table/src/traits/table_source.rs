@@ -4,7 +4,10 @@ use async_trait::async_trait;
 use indexmap::IndexMap;
 use vantage_dataset::traits::Result;
 use vantage_expressions::{
-    Expression, traits::datasource::DataSource, traits::expressive::ExpressiveEnum,
+    Expression,
+    traits::associated_expressions::AssociatedExpression,
+    traits::datasource::{DataSource, ExprDataSource},
+    traits::expressive::ExpressiveEnum,
 };
 use vantage_types::{Entity, Record};
 
@@ -159,4 +162,30 @@ pub trait TableSource: DataSource + Clone + 'static {
     where
         E: Entity<Self::Value>,
         Self: Sized;
+
+    /// Return an associated expression that, when resolved, yields all values
+    /// of the given typed column from this table (respecting current conditions).
+    ///
+    /// For query-language backends, this can be a subquery expression.
+    /// For simple backends (CSV), this uses a `DeferredFn` that loads data
+    /// and extracts the column values at execution time.
+    ///
+    /// The returned `AssociatedExpression` can be:
+    /// - Executed directly: `.get().await -> Result<Vec<Type>>`
+    /// - Composed into expressions: used via `Expressive` trait in `in_()` conditions
+    ///
+    /// ```rust,ignore
+    /// let fk_col = source.get_column::<String>("bakery_id").unwrap();
+    /// let fk_values = source.data_source().column_values_expression(&source, &fk_col);
+    /// // Execute: let ids = fk_values.get().await?;
+    /// // Or compose: target.add_condition(target["id"].in_((fk_values)));
+    /// ```
+    fn column_values_expression<'a, E, Type: ColumnType>(
+        &'a self,
+        table: &Table<Self, E>,
+        column: &Self::Column<Type>,
+    ) -> AssociatedExpression<'a, Self, Self::Value, Vec<Type>>
+    where
+        E: Entity<Self::Value> + 'static,
+        Self: ExprDataSource<Self::Value> + Sized;
 }

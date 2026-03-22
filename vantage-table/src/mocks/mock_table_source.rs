@@ -336,6 +336,34 @@ impl TableSource for MockTableSource {
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
         im_table.insert_return_id_value(record).await
     }
+
+    fn column_values_expression<'a, E, Type: ColumnType>(
+        &'a self,
+        table: &Table<Self, E>,
+        column: &Self::Column<Type>,
+    ) -> vantage_expressions::traits::associated_expressions::AssociatedExpression<
+        'a,
+        Self,
+        Self::Value,
+        Vec<Type>,
+    >
+    where
+        E: Entity<Self::Value> + 'static,
+        Self: Sized,
+    {
+        // MockTableSource uses select-based subquery (like SQL/SurrealDB)
+        use vantage_expressions::{Expressive, SelectableDataSource, Selectable};
+        use vantage_expressions::traits::associated_expressions::AssociatedExpression;
+        use crate::traits::column_like::ColumnLike;
+        let mut select = self.select();
+        select.set_source(table.table_name(), None);
+        select.clear_fields();
+        select.add_field(column.name());
+        for condition in table.conditions() {
+            select.add_where_condition(condition.clone());
+        }
+        AssociatedExpression::new(select.expr(), self)
+    }
 }
 
 impl ExprDataSource<Value> for MockTableSource {

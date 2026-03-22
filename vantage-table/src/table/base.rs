@@ -1,11 +1,12 @@
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 use indexmap::IndexMap;
 use vantage_expressions::Expression;
 use vantage_types::Entity;
 
 use crate::{
-    pagination::Pagination, /* references::RelatedTable, */ sorting::SortDirection,
+    pagination::Pagination, references::RelatedTable, sorting::SortDirection,
     traits::table_source::TableSource,
 };
 
@@ -23,7 +24,7 @@ where
     pub(super) next_condition_id: i64,
     pub(super) order_by: IndexMap<i64, (Expression<T::Value>, SortDirection)>,
     pub(super) next_order_id: i64,
-    // pub(super) refs: Option<IndexMap<String, Arc<dyn RelatedTable>>>,
+    pub(super) refs: Option<IndexMap<String, Arc<dyn RelatedTable>>>,
     pub(super) pagination: Option<Pagination>,
     pub(super) title_field: Option<String>,
     pub(super) id_field: Option<String>,
@@ -41,7 +42,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             next_condition_id: 1,
             order_by: IndexMap::new(),
             next_order_id: 1,
-            // refs: None,
+            refs: None,
             pagination: None,
             title_field: None,
             id_field: None,
@@ -59,7 +60,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             next_condition_id: self.next_condition_id,
             order_by: self.order_by,
             next_order_id: self.next_order_id,
-            // refs: self.refs,
+            refs: self.refs,
             pagination: self.pagination,
             title_field: self.title_field,
             id_field: self.id_field,
@@ -108,11 +109,6 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             .as_ref()
             .and_then(|name| self.columns.get(name))
     }
-
-    // /// Get a column by name as type-erased column
-    // pub fn column(&self, name: &str) -> Option<&T::Column<T::AnyType>> {
-    //     self.columns.get(name)
-    // }
 }
 
 impl<T: TableSource, E: Entity<T::Value>> std::ops::Index<&str> for Table<T, E> {
@@ -129,10 +125,10 @@ impl<T: TableSource, E: Entity<T::Value>> std::fmt::Debug for Table<T, E> {
             .field("table_name", &self.table_name)
             .field("columns", &self.columns.keys().collect::<Vec<_>>())
             .field("conditions_count", &self.conditions.len())
-            // .field(
-            //     "refs_count",
-            //     &self.refs.as_ref().map(|r| r.len()).unwrap_or(0),
-            // )
+            .field(
+                "refs_count",
+                &self.refs.as_ref().map(|r| r.len()).unwrap_or(0),
+            )
             .finish()
     }
 }
