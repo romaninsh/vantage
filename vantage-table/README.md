@@ -8,21 +8,23 @@ Type-safe table abstractions with ActiveEntity support for database-agnostic CRU
 use vantage_dataset::prelude::*;
 use vantage_table::table::Table;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 struct User {
-    id: Option<String>,
     name: String,
     email: String,
     active: bool,
 }
 
 // Create table with any compatible data source
-let table = Table::new("users", data_source).into_entity::<User>();
+let table = Table::new("users", data_source)
+    .with_column_of::<String>("name")
+    .with_column_of::<String>("email")
+    .with_column_of::<bool>("active")
+    .into_entity::<User>();
 
 // Load and modify entities
 let mut user = table.get_entity(&"user123".to_string()).await?
     .unwrap_or_else(|| table.new_entity("user123".to_string(), User {
-        id: Some("user123".to_string()),
         name: "New User".to_string(),
         email: "user@example.com".to_string(),
         active: false,
@@ -39,10 +41,9 @@ user.save().await?;
 ## Features
 
 - **ActiveEntity Pattern**: Load entities, modify fields directly, and save changes automatically
-- **Database Agnostic**: Works with SurrealDB, MongoDB, SQL databases, and custom data sources
+- **Database Agnostic**: Works with CSV, SurrealDB, and custom data sources
 - **Type Safety**: Full compile-time validation of entity structure and field access
 - **Flexible Queries**: Integration with vantage-expressions for complex query building
-- **Zero-Copy References**: Efficient relationship traversal between related tables
 
 ## Core Operations
 
@@ -51,18 +52,16 @@ user.save().await?;
 Define table structure with typed columns for precise querying:
 
 ```rust
-use vantage_table::column::Column;
-
 // Define columns with types
 let users_table = Table::new("users", data_source)
-    .with_column("name", Column::<String>::new())
-    .with_column("age", Column::<i32>::new())
-    .with_column("active", Column::<bool>::new());
+    .with_column_of::<String>("name")
+    .with_column_of::<i64>("age")
+    .with_column_of::<bool>("active")
+    .into_entity::<User>();
 
 // Add conditions to filter records
 let active_users = users_table
-    .with_condition(users_table["active"].eq(true))
-    .with_condition(users_table["age"].gt(18));
+    .with_condition(users_table["active"].eq(true));
 
 // Work with filtered dataset
 for mut user in active_users.list_entities().await? {
@@ -71,11 +70,13 @@ for mut user in active_users.list_entities().await? {
 }
 ```
 
+> **Note:** Comparison operators like `.gt()`, `.lt()` are planned but not yet implemented.
+> Currently `.eq()` is the primary condition operator.
+
 ### Loading Records
 
 There are multiple ways to load records depending on your needs:
 
-- **`get(id)`** - Load raw entity by ID (fails if not found)
 - **`get_entity(id)`** - Load ActiveEntity by ID (returns `None` if not found)
 - **`get_value(id)`** - Load raw record data by ID
 - **`list()`** - Load all raw entities as `IndexMap<Id, Entity>`
@@ -140,9 +141,13 @@ Vantage Table works with a wide range of data sources through modular adapter cr
 
 ### Ready-to-Use Adapters
 
-- **vantage-surrealdb**: Full SurrealDB integration with native query building
-- **vantage-sql**: PostgreSQL, MySQL, SQLite support via SQL generation
+- **vantage-csv**: CSV file backend with type-safe column parsing
+- **vantage-surrealdb**: SurrealDB integration with native query building
 - **[`MockTableSource`]**: In-memory testing and development mock
+
+### Planned Adapters
+
+- **vantage-sql**: PostgreSQL, MySQL, SQLite support via SQL generation (TODO)
 
 ### Create Your Own Vendor Support
 
@@ -153,18 +158,27 @@ Building a custom data source adapter involves:
   cross-database operations
 - **Implement [`TableSource`]**: Allow tables to persist in your database
 - **Rely on vantage-core**: Unified error handling across the ecosystem
-- **Create custom Column types**: Add advanced features specific to your database
+- **Create custom Column types**: Add advanced features specific to your database (or use the
+  built-in `Column<T>` which preserves original type info through type-erasure)
 - **Add Table extensions**: Support for full-text search, graph operations, or vendor-specific
   features
+
+## Upcoming Features
+
+- **Relationship traversal**: Reference support for navigating between related tables (TODO)
+- **Pagination**: Limit/offset support in Table operations (TODO)
+- **Comparison operators**: `.gt()`, `.lt()`, `.gte()`, `.lte()` for conditions (TODO)
 
 ## Integration
 
 Part of the Vantage framework:
 
-- **vantage-types**: Type system and entity definitions
+- **vantage-types**: Type system, entity definitions, and `TerminalRender` trait
 - **vantage-expressions**: Query building and database abstraction
 - **vantage-dataset**: CRUD operation traits
 - **vantage-core**: Error handling and utilities
+- **vantage-csv**: CSV file data source
+- **vantage-cli-util**: Terminal table rendering utilities
 
 ## Migration from 0.2
 
