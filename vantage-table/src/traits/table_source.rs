@@ -1,6 +1,8 @@
 use std::hash::Hash;
+use std::pin::Pin;
 
 use async_trait::async_trait;
+use futures_core::Stream;
 use indexmap::IndexMap;
 use vantage_dataset::traits::Result;
 use vantage_expressions::{
@@ -162,6 +164,33 @@ pub trait TableSource: DataSource + Clone + 'static {
     where
         E: Entity<Self::Value>,
         Self: Sized;
+
+    /// Stream all records from a table as (Id, Record) pairs.
+    ///
+    /// Default implementation wraps `list_table_values` into a stream.
+    /// Backends with native streaming (e.g. REST APIs with pagination)
+    /// can override this to yield records incrementally.
+    fn stream_table_values<'a, E>(
+        &'a self,
+        table: &Table<Self, E>,
+    ) -> Pin<Box<dyn Stream<Item = Result<(Self::Id, Record<Self::Value>)>> + Send + 'a>>
+    where
+        E: Entity<Self::Value> + 'a,
+        Self: Sized,
+    {
+        let table = table.clone();
+        Box::pin(async_stream::stream! {
+            let records = self.list_table_values(&table).await;
+            match records {
+                Ok(map) => {
+                    for item in map {
+                        yield Ok(item);
+                    }
+                }
+                Err(e) => yield Err(e),
+            }
+        })
+    }
 
     /// Return an associated expression that, when resolved, yields all values
     /// of the given typed column from this table (respecting current conditions).

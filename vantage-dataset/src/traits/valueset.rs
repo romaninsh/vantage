@@ -1,7 +1,10 @@
+use std::pin::Pin;
+
 use crate::record::ActiveRecord;
 
 use super::Result;
 use async_trait::async_trait;
+use futures_core::Stream;
 use indexmap::IndexMap;
 use vantage_types::Record;
 
@@ -91,6 +94,29 @@ pub trait ReadableValueSet: ValueSet {
     ///
     /// Useful when you operate with a very specific subset of data.
     async fn get_some_value(&self) -> Result<Option<(Self::Id, Record<Self::Value>)>>;
+
+    /// Stream all records as (Id, Record) pairs.
+    ///
+    /// Default wraps `list_values()`. Backends with native streaming
+    /// (e.g. paginated REST APIs) can override for incremental fetching.
+    fn stream_values(
+        &self,
+    ) -> Pin<Box<dyn Stream<Item = Result<(Self::Id, Record<Self::Value>)>> + Send + '_>>
+    where
+        Self: Sync,
+    {
+        Box::pin(async_stream::stream! {
+            let records = self.list_values().await;
+            match records {
+                Ok(map) => {
+                    for item in map {
+                        yield Ok(item);
+                    }
+                }
+                Err(e) => yield Err(e),
+            }
+        })
+    }
 }
 
 /// Write operations on raw storage values with idempotent behavior.
