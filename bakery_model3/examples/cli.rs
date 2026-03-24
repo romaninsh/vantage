@@ -80,8 +80,7 @@ where
     for command in &commands {
         match command.as_str() {
             "list" => {
-                let records = table.list_values().await?;
-                print_table(&records);
+                print_table(&table).await?;
             }
             "get" => {
                 let result = table.get_some().await?;

@@ -2,7 +2,8 @@ use indexmap::IndexMap;
 use vantage_types::Entity;
 
 use crate::{
-    column::core::ColumnType, prelude::ColumnLike, table::Table, traits::table_source::TableSource,
+    column::core::ColumnType, prelude::ColumnLike, table::Table,
+    traits::table_source::TableSource,
 };
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
@@ -40,6 +41,18 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             .data_source
             .create_column::<NewColumnType>(&name.into());
         self.add_column(column);
+    }
+
+    /// Add an ID column — sets both the column and the id_field flag.
+    pub fn with_id_column(mut self, name: impl Into<String>) -> Self
+    where
+        T::Id: ColumnType,
+    {
+        let name = name.into();
+        self.id_field = Some(name.clone());
+        let column = self.data_source.create_column::<T::Id>(&name);
+        self.add_column(column);
+        self
     }
 
     /// Add a typed column to the table (builder pattern)
