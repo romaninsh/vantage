@@ -1,4 +1,0 @@
-id,name,email,contact_details,is_paying_client,metadata
-marty,Marty McFly,marty@gmail.com,555-1955,true,
-doc,Doc Brown,doc@brown.com,555-1885,true,
-biff,Biff Tannen,biff-3293@hotmail.com,555-1955,false,"{""notes"":""Often late with payments"",""credit_limit"":500}"

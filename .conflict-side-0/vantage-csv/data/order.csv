@@ -1,4 +1,0 @@
-id,is_deleted,created_at,lines
-order1,false,,"[{""product"":""product:flux_cupcake"",""quantity"":3,""price"":120},{""product"":""product:delorean_donut"",""quantity"":1,""price"":135},{""product"":""product:hover_cookies"",""quantity"":2,""price"":199}]"
-order2,false,,"[{""product"":""product:time_tart"",""quantity"":1,""price"":220}]"
-order3,false,,"[{""product"":""product:hover_cookies"",""quantity"":500,""price"":199}]"
