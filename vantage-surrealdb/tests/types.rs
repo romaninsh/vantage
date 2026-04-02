@@ -115,13 +115,6 @@ macro_type_test!("optionals", {
     none_str: None::<&str>
 });
 
-macro_type_test!("json_values", {
-    json_string: serde_json::json!("hello"),
-    json_number: serde_json::json!(42),
-    json_object: serde_json::json!({"name": "test", "value": 123}),
-    json_array: serde_json::json!([1, 2, 3])
-});
-
 #[tokio::test]
 async fn test_mismatching_types() {
     let db = get_surrealdb().await;

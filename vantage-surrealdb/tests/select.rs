@@ -105,7 +105,7 @@ fn query03() {
     );
 
     select.set_source("product", None);
-    select.add_where_condition(Field::new("is_deleted").eq(surreal_expr!("{}", false)));
+    select.add_where_condition(Field::new("is_deleted").eq(false));
 
     let result = select.preview();
     assert_eq!(
@@ -120,18 +120,15 @@ fn query04() {
         Sum::new(
             SurrealSelect::new()
                 .with_source("product")
-                .with_condition(Field::new("is_deleted").eq(surreal_expr!("{}", false)))
+                .with_condition(Field::new("is_deleted").eq(false))
                 .only_expression(Field::new("inventory").dot("stock"))
-                .into(),
+                .expr(),
         )
         .expr()
-        .sub(
-            Fx::new(
-                "count",
-                vec![SurrealSelect::new().with_source("product").expr()],
-            )
-            .expr(),
-        ),
+        .sub(Fx::new(
+            "count",
+            vec![SurrealSelect::new().with_source("product").expr()],
+        )),
     );
     assert_eq!(
         select.preview(),
@@ -205,7 +202,7 @@ fn query11() {
                     Thing::new("bakery", "hill_valley")
                         .in_(surreal_expr!("").lref("owns", "bakery")),
                 )
-                .with_condition(Identifier::new("is_deleted").eq(surreal_expr!("{}", false)))
+                .with_condition(Identifier::new("is_deleted").eq(false))
                 .expr(),
         );
 
@@ -291,7 +288,15 @@ async fn setup_test_db_with_data(mock_data: Value) -> SurrealDB {
             _method: &str,
             _params: CborValue,
         ) -> surreal_client::error::Result<CborValue> {
-            Ok(self.data.clone())
+            // Wrap in SurrealDB response envelope: [{status: "OK", result: data}]
+            let response = CborValue::Array(vec![CborValue::Map(vec![
+                (
+                    CborValue::Text("status".to_string()),
+                    CborValue::Text("OK".to_string()),
+                ),
+                (CborValue::Text("result".to_string()), self.data.clone()),
+            ])]);
+            Ok(response)
         }
     }
 
@@ -337,7 +342,7 @@ async fn test_get_list() {
     // Test SurrealSelect<result::List> -> Vec<Value>
     let select = SurrealSelect::new()
         .with_source("products")
-        .with_condition(Field::new("active").eq(surreal_expr!("{}", true)))
+        .with_condition(Field::new("active").eq(true))
         .only_column("name");
 
     assert_eq!(
@@ -349,15 +354,15 @@ async fn test_get_list() {
     let values = select.get(&db).await;
     let values = values.unwrap();
     assert_eq!(values.len(), 2);
-    assert!(values[0].is_string());
-    assert!(values[1].is_string());
+    assert_eq!(values[0].try_get::<String>().unwrap(), "Product A");
+    assert_eq!(values[1].try_get::<String>().unwrap(), "Product B");
 }
 
 #[tokio::test]
 async fn test_single_row() {
-    let mock_data = serde_json::json!([
+    let mock_data = serde_json::json!(
         {"theme": "dark", "language": "en"}
-    ]);
+    );
     let db = setup_test_db_with_data(mock_data).await;
 
     // Test SurrealSelect<result::SingleRow>
@@ -376,10 +381,14 @@ async fn test_single_row() {
     let row = select.get(&db).await;
     let row = row.unwrap();
     assert!(!row.is_empty());
-    assert!(row.get("theme").unwrap().is_string());
-    assert!(row.get("language").unwrap().is_string());
-    assert_eq!(row.get("theme").unwrap().as_str().unwrap(), "dark");
-    assert_eq!(row.get("language").unwrap().as_str().unwrap(), "en");
+    assert_eq!(
+        row.get("theme").unwrap().try_get::<String>().unwrap(),
+        "dark"
+    );
+    assert_eq!(
+        row.get("language").unwrap().try_get::<String>().unwrap(),
+        "en"
+    );
 }
 
 #[test]
@@ -420,7 +429,7 @@ fn test_aggregation_methods() {
     let sum_query = SurrealSelect::new()
         .with_source("orders")
         .with_condition(Field::new("status").eq("completed"))
-        .as_sum("total");
+        .as_sum(Field::new("total"));
 
     assert_eq!(
         sum_query.preview(),
@@ -461,7 +470,7 @@ async fn test_single_value() {
     // Approach 1: only_first_row() then only_column()
     let name1 = SurrealSelect::new()
         .with_source("users")
-        .with_condition(Field::new("id").eq(surreal_expr!("{}", "user123")))
+        .with_condition(Field::new("id").eq("user123"))
         .only_first_row()
         .only_column("name")
         .get(&db)
@@ -471,7 +480,7 @@ async fn test_single_value() {
     // Approach 2: only_column() then only_first_row()
     let name2 = SurrealSelect::new()
         .with_source("users")
-        .with_condition(Field::new("id").eq(surreal_expr!("{}", "user123")))
+        .with_condition(Field::new("id").eq("user123"))
         .only_column("name")
         .only_first_row()
         .get(&db)
@@ -479,8 +488,6 @@ async fn test_single_value() {
         .unwrap();
 
     // Both should return the same result
-    assert!(name1.is_string());
-    assert!(name2.is_string());
-    assert_eq!(name1.as_str().unwrap(), "John Doe");
-    assert_eq!(name2.as_str().unwrap(), "John Doe");
+    assert_eq!(name1.try_get::<String>().unwrap(), "John Doe");
+    assert_eq!(name2.try_get::<String>().unwrap(), "John Doe");
 }
