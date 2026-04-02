@@ -1,0 +1,50 @@
+[package]
+name = "vantage-table"
+version = "0.1.0"
+edition = "2024"
+autoexamples = false
+
+[[example]]
+name = "mockbuilder_demo"
+path = "examples/mockbuilder_demo.rs"
+
+[lib]
+doctest = false
+
+
+[dependencies]
+vantage-core = { path = "../vantage-core" }
+vantage-types = { path = "../vantage-types" }
+vantage-expressions = { path = "../vantage-expressions" }
+vantage-dataset = { path = "../vantage-dataset" }
+async-stream = "0.3"
+async-trait = "0.1"
+futures-core = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+indexmap = "2.12"
+mockall = "0.12"
+paste = "1.0"
+tokio = { version = "1.48", features = ["macros", "rt-multi-thread", "sync"] }
+rust_decimal = { version = "1.39.0", features = ["macros", "serde"] }
+
+[dev-dependencies]
+tokio = { version = "1.48", features = ["macros", "rt-multi-thread", "sync"] }
+serde_json = "1.0"
+vantage-expressions = { path = "../vantage-expressions" }
+# vantage-surrealdb = { path = "../vantage-surrealdb" }
+surreal-client = { path = "../surreal-client" }
+async-trait = "0.1"
+ciborium = { version = "0.2", features = ["std"] }
+url = { version = "2.5", features = ["serde"] }
+
+# Disable tests during 0.3 migration
+[[test]]
+name = "surrealdb_table_like"
+path = "tests/surrealdb_table_like.rs"
+test = false
+
+[[test]]
+name = "expr"
+path = "tests/expr.rs"
+test = false

@@ -1,0 +1,20 @@
+[book]
+authors = ["Romans Malinovskis"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Vantage Framework Documentation"
+
+[preprocessor]
+
+[preprocessor.kroki-preprocessor]
+
+
+[preprocessor.admonish]
+command = "mdbook-admonish"
+assets_version = "3.0.3"    # do not edit: managed by `mdbook-admonish install`
+
+[output]
+
+[output.html]
+additional-css = ["./mdbook-admonish.css"]

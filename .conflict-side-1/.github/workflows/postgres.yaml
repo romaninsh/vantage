@@ -1,0 +1,84 @@
+name: Vantage v0.2 and Integration Tests
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "vantage/**"
+      - "bakery_model/**"
+      - "bakery_api/**"
+      - ".github/workflows/postgres.yaml"
+
+env:
+  CARGO_TERM_COLOR: always
+  TESTCONTAINER_DOCKER_NETWORK: tomodachi-testcontainers
+
+jobs:
+  vantage-v02:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:latest
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          key: "vantage-v02"
+          workspaces: |
+            vantage -> target
+            bakery_model -> target
+            bakery_api -> target
+
+      - name: Setup database schema
+        run: |
+          psql -h localhost -U postgres -d postgres -f bakery_model/schema-pg.sql
+        env:
+          PGPASSWORD: postgres
+
+      - name: Build vantage v0.2
+        working-directory: vantage
+        run: cargo build
+
+      - name: Run vantage v0.2 tests
+        working-directory: vantage
+        run: cargo test
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+
+      - name: Build bakery_model
+        working-directory: bakery_model
+        run: cargo build
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+
+      - name: Run bakery_model tests
+        working-directory: bakery_model
+        run: cargo test
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+
+      - name: Build bakery_api
+        working-directory: bakery_api
+        run: cargo build
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+
+      - name: Run bakery_api tests
+        working-directory: bakery_api
+        run: cargo test -- --test-threads=1
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres

@@ -1,0 +1,27 @@
+[package]
+name = "example_python"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "example_python"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.20", features = ["extension-module"] }
+rust_decimal = { version = "1.0", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+
+# Vantage dependencies
+vantage-core = { path = "../vantage-core" }
+vantage-table = { path = "../vantage-table" }
+vantage-surrealdb = { path = "../vantage-surrealdb" }
+bakery_model3 = { path = "../bakery_model3" }
+
+[dev-dependencies]
+pyo3-asyncio = { version = "0.20", features = ["tokio-runtime"] }
+
+[build-dependencies]
+pyo3-build-config = "0.20"

@@ -1,0 +1,12 @@
+DROP TABLE IF EXISTS event;
+
+DROP TABLE IF EXISTS person;
+
+CREATE TABLE person (id SERIAL PRIMARY KEY, name TEXT NOT NULL);
+
+CREATE TABLE event (
+    id SERIAL PRIMARY KEY,
+    person_id INT REFERENCES person (id),
+    start_time TIMESTAMP NOT NULL,
+    end_time TIMESTAMP NOT NULL
+);

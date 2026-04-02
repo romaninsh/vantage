@@ -1,0 +1,208 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VantageConfig",
+  "type": "object",
+  "properties": {
+    "menu": {
+      "description": "Array of menu items for the navigation sidebar",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/definitions/MenuItemConfig"
+        }
+      }
+    },
+    "roles": {
+      "description": "Role-based permissions configuration",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "$ref": "#/definitions/RoleConfig"
+      }
+    },
+    "tables": {
+      "description": "Table definitions",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "$ref": "#/definitions/EntityConfig"
+      }
+    }
+  },
+  "definitions": {
+    "ColumnConfig": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "default": {
+          "description": "Default value"
+        },
+        "flags": {
+          "description": "Column flags (mandatory, hidden, id, title, searchable)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "description": "Column name",
+          "type": "string"
+        },
+        "rules": {
+          "description": "Validation rules",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true
+        },
+        "type": {
+          "description": "Column type (defaults to \"any\" if not specified)",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ColumnType"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "ColumnType": {
+      "type": "string",
+      "enum": [
+        "any",
+        "int",
+        "float",
+        "string",
+        "bool",
+        "datetime",
+        "duration"
+      ]
+    },
+    "EntityConfig": {
+      "type": "object",
+      "required": [
+        "columns",
+        "table"
+      ],
+      "properties": {
+        "columns": {
+          "description": "Column definitions",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ColumnConfig"
+          }
+        },
+        "relations": {
+          "description": "Relationship definitions",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/RelationConfig"
+          }
+        },
+        "table": {
+          "description": "Database table name",
+          "type": "string"
+        }
+      }
+    },
+    "MenuItemConfig": {
+      "type": "object",
+      "properties": {
+        "icon": {
+          "description": "Icon name for the menu item",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Display name for the menu item (optional, will use key if not provided)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "PermissionRule": {
+      "type": "object",
+      "required": [
+        "allow",
+        "on"
+      ],
+      "properties": {
+        "allow": {
+          "$ref": "#/definitions/PermissionType"
+        },
+        "on": {
+          "type": "string"
+        }
+      }
+    },
+    "PermissionType": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "RelationConfig": {
+      "type": "object",
+      "required": [
+        "foreign_key",
+        "name",
+        "target",
+        "type"
+      ],
+      "properties": {
+        "foreign_key": {
+          "description": "Foreign key column name",
+          "type": "string"
+        },
+        "name": {
+          "description": "Name of the relation (used in ref_xxx methods)",
+          "type": "string"
+        },
+        "target": {
+          "description": "Target entity name",
+          "type": "string"
+        },
+        "type": {
+          "description": "Relation type: \"belongs_to\" or \"has_many\"",
+          "type": "string"
+        }
+      }
+    },
+    "RoleConfig": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/PermissionRule"
+      }
+    }
+  }
+}

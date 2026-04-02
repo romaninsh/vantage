@@ -1,0 +1,23 @@
+[package]
+name = "bakery_model3"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+vantage-core = { path = "../vantage-core" }
+vantage-table = { path = "../vantage-table" }
+vantage-csv = { path = "../vantage-csv" }
+vantage-expressions = { path = "../vantage-expressions" }
+vantage-dataset = { path = "../vantage-dataset" }
+vantage-types = { path = "../vantage-types" }
+indexmap = "2.0"
+tokio = { version = "1.48", features = ["full"] }
+clap = "4.5"
+
+[dev-dependencies]
+vantage-cli-util = { path = "../vantage-cli-util" }
+
+# SurrealDB support commented out during CSV-first development
+# vantage-surrealdb = { path = "../vantage-surrealdb" }
+# surreal-client = { path = "../surreal-client", features = ["decimal"] }
+# rust_decimal = "1.36"

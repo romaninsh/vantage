@@ -1,0 +1,27 @@
+[package]
+edition = "2024"
+name = "vantage-csv"
+version = "0.3.0"
+license = "MIT OR Apache-2.0"
+authors = ["Romans Malinovskis <me@nearly.guru>"]
+description = "Vantage extension for CSV files"
+documentation = "https://docs.rs/vantage"
+homepage = "https://romaninsh.github.io/vantage"
+repository = "https://github.com/romaninsh/vantage"
+readme = "../README.md"
+
+[dependencies]
+async-trait = "0.1"
+csv = "1.4"
+paste = "1.0"
+indexmap = { version = "2", features = ["serde"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+vantage-core = { path = "../vantage-core" }
+vantage-dataset = { path = "../vantage-dataset" }
+vantage-expressions = { path = "../vantage-expressions" }
+vantage-table = { path = "../vantage-table" }
+vantage-types = { path = "../vantage-types", features = ["serde"] }
+
+[dev-dependencies]
+tokio = { version = "1.48", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }

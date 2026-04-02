@@ -1,0 +1,28 @@
+[package]
+name = "vantage-live"
+version = "0.3.0"
+edition = "2021"
+authors = ["Romans Malinovskis <romans@malinovskis.com>"]
+license = "MIT"
+description = "Live data synchronization layer for Vantage framework"
+repository = "https://github.com/romaninsh/vantage"
+keywords = ["database", "orm", "sync", "cache", "live"]
+categories = ["database"]
+
+[dependencies]
+vantage-core = { path = "../vantage-core", version = "0.3.0" }
+vantage-dataset = { path = "../vantage-dataset", version = "0.3.0" }
+
+async-trait = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["sync", "time"] }
+uuid = { version = "1.0", features = ["v4"] }
+
+[dev-dependencies]
+tokio = { version = "1.0", features = ["full"] }
+bakery_model3 = { path = "../bakery_model3" }
+vantage-surrealdb = { path = "../vantage-surrealdb" }
+vantage-table = { path = "../vantage-table" }
+surreal-client = { path = "../surreal-client" }
+anyhow = "1.0"

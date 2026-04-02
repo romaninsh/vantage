@@ -1,0 +1,34 @@
+[package]
+edition = "2021"
+name = "vantage-api-pool"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+description = "Paginated REST API client pool for Vantage"
+
+[dependencies]
+anyhow = "1.0"
+async-stream = "0.3"
+futures-core = "0.3"
+reqwest = { version = "0.12", features = ["json"] }
+rust_decimal = { version = "1.39", features = ["serde", "macros"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+
+async-trait = "0.1"
+indexmap = { version = "2", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+vantage-core = { path = "../vantage-core" }
+vantage-dataset = { path = "../vantage-dataset" }
+vantage-expressions = { path = "../vantage-expressions" }
+vantage-table = { path = "../vantage-table" }
+vantage-types = { path = "../vantage-types", features = ["serde"] }
+
+[dev-dependencies]
+anyhow = "1.0"
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+urlencoding = "2.1"
+vantage-cli-util = { path = "../vantage-cli-util" }

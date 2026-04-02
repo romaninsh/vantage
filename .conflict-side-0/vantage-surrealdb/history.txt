@@ -1,0 +1,101 @@
+#V2
+DEFINE FIELD created_at ON temporals TYPE datetime DEFAULT time::now();
+-- Identifier types table
+DEFINE TABLE identifiers;
+DEFINE FIELD uuid_val ON identifiers TYPE uuid;
+DEFINE FIELD thing_val ON identifiers TYPE record<any>;
+-- Collection types table
+DEFINE TABLE collections;
+DEFINE FIELD array_val ON collections TYPE array;
+DEFINE FIELD object_val ON collections TYPE object;
+DEFINE FIELD set_val ON collections TYPE set<string>;
+-- Geometry types table
+DEFINE TABLE geometries;
+DEFINE FIELD point_val ON geometries TYPE geometry<point>;
+DEFINE FIELD line_val ON geometries TYPE geometry<line>;
+DEFINE FIELD polygon_val ON geometries TYPE geometry<polygon>;
+DEFINE FIELD multipoint_val ON geometries TYPE geometry<multipoint>;
+DEFINE FIELD multiline_val ON geometries TYPE geometry<multiline>;
+DEFINE FIELD multipolygon_val ON geometries TYPE geometry<multipolygon>;
+DEFINE FIELD collection_val ON geometries TYPE geometry<collection>;
+-- Range types table
+DEFINE TABLE ranges;
+-- SurrealDB Types Testing Database
+-- This database contains tables for testing all SurrealDB data types
+-- Define tables for different type categories
+-- Primitive types table
+DEFINE TABLE primitives;
+DEFINE FIELD none ON primitives TYPE option<string>;
+DEFINE FIELD bool_val ON primitives TYPE bool;
+DEFINE FIELD int_val ON primitives TYPE int;
+DEFINE FIELD float_val ON primitives TYPE float;
+DEFINE FIELD string_val ON primitives TYPE string;
+DEFINE FIELD bytes_val ON primitives TYPE bytes;
+-- Advanced numeric types table
+DEFINE TABLE numerics;
+DEFINE FIELD decimal_val ON numerics TYPE decimal;
+DEFINE FIELD big_int ON numerics TYPE int;
+DEFINE FIELD precise_float ON numerics TYPE float;
+-- Temporal types table
+DEFINE TABLE temporals;
+DEFINE FIELD datetime_val ON temporals TYPE datetime;
+DEFINE FIELD duration_val ON temporals TYPE duration;
+DEFINE FIELD created_at ON temporals TYPE datetime DEFAULT time::now();
+-- Identifier types table
+DEFINE TABLE identifiers;
+DEFINE FIELD uuid_val ON identifiers TYPE uuid;
+DEFINE FIELD thing_val ON identifiers TYPE record<any>;
+-- Collection types table
+DEFINE TABLE collections;
+DEFINE FIELD array_val ON collections TYPE array;
+DEFINE FIELD object_val ON collections TYPE object;
+DEFINE FIELD set_val ON collections TYPE set<string>;
+-- Geometry types table
+DEFINE TABLE geometries;
+DEFINE FIELD point_val ON geometries TYPE geometry<point>;
+DEFINE FIELD line_val ON geometries TYPE geometry<line>;
+DEFINE FIELD polygon_val ON geometries TYPE geometry<polygon>;
+DEFINE FIELD multipoint_val ON geometries TYPE geometry<multipoint>;
+DEFINE FIELD multiline_val ON geometries TYPE geometry<multiline>;
+DEFINE FIELD multipolygon_val ON geometries TYPE geometry<multipolygon>;
+DEFINE FIELD collection_val ON geometries TYPE geometry<collection>;
+-- Mixed types table for comprehensive testing
+DEFINE TABLE mixed_types;
+DEFINE FIELD id ON mixed_types TYPE record<mixed_types>;
+DEFINE FIELD name ON mixed_types TYPE string;
+DEFINE FIELD age ON mixed_types TYPE int;
+DEFINE FIELD score ON mixed_types TYPE float;
+DEFINE FIELD active ON mixed_types TYPE bool;
+DEFINE FIELD tags ON mixed_types TYPE array<string>;
+DEFINE FIELD metadata ON mixed_types TYPE object;
+DEFINE FIELD created ON mixed_types TYPE datetime;
+DEFINE FIELD location ON mixed_types TYPE geometry<point>;
+DEFINE FIELD balance ON mixed_types TYPE decimal;
+-- Insert sample data for testing
+-- Primitives
+INSERT INTO primitives {    none: NONE,    bool_val: true,    int_val: 42,    float_val: 3.14159,    string_val: "Hello SurrealDB",    bytes_val: "SGVsbG8="};
+INSERT INTO primitives {    none: NONE,    bool_val: false,    int_val: -123,    float_val: -2.718,    string_val: "Testing types",    bytes_val: "V29ybGQ="};
+-- Numerics
+-- SurrealDB Types Testing Database
+-- Minimal working schema for testing basic types
+-- Define simple tables for testing
+-- Strings table
+DEFINE TABLE strings;
+-- Numbers table
+DEFINE TABLE numbers;
+-- Booleans table
+DEFINE TABLE booleans;
+-- Mixed table
+DEFINE TABLE mixed;
+-- Insert test data
+-- String data
+INSERT INTO strings { id: "str1", value: "hello world" };
+INSERT INTO strings { id: "str2", value: "test string" };
+-- Number data
+INSERT INTO numbers { id: "num1", int_val: 42, float_val: 3.14 };
+INSERT INTO numbers { id: "num2", int_val: -123, float_val: 2.718 };
+-- Boolean data
+INSERT INTO booleans { id: "bool1", value: true };
+INSERT INTO booleans { id: "bool2", value: false };
+-- Mixed data
+INSERT INTO mixed {    id: "mix1",    name: "Test Record",    age: 25,    active: true,    score: 95.5};
