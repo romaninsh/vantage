@@ -3,7 +3,7 @@ members = [
     "vantage-core",
     "vantage-expressions",
     # "vantage-sql",
-    # "vantage-surrealdb",
+    "vantage-surrealdb",
     # "vantage-redb",
     # "vantage-mongodb",
     # "vantage-live",

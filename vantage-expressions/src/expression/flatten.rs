@@ -70,31 +70,41 @@ impl<T: Clone> Flatten<Expression<T>> for ExpressionFlattener {
     }
 
     fn flatten_nested(&self, expr: &Expression<T>) -> Expression<T> {
-        let mut final_template = String::new();
-        let mut final_params = Vec::new();
-        let template_parts = expr.template.split("{}");
+        let mut result = expr.clone();
+        loop {
+            let mut final_template = String::new();
+            let mut final_params = Vec::new();
+            let mut had_nested = false;
+            let template_parts = result.template.split("{}");
 
-        let mut template_iter = template_parts.into_iter();
-        final_template.push_str(template_iter.next().unwrap_or(""));
-
-        for param in &expr.parameters {
-            match param {
-                ExpressiveEnum::Nested(nested_expr) => {
-                    final_template.push_str(&nested_expr.template);
-                    final_params.extend(nested_expr.parameters.clone());
-                }
-                other => {
-                    final_template.push_str("{}");
-                    final_params.push(other.clone());
-                }
-            }
+            let mut template_iter = template_parts.into_iter();
             final_template.push_str(template_iter.next().unwrap_or(""));
-        }
 
-        Expression {
-            template: final_template,
-            parameters: final_params,
+            for param in &result.parameters {
+                match param {
+                    ExpressiveEnum::Nested(nested_expr) => {
+                        had_nested = true;
+                        final_template.push_str(&nested_expr.template);
+                        final_params.extend(nested_expr.parameters.clone());
+                    }
+                    other => {
+                        final_template.push_str("{}");
+                        final_params.push(other.clone());
+                    }
+                }
+                final_template.push_str(template_iter.next().unwrap_or(""));
+            }
+
+            result = Expression {
+                template: final_template,
+                parameters: final_params,
+            };
+
+            if !had_nested {
+                break;
+            }
         }
+        result
     }
 }
 

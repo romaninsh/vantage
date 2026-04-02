@@ -60,10 +60,10 @@ impl ExprDataSource<AnySurrealType> for SurrealDB {
             .unwrap_or(false);
 
         if is_success {
-            // Extract result from successful response
+            // Extract "result" key from successful response
             let extracted_result = response_map
                 .iter()
-                .next()
+                .find(|(k, _)| matches!(k, ciborium::Value::Text(key) if key == "result"))
                 .map(|(_, v)| v)
                 .unwrap_or(&result);
 
@@ -71,10 +71,10 @@ impl ExprDataSource<AnySurrealType> for SurrealDB {
                 vantage_core::error!("Failed to convert SurrealDB result to AnySurrealType")
             })
         } else {
-            // Extract error message from failed response
+            // Extract error message from "result" key in failed response
             let error_message = response_map
                 .iter()
-                .next()
+                .find(|(k, _)| matches!(k, ciborium::Value::Text(key) if key == "result"))
                 .and_then(|(_, v)| match v {
                     ciborium::Value::Text(msg) => Some(msg.clone()),
                     _ => None,

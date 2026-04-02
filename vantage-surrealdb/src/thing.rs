@@ -178,7 +178,7 @@ mod tests {
         let create_user = surreal_expr!(
             &format!("CREATE {} SET name = {{}}, country = {{}}", user_id),
             "Test User",
-            country_thing
+            (country_thing)
         );
         db.execute(&create_user)
             .await
