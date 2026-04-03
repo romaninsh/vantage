@@ -35,8 +35,16 @@ fn parse_cbor_row(
         if key == id_field_name {
             thing = Thing::from_cbor(v.clone());
         }
-        if let Some(val) = AnySurrealType::from_cbor(&v) {
-            fields.insert(key, val);
+        match AnySurrealType::from_cbor(&v) {
+            Some(val) => {
+                fields.insert(key, val);
+            }
+            None => {
+                eprintln!(
+                    "parse_cbor_row: dropping field '{}', unsupported CBOR: {:?}",
+                    key, v
+                );
+            }
         }
     }
 

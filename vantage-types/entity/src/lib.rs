@@ -36,7 +36,17 @@ struct EntityArgs {
 impl Parse for EntityArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let punctuated: Punctuated<Ident, Token![,]> = Punctuated::parse_terminated(input)?;
-        let type_names: Vec<Ident> = punctuated.into_iter().collect();
+        let mut seen = std::collections::HashSet::new();
+        let mut type_names = Vec::new();
+        for ident in punctuated {
+            if !seen.insert(ident.to_string()) {
+                return Err(syn::Error::new(
+                    ident.span(),
+                    format!("duplicate type system `{}`", ident),
+                ));
+            }
+            type_names.push(ident);
+        }
         if type_names.is_empty() {
             return Err(input.error("expected at least one type system name"));
         }
