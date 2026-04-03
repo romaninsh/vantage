@@ -2,9 +2,10 @@ use ciborium::Value as CborValue;
 use serde_json::Value;
 use vantage_expressions::{Expressive, Selectable};
 use vantage_surrealdb::{
+    field::Field,
     identifier::{Identifier, Parent},
     operation::RefOperation,
-    select::{SurrealSelect, field::Field},
+    select::SurrealSelect,
     sum::{Fx, Sum},
     surreal_expr,
     surreal_return::SurrealReturn,

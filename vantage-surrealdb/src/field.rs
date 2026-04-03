@@ -13,7 +13,7 @@ use crate::{AnySurrealType, Expr, identifier::Identifier};
 /// # Examples
 ///
 /// ```rust
-/// use vantage_surrealdb::select::field::Field;
+/// use vantage_surrealdb::field::Field;
 ///
 /// // doc wip
 /// let field = Field::new("user_name");

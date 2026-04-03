@@ -111,7 +111,7 @@ impl ExpressiveOr<crate::AnySurrealType, Identifier> for Expr {
     }
 }
 
-impl ExpressiveOr<crate::AnySurrealType, Identifier> for crate::statements::select::field::Field {
+impl ExpressiveOr<crate::AnySurrealType, Identifier> for crate::field::Field {
     fn field_expr(&self) -> Expr {
         Expressive::expr(self)
     }
