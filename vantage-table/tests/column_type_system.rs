@@ -285,7 +285,7 @@ impl TableSource for Type3TableSource {
         Expression::new(template, parameters)
     }
 
-    fn search_expression(
+    fn search_table_expr(
         &self,
         _table: &impl TableLike,
         search_value: &str,
@@ -371,6 +371,34 @@ impl TableSource for Type3TableSource {
         ))
     }
 
+    async fn get_max<E, Type: ColumnType>(
+        &self,
+        _table: &Table<Self, E>,
+        _column: &Self::Column<Type>,
+    ) -> Result<Type>
+    where
+        E: Entity<Self::Value>,
+        Self: Sized,
+    {
+        Err(vantage_core::error!(
+            "Max not implemented for Type3TableSource"
+        ))
+    }
+
+    async fn get_min<E, Type: ColumnType>(
+        &self,
+        _table: &Table<Self, E>,
+        _column: &Self::Column<Type>,
+    ) -> Result<Type>
+    where
+        E: Entity<Self::Value>,
+        Self: Sized,
+    {
+        Err(vantage_core::error!(
+            "Min not implemented for Type3TableSource"
+        ))
+    }
+
     async fn insert_table_value<E>(
         &self,
         _table: &Table<Self, E>,
@@ -438,7 +466,7 @@ impl TableSource for Type3TableSource {
         Err(vantage_core::error!("Insert operations not supported"))
     }
 
-    fn column_values_expression<'a, E, Type: ColumnType>(
+    fn column_table_values_expr<'a, E, Type: ColumnType>(
         &'a self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Type>,
@@ -452,7 +480,7 @@ impl TableSource for Type3TableSource {
         E: Entity<Self::Value> + 'static,
         Self: Sized,
     {
-        unimplemented!("Type3 does not support column_values_expression")
+        unimplemented!("Type3 does not support column_table_values_expr")
     }
 }
 

@@ -80,7 +80,7 @@ where
             .create_column::<T::AnyType>(&self.our_foreign_key);
         let fk_values = source
             .data_source()
-            .column_values_expression(source, &fk_col);
+            .column_table_values_expr(source, &fk_col);
 
         let id_field = target
             .id_field()

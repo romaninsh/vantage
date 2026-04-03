@@ -54,7 +54,7 @@ impl TableSource for Csv {
         Expression::new(template, parameters)
     }
 
-    fn search_expression(
+    fn search_table_expr(
         &self,
         _table: &impl TableLike,
         search_value: &str,
@@ -128,6 +128,30 @@ impl TableSource for Csv {
         Err(error!("Sum not implemented for CSV backend"))
     }
 
+    async fn get_max<E, Type: ColumnType>(
+        &self,
+        _table: &Table<Self, E>,
+        _column: &Self::Column<Type>,
+    ) -> Result<Type>
+    where
+        E: Entity<Self::Value>,
+        Self: Sized,
+    {
+        Err(error!("Max not implemented for CSV backend"))
+    }
+
+    async fn get_min<E, Type: ColumnType>(
+        &self,
+        _table: &Table<Self, E>,
+        _column: &Self::Column<Type>,
+    ) -> Result<Type>
+    where
+        E: Entity<Self::Value>,
+        Self: Sized,
+    {
+        Err(error!("Min not implemented for CSV backend"))
+    }
+
     async fn insert_table_value<E>(
         &self,
         _table: &Table<Self, E>,
@@ -195,7 +219,7 @@ impl TableSource for Csv {
         Err(error!("CSV is a read-only data source"))
     }
 
-    fn column_values_expression<'a, E, Type: ColumnType>(
+    fn column_table_values_expr<'a, E, Type: ColumnType>(
         &'a self,
         table: &Table<Self, E>,
         column: &Self::Column<Type>,

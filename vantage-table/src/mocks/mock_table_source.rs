@@ -155,7 +155,7 @@ impl TableSource for MockTableSource {
         Expression::new(template, parameters)
     }
 
-    fn search_expression(
+    fn search_table_expr(
         &self,
         _table: &impl TableLike,
         search_value: &str,
@@ -234,6 +234,34 @@ impl TableSource for MockTableSource {
         // Mock implementation - sum not supported
         Err(vantage_core::error!(
             "Sum not implemented for MockTableSource"
+        ))
+    }
+
+    async fn get_max<E, Type: ColumnType>(
+        &self,
+        _table: &Table<Self, E>,
+        _column: &Self::Column<Type>,
+    ) -> Result<Type>
+    where
+        E: Entity<Self::Value>,
+        Self: Sized,
+    {
+        Err(vantage_core::error!(
+            "Max not implemented for MockTableSource"
+        ))
+    }
+
+    async fn get_min<E, Type: ColumnType>(
+        &self,
+        _table: &Table<Self, E>,
+        _column: &Self::Column<Type>,
+    ) -> Result<Type>
+    where
+        E: Entity<Self::Value>,
+        Self: Sized,
+    {
+        Err(vantage_core::error!(
+            "Min not implemented for MockTableSource"
         ))
     }
 
@@ -337,7 +365,7 @@ impl TableSource for MockTableSource {
         im_table.insert_return_id_value(record).await
     }
 
-    fn column_values_expression<'a, E, Type: ColumnType>(
+    fn column_table_values_expr<'a, E, Type: ColumnType>(
         &'a self,
         table: &Table<Self, E>,
         column: &Self::Column<Type>,
@@ -352,9 +380,9 @@ impl TableSource for MockTableSource {
         Self: Sized,
     {
         // MockTableSource uses select-based subquery (like SQL/SurrealDB)
-        use vantage_expressions::{Expressive, SelectableDataSource, Selectable};
-        use vantage_expressions::traits::associated_expressions::AssociatedExpression;
         use crate::traits::column_like::ColumnLike;
+        use vantage_expressions::traits::associated_expressions::AssociatedExpression;
+        use vantage_expressions::{Expressive, Selectable, SelectableDataSource};
         let mut select = self.select();
         select.set_source(table.table_name(), None);
         select.clear_fields();
@@ -431,7 +459,7 @@ impl SelectableDataSource<Value> for MockTableSource {
 }
 
 impl TableExprSource for MockTableSource {
-    fn get_table_expr_count<E: Entity<Self::Value>>(
+    fn get_table_count_expr<E: Entity<Self::Value>>(
         &self,
         table: &Table<Self, E>,
     ) -> vantage_expressions::AssociatedExpression<'_, Self, Self::Value, usize> {
@@ -472,13 +500,42 @@ impl TableExprSource for MockTableSource {
         vantage_expressions::AssociatedExpression::new(expr, self)
     }
 
-    fn get_table_expr_max<E: Entity<Self::Value>, R: ColumnType>(
+    fn get_table_sum_expr<E: Entity<Self::Value>, R: ColumnType>(
         &self,
         _table: &Table<Self, E>,
         column: &Self::Column<R>,
-    ) -> vantage_expressions::AssociatedExpression<'_, Self, Self::Value, R> {
+    ) -> vantage_expressions::AssociatedExpression<'_, Self, Self::Value, R>
+    where
+        R: Default + std::ops::AddAssign,
+    {
+        let column_name = column.name();
+        let expr = expr_any!("select sum({})", column_name);
+        vantage_expressions::AssociatedExpression::new(expr, self)
+    }
+
+    fn get_table_max_expr<E: Entity<Self::Value>, R: ColumnType>(
+        &self,
+        _table: &Table<Self, E>,
+        column: &Self::Column<R>,
+    ) -> vantage_expressions::AssociatedExpression<'_, Self, Self::Value, R>
+    where
+        R: Default + std::ops::AddAssign,
+    {
         let column_name = column.name();
         let expr = expr_any!("select max({})", column_name);
+        vantage_expressions::AssociatedExpression::new(expr, self)
+    }
+
+    fn get_table_min_expr<E: Entity<Self::Value>, R: ColumnType>(
+        &self,
+        _table: &Table<Self, E>,
+        column: &Self::Column<R>,
+    ) -> vantage_expressions::AssociatedExpression<'_, Self, Self::Value, R>
+    where
+        R: Default + std::ops::AddAssign,
+    {
+        let column_name = column.name();
+        let expr = expr_any!("select min({})", column_name);
         vantage_expressions::AssociatedExpression::new(expr, self)
     }
 }

@@ -26,7 +26,7 @@ fn test_search_expression_with_searchable_columns() {
     let any_table = vantage_table::prelude::AnyTable::new(table);
 
     // Generate search expression
-    let search_expr = db.search_expression(&any_table, "john");
+    let search_expr = db.search_table_expr(&any_table, "john");
 
     let preview = search_expr.preview();
 
@@ -86,7 +86,7 @@ fn test_search_expression_no_searchable_columns() {
     let any_table = vantage_table::prelude::AnyTable::new(table);
 
     // Generate search expression
-    let search_expr = db.search_expression(&any_table, "test");
+    let search_expr = db.search_table_expr(&any_table, "test");
 
     let preview = search_expr.preview();
 
@@ -117,7 +117,7 @@ fn test_search_expression_single_searchable_column() {
     let any_table = vantage_table::prelude::AnyTable::new(table);
 
     // Generate search expression
-    let search_expr = db.search_expression(&any_table, "important");
+    let search_expr = db.search_table_expr(&any_table, "important");
 
     let preview = search_expr.preview();
 

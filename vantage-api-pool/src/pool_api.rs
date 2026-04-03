@@ -8,10 +8,10 @@ use serde_json::Value;
 use tokio_stream::StreamExt;
 use vantage_core::error;
 use vantage_dataset::traits::Result;
-use vantage_expressions::Expression;
 use vantage_expressions::traits::associated_expressions::AssociatedExpression;
 use vantage_expressions::traits::datasource::{DataSource, ExprDataSource};
 use vantage_expressions::traits::expressive::{DeferredFn, ExpressiveEnum};
+use vantage_expressions::Expression;
 use vantage_table::column::core::{Column, ColumnType};
 use vantage_table::table::Table;
 use vantage_table::traits::table_like::TableLike;
@@ -58,7 +58,6 @@ impl PoolApi {
             .map(|col| col.name().to_string())
             .or_else(|| self.id_field.clone())
     }
-
 }
 
 impl DataSource for PoolApi {}
@@ -121,7 +120,7 @@ impl TableSource for PoolApi {
         Expression::new(template, parameters)
     }
 
-    fn search_expression(
+    fn search_table_expr(
         &self,
         _table: &impl TableLike,
         search_value: &str,
@@ -140,8 +139,7 @@ impl TableSource for PoolApi {
     {
         let id_field = self.id_field_for(table);
         let endpoint = format!("/{}", table.table_name());
-        let mut stream =
-            PaginatedStream::get(self.pool.clone(), endpoint).prefetch(3);
+        let mut stream = PaginatedStream::get(self.pool.clone(), endpoint).prefetch(3);
 
         let mut records = IndexMap::new();
         while let Some(item) = stream.next().await {
@@ -160,8 +158,7 @@ impl TableSource for PoolApi {
                 })
                 .unwrap_or_else(|| records.len().to_string());
 
-            let record: Record<Value> =
-                obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            let record: Record<Value> = obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
             records.insert(id, record);
         }
 
@@ -218,6 +215,30 @@ impl TableSource for PoolApi {
         Err(error!("Sum not implemented for API pool backend"))
     }
 
+    async fn get_max<E, Type: ColumnType>(
+        &self,
+        _table: &Table<Self, E>,
+        _column: &Self::Column<Type>,
+    ) -> Result<Type>
+    where
+        E: Entity<Self::Value>,
+        Self: Sized,
+    {
+        Err(error!("Max not implemented for API pool backend"))
+    }
+
+    async fn get_min<E, Type: ColumnType>(
+        &self,
+        _table: &Table<Self, E>,
+        _column: &Self::Column<Type>,
+    ) -> Result<Type>
+    where
+        E: Entity<Self::Value>,
+        Self: Sized,
+    {
+        Err(error!("Min not implemented for API pool backend"))
+    }
+
     /// Stream records page by page using PaginatedStream with prefetch.
     fn stream_table_values<'a, E>(
         &'a self,
@@ -271,50 +292,73 @@ impl TableSource for PoolApi {
 
     // Write operations — not supported
     async fn insert_table_value<E>(
-        &self, _table: &Table<Self, E>, _id: &Self::Id, _record: &Record<Self::Value>,
+        &self,
+        _table: &Table<Self, E>,
+        _id: &Self::Id,
+        _record: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>>
-    where E: Entity<Self::Value>, Self: Sized,
+    where
+        E: Entity<Self::Value>,
+        Self: Sized,
     {
         Err(error!("REST API pool is a read-only data source"))
     }
 
     async fn replace_table_value<E>(
-        &self, _table: &Table<Self, E>, _id: &Self::Id, _record: &Record<Self::Value>,
+        &self,
+        _table: &Table<Self, E>,
+        _id: &Self::Id,
+        _record: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>>
-    where E: Entity<Self::Value>, Self: Sized,
+    where
+        E: Entity<Self::Value>,
+        Self: Sized,
     {
         Err(error!("REST API pool is a read-only data source"))
     }
 
     async fn patch_table_value<E>(
-        &self, _table: &Table<Self, E>, _id: &Self::Id, _partial: &Record<Self::Value>,
+        &self,
+        _table: &Table<Self, E>,
+        _id: &Self::Id,
+        _partial: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>>
-    where E: Entity<Self::Value>, Self: Sized,
+    where
+        E: Entity<Self::Value>,
+        Self: Sized,
     {
         Err(error!("REST API pool is a read-only data source"))
     }
 
     async fn delete_table_value<E>(&self, _table: &Table<Self, E>, _id: &Self::Id) -> Result<()>
-    where E: Entity<Self::Value>, Self: Sized,
+    where
+        E: Entity<Self::Value>,
+        Self: Sized,
     {
         Err(error!("REST API pool is a read-only data source"))
     }
 
     async fn delete_table_all_values<E>(&self, _table: &Table<Self, E>) -> Result<()>
-    where E: Entity<Self::Value>, Self: Sized,
+    where
+        E: Entity<Self::Value>,
+        Self: Sized,
     {
         Err(error!("REST API pool is a read-only data source"))
     }
 
     async fn insert_table_return_id_value<E>(
-        &self, _table: &Table<Self, E>, _record: &Record<Self::Value>,
+        &self,
+        _table: &Table<Self, E>,
+        _record: &Record<Self::Value>,
     ) -> Result<Self::Id>
-    where E: Entity<Self::Value>, Self: Sized,
+    where
+        E: Entity<Self::Value>,
+        Self: Sized,
     {
         Err(error!("REST API pool is a read-only data source"))
     }
 
-    fn column_values_expression<'a, E, Type: ColumnType>(
+    fn column_table_values_expr<'a, E, Type: ColumnType>(
         &'a self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Type>,
@@ -323,6 +367,6 @@ impl TableSource for PoolApi {
         E: Entity<Self::Value> + 'static,
         Self: Sized,
     {
-        unimplemented!("column_values_expression not yet supported for API pool")
+        unimplemented!("column_table_values_expr not yet supported for API pool")
     }
 }

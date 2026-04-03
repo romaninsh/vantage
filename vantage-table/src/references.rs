@@ -1,7 +1,7 @@
 //! Table reference implementations for one-to-one and one-to-many relationships
 //!
 //! This module provides relationship management between tables, using
-//! `column_values_expression` and `Operation::in_()` for universal backend support.
+//! `column_table_values_expr` and `Operation::in_()` for universal backend support.
 
 use std::any::Any;
 

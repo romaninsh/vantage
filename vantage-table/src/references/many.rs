@@ -76,7 +76,7 @@ where
         let id_col = source.data_source().create_column::<T::AnyType>("id");
         let id_values = source
             .data_source()
-            .column_values_expression(source, &id_col);
+            .column_table_values_expr(source, &id_col);
 
         target.add_condition(target[self.target_foreign_key.as_str()].in_(id_values.expr()));
         Ok(Box::new(target))
