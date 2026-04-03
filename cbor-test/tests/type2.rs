@@ -1,5 +1,5 @@
 use cbor_test::{AnyType2, Email, Record, Type2};
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 use std::collections::HashMap;
 use url::Url;
 

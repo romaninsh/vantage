@@ -2,8 +2,7 @@ use indexmap::IndexMap;
 use vantage_types::Entity;
 
 use crate::{
-    column::core::ColumnType, prelude::ColumnLike, table::Table,
-    traits::table_source::TableSource,
+    column::core::ColumnType, prelude::ColumnLike, table::Table, traits::table_source::TableSource,
 };
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {

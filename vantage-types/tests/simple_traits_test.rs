@@ -1,4 +1,4 @@
-use vantage_types::{vantage_type_system, IntoRecord, Record, TryFromRecord};
+use vantage_types::{IntoRecord, Record, TryFromRecord, vantage_type_system};
 
 vantage_type_system! {
     type_trait: TestType,

@@ -93,10 +93,8 @@ impl RestApi {
                 })
                 .unwrap_or_else(|| row_idx.to_string());
 
-            let record: Record<serde_json::Value> = obj
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect();
+            let record: Record<serde_json::Value> =
+                obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
             records.insert(id, record);
         }

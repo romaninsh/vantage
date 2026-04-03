@@ -58,9 +58,7 @@ where
     /// Delegates to `stream_table_values` on the data source, converting
     /// each record to the entity type. Backends with native streaming
     /// (e.g. paginated REST APIs) yield records incrementally.
-    pub fn stream(
-        &self,
-    ) -> Pin<Box<dyn Stream<Item = Result<(T::Id, E)>> + Send + '_>> {
+    pub fn stream(&self) -> Pin<Box<dyn Stream<Item = Result<(T::Id, E)>> + Send + '_>> {
         let value_stream = self.data_source().stream_table_values(self);
         Box::pin(async_stream::stream! {
             tokio::pin!(value_stream);

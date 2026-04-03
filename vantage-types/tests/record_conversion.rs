@@ -1,5 +1,5 @@
 use serde_json::Value as JsonValue;
-use vantage_types::{entity, vantage_type_system, IntoRecord, Record, TryFromRecord};
+use vantage_types::{IntoRecord, Record, TryFromRecord, entity, vantage_type_system};
 
 // Create a CBOR-based type system
 vantage_type_system! {

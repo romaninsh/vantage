@@ -70,10 +70,7 @@ async fn run() -> vantage_core::Result<()> {
     Ok(())
 }
 
-async fn handle_commands<E>(
-    table: Table<Csv, E>,
-    commands: Vec<String>,
-) -> vantage_core::Result<()>
+async fn handle_commands<E>(table: Table<Csv, E>, commands: Vec<String>) -> vantage_core::Result<()>
 where
     E: vantage_types::Entity<AnyCsvType> + std::fmt::Debug,
 {

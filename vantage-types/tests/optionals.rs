@@ -1,5 +1,5 @@
 use url::Url;
-use vantage_types::{entity, vantage_type_system, IntoRecord, TryFromRecord};
+use vantage_types::{IntoRecord, TryFromRecord, entity, vantage_type_system};
 
 // Generate Type3 system using the macro with None type for optionals
 vantage_type_system! {

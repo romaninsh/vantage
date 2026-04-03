@@ -587,8 +587,8 @@ mod tests {
             email: Email,
         }
         // Layer 1: Low-level persistence operations (hardcoded for testing)
-        async fn actually_read_csv_contents(
-        ) -> std::result::Result<Vec<IndexMap<String, String>>, std::io::Error> {
+        async fn actually_read_csv_contents()
+        -> std::result::Result<Vec<IndexMap<String, String>>, std::io::Error> {
             let mut result = Vec::new();
 
             let mut record1 = IndexMap::new();
