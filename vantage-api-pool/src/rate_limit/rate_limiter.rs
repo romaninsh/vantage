@@ -8,6 +8,15 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
+    pub fn new(rate: Decimal) -> Self {
+        let mut s = Self {
+            delay: Duration::ZERO,
+            last_request: Instant::now(),
+        };
+        s.set_desired_rate(rate);
+        s
+    }
+
     pub fn set_desired_rate(&mut self, rate: Decimal) {
         let delay_secs = (Decimal::ONE / rate).to_f64().unwrap_or(0.0);
         self.delay = Duration::try_from_secs_f64(delay_secs).unwrap_or(Duration::ZERO);
