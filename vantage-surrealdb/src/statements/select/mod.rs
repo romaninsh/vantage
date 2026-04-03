@@ -17,7 +17,7 @@ use std::marker::PhantomData;
 
 use crate::Expr;
 use select_field::SelectField;
-use select_target::Target;
+use select_target::SelectTarget;
 use vantage_expressions::result;
 
 /// SurrealDB SELECT query builder
@@ -40,7 +40,7 @@ pub struct SurrealSelect<T = result::Rows> {
     pub fields_omit: Vec<String>,
     pub(crate) single_value: bool,
     pub(crate) from_only: bool,
-    pub from: Vec<Target>,
+    pub from: Vec<SelectTarget>,
     pub from_omit: bool,
     pub where_conditions: Vec<Expr>,
     pub order_by: Vec<(Expr, bool)>,

@@ -5,7 +5,7 @@ use vantage_expressions::result::QueryResult;
 
 use super::SurrealSelect;
 use super::select_field::SelectField;
-use super::select_target::Target;
+use super::select_target::SelectTarget;
 use vantage_core::IntoVec;
 use vantage_expressions::Expressive;
 
@@ -82,12 +82,12 @@ impl<T: QueryResult> SurrealSelect<T> {
     }
 
     /// Adds targets to the FROM clause
-    pub fn add_from(&mut self, targets: impl IntoVec<Target>) {
+    pub fn add_from(&mut self, targets: impl IntoVec<SelectTarget>) {
         self.from.extend(targets.into_vec());
     }
 
     /// Builder-style FROM clause
-    pub fn from(mut self, targets: impl IntoVec<Target>) -> Self {
+    pub fn from(mut self, targets: impl IntoVec<SelectTarget>) -> Self {
         self.add_from(targets);
         self
     }

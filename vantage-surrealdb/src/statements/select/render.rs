@@ -3,7 +3,7 @@ use vantage_expressions::result::QueryResult;
 use vantage_expressions::{Expression, Expressive};
 
 use super::SurrealSelect;
-use super::select_target::Target;
+use super::select_target::SelectTarget;
 
 impl<T: QueryResult> SurrealSelect<T> {
     /// Renders the SELECT fields clause
@@ -28,7 +28,7 @@ impl<T: QueryResult> SurrealSelect<T> {
             let from_expressions: Vec<Expr> = self
                 .from
                 .iter()
-                .map(|target: &Target| target.clone().into())
+                .map(|target: &SelectTarget| target.clone().into())
                 .collect();
             surreal_expr!(
                 format!(" FROM {}{{}}", if self.from_only { "ONLY " } else { "" }),

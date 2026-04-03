@@ -20,11 +20,11 @@ use vantage_expressions::{Expressive, ExpressiveEnum, traits::selectable::Source
 /// ```
 
 #[derive(Debug, Clone)]
-pub struct Target {
+pub struct SelectTarget {
     target: Expr,
 }
 
-impl Target {
+impl SelectTarget {
     /// Creates a new query target
     ///
     /// doc wip
@@ -39,37 +39,37 @@ impl Target {
     }
 }
 
-impl From<Target> for Expr {
-    fn from(val: Target) -> Self {
+impl From<SelectTarget> for Expr {
+    fn from(val: SelectTarget) -> Self {
         val.target
     }
 }
 
-impl From<&str> for Target {
+impl From<&str> for SelectTarget {
     fn from(s: &str) -> Self {
         Self::new(Identifier::new(s))
     }
 }
 
-impl From<String> for Target {
+impl From<String> for SelectTarget {
     fn from(s: String) -> Self {
         Self::new(Identifier::new(s))
     }
 }
 
-impl From<Identifier> for Target {
+impl From<Identifier> for SelectTarget {
     fn from(id: Identifier) -> Self {
         Self::new(id)
     }
 }
 
-impl From<Expr> for Target {
+impl From<Expr> for SelectTarget {
     fn from(expr: Expr) -> Self {
         Self::new(expr)
     }
 }
 
-impl From<SourceRef<AnySurrealType>> for Target {
+impl From<SourceRef<AnySurrealType>> for SelectTarget {
     fn from(source_ref: SourceRef<AnySurrealType>) -> Self {
         let expr = match source_ref.into_expressive_enum() {
             ExpressiveEnum::Scalar(s) => {
@@ -89,38 +89,38 @@ impl From<SourceRef<AnySurrealType>> for Target {
 
 // IntoVec<Target> impls for single items
 
-impl IntoVec<Target> for Target {
-    fn into_vec(self) -> Vec<Target> {
+impl IntoVec<SelectTarget> for SelectTarget {
+    fn into_vec(self) -> Vec<SelectTarget> {
         vec![self]
     }
 }
 
-impl IntoVec<Target> for &str {
-    fn into_vec(self) -> Vec<Target> {
+impl IntoVec<SelectTarget> for &str {
+    fn into_vec(self) -> Vec<SelectTarget> {
         vec![self.into()]
     }
 }
 
-impl IntoVec<Target> for String {
-    fn into_vec(self) -> Vec<Target> {
+impl IntoVec<SelectTarget> for String {
+    fn into_vec(self) -> Vec<SelectTarget> {
         vec![self.into()]
     }
 }
 
-impl IntoVec<Target> for Identifier {
-    fn into_vec(self) -> Vec<Target> {
+impl IntoVec<SelectTarget> for Identifier {
+    fn into_vec(self) -> Vec<SelectTarget> {
         vec![self.into()]
     }
 }
 
-impl IntoVec<Target> for Expr {
-    fn into_vec(self) -> Vec<Target> {
+impl IntoVec<SelectTarget> for Expr {
+    fn into_vec(self) -> Vec<SelectTarget> {
         vec![self.into()]
     }
 }
 
-impl IntoVec<Target> for SourceRef<AnySurrealType> {
-    fn into_vec(self) -> Vec<Target> {
+impl IntoVec<SelectTarget> for SourceRef<AnySurrealType> {
+    fn into_vec(self) -> Vec<SelectTarget> {
         vec![self.into()]
     }
 }
