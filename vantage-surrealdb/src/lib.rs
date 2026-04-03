@@ -17,6 +17,7 @@
 pub mod identifier;
 pub mod operation;
 // pub mod protocol;
+pub mod ext;
 pub mod macros;
 pub mod statements;
 pub mod sum;
@@ -47,6 +48,9 @@ pub type Expr = vantage_expressions::Expression<AnySurrealType>;
 // Add types module
 pub mod types;
 pub use types::*;
+
+// Re-export extension trait
+pub use ext::SurrealTableExt;
 
 // Re-export main SurrealDB types for convenience
 pub use ciborium::Value as CborValue;

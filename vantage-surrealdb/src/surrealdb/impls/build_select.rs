@@ -48,7 +48,11 @@ where
         select.order_by.push((expr.clone(), ascending));
     }
 
-    // TODO: pagination — needs access without TableLike's 'static bound
+    // Pagination
+    if let Some(pagination) = table.pagination() {
+        select.limit = Some(pagination.limit());
+        select.skip = Some(pagination.skip());
+    }
 
     select
 }

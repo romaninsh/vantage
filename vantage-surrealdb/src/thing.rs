@@ -72,6 +72,12 @@ impl std::fmt::Display for Thing {
     }
 }
 
+impl From<String> for Thing {
+    fn from(s: String) -> Self {
+        s.parse().unwrap_or_else(|_| Thing::new("_", s))
+    }
+}
+
 impl FromStr for Thing {
     type Err = String;
 

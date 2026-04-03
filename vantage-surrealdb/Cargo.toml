@@ -47,7 +47,6 @@ chrono = { version = "0.4", features = ["serde"] }
 [[test]]
 name = "search_expression"
 path = "tests/search_expression.rs"
-test = false
 
 [[test]]
 name = "select"

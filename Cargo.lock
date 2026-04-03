@@ -158,6 +158,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "indexmap",
+ "serde_json",
  "surreal-client",
  "tokio",
  "vantage-cli-util",

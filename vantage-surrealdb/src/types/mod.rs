@@ -3,7 +3,7 @@
 //! This module provides a SurrealDB-specific type system using the vantage-types framework.
 //! It defines the core SurrealType trait and AnySurrealType for type-erased operations.
 
-use vantage_types::vantage_type_system;
+use vantage_types::{TerminalRender, vantage_type_system};
 
 // Generate the SurrealDB type system
 vantage_type_system! {
@@ -232,6 +232,28 @@ impl std::fmt::Display for AnySurrealType {
                 }
             }
             other => write!(f, "{:?}", other),
+        }
+    }
+}
+
+impl TerminalRender for AnySurrealType {
+    fn render(&self) -> String {
+        use ciborium::Value;
+        match &self.value {
+            Value::Null | Value::Tag(6, _) => "-".to_string(),
+            Value::Text(s) => s.clone(),
+            Value::Bool(b) => b.to_string(),
+            _ => format!("{}", self),
+        }
+    }
+
+    fn color_hint(&self) -> Option<&'static str> {
+        use ciborium::Value;
+        match &self.value {
+            Value::Bool(true) => Some("green"),
+            Value::Bool(false) => Some("red"),
+            Value::Null | Value::Tag(6, _) => Some("dim"),
+            _ => None,
         }
     }
 }
