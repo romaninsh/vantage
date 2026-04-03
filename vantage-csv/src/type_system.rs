@@ -172,6 +172,29 @@ impl From<bool> for AnyCsvType {
     }
 }
 
+impl From<serde_json::Value> for AnyCsvType {
+    fn from(v: serde_json::Value) -> Self {
+        match v {
+            serde_json::Value::Null => AnyCsvType {
+                value: String::new(),
+                type_variant: None,
+            },
+            serde_json::Value::Bool(b) => AnyCsvType::new(b),
+            serde_json::Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    AnyCsvType::new(i)
+                } else if let Some(f) = n.as_f64() {
+                    AnyCsvType::new(f)
+                } else {
+                    AnyCsvType::new(n.to_string())
+                }
+            }
+            serde_json::Value::String(s) => AnyCsvType::new(s),
+            other => AnyCsvType::new(other.to_string()),
+        }
+    }
+}
+
 /// Parse a raw CSV string into an `AnyCsvType` using the column's type variant.
 ///
 /// If `variant` is `None`, the value is stored as a plain string.

@@ -52,6 +52,15 @@ impl From<JsonValue> for AnySurrealType {
     }
 }
 
+impl From<AnySurrealType> for JsonValue {
+    fn from(val: AnySurrealType) -> Self {
+        // CBOR → bytes → JSON via serde round-trip
+        let mut buf = Vec::new();
+        ciborium::into_writer(val.value(), &mut buf).expect("CBOR serialization failed");
+        ciborium::from_reader(&buf[..]).unwrap_or(JsonValue::Null)
+    }
+}
+
 fn json_to_cbor(val: JsonValue) -> CborValue {
     match val {
         JsonValue::Null => CborValue::Null,
@@ -59,6 +68,8 @@ fn json_to_cbor(val: JsonValue) -> CborValue {
         JsonValue::Number(n) => {
             if let Some(i) = n.as_i64() {
                 CborValue::Integer(i.into())
+            } else if let Some(u) = n.as_u64() {
+                CborValue::Integer(u.into())
             } else if let Some(f) = n.as_f64() {
                 CborValue::Float(f)
             } else {

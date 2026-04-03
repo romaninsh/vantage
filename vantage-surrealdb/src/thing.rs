@@ -72,6 +72,10 @@ impl std::fmt::Display for Thing {
     }
 }
 
+/// Converts a string to a `Thing`. If the string is in `table:id` format it is
+/// parsed normally. Otherwise the bare string is used as the id with a placeholder
+/// table `"_"` — callers that need a fully-qualified record id (e.g. for
+/// `AnyTable` write operations) should pass `"table:id"` explicitly.
 impl From<String> for Thing {
     fn from(s: String) -> Self {
         s.parse().unwrap_or_else(|_| Thing::new("_", s))

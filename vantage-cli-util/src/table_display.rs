@@ -56,7 +56,7 @@ where
 ///
 /// `id_field` names the column used as the record key. That column is
 /// skipped in the data columns to avoid duplication.
-fn render_records<Id: std::fmt::Display, V: TerminalRender>(
+pub fn render_records<Id: std::fmt::Display, V: TerminalRender>(
     records: &IndexMap<Id, Record<V>>,
     id_field: Option<&str>,
 ) {

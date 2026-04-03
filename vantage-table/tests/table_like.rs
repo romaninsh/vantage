@@ -1,3 +1,4 @@
+use vantage_dataset::prelude::*;
 use vantage_table::prelude::*;
 use vantage_types::EmptyEntity;
 
@@ -94,10 +95,11 @@ async fn test_anytable_value_operations() {
         "available": true
     });
 
-    let result = any_table.insert_value_from_json("item1", item_data).await;
+    let record = vantage_types::Record::from(item_data);
+    let result = any_table.insert_value(&"item1".to_string(), &record).await;
     assert!(result.is_ok());
 
     // Test retrieval
-    let retrieved = any_table.get_value_as_json("item1").await;
+    let retrieved = any_table.get_value(&"item1".to_string()).await;
     assert!(retrieved.is_ok());
 }
