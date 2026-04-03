@@ -6,7 +6,7 @@ use vantage_dataset::traits::Result;
 use vantage_expressions::traits::associated_expressions::AssociatedExpression;
 use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
-use vantage_expressions::{Expression, Expressive, SelectableDataSource};
+use vantage_expressions::{Expression, Expressive};
 use vantage_table::column::core::{Column, ColumnType};
 
 use vantage_table::table::Table;

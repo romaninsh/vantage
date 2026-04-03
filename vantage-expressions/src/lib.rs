@@ -19,6 +19,7 @@ pub use traits::associated_queryable::AssociatedQueryable;
 pub use traits::datasource::ExprDataSource;
 pub use traits::datasource::SelectableDataSource;
 pub use traits::expressive::{DeferredFn, Expressive, ExpressiveEnum};
+pub use traits::expressive_or::ExpressiveOr;
 pub use traits::selectable::Selectable;
 
 pub use traits::result;

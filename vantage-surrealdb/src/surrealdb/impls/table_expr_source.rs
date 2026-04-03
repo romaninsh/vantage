@@ -1,7 +1,6 @@
 use std::ops::AddAssign;
 
 use vantage_expressions::Expressive;
-use vantage_expressions::SelectableDataSource;
 use vantage_expressions::expr_any;
 use vantage_expressions::traits::associated_expressions::AssociatedExpression;
 use vantage_table::column::core::ColumnType;

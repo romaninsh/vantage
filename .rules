@@ -158,13 +158,13 @@ query builder, any table or any datasource.
 - ✅ Expression system integrated via vantage-expressions
 - ✅ Field accessor methods returning expressions instead of column objects
 - ✅ Database connection initialization (DSN pattern implemented, working)
-- ✅ Query building and execution (SurrealTableExt methods working)
-- ✅ Basic data retrieval (select_surreal(), select_surreal_column() working)
+- ✅ Query building and execution (table.select() + SurrealTableExt methods working)
+- ✅ Basic data retrieval (table.select(), select_first(), select_column() working)
 - ✅ CRUD operations (.get(), .insert(), .count() methods working)
 - ✅ Condition system (.with_condition(), field comparisons working)
 - ✅ Relationship traversal (.ref_orders(), .with_many(), .with_one() implemented)
 - ✅ Dynamic entity loading (.get_some_as::<T>() working)
-- ✅ AnyTable type erasure for generic table handling
+- ✅ AnyTable type erasure for generic table handling (including non-JSON datasources via from_table)
 - ✅ Reference downcasting (.get_ref_as() working)
 - ✅ AnyTable implements TableLike, ReadableValueSet, WritableValueSet (full trait support)
 - ✅ AnyTable is Clone, Send, Sync for use in async contexts
@@ -172,18 +172,24 @@ query builder, any table or any datasource.
 - ✅ Temporary condition system (.temp_add_condition(), .temp_remove_condition())
 - ✅ Search expressions (.search_expression() in TableSource, vendor-specific implementations)
 - ✅ models! macro generates all_tables() -> IndexMap<String, AnyTable>
+- ✅ SelectableDataSource, TableQuerySource, TableExprSource implemented for SurrealDB
+- ✅ Pagination wired into table.select() and SurrealDB queries
+- ✅ AnyTable::from_table() blanket adapter for non-JSON datasources (JsonAdapter)
+- ✅ TryFrom<AnySurrealType> for common types (i64, f64, bool, String, usize)
+- ✅ Multi-source CLI (csv/surreal) with full CRUD via AnyTable trait methods
 - ⏳ Condition propagation in references (WHERE clauses for related queries)
 - ⏳ get_linked_table for JOIN scenarios
 
 Key architectural changes:
-- Table definitions now use builder pattern instead of static initialization
+- Table definitions use builder pattern instead of static initialization
 - Field accessors return Expression instead of typed column objects
 - Database-specific features (like SurrealDB embedded docs) properly supported
 - Connection management moved to dedicated client libraries (surreal-client)
 - DSN connection pattern adopted (ws://user:pass@host:port/namespace/database)
-- SurrealTableExt provides database-specific query execution methods
-- Query execution uses ds.get(query) pattern instead of table.get().await
+- SurrealTableExt provides type-narrowing select methods (select_first, select_column, select_single)
+- table.select() returns datasource-native query (SurrealSelect for SurrealDB) — no separate build_select needed
 - AnyTable replaces Box<dyn SqlTable> for type-erased tables with downcasting
+- AnyTable::from_table() wraps any datasource via JsonAdapter (requires Value: Into/From<json::Value>, Id: Display/From<String>)
 - AnyTable uses clone_box() pattern for object-safe cloning via TableLike trait
 - AnyExpression wraps any T: Clone + Send + Sync via ExpressionLike trait
 - Condition methods moved to TableLike trait using AnyExpression for type erasure
@@ -302,9 +308,11 @@ MongoDB, and other backends while maintaining type safety throughout the
 conversion process.
 
 **vantage-surrealdb** bridges the low-level surreal-client with Vantage's query
-building ecosystem. It provides type-safe SurrealDB operations while
-maintaining compatibility with the broader Vantage framework, allowing
-SurrealDB queries to be used in cross-database scenarios.
+building ecosystem. Implements SelectableDataSource, TableQuerySource,
+TableExprSource, and TableSource for full CRUD + aggregation support.
+SurrealTableExt adds type-narrowing query methods (select_first, select_column,
+select_single). Includes From/Into conversions between AnySurrealType and
+serde_json::Value, enabling AnyTable integration via from_table().
 
 **vantage-mongodb** generates native MongoDB JSON queries using Vantage
 patterns. It supports full CRUD operations and all common MongoDB operators
@@ -365,13 +373,10 @@ eventually be migrated to the new architecture.
 
 **bakery_model3** shows complete 0.3 migration of bakery_model, using
 vantage-table + vantage-surrealdb instead of monolithic vantage crate. Entities
-adapted for SurrealDB (string IDs, embedded documents), with commented
-placeholders showing exactly what 0.2 functionality needs implementing in 0.3.
-Includes working 0-intro.rs example that successfully connects to SurrealDB,
-executes queries, and retrieves real data using SurrealTableExt methods,
-demonstrating current capabilities and migration roadmap. Future integration
-with vantage-live will demonstrate responsive form editing with conflict
-detection.
+adapted for SurrealDB (string IDs, embedded documents). Includes multi-source
+CLI example (`db <csv|surreal> <entity> <command>`) demonstrating full CRUD
+through AnyTable — same handle_commands function works with both CSV and
+SurrealDB backends. Also includes 0-intro.rs for direct SurrealDB queries.
 
 **bakery_api** illustrates Axum web framework integration, showing how Vantage
 tables can power HTTP APIs and generic data grid capabilities for web
@@ -399,13 +404,14 @@ rather than Rust code. Relations can be traversed via CLI commands like
 
 **vantage-table** provides the core Table<DataSource, Entity> abstraction in
 0.3, replacing the monolithic table implementation from 0.2. Supports table
-definition with columns, conditions, ordering, and relationships. Includes
-AnyTable for type erasure with downcasting capability (stores TypeId and type
-names for debugging). Reference system using ReferenceOne/ReferenceMany traits
-enables relationship traversal with .get_ref() returning AnyTable and
-.get_ref_as() for automatic downcasting. Database-specific extensions like
-SurrealTableExt provide query execution methods. The .with_id_column() helper
-simplifies ID column definition.
+definition with columns, conditions, ordering, pagination, and relationships.
+AnyTable provides type erasure with downcasting (stores TypeId and type names
+for debugging). AnyTable::from_table() accepts any datasource whose value/id
+types convert to/from JSON, using an internal JsonAdapter for on-the-fly
+conversion. Reference system using ReferenceOne/ReferenceMany traits enables
+relationship traversal with .get_ref() returning AnyTable and .get_ref_as()
+for automatic downcasting. The .with_id_column() helper simplifies ID column
+definition.
 
 The Vantage 0.3 ecosystem consists of three main layers: core query building
 framework (expressions, database-specific builders), data management (dataset

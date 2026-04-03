@@ -55,6 +55,7 @@ First - persistence implementation:
   `SurrealType` that include Geospatial, 128-bit `Decimal` and other advanced types. Built on
   [`surreal-client`](surreal-client/README.md).
 
+- `vantage-csv` - CSV file persistence with full read/write support and custom type system.
 - `vantage-redb` - Implementation for Redb embedded database, providing some basic features. Perfect
   as a local cache.
 
@@ -69,28 +70,23 @@ implement generic UI or API component:
 
 (`*` indicate commercial component)
 
-Vantage `0.4` is almost here. New features include:
+Vantage `0.3` is the current version. Recent additions:
 
-- **Full type system overhaul** - Complete redesign of the type mapping system for better database
-  compatibility
-- **Cross-database integration** - Seamless queries and operations across different database types
-- **Binary CBOR support** - Migrated SurrealDB client from JSON to binary CBOR for improved
-  performance
-- References`(implemented)` allowing to traverse between `Table<Client>` into `Table<Order>`, even
-  if those tables are stored in different databases.
-- Expressions`(implemented)` allow Table columns to be calculated based on subqueries and
-  references.
+- **Full type system overhaul** - Custom type systems per datasource (`SurrealType`, `CsvType`) with
+  `vantage_type_system!` macro
+- **Cross-database integration** - `AnyTable::from_table()` wraps any datasource for generic code
+- **Binary CBOR support** - SurrealDB client uses binary CBOR for improved performance
+- **References** - Traverse between `Table<Client>` into `Table<Order>`, even across databases
+- **Expressions** - Table columns can be calculated based on subqueries and references
+- **Full SurrealDB protocol support** - SelectableDataSource, TableQuerySource, TableExprSource
+- **Multi-source CLI** - Same `handle_commands` function works with CSV and SurrealDB
 
-Features planned for `0.5`:
+Features planned for next release:
 
 - **Hooks** - Attach 3rd party code plugins into Tables.
 - **Validation** - Use standard and advanced validation through a hook mechanism.
 - **Audit** - Capture modifications automatically and store in same or a different persistence.
-
-Vantage is planning to add the following features before `1.0`:
-
 - Aggregators. Use database-vendor specific extensions to build reports declaratively.
-- GraphQL API adaptor. Build GraphQL APIs on top of Vantage Tables.
 - Live Tables. Connect CDC or Live events provided by databases with UI adapters or WS APIs.
 
 ## Example
@@ -192,11 +188,11 @@ A more comprehensive feature list:
 - Generic types for DataSet, Table and ActiveRecord over Entity
 - Support for standard and extended types on table columns
 - Column flags
-- (coming in 0.3) Column mapping, validation
+- Column flags and type-aware columns
 - Typed queries (known result type) and associated queries (can self-execute)
-- Type-erased structs for all major traits
+- Type-erased structs for all major traits (AnyTable, AnyExpression)
 - Adaptors for UI frameworks, APIs (like axum)
-- (planned in 0.3) Aggregation, Joins, Expressions.
+- Pagination support wired into query builders
 - Yaml-based Entity configurator
 - Powerful Error handling
 
@@ -349,14 +345,14 @@ Crates `vantage-surrealdb` and `vantage-sql` provide implementations for Query B
 the ability to execute those queries:
 
 ```rust
-impl SelectSource for SurrealDB {
-    type Select<E: Entity> = SurrealSelect;
+impl SelectableDataSource<AnySurrealType> for SurrealDB {
+    type Select = SurrealSelect;
 
-    fn select<E: Entity>(&self) -> Self::Select<E>;
-    async fn execute_select<E: Entity>(&self, select: &Self::Select<E>) -> Result<Vec<E>>;
+    fn select(&self) -> Self::Select;
+    async fn execute_select(&self, select: &Self::Select) -> Result<Vec<AnySurrealType>>;
 }
 
-impl Selectable for SurrealSelect { .. }
+impl Selectable<AnySurrealType> for SurrealSelect { .. }
 ```
 
 Vantage understands that databases have different SQL dialects or even entirely different query
@@ -641,7 +637,7 @@ API response for `GET /orders?client_id=2&page=1`
 ]
 ```
 
-## What's Coming in v0.5
+## What's Coming Next
 
 Work-in-progress features for the next release:
 
@@ -655,31 +651,31 @@ Work-in-progress features for the next release:
 Vantage needs a bit more work. Large number of features is already implemented, but some notable
 features are still missing:
 
-- Joins - were present in 0.2, but not yet implemented in 0.4 (read and write)
-- Aggregate columns - were in 0.2, but not yet implemented in 0.4
+- Joins - were present in 0.2, but not yet implemented in 0.3 (read and write)
+- Aggregate columns - were in 0.2, partially implemented in 0.3 (count/sum/max/min work)
 - Column hooks - allowing field mappings and custom calculation is still TODO.
-- Cleanups - still missing some Any\* types.
-- Interface consistency - more methods must return (id, E) tuple.
+- Condition propagation in references (WHERE clauses for related queries)
 - SQL testing - most tests so far were done with SurrealDB. We should give SQL more love.
-- Type support for SQL
-- Oracle, because why not!
 - Graph relations - implement hasMany support for Graph databases
-- Consider Neo4j
 - Implement some RestAPI adaptors (e.g. GitLab)
 - Aggregators (grouping queries) for SQL and SurrealDB
 
 ## Installation
 
-// For 0.2 version: Just type: `cargo add vantage`
+For 0.3, clone this repository and specify path to a crate in your `Cargo.toml`:
 
-// For 0.3 clone this repository and specify path to a crate.
+```toml
+vantage-table = { path = "../vantage/vantage-table" }
+vantage-surrealdb = { path = "../vantage/vantage-surrealdb" }
+```
 
 If you like what you see so far - reach out to me on BlueSky:
 [nearly.guru](https://bsky.app/profile/nearly.guru)
 
 ## Current status
 
-Vantage currently is in development. See [TODO](TODO.md) for the current status.
+Vantage `0.3` is under active development. SurrealDB and CSV backends are fully functional with
+CRUD, aggregation, pagination, and type-erased `AnyTable` support.
 
 ## Author
 
