@@ -91,7 +91,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
             .unwrap_or_default()
     }
 
-    /// Get a related table as Box<dyn Any>
+    /// Get a related table as `Box<dyn Any>`
     pub fn get_ref(&self, relation: &str) -> Result<Box<dyn std::any::Any>> {
         let table_name = self.table_name().to_string();
         let refs = self.refs.as_ref().ok_or_else(|| {

@@ -27,7 +27,7 @@ impl RestApi {
         }
     }
 
-    /// Set the Authorization header value (e.g. "Bearer <token>").
+    /// Set the Authorization header value (e.g. "Bearer `<token>`").
     pub fn with_auth(mut self, auth: impl Into<String>) -> Self {
         self.auth_header = Some(auth.into());
         self

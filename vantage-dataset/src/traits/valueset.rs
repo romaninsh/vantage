@@ -212,7 +212,7 @@ pub trait InsertableValueSet: ValueSet {
 pub trait ActiveRecordSet: ReadableValueSet + WritableValueSet {
     /// Retrieve a record wrapped for change tracking and deferred persistence.
     ///
-    /// The returned [`RecordValue`] can be modified in-place and will track all
+    /// The returned `RecordValue` can be modified in-place and will track all
     /// changes for efficient persistence when `save()` is called.
     ///
     /// # Returns
@@ -223,7 +223,7 @@ pub trait ActiveRecordSet: ReadableValueSet + WritableValueSet {
 
     /// Retrieve all records wrapped for change tracking.
     ///
-    /// Each returned [`RecordValue`] operates independently - modifications to one
+    /// Each returned `RecordValue` operates independently - modifications to one
     /// record don't affect others, and each must be saved separately.
     ///
     /// # Performance Note

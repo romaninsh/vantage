@@ -6,7 +6,7 @@ use vantage_core::Result;
 
 /// An expression with an associated datasource and known return type
 ///
-/// AssociatedExpression combines an Expression<T> with a datasource reference
+/// AssociatedExpression combines an `Expression<T>` with a datasource reference
 /// and provides compile-time guarantees about the return type when executed.
 /// This enables building expressions like `get_row_count()` that can be both
 /// executed directly and composed into larger expressions.

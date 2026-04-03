@@ -43,7 +43,7 @@ from local CSV files to distributed databases.
 - **Capability-based traits**: [`ReadableDataSet`], [`InsertableDataSet`], [`WritableDataSet`]
   represent what operations a data source supports
 - **Type-safe operations**: Work with native Rust structs while maintaining storage abstraction
-- **Record change tracking**: [`RecordDataSet`] provides edit sessions with automatic persistence
+- **Record change tracking**: `RecordDataSet` provides edit sessions with automatic persistence
 - **Value-level access**: [`ValueSet`] traits for working with raw JSON-like values
 - **In-memory implementation**: [`ImTable`] for local caching and testing scenarios
 - **Cross-dataset imports**: Move data between different storage types seamlessly
@@ -161,7 +161,7 @@ Value-level operations are essential for:
 
 ## Record Pattern
 
-The [`RecordDataSet`] and [`RecordValueSet`] traits provide change tracking for interactive editing:
+The `RecordDataSet` and `RecordValueSet` traits provide change tracking for interactive editing:
 
 ```rust,ignore
 // Get entity wrapped in Record for change tracking

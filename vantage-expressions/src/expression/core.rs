@@ -109,7 +109,7 @@ impl<T> Expression<T> {
 
     /// Create expression from vector of expressions and a delimiter
     ///
-    /// See the [module-level documentation](crate::expression::expression) for examples.
+    /// See the [module-level documentation](crate::expression::core) for examples.
     pub fn from_vec(vec: Vec<Expression<T>>, delimiter: &str) -> Self {
         let template = vec
             .iter()

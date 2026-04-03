@@ -6,7 +6,7 @@ use crate::{
 };
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
-    /// Add a column to the table (accepts any typed column, converts to Column<AnyType>)
+    /// Add a column to the table (accepts any typed column, converts to `Column<AnyType>`)
     pub fn add_column<NewColumnType>(&mut self, column: T::Column<NewColumnType>)
     where
         NewColumnType: ColumnType,
@@ -65,12 +65,12 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self.with_column(column)
     }
 
-    /// Get all columns as type-erased columns (Column<AnyType>)
+    /// Get all columns as type-erased columns (`Column<AnyType>`)
     pub fn columns(&self) -> &IndexMap<String, T::Column<T::AnyType>> {
         &self.columns
     }
 
-    /// Get a typed column by converting from stored Column<AnyType>
+    /// Get a typed column by converting from stored `Column<AnyType>`
     pub fn get_column<Type>(&self, name: &str) -> Option<T::Column<Type>>
     where
         Type: ColumnType,

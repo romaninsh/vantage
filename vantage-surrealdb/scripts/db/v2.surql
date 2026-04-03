@@ -16,13 +16,13 @@ DEFINE FIELD profit_margin ON bakery TYPE int ASSERT $value >= 0 AND $value <= 1
 
 -- Client table (schema-full with flexible metadata field)
 DEFINE TABLE client SCHEMAFULL;
-DEFINE FIELD email ON client TYPE string ASSERT string::is::email($value);
+DEFINE FIELD email ON client TYPE string;
 DEFINE FIELD name ON client TYPE string;
 DEFINE FIELD contact_details ON client TYPE string;
 DEFINE FIELD is_paying_client ON client TYPE bool DEFAULT false;
 DEFINE FIELD balance ON client TYPE decimal DEFAULT 0;
 DEFINE FIELD bakery ON client TYPE record<bakery>; -- Direct link to bakery
-DEFINE FIELD metadata ON client FLEXIBLE TYPE option<object>; -- For future extensibility
+DEFINE FIELD metadata ON client TYPE option<object> FLEXIBLE; -- For future extensibility
 DEFINE INDEX unique_email ON client FIELDS email UNIQUE;
 
 -- Product table (schema-full with embedded inventory)

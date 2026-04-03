@@ -37,7 +37,6 @@ echo "Namespace: $NS"
 docker run -d \
     --name $CONTAINER_NAME \
     -p $PORT:8000 \
-    -e SURREAL_CAPS_ALLOW_EXPERIMENTAL=graphql \
     surrealdb/surrealdb:latest \
     start --log debug --user $USER --pass $PASS memory
 

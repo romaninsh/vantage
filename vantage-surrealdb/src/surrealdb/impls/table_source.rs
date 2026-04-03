@@ -2,10 +2,10 @@ use async_trait::async_trait;
 use indexmap::IndexMap;
 
 use vantage_dataset::traits::Result;
-use vantage_expressions::Expression;
 use vantage_expressions::traits::associated_expressions::AssociatedExpression;
 use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
+use vantage_expressions::{Expression, Expressive};
 use vantage_table::column::core::{Column, ColumnType};
 
 use vantage_table::table::Table;
@@ -99,44 +99,50 @@ impl TableSource for SurrealDB {
         todo!("get_table_some_value: SELECT * FROM table LIMIT 1")
     }
 
-    async fn get_count<E>(&self, _table: &Table<Self, E>) -> Result<i64>
+    async fn get_count<E>(&self, table: &Table<Self, E>) -> Result<i64>
     where
         E: Entity<Self::Value>,
     {
-        todo!("get_count: SELECT count() FROM table GROUP ALL")
+        let mut select = super::build_select::build_select(table);
+        select.order_by.clear(); // ordering is unnecessary for count
+        let count_query = select.as_count();
+        let result = self.execute(&count_query.expr()).await?;
+        result.try_get::<i64>().ok_or_else(|| {
+            vantage_core::error!("get_count: expected i64", result = format!("{}", result))
+        })
     }
 
-    async fn get_sum<E, Type: ColumnType>(
+    async fn get_sum<E>(
         &self,
         _table: &Table<Self, E>,
-        _column: &Self::Column<Type>,
-    ) -> Result<Type>
+        _column: &Self::Column<Self::AnyType>,
+    ) -> Result<Self::Value>
     where
         E: Entity<Self::Value>,
     {
-        todo!("get_sum: SELECT math::sum(column) FROM table GROUP ALL")
+        todo!("get_sum: build_select + math::sum")
     }
 
-    async fn get_max<E, Type: ColumnType>(
+    async fn get_max<E>(
         &self,
         _table: &Table<Self, E>,
-        _column: &Self::Column<Type>,
-    ) -> Result<Type>
+        _column: &Self::Column<Self::AnyType>,
+    ) -> Result<Self::Value>
     where
         E: Entity<Self::Value>,
     {
-        todo!("get_max: SELECT math::max(column) FROM table GROUP ALL")
+        todo!("get_max: build_select + math::max")
     }
 
-    async fn get_min<E, Type: ColumnType>(
+    async fn get_min<E>(
         &self,
         _table: &Table<Self, E>,
-        _column: &Self::Column<Type>,
-    ) -> Result<Type>
+        _column: &Self::Column<Self::AnyType>,
+    ) -> Result<Self::Value>
     where
         E: Entity<Self::Value>,
     {
-        todo!("get_min: SELECT math::min(column) FROM table GROUP ALL")
+        todo!("get_min: build_select + math::min")
     }
 
     async fn insert_table_value<E>(
