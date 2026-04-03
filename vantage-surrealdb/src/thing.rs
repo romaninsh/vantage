@@ -56,6 +56,20 @@ impl Thing {
             id: id.into(),
         }
     }
+
+    pub fn table(&self) -> &str {
+        &self.table
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+}
+
+impl std::fmt::Display for Thing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.table, self.id)
+    }
 }
 
 impl FromStr for Thing {

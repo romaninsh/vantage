@@ -15,22 +15,31 @@
 
 // pub mod field_projection;
 pub mod identifier;
-// pub mod insert;
 pub mod operation;
 // pub mod protocol;
 pub mod macros;
+pub mod statements;
 pub mod sum;
 pub mod surreal_return;
 pub mod surrealdb;
 // pub mod prelude;
 // pub mod column;
-pub mod select;
 // pub mod table;
 pub mod thing;
 // pub mod typed_expression;
 // pub mod variable;
 
-pub use select::SurrealSelect;
+// Re-export statement builders at crate root for convenience
+pub use statements::SurrealDelete;
+pub use statements::SurrealInsert;
+pub use statements::SurrealSelect;
+pub use statements::SurrealUpdate;
+
+// Backwards-compat module aliases
+pub use statements::delete;
+pub use statements::insert;
+pub use statements::select;
+pub use statements::update;
 
 // SurrealDB expression support using vantage-expressions with AnySurrealType
 pub type Expr = vantage_expressions::Expression<AnySurrealType>;
