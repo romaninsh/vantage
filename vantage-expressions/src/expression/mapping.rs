@@ -28,7 +28,7 @@ impl<From, To> ExpressionMapper<From, To> for Expression<From> {
     }
 }
 
-/// Convert ExpressiveEnum<From> to ExpressiveEnum<To>
+/// Convert `ExpressiveEnum<From>` to `ExpressiveEnum<To>`
 fn map_expressive_enum<From, To>(enum_value: ExpressiveEnum<From>) -> ExpressiveEnum<To>
 where
     From: Into<To> + Send + Clone + 'static,
@@ -46,7 +46,7 @@ where
     }
 }
 
-/// Convert DeferredFn<From> to DeferredFn<To>
+/// Convert `DeferredFn<From>` to `DeferredFn<To>`
 fn map_deferred_fn<From, To>(deferred: DeferredFn<From>) -> DeferredFn<To>
 where
     From: Into<To> + Send + Clone + 'static,

@@ -33,7 +33,7 @@ use vantage_types::Entity;
 /// - [`ReadableDataSet`] for read-only sources (CSV files, APIs)
 /// - [`InsertableDataSet`] for append-only sources (message queues, logs)
 /// - [`WritableDataSet`] for full CRUD sources (databases, caches)
-/// - [`entityDataSet`] for change-tracking scenarios (interactive applications)
+/// - `entityDataSet` for change-tracking scenarios (interactive applications)
 ///
 /// # Example
 ///
@@ -322,7 +322,7 @@ where
 {
     /// Retrieve an entity wrapped for change tracking and deferred persistence.
     ///
-    /// The returned [`entity`] can be modified in-place and will track all
+    /// The returned `entity` can be modified in-place and will track all
     /// changes for efficient persistence when `save()` is called.
     ///
     /// # Example
@@ -353,7 +353,7 @@ where
 
     /// Retrieve all entities wrapped for change tracking.
     ///
-    /// Each returned [`entity`] operates independently - modifications to one
+    /// Each returned `entity` operates independently - modifications to one
     /// entity don't affect others, and each must be saved separately.
     ///
     /// # Performance Note

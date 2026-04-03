@@ -17,8 +17,8 @@ let query_expr = expr!("SELECT * FROM users WHERE {}", where_expr);
 The [`expr!`] macro keeps your parameters separate from the query template, preventing SQL injection
 while maintaining readability.
 
-For a complete example with testing using mockbuilder,
-[see expression module documentation](crate::expression::expression).
+For a complete example with testing using mockbuilder, see
+[expression module documentation](crate::expression::core).
 
 ## Features
 
@@ -175,7 +175,7 @@ and each database could be implementing their own type system.
 ### Immediate vs deferred execution
 
 `vantage-expression` does not require you to implement database SDK in a certain way, however, by
-implementing a trait [`QuerySource`] your SDK would have 2 foundational methods:
+implementing a trait [`ExprDataSource`] your SDK would have 2 foundational methods:
 
 - `async db.execute(expr) -> result` - Execute an [`Expression<V>`] now and return `Result<V>`.
 - `db.defer(expr) -> DeferredFn` - Wrap query execution into a closure which can be executed with
@@ -202,10 +202,9 @@ match count_later {
 
 ## Other kinds of `DeferredFn`
 
-A sharp-eyeed reader would notice that `count_later` actually contains
-[`ExpressiveEnum::Scalar(value)`]. As it turns out - resolving deferred query can also return nested
-expressions, once return results are known. I'll explore the powerful implications of non-scalar
-return types later.
+A sharp-eyeed reader would notice that `count_later` actually contains [`ExpressiveEnum::Scalar`].
+As it turns out - resolving deferred query can also return nested expressions, once return results
+are known. I'll explore the powerful implications of non-scalar return types later.
 
 There are also other ways to obtain [`DeferredFn`], for instance you can create it from a mutex:
 

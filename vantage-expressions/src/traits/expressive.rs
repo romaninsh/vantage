@@ -19,7 +19,7 @@ pub type DeferredCallback<T> = Arc<dyn Fn() -> DeferredFuture<T> + Send + Sync>;
 /// # Use Cases
 ///
 /// - **Cross-database queries**: Embed API calls or database queries from other sources
-/// - **Dynamic values**: Read from shared state (Arc<Mutex<T>>) at execution time
+/// - **Dynamic values**: Read from shared state (`Arc<Mutex<T>>`) at execution time
 /// - **Complex operations**: Wrap expensive computations or I/O operations
 /// - **Database integration**: Use `db.defer()` to create reusable query closures
 ///

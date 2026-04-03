@@ -1,5 +1,4 @@
 use surreal_client::SurrealConnection;
-use vantage_expressions::ExprDataSource;
 use vantage_expressions::Expressive;
 use vantage_surrealdb::surreal_expr;
 use vantage_surrealdb::surrealdb::SurrealDB;
@@ -11,7 +10,7 @@ use vantage_types::EmptyEntity;
 
 const DB_URL: &str = "cbor://localhost:8000/rpc";
 const TEST_NAMESPACE: &str = "bakery";
-const TEST_DATABASE: &str = "table_source_read";
+const TEST_DATABASE: &str = "v2";
 
 async fn get_db() -> SurrealDB {
     let client = SurrealConnection::new()
@@ -25,7 +24,7 @@ async fn get_db() -> SurrealDB {
     SurrealDB::new(client)
 }
 
-// -- Query generation tests (no execution) --
+// -- Query generation tests --
 
 #[tokio::test]
 async fn test_build_select_basic() {
@@ -73,33 +72,22 @@ async fn test_build_select_count_query() {
     );
 }
 
-// -- Live DB tests --
+// -- Live DB tests (v2 database, ingested by CI) --
 
 #[tokio::test]
-async fn test_get_count_empty() {
+async fn test_get_count_products() {
     let db = get_db().await;
-    db.execute(&surreal_expr!("DELETE test_count_empty"))
-        .await
-        .unwrap();
-
-    let table = Table::<_, EmptyEntity>::new("test_count_empty", db.clone());
+    // v2.surql creates 5 products
+    let table = Table::<_, EmptyEntity>::new("product", db.clone());
     let count = db.get_count(&table).await.unwrap();
-    assert_eq!(count, 0);
+    assert_eq!(count, 5);
 }
 
 #[tokio::test]
-async fn test_get_count_with_data() {
+async fn test_get_count_clients() {
     let db = get_db().await;
-    db.execute(&surreal_expr!("DELETE test_count_data"))
-        .await
-        .unwrap();
-    for name in ["a", "b", "c"] {
-        db.execute(&surreal_expr!("CREATE test_count_data SET name = {}", name))
-            .await
-            .unwrap();
-    }
-
-    let table = Table::<_, EmptyEntity>::new("test_count_data", db.clone());
+    // v2.surql creates 3 clients: marty, doc, biff
+    let table = Table::<_, EmptyEntity>::new("client", db.clone());
     let count = db.get_count(&table).await.unwrap();
     assert_eq!(count, 3);
 }
@@ -107,34 +95,18 @@ async fn test_get_count_with_data() {
 #[tokio::test]
 async fn test_get_count_with_condition() {
     let db = get_db().await;
-    db.execute(&surreal_expr!("DELETE test_count_cond"))
-        .await
-        .unwrap();
-    db.execute(&surreal_expr!(
-        "CREATE test_count_cond SET name = {}, active = {}",
-        "x",
-        true
-    ))
-    .await
-    .unwrap();
-    db.execute(&surreal_expr!(
-        "CREATE test_count_cond SET name = {}, active = {}",
-        "y",
-        false
-    ))
-    .await
-    .unwrap();
-    db.execute(&surreal_expr!(
-        "CREATE test_count_cond SET name = {}, active = {}",
-        "z",
-        true
-    ))
-    .await
-    .unwrap();
-
-    let table = Table::<_, EmptyEntity>::new("test_count_cond", db.clone())
-        .with_condition(surreal_expr!("active = {}", true));
-
+    // v2.surql: marty and doc are paying, biff is not
+    let table = Table::<_, EmptyEntity>::new("client", db.clone())
+        .with_condition(surreal_expr!("is_paying_client = {}", true));
     let count = db.get_count(&table).await.unwrap();
     assert_eq!(count, 2);
+}
+
+#[tokio::test]
+async fn test_get_count_orders() {
+    let db = get_db().await;
+    // v2.surql creates 3 orders
+    let table = Table::<_, EmptyEntity>::new("order", db.clone());
+    let count = db.get_count(&table).await.unwrap();
+    assert_eq!(count, 3);
 }

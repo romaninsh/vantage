@@ -1,7 +1,7 @@
 //! SQL-injection-safe expression building with templates and parameters.
 //!
 //! Modules:
-//! - [`expression`] - Core `Expression<T>` struct
+//! - [`core`] - Core `Expression<T>` struct
 //! - [`macros`] - `expr!` and `expr_as!` macros
 //! - [`mapping`] - Type conversion utilities
 //! - [`flatten`] - Expression flattening

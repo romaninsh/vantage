@@ -6,3 +6,5 @@ DEFINE DATABASE types;
 SELECT * FROM strings;
 RETURN 42;
 INFO FOR DB;
+CREATE test_check SET x = 1; RETURN count(SELECT VALUE id FROM test_check);
+DELETE test_check; RETURN count(SELECT VALUE id FROM test_check);
