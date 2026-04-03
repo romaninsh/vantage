@@ -67,8 +67,11 @@ fn generate_impls(
         if is_option_type(field_type) {
             let inner_type = extract_option_inner(field_type).unwrap();
             quote! {
-                #field_name: record.get(#field_name_str)
-                    .and_then(|v| v.try_get::<#inner_type>())
+                #field_name: match record.get(#field_name_str) {
+                    Some(v) => v.try_get::<#field_type>()
+                        .unwrap_or_else(|| v.try_get::<#inner_type>().map(Some).unwrap_or(None)),
+                    None => None,
+                }
             }
         } else {
             quote! {
