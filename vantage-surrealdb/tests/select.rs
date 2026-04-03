@@ -121,7 +121,7 @@ fn query04() {
             SurrealSelect::new()
                 .with_source("product")
                 .with_condition(Field::new("is_deleted").eq(false))
-                .only_expression(Field::new("inventory").dot("stock"))
+                .only(Field::new("inventory").dot("stock"))
                 .expr(),
         )
         .expr()
@@ -155,8 +155,8 @@ fn query07() {
     // Skip FieldProjection test as it's not available
     let select = SurrealSelect::new()
         .with_source("order")
-        .with_field("id")
-        .with_field("created_at");
+        .field("id")
+        .field("created_at");
     assert_eq!(select.preview(), "SELECT id, created_at FROM order")
 }
 
@@ -190,7 +190,7 @@ fn query11() {
                             .with_condition(
                                 Identifier::new("lines")
                                     .dot("product")
-                                    .contains(Parent::identifier().dot("id")),
+                                    .contains_(Parent::identifier().dot("id")),
                             )
                             .expr(),
                     )
@@ -320,8 +320,8 @@ async fn test_get_rows() {
     // Test SurrealSelect<result::Rows> -> Vec<Map<String, Value>>
     let select = SurrealSelect::new()
         .with_source("users")
-        .with_field("name")
-        .with_field("email");
+        .field("name")
+        .field("email");
 
     // Test the query structure
     assert_eq!(select.preview(), "SELECT name, email FROM users");
@@ -343,7 +343,7 @@ async fn test_get_list() {
     let select = SurrealSelect::new()
         .with_source("products")
         .with_condition(Field::new("active").eq(true))
-        .only_column("name");
+        .only("name");
 
     assert_eq!(
         select.preview(),
@@ -368,8 +368,8 @@ async fn test_single_row() {
     // Test SurrealSelect<result::SingleRow>
     let select = SurrealSelect::new()
         .with_source("settings")
-        .with_field("theme")
-        .with_field("language")
+        .field("theme")
+        .field("language")
         .only_first_row();
 
     assert_eq!(
@@ -398,7 +398,7 @@ fn test_type_conversions() {
         .with_source("products")
         .with_condition(Field::new("category").eq("electronics"));
 
-    let list_query = rows_query.only_column("price");
+    let list_query = rows_query.only("price");
     assert_eq!(
         list_query.preview(),
         "SELECT VALUE price FROM products WHERE category = \"electronics\""
@@ -416,7 +416,7 @@ fn test_type_conversions() {
     );
 
     // Test SingleRow -> Single conversion
-    let single_query = single_row_query.only_column("id");
+    let single_query = single_row_query.only("id");
     assert_eq!(
         single_query.preview(),
         "SELECT VALUE id FROM ONLY users WHERE email = \"test@example.com\""
@@ -454,7 +454,7 @@ fn test_value_select() {
     let select = SurrealSelect::new()
         .with_source("inventory")
         .with_condition(Field::new("product_id").eq("prod123"))
-        .only_expression(surreal_expr!("stock * price"));
+        .only(surreal_expr!("stock * price"));
 
     assert_eq!(
         select.preview(),
@@ -472,7 +472,7 @@ async fn test_single_value() {
         .with_source("users")
         .with_condition(Field::new("id").eq("user123"))
         .only_first_row()
-        .only_column("name")
+        .only("name")
         .get(&db)
         .await
         .unwrap();
@@ -481,7 +481,7 @@ async fn test_single_value() {
     let name2 = SurrealSelect::new()
         .with_source("users")
         .with_condition(Field::new("id").eq("user123"))
-        .only_column("name")
+        .only("name")
         .only_first_row()
         .get(&db)
         .await

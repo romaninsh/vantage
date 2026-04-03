@@ -11,14 +11,15 @@ use std::marker::PhantomData;
 
 use crate::AnySurrealType;
 
+use crate::identifier::Identifier;
 use field::Field;
 use select_field::SelectField;
 use target::Target;
-use vantage_core::Result;
+use vantage_core::{IntoVec, Result};
+use vantage_expressions::ExpressiveOr;
 
 use crate::{
     Expr,
-    identifier::Identifier,
     sum::{Fx, Sum},
     surreal_expr,
     surreal_return::SurrealReturn,
@@ -132,14 +133,6 @@ impl SurrealSelect {
         self.fields = fields;
         self
     }
-
-    /// Sets the FROM clause targets
-    ///
-    /// doc wip
-    pub fn from(mut self, targets: Vec<Target>) -> Self {
-        self.from = targets;
-        self
-    }
 }
 
 impl<T: QueryResult> SurrealSelect<T> {
@@ -162,8 +155,42 @@ impl<T: QueryResult> SurrealSelect<T> {
         self
     }
 
-    pub fn with_field(mut self, field: impl Into<String>) -> Self {
-        self.fields.push(SelectField::new(Identifier::new(field)));
+    pub fn field(mut self, field: impl ExpressiveOr<AnySurrealType, Identifier>) -> Self {
+        self.fields.push(SelectField::new(field.field_expr()));
+        self
+    }
+
+    pub fn with_where(mut self, condition: impl Expressive<AnySurrealType>) -> Self {
+        self.where_conditions.push(condition.expr());
+        self
+    }
+
+    pub fn with_order_by(
+        mut self,
+        field: impl ExpressiveOr<AnySurrealType, Identifier>,
+        ascending: bool,
+    ) -> Self {
+        self.order_by.push((field.field_expr(), ascending));
+        self
+    }
+
+    pub fn with_group_by(mut self, field: impl ExpressiveOr<AnySurrealType, Identifier>) -> Self {
+        self.group_by.push(field.field_expr());
+        self
+    }
+
+    pub fn with_limit(mut self, limit: i64) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
+    pub fn with_skip(mut self, skip: i64) -> Self {
+        self.skip = Some(skip);
+        self
+    }
+
+    pub fn with_distinct(mut self) -> Self {
+        self.distinct = true;
         self
     }
     /// Renders the SELECT fields clause
@@ -301,27 +328,27 @@ impl<T: QueryResult> Expressive<AnySurrealType> for SurrealSelect<T> {
 //     }
 // }
 
+impl<T: QueryResult> SurrealSelect<T> {
+    /// Adds targets to the FROM clause
+    pub fn add_from(&mut self, targets: impl IntoVec<Target>) {
+        self.from.extend(targets.into_vec());
+    }
+
+    /// Builder-style FROM clause
+    pub fn from(mut self, targets: impl IntoVec<Target>) -> Self {
+        self.add_from(targets);
+        self
+    }
+}
+
 impl<T: QueryResult> Selectable<crate::AnySurrealType> for SurrealSelect<T> {
     fn set_source(
         &mut self,
         source: impl Into<SourceRef<crate::AnySurrealType>>,
         _alias: Option<String>,
     ) {
-        use vantage_expressions::ExpressiveEnum;
-        let source_ref = source.into();
-        let source_expr = match source_ref.into_expressive_enum() {
-            ExpressiveEnum::Scalar(s) => {
-                let source = s
-                    .try_get::<String>()
-                    .unwrap_or_else(|| panic!("Source must be a string, found {:?}", s));
-                Identifier::new(source).expr()
-            }
-            ExpressiveEnum::Nested(expr) => surreal_expr!("({})", (expr)),
-            ExpressiveEnum::Deferred(_deferred_fn) => {
-                panic!("Cannot use deferred as select source")
-            }
-        };
-        self.from = vec![Target::new(source_expr)];
+        self.from.clear();
+        self.add_from(source.into());
     }
 
     fn add_field(&mut self, field: impl Into<String>) {
@@ -418,29 +445,38 @@ impl<T: QueryResult> Selectable<crate::AnySurrealType> for SurrealSelect<T> {
 }
 
 impl SurrealSelect<result::Rows> {
-    pub fn as_sum(self, field_or_expr: impl Expressive<AnySurrealType>) -> SurrealReturn {
-        let query = self.without_fields().only_expression(field_or_expr.expr());
+    pub fn as_sum(
+        self,
+        field_or_expr: impl ExpressiveOr<AnySurrealType, Identifier>,
+    ) -> SurrealReturn {
+        let query = self.only(field_or_expr);
         SurrealReturn::new(Sum::new(query.expr()).into())
     }
-    pub fn as_max(self, field_or_expr: impl Expressive<AnySurrealType>) -> SurrealReturn {
-        let query = self.without_fields().only_expression(field_or_expr.expr());
+    pub fn as_max(
+        self,
+        field_or_expr: impl ExpressiveOr<AnySurrealType, Identifier>,
+    ) -> SurrealReturn {
+        let query = self.only(field_or_expr);
         SurrealReturn::new(Fx::new("math::max", vec![query.expr()]).into())
     }
-    pub fn as_min(self, field_or_expr: impl Expressive<AnySurrealType>) -> SurrealReturn {
-        let query = self.without_fields().only_expression(field_or_expr.expr());
+    pub fn as_min(
+        self,
+        field_or_expr: impl ExpressiveOr<AnySurrealType, Identifier>,
+    ) -> SurrealReturn {
+        let query = self.only(field_or_expr);
         SurrealReturn::new(Fx::new("math::min", vec![query.expr()]).into())
     }
     pub fn as_count(self) -> SurrealReturn {
-        let result = self.only_expression(surreal_expr!("id"));
+        let result = self.only("id");
         SurrealReturn::new(Fx::new("count", vec![result.expr()]).into())
     }
-    pub fn only_expression(self, expr: Expr) -> SurrealSelect<result::List> {
+    pub fn only(
+        self,
+        field_or_expr: impl ExpressiveOr<AnySurrealType, Identifier>,
+    ) -> SurrealSelect<result::List> {
         self.without_fields()
-            .with_expression(expr, None)
+            .with_expression(field_or_expr.field_expr(), None)
             .into_list()
-    }
-    pub fn only_column(self, column: impl Into<String>) -> SurrealSelect<result::List> {
-        self.without_fields().with_field(column).into_list()
     }
     fn into_list(self) -> SurrealSelect<result::List> {
         if self.from_only {
@@ -520,13 +556,13 @@ impl SurrealSelect<result::List> {
 }
 
 impl SurrealSelect<result::SingleRow> {
-    pub fn only_expression(self, expr: Expr) -> SurrealSelect<result::Single> {
+    pub fn only(
+        self,
+        field_or_expr: impl ExpressiveOr<AnySurrealType, Identifier>,
+    ) -> SurrealSelect<result::Single> {
         self.without_fields()
-            .with_expression(expr, None)
+            .with_expression(field_or_expr.field_expr(), None)
             .as_single_value()
-    }
-    pub fn only_column(self, column: impl Into<String>) -> SurrealSelect<result::Single> {
-        self.without_fields().with_field(column).as_single_value()
     }
     pub fn as_single_value(self) -> SurrealSelect<result::Single> {
         if !self.from_only {
@@ -571,7 +607,6 @@ mod tests {
     use super::*;
     use crate::select::field::Field;
     use crate::select::select_field::SelectField;
-    use crate::select::target::Target;
 
     #[test]
     fn test_basic_select() {
@@ -580,7 +615,7 @@ mod tests {
                 SelectField::new(Field::new("name")),
                 SelectField::new(Field::new("set")),
             ])
-            .from(vec![Target::new(surreal_expr!("users"))]);
+            .from("users");
 
         let sql = select.preview();
 
@@ -589,7 +624,7 @@ mod tests {
 
     #[test]
     fn test_select_all() {
-        let select = SurrealSelect::new().from(vec![Target::new(surreal_expr!("users"))]);
+        let select = SurrealSelect::new().from("users");
 
         let sql = select.preview();
 
@@ -598,114 +633,102 @@ mod tests {
 
     #[test]
     fn test_select_with_where_condition() {
-        let mut select = SurrealSelect::new();
-        select.set_source("users", None);
-        select.add_field("name".to_string());
-        select.add_where_condition(surreal_expr!("age > 18"));
+        let select = SurrealSelect::new()
+            .from("users")
+            .field("name")
+            .with_where(surreal_expr!("age > 18"));
 
-        let sql = select.preview();
-
-        assert_eq!(sql, "SELECT name FROM users WHERE age > 18");
+        assert_eq!(select.preview(), "SELECT name FROM users WHERE age > 18");
     }
 
     #[test]
     fn test_select_with_multiple_where_conditions() {
-        let mut select = SurrealSelect::new();
-        select.set_source("users", None);
-        select.add_field("name".to_string());
-        select.add_where_condition(surreal_expr!("age > 18"));
-        select.add_where_condition(surreal_expr!("active = true"));
-
-        let sql = select.preview();
+        let select = SurrealSelect::new()
+            .from("users")
+            .field("name")
+            .with_where(surreal_expr!("age > 18"))
+            .with_where(surreal_expr!("active = true"));
 
         assert_eq!(
-            sql,
+            select.preview(),
             "SELECT name FROM users WHERE age > 18 AND active = true"
         );
     }
 
     #[test]
     fn test_select_with_order_by() {
-        let mut select = SurrealSelect::new();
-        select.set_source("users", None);
-        select.add_field("name".to_string());
-        select.add_order_by(surreal_expr!("name"), true);
+        let select = SurrealSelect::new()
+            .from("users")
+            .field("name")
+            .with_order_by(surreal_expr!("name"), true);
 
-        let sql = select.preview();
-
-        assert_eq!(sql, "SELECT name FROM users ORDER BY name");
+        assert_eq!(select.preview(), "SELECT name FROM users ORDER BY name");
     }
 
     #[test]
     fn test_select_with_order_by_desc() {
-        let mut select = SurrealSelect::new();
-        select.set_source("users", None);
-        select.add_field("name".to_string());
-        select.add_order_by(surreal_expr!("created_at"), false);
+        let select = SurrealSelect::new()
+            .from("users")
+            .field("name")
+            .with_order_by(surreal_expr!("created_at"), false);
 
-        let sql = select.preview();
-
-        assert_eq!(sql, "SELECT name FROM users ORDER BY created_at DESC");
+        assert_eq!(
+            select.preview(),
+            "SELECT name FROM users ORDER BY created_at DESC"
+        );
     }
 
     #[test]
     fn test_select_with_group_by() {
-        let mut select = SurrealSelect::new();
-        select.set_source("users", None);
-        select.add_field("department".to_string());
-        select.add_expression(surreal_expr!("count()"), Some("count".to_string()));
-        select.add_group_by(surreal_expr!("department"));
-
-        let sql = select.preview();
+        let select = SurrealSelect::new()
+            .from("users")
+            .field("department")
+            .with_expression(surreal_expr!("count()"), Some("count".to_string()))
+            .with_group_by(surreal_expr!("department"));
 
         assert_eq!(
-            sql,
+            select.preview(),
             "SELECT department, count() AS count FROM users GROUP BY department"
         );
     }
 
     #[test]
     fn test_select_with_limit() {
-        let mut select = SurrealSelect::new();
-        select.set_source("users", None);
-        select.add_field("name".to_string());
-        select.set_limit(Some(10), None);
+        let select = SurrealSelect::new()
+            .from("users")
+            .field("name")
+            .with_limit(10);
 
-        let sql = select.preview();
-
-        assert_eq!(sql, "SELECT name FROM users LIMIT 10");
+        assert_eq!(select.preview(), "SELECT name FROM users LIMIT 10");
     }
 
     #[test]
     fn test_select_with_limit_and_start() {
-        let mut select = SurrealSelect::new();
-        select.set_source("users", None);
-        select.add_field("name".to_string());
-        select.set_limit(Some(10), Some(20));
+        let select = SurrealSelect::new()
+            .from("users")
+            .field("name")
+            .with_limit(10)
+            .with_skip(20);
 
-        let sql = select.preview();
-
-        assert_eq!(sql, "SELECT name FROM users LIMIT 10 START 20");
+        assert_eq!(select.preview(), "SELECT name FROM users LIMIT 10 START 20");
     }
 
     #[test]
     fn test_complex_select_query() {
-        let mut select = SurrealSelect::new();
-        select.set_source("orders", None);
-        select.add_field("customer_id".to_string());
-        select.add_expression(
-            surreal_expr!("SUM(total)"),
-            Some("total_amount".to_string()),
-        );
-        select.add_where_condition(surreal_expr!("status = 'completed'"));
-        select.add_group_by(surreal_expr!("customer_id"));
-        select.add_order_by(surreal_expr!("total_amount"), false);
-        select.set_limit(Some(5), None);
-
-        let sql = select.preview();
+        let select = SurrealSelect::new()
+            .from("orders")
+            .field("customer_id")
+            .with_expression(
+                surreal_expr!("SUM(total)"),
+                Some("total_amount".to_string()),
+            )
+            .with_where(surreal_expr!("status = 'completed'"))
+            .with_group_by(surreal_expr!("customer_id"))
+            .with_order_by(surreal_expr!("total_amount"), false)
+            .with_limit(5);
 
         assert_eq!(
-            sql,
+            select.preview(),
             "SELECT customer_id, SUM(total) AS total_amount FROM orders WHERE status = 'completed' GROUP BY customer_id ORDER BY total_amount DESC LIMIT 5"
         );
     }

@@ -80,7 +80,7 @@ impl<E: Entity> SurrealTableCore<E> for Table<SurrealDB, E> {
         };
 
         // Add only the requested column
-        let select = self.select().only_column(col.name());
+        let select = self.select().only(col.name());
 
         Ok(SurrealAssociated::new(select, self.data_source().clone()))
     }
@@ -95,7 +95,7 @@ impl<E: Entity> SurrealTableCore<E> for Table<SurrealDB, E> {
         };
 
         // Add only the requested column
-        let select = self.select().only_column(col.name()).only_first_row();
+        let select = self.select().only(col.name()).only_first_row();
 
         Ok(SurrealAssociated::new(select, self.data_source().clone()))
     }

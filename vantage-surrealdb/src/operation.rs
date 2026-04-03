@@ -11,8 +11,13 @@ pub trait RefOperation: Expressive<AnySurrealType> {
     fn rref(&self, reference: impl Into<String>, table: impl Into<String>) -> Expr;
     fn lref(&self, reference: impl Into<String>, table: impl Into<String>) -> Expr;
     fn eq(&self, other: impl Expressive<AnySurrealType>) -> Expr;
+    fn ne(&self, other: impl Expressive<AnySurrealType>) -> Expr;
+    fn gt(&self, other: impl Expressive<AnySurrealType>) -> Expr;
+    fn gte(&self, other: impl Expressive<AnySurrealType>) -> Expr;
+    fn lt(&self, other: impl Expressive<AnySurrealType>) -> Expr;
+    fn lte(&self, other: impl Expressive<AnySurrealType>) -> Expr;
     fn sub(&self, other: impl Expressive<AnySurrealType>) -> Expr;
-    fn contains(&self, other: impl Expressive<AnySurrealType>) -> Expr;
+    fn contains_(&self, other: impl Expressive<AnySurrealType>) -> Expr;
     fn in_(&self, other: impl Expressive<AnySurrealType>) -> Expr;
 }
 
@@ -42,11 +47,31 @@ where
         surreal_expr!("{} = {}", (self), (other))
     }
 
+    fn ne(&self, other: impl Expressive<AnySurrealType>) -> Expr {
+        surreal_expr!("{} != {}", (self), (other))
+    }
+
+    fn gt(&self, other: impl Expressive<AnySurrealType>) -> Expr {
+        surreal_expr!("{} > {}", (self), (other))
+    }
+
+    fn gte(&self, other: impl Expressive<AnySurrealType>) -> Expr {
+        surreal_expr!("{} >= {}", (self), (other))
+    }
+
+    fn lt(&self, other: impl Expressive<AnySurrealType>) -> Expr {
+        surreal_expr!("{} < {}", (self), (other))
+    }
+
+    fn lte(&self, other: impl Expressive<AnySurrealType>) -> Expr {
+        surreal_expr!("{} <= {}", (self), (other))
+    }
+
     fn sub(&self, other: impl Expressive<AnySurrealType>) -> Expr {
         surreal_expr!("{} - {}", (self), (other))
     }
 
-    fn contains(&self, other: impl Expressive<AnySurrealType>) -> Expr {
+    fn contains_(&self, other: impl Expressive<AnySurrealType>) -> Expr {
         surreal_expr!("{} CONTAINS {}", (self), (other))
     }
 
@@ -142,7 +167,7 @@ mod tests {
         assert_eq!(sub_result.preview(), "age - 10");
 
         let tags_field = surreal_expr!("tags");
-        let contains_result = tags_field.contains("bakery".to_string());
+        let contains_result = tags_field.contains_("bakery".to_string());
         assert_eq!(contains_result.preview(), r#"tags CONTAINS "bakery""#);
 
         let status_field = surreal_expr!("status");

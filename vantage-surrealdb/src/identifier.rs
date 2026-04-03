@@ -2,8 +2,10 @@
 //!
 //! doc wip
 
+use crate::Expr;
 use crate::surreal_expr;
-use vantage_expressions::Expressive;
+use vantage_expressions::{Expressive, ExpressiveOr};
+use vantage_table::column::core::{Column, ColumnType};
 
 /// SurrealDB identifier with automatic escaping
 ///
@@ -78,5 +80,45 @@ pub struct Parent {}
 impl Parent {
     pub fn identifier() -> Identifier {
         Identifier::new("$parent")
+    }
+}
+
+// ExpressiveOr<AnySurrealType, Identifier> impls
+// Strings go through Identifier (unquoted column names),
+// everything else passes through via Expressive.
+
+impl ExpressiveOr<crate::AnySurrealType, Identifier> for &str {
+    fn field_expr(&self) -> Expr {
+        Identifier::new(*self).expr()
+    }
+}
+
+impl ExpressiveOr<crate::AnySurrealType, Identifier> for String {
+    fn field_expr(&self) -> Expr {
+        Identifier::new(self.as_str()).expr()
+    }
+}
+
+impl ExpressiveOr<crate::AnySurrealType, Identifier> for Identifier {
+    fn field_expr(&self) -> Expr {
+        Expressive::expr(self)
+    }
+}
+
+impl ExpressiveOr<crate::AnySurrealType, Identifier> for Expr {
+    fn field_expr(&self) -> Expr {
+        self.clone()
+    }
+}
+
+impl ExpressiveOr<crate::AnySurrealType, Identifier> for crate::statements::select::field::Field {
+    fn field_expr(&self) -> Expr {
+        Expressive::expr(self)
+    }
+}
+
+impl<T: ColumnType> ExpressiveOr<crate::AnySurrealType, Identifier> for Column<T> {
+    fn field_expr(&self) -> Expr {
+        Identifier::new(self.name()).expr()
     }
 }

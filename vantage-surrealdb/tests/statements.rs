@@ -6,16 +6,17 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use vantage_expressions::{ExprDataSource, Expressive, Selectable};
+use vantage_surrealdb::operation::RefOperation;
 use vantage_surrealdb::statements::delete::SurrealDelete;
 use vantage_surrealdb::statements::insert::SurrealInsert;
 use vantage_surrealdb::statements::select::SurrealSelect;
+use vantage_surrealdb::statements::select::field::Field;
 
-use vantage_surrealdb::statements::select::target::Target;
 use vantage_surrealdb::statements::update::SurrealUpdate;
+use vantage_surrealdb::surreal_expr;
 use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::thing::Thing;
 use vantage_surrealdb::types::{AnySurrealType, SurrealType};
-use vantage_surrealdb::{identifier::Identifier, surreal_expr};
 
 static TEST_COUNTER: AtomicU32 = AtomicU32::new(0);
 
@@ -69,7 +70,7 @@ async fn count_records(db: &SurrealDB, table: &str) -> i64 {
 #[test]
 fn select_basic_fields() {
     let select = SurrealSelect::new()
-        .from(vec![Target::new(Identifier::new("users"))])
+        .from("users")
         .with_field("name")
         .with_field("email");
 
@@ -78,14 +79,14 @@ fn select_basic_fields() {
 
 #[test]
 fn select_star() {
-    let select = SurrealSelect::new().from(vec![Target::new(Identifier::new("products"))]);
+    let select = SurrealSelect::new().from("products");
     assert_eq!(select.preview(), "SELECT * FROM products");
 }
 
 #[test]
 fn select_with_alias() {
     let select = SurrealSelect::new()
-        .from(vec![Target::new(Identifier::new("users"))])
+        .from("users")
         .with_expression(surreal_expr!("name"), Some("user_name".to_string()))
         .with_expression(surreal_expr!("math::sum(score)"), Some("total".to_string()));
 
@@ -96,10 +97,10 @@ fn select_with_alias() {
 
 #[test]
 fn select_where_single() {
-    let mut select = SurrealSelect::new();
-    select.set_source("users", None);
-    select.add_field("name".to_string());
-    select.add_where_condition(surreal_expr!("active = {}", true));
+    let select = SurrealSelect::new()
+        .from("users")
+        .with_field("name")
+        .with_where(Field::new("active").eq(true));
 
     assert_eq!(
         select.preview(),
@@ -109,44 +110,45 @@ fn select_where_single() {
 
 #[test]
 fn select_where_multiple() {
-    let mut select = SurrealSelect::new();
-    select.set_source("orders", None);
-    select.add_where_condition(surreal_expr!("status = {}", "pending"));
-    select.add_where_condition(surreal_expr!("total > {}", 100i64));
+    let select = SurrealSelect::new()
+        .from("orders")
+        .with_where(Field::new("status").eq("pending"))
+        .with_where(Field::new("total").gt(100i64));
 
-    let p = select.preview();
-    assert!(p.contains("WHERE status = \"pending\" AND total > 100"));
+    assert!(
+        select
+            .preview()
+            .contains("WHERE status = \"pending\" AND total > 100")
+    );
 }
 
 #[test]
 fn select_order_by() {
-    let mut select = SurrealSelect::new();
-    select.set_source("products", None);
-    select.add_field("name".to_string());
-    select.add_order_by(surreal_expr!("price"), false); // DESC
+    let select = SurrealSelect::new()
+        .from("products")
+        .with_field("name")
+        .with_order_by(Field::new("price"), false);
 
-    let p = select.preview();
-    assert!(p.contains("ORDER BY price DESC"));
+    assert!(select.preview().contains("ORDER BY price DESC"));
 }
 
 #[test]
 fn select_order_by_asc() {
-    let mut select = SurrealSelect::new();
-    select.set_source("products", None);
-    select.add_order_by(surreal_expr!("name"), true);
+    let select = SurrealSelect::new()
+        .from("products")
+        .with_order_by(Field::new("name"), true);
 
     let p = select.preview();
-    // SurrealDB may omit ASC (it's the default) — just verify field is there
     assert!(p.contains("ORDER BY name"), "got: {}", p);
 }
 
 #[test]
 fn select_group_by() {
-    let mut select = SurrealSelect::new();
-    select.set_source("orders", None);
-    select.add_expression(surreal_expr!("status"), None);
-    select.add_expression(surreal_expr!("count()"), Some("cnt".to_string()));
-    select.add_group_by(surreal_expr!("status"));
+    let select = SurrealSelect::new()
+        .from("orders")
+        .with_expression(surreal_expr!("status"), None)
+        .with_expression(surreal_expr!("count()"), Some("cnt".to_string()))
+        .with_group_by(Field::new("status"));
 
     let p = select.preview();
     assert!(p.contains("GROUP BY status"));
@@ -155,9 +157,10 @@ fn select_group_by() {
 
 #[test]
 fn select_limit_and_skip() {
-    let mut select = SurrealSelect::new();
-    select.set_source("logs", None);
-    select.set_limit(Some(10), Some(20));
+    let select = SurrealSelect::new()
+        .from("logs")
+        .with_limit(10)
+        .with_skip(20);
 
     let p = select.preview();
     assert!(p.contains("LIMIT 10"));
@@ -168,9 +171,7 @@ fn select_limit_and_skip() {
 
 #[test]
 fn select_limit_only() {
-    let mut select = SurrealSelect::new();
-    select.set_source("logs", None);
-    select.set_limit(Some(5), None);
+    let select = SurrealSelect::new().from("logs").with_limit(5);
 
     let p = select.preview();
     assert!(p.contains("LIMIT 5"));
@@ -179,19 +180,18 @@ fn select_limit_only() {
 
 #[test]
 fn select_distinct() {
-    let mut select = SurrealSelect::new();
-    select.set_source("events", None);
-    select.add_field("type".to_string());
-    select.set_distinct(true);
+    let select = SurrealSelect::new()
+        .from("events")
+        .with_field("type")
+        .with_distinct();
 
     assert!(select.is_distinct());
-    // SurrealDB doesn't have SQL DISTINCT — verify flag is set
 }
 
 #[test]
 fn select_value_mode() {
     let select = SurrealSelect::new()
-        .from(vec![Target::new(Identifier::new("users"))])
+        .from("users")
         .with_field("name")
         .with_value();
 
@@ -200,12 +200,12 @@ fn select_value_mode() {
 
 #[test]
 fn select_clear_methods() {
-    let mut select = SurrealSelect::new();
-    select.set_source("t", None);
-    select.add_field("a".to_string());
-    select.add_where_condition(surreal_expr!("x = 1"));
-    select.add_order_by(surreal_expr!("a"), true);
-    select.add_group_by(surreal_expr!("a"));
+    let mut select = SurrealSelect::new()
+        .from("t")
+        .with_field("a")
+        .with_where(Field::new("x").eq(1i64))
+        .with_order_by(Field::new("a"), true)
+        .with_group_by(Field::new("a"));
 
     assert!(select.has_fields());
     assert!(select.has_where_conditions());
@@ -226,7 +226,7 @@ fn select_clear_methods() {
 #[test]
 fn select_without_fields() {
     let select = SurrealSelect::new()
-        .from(vec![Target::new(Identifier::new("t"))])
+        .from("t")
         .with_field("a")
         .with_field("b")
         .without_fields();
@@ -237,21 +237,20 @@ fn select_without_fields() {
 #[test]
 fn select_only_column() {
     let select = SurrealSelect::new()
-        .from(vec![Target::new(Identifier::new("products"))])
+        .from("products")
         .with_field("name")
         .with_field("price")
-        .only_column("name");
+        .only("name");
 
-    // only_column → SELECT VALUE name
     assert_eq!(select.preview(), "SELECT VALUE name FROM products");
 }
 
 #[test]
 fn select_only_expression() {
     let select = SurrealSelect::new()
-        .from(vec![Target::new(Identifier::new("products"))])
+        .from("products")
         .with_field("name")
-        .only_expression(surreal_expr!("math::sum(price)"));
+        .only(surreal_expr!("math::sum(price)"));
 
     assert_eq!(
         select.preview(),
@@ -261,9 +260,7 @@ fn select_only_expression() {
 
 #[test]
 fn select_as_count() {
-    let select = SurrealSelect::new()
-        .from(vec![Target::new(Identifier::new("users"))])
-        .as_count();
+    let select = SurrealSelect::new().from("users").as_count();
 
     let p = select.preview();
     assert!(p.contains("RETURN count("));
@@ -272,7 +269,7 @@ fn select_as_count() {
 #[test]
 fn select_as_sum() {
     let select = SurrealSelect::new()
-        .from(vec![Target::new(Identifier::new("orders"))])
+        .from("orders")
         .as_sum(surreal_expr!("total"));
 
     let p = select.preview();
@@ -282,7 +279,7 @@ fn select_as_sum() {
 #[test]
 fn select_as_max() {
     let select = SurrealSelect::new()
-        .from(vec![Target::new(Identifier::new("scores"))])
+        .from("scores")
         .as_max(surreal_expr!("value"));
 
     let p = select.preview();
@@ -292,7 +289,7 @@ fn select_as_max() {
 #[test]
 fn select_as_min() {
     let select = SurrealSelect::new()
-        .from(vec![Target::new(Identifier::new("scores"))])
+        .from("scores")
         .as_min(surreal_expr!("value"));
 
     let p = select.preview();
@@ -302,19 +299,17 @@ fn select_as_min() {
 #[test]
 fn select_complex_query() {
     let select = SurrealSelect::new()
-        .from(vec![Target::new(Identifier::new("order_line"))])
+        .from("order_line")
         .with_expression(surreal_expr!("product"), None)
         .with_expression(
             surreal_expr!("math::sum(qty * price)"),
             Some("total".to_string()),
         )
-        .with_expression(surreal_expr!("count()"), Some("cnt".to_string()));
-
-    let mut select = select;
-    select.add_where_condition(surreal_expr!("order.status = {}", "confirmed"));
-    select.add_group_by(surreal_expr!("product"));
-    select.add_order_by(surreal_expr!("total"), false);
-    select.set_limit(Some(10), None);
+        .with_expression(surreal_expr!("count()"), Some("cnt".to_string()))
+        .with_where(Field::new("order.status").eq("confirmed"))
+        .with_group_by(Field::new("product"))
+        .with_order_by(Field::new("total"), false)
+        .with_limit(10);
 
     let p = select.preview();
     assert!(p.contains("SELECT product"));
@@ -344,7 +339,7 @@ async fn select_live_basic() {
     }
 
     let select = SurrealSelect::new()
-        .from(vec![Target::new(Identifier::new("sl_user"))])
+        .from("sl_user")
         .with_value()
         .with_field("name");
 
@@ -372,12 +367,12 @@ async fn select_live_with_where_and_order() {
 
     // Score > 60, order by score DESC — use full row select (not VALUE)
     // because SurrealDB requires ORDER BY field to be in the selection
-    let mut select = SurrealSelect::new();
-    select.set_source("sl_score", None);
-    select.add_field("name".to_string());
-    select.add_field("score".to_string());
-    select.add_where_condition(surreal_expr!("score > {}", 60i64));
-    select.add_order_by(surreal_expr!("score"), false);
+    let select = SurrealSelect::new()
+        .from("sl_score")
+        .with_field("name")
+        .with_field("score")
+        .with_where(Field::new("score").gt(60i64))
+        .with_order_by(Field::new("score"), false);
 
     let result = db.execute(&select.expr()).await.unwrap();
     let rows: Vec<indexmap::IndexMap<String, AnySurrealType>> = result.try_get().unwrap();
@@ -402,11 +397,11 @@ async fn select_live_with_limit() {
         db.execute(&ins.expr()).await.unwrap();
     }
 
-    let mut select = SurrealSelect::new();
-    select.set_source("sl_limit", None);
-    select.set_limit(Some(3), None);
-
-    let select = select.with_value().with_field("val");
+    let select = SurrealSelect::new()
+        .from("sl_limit")
+        .with_limit(3)
+        .with_value()
+        .with_field("val");
 
     let result = db.execute(&select.expr()).await.unwrap();
     let vals: Vec<i64> = result.try_get().unwrap();
@@ -428,9 +423,7 @@ async fn select_live_aggregation() {
     }
 
     // count
-    let count_q = SurrealSelect::new()
-        .from(vec![Target::new(Identifier::new("sl_agg"))])
-        .as_count();
+    let count_q = SurrealSelect::new().from("sl_agg").as_count();
     let count: i64 = db
         .execute(&count_q.expr())
         .await
@@ -441,21 +434,21 @@ async fn select_live_aggregation() {
 
     // sum
     let sum_q = SurrealSelect::new()
-        .from(vec![Target::new(Identifier::new("sl_agg"))])
+        .from("sl_agg")
         .as_sum(surreal_expr!("val"));
     let sum: i64 = db.execute(&sum_q.expr()).await.unwrap().try_get().unwrap();
     assert_eq!(sum, 60);
 
     // max
     let max_q = SurrealSelect::new()
-        .from(vec![Target::new(Identifier::new("sl_agg"))])
+        .from("sl_agg")
         .as_max(surreal_expr!("val"));
     let max: i64 = db.execute(&max_q.expr()).await.unwrap().try_get().unwrap();
     assert_eq!(max, 30);
 
     // min
     let min_q = SurrealSelect::new()
-        .from(vec![Target::new(Identifier::new("sl_agg"))])
+        .from("sl_agg")
         .as_min(surreal_expr!("val"));
     let min: i64 = db.execute(&min_q.expr()).await.unwrap().try_get().unwrap();
     assert_eq!(min, 10);
@@ -899,15 +892,15 @@ fn delete_record() {
 
 #[test]
 fn delete_with_single_condition() {
-    let del = SurrealDelete::table("logs").with_condition(surreal_expr!("level = {}", "debug"));
+    let del = SurrealDelete::table("logs").with_condition(Field::new("level").eq("debug"));
     assert_eq!(del.preview(), "DELETE logs WHERE level = \"debug\"");
 }
 
 #[test]
 fn delete_with_multiple_conditions() {
     let del = SurrealDelete::table("logs")
-        .with_condition(surreal_expr!("level = {}", "debug"))
-        .with_condition(surreal_expr!("age > {}", 30i64));
+        .with_condition(Field::new("level").eq("debug"))
+        .with_condition(Field::new("age").gt(30i64));
     assert_eq!(
         del.preview(),
         "DELETE logs WHERE level = \"debug\" AND age > 30"
@@ -922,7 +915,7 @@ fn delete_reserved_keyword_escaping() {
 
 #[test]
 fn delete_parameterized_expression() {
-    let del = SurrealDelete::table("t").with_condition(surreal_expr!("x < {}", 5i64));
+    let del = SurrealDelete::table("t").with_condition(Field::new("x").lt(5i64));
     let expr = del.expr();
     assert!(expr.template.contains("{}"));
 }
@@ -1001,7 +994,7 @@ async fn delete_live_with_condition() {
     }
 
     // Delete records with score < 60
-    let del = SurrealDelete::table("sd_cond").with_condition(surreal_expr!("score < {}", 60i64));
+    let del = SurrealDelete::table("sd_cond").with_condition(Field::new("score").lt(60i64));
     db.execute(&del.expr()).await.unwrap();
 
     assert_eq!(count_records(&db, "sd_cond").await, 1);
@@ -1124,12 +1117,12 @@ async fn insert_select_update_flow() {
 
     // Select passing scores (>= 50), ordered descending
     // Use row select (not VALUE) since SurrealDB requires ORDER BY field in selection
-    let mut select = SurrealSelect::new();
-    select.set_source("flow", None);
-    select.add_field("name".to_string());
-    select.add_field("score".to_string());
-    select.add_where_condition(surreal_expr!("score >= {}", 50i64));
-    select.add_order_by(surreal_expr!("score"), false);
+    let select = SurrealSelect::new()
+        .from("flow")
+        .with_field("name")
+        .with_field("score")
+        .with_where(Field::new("score").gte(50i64))
+        .with_order_by(Field::new("score"), false);
 
     let result = db.execute(&select.expr()).await.unwrap();
     let rows: Vec<indexmap::IndexMap<String, AnySurrealType>> = result.try_get().unwrap();
@@ -1149,7 +1142,7 @@ async fn insert_select_update_flow() {
     assert!(!read_value::<bool>(&db, "flow:dave", "passed").await);
 
     // Delete failing students
-    let del = SurrealDelete::table("flow").with_condition(surreal_expr!("passed = {}", false));
+    let del = SurrealDelete::table("flow").with_condition(Field::new("passed").eq(false));
     db.execute(&del.expr()).await.unwrap();
 
     assert_eq!(count_records(&db, "flow").await, 2);

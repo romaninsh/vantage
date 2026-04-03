@@ -1,7 +1,6 @@
 //! SurrealDB-specific extension methods for `Table<SurrealDB, E>`.
 
 use vantage_core::Result;
-use vantage_expressions::SelectableDataSource;
 use vantage_expressions::result;
 use vantage_table::table::Table;
 use vantage_types::Entity;
@@ -38,7 +37,7 @@ impl<E: Entity<AnySurrealType>> SurrealTableExt<E> for Table<SurrealDB, E> {
                 table = self.table_name()
             ));
         }
-        Ok(self.select().only_column(column))
+        Ok(self.select().only(column))
     }
 
     fn select_single(&self, column: &str) -> Result<SurrealSelect<result::Single>> {
@@ -49,6 +48,6 @@ impl<E: Entity<AnySurrealType>> SurrealTableExt<E> for Table<SurrealDB, E> {
                 table = self.table_name()
             ));
         }
-        Ok(self.select().only_column(column).only_first_row())
+        Ok(self.select().only(column).only_first_row())
     }
 }

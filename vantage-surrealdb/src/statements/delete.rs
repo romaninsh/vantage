@@ -77,7 +77,7 @@ impl Expressive<AnySurrealType> for SurrealDelete {
         let combined = self
             .conditions
             .iter()
-            .map(|c| c.clone())
+            .cloned()
             .reduce(|a, b| crate::surreal_expr!("{} AND {}", (a), (b)))
             .unwrap();
 
