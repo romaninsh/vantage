@@ -82,9 +82,10 @@ fn test_dynamic_query_building() {
     assert_eq!(where_clause.template, "{} AND {} AND {}");
     assert_eq!(final_query.template, "SELECT * FROM users WHERE {}");
     // After flattening, the nested structure should be resolved
+    // Leaf expressions inline their templates, only parameterized ones keep {}
     assert_eq!(
         flattened.template,
-        "SELECT * FROM users WHERE {} AND {} AND {}"
+        "SELECT * FROM users WHERE age >= {} AND status = {} AND last_login > NOW() - INTERVAL 30 DAY"
     );
     // The flattened version should have the parameters from nested expressions
     println!("Template: {}", flattened.template);
