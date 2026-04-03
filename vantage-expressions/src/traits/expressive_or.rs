@@ -1,6 +1,6 @@
 use crate::expression::core::Expression;
 
-/// Like [`Expressive`], but with an alternative conversion for string types.
+/// Like [`Expressive`](crate::Expressive), but with an alternative conversion for string types.
 ///
 /// Both traits convert values into `Expression<T>`, but differ in how
 /// they treat `&str` and `String`:
