@@ -54,7 +54,7 @@ impl AnyTable {
 
     /// Create an AnyTable from a table with any value/id types that convert to/from JSON.
     ///
-    /// This wraps the table in a [`JsonAdapter`] that converts values on the fly,
+    /// This wraps the table in an internal adapter that converts values on the fly,
     /// so any `TableSource` can be used with the unified `AnyTable` interface.
     pub fn from_table<T, E>(table: Table<T, E>) -> Self
     where
