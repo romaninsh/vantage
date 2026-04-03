@@ -2,8 +2,13 @@
 //!
 //! `AnyTable` provides a way to store tables of different types uniformly
 //! while preserving the ability to recover the concrete type through downcasting.
+//!
+//! Tables whose value/id types differ from `serde_json::Value`/`String` can still
+//! be wrapped via [`AnyTable::from_table`] as long as the value type implements
+//! `Into<Value> + From<Value>` and the id type implements `Display + From<String>`.
 
 use std::any::TypeId;
+use std::fmt::Display;
 
 use async_trait::async_trait;
 use indexmap::IndexMap;
@@ -40,6 +45,26 @@ impl AnyTable {
     ) -> Self {
         Self {
             inner: Box::new(table),
+            datasource_type_id: TypeId::of::<T>(),
+            entity_type_id: TypeId::of::<E>(),
+            datasource_name: std::any::type_name::<T>(),
+            entity_name: std::any::type_name::<E>(),
+        }
+    }
+
+    /// Create an AnyTable from a table with any value/id types that convert to/from JSON.
+    ///
+    /// This wraps the table in a [`JsonAdapter`] that converts values on the fly,
+    /// so any `TableSource` can be used with the unified `AnyTable` interface.
+    pub fn from_table<T, E>(table: Table<T, E>) -> Self
+    where
+        T: TableSource + 'static,
+        T::Value: Into<Value> + From<Value>,
+        T::Id: Display + From<String>,
+        E: Entity<T::Value> + 'static,
+    {
+        Self {
+            inner: Box::new(JsonAdapter { inner: table }),
             datasource_type_id: TypeId::of::<T>(),
             entity_type_id: TypeId::of::<E>(),
             datasource_name: std::any::type_name::<T>(),
@@ -187,81 +212,6 @@ impl WritableValueSet for AnyTable {
     }
 }
 
-// TODO: review methods here, some are duplicating things
-impl AnyTable {
-    // /// Get all values as raw serde_json::Value (complete record objects)
-    // pub async fn get_all_values(&self) -> Result<Vec<Value>> {
-    //     let records = self.list_values().await?;
-    //     Ok(records
-    //         .into_values()
-    //         .map(|record| self.record_to_value(record))
-    //         .collect())
-    // }
-
-    /// Get a specific value by ID as raw serde_json::Value (complete record object)
-    pub async fn get_value_as_json(&self, id: &str) -> Result<Value> {
-        let record = self.get_value(&id.to_string()).await?;
-        Ok(self.record_to_value(record))
-    }
-
-    /// Get some value as raw serde_json::Value (complete record object)
-    pub async fn get_some_value_as_json(&self) -> Result<Option<(String, Value)>> {
-        if let Some((id, record)) = self.get_some_value().await? {
-            let value = self.record_to_value(record);
-            Ok(Some((id, value)))
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Insert a value by ID (value should be a complete record object)
-    pub async fn insert_value_from_json(&self, id: &str, value: Value) -> Result<()> {
-        let record = self.value_to_record(value)?;
-        self.insert_value(&id.to_string(), &record).await?;
-        Ok(())
-    }
-
-    /// Replace a value by ID (value should be a complete record object)
-    pub async fn replace_value_from_json(&self, id: &str, value: Value) -> Result<()> {
-        let record = self.value_to_record(value)?;
-        self.replace_value(&id.to_string(), &record).await?;
-        Ok(())
-    }
-
-    /// Patch a value by ID (value should be a complete record object)
-    pub async fn patch_value_from_json(&self, id: &str, value: Value) -> Result<()> {
-        let record = self.value_to_record(value)?;
-        self.patch_value(&id.to_string(), &record).await?;
-        Ok(())
-    }
-
-    /// Delete a value by ID
-    pub async fn delete_by_str(&self, id: &str) -> Result<()> {
-        self.delete(&id.to_string()).await
-    }
-
-    /// Helper to convert serde_json::Value to Record<serde_json::Value>
-    fn value_to_record(&self, value: Value) -> Result<AnyRecord> {
-        match value {
-            Value::Object(map) => {
-                let mut record = Record::new();
-                for (key, val) in map {
-                    record.insert(key, val);
-                }
-                Ok(record)
-            }
-            _ => Err(error!("Value must be an object to convert to record")),
-        }
-    }
-
-    /// Helper to convert Record<serde_json::Value> to serde_json::Value
-    fn record_to_value(&self, record: AnyRecord) -> Value {
-        let map: IndexMap<String, Value> = record.into_inner();
-        let json_map: serde_json::Map<String, Value> = map.into_iter().collect();
-        Value::Object(json_map)
-    }
-}
-
 // Implement TableLike by delegating to inner
 #[async_trait]
 impl TableLike for AnyTable {
@@ -326,6 +276,216 @@ impl AnyTable {
         let mut pagination = self.inner.get_pagination().copied().unwrap_or_default();
         func(&mut pagination);
         self.inner.set_pagination(Some(pagination));
+    }
+}
+
+// ── JsonAdapter: blanket bridge for non-JSON table types ────────────────
+
+/// Wraps a `Table<T, E>` whose value/id types are not `serde_json::Value`/`String`,
+/// converting on the fly so it can satisfy `TableLike<Value = Value, Id = String>`.
+struct JsonAdapter<T: TableSource, E: Entity<T::Value>> {
+    inner: Table<T, E>,
+}
+
+impl<T: TableSource, E: Entity<T::Value>> Clone for JsonAdapter<T, E> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<T, E> JsonAdapter<T, E>
+where
+    T: TableSource,
+    T::Value: Into<Value>,
+    T::Id: Display,
+    E: Entity<T::Value>,
+{
+    fn convert_record(record: Record<T::Value>) -> Record<Value> {
+        record.into_iter().map(|(k, v)| (k, v.into())).collect()
+    }
+
+    fn convert_record_back(record: &Record<Value>) -> Record<T::Value>
+    where
+        T::Value: From<Value>,
+    {
+        record
+            .iter()
+            .map(|(k, v)| (k.clone(), T::Value::from(v.clone())))
+            .collect()
+    }
+}
+
+impl<T, E> ValueSet for JsonAdapter<T, E>
+where
+    T: TableSource,
+    E: Entity<T::Value>,
+{
+    type Id = String;
+    type Value = Value;
+}
+
+#[async_trait]
+impl<T, E> ReadableValueSet for JsonAdapter<T, E>
+where
+    T: TableSource,
+    T::Value: Into<Value>,
+    T::Id: Display + From<String>,
+    E: Entity<T::Value>,
+{
+    async fn list_values(&self) -> Result<IndexMap<String, Record<Value>>> {
+        let raw = self
+            .inner
+            .data_source()
+            .list_table_values(&self.inner)
+            .await?;
+        Ok(raw
+            .into_iter()
+            .map(|(id, rec)| (id.to_string(), Self::convert_record(rec)))
+            .collect())
+    }
+
+    async fn get_value(&self, id: &String) -> Result<Record<Value>> {
+        let native_id: T::Id = id.clone().into();
+        let rec = self
+            .inner
+            .data_source()
+            .get_table_value(&self.inner, &native_id)
+            .await?;
+        Ok(Self::convert_record(rec))
+    }
+
+    async fn get_some_value(&self) -> Result<Option<(String, Record<Value>)>> {
+        let result = self
+            .inner
+            .data_source()
+            .get_table_some_value(&self.inner)
+            .await?;
+        Ok(result.map(|(id, rec)| (id.to_string(), Self::convert_record(rec))))
+    }
+}
+
+#[async_trait]
+impl<T, E> WritableValueSet for JsonAdapter<T, E>
+where
+    T: TableSource,
+    T::Value: Into<Value> + From<Value>,
+    T::Id: Display + From<String>,
+    E: Entity<T::Value>,
+{
+    async fn insert_value(&self, id: &String, record: &Record<Value>) -> Result<Record<Value>> {
+        let native_id: T::Id = id.clone().into();
+        let native_rec = Self::convert_record_back(record);
+        let returned = self
+            .inner
+            .data_source()
+            .insert_table_value(&self.inner, &native_id, &native_rec)
+            .await?;
+        Ok(Self::convert_record(returned))
+    }
+
+    async fn replace_value(&self, id: &String, record: &Record<Value>) -> Result<Record<Value>> {
+        let native_id: T::Id = id.clone().into();
+        let native_rec = Self::convert_record_back(record);
+        let returned = self
+            .inner
+            .data_source()
+            .replace_table_value(&self.inner, &native_id, &native_rec)
+            .await?;
+        Ok(Self::convert_record(returned))
+    }
+
+    async fn patch_value(&self, id: &String, partial: &Record<Value>) -> Result<Record<Value>> {
+        let native_id: T::Id = id.clone().into();
+        let native_rec = Self::convert_record_back(partial);
+        let returned = self
+            .inner
+            .data_source()
+            .patch_table_value(&self.inner, &native_id, &native_rec)
+            .await?;
+        Ok(Self::convert_record(returned))
+    }
+
+    async fn delete(&self, id: &String) -> Result<()> {
+        let native_id: T::Id = id.clone().into();
+        self.inner
+            .data_source()
+            .delete_table_value(&self.inner, &native_id)
+            .await
+    }
+
+    async fn delete_all(&self) -> Result<()> {
+        self.inner
+            .data_source()
+            .delete_table_all_values(&self.inner)
+            .await
+    }
+}
+
+#[async_trait]
+impl<T, E> TableLike for JsonAdapter<T, E>
+where
+    T: TableSource + 'static,
+    T::Value: Into<Value> + From<Value>,
+    T::Id: Display + From<String>,
+    E: Entity<T::Value> + 'static,
+{
+    fn table_name(&self) -> &str {
+        self.inner.table_name()
+    }
+
+    fn table_alias(&self) -> &str {
+        self.inner.table_name()
+    }
+
+    fn add_condition(&mut self, _condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()> {
+        Err(error!("add_condition not supported through JsonAdapter"))
+    }
+
+    fn temp_add_condition(
+        &mut self,
+        _condition: vantage_expressions::AnyExpression,
+    ) -> Result<ConditionHandle> {
+        Err(error!(
+            "temp_add_condition not supported through JsonAdapter"
+        ))
+    }
+
+    fn temp_remove_condition(&mut self, _handle: ConditionHandle) -> Result<()> {
+        Err(error!(
+            "temp_remove_condition not supported through JsonAdapter"
+        ))
+    }
+
+    fn search_expression(&self, _search_value: &str) -> Result<vantage_expressions::AnyExpression> {
+        Err(error!(
+            "search_expression not supported through JsonAdapter"
+        ))
+    }
+
+    fn clone_box(&self) -> Box<dyn TableLike<Value = Value, Id = String>> {
+        Box::new(self.clone())
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+
+    fn as_any_ref(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn set_pagination(&mut self, pagination: Option<Pagination>) {
+        self.inner.set_pagination(pagination);
+    }
+
+    fn get_pagination(&self) -> Option<&Pagination> {
+        self.inner.pagination()
+    }
+
+    async fn get_count(&self) -> Result<i64> {
+        self.inner.data_source().get_count(&self.inner).await
     }
 }
 

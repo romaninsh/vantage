@@ -3,7 +3,6 @@
 ## Remaining Work
 
 1. **Enable remaining tests** one by one, updating to 0.3 API.
-2. **Pagination support** — wire up limit/skip in `build_select` (needs `TableLike` `'static` fix).
 
 ### Future: Mutation query objects
 

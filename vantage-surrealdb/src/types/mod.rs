@@ -3,6 +3,7 @@
 //! This module provides a SurrealDB-specific type system using the vantage-types framework.
 //! It defines the core SurrealType trait and AnySurrealType for type-erased operations.
 
+use vantage_core::VantageError;
 use vantage_types::{TerminalRender, vantage_type_system};
 
 // Generate the SurrealDB type system
@@ -255,6 +256,40 @@ impl TerminalRender for AnySurrealType {
             Value::Null | Value::Tag(6, _) => Some("dim"),
             _ => None,
         }
+    }
+}
+
+// TryFrom<AnySurrealType> impls for common types — enables AssociatedExpression::get()
+macro_rules! impl_try_from_surreal {
+    ($($ty:ty),*) => {
+        $(
+            impl TryFrom<AnySurrealType> for $ty {
+                type Error = VantageError;
+                fn try_from(val: AnySurrealType) -> Result<Self, Self::Error> {
+                    val.try_get::<$ty>().ok_or_else(|| {
+                        vantage_core::error!(
+                            "Cannot convert AnySurrealType to target type",
+                            target = std::any::type_name::<$ty>(),
+                            value = format!("{}", val)
+                        )
+                    })
+                }
+            }
+        )*
+    };
+}
+
+impl_try_from_surreal!(i64, f64, bool, String, usize);
+
+impl TryFrom<AnySurrealType> for Vec<AnySurrealType> {
+    type Error = VantageError;
+    fn try_from(val: AnySurrealType) -> Result<Self, Self::Error> {
+        val.try_get::<Vec<AnySurrealType>>().ok_or_else(|| {
+            vantage_core::error!(
+                "Cannot convert AnySurrealType to Vec",
+                value = format!("{}", val)
+            )
+        })
     }
 }
 
