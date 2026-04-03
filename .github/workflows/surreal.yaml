@@ -30,7 +30,6 @@ jobs:
           docker run -d \
             --name surrealdb \
             -p 8000:8000 \
-            -e SURREAL_CAPS_ALLOW_EXPERIMENTAL=graphql \
             surrealdb/surrealdb:latest \
             start \
             --log debug \
