@@ -103,7 +103,8 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let select = super::build_select::build_select(table);
+        let mut select = super::build_select::build_select(table);
+        select.order_by.clear(); // ordering is unnecessary for count
         let count_query = select.as_count();
         let result = self.execute(&count_query.expr()).await?;
         result.try_get::<i64>().ok_or_else(|| {

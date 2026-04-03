@@ -105,7 +105,7 @@ jobs:
       - name: Run vantage-surrealdb and surreal-client tests
         run: cargo test -p vantage-surrealdb -p surreal-client -- --test-threads=1
         env:
-          DB_ENDPOINT: ws://localhost:8000
+          DB_ENDPOINT: cbor://localhost:8000/rpc
           DB_USER: root
           DB_PASS: root
           DB_AUTH_LEVEL: root
@@ -114,7 +114,7 @@ jobs:
       - name: Build bakery_model3
         run: cargo build -p bakery_model3
         env:
-          DB_ENDPOINT: ws://localhost:8000
+          DB_ENDPOINT: cbor://localhost:8000/rpc
           DB_USER: root
           DB_PASS: root
           DB_AUTH_LEVEL: root
@@ -123,7 +123,7 @@ jobs:
       - name: Run bakery_model3 tests
         run: cargo test -p bakery_model3 -- --test-threads=1
         env:
-          DB_ENDPOINT: ws://localhost:8000
+          DB_ENDPOINT: cbor://localhost:8000/rpc
           DB_USER: root
           DB_PASS: root
           DB_AUTH_LEVEL: root
@@ -132,7 +132,7 @@ jobs:
       - name: Run bakery_model3 example
         run: cargo run -p bakery_model3 --example 0-intro
         env:
-          DB_ENDPOINT: ws://localhost:8000
+          DB_ENDPOINT: cbor://localhost:8000/rpc
           DB_USER: root
           DB_PASS: root
           DB_AUTH_LEVEL: root

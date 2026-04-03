@@ -72,12 +72,12 @@ async fn test_build_select_count_query() {
     );
 }
 
-// -- Live DB tests (v2 database, ingested by CI) --
+// -- Live DB tests (v2 database, ingested by scripts/ingress.sh) --
+// v2.surql defines: 5 products, 3 clients (2 paying), 3 orders
 
 #[tokio::test]
 async fn test_get_count_products() {
     let db = get_db().await;
-    // v2.surql creates 5 products
     let table = Table::<_, EmptyEntity>::new("product", db.clone());
     let count = db.get_count(&table).await.unwrap();
     assert_eq!(count, 5);
@@ -86,7 +86,6 @@ async fn test_get_count_products() {
 #[tokio::test]
 async fn test_get_count_clients() {
     let db = get_db().await;
-    // v2.surql creates 3 clients: marty, doc, biff
     let table = Table::<_, EmptyEntity>::new("client", db.clone());
     let count = db.get_count(&table).await.unwrap();
     assert_eq!(count, 3);
@@ -95,7 +94,7 @@ async fn test_get_count_clients() {
 #[tokio::test]
 async fn test_get_count_with_condition() {
     let db = get_db().await;
-    // v2.surql: marty and doc are paying, biff is not
+    // marty and doc are paying, biff is not
     let table = Table::<_, EmptyEntity>::new("client", db.clone())
         .with_condition(surreal_expr!("is_paying_client = {}", true));
     let count = db.get_count(&table).await.unwrap();
@@ -105,7 +104,6 @@ async fn test_get_count_with_condition() {
 #[tokio::test]
 async fn test_get_count_orders() {
     let db = get_db().await;
-    // v2.surql creates 3 orders
     let table = Table::<_, EmptyEntity>::new("order", db.clone());
     let count = db.get_count(&table).await.unwrap();
     assert_eq!(count, 3);
