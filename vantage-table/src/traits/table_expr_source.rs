@@ -42,7 +42,7 @@ pub trait TableExprSource<Ex = Expression<Value>>:
         column: &Self::Column<R>,
     ) -> AssociatedExpression<'_, Self, Self::Value, R>
     where
-        R: ColumnType,
+        R: ColumnType + Default + AddAssign,
         E: Entity<Self::Value>;
 
     /// Return an expression that resolves to the minimum value of a column
@@ -52,6 +52,6 @@ pub trait TableExprSource<Ex = Expression<Value>>:
         column: &Self::Column<R>,
     ) -> AssociatedExpression<'_, Self, Self::Value, R>
     where
-        R: ColumnType,
+        R: ColumnType + Default + AddAssign,
         E: Entity<Self::Value>;
 }
