@@ -422,6 +422,14 @@ impl SurrealSelect<result::Rows> {
         let query = self.without_fields().only_expression(field_or_expr.expr());
         SurrealReturn::new(Sum::new(query.expr()).into())
     }
+    pub fn as_max(self, field_or_expr: impl Expressive<AnySurrealType>) -> SurrealReturn {
+        let query = self.without_fields().only_expression(field_or_expr.expr());
+        SurrealReturn::new(Fx::new("math::max", vec![query.expr()]).into())
+    }
+    pub fn as_min(self, field_or_expr: impl Expressive<AnySurrealType>) -> SurrealReturn {
+        let query = self.without_fields().only_expression(field_or_expr.expr());
+        SurrealReturn::new(Fx::new("math::min", vec![query.expr()]).into())
+    }
     pub fn as_count(self) -> SurrealReturn {
         let result = self.only_expression(surreal_expr!("id"));
         SurrealReturn::new(Fx::new("count", vec![result.expr()]).into())

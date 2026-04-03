@@ -1,4 +1,6 @@
 use vantage_csv::{CsvType, type_system::CsvTypeAnimalMarker};
+use vantage_surrealdb::types::SurrealTypeStringMarker;
+use vantage_surrealdb::{CborValue, SurrealType};
 use vantage_types::TerminalRender;
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -11,18 +13,22 @@ pub enum Animal {
     Chicken,
 }
 
-impl Animal {
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for Animal {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "cat" => Some(Animal::Cat),
-            "dog" => Some(Animal::Dog),
-            "pig" => Some(Animal::Pig),
-            "cow" => Some(Animal::Cow),
-            "chicken" => Some(Animal::Chicken),
-            _ => None,
+            "cat" => Ok(Animal::Cat),
+            "dog" => Ok(Animal::Dog),
+            "pig" => Ok(Animal::Pig),
+            "cow" => Ok(Animal::Cow),
+            "chicken" => Ok(Animal::Chicken),
+            _ => Err(format!("Unknown animal: {}", s)),
         }
     }
+}
 
+impl Animal {
     pub fn as_str(&self) -> &'static str {
         match self {
             Animal::Cat => "cat",
@@ -54,6 +60,21 @@ impl CsvType for Animal {
     }
 
     fn from_csv_string(value: String) -> Option<Self> {
-        Animal::from_str(&value)
+        value.parse().ok()
+    }
+}
+
+impl SurrealType for Animal {
+    type Target = SurrealTypeStringMarker;
+
+    fn to_cbor(&self) -> CborValue {
+        CborValue::Text(self.as_str().to_string())
+    }
+
+    fn from_cbor(cbor: CborValue) -> Option<Self> {
+        match cbor {
+            CborValue::Text(s) => s.parse().ok(),
+            _ => None,
+        }
     }
 }

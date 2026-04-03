@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
         .values()
     {
         println!(
-            "  client_id={}, is_deleted={}, lines={}",
+            "  client_id={:?}, is_deleted={}, lines={:?}",
             order.client_id, order.is_deleted, order.lines
         );
     }
@@ -59,7 +59,7 @@ async fn main() -> Result<()> {
         .values()
     {
         println!(
-            "  client_id={}, is_deleted={}",
+            "  client_id={:?}, is_deleted={}",
             order.client_id, order.is_deleted
         );
     }
