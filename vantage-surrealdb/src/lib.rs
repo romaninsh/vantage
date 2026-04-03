@@ -15,7 +15,7 @@
 
 // pub mod field_projection;
 pub mod identifier;
-// pub mod insert;
+pub mod insert;
 pub mod operation;
 // pub mod protocol;
 pub mod macros;
