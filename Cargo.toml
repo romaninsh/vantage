@@ -13,6 +13,7 @@ members = [
     "vantage-dataset",
     "vantage-table",
     "vantage-csv",
+    "vantage-api-client",
     "vantage-cli-util",
     # "vantage-config",
     "cbor-test",
@@ -24,5 +25,6 @@ exclude = [
     "bakery_api",
     "example_*",
     "vantage-ui-adapters",
+    "test-api-server",
 ]
 resolver = "2"

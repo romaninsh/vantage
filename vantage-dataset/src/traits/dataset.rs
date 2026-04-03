@@ -120,7 +120,7 @@ where
     /// # Errors
     ///
     /// Returns an error if the entity doesn't exist or deserialization fails.
-    async fn get(&self, id: &Self::Id) -> Result<E>;
+    async fn get(&self, id: impl Into<Self::Id> + Send) -> Result<E>;
 
     /// Retrieve one single entity from the set. If entities are ordered - return first entity.
     ///
@@ -345,7 +345,7 @@ where
     /// - `Ok(None)`: entity doesn't exist
     /// - `Err`: Storage or deserialization error
     async fn get_entity(&self, id: &Self::Id) -> Result<Option<ActiveEntity<'_, Self, E>>> {
-        match self.get(id).await {
+        match self.get(id.clone()).await {
             Ok(data) => Ok(Some(ActiveEntity::new(id.clone(), data, self))),
             Err(_) => Ok(None),
         }

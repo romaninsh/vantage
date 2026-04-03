@@ -148,8 +148,9 @@ where
         Ok(records)
     }
 
-    async fn get(&self, id: &Self::Id) -> Result<T> {
-        let record = self.get_value(id).await?;
+    async fn get(&self, id: impl Into<Self::Id> + Send) -> Result<T> {
+        let id = id.into();
+        let record = self.get_value(&id).await?;
         let entity = T::try_from_record(&record)
             .map_err(|_| vantage_error!("Failed to convert record to entity"))?;
         Ok(entity)

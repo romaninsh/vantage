@@ -35,10 +35,11 @@ where
         Ok(records)
     }
 
-    async fn get(&self, id: &Self::Id) -> Result<E> {
+    async fn get(&self, id: impl Into<Self::Id> + Send) -> Result<E> {
+        let id = id.into();
         let table = self.data_source.get_or_create_table(&self.table_name);
 
-        match table.get(id) {
+        match table.get(&id) {
             Some(record) => {
                 // Add the id field to the record for conversion
                 let mut record_with_id = record.clone();

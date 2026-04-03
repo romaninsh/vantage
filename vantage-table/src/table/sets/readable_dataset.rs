@@ -27,8 +27,9 @@ where
         Ok(entities)
     }
 
-    async fn get(&self, id: &Self::Id) -> Result<E> {
-        let record = self.data_source().get_table_value(self, id).await?;
+    async fn get(&self, id: impl Into<Self::Id> + Send) -> Result<E> {
+        let id = id.into();
+        let record = self.data_source().get_table_value(self, &id).await?;
         E::try_from_record(&record)
             .map_err(|_| vantage_core::error!("Failed to convert record to entity"))
     }
