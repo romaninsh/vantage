@@ -8,22 +8,25 @@ use vantage_types::Entity;
 
 use crate::{column::core::ColumnType, prelude::TableSource, table::Table};
 
-/// Trait for table data sources that defines column type separate from execution
-/// TableSource represents a data source that can create and manage tables
+/// Trait for table data sources that can return composable expressions for aggregation.
+///
+/// Unlike `TableSource` methods (which execute and return values), these methods return
+/// `AssociatedExpression` that can be:
+/// - Executed directly: `.get().await -> Result<T>`
+/// - Composed into other queries as subexpressions
 pub trait TableExprSource<Ex = Expression<Value>>:
     DataSource + TableSource + ExprDataSource<Self::Value>
 {
-    /// Get a select query for all data from a table (for ReadableValueSet implementation)
-    fn get_table_expr_count<E>(
+    /// Return an expression that resolves to the count of records in the table
+    fn get_table_count_expr<E>(
         &self,
         table: &Table<Self, E>,
     ) -> AssociatedExpression<'_, Self, Self::Value, usize>
     where
         E: Entity<Self::Value>;
 
-    /// Get a MAX query for a specific column with generic return type
-    /// The column type R is determined by the Column<R> parameter
-    fn get_table_expr_max<E, R>(
+    /// Return an expression that resolves to the sum of a column
+    fn get_table_sum_expr<E, R>(
         &self,
         table: &Table<Self, E>,
         column: &Self::Column<R>,
@@ -32,10 +35,23 @@ pub trait TableExprSource<Ex = Expression<Value>>:
         R: ColumnType + Default + AddAssign,
         E: Entity<Self::Value>;
 
-    // /// Get an insert query for a record into a table (for InsertableValueSet implementation)
-    // fn get_table_insert_query<E: Entity<Self::Value>>(
-    //     &self,
-    //     table: &Table<Self, E>,
-    //     record: &vantage_types::Record<Self::Value>,
-    // ) -> Result<Self::Insert>;
+    /// Return an expression that resolves to the maximum value of a column
+    fn get_table_max_expr<E, R>(
+        &self,
+        table: &Table<Self, E>,
+        column: &Self::Column<R>,
+    ) -> AssociatedExpression<'_, Self, Self::Value, R>
+    where
+        R: ColumnType + Default + AddAssign,
+        E: Entity<Self::Value>;
+
+    /// Return an expression that resolves to the minimum value of a column
+    fn get_table_min_expr<E, R>(
+        &self,
+        table: &Table<Self, E>,
+        column: &Self::Column<R>,
+    ) -> AssociatedExpression<'_, Self, Self::Value, R>
+    where
+        R: ColumnType + Default + AddAssign,
+        E: Entity<Self::Value>;
 }

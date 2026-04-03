@@ -60,7 +60,7 @@ pub trait TableSource: DataSource + Clone + 'static {
     /// - MongoDB: `{ field: { $regex: 'value', $options: 'i' } }`
     ///
     /// The implementation should search across appropriate fields in the table.
-    fn search_expression(
+    fn search_table_expr(
         &self,
         table: &impl TableLike,
         search_value: &str,
@@ -102,6 +102,26 @@ pub trait TableSource: DataSource + Clone + 'static {
 
     /// Get sum of a column in the table
     async fn get_sum<E, Type: ColumnType>(
+        &self,
+        table: &Table<Self, E>,
+        column: &Self::Column<Type>,
+    ) -> Result<Type>
+    where
+        E: Entity<Self::Value>,
+        Self: Sized;
+
+    /// Get maximum value of a column in the table
+    async fn get_max<E, Type: ColumnType>(
+        &self,
+        table: &Table<Self, E>,
+        column: &Self::Column<Type>,
+    ) -> Result<Type>
+    where
+        E: Entity<Self::Value>,
+        Self: Sized;
+
+    /// Get minimum value of a column in the table
+    async fn get_min<E, Type: ColumnType>(
         &self,
         table: &Table<Self, E>,
         column: &Self::Column<Type>,
@@ -205,11 +225,11 @@ pub trait TableSource: DataSource + Clone + 'static {
     ///
     /// ```rust,ignore
     /// let fk_col = source.get_column::<String>("bakery_id").unwrap();
-    /// let fk_values = source.data_source().column_values_expression(&source, &fk_col);
+    /// let fk_values = source.data_source().column_table_values_expr(&source, &fk_col);
     /// // Execute: let ids = fk_values.get().await?;
     /// // Or compose: target.add_condition(target["id"].in_((fk_values)));
     /// ```
-    fn column_values_expression<'a, E, Type: ColumnType>(
+    fn column_table_values_expr<'a, E, Type: ColumnType>(
         &'a self,
         table: &Table<Self, E>,
         column: &Self::Column<Type>,

@@ -83,7 +83,7 @@ impl TableSource for RestApi {
         Expression::new(template, parameters)
     }
 
-    fn search_expression(
+    fn search_table_expr(
         &self,
         _table: &impl TableLike,
         search_value: &str,
@@ -99,7 +99,8 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        self.fetch_records(table.table_name(), id_field_name(table).as_deref()).await
+        self.fetch_records(table.table_name(), id_field_name(table).as_deref())
+            .await
     }
 
     async fn get_table_value<E>(
@@ -111,7 +112,9 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        let records = self.fetch_records(table.table_name(), id_field_name(table).as_deref()).await?;
+        let records = self
+            .fetch_records(table.table_name(), id_field_name(table).as_deref())
+            .await?;
         records
             .get(id)
             .cloned()
@@ -126,7 +129,9 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        let records = self.fetch_records(table.table_name(), id_field_name(table).as_deref()).await?;
+        let records = self
+            .fetch_records(table.table_name(), id_field_name(table).as_deref())
+            .await?;
         Ok(records.into_iter().next())
     }
 
@@ -135,7 +140,9 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        let records = self.fetch_records(table.table_name(), id_field_name(table).as_deref()).await?;
+        let records = self
+            .fetch_records(table.table_name(), id_field_name(table).as_deref())
+            .await?;
         Ok(records.len() as i64)
     }
 
@@ -149,6 +156,30 @@ impl TableSource for RestApi {
         Self: Sized,
     {
         Err(error!("Sum not implemented for API backend"))
+    }
+
+    async fn get_max<E, Type: ColumnType>(
+        &self,
+        _table: &Table<Self, E>,
+        _column: &Self::Column<Type>,
+    ) -> Result<Type>
+    where
+        E: Entity<Self::Value>,
+        Self: Sized,
+    {
+        Err(error!("Max not implemented for API backend"))
+    }
+
+    async fn get_min<E, Type: ColumnType>(
+        &self,
+        _table: &Table<Self, E>,
+        _column: &Self::Column<Type>,
+    ) -> Result<Type>
+    where
+        E: Entity<Self::Value>,
+        Self: Sized,
+    {
+        Err(error!("Min not implemented for API backend"))
     }
 
     async fn insert_table_value<E>(
@@ -218,7 +249,7 @@ impl TableSource for RestApi {
         Err(error!("REST API is a read-only data source"))
     }
 
-    fn column_values_expression<'a, E, Type: ColumnType>(
+    fn column_table_values_expr<'a, E, Type: ColumnType>(
         &'a self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Type>,
@@ -228,6 +259,6 @@ impl TableSource for RestApi {
         Self: Sized,
     {
         // TODO: implement when conditions/expressions are added
-        unimplemented!("column_values_expression not yet supported for REST API")
+        unimplemented!("column_table_values_expr not yet supported for REST API")
     }
 }

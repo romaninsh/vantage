@@ -50,9 +50,8 @@ pub(crate) async fn apply_condition(
         OP_IN => {
             let resolved = resolve_param(&params[1]).await?;
             // Try to extract as Vec<AnyCsvType> (List variant)
-            let match_values: Vec<AnyCsvType> = resolved
-                .try_get::<Vec<AnyCsvType>>()
-                .unwrap_or_else(|| {
+            let match_values: Vec<AnyCsvType> =
+                resolved.try_get::<Vec<AnyCsvType>>().unwrap_or_else(|| {
                     // Fallback: treat as single value
                     vec![resolved.clone()]
                 });
@@ -102,9 +101,9 @@ pub(crate) fn resolve_param(
 
 #[cfg(test)]
 mod tests {
-    use crate::{Csv, AnyCsvType};
-    use vantage_table::operation::Operation;
+    use crate::{AnyCsvType, Csv};
     use vantage_dataset::prelude::ReadableValueSet;
+    use vantage_table::operation::Operation;
     use vantage_table::table::Table;
     use vantage_types::EmptyEntity;
 
@@ -190,7 +189,7 @@ mod tests {
 
         // Get paying client names as AssociatedExpression
         let name_col = csv.create_column::<String>("name");
-        let paying_names = csv.column_values_expression(&clients, &name_col);
+        let paying_names = csv.column_table_values_expr(&clients, &name_col);
 
         // Use IN condition — AssociatedExpression implements Expressive,
         // so we can nest it via (paying_names) syntax
