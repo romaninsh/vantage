@@ -1,6 +1,7 @@
 use std::ops::AddAssign;
 
 use vantage_expressions::Expressive;
+use vantage_expressions::SelectableDataSource;
 use vantage_expressions::expr_any;
 use vantage_expressions::traits::associated_expressions::AssociatedExpression;
 use vantage_table::column::core::ColumnType;
@@ -18,7 +19,7 @@ impl TableExprSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let mut select = super::build_select::build_select(table);
+        let mut select = table.select();
         select.order_by.clear();
         let count_return = select.as_count();
         AssociatedExpression::new(count_return.expr(), self)
@@ -33,7 +34,7 @@ impl TableExprSource for SurrealDB {
         R: ColumnType + Default + AddAssign,
         E: Entity<Self::Value>,
     {
-        let mut select = super::build_select::build_select(table);
+        let mut select = table.select();
         select.order_by.clear();
         let col_expr = expr_any!(column.name().to_string());
         let sum_return = select.as_sum(col_expr);
@@ -49,7 +50,7 @@ impl TableExprSource for SurrealDB {
         R: ColumnType,
         E: Entity<Self::Value>,
     {
-        let mut select = super::build_select::build_select(table);
+        let mut select = table.select();
         select.order_by.clear();
         let col_expr = expr_any!(column.name().to_string());
         let max_return = select.as_max(col_expr);
@@ -65,7 +66,7 @@ impl TableExprSource for SurrealDB {
         R: ColumnType,
         E: Entity<Self::Value>,
     {
-        let mut select = super::build_select::build_select(table);
+        let mut select = table.select();
         select.order_by.clear();
         let col_expr = expr_any!(column.name().to_string());
         let min_return = select.as_min(col_expr);

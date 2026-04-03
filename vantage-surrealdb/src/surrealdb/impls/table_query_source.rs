@@ -10,6 +10,6 @@ impl TableQuerySource<AnySurrealType> for SurrealDB {
         &self,
         table: &vantage_table::table::Table<Self, E>,
     ) -> Result<Self::Select> {
-        Ok(super::build_select::build_select(table))
+        Ok(table.select())
     }
 }
