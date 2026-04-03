@@ -100,32 +100,32 @@ pub trait TableSource: DataSource + Clone + 'static {
         E: Entity<Self::Value>,
         Self: Sized;
 
-    /// Get sum of a column in the table
-    async fn get_sum<E, Type: ColumnType>(
+    /// Get sum of a column in the table (returns native value type)
+    async fn get_sum<E>(
         &self,
         table: &Table<Self, E>,
-        column: &Self::Column<Type>,
-    ) -> Result<Type>
+        column: &Self::Column<Self::AnyType>,
+    ) -> Result<Self::Value>
     where
         E: Entity<Self::Value>,
         Self: Sized;
 
-    /// Get maximum value of a column in the table
-    async fn get_max<E, Type: ColumnType>(
+    /// Get maximum value of a column in the table (returns native value type)
+    async fn get_max<E>(
         &self,
         table: &Table<Self, E>,
-        column: &Self::Column<Type>,
-    ) -> Result<Type>
+        column: &Self::Column<Self::AnyType>,
+    ) -> Result<Self::Value>
     where
         E: Entity<Self::Value>,
         Self: Sized;
 
-    /// Get minimum value of a column in the table
-    async fn get_min<E, Type: ColumnType>(
+    /// Get minimum value of a column in the table (returns native value type)
+    async fn get_min<E>(
         &self,
         table: &Table<Self, E>,
-        column: &Self::Column<Type>,
-    ) -> Result<Type>
+        column: &Self::Column<Self::AnyType>,
+    ) -> Result<Self::Value>
     where
         E: Entity<Self::Value>,
         Self: Sized;

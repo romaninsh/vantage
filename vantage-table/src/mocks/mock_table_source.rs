@@ -9,7 +9,6 @@ use vantage_dataset::InsertableValueSet;
 use vantage_dataset::{
     ReadableValueSet, WritableValueSet,
     im::{ImDataSource, ImTable},
-    prelude::VantageError,
     traits::Result,
 };
 use vantage_expressions::{
@@ -217,31 +216,25 @@ impl TableSource for MockTableSource {
         }
     }
 
-    async fn get_sum<E, Type: ColumnType>(
+    async fn get_sum<E>(
         &self,
-        table: &Table<Self, E>,
-        _column: &Self::Column<Type>,
-    ) -> Result<Type>
+        _table: &Table<Self, E>,
+        _column: &Self::Column<Self::AnyType>,
+    ) -> Result<Self::Value>
     where
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        let data = self.data.lock().await;
-        let _vec = data
-            .get(table.table_name())
-            .ok_or(VantageError::no_data())?;
-
-        // Mock implementation - sum not supported
         Err(vantage_core::error!(
             "Sum not implemented for MockTableSource"
         ))
     }
 
-    async fn get_max<E, Type: ColumnType>(
+    async fn get_max<E>(
         &self,
         _table: &Table<Self, E>,
-        _column: &Self::Column<Type>,
-    ) -> Result<Type>
+        _column: &Self::Column<Self::AnyType>,
+    ) -> Result<Self::Value>
     where
         E: Entity<Self::Value>,
         Self: Sized,
@@ -251,11 +244,11 @@ impl TableSource for MockTableSource {
         ))
     }
 
-    async fn get_min<E, Type: ColumnType>(
+    async fn get_min<E>(
         &self,
         _table: &Table<Self, E>,
-        _column: &Self::Column<Type>,
-    ) -> Result<Type>
+        _column: &Self::Column<Self::AnyType>,
+    ) -> Result<Self::Value>
     where
         E: Entity<Self::Value>,
         Self: Sized,

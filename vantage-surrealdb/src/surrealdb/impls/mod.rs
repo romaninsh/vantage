@@ -1,4 +1,5 @@
 pub mod base;
+pub mod build_select;
 pub mod expr_data_source;
 pub mod table_source;
 

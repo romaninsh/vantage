@@ -56,26 +56,17 @@ where
     }
 
     /// Get sum of a column in the table
-    pub async fn get_sum<Type>(&self, column: &T::Column<Type>) -> Result<Type>
-    where
-        Type: ColumnType,
-    {
+    pub async fn get_sum(&self, column: &T::Column<T::AnyType>) -> Result<T::Value> {
         self.data_source.get_sum(self, column).await
     }
 
     /// Get max of a column in the table
-    pub async fn get_max<Type>(&self, column: &T::Column<Type>) -> Result<Type>
-    where
-        Type: ColumnType,
-    {
+    pub async fn get_max(&self, column: &T::Column<T::AnyType>) -> Result<T::Value> {
         self.data_source.get_max(self, column).await
     }
 
     /// Get min of a column in the table
-    pub async fn get_min<Type>(&self, column: &T::Column<Type>) -> Result<Type>
-    where
-        Type: ColumnType,
-    {
+    pub async fn get_min(&self, column: &T::Column<T::AnyType>) -> Result<T::Value> {
         self.data_source.get_min(self, column).await
     }
 

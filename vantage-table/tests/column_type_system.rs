@@ -357,11 +357,11 @@ impl TableSource for Type3TableSource {
         Ok(self.data.len() as i64)
     }
 
-    async fn get_sum<E, Type: ColumnType>(
+    async fn get_sum<E>(
         &self,
         _table: &Table<Self, E>,
-        _column: &Self::Column<Type>,
-    ) -> Result<Type>
+        _column: &Self::Column<Self::AnyType>,
+    ) -> Result<Self::Value>
     where
         E: Entity<Self::Value>,
         Self: Sized,
@@ -371,11 +371,11 @@ impl TableSource for Type3TableSource {
         ))
     }
 
-    async fn get_max<E, Type: ColumnType>(
+    async fn get_max<E>(
         &self,
         _table: &Table<Self, E>,
-        _column: &Self::Column<Type>,
-    ) -> Result<Type>
+        _column: &Self::Column<Self::AnyType>,
+    ) -> Result<Self::Value>
     where
         E: Entity<Self::Value>,
         Self: Sized,
@@ -385,11 +385,11 @@ impl TableSource for Type3TableSource {
         ))
     }
 
-    async fn get_min<E, Type: ColumnType>(
+    async fn get_min<E>(
         &self,
         _table: &Table<Self, E>,
-        _column: &Self::Column<Type>,
-    ) -> Result<Type>
+        _column: &Self::Column<Self::AnyType>,
+    ) -> Result<Self::Value>
     where
         E: Entity<Self::Value>,
         Self: Sized,
