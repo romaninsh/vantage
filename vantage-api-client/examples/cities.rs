@@ -28,8 +28,7 @@ pub struct Country {
 
 impl Country {
     pub fn api_table() -> Table<RestApi, Country> {
-        Table::new("countries", api())
-            .with_id_column("name")
+        Table::new("countries", api()).with_id_column("name")
     }
 
     pub fn ref_cities(&self) -> Table<RestApi, City> {
@@ -63,10 +62,7 @@ async fn main() -> anyhow::Result<()> {
     let token = body["token"].as_str().expect("No token in response");
 
     // Initialize static API
-    set_api(
-        RestApi::new("http://127.0.0.1:3030")
-            .with_auth(format!("Bearer {}", token)),
-    );
+    set_api(RestApi::new("http://127.0.0.1:3030").with_auth(format!("Bearer {}", token)));
 
     // List countries
     let countries = Country::api_table();

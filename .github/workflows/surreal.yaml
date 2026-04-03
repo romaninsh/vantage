@@ -30,7 +30,6 @@ jobs:
           docker run -d \
             --name surrealdb \
             -p 8000:8000 \
-            -e SURREAL_CAPS_ALLOW_EXPERIMENTAL=graphql \
             surrealdb/surrealdb:latest \
             start \
             --log debug \
@@ -41,8 +40,26 @@ jobs:
       - name: Wait for SurrealDB to be ready
         run: |
           echo "Waiting for SurrealDB to start..."
-          timeout 60 bash -c 'until curl -f http://localhost:8000/health 2>/dev/null; do sleep 1; done'
-          echo "SurrealDB is ready!"
+          echo "Docker container status:"
+          docker ps -a --filter name=surrealdb
+          echo "Container logs so far:"
+          docker logs surrealdb 2>&1 || true
+          echo "---"
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8000/health 2>/dev/null; then
+              echo "SurrealDB is ready! (took ${i}s)"
+              exit 0
+            fi
+            if ! docker ps --filter name=surrealdb --filter status=running -q | grep -q .; then
+              echo "ERROR: SurrealDB container is not running!"
+              docker logs surrealdb 2>&1
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "ERROR: SurrealDB failed to start within 60s"
+          docker logs surrealdb 2>&1
+          exit 1
 
       - name: Setup environment variables
         run: |
@@ -113,8 +130,7 @@ jobs:
           DB_NS: bakery
 
       - name: Run bakery_model3 example
-        run: cargo run --example 0-intro
-        working-directory: bakery_model3
+        run: cargo run -p bakery_model3 --example 0-intro
         env:
           DB_ENDPOINT: ws://localhost:8000
           DB_USER: root

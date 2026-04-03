@@ -131,7 +131,7 @@ mod tests {
         assert_eq!(replaced2.name, "Eve");
 
         // Test patch - create a partial update that only changes the name
-        let original = table.get(&"1".to_string()).await.unwrap();
+        let original = table.get("1".to_string()).await.unwrap();
         assert_eq!(original.name, "Alice");
         assert_eq!(original.age, 30);
 
@@ -155,7 +155,7 @@ mod tests {
 
         // Test delete
         table.delete(&"2".to_string()).await.unwrap();
-        let result3 = table.get(&"2".to_string()).await;
+        let result3 = table.get("2".to_string()).await;
         assert!(result3.is_err()); // Should be deleted
 
         // Test delete non-existing ID should fail

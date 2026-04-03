@@ -83,11 +83,8 @@ impl<T: Sync + Send + Sized> HttpClientPool<T> {
             match result {
                 EventualRequestResult::Success => {
                     request.time_queue_start();
-                    match response_sender.send(request).await {
-                        Err(e) => {
-                            eprintln!("Error sending response back from worker: {}", e.to_string())
-                        }
-                        _ => {}
+                    if let Err(e) = response_sender.send(request).await {
+                        eprintln!("Error sending response back from worker: {}", e)
                     }
                 }
                 EventualRequestResult::Retry => {
@@ -104,11 +101,8 @@ impl<T: Sync + Send + Sized> HttpClientPool<T> {
     /// Cap at rate_limit requests per second
     pub fn with_rate_limit(mut self, rate_limit: Decimal) -> Self {
         let desired_rate = rate_limit / Decimal::from_usize(self.workers).unwrap();
-        if self.rate_limit.is_some() {
-            self.rate_limit
-                .as_mut()
-                .unwrap()
-                .set_desired_rate(desired_rate);
+        if let Some(rl) = self.rate_limit.as_mut() {
+            rl.set_desired_rate(desired_rate);
         }
         self
     }

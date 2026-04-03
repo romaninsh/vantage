@@ -190,6 +190,7 @@ pub trait TableSource: DataSource + Clone + 'static {
     /// Default implementation wraps `list_table_values` into a stream.
     /// Backends with native streaming (e.g. REST APIs with pagination)
     /// can override this to yield records incrementally.
+    #[allow(clippy::type_complexity)]
     fn stream_table_values<'a, E>(
         &'a self,
         table: &Table<Self, E>,

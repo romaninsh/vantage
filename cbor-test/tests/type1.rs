@@ -67,15 +67,18 @@ fn test_3_record_to_cbor_map() {
     // Verify the record was serialized to CBOR map with correct structure
     if let CborValue::Map(map) = cbor_value {
         assert_eq!(map.len(), 3);
-        assert!(map
-            .iter()
-            .any(|(k, _)| k == &CborValue::Text("name".to_string())));
-        assert!(map
-            .iter()
-            .any(|(k, _)| k == &CborValue::Text("website".to_string())));
-        assert!(map
-            .iter()
-            .any(|(k, _)| k == &CborValue::Text("email".to_string())));
+        assert!(
+            map.iter()
+                .any(|(k, _)| k == &CborValue::Text("name".to_string()))
+        );
+        assert!(
+            map.iter()
+                .any(|(k, _)| k == &CborValue::Text("website".to_string()))
+        );
+        assert!(
+            map.iter()
+                .any(|(k, _)| k == &CborValue::Text("email".to_string()))
+        );
     } else {
         panic!("Expected CBOR map");
     }

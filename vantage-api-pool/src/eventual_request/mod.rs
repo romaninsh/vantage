@@ -123,7 +123,7 @@ impl<T: Sync + Send + Sized> EventualRequest<T> {
 
         match client.execute(request).await {
             Ok(response) if response.status() == 429 => {
-                self.retries = self.retries + 1;
+                self.retries += 1;
 
                 let delay = self
                     .extract_retry_delay(&response)
@@ -138,7 +138,7 @@ impl<T: Sync + Send + Sized> EventualRequest<T> {
                 EventualRequestResult::Retry
             }
             Ok(response) if response.status().is_server_error() => {
-                self.retries = self.retries + 1;
+                self.retries += 1;
                 let status = response.status();
 
                 let delay = self.calculate_backoff_delay();
@@ -162,7 +162,7 @@ impl<T: Sync + Send + Sized> EventualRequest<T> {
                 EventualRequestResult::Error(error)
             }
             Err(err) => {
-                self.retries = self.retries + 1;
+                self.retries += 1;
 
                 let delay = self.calculate_backoff_delay();
 

@@ -1,6 +1,6 @@
 use rust_decimal::Decimal;
 use serde_json::Value as JsonValue;
-use vantage_types::{entity, vantage_type_system, IntoRecord, TryFromRecord};
+use vantage_types::{IntoRecord, TryFromRecord, entity, vantage_type_system};
 
 // SurrealDB type system with CBOR
 vantage_type_system! {

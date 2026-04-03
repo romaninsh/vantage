@@ -10,6 +10,7 @@ type BoxFuture<'a, T> = std::pin::Pin<Box<dyn Future<Output = T> + Send + Sync +
 
 struct Metadata {}
 
+#[allow(clippy::type_complexity)]
 pub struct AwwPool {
     http_client_pool: HttpClientPool<Metadata>,
     eventual_request_matcher: EventualRequestMatcher<Metadata>,

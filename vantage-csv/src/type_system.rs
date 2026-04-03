@@ -157,13 +157,19 @@ impl CsvType for Vec<AnyCsvType> {
 
 // From impls for common types — enables Operation::eq() with native Rust types
 impl From<i64> for AnyCsvType {
-    fn from(v: i64) -> Self { AnyCsvType::new(v) }
+    fn from(v: i64) -> Self {
+        AnyCsvType::new(v)
+    }
 }
 impl From<f64> for AnyCsvType {
-    fn from(v: f64) -> Self { AnyCsvType::new(v) }
+    fn from(v: f64) -> Self {
+        AnyCsvType::new(v)
+    }
 }
 impl From<bool> for AnyCsvType {
-    fn from(v: bool) -> Self { AnyCsvType::new(v) }
+    fn from(v: bool) -> Self {
+        AnyCsvType::new(v)
+    }
 }
 
 /// Parse a raw CSV string into an `AnyCsvType` using the column's type variant.
@@ -349,7 +355,7 @@ mod tests {
 
     #[test]
     fn test_roundtrip_float() {
-        let any = AnyCsvType::new(3.14_f64);
+        let any = AnyCsvType::new(2.72_f64);
         assert_eq!(any.type_variant(), Some(CsvTypeVariants::Float));
         assert!(any.try_get::<f64>().is_some());
     }

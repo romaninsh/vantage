@@ -3,4 +3,5 @@ target
 .ipynb_checkpoints
 .env*
 *.redb
+.c*e
 .claude/

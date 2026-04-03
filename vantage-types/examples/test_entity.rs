@@ -1,4 +1,4 @@
-use vantage_types::{vantage_type_system, IntoRecord, Record, TryFromRecord};
+use vantage_types::{IntoRecord, Record, TryFromRecord, vantage_type_system};
 use vantage_types_entity::entity;
 
 vantage_type_system! {

@@ -79,7 +79,7 @@ mod tests {
         assert_eq!(second_second.get_value(), dec!(9));
 
         // Average RPS after 2 seconds: (10+9)/2 = 9.5
-        let two_seconds = first_second.clone() + second_second.clone();
+        let two_seconds = first_second + second_second;
         assert_eq!(two_seconds.get_value(), dec!(9.5));
 
         // Third second: 8 requests

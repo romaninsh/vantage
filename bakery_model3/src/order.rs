@@ -21,7 +21,9 @@ impl Order {
             .with_column_of::<bool>("is_deleted")
             .with_column_of::<String>("created_at")
             .with_column_of::<String>("lines")
-            .with_one("client", "client_id", move || Client::csv_table(csv2.clone()))
+            .with_one("client", "client_id", move || {
+                Client::csv_table(csv2.clone())
+            })
             .into_entity()
     }
 }

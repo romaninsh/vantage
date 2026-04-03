@@ -24,8 +24,12 @@ impl Client {
             .with_column_of::<String>("contact_details")
             .with_column_of::<bool>("is_paying_client")
             .with_column_of::<String>("bakery_id")
-            .with_one("bakery", "bakery_id", move || Bakery::csv_table(csv2.clone()))
-            .with_many("orders", "client_id", move || Order::csv_table(csv3.clone()))
+            .with_one("bakery", "bakery_id", move || {
+                Bakery::csv_table(csv2.clone())
+            })
+            .with_many("orders", "client_id", move || {
+                Order::csv_table(csv3.clone())
+            })
             .into_entity()
     }
 }

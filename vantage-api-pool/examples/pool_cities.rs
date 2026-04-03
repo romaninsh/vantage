@@ -30,8 +30,7 @@ pub struct Country {
 
 impl Country {
     pub fn api_table() -> Table<PoolApi, Country> {
-        Table::new("countries", pool())
-            .with_id_column("name")
+        Table::new("countries", pool()).with_id_column("name")
     }
 
     pub fn ref_cities(&self) -> Table<PoolApi, City> {

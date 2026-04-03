@@ -61,7 +61,7 @@ impl TableSource for SurrealDB {
     ) -> Expression<Self::Value> {
         // TODO: iterate searchable columns once TableLike exposes them
         Expression::new(
-            "SEARCH '{}'",
+            "SEARCH {}",
             vec![ExpressiveEnum::Scalar(AnySurrealType::new(
                 search_value.to_string(),
             ))],
