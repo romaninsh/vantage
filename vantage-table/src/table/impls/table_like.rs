@@ -60,7 +60,7 @@ where
     }
 
     fn search_expression(&self, search_value: &str) -> Result<AnyExpression> {
-        let expr = self.data_source().search_expression(self, search_value);
+        let expr = self.data_source().search_table_expr(self, search_value);
         Ok(AnyExpression::new(expr))
     }
 

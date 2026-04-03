@@ -25,15 +25,16 @@ where
     where
         T::Value: From<String>,
     {
-        self.data_source().get_table_expr_count(self)
-        /*
-        let table_name = self.table_name().to_string();
-        let query = self.data_source.expr(
-            "SELECT COUNT(*) FROM {}",
-            vec![ExpressiveEnum::Scalar(table_name.into())],
-        );
-        self.data_source.associate::<i64>(query)
-        */
+        self.data_source().get_table_count_expr(self)
+    }
+
+    /// Get an expression for the sum of a column
+    /// Returns an AssociatedExpression that can be executed or composed
+    pub fn get_expr_sum<R: ColumnType + Default + AddAssign>(
+        &self,
+        column: &T::Column<R>,
+    ) -> AssociatedExpression<'_, T, T::Value, R> {
+        self.data_source().get_table_sum_expr(self, column)
     }
 
     /// Get an expression for the maximum value of a column
@@ -42,6 +43,15 @@ where
         &self,
         column: &T::Column<R>,
     ) -> AssociatedExpression<'_, T, T::Value, R> {
-        self.data_source().get_table_expr_max(self, column)
+        self.data_source().get_table_max_expr(self, column)
+    }
+
+    /// Get an expression for the minimum value of a column
+    /// Returns an AssociatedExpression that can be executed or composed
+    pub fn get_expr_min<R: ColumnType + Default + AddAssign>(
+        &self,
+        column: &T::Column<R>,
+    ) -> AssociatedExpression<'_, T, T::Value, R> {
+        self.data_source().get_table_min_expr(self, column)
     }
 }

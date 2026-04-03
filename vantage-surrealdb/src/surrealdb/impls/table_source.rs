@@ -1,15 +1,15 @@
 use async_trait::async_trait;
 use indexmap::IndexMap;
-use vantage_core::error;
+
 use vantage_dataset::traits::Result;
 use vantage_expressions::Expression;
 use vantage_expressions::traits::associated_expressions::AssociatedExpression;
 use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_table::column::core::{Column, ColumnType};
-use vantage_table::column::flags::ColumnFlag;
+
 use vantage_table::table::Table;
-use vantage_table::traits::column_like::ColumnLike;
+
 use vantage_table::traits::table_like::TableLike;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
@@ -54,32 +54,18 @@ impl TableSource for SurrealDB {
         Expression::new(template, parameters)
     }
 
-    fn search_expression(
+    fn search_table_expr(
         &self,
-        table: &impl TableLike,
+        _table: &impl TableLike,
         search_value: &str,
     ) -> Expression<Self::Value> {
-        use vantage_table::column::collection::ColumnCollectionExt;
-
-        let searchable_columns = table.columns().only(ColumnFlag::Searchable);
-
-        if searchable_columns.is_empty() {
-            return Expression::new("true", vec![]);
-        }
-
-        let conditions: Vec<Expression<Self::Value>> = searchable_columns
-            .iter()
-            .map(|(_name, col)| {
-                Expression::new(
-                    format!("{} @@ {{}}", col.name()),
-                    vec![ExpressiveEnum::Scalar(AnySurrealType::new(
-                        search_value.to_string(),
-                    ))],
-                )
-            })
-            .collect();
-
-        Expression::from_vec(conditions, " OR ")
+        // TODO: iterate searchable columns once TableLike exposes them
+        Expression::new(
+            "SEARCH '{}'",
+            vec![ExpressiveEnum::Scalar(AnySurrealType::new(
+                search_value.to_string(),
+            ))],
+        )
     }
 
     async fn list_table_values<E>(
@@ -129,6 +115,28 @@ impl TableSource for SurrealDB {
         E: Entity<Self::Value>,
     {
         todo!("get_sum: SELECT math::sum(column) FROM table GROUP ALL")
+    }
+
+    async fn get_max<E, Type: ColumnType>(
+        &self,
+        _table: &Table<Self, E>,
+        _column: &Self::Column<Type>,
+    ) -> Result<Type>
+    where
+        E: Entity<Self::Value>,
+    {
+        todo!("get_max: SELECT math::max(column) FROM table GROUP ALL")
+    }
+
+    async fn get_min<E, Type: ColumnType>(
+        &self,
+        _table: &Table<Self, E>,
+        _column: &Self::Column<Type>,
+    ) -> Result<Type>
+    where
+        E: Entity<Self::Value>,
+    {
+        todo!("get_min: SELECT math::min(column) FROM table GROUP ALL")
     }
 
     async fn insert_table_value<E>(
@@ -192,7 +200,7 @@ impl TableSource for SurrealDB {
         todo!("insert_table_return_id_value: CREATE table SET ... RETURN id")
     }
 
-    fn column_values_expression<'a, E, Type: ColumnType>(
+    fn column_table_values_expr<'a, E, Type: ColumnType>(
         &'a self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Type>,
@@ -201,6 +209,6 @@ impl TableSource for SurrealDB {
         E: Entity<Self::Value> + 'static,
         Self: ExprDataSource<Self::Value> + Sized,
     {
-        todo!("column_values_expression: subquery for column values")
+        todo!("column_table_values_expr: subquery for column values")
     }
 }
