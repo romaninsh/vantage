@@ -109,6 +109,11 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             .as_ref()
             .and_then(|name| self.columns.get(name))
     }
+
+    /// Get the current pagination configuration, if set
+    pub fn pagination(&self) -> Option<&Pagination> {
+        self.pagination.as_ref()
+    }
 }
 
 impl<T: TableSource, E: Entity<T::Value>> std::ops::Index<&str> for Table<T, E> {

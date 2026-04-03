@@ -2,15 +2,8 @@
 
 ## Remaining Work
 
-1. **Implement `SelectableDataSource`** — `select()` returns `SurrealSelect`. Unlocks
-   `Table::select()`, `get_count_query()`, `get_sum_query()`.
-2. **Implement `TableQuerySource`** — `get_table_select_query()` using `build_select`.
-3. **Implement `TableExprSource`** — count/sum/max/min expr methods using `AssociatedExpression`.
-4. **Enable `search_expression.rs` test** — once search impl uses column flags.
-5. **Delete `test_expressions.rs`** — old 0.2 API, fully superseded.
-6. **Rebuild table extensions** — SurrealDB-specific methods on `Table<SurrealDB, E>`.
-7. **Enable remaining tests** one by one, updating to 0.3 API.
-8. **Pagination support** — wire up limit/skip in `build_select` (needs `TableLike` `'static` fix).
+1. **Enable remaining tests** one by one, updating to 0.3 API.
+2. **Pagination support** — wire up limit/skip in `build_select` (needs `TableLike` `'static` fix).
 
 ### Future: Mutation query objects
 
@@ -23,31 +16,35 @@ Eventually, `SelectableDataSource` (or a new trait) could add `type Delete`, `ty
 
 ## Disabled Modules
 
-| Module              | Plan                                                                    |
-| ------------------- | ----------------------------------------------------------------------- |
-| `column`            | Not needed — use `Column<Type>` from vantage-table directly.            |
-| `typed_expression`  | May revive later for compile-time type checking.                        |
-| `conditional`       | IF-THEN-ELSE builder. Trivial to port — just switch to `surreal_expr!`. |
-| `associated_query`  | Replaced by `AssociatedExpression` from vantage-expressions.            |
-| `field_projection`  | Replaced by `SelectField` + `Field`.                                    |
-| `protocol`          | Replaced by `Selectable` / `ExprDataSource` from vantage-expressions.   |
-| `variable`          | SurrealDB LET variable support. Low priority.                           |
-| `table/`            | Old SurrealTableExt. Rebuild as table extensions.                       |
-| `selectsource`      | Replace with `SelectableDataSource` or integrate into TableSource.      |
-| `tablesource` (old) | 0.2 impl. Reference only.                                               |
-| `prelude`           | Re-enable once public API stabilizes.                                   |
+| Module             | Plan                                                                    |
+| ------------------ | ----------------------------------------------------------------------- |
+| `typed_expression` | May revive later for compile-time type checking.                        |
+| `conditional`      | IF-THEN-ELSE builder. Trivial to port — just switch to `surreal_expr!`. |
+| `variable`         | SurrealDB LET variable support. Low priority.                           |
+| `prelude`          | Re-enable once public API stabilizes.                                   |
+
+### Superseded modules (kept as reference)
+
+| Module             | Replaced by                                                  |
+| ------------------ | ------------------------------------------------------------ |
+| `column`           | `Column<Type>` from vantage-table.                           |
+| `associated_query` | `AssociatedExpression` from vantage-expressions.             |
+| `field_projection` | `SelectField` + `Field`.                                     |
+| `protocol`         | `Selectable` / `ExprDataSource` from vantage-expressions.    |
+| `table/`           | `SurrealTableExt` in `src/ext.rs` + `impls/table_source.rs`. |
+| `selectsource`     | `SelectableDataSource` impl in `impls/`.                     |
+| `tablesource`      | `impls/table_source.rs`.                                     |
 
 ### Disabled tests
 
-| Test file                  | Depends on                                                                 |
-| -------------------------- | -------------------------------------------------------------------------- |
-| `queries.rs`               | `prelude`, `SurrealMockBuilder`, `select_surreal` — needs table extensions |
-| `search_expression.rs`     | `TableSource::search_table_expr` — needs column flags                      |
-| `table_ext.rs`             | SurrealTableExt — enable after table extensions                            |
-| `table_ext_mocked.rs`      | Same                                                                       |
-| `test_expressions.rs`      | Old API — **delete**, functionality covered by new type system             |
-| `test_insert_cbor.rs`      | Old insert tests, superseded by `statements.rs`                            |
-| `test_insert_unstructured` | Old insert tests, superseded by `statements.rs`                            |
+| Test file                  | Status                                                     |
+| -------------------------- | ---------------------------------------------------------- |
+| `queries.rs`               | Old 0.2 API (`prelude`, `SurrealMockBuilder`). Superseded. |
+| `table_ext.rs`             | Old 0.2 `SurrealTableExt`. Superseded by `ext.rs`.         |
+| `table_ext_mocked.rs`      | Same.                                                      |
+| `test_expressions.rs`      | Old 0.2 expression API. Fully superseded.                  |
+| `test_insert_cbor.rs`      | Old insert tests. Superseded by `statements.rs`.           |
+| `test_insert_unstructured` | Old insert tests. Superseded by `statements.rs`.           |
 
 ---
 
@@ -72,3 +69,11 @@ Eventually, `SelectableDataSource` (or a new trait) could add `type Delete`, `ty
   runtime, WS connection dies between tests). Create fresh connection per test instead.
 - `connect_surrealdb()` in bakery_model3 uses `cbor://` DSN scheme, not `ws://`.
 - Re-exported `CborValue` and `SurrealConnection` from vantage-surrealdb for downstream use.
+- `TableExprSource` methods don't need `defer()` — same-database expressions compose directly.
+  Deferral is only for cross-database scenarios.
+- `Selectable` trait `as_count`/`as_sum` return bare expressions without subquery context. Use
+  inherent `SurrealSelect<Rows>` methods for full query wrapping, then `.expr()` via `Expressive`
+  trait.
+- `Table::select()` (from vantage-table `selectable.rs`) already wires source, columns, conditions,
+  ordering, and pagination into `T::Select`. No need for a duplicate `select_surreal()` method — ext
+  trait only adds type-narrowing methods (`select_first`, `select_column`, `select_single`).

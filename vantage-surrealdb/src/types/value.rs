@@ -4,6 +4,7 @@
 
 use crate::types::{AnySurrealType, SurrealType, SurrealTypeNoneMarker};
 use ciborium::Value as CborValue;
+use serde_json::Value as JsonValue;
 use vantage_expressions::{Expression, Expressive};
 
 /// AnySurrealType implements SurrealType as a passthrough — it already holds
@@ -41,6 +42,36 @@ impl_from_for_any!(
 impl From<&str> for AnySurrealType {
     fn from(val: &str) -> Self {
         AnySurrealType::new(val.to_string())
+    }
+}
+
+impl From<JsonValue> for AnySurrealType {
+    fn from(val: JsonValue) -> Self {
+        let cbor = json_to_cbor(val);
+        AnySurrealType::from_cbor(&cbor).expect("json_to_cbor produced unconvertible CBOR")
+    }
+}
+
+fn json_to_cbor(val: JsonValue) -> CborValue {
+    match val {
+        JsonValue::Null => CborValue::Null,
+        JsonValue::Bool(b) => CborValue::Bool(b),
+        JsonValue::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                CborValue::Integer(i.into())
+            } else if let Some(f) = n.as_f64() {
+                CborValue::Float(f)
+            } else {
+                CborValue::Text(n.to_string())
+            }
+        }
+        JsonValue::String(s) => CborValue::Text(s),
+        JsonValue::Array(arr) => CborValue::Array(arr.into_iter().map(json_to_cbor).collect()),
+        JsonValue::Object(map) => CborValue::Map(
+            map.into_iter()
+                .map(|(k, v)| (CborValue::Text(k), json_to_cbor(v)))
+                .collect(),
+        ),
     }
 }
 
