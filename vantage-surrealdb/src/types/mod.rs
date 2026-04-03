@@ -163,6 +163,80 @@ mod value;
 //     }
 // }
 
+impl std::fmt::Display for AnySurrealType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use ciborium::Value;
+        match &self.value {
+            Value::Null => write!(f, "NULL"),
+            Value::Bool(b) => write!(f, "{}", b),
+            Value::Integer(i) => write!(f, "{}", i128::from(*i)),
+            Value::Float(v) => write!(f, "{}", v),
+            Value::Text(s) => write!(f, "\"{}\"", s),
+            Value::Bytes(b) => write!(f, "h'{}'", hex::encode(b)),
+            Value::Array(arr) => {
+                write!(f, "[")?;
+                for (i, item) in arr.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    if let Some(any) = AnySurrealType::from_cbor(item) {
+                        write!(f, "{}", any)?;
+                    } else {
+                        write!(f, "{:?}", item)?;
+                    }
+                }
+                write!(f, "]")
+            }
+            Value::Map(map) => {
+                write!(f, "{{")?;
+                for (i, (k, v)) in map.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    let key_str = match k {
+                        Value::Text(s) => s.clone(),
+                        _ => format!("{:?}", k),
+                    };
+                    if let Some(any) = AnySurrealType::from_cbor(v) {
+                        write!(f, "{}: {}", key_str, any)?;
+                    } else {
+                        write!(f, "{}: {:?}", key_str, v)?;
+                    }
+                }
+                write!(f, "}}")
+            }
+            Value::Tag(6, _) => write!(f, "NONE"),
+            Value::Tag(8, inner) => {
+                // Record ID: Tag(8, Array([Text(table), Text(id)]))
+                if let Value::Array(parts) = inner.as_ref() {
+                    if let (Some(Value::Text(table)), Some(Value::Text(id))) =
+                        (parts.first(), parts.get(1))
+                    {
+                        return write!(f, "{}:{}", table, id);
+                    }
+                }
+                write!(f, "{:?}", inner)
+            }
+            Value::Tag(10, inner) => {
+                // Decimal
+                if let Value::Text(s) = inner.as_ref() {
+                    write!(f, "{}", s)
+                } else {
+                    write!(f, "{:?}", inner)
+                }
+            }
+            Value::Tag(_, inner) => {
+                if let Some(any) = AnySurrealType::from_cbor(inner) {
+                    write!(f, "{}", any)
+                } else {
+                    write!(f, "{:?}", inner)
+                }
+            }
+            other => write!(f, "{:?}", other),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

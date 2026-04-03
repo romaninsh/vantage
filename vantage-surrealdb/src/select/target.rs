@@ -11,11 +11,9 @@ use crate::Expr;
 /// # Examples
 ///
 /// ```rust
-/// use vantage_expressions::expr;
-/// use vantage_surrealdb::select::target::Target;
+/// use vantage_surrealdb::{select::target::Target, surreal_expr};
 ///
-/// // doc wip
-/// let target = Target::new(expr!("users"));
+/// let target = Target::new(surreal_expr!("users"));
 /// ```
 
 #[derive(Debug, Clone)]

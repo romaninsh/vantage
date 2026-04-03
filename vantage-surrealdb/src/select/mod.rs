@@ -25,7 +25,7 @@ use crate::{
     surrealdb::SurrealDB,
 };
 use vantage_expressions::{
-    ExprDataSource, Expression, Expressive, ExpressiveEnum,
+    ExprDataSource, Expression, Expressive,
     result::{self, QueryResult},
     traits::selectable::{Selectable, SourceRef},
 };
@@ -37,13 +37,12 @@ use vantage_expressions::{
 /// # Examples
 ///
 /// ```rust
-/// use vantage_expressions::{expr, protocol::selectable::Selectable};
-/// use vantage_surrealdb::select::SurrealSelect;
+/// use vantage_expressions::Selectable;
+/// use vantage_surrealdb::{select::SurrealSelect, surreal_expr};
 ///
-/// // doc wip
 /// let mut select = SurrealSelect::new();
 /// select.set_source("users", None);
-/// select.add_field("name".to_string());
+/// select.add_field("name");
 /// ```
 #[derive(Debug, Clone)]
 pub struct SurrealSelect<T = result::Rows> {
@@ -314,7 +313,7 @@ impl<T: QueryResult> Selectable<crate::AnySurrealType> for SurrealSelect<T> {
             ExpressiveEnum::Scalar(s) => {
                 let source = s
                     .try_get::<String>()
-                    .unwrap_or_else(|_| panic!("Source must be a string, found {:?}", s));
+                    .unwrap_or_else(|| panic!("Source must be a string, found {:?}", s));
                 Identifier::new(source).expr()
             }
             ExpressiveEnum::Nested(expr) => surreal_expr!("({})", (expr)),
@@ -419,14 +418,8 @@ impl<T: QueryResult> Selectable<crate::AnySurrealType> for SurrealSelect<T> {
 }
 
 impl SurrealSelect<result::Rows> {
-    pub fn as_sum(self, field_or_expr: impl Into<ExpressiveEnum<AnySurrealType>>) -> SurrealReturn {
-        let query = self.without_fields();
-        let query = match field_or_expr.into() {
-            ExpressiveEnum::Scalar(s) => query.only_column(s.try_get::<String>().unwrap()),
-            ExpressiveEnum::Nested(e) => query.only_expression(e),
-            _ => panic!("Only scalar string or nested is acceptable"),
-        };
-
+    pub fn as_sum(self, field_or_expr: impl Expressive<AnySurrealType>) -> SurrealReturn {
+        let query = self.without_fields().only_expression(field_or_expr.expr());
         SurrealReturn::new(Sum::new(query.expr()).into())
     }
     pub fn as_count(self) -> SurrealReturn {

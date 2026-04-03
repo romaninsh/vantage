@@ -13,12 +13,10 @@ use crate::{AnySurrealType, Expr, identifier::Identifier, surreal_expr};
 /// # Examples
 ///
 /// ```rust
-/// use vantage_expressions::expr;
-/// use vantage_surrealdb::select::select_field::SelectField;
+/// use vantage_surrealdb::{select::select_field::SelectField, surreal_expr};
 ///
-/// // doc wip
-/// let field = SelectField::new(expr!("name"));
-/// let aliased = SelectField::new(expr!("count()")).with_alias("total".to_string());
+/// let field = SelectField::new(surreal_expr!("name"));
+/// let aliased = SelectField::new(surreal_expr!("count()")).with_alias("total".to_string());
 /// ```
 
 #[derive(Debug, Clone)]

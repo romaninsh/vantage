@@ -52,7 +52,6 @@ test = false
 [[test]]
 name = "select"
 path = "tests/select.rs"
-test = false
 
 [[test]]
 name = "table_ext"
