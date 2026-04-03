@@ -253,6 +253,24 @@ fn test_set_source_accepts_string_and_expression() {
     assert_eq!(result3, "SELECT * FROM product_table");
 }
 
+#[test]
+fn test_subquery_as_source() {
+    // Inner: SELECT id FROM users WHERE active = true
+    let inner = SurrealSelect::new()
+        .from("users")
+        .field("id")
+        .with_where(surreal_expr!("active = {}", true));
+
+    // Outer: SELECT * FROM (inner)
+    let mut outer = SurrealSelect::new();
+    outer.set_source(inner.expr(), None);
+
+    assert_eq!(
+        outer.preview(),
+        "SELECT * FROM (SELECT id FROM users WHERE active = true)"
+    );
+}
+
 async fn setup_test_db_with_data(mock_data: Value) -> SurrealDB {
     use surreal_client::{Engine, SurrealClient};
 
