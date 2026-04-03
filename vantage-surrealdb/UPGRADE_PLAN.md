@@ -58,59 +58,11 @@
 
 ---
 
-## Next: TableSource Implementation
+## TableSource Implementation
 
-The main goal is implementing `TableSource` for `SurrealDB` so that `Table<SurrealDB, E>` works with
-all vantage-table operations (list, get, insert, delete, count, etc). This is the bridge between the
-expression/query layer (done) and the table abstraction layer.
+### Phase A: Columns & Expression Factory ✅
 
-### How it works in CSV (reference implementation)
-
-`vantage-csv` implements `TableSource` directly — each method reads from CSV files, applies
-conditions in-memory, and returns `IndexMap<Id, Record<Value>>`. No query building needed.
-
-### How it should work for SurrealDB
-
-SurrealDB is a query-driven backend. `TableSource` methods should build `SurrealSelect` queries (or
-INSERT/UPDATE/DELETE expressions), execute them via `ExprDataSource::execute()`, and convert
-`AnySurrealType` results to `Record<AnySurrealType>`.
-
-This means `TableSource` depends on `SurrealSelect` + `ExprDataSource` — both already working.
-
-### What needs implementing
-
-The old `tablesource.rs` (commented out) has 24 methods using the 0.2 API. The new `TableSource`
-trait (in `vantage-table/src/traits/table_source.rs`) requires:
-
-| Method                         | Purpose                        | Approach                                   |
-| ------------------------------ | ------------------------------ | ------------------------------------------ |
-| `create_column`                | Column factory                 | Return `Column<Type>` (same as CSV)        |
-| `to_any_column`                | Type erasure                   | `Column::from_column`                      |
-| `convert_any_column`           | Type recovery                  | `Column::from_column`                      |
-| `expr`                         | Expression factory             | `Expression::new(template, params)`        |
-| `search_expression`            | Full-text search               | Build `@@ value` or `CONTAINS` expressions |
-| `list_table_values`            | SELECT \* → IndexMap           | SurrealSelect → execute → parse CBOR rows  |
-| `get_table_value`              | SELECT \* FROM ONLY table:id   | Single record by ID                        |
-| `get_table_some_value`         | SELECT \* LIMIT 1              | First matching record                      |
-| `get_count`                    | count()                        | SurrealSelect::as_count → execute          |
-| `get_sum`                      | math::sum()                    | SurrealSelect::as_sum → execute            |
-| `insert_table_value`           | CREATE table:id SET ...        | Build CREATE expression                    |
-| `replace_table_value`          | UPDATE table:id CONTENT ...    | Build UPDATE CONTENT expression            |
-| `patch_table_value`            | UPDATE table:id MERGE ...      | Build UPDATE MERGE expression              |
-| `delete_table_value`           | DELETE table:id                | Build DELETE expression                    |
-| `delete_table_all_values`      | DELETE table                   | Build DELETE expression                    |
-| `insert_table_return_id_value` | CREATE table SET ... RETURN id | Build CREATE, extract returned ID          |
-| `column_values_expression`     | Subquery for column values     | SurrealSelect VALUE column → deferred expr |
-
-### Additional traits (optional, unlocks more features)
-
-- **`TableQuerySource`** — `get_table_select_query()` returns a `SurrealSelect` for a table. This
-  enables the query-aware code paths in vantage-table.
-- **`TableExprSource`** — `get_table_expr_count()` / `get_table_expr_max()` return
-  `AssociatedExpression` that can be composed into other queries. This is how cross-table subqueries
-  work.
-
-### Associated types for SurrealDB's TableSource
+Implemented in `surrealdb/impls/table_source.rs`. Associated types:
 
 ```rust
 type Column<Type> = Column<Type>;          // from vantage-table (same as CSV)
@@ -119,8 +71,62 @@ type Value = AnySurrealType;               // CBOR-backed values
 type Id = Thing;                           // record IDs are Thing (table:id)
 ```
 
-Note: `Id = Thing` differs from CSV's `Id = String`. This means record operations use `Thing` for
-addressing, which maps naturally to SurrealDB's `table:id` pattern.
+Completed methods:
+
+- `create_column` → `Column::new(name)`
+- `to_any_column` / `convert_any_column` → `Column::from_column()` (preserves original_type)
+- `expr` → `Expression::new(template, params)`
+- `search_table_expr` → placeholder (TODO: iterate searchable columns once TableLike exposes them)
+
+No SurrealDB-specific column type needed — `Column<Type>` from vantage-table works directly.
+
+### Phase B: Read Operations (next)
+
+All methods below currently have `todo!()` stubs. Implementation approach: build a shared
+`build_select` helper that creates `SurrealSelect` from Table state (name, columns, conditions,
+order_by, pagination), then specialize per method.
+
+| Method                 | SurrealDB Query                           | Status  |
+| ---------------------- | ----------------------------------------- | ------- |
+| `list_table_values`    | SurrealSelect → execute → parse CBOR rows | `todo!` |
+| `get_table_value`      | SELECT \* FROM ONLY table:id              | `todo!` |
+| `get_table_some_value` | SELECT \* FROM table LIMIT 1              | `todo!` |
+| `get_count`            | SELECT count() ... GROUP ALL              | `todo!` |
+| `get_sum`              | SELECT math::sum(col) ... GROUP ALL       | `todo!` |
+| `get_max`              | SELECT math::max(col) ... GROUP ALL       | `todo!` |
+| `get_min`              | SELECT math::min(col) ... GROUP ALL       | `todo!` |
+
+### Phase C: Write Operations
+
+Depends on porting `insert/mod.rs` to use `surreal_expr!`.
+
+| Method                         | SurrealDB Query             | Status  |
+| ------------------------------ | --------------------------- | ------- |
+| `insert_table_value`           | CREATE table:id SET ...     | `todo!` |
+| `replace_table_value`          | UPDATE table:id CONTENT ... | `todo!` |
+| `patch_table_value`            | UPDATE table:id MERGE ...   | `todo!` |
+| `delete_table_value`           | DELETE table:id             | `todo!` |
+| `delete_table_all_values`      | DELETE table                | `todo!` |
+| `insert_table_return_id_value` | CREATE ... RETURN id        | `todo!` |
+| `column_table_values_expr`     | SurrealSelect VALUE col     | `todo!` |
+
+### Additional traits (optional, unlocks more features)
+
+All three traits share `build_select` internally. See `vantage-table/docs/interface-map.md` for full
+cross-reference.
+
+- **`SelectableDataSource`** — `select()` returns `SurrealSelect`. Already gives `Table::select()`,
+  `get_count_query()`, `get_sum_query()`.
+- **`TableQuerySource`** — `get_table_select_query()` returns a `SurrealSelect` for a table.
+- **`TableExprSource`** — `get_table_count_expr()` / `get_table_max_expr()` / `get_table_min_expr()`
+  / `get_table_sum_expr()` return `AssociatedExpression` for cross-table subqueries.
+
+### Future: Mutation query objects
+
+Currently `select()` returns a query object but write ops execute directly via `TableSource`.
+Eventually, `SelectableDataSource` (or a new trait) could add `type Delete`, `type Update`,
+`type Insert`, enabling `Table::delete_query()` / `update_query()` that share conditions with
+`select()` via `build_select`. Low priority — mutation query inspection is rarely needed.
 
 ### Key decision: Record conversion
 
@@ -140,7 +146,7 @@ The `id` field in results needs special handling — it's a `Thing` (CBOR Tag 8)
 | Module              | Status      | Plan                                                                                                                                                                                            |
 | ------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `select/`           | ✅ enabled  | Done, all tests pass                                                                                                                                                                            |
-| `surrealdb/impls/`  | ✅ partial  | `base.rs` + `expr_data_source.rs` working, `table_source.rs` is next                                                                                                                            |
+| `surrealdb/impls/`  | ✅ partial  | `base.rs` + `expr_data_source.rs` + `table_source.rs` (Phase A done, Phase B/C are `todo!()`)                                                                                                   |
 | `identifier`        | ✅ enabled  | Done                                                                                                                                                                                            |
 | `operation`         | ✅ enabled  | Done, updated to use `Expressive`                                                                                                                                                               |
 | `thing`             | ✅ enabled  | Done                                                                                                                                                                                            |
@@ -162,18 +168,18 @@ The `id` field in results needs special handling — it's a `Thing` (CBOR Tag 8)
 
 ### Disabled tests
 
-| Test file                  | Status      | Depends on                                                                                                                       |
-| -------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `select.rs`                | ✅ enabled  | —                                                                                                                                |
-| `return.rs`                | ✅ enabled  | live SurrealDB                                                                                                                   |
-| `types.rs`                 | ✅ enabled  | live SurrealDB                                                                                                                   |
-| `queries.rs`               | ❌ disabled | `prelude`, `SurrealMockBuilder`, `Table::into_entity`, `select_surreal` — needs TableSource + table extensions                   |
-| `search_expression.rs`     | ❌ disabled | `TableSource::search_expression` — enable after TableSource                                                                      |
-| `table_ext.rs`             | ❌ disabled | SurrealTableExt — enable after table extensions                                                                                  |
-| `table_ext_mocked.rs`      | ❌ disabled | Same                                                                                                                             |
-| `test_expressions.rs`      | ❌ disabled | Old `surreal_client::types` API, `SurrealExpression`, `IntoExpression` — likely delete, functionality covered by new type system |
-| `test_insert_cbor.rs`      | ❌ disabled | Insert query builder                                                                                                             |
-| `test_insert_unstructured` | ❌ disabled | Insert query builder                                                                                                             |
+| Test file                  | Status      | Depends on                                                                                                                    |
+| -------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `select.rs`                | ✅ enabled  | —                                                                                                                             |
+| `return.rs`                | ✅ enabled  | live SurrealDB                                                                                                                |
+| `types.rs`                 | ✅ enabled  | live SurrealDB                                                                                                                |
+| `queries.rs`               | ❌ disabled | `prelude`, `SurrealMockBuilder`, `Table::into_entity`, `select_surreal` — needs TableSource + table extensions                |
+| `search_expression.rs`     | ❌ disabled | `TableSource::search_table_expr` — enable after search impl uses column flags                                                 |
+| `table_ext.rs`             | ❌ disabled | SurrealTableExt — enable after table extensions                                                                               |
+| `table_ext_mocked.rs`      | ❌ disabled | Same                                                                                                                          |
+| `test_expressions.rs`      | ❌ disabled | Old `surreal_client::types` API, `SurrealExpression`, `IntoExpression` — **delete**, functionality covered by new type system |
+| `test_insert_cbor.rs`      | ❌ disabled | Insert query builder                                                                                                          |
+| `test_insert_unstructured` | ❌ disabled | Insert query builder                                                                                                          |
 
 ---
 
@@ -229,15 +235,33 @@ The `id` field in results needs special handling — it's a `Thing` (CBOR Tag 8)
 
 ## Rough Order of Work
 
-1. **Implement `TableSource` for `SurrealDB`** — start with read operations (`list_table_values`,
-   `get_table_value`, `get_count`), then write operations. Use `Column<Type>` from vantage-table
-   (don't revive `SurrealColumn`).
-2. **Port `insert/mod.rs`** — needed for write operations in TableSource.
-3. **Enable `search_expression.rs` test** — verify search works.
-4. **Implement `TableQuerySource`** — returns `SurrealSelect` for a table, enabling query-aware
-   optimizations in vantage-table.
-5. **Implement `TableExprSource`** — enables `AssociatedExpression` for count/max, which is needed
-   for cross-table subqueries.
-6. **Rebuild table extensions** — SurrealDB-specific methods on `Table<SurrealDB, E>`.
-7. **Enable remaining tests** one by one, updating to 0.3 API.
-8. **Update `bakery_model3`** — uncomment SurrealDB integration, verify full stack works.
+1. ~~**Phase A: Column & expression plumbing**~~ ✅ Done.
+2. **Phase B: Read operations** — implement `build_select` helper + `list_table_values`,
+   `get_table_value`, `get_table_some_value`, `get_count`, `get_sum`, `get_max`, `get_min`.
+3. **Implement `SelectableDataSource`** — returns `SurrealSelect` from `select()`.
+4. **Implement `TableQuerySource`** — `get_table_select_query()` using `build_select`.
+5. **Implement `TableExprSource`** — `get_table_count_expr` / `get_table_sum_expr` /
+   `get_table_max_expr` / `get_table_min_expr` using `build_select` + `AssociatedExpression`.
+6. **Port `insert/mod.rs`** — needed for write operations in TableSource.
+7. **Phase C: Write operations** — `insert_table_value`, `replace_table_value`, etc.
+8. **Enable `search_expression.rs` test** — once search impl uses column flags.
+9. **Delete `test_expressions.rs`** — old 0.2 API, fully superseded.
+10. **Rebuild table extensions** — SurrealDB-specific methods on `Table<SurrealDB, E>`.
+11. **Enable remaining tests** one by one, updating to 0.3 API.
+12. **Update `bakery_model3`** — uncomment SurrealDB integration, verify full stack works.
+
+## Applied Naming Changes
+
+These renames were applied across the entire workspace (all trait definitions and implementations):
+
+| Old name                   | New name                   | Reason                    |
+| -------------------------- | -------------------------- | ------------------------- |
+| `search_expression`        | `search_table_expr`        | Add `_table_`, abbreviate |
+| `column_values_expression` | `column_table_values_expr` | Add `_table_`, abbreviate |
+| `get_table_expr_count`     | `get_table_count_expr`     | Reorder: `_{what}_{form}` |
+| `get_table_expr_max`       | `get_table_max_expr`       | Same reorder              |
+
+New methods added to `TableSource`: `get_max`, `get_min`. New methods added to `TableExprSource`:
+`get_table_sum_expr`, `get_table_min_expr`.
+
+See `vantage-table/docs/interface-map.md` for full cross-reference of all three traits.

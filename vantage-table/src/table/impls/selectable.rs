@@ -63,6 +63,22 @@ where
         self.data_source.get_sum(self, column).await
     }
 
+    /// Get max of a column in the table
+    pub async fn get_max<Type>(&self, column: &T::Column<Type>) -> Result<Type>
+    where
+        Type: ColumnType,
+    {
+        self.data_source.get_max(self, column).await
+    }
+
+    /// Get min of a column in the table
+    pub async fn get_min<Type>(&self, column: &T::Column<Type>) -> Result<Type>
+    where
+        Type: ColumnType,
+    {
+        self.data_source.get_min(self, column).await
+    }
+
     /// Create a count query expression (does not execute)
     pub fn get_count_query(&self) -> Expression<T::Value> {
         self.select().as_count()

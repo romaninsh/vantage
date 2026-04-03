@@ -24,11 +24,11 @@ The table below shows how the same underlying query appears across all three tra
 | **List rows**        | `list_table_values` → IndexMap              | `get_table_select_query` → Select | —                                       |
 | **Get by ID**        | `get_table_value` → Record                  | —                                 | —                                       |
 | **Get first**        | `get_table_some_value` → Option             | —                                 | —                                       |
-| **Count**            | `get_count` → i64                           | —                                 | `get_table_expr_count` → AssociatedExpr |
-| **Sum**              | `get_sum` → Type                            | —                                 | —                                       |
-| **Max**              | `get_max` → Type                            | —                                 | `get_table_expr_max` → AssociatedExpr   |
-| **Min**              | `get_min` → Type                            | —                                 | `get_table_expr_min` → AssociatedExpr   |
-| **Col values**       | `column_values_expression` → AssociatedExpr | —                                 | —                                       |
+| **Count**            | `get_count` → i64                           | —                                 | `get_table_count_expr` → AssociatedExpr |
+| **Sum**              | `get_sum` → Type                            | —                                 | `get_table_sum_expr` → AssociatedExpr   |
+| **Max**              | `get_max` → Type                            | —                                 | `get_table_max_expr` → AssociatedExpr   |
+| **Min**              | `get_min` → Type                            | —                                 | `get_table_min_expr` → AssociatedExpr   |
+| **Col values**       | `column_table_values_expr` → AssociatedExpr | —                                 | —                                       |
 | **Insert**           | `insert_table_value`                        | —                                 | —                                       |
 | **Insert (auto ID)** | `insert_table_return_id_value`              | —                                 | —                                       |
 | **Replace**          | `replace_table_value`                       | —                                 | —                                       |
@@ -36,12 +36,12 @@ The table below shows how the same underlying query appears across all three tra
 | **Delete**           | `delete_table_value`                        | —                                 | —                                       |
 | **Delete all**       | `delete_table_all_values`                   | —                                 | —                                       |
 | **Stream**           | `stream_table_values` (default)             | —                                 | —                                       |
-| **Search**           | `search_expression`                         | —                                 | —                                       |
+| **Search**           | `search_table_expr`                         | —                                 | —                                       |
 
 ### Shared internal: `build_select`
 
 For query-driven backends (SQL, SurrealDB), `list_table_values`, `get_table_select_query`,
-`get_table_expr_count`, and `get_count` all start from the same internal logic: build a SELECT from
+`get_table_count_expr`, and `get_count` all start from the same internal logic: build a SELECT from
 the table's name, columns, conditions, order_by, and pagination. The difference is only what happens
 after building:
 
@@ -49,19 +49,19 @@ after building:
 build_select(table)
   ├── execute + parse rows    → list_table_values / get_count / get_sum
   ├── return query object     → get_table_select_query
-  └── wrap in AssociatedExpr  → get_table_expr_count / get_table_expr_max / column_values_expression
+  └── wrap in AssociatedExpr  → get_table_count_expr / get_table_max_expr / column_table_values_expr
 ```
 
 Backends should implement a shared `build_select` helper to avoid duplication.
 
 ### Gaps / Alignment Opportunities
 
-| Gap                                       | Notes                                                                                                                                                                        |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No `get_table_expr_sum`                   | `TableExprSource` has `get_table_expr_max` but no sum equivalent. `TableSource` has `get_sum`. Consider adding `get_table_expr_sum` for symmetry.                            |
-| No `get_table_expr_column_values`         | `column_values_expression` on `TableSource` already returns `AssociatedExpression`. Could live on `TableExprSource` instead — it's expression-returning, not data-returning. |
-| `get_table_select_query` only covers list | No query-object variants for count/sum/insert. `TableQuerySource` could grow `get_table_count_query`, `get_table_insert_query` etc.                                          |
-| `search_expression` lives on TableSource  | It returns an `Expression`, not data. Could be on `TableExprSource`, but it needs `TableLike` access for column flags, so `TableSource` is fine.                             |
+| Gap                                       | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `column_table_values_expr` on TableSource | Returns `AssociatedExpression`, not data. Could live on `TableExprSource` instead — it's expression-returning, not data-returning.                                                                                                                                                                                                                                                                                                                                                 |
+| `get_table_select_query` only covers list | No query-object variants for count/sum/insert. `TableQuerySource` could grow `get_table_count_query`, `get_table_insert_query` etc.                                                                                                                                                                                                                                                                                                                                                |
+| `search_table_expr` lives on TableSource  | It returns an `Expression`, not data. Could be on `TableExprSource`, but it needs `TableLike` access for column flags, so `TableSource` is fine.                                                                                                                                                                                                                                                                                                                                   |
+| No mutation query objects                 | `select()` returns a query object, but write ops execute directly via `TableSource`. Future: add `type Delete`, `type Update`, `type Insert` to `SelectableDataSource` (or a new `MutableDataSource` trait), enabling `delete_query()`, `update_query()` on Table. `delete_query()` and `update_query()` would share conditions/table name with `select()` via `build_select`. `insert_query()` shares only table name. Low priority — mutation query inspection is rarely needed. |
 
 ## What Each Trait Unlocks on `Table<DS, E>`
 
@@ -92,24 +92,45 @@ Implementing `TableSource` for a datasource `DS` automatically gives `Table<DS, 
 | `InsertableValueSet::insert_return_id_value(record)`  | → `insert_table_return_id_value`                         | `table/sets/insertable_value_set.rs` |
 | `InsertableDataSet::insert_return_id(entity)`         | → `insert_table_return_id_value` + entity conversion     | `table/sets/insertable_dataset.rs`   |
 | `TableLike::get_count()`                              | → `get_count`                                            | `table/impls/table_like.rs`          |
-| `TableLike::search_expression(value)`                 | → `search_expression`                                    | `table/impls/table_like.rs`          |
+| `TableLike::search_expression(value)`                 | → `search_table_expr`                                    | `table/impls/table_like.rs`          |
 | Column management (`with_column`, `get_column`, etc.) | → `create_column`, `to_any_column`, `convert_any_column` | `table/impls/columns.rs`             |
 | Expression factory (`Table::expr(...)`)               | → `expr`                                                 | `table/impls/expr.rs`                |
 
+### SelectableDataSource (optional, required by TableQuerySource)
+
+When `DS` also implements `SelectableDataSource`, Table gets query-building convenience methods:
+
+| Table method                 | Delegation / behaviour                                  | Source                      |
+| ---------------------------- | ------------------------------------------------------- | --------------------------- |
+| `Table::select()`            | Builds `DS::Select` with columns/conditions/order/page  | `table/impls/selectable.rs` |
+| `Table::get_count()`         | → `get_count` (execute)                                 | `table/impls/selectable.rs` |
+| `Table::get_sum(&col)`       | → `get_sum` (execute)                                   | `table/impls/selectable.rs` |
+| `Table::get_max(&col)`       | → `get_max` (execute)                                   | `table/impls/selectable.rs` |
+| `Table::get_min(&col)`       | → `get_min` (execute)                                   | `table/impls/selectable.rs` |
+| `Table::get_count_query()`   | `select().as_count()` — returns expression, no execute  | `table/impls/selectable.rs` |
+| `Table::get_sum_query(&col)` | `select().as_sum(col)` — returns expression, no execute | `table/impls/selectable.rs` |
+
 ### TableQuerySource (optional)
 
-| Unlocks                                              | Notes                                                                                                                                |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `table.data_source().get_table_select_query(&table)` | Returns a `Select` query object (e.g. `SurrealSelect`) that can be inspected, modified, or passed to other systems before execution. |
-| Enables query-aware optimizations in vantage-table   | Table can check if DS implements `TableQuerySource` and use query composition instead of loading all data.                           |
+Requires `SelectableDataSource`. All methods above are available, plus:
+
+| Table method / access                                | Notes                                                                                                                                   |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `table.data_source().get_table_select_query(&table)` | Backend-specific query builder. Returns `Result<DS::Select>` — can be inspected, modified, or passed to other systems before execution. |
+| Enables query-aware optimizations in vantage-table   | Table can check if DS implements `TableQuerySource` and use query composition instead of loading all data.                              |
+
+Note: `Table::select()` (from `SelectableDataSource`) builds the query generically from table state.
+`get_table_select_query()` lets the backend build it with vendor-specific logic.
 
 ### TableExprSource (optional)
 
-| Unlocks                                                | Notes                                                                                                                 |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| `table.data_source().get_table_expr_count(&table)`     | Returns `AssociatedExpression` — can be `.get().await` for the value, or composed into another query (e.g. subquery). |
-| `table.data_source().get_table_expr_max(&table, &col)` | Same pattern for MAX aggregation.                                                                                     |
-| Cross-table subqueries                                 | `AssociatedExpression` can be embedded in conditions of another table (e.g. `WHERE id IN (SELECT id FROM ...)`).      |
+| Table method                | Delegation             | Notes                                                                                                         |
+| --------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `Table::get_expr_count()`   | `get_table_count_expr` | Returns `AssociatedExpression` — `.get().await` for the value, or compose into another query (e.g. subquery). |
+| `Table::get_expr_sum(&col)` | `get_table_sum_expr`   | Same pattern for SUM aggregation.                                                                             |
+| `Table::get_expr_max(&col)` | `get_table_max_expr`   | Same pattern for MAX aggregation.                                                                             |
+| `Table::get_expr_min(&col)` | `get_table_min_expr`   | Same pattern for MIN aggregation.                                                                             |
+| Cross-table subqueries      | —                      | `AssociatedExpression` can be embedded in conditions of another table (e.g. `WHERE id IN (SELECT ...)`).      |
 
 ## Implementation Status
 
@@ -155,77 +176,20 @@ Implementing `TableSource` for a datasource `DS` automatically gives `Table<DS, 
 5. Implement `TableExprSource` using `build_select` + `AssociatedExpression` wrapping
 6. Implement `TableSource` write ops (needs insert query builder)
 
-## Naming Recommendations
+## Naming Conventions (applied)
 
-Current method names mix several conventions. The `_table_` infix is intentional — these methods
-take a `&Table` argument and live on a trait called `TableSource`, so the infix disambiguates them
-from the `ValueSet`/`DataSet` methods that delegate to them. The `_value`/`_values` suffix is also
-intentional — it marks the ValueSet layer (raw `Record<Value>`) as distinct from the DataSet layer
-(typed entities). Recommendations below preserve both.
+The `_table_` infix is intentional — these methods take a `&Table` argument and live on a trait
+called `TableSource`, so the infix disambiguates them from the `ValueSet`/`DataSet` methods that
+delegate to them. The `_value`/`_values` suffix marks the ValueSet layer (raw `Record<Value>`) as
+distinct from the DataSet layer (typed entities).
 
-### 1. Consistent `_table_` pattern across all three traits
+Pattern: `{verb}_table_{what}_{form}` — e.g. `get_table_count_expr`, `get_table_select_query`.
 
-`TableSource` uses `verb_table_noun` (e.g. `list_table_values`). The other two traits should follow
-the same pattern instead of `get_table_expr_*` or `get_table_select_*`.
+### Aggregation methods
 
-| Current (TableQuerySource) | Proposed                   | Rationale               |
-| -------------------------- | -------------------------- | ----------------------- |
-| `get_table_select_query`   | `get_table_select_query` ✓ | Already follows pattern |
-
-| Current (TableExprSource) | Proposed               | Rationale                                  |
-| ------------------------- | ---------------------- | ------------------------------------------ |
-| `get_table_expr_count`    | `get_table_count_expr` | Noun-last: matches `_table_values` pattern |
-| `get_table_expr_max`      | `get_table_max_expr`   | Same reorder: `_table_{what}_{form}`       |
-
-Pattern becomes: `{verb}_table_{what}_{form}` — e.g. `get_table_count_expr`,
-`get_table_select_query`.
-
-### 2. Consistent verb for aggregation
-
-Currently: `get_count`, `get_sum` (imperative, executes) vs `get_table_expr_count` (returns expr).
-The `get_` prefix is fine for execute-and-return. Expr variants follow the reorder from §1.
-
-| Operation | TableSource (execute) | TableExprSource (expr)                 |
-| --------- | --------------------- | -------------------------------------- |
-| Count     | `get_count` ✓         | `get_table_count_expr`                 |
-| Sum       | `get_sum` ✓           | `get_table_sum_expr` (new, for parity) |
-| Max       | `get_max` (new)       | `get_table_max_expr`                   |
-| Min       | `get_min` (new)       | `get_table_min_expr` (new)             |
-
-### 3. `column_values_expression` → `column_table_values_expr`
-
-The full word `expression` is used nowhere else — everything else uses `expr`. Also adding `_table_`
-since it takes a `&Table` arg, matching the convention.
-
-### 4. `search_expression` → `search_table_expr`
-
-Same two fixes — abbreviate to `expr`, add `_table_` since it takes `&impl TableLike`.
-
-### 5. Summary: before/after
-
-| Current                        | After                          | Changed? |
-| ------------------------------ | ------------------------------ | -------- |
-| `create_column`                | `create_column`                | —        |
-| `to_any_column`                | `to_any_column`                | —        |
-| `convert_any_column`           | `convert_any_column`           | —        |
-| `expr`                         | `expr`                         | —        |
-| `search_expression`            | `search_table_expr`            | ✏️       |
-| `list_table_values`            | `list_table_values`            | —        |
-| `get_table_value`              | `get_table_value`              | —        |
-| `get_table_some_value`         | `get_table_some_value`         | —        |
-| `get_count`                    | `get_count`                    | —        |
-| `get_sum`                      | `get_sum`                      | —        |
-| —                              | `get_max` (new)                | ✏️       |
-| —                              | `get_min` (new)                | ✏️       |
-| `insert_table_value`           | `insert_table_value`           | —        |
-| `replace_table_value`          | `replace_table_value`          | —        |
-| `patch_table_value`            | `patch_table_value`            | —        |
-| `delete_table_value`           | `delete_table_value`           | —        |
-| `delete_table_all_values`      | `delete_table_all_values`      | —        |
-| `insert_table_return_id_value` | `insert_table_return_id_value` | —        |
-| `stream_table_values`          | `stream_table_values`          | —        |
-| `column_values_expression`     | `column_table_values_expr`     | ✏️       |
-| `get_table_select_query`       | `get_table_select_query`       | —        |
-| `get_table_expr_count`         | `get_table_count_expr`         | ✏️       |
-| `get_table_expr_max`           | `get_table_max_expr`           | ✏️       |
-| —                              | `get_table_min_expr` (new)     | ✏️       |
+| Operation | TableSource (execute) | TableExprSource (expr) |
+| --------- | --------------------- | ---------------------- |
+| Count     | `get_count`           | `get_table_count_expr` |
+| Sum       | `get_sum`             | `get_table_sum_expr`   |
+| Max       | `get_max`             | `get_table_max_expr`   |
+| Min       | `get_min`             | `get_table_min_expr`   |
