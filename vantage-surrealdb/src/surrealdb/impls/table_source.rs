@@ -15,6 +15,12 @@ use vantage_table::traits::table_like::TableLike;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
+use crate::identifier::Identifier;
+use crate::statements::delete::SurrealDelete;
+use crate::statements::insert::SurrealInsert;
+use crate::statements::update::SurrealUpdate;
+
+use crate::surreal_expr;
 use crate::surrealdb::SurrealDB;
 use crate::thing::Thing;
 use crate::types::{AnySurrealType, SurrealType};
@@ -49,6 +55,24 @@ fn parse_cbor_row(
     }
 
     (thing, Record::from_indexmap(fields))
+}
+
+/// Extract the first CBOR map from a result that may be a map or an array-of-maps.
+fn extract_first_map(
+    result: AnySurrealType,
+) -> vantage_dataset::traits::Result<Vec<(ciborium::Value, ciborium::Value)>> {
+    let value = result.into_value();
+    match value {
+        ciborium::Value::Map(m) => Ok(m),
+        ciborium::Value::Array(arr) => arr
+            .into_iter()
+            .find_map(|v| match v {
+                ciborium::Value::Map(m) => Some(m),
+                _ => None,
+            })
+            .ok_or_else(|| error!("expected map in array result")),
+        _ => Err(error!("expected map or array result")),
+    }
 }
 
 #[async_trait]
@@ -258,74 +282,128 @@ impl TableSource for SurrealDB {
 
     async fn insert_table_value<E>(
         &self,
-        _table: &Table<Self, E>,
-        _id: &Self::Id,
-        _record: &Record<Self::Value>,
+        table: &Table<Self, E>,
+        id: &Self::Id,
+        record: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>>
     where
         E: Entity<Self::Value>,
     {
-        todo!("insert_table_value: CREATE table:id SET ...")
+        let mut insert = SurrealInsert::new(table.table_name()).with_id(id.id());
+        for (key, value) in record.iter() {
+            insert = insert.set_any_field(key, value.clone());
+        }
+        let result = self.execute(&insert.expr()).await?;
+        let map = extract_first_map(result)?;
+        let id_field = table
+            .id_field()
+            .map(|c| c.name().to_string())
+            .unwrap_or_else(|| "id".to_string());
+        let (_thing, rec) = parse_cbor_row(map, &id_field);
+        Ok(rec)
     }
 
     async fn replace_table_value<E>(
         &self,
-        _table: &Table<Self, E>,
-        _id: &Self::Id,
-        _record: &Record<Self::Value>,
+        table: &Table<Self, E>,
+        id: &Self::Id,
+        record: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>>
     where
         E: Entity<Self::Value>,
     {
-        todo!("replace_table_value: UPDATE table:id CONTENT ...")
+        let update = SurrealUpdate::new(id.clone()).content().set_record(record);
+        let result = self.execute(&update.expr()).await?;
+        let map = extract_first_map(result)?;
+        let id_field = table
+            .id_field()
+            .map(|c| c.name().to_string())
+            .unwrap_or_else(|| "id".to_string());
+        let (_thing, rec) = parse_cbor_row(map, &id_field);
+        Ok(rec)
     }
 
     async fn patch_table_value<E>(
         &self,
-        _table: &Table<Self, E>,
-        _id: &Self::Id,
-        _partial: &Record<Self::Value>,
+        table: &Table<Self, E>,
+        id: &Self::Id,
+        partial: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>>
     where
         E: Entity<Self::Value>,
     {
-        todo!("patch_table_value: UPDATE table:id MERGE ...")
+        let update = SurrealUpdate::new(id.clone()).merge().set_record(partial);
+        let result = self.execute(&update.expr()).await?;
+        let map = extract_first_map(result)?;
+        let id_field = table
+            .id_field()
+            .map(|c| c.name().to_string())
+            .unwrap_or_else(|| "id".to_string());
+        let (_thing, rec) = parse_cbor_row(map, &id_field);
+        Ok(rec)
     }
 
-    async fn delete_table_value<E>(&self, _table: &Table<Self, E>, _id: &Self::Id) -> Result<()>
+    async fn delete_table_value<E>(&self, _table: &Table<Self, E>, id: &Self::Id) -> Result<()>
     where
         E: Entity<Self::Value>,
     {
-        todo!("delete_table_value: DELETE table:id")
+        let delete = SurrealDelete::new(id.clone());
+        self.execute(&delete.expr()).await?;
+        Ok(())
     }
 
-    async fn delete_table_all_values<E>(&self, _table: &Table<Self, E>) -> Result<()>
+    async fn delete_table_all_values<E>(&self, table: &Table<Self, E>) -> Result<()>
     where
         E: Entity<Self::Value>,
     {
-        todo!("delete_table_all_values: DELETE table")
+        let delete = SurrealDelete::table(table.table_name());
+        self.execute(&delete.expr()).await?;
+        Ok(())
     }
 
     async fn insert_table_return_id_value<E>(
         &self,
-        _table: &Table<Self, E>,
-        _record: &Record<Self::Value>,
+        table: &Table<Self, E>,
+        record: &Record<Self::Value>,
     ) -> Result<Self::Id>
     where
         E: Entity<Self::Value>,
     {
-        todo!("insert_table_return_id_value: CREATE table SET ... RETURN id")
+        let mut insert = SurrealInsert::new(table.table_name());
+        for (key, value) in record.iter() {
+            insert = insert.set_any_field(key, value.clone());
+        }
+        // Append RETURN id
+        let base = insert.expr();
+        let query = Expression::new(format!("{} RETURN id", base.template), base.parameters);
+        let result = self.execute(&query).await?;
+        let map = extract_first_map(result)?;
+        let (thing, _rec) = parse_cbor_row(map, "id");
+        thing.ok_or_else(|| error!("insert_table_return_id_value: no id returned"))
     }
 
     fn column_table_values_expr<'a, E, Type: ColumnType>(
         &'a self,
-        _table: &Table<Self, E>,
-        _column: &Self::Column<Type>,
+        table: &Table<Self, E>,
+        column: &Self::Column<Type>,
     ) -> AssociatedExpression<'a, Self, Self::Value, Vec<Type>>
     where
         E: Entity<Self::Value> + 'static,
         Self: ExprDataSource<Self::Value> + Sized,
     {
-        todo!("column_table_values_expr: subquery for column values")
+        let mut select = super::build_select::build_select(table);
+        select.order_by.clear();
+        select.fields.clear();
+
+        use crate::select::select_field::SelectField;
+        select
+            .fields
+            .push(SelectField::new(Identifier::new(column.name())));
+
+        let select = select.with_value();
+        let expr = select.expr();
+
+        let deferred_expr = Expression::new("{}", vec![ExpressiveEnum::Deferred(self.defer(expr))]);
+        AssociatedExpression::new(deferred_expr, self)
     }
 }
