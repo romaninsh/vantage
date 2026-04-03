@@ -302,10 +302,10 @@ mod tests {
 
         let marty = &values["marty"];
         assert_eq!(marty["name"].try_get::<String>().unwrap(), "Marty McFly");
-        assert_eq!(marty["is_paying_client"].try_get::<bool>().unwrap(), true);
+        assert!(marty["is_paying_client"].try_get::<bool>().unwrap());
 
         let biff = &values["biff"];
-        assert_eq!(biff["is_paying_client"].try_get::<bool>().unwrap(), false);
+        assert!(!biff["is_paying_client"].try_get::<bool>().unwrap());
         assert_eq!(biff["metadata"].type_variant(), Some(CsvTypeVariants::Json));
     }
 
@@ -329,7 +329,7 @@ mod tests {
         );
         assert_eq!(cupcake["calories"].try_get::<i64>().unwrap(), 300);
         assert_eq!(cupcake["price"].try_get::<i64>().unwrap(), 120);
-        assert_eq!(cupcake["is_deleted"].try_get::<bool>().unwrap(), false);
+        assert!(!cupcake["is_deleted"].try_get::<bool>().unwrap());
 
         let inv = cupcake["inventory"].try_get::<serde_json::Value>().unwrap();
         assert_eq!(inv["stock"], serde_json::json!(50));

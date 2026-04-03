@@ -58,6 +58,7 @@ where
     /// Delegates to `stream_table_values` on the data source, converting
     /// each record to the entity type. Backends with native streaming
     /// (e.g. paginated REST APIs) yield records incrementally.
+    #[allow(clippy::type_complexity)]
     pub fn stream(&self) -> Pin<Box<dyn Stream<Item = Result<(T::Id, E)>> + Send + '_>> {
         let value_stream = self.data_source().stream_table_values(self);
         Box::pin(async_stream::stream! {
@@ -135,13 +136,13 @@ mod tests {
         assert_eq!(entity_1.age, 30);
 
         // Test get() with existing ID
-        let entity_2 = table.get(&"2".to_string()).await.unwrap();
+        let entity_2 = table.get("2".to_string()).await.unwrap();
         assert_eq!(entity_2.id, Some("2".to_string()));
         assert_eq!(entity_2.name, "Bob");
         assert_eq!(entity_2.age, 25);
 
         // Test get() with non-existing ID
-        let result = table.get(&"999".to_string()).await;
+        let result = table.get("999".to_string()).await;
         assert!(result.is_err());
 
         // Test get_some()
@@ -178,7 +179,7 @@ mod tests {
         let result = table.list().await;
         assert!(result.is_err());
 
-        let result = table.get(&"1".to_string()).await;
+        let result = table.get("1".to_string()).await;
         assert!(result.is_err());
 
         let result = table.get_some().await;

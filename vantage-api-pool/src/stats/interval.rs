@@ -50,7 +50,7 @@ impl StatPeriod {
     }
 
     fn format_duration(from: &Instant, to: &Instant) -> String {
-        let duration = to.duration_since(from.clone());
+        let duration = to.duration_since(*from);
         let secs = duration.as_secs();
         let hours = secs / 3600;
         let minutes = (secs % 3600) / 60;
@@ -70,7 +70,7 @@ impl StatPeriod {
         let system_now = SystemTime::now();
         let instant_now = Instant::now();
 
-        let duration_since_instant = instant_now.duration_since(instant.clone());
+        let duration_since_instant = instant_now.duration_since(*instant);
         let system_time = system_now - duration_since_instant;
 
         // Get seconds since UNIX epoch
@@ -147,7 +147,7 @@ impl Stats {
         // sleep until self.period.start + duration, but not longer than duration
         let target_time = min(self.period.end(), Instant::now()) + Duration::from_secs(secs);
         if target_time < Instant::now() {
-            return Duration::ZERO;
+            Duration::ZERO
         } else {
             target_time.duration_since(Instant::now())
         }
@@ -155,7 +155,7 @@ impl Stats {
 
     pub fn snapshot(&self) -> Stats {
         if self.period.is_period() {
-            return self.clone();
+            return *self;
         }
 
         Stats {
@@ -163,7 +163,7 @@ impl Stats {
             success: self.success,
             retries: self.retries,
             errors: self.errors,
-            average_latency: self.average_latency.clone(),
+            average_latency: self.average_latency,
         }
     }
 

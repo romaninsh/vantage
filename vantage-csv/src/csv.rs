@@ -75,8 +75,7 @@ impl Csv {
                 if let Some(header) = headers.get(i) {
                     let variant = columns
                         .get(header)
-                        .map(|col| variant_from_type_name(col.get_type()))
-                        .flatten();
+                        .and_then(|col| variant_from_type_name(col.get_type()));
                     record.insert(header.to_string(), parse_with_type(field, variant));
                 }
             }

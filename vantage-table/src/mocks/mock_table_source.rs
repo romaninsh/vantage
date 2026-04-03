@@ -500,13 +500,14 @@ impl TableExprSource for MockTableSource {
         vantage_expressions::AssociatedExpression::new(expr, self)
     }
 
-    fn get_table_sum_expr<E: Entity<Self::Value>, R: ColumnType>(
+    fn get_table_sum_expr<E, R>(
         &self,
         table: &Table<Self, E>,
         column: &Self::Column<R>,
     ) -> vantage_expressions::AssociatedExpression<'_, Self, Self::Value, R>
     where
-        R: Default + std::ops::AddAssign,
+        E: Entity<Self::Value>,
+        R: ColumnType + Default + std::ops::AddAssign,
     {
         let column_name = column.name();
         let table_name = table.table_name();

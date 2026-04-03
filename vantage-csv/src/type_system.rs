@@ -355,7 +355,7 @@ mod tests {
 
     #[test]
     fn test_roundtrip_float() {
-        let any = AnyCsvType::new(3.14_f64);
+        let any = AnyCsvType::new(2.72_f64);
         assert_eq!(any.type_variant(), Some(CsvTypeVariants::Float));
         assert!(any.try_get::<f64>().is_some());
     }

@@ -80,7 +80,7 @@ impl PaginatedStream {
         let items = body
             .get("data")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.clone())
+            .cloned()
             .unwrap_or_default();
 
         // Determine next page

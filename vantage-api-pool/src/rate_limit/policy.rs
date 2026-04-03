@@ -122,8 +122,7 @@ impl<T: Eq + Hash + Clone> RateLimitPolicyEnforcer<T> {
         if self
             .call_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            % 1000
-            == 0
+            .is_multiple_of(1000)
         {
             let cutoff = now - Duration::from_secs(3600);
             buckets.retain(|_, bucket| bucket.reset_time > cutoff);
