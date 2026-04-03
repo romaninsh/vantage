@@ -1,16 +1,46 @@
+//! SurrealDB `DELETE` statement builder.
+//!
+//! Builds parameterized `DELETE target [WHERE ...]` expressions.
+//!
+//! # Examples
+//!
+//! ```rust,ignore
+//! use vantage_surrealdb::{SurrealDelete, thing::Thing, surreal_expr};
+//!
+//! // Delete a single record
+//! let del = SurrealDelete::new(Thing::new("users", "john"));
+//!
+//! // Delete all records in a table
+//! let del = SurrealDelete::table("sessions");
+//!
+//! // Conditional delete
+//! let del = SurrealDelete::table("logs")
+//!     .with_condition(surreal_expr!("level = {}", "debug"))
+//!     .with_condition(surreal_expr!("age > {}", 30i64));
+//!
+//! // Execute
+//! db.execute(&del.expr()).await?;
+//! ```
+
 use vantage_expressions::Expressive;
 
 use crate::Expr;
 use crate::identifier::Identifier;
 use crate::types::AnySurrealType;
 
+/// Builder for SurrealDB `DELETE` statements.
+///
+/// Produces `DELETE target` or `DELETE target WHERE ...`.
+/// Multiple conditions are combined with AND.
 pub struct SurrealDelete {
+    /// Target expression (table name, `Thing`, or arbitrary expression).
     pub target: Expr,
+    /// Optional WHERE conditions (combined with AND).
     pub conditions: Vec<Expr>,
 }
 
 impl SurrealDelete {
-    /// Delete a whole table: `DELETE table`
+    /// Delete all records from a table: `DELETE tablename`
     pub fn table(table: &str) -> Self {
         Self {
             target: Identifier::new(table).expr(),
@@ -18,7 +48,7 @@ impl SurrealDelete {
         }
     }
 
-    /// Delete with an arbitrary target expression (e.g. Thing).
+    /// Delete a specific target (e.g. a [`Thing`](crate::thing::Thing) record ID).
     pub fn new(target: impl Expressive<AnySurrealType>) -> Self {
         Self {
             target: target.expr(),
@@ -26,11 +56,13 @@ impl SurrealDelete {
         }
     }
 
+    /// Add a WHERE condition. Multiple conditions are combined with AND.
     pub fn with_condition(mut self, condition: impl Expressive<AnySurrealType>) -> Self {
         self.conditions.push(condition.expr());
         self
     }
 
+    /// Render the statement as a string (for debugging — never use in queries).
     pub fn preview(&self) -> String {
         self.expr().preview()
     }

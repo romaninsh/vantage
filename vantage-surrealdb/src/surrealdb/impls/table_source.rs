@@ -20,7 +20,6 @@ use crate::statements::delete::SurrealDelete;
 use crate::statements::insert::SurrealInsert;
 use crate::statements::update::SurrealUpdate;
 
-use crate::surreal_expr;
 use crate::surrealdb::SurrealDB;
 use crate::thing::Thing;
 use crate::types::{AnySurrealType, SurrealType};
@@ -291,7 +290,7 @@ impl TableSource for SurrealDB {
     {
         let mut insert = SurrealInsert::new(table.table_name()).with_id(id.id());
         for (key, value) in record.iter() {
-            insert = insert.set_any_field(key, value.clone());
+            insert = insert.with_any_field(key, value.clone());
         }
         let result = self.execute(&insert.expr()).await?;
         let map = extract_first_map(result)?;
@@ -312,7 +311,7 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let update = SurrealUpdate::new(id.clone()).content().set_record(record);
+        let update = SurrealUpdate::new(id.clone()).content().with_record(record);
         let result = self.execute(&update.expr()).await?;
         let map = extract_first_map(result)?;
         let id_field = table
@@ -332,7 +331,7 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let update = SurrealUpdate::new(id.clone()).merge().set_record(partial);
+        let update = SurrealUpdate::new(id.clone()).merge().with_record(partial);
         let result = self.execute(&update.expr()).await?;
         let map = extract_first_map(result)?;
         let id_field = table
@@ -371,7 +370,7 @@ impl TableSource for SurrealDB {
     {
         let mut insert = SurrealInsert::new(table.table_name());
         for (key, value) in record.iter() {
-            insert = insert.set_any_field(key, value.clone());
+            insert = insert.with_any_field(key, value.clone());
         }
         // Append RETURN id
         let base = insert.expr();

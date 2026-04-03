@@ -1,11 +1,9 @@
-use indexmap::IndexMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use vantage_expressions::ExprDataSource;
 use vantage_surrealdb::surreal_expr;
 use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::thing::Thing;
 use vantage_surrealdb::types::AnySurrealType;
-use vantage_table::column::core::Column;
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
