@@ -163,14 +163,38 @@ cargo test -p vantage-surrealdb --lib
 
 ### Test coverage
 
-| Test file    | Tests | Notes                                            |
-| ------------ | ----- | ------------------------------------------------ |
-| lib (inline) | 18    | select, operation, thing, types                  |
-| `select.rs`  | 15    | query building, mock execution, type transitions |
-| `return.rs`  | 3     | RETURN statements, error handling (live DB)      |
-| `types.rs`   | 6     | CBOR round-trip for all scalar types (live DB)   |
-| doc-tests    | 7     | all doc examples compile and pass                |
+| Test file              | Tests | Notes                                            |
+| ---------------------- | ----- | ------------------------------------------------ |
+| lib (inline)           | 18    | select, operation, thing, types                  |
+| `select.rs`            | 15    | query building, mock execution, type transitions |
+| `return.rs`            | 3     | RETURN statements, error handling (live DB)      |
+| `types.rs`             | 6     | CBOR round-trip for all scalar types (live DB)   |
+| `table_source_read.rs` | 8     | build_select query gen + get_count (live DB)     |
+| doc-tests              | 7     | all doc examples compile and pass                |
 
-## Current Status
+## Current Status — TableSource Implementation
 
-See [UPGRADE_PLAN.md](UPGRADE_PLAN.md) for what's done, what's next, and crate dependencies.
+### Phase A: Columns & Expression Factory ✅
+
+Implemented in `surrealdb/impls/table_source.rs`. Column creation, type conversion, expression
+factory, and search expression placeholder.
+
+### Phase B: Read Operations (in progress)
+
+`build_select` helper constructs `SurrealSelect` from `Table` state (source, columns, conditions,
+ordering). Pagination is TODO.
+
+| Method                 | Status | Notes                                  |
+| ---------------------- | ------ | -------------------------------------- |
+| `get_count`            | ✅     | via `build_select` + `as_count()`      |
+| `get_sum`              | todo   | signature ready, returns `Self::Value` |
+| `get_max`              | todo   | signature ready, returns `Self::Value` |
+| `get_min`              | todo   | signature ready, returns `Self::Value` |
+| `list_table_values`    | todo   | needs CBOR → Record conversion         |
+| `get_table_value`      | todo   | `SELECT * FROM ONLY table:id`          |
+| `get_table_some_value` | todo   | `SELECT * FROM table LIMIT 1`          |
+
+### Phase C: Write Operations (not started)
+
+All write methods (`insert_table_value`, `replace_table_value`, `patch_table_value`,
+`delete_table_value`, etc.) are `todo!` stubs.
