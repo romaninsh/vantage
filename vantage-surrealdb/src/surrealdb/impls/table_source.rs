@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use indexmap::IndexMap;
 
+use vantage_core::error;
 use vantage_dataset::traits::Result;
 use vantage_expressions::traits::associated_expressions::AssociatedExpression;
 use vantage_expressions::traits::datasource::ExprDataSource;
@@ -16,7 +17,39 @@ use vantage_types::{Entity, Record};
 
 use crate::surrealdb::SurrealDB;
 use crate::thing::Thing;
-use crate::types::AnySurrealType;
+use crate::types::{AnySurrealType, SurrealType};
+
+/// Parse a CBOR map into a Record and optionally extract the ID field as a Thing.
+fn parse_cbor_row(
+    map: Vec<(ciborium::Value, ciborium::Value)>,
+    id_field_name: &str,
+) -> (Option<Thing>, Record<AnySurrealType>) {
+    let mut fields = IndexMap::new();
+    let mut thing: Option<Thing> = None;
+
+    for (k, v) in map {
+        let key = match k {
+            ciborium::Value::Text(s) => s,
+            _ => continue,
+        };
+        if key == id_field_name {
+            thing = Thing::from_cbor(v.clone());
+        }
+        match AnySurrealType::from_cbor(&v) {
+            Some(val) => {
+                fields.insert(key, val);
+            }
+            None => {
+                eprintln!(
+                    "parse_cbor_row: dropping field '{}', unsupported CBOR: {:?}",
+                    key, v
+                );
+            }
+        }
+    }
+
+    (thing, Record::from_indexmap(fields))
+}
 
 #[async_trait]
 impl TableSource for SurrealDB {
@@ -70,33 +103,102 @@ impl TableSource for SurrealDB {
 
     async fn list_table_values<E>(
         &self,
-        _table: &Table<Self, E>,
+        table: &Table<Self, E>,
     ) -> Result<IndexMap<Self::Id, Record<Self::Value>>>
     where
         E: Entity<Self::Value>,
     {
-        todo!("list_table_values: build SurrealSelect, execute, parse CBOR rows")
+        let id_field_name = table
+            .id_field()
+            .map(|c| c.name().to_string())
+            .unwrap_or_else(|| "id".to_string());
+
+        let select = super::build_select::build_select(table);
+        let result = self.execute(&select.expr()).await?;
+
+        let arr = result
+            .into_value()
+            .into_array()
+            .map_err(|_| error!("list_table_values: expected array result"))?;
+
+        let mut records = IndexMap::new();
+        for item in arr {
+            let map = match item {
+                ciborium::Value::Map(m) => m,
+                _ => continue,
+            };
+
+            let (thing, record) = parse_cbor_row(map, &id_field_name);
+            let id = thing.ok_or_else(|| {
+                error!(
+                    "list_table_values: row missing id field",
+                    id_field = &id_field_name
+                )
+            })?;
+            records.insert(id, record);
+        }
+
+        Ok(records)
     }
 
     async fn get_table_value<E>(
         &self,
         _table: &Table<Self, E>,
-        _id: &Self::Id,
+        id: &Self::Id,
     ) -> Result<Record<Self::Value>>
     where
         E: Entity<Self::Value>,
     {
-        todo!("get_table_value: SELECT * FROM ONLY table:id")
+        let query = crate::surreal_expr!("SELECT * FROM ONLY {}", (id.clone()));
+        let result = self.execute(&query).await?;
+
+        let map = result.into_value().into_map().map_err(|_| {
+            error!(
+                "get_table_value: expected map result",
+                id = format!("{:?}", id)
+            )
+        })?;
+
+        let (_thing, record) = parse_cbor_row(map, "id");
+        Ok(record)
     }
 
     async fn get_table_some_value<E>(
         &self,
-        _table: &Table<Self, E>,
+        table: &Table<Self, E>,
     ) -> Result<Option<(Self::Id, Record<Self::Value>)>>
     where
         E: Entity<Self::Value>,
     {
-        todo!("get_table_some_value: SELECT * FROM table LIMIT 1")
+        let mut select = super::build_select::build_select(table);
+        select.limit = Some(1);
+        let result = self.execute(&select.expr()).await?;
+
+        let id_field_name = table
+            .id_field()
+            .map(|c| c.name().to_string())
+            .unwrap_or_else(|| "id".to_string());
+
+        let arr = result
+            .into_value()
+            .into_array()
+            .map_err(|_| error!("get_table_some_value: expected array result"))?;
+
+        let item = match arr.into_iter().next() {
+            Some(item) => item,
+            None => return Ok(None),
+        };
+
+        let map = match item {
+            ciborium::Value::Map(m) => m,
+            _ => return Ok(None),
+        };
+
+        let (thing, record) = parse_cbor_row(map, &id_field_name);
+        match thing {
+            Some(id) => Ok(Some((id, record))),
+            None => Ok(None),
+        }
     }
 
     async fn get_count<E>(&self, table: &Table<Self, E>) -> Result<i64>
@@ -114,35 +216,44 @@ impl TableSource for SurrealDB {
 
     async fn get_sum<E>(
         &self,
-        _table: &Table<Self, E>,
-        _column: &Self::Column<Self::AnyType>,
+        table: &Table<Self, E>,
+        column: &Self::Column<Self::AnyType>,
     ) -> Result<Self::Value>
     where
         E: Entity<Self::Value>,
     {
-        todo!("get_sum: build_select + math::sum")
+        let mut select = super::build_select::build_select(table);
+        select.order_by.clear();
+        let sum_query = select.as_sum(column.clone());
+        self.execute(&sum_query.expr()).await
     }
 
     async fn get_max<E>(
         &self,
-        _table: &Table<Self, E>,
-        _column: &Self::Column<Self::AnyType>,
+        table: &Table<Self, E>,
+        column: &Self::Column<Self::AnyType>,
     ) -> Result<Self::Value>
     where
         E: Entity<Self::Value>,
     {
-        todo!("get_max: build_select + math::max")
+        let mut select = super::build_select::build_select(table);
+        select.order_by.clear();
+        let max_query = select.as_max(column.clone());
+        self.execute(&max_query.expr()).await
     }
 
     async fn get_min<E>(
         &self,
-        _table: &Table<Self, E>,
-        _column: &Self::Column<Self::AnyType>,
+        table: &Table<Self, E>,
+        column: &Self::Column<Self::AnyType>,
     ) -> Result<Self::Value>
     where
         E: Entity<Self::Value>,
     {
-        todo!("get_min: build_select + math::min")
+        let mut select = super::build_select::build_select(table);
+        select.order_by.clear();
+        let min_query = select.as_min(column.clone());
+        self.execute(&min_query.expr()).await
     }
 
     async fn insert_table_value<E>(

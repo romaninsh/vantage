@@ -11,3 +11,4 @@ DELETE test_check; RETURN count(SELECT VALUE id FROM test_check);
 RETURN count(SELECT VALUE id FROM order);
 RETURN count(SELECT VALUE id FROM product);
 SELECT count() FROM product GROUP ALL; SELECT count() FROM client GROUP ALL; SELECT count() FROM order GROUP ALL;
+SELECT count() FROM product GROUP ALL; SELECT count() FROM client GROUP ALL;

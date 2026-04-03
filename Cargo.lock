@@ -158,12 +158,14 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "indexmap",
+ "surreal-client",
  "tokio",
  "vantage-cli-util",
  "vantage-core",
  "vantage-csv",
  "vantage-dataset",
  "vantage-expressions",
+ "vantage-surrealdb",
  "vantage-table",
  "vantage-types",
 ]
@@ -2634,6 +2636,7 @@ name = "vantage-surrealdb"
 version = "0.3.0"
 dependencies = [
  "async-trait",
+ "bakery_model3",
  "base64",
  "chrono",
  "ciborium",

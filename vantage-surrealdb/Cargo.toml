@@ -86,6 +86,9 @@ test = false
 
 # Examples disabled during 0.3 migration (files moved to .disabled)
 
+[dev-dependencies]
+bakery_model3 = { path = "../bakery_model3" }
+
 [[example]]
 name = "expr"
 path = "examples/expr.rs"

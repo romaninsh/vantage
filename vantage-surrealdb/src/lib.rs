@@ -40,4 +40,5 @@ pub mod types;
 pub use types::*;
 
 // Re-export main SurrealDB types for convenience
+pub use ciborium::Value as CborValue;
 pub use types::{AnySurrealType, SurrealType, SurrealTypeVariants};

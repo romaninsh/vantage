@@ -90,14 +90,12 @@ impl SurrealType for Thing {
     fn from_cbor(cbor: ciborium::Value) -> Option<Self> {
         match cbor {
             ciborium::Value::Tag(8, boxed_value) => {
-                if let ciborium::Value::Array(arr) = *boxed_value {
-                    if arr.len() == 2 {
-                        if let (ciborium::Value::Text(table), ciborium::Value::Text(id)) =
-                            (&arr[0], &arr[1])
-                        {
-                            return Some(Thing::new(table.clone(), id.clone()));
-                        }
-                    }
+                if let ciborium::Value::Array(arr) = *boxed_value
+                    && arr.len() == 2
+                    && let (ciborium::Value::Text(table), ciborium::Value::Text(id)) =
+                        (&arr[0], &arr[1])
+                {
+                    return Some(Thing::new(table.clone(), id.clone()));
                 }
                 None
             }

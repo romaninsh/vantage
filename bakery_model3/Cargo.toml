@@ -10,14 +10,11 @@ vantage-csv = { path = "../vantage-csv" }
 vantage-expressions = { path = "../vantage-expressions" }
 vantage-dataset = { path = "../vantage-dataset" }
 vantage-types = { path = "../vantage-types" }
+vantage-surrealdb = { path = "../vantage-surrealdb" }
+surreal-client = { path = "../surreal-client", features = ["decimal"] }
 indexmap = "2.0"
 tokio = { version = "1.48", features = ["full"] }
 clap = "4.5"
 
 [dev-dependencies]
 vantage-cli-util = { path = "../vantage-cli-util" }
-
-# SurrealDB support commented out during CSV-first development
-# vantage-surrealdb = { path = "../vantage-surrealdb" }
-# surreal-client = { path = "../surreal-client", features = ["decimal"] }
-# rust_decimal = "1.36"

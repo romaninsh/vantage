@@ -70,7 +70,7 @@ macro_rules! macro_type_test {
                 let Value::Array(result_array) = select_result.value() else {
                     panic!("Expected result array")
                 };
-                let Value::Map(_first_record) = result_array.get(0).expect("Expected first record") else {
+                let Value::Map(_first_record) = result_array.first().expect("Expected first record") else {
                     panic!("Expected record map")
                 };
             }
@@ -98,8 +98,8 @@ macro_type_test!("numbers", {
     u32_val: 4294967295u32,
     u64_val: 18446744073709551615u64,
     usize_val: 123456usize,
-    f32_val: 3.14f32,
-    f64_val: 2.718281828f64
+    f32_val: 3.15f32,
+    f64_val: 2.719281828f64
 });
 
 macro_type_test!("decimals", {
@@ -155,7 +155,7 @@ async fn test_mismatching_types() {
     let Value::Array(result_array) = select_result.value() else {
         panic!("Expected result array")
     };
-    let Value::Map(first_record) = result_array.get(0).expect("Expected first record") else {
+    let Value::Map(first_record) = result_array.first().expect("Expected first record") else {
         panic!("Expected record map")
     };
 

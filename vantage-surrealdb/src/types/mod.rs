@@ -208,12 +208,11 @@ impl std::fmt::Display for AnySurrealType {
             Value::Tag(6, _) => write!(f, "NONE"),
             Value::Tag(8, inner) => {
                 // Record ID: Tag(8, Array([Text(table), Text(id)]))
-                if let Value::Array(parts) = inner.as_ref() {
-                    if let (Some(Value::Text(table)), Some(Value::Text(id))) =
+                if let Value::Array(parts) = inner.as_ref()
+                    && let (Some(Value::Text(table)), Some(Value::Text(id))) =
                         (parts.first(), parts.get(1))
-                    {
-                        return write!(f, "{}:{}", table, id);
-                    }
+                {
+                    return write!(f, "{}:{}", table, id);
                 }
                 write!(f, "{:?}", inner)
             }
