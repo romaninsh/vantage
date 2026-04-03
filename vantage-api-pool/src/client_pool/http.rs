@@ -51,7 +51,7 @@ impl<T: Sync + Send + Sized> HttpClientPool<T> {
 
     pub async fn worker_thread(
         client: reqwest::Client,
-        _rate_limit: Option<Arc<KeyedRateLimiter<usize>>>,
+        rate_limit: Option<Arc<KeyedRateLimiter<usize>>>,
         request_receiver: Arc<tokio::sync::Mutex<mpsc::Receiver<EventualRequest<T>>>>,
         response_sender: mpsc::Sender<EventualRequest<T>>,
         w: usize,
@@ -69,6 +69,13 @@ impl<T: Sync + Send + Sized> HttpClientPool<T> {
                 },
             };
             retry = None;
+
+            if let Some(ref rl) = rate_limit {
+                let sleep_for = rl.get_sleep_and_update(w);
+                if !sleep_for.is_zero() {
+                    tokio::time::sleep(sleep_for).await;
+                }
+            }
 
             request.time_request_start();
             let result = request.execute(&client).await;

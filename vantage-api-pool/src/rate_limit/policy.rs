@@ -37,6 +37,7 @@ struct RateLimitBucket {
 pub struct RateLimitPolicyEnforcer<T: Eq + Hash> {
     policy: RateLimitPolicy,
     buckets: Mutex<HashMap<T, RateLimitBucket>>,
+    call_count: std::sync::atomic::AtomicU64,
 }
 
 impl<T: Eq + Hash + Clone> RateLimitPolicyEnforcer<T> {
@@ -44,6 +45,7 @@ impl<T: Eq + Hash + Clone> RateLimitPolicyEnforcer<T> {
         Self {
             policy,
             buckets: Mutex::new(HashMap::new()),
+            call_count: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -116,9 +118,14 @@ impl<T: Eq + Hash + Clone> RateLimitPolicyEnforcer<T> {
             }
         }
 
-        // Cleanup old buckets occasionally
-        if now.elapsed().as_secs() % 600 == 0 {
-            let cutoff = now - Duration::from_secs(3600); // 1 hour
+        // Cleanup old buckets every ~1000 calls
+        if self
+            .call_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            % 1000
+            == 0
+        {
+            let cutoff = now - Duration::from_secs(3600);
             buckets.retain(|_, bucket| bucket.reset_time > cutoff);
         }
 

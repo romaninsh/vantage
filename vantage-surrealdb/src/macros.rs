@@ -6,8 +6,9 @@
 /// - `surreal_expr!("template", (expr))` — expr becomes `ExpressiveEnum::Nested(expr.expr())`
 /// - `surreal_expr!("template", {deferred})` — deferred becomes `ExpressiveEnum::Deferred(deferred)`
 ///
-/// Any type implementing `SurrealType` can be used as a scalar (i64, String, bool, etc.)
-/// since `From<T: SurrealType> for AnySurrealType` is implemented as a blanket.
+/// Scalar arguments must implement `Into<AnySurrealType>` — supported types are:
+/// `i8`–`u64`, `isize`/`usize`, `f32`/`f64`, `bool`, `String`, and `&str`.
+/// Other expression-like values should be wrapped in `( ... )` for nested expressions.
 #[macro_export]
 macro_rules! surreal_expr {
     // Simple template without parameters

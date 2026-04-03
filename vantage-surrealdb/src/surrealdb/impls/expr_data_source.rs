@@ -65,7 +65,12 @@ impl ExprDataSource<AnySurrealType> for SurrealDB {
                 .iter()
                 .find(|(k, _)| matches!(k, ciborium::Value::Text(key) if key == "result"))
                 .map(|(_, v)| v)
-                .unwrap_or(&result);
+                .ok_or_else(|| {
+                    vantage_core::error!(
+                        "Successful SurrealDB response missing result field",
+                        response_payload = format!("{:?}", response)
+                    )
+                })?;
 
             AnySurrealType::from_cbor(extracted_result).ok_or_else(|| {
                 vantage_core::error!("Failed to convert SurrealDB result to AnySurrealType")

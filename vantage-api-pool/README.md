@@ -1,8 +1,11 @@
 # vantage-api-pool
 
-High-performance REST API client pool for the [Vantage](https://github.com/romaninsh/vantage) data framework.
+High-performance REST API client pool for the [Vantage](https://github.com/romaninsh/vantage) data
+framework.
 
-Provides `PoolApi`, a `TableSource` implementation backed by a concurrent HTTP client pool with automatic pagination, prefetching, and rate limiting. Use the same `Table<PoolApi, E>` / entity pattern as any other Vantage backend.
+Provides `PoolApi`, a `TableSource` implementation backed by a concurrent HTTP client pool with
+automatic pagination, prefetching, and rate limiting. Use the same `Table<PoolApi, E>` / entity
+pattern as any other Vantage backend.
 
 ## Quick start
 
@@ -44,51 +47,53 @@ PoolApi (TableSource)
         └── PaginatedStream (async Stream with prefetch)
 ```
 
-**Request flow:** `Table.list_values()` -> `PoolApi.list_table_values()` -> `PaginatedStream` fetches pages concurrently via `AwwPool.get()` -> worker threads execute HTTP requests -> responses are matched back and yielded as stream items.
+**Request flow:** `Table.list_values()` -> `PoolApi.list_table_values()` -> `PaginatedStream`
+fetches pages concurrently via `AwwPool.get()` -> worker threads execute HTTP requests -> responses
+are matched back and yielded as stream items.
 
 ## Modules
 
 ### Core pool
 
-| File | Description |
-|------|-------------|
-| `src/aww_pool.rs` | `AwwPool` — top-level pool API. Manages workers, auth tokens, and request dispatch. |
-| `src/client_pool/http.rs` | `HttpClientPool` — spawns N worker threads that process HTTP requests from a channel. Handles per-worker rate limiting. |
-| `src/eventual_request/mod.rs` | `EventualRequest` — wraps a single HTTP request with retry logic. Exponential backoff on 429/5xx errors. |
-| `src/matcher/mod.rs` | `EventualRequestMatcher` — routes responses back to callers using ID-based matching. Async coordination between senders and receivers. |
+| File                          | Description                                                                                                                            |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/aww_pool.rs`             | `AwwPool` — top-level pool API. Manages workers, auth tokens, and request dispatch.                                                    |
+| `src/client_pool/http.rs`     | `HttpClientPool` — spawns N worker threads that process HTTP requests from a channel. Handles per-worker rate limiting.                |
+| `src/eventual_request/mod.rs` | `EventualRequest` — wraps a single HTTP request with retry logic. Exponential backoff on 429/5xx errors.                               |
+| `src/matcher/mod.rs`          | `EventualRequestMatcher` — routes responses back to callers using ID-based matching. Async coordination between senders and receivers. |
 
 ### Pagination
 
-| File | Description |
-|------|-------------|
-| `src/paginator/paginated_stream.rs` | `PaginatedStream` — implements `futures::Stream`. Fetches pages via tokio tasks with configurable prefetch depth. Expects `{"data": [...], "pagination": {"total_pages": N}}` response format. |
-| `src/paginator/paginated_stream2.rs` | `PaginatedStream2` — alternative with sequential fetch + overlap. |
-| `src/paginator/paginated_stream3.rs` | `PaginatedStream3` — pure sequential, minimal overhead. |
-| `src/paginator/paginated_stream4.rs` | `ItemStream4` — channel-based with dedicated worker thread. |
+| File                                 | Description                                                                                                                                                                                    |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/paginator/paginated_stream.rs`  | `PaginatedStream` — implements `futures::Stream`. Fetches pages via tokio tasks with configurable prefetch depth. Expects `{"data": [...], "pagination": {"total_pages": N}}` response format. |
+| `src/paginator/paginated_stream2.rs` | `PaginatedStream2` — alternative with sequential fetch + overlap.                                                                                                                              |
+| `src/paginator/paginated_stream3.rs` | `PaginatedStream3` — pure sequential, minimal overhead.                                                                                                                                        |
+| `src/paginator/paginated_stream4.rs` | `ItemStream4` — channel-based with dedicated worker thread.                                                                                                                                    |
 
 `PaginatedStream` (used by `PoolApi`) is the best performer across all configurations.
 
 ### Rate limiting
 
-| File | Description |
-|------|-------------|
-| `src/rate_limit/keyed_rate_limiter.rs` | `KeyedRateLimiter` — per-key rate limiting with sleep-based throttling. |
-| `src/rate_limit/policy.rs` | `RateLimitPolicyEnforcer` — IETF-compliant rate limit policy (returns 429 with headers). |
-| `src/rate_limit/damper.rs` | Adaptive dampening for rate-limited requests. |
-| `src/rate_limit/rate_limiter.rs` | `RateLimiter` — simple single-key rate limiter. |
+| File                                   | Description                                                                              |
+| -------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `src/rate_limit/keyed_rate_limiter.rs` | `KeyedRateLimiter` — per-key rate limiting with sleep-based throttling.                  |
+| `src/rate_limit/policy.rs`             | `RateLimitPolicyEnforcer` — IETF-compliant rate limit policy (returns 429 with headers). |
+| `src/rate_limit/damper.rs`             | Reserved for future adaptive dampening support; currently not implemented.               |
+| `src/rate_limit/rate_limiter.rs`       | `RateLimiter` — simple single-key rate limiter.                                          |
 
 ### Statistics
 
-| File | Description |
-|------|-------------|
-| `src/stats/mod.rs` | `Stats` — tracks success/error/retry counts with timing. |
-| `src/stats/average.rs` | `Average` — running average computation for response times. |
-| `src/stats/interval.rs` | Interval-based stat differencing for live reporting. |
+| File                    | Description                                                 |
+| ----------------------- | ----------------------------------------------------------- |
+| `src/stats/mod.rs`      | `Stats` — tracks success/error/retry counts with timing.    |
+| `src/stats/average.rs`  | `Average` — running average computation for response times. |
+| `src/stats/interval.rs` | Interval-based stat differencing for live reporting.        |
 
 ### Vantage integration
 
-| File | Description |
-|------|-------------|
+| File              | Description                                                                                                                                                                                                 |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/pool_api.rs` | `PoolApi` — implements `TableSource` for `AwwPool`. `list_table_values()` auto-paginates by collecting a `PaginatedStream`. `stream_table_values()` exposes the stream directly for incremental processing. |
 
 ## AwwPool configuration
@@ -96,7 +101,7 @@ PoolApi (TableSource)
 ```rust
 AwwPool::new(
     workers: usize,         // Number of HTTP worker threads (default: 3)
-    rate_limit: Option<Decimal>,  // Requests/minute per worker (None = unlimited)
+    rate_limit: Option<Decimal>,  // Requests/second per worker (None = unlimited)
     use_dampener: bool,     // Adaptive rate dampening on 429 responses
     base_url: String,       // API base URL
 )
@@ -112,7 +117,8 @@ pool.with_auth_callback(
 )
 ```
 
-Tokens are acquired lazily and cached. Multiple tokens can be rotated for APIs with per-token rate limits.
+Tokens are acquired lazily and cached. Multiple tokens can be rotated for APIs with per-token rate
+limits.
 
 ### Direct pool usage
 
@@ -141,7 +147,8 @@ while let Some(item) = stream.next().await {
 
 ## Vantage integration
 
-`PoolApi` wraps `Arc<AwwPool>` and implements `TableSource`, so it works with `Table`, `Entity`, `print_table`, and all other Vantage features.
+`PoolApi` wraps `Arc<AwwPool>` and implements `TableSource`, so it works with `Table`, `Entity`,
+`print_table`, and all other Vantage features.
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -173,8 +180,8 @@ println!("Population: {}", rosario.population);
 ```json
 {
   "data": [
-    {"name": "Berlin", "population": 3426354},
-    {"name": "Munich", "population": 1510378}
+    { "name": "Berlin", "population": 3426354 },
+    { "name": "Munich", "population": 1510378 }
   ],
   "pagination": {
     "page": 1,
@@ -187,7 +194,8 @@ println!("Population: {}", rosario.population);
 }
 ```
 
-Pagination is driven by `total_pages` from the first response. Pages are fetched as `?page=N` query parameters.
+Pagination is driven by `total_pages` from the first response. Pages are fetched as `?page=N` query
+parameters.
 
 ## License
 
