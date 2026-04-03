@@ -1,7 +1,6 @@
 use bakery_model3::{Bakery, Client, Order, Product, SurrealConnection, SurrealDB};
 use vantage_expressions::Expressive;
 use vantage_surrealdb::surreal_expr;
-use vantage_surrealdb::surrealdb::impls::build_select;
 use vantage_surrealdb::thing::Thing;
 use vantage_surrealdb::types::AnySurrealType;
 use vantage_table::column::core::Column;
@@ -25,7 +24,7 @@ async fn test_build_select_basic() {
     let db = get_db().await;
     let table = Product::surreal_table(db);
 
-    let select = build_select::build_select(&table);
+    let select = table.select();
     assert_eq!(
         select.preview(),
         "SELECT id, name, calories, price, is_deleted FROM product"
@@ -37,7 +36,7 @@ async fn test_build_select_with_condition() {
     let db = get_db().await;
     let table = Product::surreal_table(db).with_condition(surreal_expr!("active = {}", true));
 
-    let select = build_select::build_select(&table);
+    let select = table.select();
     assert_eq!(
         select.preview(),
         "SELECT id, name, calories, price, is_deleted FROM product WHERE active = true"
@@ -49,7 +48,7 @@ async fn test_build_select_count_query() {
     let db = get_db().await;
     let table = Product::surreal_table(db);
 
-    let select = build_select::build_select(&table);
+    let select = table.select();
     let count_query = select.as_count();
     assert_eq!(
         count_query.expr().preview(),

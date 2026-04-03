@@ -6,7 +6,7 @@ use vantage_dataset::traits::Result;
 use vantage_expressions::traits::associated_expressions::AssociatedExpression;
 use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
-use vantage_expressions::{Expression, Expressive};
+use vantage_expressions::{Expression, Expressive, SelectableDataSource};
 use vantage_table::column::core::{Column, ColumnType};
 
 use vantage_table::table::Table;
@@ -136,7 +136,7 @@ impl TableSource for SurrealDB {
             .map(|c| c.name().to_string())
             .unwrap_or_else(|| "id".to_string());
 
-        let select = super::build_select::build_select(table);
+        let select = table.select();
         let result = self.execute(&select.expr()).await?;
 
         let arr = result
@@ -193,7 +193,7 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let mut select = super::build_select::build_select(table);
+        let mut select = table.select();
         select.limit = Some(1);
         let result = self.execute(&select.expr()).await?;
 
@@ -228,7 +228,7 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let mut select = super::build_select::build_select(table);
+        let mut select = table.select();
         select.order_by.clear(); // ordering is unnecessary for count
         let count_query = select.as_count();
         let result = self.execute(&count_query.expr()).await?;
@@ -245,7 +245,7 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let mut select = super::build_select::build_select(table);
+        let mut select = table.select();
         select.order_by.clear();
         let sum_query = select.as_sum(column.clone());
         self.execute(&sum_query.expr()).await
@@ -259,7 +259,7 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let mut select = super::build_select::build_select(table);
+        let mut select = table.select();
         select.order_by.clear();
         let max_query = select.as_max(column.clone());
         self.execute(&max_query.expr()).await
@@ -273,7 +273,7 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let mut select = super::build_select::build_select(table);
+        let mut select = table.select();
         select.order_by.clear();
         let min_query = select.as_min(column.clone());
         self.execute(&min_query.expr()).await
@@ -390,7 +390,7 @@ impl TableSource for SurrealDB {
         E: Entity<Self::Value> + 'static,
         Self: ExprDataSource<Self::Value> + Sized,
     {
-        let mut select = super::build_select::build_select(table);
+        let mut select = table.select();
         select.order_by.clear();
         select.fields.clear();
 
