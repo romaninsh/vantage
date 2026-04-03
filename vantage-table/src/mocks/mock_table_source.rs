@@ -518,23 +518,7 @@ impl TableExprSource for MockTableSource {
         &self,
         table: &Table<Self, E>,
         column: &Self::Column<R>,
-    ) -> vantage_expressions::AssociatedExpression<'_, Self, Self::Value, R>
-    where
-        R: Default + std::ops::AddAssign,
-    {
-        let column_name = column.name();
-        let expr = expr_any!("select sum({})", column_name);
-        vantage_expressions::AssociatedExpression::new(expr, self)
-    }
-
-    fn get_table_max_expr<E: Entity<Self::Value>, R: ColumnType>(
-        &self,
-        _table: &Table<Self, E>,
-        column: &Self::Column<R>,
-    ) -> vantage_expressions::AssociatedExpression<'_, Self, Self::Value, R>
-    where
-        R: Default + std::ops::AddAssign,
-    {
+    ) -> vantage_expressions::AssociatedExpression<'_, Self, Self::Value, R> {
         let column_name = column.name();
         let table_name = table.table_name();
         let expr = expr_any!("select max({}) from {}", column_name, table_name);
@@ -549,19 +533,6 @@ impl TableExprSource for MockTableSource {
         let column_name = column.name();
         let table_name = table.table_name();
         let expr = expr_any!("select min({}) from {}", column_name, table_name);
-        vantage_expressions::AssociatedExpression::new(expr, self)
-    }
-
-    fn get_table_min_expr<E: Entity<Self::Value>, R: ColumnType>(
-        &self,
-        _table: &Table<Self, E>,
-        column: &Self::Column<R>,
-    ) -> vantage_expressions::AssociatedExpression<'_, Self, Self::Value, R>
-    where
-        R: Default + std::ops::AddAssign,
-    {
-        let column_name = column.name();
-        let expr = expr_any!("select min({})", column_name);
         vantage_expressions::AssociatedExpression::new(expr, self)
     }
 }
