@@ -1,4 +1,7 @@
+use std::pin::Pin;
+
 use async_trait::async_trait;
+use futures_core::Stream;
 use indexmap::IndexMap;
 use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
@@ -19,6 +22,12 @@ impl<T: TableSource, E: Entity<T::Value>> ReadableValueSet for Table<T, E> {
 
     async fn get_some_value(&self) -> Result<Option<(Self::Id, Record<Self::Value>)>> {
         self.data_source().get_table_some_value(self).await
+    }
+
+    fn stream_values(
+        &self,
+    ) -> Pin<Box<dyn Stream<Item = Result<(Self::Id, Record<Self::Value>)>> + Send + '_>> {
+        self.data_source().stream_table_values(self)
     }
 }
 
