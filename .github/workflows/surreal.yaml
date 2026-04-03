@@ -130,8 +130,7 @@ jobs:
           DB_NS: bakery
 
       - name: Run bakery_model3 example
-        run: cargo run --example 0-intro
-        working-directory: bakery_model3
+        run: cargo run -p bakery_model3 --example 0-intro
         env:
           DB_ENDPOINT: ws://localhost:8000
           DB_USER: root

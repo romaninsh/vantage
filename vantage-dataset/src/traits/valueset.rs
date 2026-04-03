@@ -99,6 +99,7 @@ pub trait ReadableValueSet: ValueSet {
     ///
     /// Default wraps `list_values()`. Backends with native streaming
     /// (e.g. paginated REST APIs) can override for incremental fetching.
+    #[allow(clippy::type_complexity)]
     fn stream_values(
         &self,
     ) -> Pin<Box<dyn Stream<Item = Result<(Self::Id, Record<Self::Value>)>> + Send + '_>>
