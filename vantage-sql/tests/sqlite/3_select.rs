@@ -2,7 +2,6 @@
 //!
 //! All queries built using the Selectable trait methods, not custom builders.
 
-use serde::Deserialize;
 use vantage_expressions::{ExprDataSource, Expressive, Selectable};
 use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 #[allow(unused_imports)]

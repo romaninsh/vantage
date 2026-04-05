@@ -1,5 +1,5 @@
 use vantage_expressions::traits::selectable::{Selectable, SourceRef};
-use vantage_expressions::{Expression, ExpressiveEnum};
+use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
 use crate::sqlite::types::AnySqliteType;
 use crate::sqlite::statements::SqliteSelect;
@@ -12,7 +12,6 @@ impl Selectable<AnySqliteType> for SqliteSelect {
         let source_ref = source.into().into_expressive_enum();
         let expr = match (source_ref, alias) {
             (ExpressiveEnum::Scalar(val), None) => {
-                // Table name as string → quote it
                 Expression::new(
                     format!("\"{}\"", val.try_get::<String>().unwrap_or_default()),
                     vec![],
@@ -41,31 +40,32 @@ impl Selectable<AnySqliteType> for SqliteSelect {
             .push(Expression::new(format!("\"{}\"", field.into()), vec![]));
     }
 
-    fn add_expression(&mut self, expression: Expr, alias: Option<String>) {
+    fn add_expression(&mut self, expression: impl Expressive<AnySqliteType>, alias: Option<String>) {
+        let expr = expression.expr();
         let field = match alias {
             Some(a) => Expression::new(
                 format!("{{}} AS \"{}\"", a),
-                vec![ExpressiveEnum::Nested(expression)],
+                vec![ExpressiveEnum::Nested(expr)],
             ),
-            None => expression,
+            None => expr,
         };
         self.fields.push(field);
     }
 
-    fn add_where_condition(&mut self, condition: Expr) {
-        self.where_conditions.push(condition);
+    fn add_where_condition(&mut self, condition: impl Expressive<AnySqliteType>) {
+        self.where_conditions.push(condition.expr());
     }
 
     fn set_distinct(&mut self, distinct: bool) {
         self.distinct = distinct;
     }
 
-    fn add_order_by(&mut self, expression: Expr, ascending: bool) {
-        self.order_by.push((expression, ascending));
+    fn add_order_by(&mut self, expression: impl Expressive<AnySqliteType>, ascending: bool) {
+        self.order_by.push((expression.expr(), ascending));
     }
 
-    fn add_group_by(&mut self, expression: Expr) {
-        self.group_by.push(expression);
+    fn add_group_by(&mut self, expression: impl Expressive<AnySqliteType>) {
+        self.group_by.push(expression.expr());
     }
 
     fn set_limit(&mut self, limit: Option<i64>, skip: Option<i64>) {
@@ -125,12 +125,12 @@ impl Selectable<AnySqliteType> for SqliteSelect {
         count_select.render()
     }
 
-    fn as_sum(&self, column: Expr) -> Expr {
+    fn as_sum(&self, column: impl Expressive<AnySqliteType>) -> Expr {
         let mut sum_select = self.clone();
         sum_select.fields.clear();
         sum_select.fields.push(Expression::new(
             "SUM({})",
-            vec![ExpressiveEnum::Nested(column)],
+            vec![ExpressiveEnum::Nested(column.expr())],
         ));
         sum_select.order_by.clear();
         sum_select.render()

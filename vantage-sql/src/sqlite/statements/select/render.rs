@@ -4,6 +4,15 @@ use crate::sqlite::types::AnySqliteType;
 
 use super::{Expr, SqliteSelect};
 
+fn render_condition_list(conditions: &[Expr], keyword: &str) -> Expr {
+    if conditions.is_empty() {
+        Expression::new("", vec![])
+    } else {
+        let combined = Expression::from_vec(conditions.to_vec(), " AND ");
+        Expression::new(format!(" {} {{}}", keyword), vec![ExpressiveEnum::Nested(combined)])
+    }
+}
+
 impl SqliteSelect {
     fn render_fields(&self) -> Expr {
         if self.fields.is_empty() {
@@ -27,13 +36,21 @@ impl SqliteSelect {
         }
     }
 
-    fn render_where(&self) -> Expr {
-        if self.where_conditions.is_empty() {
+    fn render_joins(&self) -> Expr {
+        if self.joins.is_empty() {
             Expression::new("", vec![])
         } else {
-            let combined = Expression::from_vec(self.where_conditions.clone(), " AND ");
-            Expression::new(" WHERE {}", vec![ExpressiveEnum::Nested(combined)])
+            let parts: Vec<Expr> = self.joins.iter().map(|j| j.render()).collect();
+            Expression::from_vec(parts, "")
         }
+    }
+
+    fn render_where(&self) -> Expr {
+        render_condition_list(&self.where_conditions, "WHERE")
+    }
+
+    fn render_having(&self) -> Expr {
+        render_condition_list(&self.having, "HAVING")
     }
 
     fn render_group_by(&self) -> Expr {
@@ -46,6 +63,27 @@ impl SqliteSelect {
                     self.group_by.clone(),
                     ", ",
                 ))],
+            )
+        }
+    }
+
+    fn render_windows(&self) -> Expr {
+        if self.windows.is_empty() {
+            Expression::new("", vec![])
+        } else {
+            let parts: Vec<Expr> = self
+                .windows
+                .iter()
+                .map(|(name, win)| {
+                    Expression::new(
+                        format!("{} AS {{}}", name),
+                        vec![ExpressiveEnum::Nested(win.definition())],
+                    )
+                })
+                .collect();
+            Expression::new(
+                " WINDOW {}",
+                vec![ExpressiveEnum::Nested(Expression::from_vec(parts, ", "))],
             )
         }
     }
@@ -96,17 +134,44 @@ impl SqliteSelect {
         }
     }
 
+    fn render_ctes(&self) -> Expr {
+        if self.ctes.is_empty() {
+            Expression::new("", vec![])
+        } else {
+            let is_recursive = self.ctes.iter().any(|(_, _, r)| *r);
+            let parts: Vec<Expr> = self
+                .ctes
+                .iter()
+                .map(|(name, query, _)| {
+                    Expression::new(
+                        format!("{} AS ({{}})", name),
+                        vec![ExpressiveEnum::Nested(query.clone())],
+                    )
+                })
+                .collect();
+            let keyword = if is_recursive { "WITH RECURSIVE" } else { "WITH" };
+            Expression::new(
+                format!("{} {{}} ", keyword),
+                vec![ExpressiveEnum::Nested(Expression::from_vec(parts, ", "))],
+            )
+        }
+    }
+
     pub fn render(&self) -> Expr {
         Expression::new(
             format!(
-                "SELECT{} {{}}{{}}{{}}{{}}{{}}{{}}",
+                "{{}}SELECT{} {{}}{{}}{{}}{{}}{{}}{{}}{{}}{{}}{{}}",
                 if self.distinct { " DISTINCT" } else { "" }
             ),
             vec![
+                ExpressiveEnum::Nested(self.render_ctes()),
                 ExpressiveEnum::Nested(self.render_fields()),
                 ExpressiveEnum::Nested(self.render_from()),
+                ExpressiveEnum::Nested(self.render_joins()),
                 ExpressiveEnum::Nested(self.render_where()),
                 ExpressiveEnum::Nested(self.render_group_by()),
+                ExpressiveEnum::Nested(self.render_having()),
+                ExpressiveEnum::Nested(self.render_windows()),
                 ExpressiveEnum::Nested(self.render_order_by()),
                 ExpressiveEnum::Nested(self.render_limit()),
             ],

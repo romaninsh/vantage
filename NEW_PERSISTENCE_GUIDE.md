@@ -586,12 +586,14 @@ This approach has two advantages. First, you don't over-design — you only add 
 need. Second, every new feature ships with a test that proves it works against a real database, not
 just string comparison.
 
-As you proceed - you can add new structs, for example "CASE" can be implemented as SqliteCase. Make
-sure it implements `Expressive` and then it can be used inside your queries.
-
-The select builder does not require to validate query logic during build, it only need to render.
-Most methods will accept either scalar values or other expressions. A good time to look into
-ExpressiveOr and use it for argument types in your query builder.
+When your queries outgrow what the select struct offers directly, extract **primitives** and
+**nested structs** rather than bloating the builder. For example, `Identifier` (in
+`vantage-sql/src/primitives/`) handles qualified column names (`"u"."name"`) and aliases — it
+implements `Expressive<T>` so it plugs straight into expressions. Similarly, `SqliteSelectJoin`
+lives inside the select module and renders its own `INNER JOIN ... ON ...` clause. The select struct
+just holds a `Vec<SqliteSelectJoin>` and calls `render()` on each one. This pattern — small struct
+with `Expressive` impl, composed into the builder — scales to CASE, CTE, window specs, and anything
+else without the select struct growing unbounded.
 
 ### Other statements
 

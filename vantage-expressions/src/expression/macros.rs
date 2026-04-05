@@ -73,6 +73,7 @@ macro_rules! expr_param {
     // If expr implements Expressive, convert it to Expression first
     (($expr:expr)) => {
         $crate::traits::expressive::ExpressiveEnum::Nested({
+            #[allow(unused_imports)]
             use $crate::traits::expressive::Expressive;
             $expr.expr()
         })
