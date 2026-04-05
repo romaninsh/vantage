@@ -13,6 +13,7 @@ mod sqlite {
     mod records;
     #[path = "2_associated.rs"]
     mod associated;
+    #[path = "3_select.rs"]
+    mod select;
     mod bakery;
-    mod statements;
 }
