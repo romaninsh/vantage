@@ -1,5 +1,6 @@
-use serde_json::Value as JsonValue;
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
+
+use crate::sqlite::types::AnySqliteType;
 
 use super::{Expr, SqliteSelect};
 
@@ -79,17 +80,17 @@ impl SqliteSelect {
             (Some(limit), Some(skip)) => Expression::new(
                 " LIMIT {} OFFSET {}",
                 vec![
-                    ExpressiveEnum::Scalar(JsonValue::Number(limit.into())),
-                    ExpressiveEnum::Scalar(JsonValue::Number(skip.into())),
+                    ExpressiveEnum::Scalar(AnySqliteType::new(limit)),
+                    ExpressiveEnum::Scalar(AnySqliteType::new(skip)),
                 ],
             ),
             (Some(limit), None) => Expression::new(
                 " LIMIT {}",
-                vec![ExpressiveEnum::Scalar(JsonValue::Number(limit.into()))],
+                vec![ExpressiveEnum::Scalar(AnySqliteType::new(limit))],
             ),
             (None, Some(skip)) => Expression::new(
                 " OFFSET {}",
-                vec![ExpressiveEnum::Scalar(JsonValue::Number(skip.into()))],
+                vec![ExpressiveEnum::Scalar(AnySqliteType::new(skip))],
             ),
             (None, None) => Expression::new("", vec![]),
         }
@@ -117,7 +118,7 @@ impl SqliteSelect {
     }
 }
 
-impl Expressive<JsonValue> for SqliteSelect {
+impl Expressive<AnySqliteType> for SqliteSelect {
     fn expr(&self) -> Expr {
         self.render()
     }

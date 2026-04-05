@@ -13,6 +13,9 @@ mod sqlite {
     mod records;
     #[path = "2_associated.rs"]
     mod associated;
+    #[path = "3_select.rs"]
+    mod select;
+    #[path = "3_complex_queries.rs"]
+    mod complex_queries;
     mod bakery;
-    mod statements;
 }
