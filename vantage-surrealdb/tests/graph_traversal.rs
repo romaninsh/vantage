@@ -165,14 +165,18 @@ async fn query10_low_stock_products() {
 async fn subquery_paying_clients() {
     let db = v1_db().await;
 
-    // Inner: get paying client IDs via graph
+    // Inner: get paying clients via graph
     let inner = SurrealSelect::new()
         .from(Thing::new("bakery", "hill_valley").lref("belongs_to", "client"))
         .field("name")
-        .with_where(surreal_expr!("is_paying_client = {}", true))
-        .with_order_by("name", true);
+        .with_where(surreal_expr!("is_paying_client = {}", true));
 
-    let rows = inner.get(&db).await.unwrap();
+    // Wrap to get ordered results
+    let mut outer = SurrealSelect::new();
+    outer.set_source(inner.expr(), None);
+    outer.add_order_by(surreal_expr!("name"), true);
+
+    let rows = outer.get(&db).await.unwrap();
     assert_eq!(rows.len(), 2); // Marty + Doc are paying
 
     let names: Vec<String> = rows

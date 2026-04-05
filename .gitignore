@@ -5,3 +5,4 @@ target
 *.redb
 .c*e
 .claude/
+vantage-sql-old
