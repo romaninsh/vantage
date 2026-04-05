@@ -22,7 +22,9 @@ pub(crate) fn bind_sqlite_value<'q>(
 ) -> sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>> {
     let json = value.value();
     match value.type_variant() {
-        Some(SqliteTypeVariants::Null) | None => query.bind(None::<String>),
+        Some(SqliteTypeVariants::Null) => query.bind(None::<String>),
+        // Untyped values (from deferred results, database reads) — infer from JSON
+        None => bind_by_json(query, json),
         Some(SqliteTypeVariants::Bool) => {
             match json {
                 JsonValue::Number(n) => query.bind(n.as_i64().unwrap_or(0) != 0),
@@ -60,6 +62,29 @@ pub(crate) fn bind_sqlite_value<'q>(
                 .unwrap_or("");
             query.bind(s)
         }
+    }
+}
+
+/// Bind a JSON value without type variant — infers the bind type from the value itself.
+/// Used for untyped values (deferred results, database reads).
+fn bind_by_json<'q>(
+    query: sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>>,
+    json: &'q JsonValue,
+) -> sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>> {
+    match json {
+        JsonValue::Null => query.bind(None::<String>),
+        JsonValue::Bool(b) => query.bind(*b),
+        JsonValue::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                query.bind(i)
+            } else if let Some(f) = n.as_f64() {
+                query.bind(f)
+            } else {
+                query.bind(n.to_string())
+            }
+        }
+        JsonValue::String(s) => query.bind(s.as_str()),
+        other => query.bind(other.to_string()),
     }
 }
 

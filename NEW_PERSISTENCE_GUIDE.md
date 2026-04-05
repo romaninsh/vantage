@@ -204,13 +204,35 @@ because there's no variant to check — it just asks "can JSON number 42 be read
 
 Also test `Option<T>` fields, null handling, and missing fields.
 
+### TryFrom<AnyType> for common types
+
+You also need `TryFrom<AnyType>` implementations for scalar types and Records.
+These are used later by `AssociatedExpression::get()` in Step 2, but they belong
+here because they're part of the type system:
+
+```rust
+// Scalars — extract single value from single-row results
+impl TryFrom<AnySqliteType> for i64 { ... }
+impl TryFrom<AnySqliteType> for String { ... }
+// etc.
+
+// Records — extract first row from result array
+impl TryFrom<AnySqliteType> for Record<AnySqliteType> { ... }
+impl TryFrom<AnySqliteType> for Record<serde_json::Value> { ... }
+```
+
+For scalars, if the result is a single-row, single-column array like `[{"COUNT(*)": 3}]`,
+extract the value automatically. For Records, extract the first row and wrap each
+field as an untyped `AnyType`.
+
 ### Step 1 conclusion
 
 At this point you should have:
 
 1. **Type impls** in `src/<backend>/types/` — the `vantage_type_system!` macro call,
-   trait implementations for each Rust type, `From` conversions on `AnyType`, and
-   variant detection in `TypeVariants::from_*()`.
+   trait implementations for each Rust type, `From` conversions on `AnyType`,
+   variant detection in `TypeVariants::from_*()`, and `TryFrom<AnyType>` for
+   scalars and Records.
 
 2. **Tests** in `tests/<backend>/1_types_round_trip.rs` covering:
    - In-memory `AnyType` round-trips for each supported type
@@ -255,147 +277,180 @@ Reading:  sqlx → Record<AnySqliteType> (untyped) → try_get / serde → Struc
 ```
 
 
-## Step 2: Implement ExprDataSource
+## Step 2: Make expressions work
 
-The expression system is how vantage builds and executes queries without knowing
-which database you're talking to. An `Expression<T>` is a template string with `{}`
-placeholders and a list of typed parameters. The type parameter `T` is your `AnyType`
-— this is what makes the type markers from Step 1 flow through to binding.
+With the type system in place, you can now use `Expression<AnySqliteType>` to build
+and execute queries. This step has two deliverables: a convenience macro and the
+`ExprDataSource` trait implementation.
 
-### Create a vendor-specific expression macro
+### The vendor macro
 
-Each backend defines a convenience macro that produces `Expression<AnyType>`. Vantage
-already ships `surreal_expr!` for SurrealDB. For SQLite, we define `sqlite_expr!`:
-
-```rust
-#[macro_export]
-macro_rules! sqlite_expr {
-    ($template:expr) => {
-        Expression::<AnySqliteType>::new($template, vec![])
-    };
-    ($template:expr, $($param:tt),*) => {
-        Expression::<AnySqliteType>::new(
-            $template,
-            vec![ $(vantage_expressions::expr_param!($param)),* ]
-        )
-    };
-}
-```
-
-The `expr_param!` helper handles the three kinds of parameters:
-- bare value like `42i64` → `ExpressiveEnum::Scalar(42i64.into())`
-- parenthesized expression like `(sub_expr)` → `ExpressiveEnum::Nested(sub_expr.expr())`
-- braced deferred like `{deferred_fn}` → `ExpressiveEnum::Deferred(...)`
-
-Now building expressions is clean:
+Define a macro that produces `Expression<YourAnyType>`. SurrealDB has `surreal_expr!`,
+we create `sqlite_expr!`:
 
 ```rust
-// Simple query — parameters carry type markers automatically
 let expr = sqlite_expr!("SELECT * FROM product WHERE price > {}", 100i64);
-
-// The 100i64 becomes AnySqliteType with Integer variant,
-// which bind_sqlite_value() uses to call query.bind(100i64)
 ```
 
-There's also `sql_expr!` which produces `Expression<serde_json::Value>` — the untyped
-variant. That's used by statement builders (Step 3) where types are inferred from
-context. For `ExprDataSource::execute()`, always use the typed variant.
+Under the hood, `100i64` gets wrapped as `AnySqliteType::new(100i64)` with variant
+`Integer`. When this expression hits the database, the bind layer knows to call
+`query.bind(100i64)` — not `query.bind("100")` or `query.bind(100.0)`.
 
-### Expressions compose
+The macro handles three kinds of parameters:
+- `42i64` → scalar with type marker
+- `(sub_expr)` → nested expression (composed into the template)
+- `{deferred}` → lazy evaluation (resolved at execution time)
 
-Expressions nest naturally. Each sub-expression keeps its own parameters with their
-type markers intact:
+### ExprDataSource
+
+Implement `DataSource` (marker) and `ExprDataSource<AnySqliteType>` on your DB struct.
+The `execute` method takes an expression, flattens nested sub-expressions, converts
+`{}` placeholders to your driver's syntax (`?N` for SQLite, `$N` for Postgres), binds
+parameters using type markers, and returns results.
+
+Results come back as `AnySqliteType` with `type_variant: None` — the database doesn't
+preserve our markers, so results are permissive (see Step 1). For SQLite that's
+especially natural since it doesn't distinguish boolean from integer on the wire.
+
+If the persistence layer you're implementing *does* preserve type information in
+responses (like SurrealDB with CBOR tags), set the correct `type_variant` when
+constructing result values in your `execute()` implementation. That way `try_get`
+enforces type boundaries on both sides of the round-trip.
+
+### Validating with INSERT expressions
+
+The best way to test this is INSERT + SELECT round-trips. A single insert exercises
+all the pieces — macro, parameter binding, type markers, and result parsing:
 
 ```rust
-// Build rows as nested expressions, each with typed parameters
-let row1 = sqlite_expr!("({}, {}, {})", "cupcake", 120i64, false);
-let row2 = sqlite_expr!("({}, {}, {})", "tart", 220i64, false);
+let insert = sqlite_expr!(
+    "INSERT INTO product (id, name, price, is_deleted) VALUES ({}, {}, {}, {})",
+    "cupcake", "Flux Cupcake", 120i64, false
+);
+db.execute(&insert).await?;
 
-// Combine into a single INSERT — Expression::from_vec joins with ", "
+let select = sqlite_expr!("SELECT * FROM product WHERE id = {}", "cupcake");
+let result = db.execute(&select).await?;
+```
+
+Nested expressions let you build multi-row inserts from composable parts:
+
+```rust
+let row1 = sqlite_expr!("({}, {}, {}, {})", "tart", "Time Tart", 220i64, false);
+let row2 = sqlite_expr!("({}, {}, {}, {})", "pie", "Sea Pie", 299i64, true);
+
+// Expression::from_vec joins sub-expressions with a delimiter
 let rows = Expression::from_vec(vec![row1, row2], ", ");
+
+// Nest into the INSERT — flattener resolves everything into a single query
 let insert = Expression::<AnySqliteType>::new(
-    "INSERT INTO product (name, price, is_deleted) VALUES {}",
+    "INSERT INTO product (id, name, price, is_deleted) VALUES {}",
     vec![ExpressiveEnum::Nested(rows)],
 );
-
 db.execute(&insert).await?;
 ```
 
-When executed, the `ExpressionFlattener` collapses all nesting into a flat template
-with only scalar parameters — safe for positional binding.
+The `ExpressionFlattener` collapses all nesting into one flat template with positional
+parameters — each one still carrying its type marker for correct binding.
 
-### What you need to implement
+### Deferring: cross-database value resolution
 
-Two traits on your DB struct:
+Sometimes a query on one database needs a value from another database. That's what
+`defer()` is for — it wraps a query as a closure that executes later, when the outer
+query runs.
+
+This is not a subquery. The deferred query runs first, produces a concrete value, and
+that value gets bound as a regular parameter in the outer query.
 
 ```rust
-impl DataSource for SqliteDB {}  // just a marker
+let (config_db, shop_db) = setup().await;
 
-impl ExprDataSource<AnySqliteType> for SqliteDB {
-    async fn execute(&self, expr: &Expression<AnySqliteType>) -> Result<AnySqliteType> {
-        // 1. Flatten nested expressions
-        // 2. Convert {} placeholders to your driver's bind syntax (?N for SQLite)
-        // 3. Bind the scalar parameters using type-aware bind_sqlite_value()
-        // 4. Execute and convert rows back to AnySqliteType
-    }
+// This doesn't execute yet — it's a closure
+let threshold_query = sqlite_expr!("SELECT value FROM config WHERE key = {}", "min_price");
+let deferred_threshold = config_db.defer(threshold_query);
 
-    fn defer(&self, expr: Expression<AnySqliteType>) -> DeferredFn<AnySqliteType> {
-        // Return a closure that calls execute() later — used for lazy evaluation
-    }
-}
+// Use the deferred value as a parameter in a different database
+let shop_query = Expression::<AnySqliteType>::new(
+    "SELECT name FROM product WHERE price >= {} ORDER BY price",
+    vec![ExpressiveEnum::Deferred(deferred_threshold)],
+);
+
+// When shop_db.execute() runs:
+// 1. Resolves the deferred → calls config_db, gets 150
+// 2. Replaces the Deferred param with Scalar(150)
+// 3. Flattens and binds: SELECT name FROM product WHERE price >= ?1
+let result = shop_db.execute(&shop_query).await?;
 ```
 
-The key helper is `prepare_typed_query` — it flattens the expression and converts
-`{}` placeholders to your driver's syntax:
+Your `execute()` implementation needs to resolve deferred parameters before flattening.
+Walk the parameter list, call `.call().await` on any `Deferred`, and leave `Scalar`
+and `Nested` untouched.
+
+The resolved value comes back as an untyped `AnySqliteType` (no variant marker), so
+it gets bound via JSON-inference. For SQLite this is fine — the loose type system
+handles it. For stricter databases, you may want `defer()` to preserve type
+information from the source query's result.
+
+### Reading query results
+
+So far we've been calling `db.execute(&expr).await` which returns `AnySqliteType`.
+For a SELECT query, that value wraps a JSON array of row objects. To work with
+individual rows, you convert into Records:
 
 ```rust
-fn prepare_typed_query(expr: &Expression<AnySqliteType>) -> (String, Vec<AnySqliteType>) {
-    let flattener = ExpressionFlattener::new();
-    let flattened = flattener.flatten(expr);
-    // Walk the template, replace each {} with ?1, ?2, ...
-    // Collect scalar AnySqliteType values in order
-    (sql_string, params)
-}
-```
+let result = db.execute(&sqlite_expr!("SELECT * FROM product")).await?;
 
-Each database driver has its own placeholder syntax. SQLite and MySQL use `?N`,
-Postgres uses `$N`, SurrealDB uses `$_argN`. The flattener doesn't care — it just
-gives you a flat list of scalars and a template.
-
-Then the bind step uses the type markers from Step 1:
-
-```rust
-fn bind_sqlite_value(query, value: &AnySqliteType) -> ... {
-    match value.type_variant() {
-        Some(SqliteTypeVariants::Integer) => query.bind(value.as_i64()),
-        Some(SqliteTypeVariants::Text) => query.bind(value.as_str()),
-        Some(SqliteTypeVariants::Real) => query.bind(value.as_f64()),
-        // ...
-    }
-}
-```
-
-### Reading results back
-
-`ExprDataSource::execute()` returns an `AnySqliteType`. For queries that return rows,
-this wraps a JSON array of objects. To get typed structs out:
-
-```rust
-let result = db.execute(&sqlite_expr!("SELECT * FROM product WHERE id = {}", "cupcake")).await?;
-
-// Unwrap the array
-let rows = match result.into_value() {
-    serde_json::Value::Array(arr) => arr,
-    _ => panic!("expected array"),
+// Result is AnySqliteType wrapping [{"id":"a","name":"Cheap","price":50}, ...]
+// Convert to records manually:
+let rows: Vec<JsonValue> = match result.into_value() {
+    JsonValue::Array(arr) => arr,
+    _ => panic!("expected rows"),
 };
+let record: Record<JsonValue> = rows[0].clone().into();
+```
 
-// Each row → Record → struct via serde
-let record: Record<serde_json::Value> = rows[0].clone().into();
+That works but it's verbose. The `TryFrom<AnyType>` impls from Step 1 make this
+cleaner through `AssociatedExpression`. When you call `db.associate::<R>(expr)`,
+you get an expression that knows its return type — `.get()` executes and converts
+in one step:
+
+```rust
+// Scalar — extracts single value from single-row result
+let count = db.associate::<i64>(sqlite_expr!("SELECT COUNT(*) FROM product"));
+assert_eq!(count.get().await?, 3);
+
+// Record — extracts first row
+let record: Record<JsonValue> = db
+    .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
+    .get().await?;
+```
+
+From a Record, you can deserialize into a struct. For the `#[entity]` path:
+
+```rust
+#[entity(SqliteType)]
+struct Product { id: String, name: String, price: i64 }
+
+let record: Record<AnySqliteType> = db
+    .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
+    .get().await?;
+let product = Product::from_record(record)?;
+```
+
+Or for the serde path with `Record<JsonValue>`:
+
+```rust
+#[derive(Deserialize)]
+struct Product { id: String, name: String, price: i64 }
+
+let record: Record<JsonValue> = db
+    .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
+    .get().await?;
 let product: Product = Product::from_record(record)?;
 ```
 
-Remember the asymmetry from Step 1: writing uses `AnySqliteType` (type-aware binding),
-reading returns `Record<serde_json::Value>` (struct validates types via serde).
+Testing the failure modes (missing fields, NULL into required field, wrong types)
+can help spot issues in your implementation.
 
 ### Step 2 conclusion
 
@@ -408,8 +463,8 @@ At this point you should have:
    `ExprDataSource<AnyType>` with `execute()` and `defer()`.
 
 3. **Tests** in `tests/<backend>/2_*.rs` covering:
-   - SELECT with parameterized queries (each type)
    - INSERT with typed parameters, read back and verify
-   - Nested expressions (compose sub-expressions, execute as one query)
+   - Multi-row INSERT using nested expressions and `from_vec`
    - Type marker verification (bool binds as bool, not as string "true")
-   - Empty result sets
+   - Cross-database deferred value resolution
+   - AssociatedExpression with scalar, Record, and entity results
