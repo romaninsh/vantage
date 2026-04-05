@@ -12,18 +12,20 @@ impl SelectableDataSource<AnySqliteType> for SqliteDB {
         SqliteSelect::new()
     }
 
-    async fn execute_select(&self, select: &Self::Select) -> vantage_core::Result<Vec<AnySqliteType>> {
+    async fn execute_select(
+        &self,
+        select: &Self::Select,
+    ) -> vantage_core::Result<Vec<AnySqliteType>> {
         use vantage_expressions::ExprDataSource;
 
         let result = self.execute(&select.expr()).await?;
 
         // Result is an array of row objects — unwrap into individual AnySqliteType values
         match result.value() {
-            serde_json::Value::Array(arr) => {
-                Ok(arr.iter()
-                    .map(|v| AnySqliteType::untyped(v.clone()))
-                    .collect())
-            }
+            serde_json::Value::Array(arr) => Ok(arr
+                .iter()
+                .map(|v| AnySqliteType::untyped(v.clone()))
+                .collect()),
             _ => Ok(vec![result]),
         }
     }

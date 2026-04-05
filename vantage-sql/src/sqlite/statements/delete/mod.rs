@@ -1,10 +1,10 @@
 mod builder;
 mod render;
 
-use serde_json::Value as JsonValue;
+use crate::sqlite::types::AnySqliteType;
 use vantage_expressions::Expression;
 
-type Expr = Expression<JsonValue>;
+type Expr = Expression<AnySqliteType>;
 
 /// SQLite DELETE statement builder.
 #[derive(Debug, Clone)]

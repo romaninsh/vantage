@@ -20,6 +20,12 @@ pub struct Case<T: Debug + Display + Clone> {
     alias: Option<String>,
 }
 
+impl<T: Debug + Display + Clone> Default for Case<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Debug + Display + Clone> Case<T> {
     pub fn new() -> Self {
         Self {
@@ -68,10 +74,7 @@ impl<T: Debug + Display + Clone> Expressive<T> for Case<T> {
                     ExpressiveEnum::Nested(else_val.clone()),
                 ],
             ),
-            None => Expression::new(
-                "CASE{} END",
-                vec![ExpressiveEnum::Nested(branches_expr)],
-            ),
+            None => Expression::new("CASE{} END", vec![ExpressiveEnum::Nested(branches_expr)]),
         };
 
         match &self.alias {

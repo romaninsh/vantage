@@ -6,9 +6,9 @@
 use serde::Deserialize;
 use vantage_expressions::{ExprDataSource, Expressive, Selectable};
 use vantage_sql::primitives::identifier::Identifier;
-use vantage_sql::sqlite::statements::select::join::SqliteSelectJoin;
-use vantage_sql::sqlite::statements::SqliteSelect;
 use vantage_sql::sqlite::SqliteDB;
+use vantage_sql::sqlite::statements::SqliteSelect;
+use vantage_sql::sqlite::statements::select::join::SqliteSelectJoin;
 use vantage_sql::sqlite_expr;
 use vantage_types::{Record, TryFromRecord};
 
@@ -33,8 +33,7 @@ async fn check_and_run<T: for<'de> Deserialize<'de>>(
     let rows = result.into_value();
     let arr = rows.as_array().unwrap();
 
-    let records: Vec<Record<serde_json::Value>> =
-        arr.iter().map(|v| v.clone().into()).collect();
+    let records: Vec<Record<serde_json::Value>> = arr.iter().map(|v| v.clone().into()).collect();
     records
         .into_iter()
         .map(|r| T::from_record(r).unwrap())
@@ -175,10 +174,13 @@ async fn test_q3() {
         .with_expression(Identifier::with_dot("u", "id"), None)
         .with_expression(Identifier::with_dot("u", "name"), None)
         .with_expression(
-            Fx::new("coalesce", [
-                Fx::new("sum", [Identifier::with_dot("o", "total").expr()]).expr(),
-                sqlite_expr!("{}", 0.0f64),
-            ]),
+            Fx::new(
+                "coalesce",
+                [
+                    Fx::new("sum", [Identifier::with_dot("o", "total").expr()]).expr(),
+                    sqlite_expr!("{}", 0.0f64),
+                ],
+            ),
             Some("total_spent".into()),
         )
         .with_join(SqliteSelectJoin::left(
@@ -256,13 +258,27 @@ async fn test_q4() {
         &SqliteSelect::new()
             .with_source("products")
             .with_field("category")
-            .with_expression(Fx::new("count", [sqlite_expr!("*")]), Some("product_count".into()))
+            .with_expression(
+                Fx::new("count", [sqlite_expr!("*")]),
+                Some("product_count".into()),
+            )
             .with_expression(Fx::new("avg", [price.expr()]), Some("avg_price".into()))
             .with_expression(Fx::new("min", [price.expr()]), Some("cheapest".into()))
-            .with_expression(Fx::new("max", [price.expr()]), Some("most_expensive".into()))
+            .with_expression(
+                Fx::new("max", [price.expr()]),
+                Some("most_expensive".into()),
+            )
             .with_group_by(Identifier::new("category"))
-            .with_having(sqlite_expr!("{} > {}", (Fx::new("count", [sqlite_expr!("*")])), 1i64))
-            .with_having(sqlite_expr!("{} < {}", (Fx::new("avg", [price.expr()])), 500.0f64))
+            .with_having(sqlite_expr!(
+                "{} > {}",
+                (Fx::new("count", [sqlite_expr!("*")])),
+                1i64
+            ))
+            .with_having(sqlite_expr!(
+                "{} < {}",
+                (Fx::new("avg", [price.expr()])),
+                500.0f64
+            ))
             .with_order(Identifier::new("product_count"), false),
         "SELECT \"category\", COUNT(*) AS \"product_count\", AVG(\"price\") AS \"avg_price\", \
          MIN(\"price\") AS \"cheapest\", MAX(\"price\") AS \"most_expensive\" \
@@ -394,12 +410,19 @@ async fn test_q6() {
     let stats_subquery = SqliteSelect::new()
         .with_source("orders")
         .with_field("user_id")
-        .with_expression(Fx::new("count", [sqlite_expr!("*")]), Some("order_count".into()))
+        .with_expression(
+            Fx::new("count", [sqlite_expr!("*")]),
+            Some("order_count".into()),
+        )
         .with_expression(
             Fx::new("avg", [Identifier::new("total").expr()]),
             Some("avg_total".into()),
         )
-        .with_condition(sqlite_expr!("{} != {}", (Identifier::new("status")), "cancelled"))
+        .with_condition(sqlite_expr!(
+            "{} != {}",
+            (Identifier::new("status")),
+            "cancelled"
+        ))
         .with_group_by(Identifier::new("user_id"));
 
     let users: Vec<UserOrderStats> = check_and_run(
@@ -491,9 +514,18 @@ async fn test_q7() {
             .with_field("salary")
             .with_expression(
                 Case::new()
-                    .when(sqlite_expr!("{} >= {}", (salary.clone()), 100000.0f64), sqlite_expr!("{}", "senior"))
-                    .when(sqlite_expr!("{} >= {}", (salary.clone()), 60000.0f64), sqlite_expr!("{}", "mid"))
-                    .when(sqlite_expr!("{} >= {}", (salary.clone()), 30000.0f64), sqlite_expr!("{}", "junior"))
+                    .when(
+                        sqlite_expr!("{} >= {}", (salary.clone()), 100000.0f64),
+                        sqlite_expr!("{}", "senior"),
+                    )
+                    .when(
+                        sqlite_expr!("{} >= {}", (salary.clone()), 60000.0f64),
+                        sqlite_expr!("{}", "mid"),
+                    )
+                    .when(
+                        sqlite_expr!("{} >= {}", (salary.clone()), 30000.0f64),
+                        sqlite_expr!("{}", "junior"),
+                    )
                     .else_(sqlite_expr!("{}", "intern")),
                 Some("band".into()),
             )
@@ -592,8 +624,7 @@ async fn test_q8() {
          SELECT \"id\", \"name\", 'department' AS \"source\" FROM \"departments\" WHERE \"budget\" = 0.0"
     );
 
-    let records: Vec<Record<serde_json::Value>> =
-        arr.iter().map(|v| v.clone().into()).collect();
+    let records: Vec<Record<serde_json::Value>> = arr.iter().map(|v| v.clone().into()).collect();
     let rows: Vec<NamedSource> = records
         .into_iter()
         .map(|r| NamedSource::from_record(r).unwrap())
@@ -823,13 +854,27 @@ async fn test_q11() {
         .with_source_as("departments", "d")
         .with_expression(Identifier::with_dot("d", "id"), None)
         .with_expression(Identifier::with_dot("d", "name"), None)
-        .with_expression(sqlite_expr!("{} + 1", (Identifier::with_dot("dt", "depth"))), None)
         .with_expression(
-            sqlite_expr!("{} || ' > ' || {}", (Identifier::with_dot("dt", "path")), (Identifier::with_dot("d", "name"))),
+            sqlite_expr!("{} + 1", (Identifier::with_dot("dt", "depth"))),
             None,
         )
-        .with_join(SqliteSelectJoin::inner("dept_tree", "dt",
-            sqlite_expr!("{} = {}", (Identifier::with_dot("dt", "id")), (Identifier::with_dot("d", "parent_id")))));
+        .with_expression(
+            sqlite_expr!(
+                "{} || ' > ' || {}",
+                (Identifier::with_dot("dt", "path")),
+                (Identifier::with_dot("d", "name"))
+            ),
+            None,
+        )
+        .with_join(SqliteSelectJoin::inner(
+            "dept_tree",
+            "dt",
+            sqlite_expr!(
+                "{} = {}",
+                (Identifier::with_dot("dt", "id")),
+                (Identifier::with_dot("d", "parent_id"))
+            ),
+        ));
 
     let rows: Vec<DeptTree> = check_and_run(
         &SqliteSelect::new()
@@ -900,21 +945,41 @@ async fn test_q12() {
             .with_expression(Identifier::with_dot("p", "id"), None)
             .with_expression(Identifier::with_dot("p", "name"), None)
             .with_expression(Identifier::with_dot("p", "price"), None)
-            .with_join(SqliteSelectJoin::inner("product_tags", "pt",
-                sqlite_expr!("{} = {}",
+            .with_join(SqliteSelectJoin::inner(
+                "product_tags",
+                "pt",
+                sqlite_expr!(
+                    "{} = {}",
                     (Identifier::with_dot("pt", "product_id")),
-                    (Identifier::with_dot("p", "id")))))
-            .with_join(SqliteSelectJoin::inner("tags", "t",
-                sqlite_expr!("{} = {}",
+                    (Identifier::with_dot("p", "id"))
+                ),
+            ))
+            .with_join(SqliteSelectJoin::inner(
+                "tags",
+                "t",
+                sqlite_expr!(
+                    "{} = {}",
                     (Identifier::with_dot("t", "id")),
-                    (Identifier::with_dot("pt", "tag_id")))))
-            .with_condition(sqlite_expr!("{} IN ({}, {}, {})",
+                    (Identifier::with_dot("pt", "tag_id"))
+                ),
+            ))
+            .with_condition(sqlite_expr!(
+                "{} IN ({}, {}, {})",
                 (Identifier::with_dot("t", "name")),
-                "electronics", "sale", "featured"))
-            .with_condition(sqlite_expr!("{} LIKE {}",
-                (Identifier::with_dot("p", "name")), "%Pro%"))
-            .with_condition(sqlite_expr!("{} > {}",
-                (Identifier::with_dot("p", "stock")), 0i64))
+                "electronics",
+                "sale",
+                "featured"
+            ))
+            .with_condition(sqlite_expr!(
+                "{} LIKE {}",
+                (Identifier::with_dot("p", "name")),
+                "%Pro%"
+            ))
+            .with_condition(sqlite_expr!(
+                "{} > {}",
+                (Identifier::with_dot("p", "stock")),
+                0i64
+            ))
             .with_order(Identifier::with_dot("p", "price"), true)
             .with_limit(Some(50), None),
         concat!(
@@ -975,7 +1040,10 @@ async fn test_q13() {
             .with_field("id")
             .with_field("name")
             .with_expression(
-                Fx::new("json_extract", [metadata.expr(), sqlite_expr!("{}", "$.color")]),
+                Fx::new(
+                    "json_extract",
+                    [metadata.expr(), sqlite_expr!("{}", "$.color")],
+                ),
                 Some("color".into()),
             )
             .with_expression(
@@ -987,16 +1055,28 @@ async fn test_q13() {
                 Some("rating".into()),
             )
             .with_expression(
-                Fx::new("nullif", [Identifier::new("category").expr(), sqlite_expr!("{}", "uncategorized")]),
+                Fx::new(
+                    "nullif",
+                    [
+                        Identifier::new("category").expr(),
+                        sqlite_expr!("{}", "uncategorized"),
+                    ],
+                ),
                 Some("clean_category".into()),
             )
             .with_condition(sqlite_expr!(
                 "CAST({} ->> {} AS REAL) BETWEEN {} AND {}",
-                (metadata.clone()), "$.rating", 4.0f64, 5.0f64
+                (metadata.clone()),
+                "$.rating",
+                4.0f64,
+                5.0f64
             ))
             .with_condition(sqlite_expr!(
                 "{} = {}",
-                (Fx::new("json_extract", [metadata.expr(), sqlite_expr!("{}", "$.in_stock")])),
+                (Fx::new(
+                    "json_extract",
+                    [metadata.expr(), sqlite_expr!("{}", "$.in_stock")]
+                )),
                 1i64
             ))
             .with_order(Identifier::new("rating"), false),
@@ -1057,10 +1137,13 @@ async fn test_q14() {
 
     let o_total = Identifier::with_dot("o", "total");
     let sum_total = Fx::new("sum", [o_total.expr()]);
-    let month_expr = Fx::new("strftime", [
-        sqlite_expr!("{}", "%Y-%m"),
-        Identifier::with_dot("o", "created_at").expr(),
-    ]);
+    let month_expr = Fx::new(
+        "strftime",
+        [
+            sqlite_expr!("{}", "%Y-%m"),
+            Identifier::with_dot("o", "created_at").expr(),
+        ],
+    );
 
     let rows: Vec<MonthlyRevenue> = check_and_run(
         &SqliteSelect::new()
@@ -1079,11 +1162,29 @@ async fn test_q14() {
                 Fx::new("typeof", [sum_total.expr()]),
                 Some("sum_type".into()),
             )
-            .with_join(SqliteSelectJoin::inner("users", "u",
-                sqlite_expr!("{} = {}", (Identifier::with_dot("u", "id")), (Identifier::with_dot("o", "user_id")))))
-            .with_join(SqliteSelectJoin::inner("departments", "d",
-                sqlite_expr!("{} = {}", (Identifier::with_dot("d", "id")), (Identifier::with_dot("u", "department_id")))))
-            .with_condition(sqlite_expr!("{} >= {}", (Identifier::with_dot("o", "created_at")), "2025-01-01"))
+            .with_join(SqliteSelectJoin::inner(
+                "users",
+                "u",
+                sqlite_expr!(
+                    "{} = {}",
+                    (Identifier::with_dot("u", "id")),
+                    (Identifier::with_dot("o", "user_id"))
+                ),
+            ))
+            .with_join(SqliteSelectJoin::inner(
+                "departments",
+                "d",
+                sqlite_expr!(
+                    "{} = {}",
+                    (Identifier::with_dot("d", "id")),
+                    (Identifier::with_dot("u", "department_id"))
+                ),
+            ))
+            .with_condition(sqlite_expr!(
+                "{} >= {}",
+                (Identifier::with_dot("o", "created_at")),
+                "2025-01-01"
+            ))
             .with_group_by(month_expr)
             .with_group_by(Identifier::with_dot("d", "name"))
             .with_having(sqlite_expr!("{} > {}", (sum_total), 100.0f64))
@@ -1108,7 +1209,10 @@ async fn test_q14() {
 
     assert!(!rows.is_empty());
     // typeof returns the SQLite storage type
-    assert!(rows.iter().all(|r| r.sum_type == "real" || r.sum_type == "integer"));
+    assert!(
+        rows.iter()
+            .all(|r| r.sum_type == "real" || r.sum_type == "integer")
+    );
     // All rows have revenue > 100 (HAVING filter)
     assert!(rows.iter().all(|r| r.monthly_revenue > 100.0));
 }

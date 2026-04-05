@@ -41,9 +41,15 @@ async fn setup() -> (SqliteDB, SqliteDB) {
 
     let insert = sqlite_expr!(
         "INSERT INTO product VALUES ({}, {}, {}), ({}, {}, {}), ({}, {}, {})",
-        "a", "Cheap Thing", 50i64,
-        "b", "Mid Thing", 150i64,
-        "c", "Expensive Thing", 300i64
+        "a",
+        "Cheap Thing",
+        50i64,
+        "b",
+        "Mid Thing",
+        150i64,
+        "c",
+        "Expensive Thing",
+        300i64
     );
     shop_db.execute(&insert).await.unwrap();
 
@@ -97,4 +103,29 @@ async fn test_deferred_mixed_with_scalars() {
     // 150 threshold, excluding "Mid Thing" → only "Expensive Thing"
     assert_eq!(result.len(), 1);
     assert_eq!(result[0]["name"], "Expensive Thing");
+}
+
+// ── Deferred inside a nested expression ───────────────────────────────────
+
+#[tokio::test]
+async fn test_nested_deferred() {
+    let (config_db, shop_db) = setup().await;
+
+    let threshold_query = sqlite_expr!("SELECT value FROM config WHERE key = {}", "min_price");
+    let deferred_threshold = config_db.defer(threshold_query);
+
+    // Build a nested expression: the deferred lives inside an inner expression
+    // that gets composed into the outer query via sqlite_expr!(... (inner) ...)
+    let inner = Expression::<AnySqliteType>::new(
+        "price >= {}",
+        vec![ExpressiveEnum::Deferred(deferred_threshold)],
+    );
+
+    let shop_query = sqlite_expr!("SELECT name FROM product WHERE {} ORDER BY price", (inner));
+
+    let result = rows(shop_db.execute(&shop_query).await.unwrap());
+
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0]["name"], "Mid Thing");
+    assert_eq!(result[1]["name"], "Expensive Thing");
 }

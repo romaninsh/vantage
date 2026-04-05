@@ -25,6 +25,12 @@ pub struct Window<T: Debug + Display + Clone> {
     named_ref: Option<String>,
 }
 
+impl<T: Debug + Display + Clone> Default for Window<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Debug + Display + Clone> Window<T> {
     pub fn new() -> Self {
         Self {
@@ -102,17 +108,15 @@ impl<T: Debug + Display + Clone> Window<T> {
                     if *asc {
                         expr.clone()
                     } else {
-                        Expression::new(
-                            "{} DESC",
-                            vec![ExpressiveEnum::Nested(expr.clone())],
-                        )
+                        Expression::new("{} DESC", vec![ExpressiveEnum::Nested(expr.clone())])
                     }
                 })
                 .collect();
             parts.push(Expression::new(
                 "ORDER BY {}",
                 vec![ExpressiveEnum::Nested(Expression::from_vec(
-                    order_parts, ", ",
+                    order_parts,
+                    ", ",
                 ))],
             ));
         }

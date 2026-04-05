@@ -5,6 +5,10 @@ use vantage_expressions::{Expression, Expressive};
 /// Handles single identifiers (`"name"`), qualified names (`"u"."name"`),
 /// and aliased expressions (`"name" AS "alias"`).
 ///
+/// **Warning:** Identifier names are not escaped for embedded double quotes.
+/// Do not pass untrusted user input as identifier names — this is intended
+/// for code-defined table/column names only.
+///
 /// # Examples
 ///
 /// ```ignore

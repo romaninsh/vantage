@@ -3,10 +3,10 @@
 //! All queries built using the Selectable trait methods, not custom builders.
 
 use vantage_expressions::{ExprDataSource, Expressive, Selectable};
-use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 #[allow(unused_imports)]
 use vantage_sql::sqlite::SqliteType;
 use vantage_sql::sqlite::statements::SqliteSelect;
+use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 use vantage_sql::sqlite_expr;
 use vantage_types::{Record, TryFromRecord, entity};
 
@@ -27,9 +27,18 @@ async fn setup() -> SqliteDB {
 
     let insert = sqlite_expr!(
         "INSERT INTO product VALUES ({}, {}, {}, {}), ({}, {}, {}, {}), ({}, {}, {}, {})",
-        "a", "Cheap", 50i64, false,
-        "b", "Mid", 150i64, false,
-        "c", "Expensive", 300i64, true
+        "a",
+        "Cheap",
+        50i64,
+        false,
+        "b",
+        "Mid",
+        150i64,
+        false,
+        "c",
+        "Expensive",
+        300i64,
+        true
     );
     db.execute(&insert).await.unwrap();
 
@@ -66,7 +75,10 @@ fn test_select_with_condition() {
     let s = SqliteSelect::new()
         .with_source("product")
         .with_condition(sqlite_expr!("\"price\" > {}", 100i64));
-    assert_eq!(s.preview(), "SELECT * FROM \"product\" WHERE \"price\" > 100");
+    assert_eq!(
+        s.preview(),
+        "SELECT * FROM \"product\" WHERE \"price\" > 100"
+    );
 }
 
 #[test]
@@ -83,7 +95,9 @@ fn test_select_order_and_limit() {
 
 #[test]
 fn test_select_distinct() {
-    let mut s = SqliteSelect::new().with_source("product").with_field("name");
+    let mut s = SqliteSelect::new()
+        .with_source("product")
+        .with_field("name");
     s.set_distinct(true);
     assert_eq!(s.preview(), "SELECT DISTINCT \"name\" FROM \"product\"");
 }
@@ -118,10 +132,7 @@ fn test_as_count() {
 fn test_as_sum() {
     let s = SqliteSelect::new().with_source("product");
     let sum_expr = s.as_sum(sqlite_expr!("\"price\""));
-    assert_eq!(
-        sum_expr.preview(),
-        "SELECT SUM(\"price\") FROM \"product\""
-    );
+    assert_eq!(sum_expr.preview(), "SELECT SUM(\"price\") FROM \"product\"");
 }
 
 // ── Live execution via ExprDataSource ──────────────────────────────────────

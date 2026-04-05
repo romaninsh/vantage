@@ -4,9 +4,9 @@
 //! once ExprDataSource and TryFrom<AnySqliteType> are in place.
 
 use vantage_expressions::ExprDataSource;
-use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 #[allow(unused_imports)]
 use vantage_sql::sqlite::SqliteType;
+use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 use vantage_sql::sqlite_expr;
 use vantage_types::{Record, TryFromRecord, entity};
 
@@ -26,9 +26,15 @@ async fn setup() -> SqliteDB {
 
     let insert = sqlite_expr!(
         "INSERT INTO product VALUES ({}, {}, {}), ({}, {}, {}), ({}, {}, {})",
-        "a", "Cheap", 50i64,
-        "b", "Mid", 150i64,
-        "c", "Expensive", 300i64
+        "a",
+        "Cheap",
+        50i64,
+        "b",
+        "Mid",
+        150i64,
+        "c",
+        "Expensive",
+        300i64
     );
     db.execute(&insert).await.unwrap();
 
@@ -54,11 +60,15 @@ async fn test_associated_scalar() {
 async fn test_associated_record() {
     let db = setup().await;
 
-    let associated = db.associate::<Record<AnySqliteType>>(
-        sqlite_expr!("SELECT name, price FROM product WHERE id = {}", "a"),
-    );
+    let associated = db.associate::<Record<AnySqliteType>>(sqlite_expr!(
+        "SELECT name, price FROM product WHERE id = {}",
+        "a"
+    ));
     let record = associated.get().await.unwrap();
-    assert_eq!(record["name"].try_get::<String>(), Some("Cheap".to_string()));
+    assert_eq!(
+        record["name"].try_get::<String>(),
+        Some("Cheap".to_string())
+    );
     assert_eq!(record["price"].try_get::<i64>(), Some(50));
 }
 
@@ -66,9 +76,10 @@ async fn test_associated_record() {
 async fn test_associated_entity() {
     let db = setup().await;
 
-    let associated = db.associate::<Record<AnySqliteType>>(
-        sqlite_expr!("SELECT id, name, price FROM product WHERE id = {}", "c"),
-    );
+    let associated = db.associate::<Record<AnySqliteType>>(sqlite_expr!(
+        "SELECT id, name, price FROM product WHERE id = {}",
+        "c"
+    ));
     let record = associated.get().await.unwrap();
     let product = Product::from_record(record).unwrap();
     assert_eq!(product.id, "c");
@@ -89,7 +100,10 @@ async fn test_associated_entity_serde() {
     }
 
     let record: Record<serde_json::Value> = db
-        .associate(sqlite_expr!("SELECT id, name, price FROM product WHERE id = {}", "b"))
+        .associate(sqlite_expr!(
+            "SELECT id, name, price FROM product WHERE id = {}",
+            "b"
+        ))
         .get()
         .await
         .unwrap();

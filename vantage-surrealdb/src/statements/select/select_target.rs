@@ -14,9 +14,9 @@ use vantage_expressions::{Expressive, ExpressiveEnum, traits::selectable::Source
 /// # Examples
 ///
 /// ```rust
-/// use vantage_surrealdb::{select::select_target::Target, surreal_expr};
+/// use vantage_surrealdb::{statements::select::select_target::SelectTarget, surreal_expr};
 ///
-/// let target = Target::new(surreal_expr!("users"));
+/// let target = SelectTarget::new(surreal_expr!("users"));
 /// ```
 
 #[derive(Debug, Clone)]

@@ -1,5 +1,6 @@
-use serde_json::Value as JsonValue;
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
+
+use crate::sqlite::types::AnySqliteType;
 
 use super::{Expr, SqliteInsert};
 
@@ -9,7 +10,7 @@ impl SqliteInsert {
     }
 }
 
-impl Expressive<JsonValue> for SqliteInsert {
+impl Expressive<AnySqliteType> for SqliteInsert {
     fn expr(&self) -> Expr {
         if self.fields.is_empty() {
             return Expression::new(
@@ -28,7 +29,7 @@ impl Expressive<JsonValue> for SqliteInsert {
             placeholders.join(", ")
         );
 
-        let params: Vec<ExpressiveEnum<JsonValue>> = self
+        let params: Vec<ExpressiveEnum<AnySqliteType>> = self
             .fields
             .values()
             .map(|v| ExpressiveEnum::Scalar(v.clone()))

@@ -6,3 +6,4 @@ target
 .c*e
 .claude/
 vantage-sql-old
+tmp-*

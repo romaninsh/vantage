@@ -1,5 +1,6 @@
-use serde_json::Value as JsonValue;
 use vantage_expressions::Expressive;
+
+use crate::sqlite::types::AnySqliteType;
 
 use super::SqliteDelete;
 
@@ -11,7 +12,7 @@ impl SqliteDelete {
         }
     }
 
-    pub fn with_condition(mut self, condition: impl Expressive<JsonValue>) -> Self {
+    pub fn with_condition(mut self, condition: impl Expressive<AnySqliteType>) -> Self {
         self.conditions.push(condition.expr());
         self
     }

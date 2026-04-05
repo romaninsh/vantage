@@ -141,11 +141,7 @@ impl Selectable<serde_json::Value> for MockSelect {
         self.fields.push(field.into());
     }
 
-    fn add_expression(
-        &mut self,
-        _expression: impl Expressive<Value>,
-        _alias: Option<String>,
-    ) {
+    fn add_expression(&mut self, _expression: impl Expressive<Value>, _alias: Option<String>) {
         panic!("You may only use field() in this mock")
     }
 

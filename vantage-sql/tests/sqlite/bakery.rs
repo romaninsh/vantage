@@ -4,8 +4,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use vantage_expressions::{ExprDataSource, Expressive, Selectable};
-use vantage_sql::sqlite::statements::SqliteSelect;
 use vantage_sql::sqlite::SqliteDB;
+use vantage_sql::sqlite::statements::SqliteSelect;
 use vantage_sql::sqlite_expr;
 use vantage_types::{Record, TryFromRecord};
 
@@ -144,7 +144,10 @@ async fn test_select_specific_fields() {
 
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].len(), 2);
-    assert_eq!(rows[0]["name"], JsonValue::String("Flux Capacitor Cupcake".into()));
+    assert_eq!(
+        rows[0]["name"],
+        JsonValue::String("Flux Capacitor Cupcake".into())
+    );
     assert_eq!(rows[0]["price"], JsonValue::Number(120.into()));
 }
 

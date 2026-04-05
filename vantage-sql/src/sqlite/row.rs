@@ -25,43 +25,46 @@ pub(crate) fn bind_sqlite_value<'q>(
         Some(SqliteTypeVariants::Null) => query.bind(None::<String>),
         // Untyped values (from deferred results, database reads) — infer from JSON
         None => bind_by_json(query, json),
-        Some(SqliteTypeVariants::Bool) => {
-            match json {
-                JsonValue::Number(n) => query.bind(n.as_i64().unwrap_or(0) != 0),
-                JsonValue::Bool(b) => query.bind(*b),
-                _ => query.bind(false),
+        Some(SqliteTypeVariants::Bool) => match json {
+            JsonValue::Null => query.bind(None::<bool>),
+            JsonValue::Number(n) => match n.as_i64() {
+                Some(i) => query.bind(i != 0),
+                None => query.bind(None::<bool>),
+            },
+            JsonValue::Bool(b) => query.bind(*b),
+            _ => query.bind(None::<bool>),
+        },
+        Some(SqliteTypeVariants::Integer) => match json {
+            JsonValue::Null => query.bind(None::<i64>),
+            JsonValue::Number(n) => query.bind(n.as_i64()),
+            _ => query.bind(None::<i64>),
+        },
+        Some(SqliteTypeVariants::Real) => match json {
+            JsonValue::Null => query.bind(None::<f64>),
+            JsonValue::Number(n) => query.bind(n.as_f64()),
+            _ => query.bind(None::<f64>),
+        },
+        Some(SqliteTypeVariants::Text) => match json {
+            JsonValue::Null => query.bind(None::<String>),
+            JsonValue::String(s) => query.bind(s.as_str()),
+            _ => query.bind(None::<String>),
+        },
+        Some(SqliteTypeVariants::Numeric) => match json {
+            JsonValue::Null => query.bind(None::<String>),
+            JsonValue::Object(o) => {
+                let s = o.get("numeric").and_then(|v| v.as_str()).unwrap_or("0");
+                query.bind(s)
             }
-        }
-        Some(SqliteTypeVariants::Integer) => {
-            match json {
-                JsonValue::Number(n) => query.bind(n.as_i64().unwrap_or(0)),
-                _ => query.bind(None::<String>),
+            _ => query.bind(None::<String>),
+        },
+        Some(SqliteTypeVariants::Blob) => match json {
+            JsonValue::Null => query.bind(None::<String>),
+            JsonValue::Object(o) => {
+                let s = o.get("blob").and_then(|v| v.as_str()).unwrap_or("");
+                query.bind(s)
             }
-        }
-        Some(SqliteTypeVariants::Real) => {
-            let f = json.as_f64().unwrap_or(0.0);
-            query.bind(f)
-        }
-        Some(SqliteTypeVariants::Text) => {
-            let s = json.as_str().unwrap_or("");
-            query.bind(s)
-        }
-        Some(SqliteTypeVariants::Numeric) => {
-            let s = json
-                .as_object()
-                .and_then(|o| o.get("numeric"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("0");
-            query.bind(s)
-        }
-        Some(SqliteTypeVariants::Blob) => {
-            let s = json
-                .as_object()
-                .and_then(|o| o.get("blob"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            query.bind(s)
-        }
+            _ => query.bind(None::<String>),
+        },
     }
 }
 
@@ -114,24 +117,28 @@ pub(crate) fn row_to_record(row: &SqliteRow) -> Record<AnySqliteType> {
 fn sqlite_column_to_json(row: &SqliteRow, ordinal: usize, declared_type: &str) -> JsonValue {
     use sqlx::ValueRef;
 
-    if row.try_get_raw(ordinal).map(|v| v.is_null()).unwrap_or(true) {
+    if row
+        .try_get_raw(ordinal)
+        .map(|v| v.is_null())
+        .unwrap_or(true)
+    {
         return JsonValue::Null;
     }
 
     let dt = declared_type.to_uppercase();
-    if dt == "BOOLEAN" || dt == "BOOL" {
-        if let Ok(v) = row.try_get::<bool, _>(ordinal) {
-            return JsonValue::Bool(v);
-        }
+    if (dt == "BOOLEAN" || dt == "BOOL")
+        && let Ok(v) = row.try_get::<bool, _>(ordinal)
+    {
+        return JsonValue::Bool(v);
     }
 
     if let Ok(v) = row.try_get::<i64, _>(ordinal) {
         return JsonValue::Number(v.into());
     }
-    if let Ok(v) = row.try_get::<f64, _>(ordinal) {
-        if let Some(n) = serde_json::Number::from_f64(v) {
-            return JsonValue::Number(n);
-        }
+    if let Ok(v) = row.try_get::<f64, _>(ordinal)
+        && let Some(n) = serde_json::Number::from_f64(v)
+    {
+        return JsonValue::Number(n);
     }
     if let Ok(v) = row.try_get::<String, _>(ordinal) {
         return JsonValue::String(v);
@@ -171,7 +178,7 @@ mod tests {
         .await
         .unwrap();
 
-        sqlx::query("INSERT INTO t VALUES ('Alice', 42, 3.14, 1, NULL)")
+        sqlx::query("INSERT INTO t VALUES ('Alice', 42, 3.15, 1, NULL)")
             .execute(db.pool())
             .await
             .unwrap();
@@ -185,9 +192,12 @@ mod tests {
 
         // Values have type_variant from from_json detection, but try_get
         // is permissive — it attempts conversion regardless
-        assert_eq!(record["name"].try_get::<String>(), Some("Alice".to_string()));
+        assert_eq!(
+            record["name"].try_get::<String>(),
+            Some("Alice".to_string())
+        );
         assert_eq!(record["score"].try_get::<i64>(), Some(42));
-        assert!((record["ratio"].try_get::<f64>().unwrap() - 3.14).abs() < f64::EPSILON);
+        assert!((record["ratio"].try_get::<f64>().unwrap() - 3.15).abs() < f64::EPSILON);
         assert_eq!(record["active"].try_get::<bool>(), Some(true));
 
         // NULL column — try_get on Option works
@@ -237,8 +247,22 @@ mod tests {
             .collect();
 
         assert_eq!(products.len(), 2);
-        assert_eq!(products[0], Product { name: "Cupcake".into(), price: 120, is_deleted: false });
-        assert_eq!(products[1], Product { name: "Tart".into(), price: 220, is_deleted: true });
+        assert_eq!(
+            products[0],
+            Product {
+                name: "Cupcake".into(),
+                price: 120,
+                is_deleted: false
+            }
+        );
+        assert_eq!(
+            products[1],
+            Product {
+                name: "Tart".into(),
+                price: 220,
+                is_deleted: true
+            }
+        );
     }
 
     #[tokio::test]

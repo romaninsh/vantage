@@ -1,8 +1,8 @@
 use vantage_expressions::traits::selectable::{Selectable, SourceRef};
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
-use crate::sqlite::types::AnySqliteType;
 use crate::sqlite::statements::SqliteSelect;
+use crate::sqlite::types::AnySqliteType;
 
 type Expr = Expression<AnySqliteType>;
 
@@ -11,25 +11,23 @@ impl Selectable<AnySqliteType> for SqliteSelect {
         self.from.clear();
         let source_ref = source.into().into_expressive_enum();
         let expr = match (source_ref, alias) {
-            (ExpressiveEnum::Scalar(val), None) => {
-                Expression::new(
-                    format!("\"{}\"", val.try_get::<String>().unwrap_or_default()),
-                    vec![],
-                )
-            }
-            (ExpressiveEnum::Scalar(val), Some(alias)) => {
-                Expression::new(
-                    format!("\"{}\" AS \"{}\"", val.try_get::<String>().unwrap_or_default(), alias),
-                    vec![],
-                )
-            }
+            (ExpressiveEnum::Scalar(val), None) => Expression::new(
+                format!("\"{}\"", val.try_get::<String>().unwrap_or_default()),
+                vec![],
+            ),
+            (ExpressiveEnum::Scalar(val), Some(alias)) => Expression::new(
+                format!(
+                    "\"{}\" AS \"{}\"",
+                    val.try_get::<String>().unwrap_or_default(),
+                    alias
+                ),
+                vec![],
+            ),
             (ExpressiveEnum::Nested(expr), None) => expr,
-            (ExpressiveEnum::Nested(expr), Some(alias)) => {
-                Expression::new(
-                    format!("{{}} AS \"{}\"", alias),
-                    vec![ExpressiveEnum::Nested(expr)],
-                )
-            }
+            (ExpressiveEnum::Nested(expr), Some(alias)) => Expression::new(
+                format!("{{}} AS \"{}\"", alias),
+                vec![ExpressiveEnum::Nested(expr)],
+            ),
             _ => return,
         };
         self.from.push(expr);
@@ -40,7 +38,11 @@ impl Selectable<AnySqliteType> for SqliteSelect {
             .push(Expression::new(format!("\"{}\"", field.into()), vec![]));
     }
 
-    fn add_expression(&mut self, expression: impl Expressive<AnySqliteType>, alias: Option<String>) {
+    fn add_expression(
+        &mut self,
+        expression: impl Expressive<AnySqliteType>,
+        alias: Option<String>,
+    ) {
         let expr = expression.expr();
         let field = match alias {
             Some(a) => Expression::new(
@@ -120,7 +122,9 @@ impl Selectable<AnySqliteType> for SqliteSelect {
     fn as_count(&self) -> Expr {
         let mut count_select = self.clone();
         count_select.fields.clear();
-        count_select.fields.push(Expression::new("COUNT(*)", vec![]));
+        count_select
+            .fields
+            .push(Expression::new("COUNT(*)", vec![]));
         count_select.order_by.clear();
         count_select.render()
     }
