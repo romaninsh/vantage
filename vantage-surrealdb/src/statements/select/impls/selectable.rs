@@ -2,6 +2,7 @@ use crate::identifier::Identifier;
 use crate::sum::{Fx, Sum};
 use crate::{AnySurrealType, Expr, surreal_expr};
 use vantage_expressions::result::QueryResult;
+use vantage_expressions::traits::expressive::Expressive;
 use vantage_expressions::traits::selectable::{Selectable, SourceRef};
 
 use super::super::SurrealSelect;
@@ -17,28 +18,28 @@ impl<T: QueryResult> Selectable<AnySurrealType> for SurrealSelect<T> {
         self.fields.push(SelectField::new(Identifier::new(field)));
     }
 
-    fn add_expression(&mut self, expression: Expr, alias: Option<String>) {
-        let mut field = SelectField::new(expression);
+    fn add_expression(&mut self, expression: impl Expressive<AnySurrealType>, alias: Option<String>) {
+        let mut field = SelectField::new(expression.expr());
         if let Some(alias) = alias {
             field = field.with_alias(alias);
         }
         self.fields.push(field);
     }
 
-    fn add_where_condition(&mut self, condition: Expr) {
-        self.where_conditions.push(condition);
+    fn add_where_condition(&mut self, condition: impl Expressive<AnySurrealType>) {
+        self.where_conditions.push(condition.expr());
     }
 
     fn set_distinct(&mut self, distinct: bool) {
         self.distinct = distinct;
     }
 
-    fn add_order_by(&mut self, expression: Expr, ascending: bool) {
-        self.order_by.push((expression, ascending));
+    fn add_order_by(&mut self, expression: impl Expressive<AnySurrealType>, ascending: bool) {
+        self.order_by.push((expression.expr(), ascending));
     }
 
-    fn add_group_by(&mut self, expression: Expr) {
-        self.group_by.push(expression);
+    fn add_group_by(&mut self, expression: impl Expressive<AnySurrealType>) {
+        self.group_by.push(expression.expr());
     }
 
     fn set_limit(&mut self, limit: Option<i64>, skip: Option<i64>) {
@@ -95,7 +96,7 @@ impl<T: QueryResult> Selectable<AnySurrealType> for SurrealSelect<T> {
         Fx::new("count", vec![id_expr]).into()
     }
 
-    fn as_sum(&self, column: Expr) -> Expr {
-        Sum::new(column).into()
+    fn as_sum(&self, column: impl Expressive<AnySurrealType>) -> Expr {
+        Sum::new(column.expr()).into()
     }
 }
