@@ -48,7 +48,7 @@ fn test_q1_render() {
 
     assert_eq!(
         select.preview(),
-        "SELECT \"id\", \"name\", \"email\" FROM \"users\" WHERE \"role\" = \"admin\" AND \"salary\" > 50000.0 ORDER BY \"name\" LIMIT 10 OFFSET 20"
+        "SELECT \"id\", \"name\", \"email\" FROM \"users\" WHERE \"role\" = 'admin' AND \"salary\" > 50000.0 ORDER BY \"name\" LIMIT 10 OFFSET 20"
     );
 }
 

@@ -1,34 +1,31 @@
 # Adding a New Persistence Backend to Vantage
 
-So you want to connect Vantage to a new database? This guide walks through the process
-using SQLite as the example. The same pattern applies whether you're adding Postgres,
-MongoDB, or anything else.
+So you want to connect Vantage to a new database? This guide walks through the process using SQLite
+as the example. The same pattern applies whether you're adding Postgres, MongoDB, or anything else.
 
 ## Step 1: Define Your Type System
 
-Every database has its own idea of what types exist. SQLite has 5 storage classes
-(NULL, INTEGER, REAL, TEXT, BLOB). Postgres has dozens. SurrealDB has its own set
-with Things and Geometry types.
+Every database has its own idea of what types exist. SQLite has 5 storage classes (NULL, INTEGER,
+REAL, TEXT, BLOB). Postgres has dozens. SurrealDB has its own set with Things and Geometry types.
 
 The vantage type system gives you two things:
 
-1. **Type markers** — so you can tell the difference between "this is an integer" and
-   "this is text" even when both are stored as `serde_json::Value` under the hood.
-2. **Safe extraction** — `try_get::<i64>()` on a text value returns `None` instead of
-   silently coercing. This prevents the kind of bugs where a string "42" gets treated
-   as a number somewhere downstream.
+1. **Type markers** — so you can tell the difference between "this is an integer" and "this is text"
+   even when both are stored as `serde_json::Value` under the hood.
+2. **Safe extraction** — `try_get::<i64>()` on a text value returns `None` instead of silently
+   coercing. This prevents the kind of bugs where a string "42" gets treated as a number somewhere
+   downstream.
 
 ### Why not just use serde_json::Value directly?
 
-You can! And for simple cases it works fine. The problem shows up when values move
-between contexts. A JSON number `42` could be an integer, a float, or even a boolean
-(SQLite stores bools as 0/1). Without type markers, you lose that distinction and
-get silent data corruption.
+You can! And for simple cases it works fine. The problem shows up when values move between contexts.
+A JSON number `42` could be an integer, a float, or even a boolean (SQLite stores bools as 0/1).
+Without type markers, you lose that distinction and get silent data corruption.
 
 ### Setting it up
 
-Use the `vantage_type_system!` macro. It generates a trait, an enum of variants,
-and a type-erased `AnyType` wrapper:
+Use the `vantage_type_system!` macro. It generates a trait, an enum of variants, and a type-erased
+`AnyType` wrapper:
 
 ```rust
 vantage_type_system! {
@@ -39,12 +36,12 @@ vantage_type_system! {
 }
 ```
 
-This gives you `SqliteType` (trait), `SqliteTypeVariants` (enum), and `AnySqliteType`
-(the type-erased wrapper that remembers which variant a value belongs to).
+This gives you `SqliteType` (trait), `SqliteTypeVariants` (enum), and `AnySqliteType` (the
+type-erased wrapper that remembers which variant a value belongs to).
 
-The `value_type` is whatever your database driver naturally speaks. For SQL databases
-that's usually `serde_json::Value`. SurrealDB uses `ciborium::Value` (CBOR). You could
-use any type — even `String` if your storage is that simple.
+The `value_type` is whatever your database driver naturally speaks. For SQL databases that's usually
+`serde_json::Value`. SurrealDB uses `ciborium::Value` (CBOR). You could use any type — even `String`
+if your storage is that simple.
 
 Then implement the trait for each Rust type. Here's bool — SQLite stores it as 0/1:
 
@@ -88,17 +85,17 @@ let val: AnySqliteType = true.into();
 
 ### Records and struct conversion
 
-A `Record<V>` is an ordered key-value map (field name → value). It's how vantage
-represents a single row of data regardless of the backend. The question is: how do
-your structs become Records and vice versa?
+A `Record<V>` is an ordered key-value map (field name → value). It's how vantage represents a single
+row of data regardless of the backend. The question is: how do your structs become Records and vice
+versa?
 
 There are two paths depending on your `value_type`.
 
 #### Path A: serde_json::Value (the easy path)
 
-If your type system uses `serde_json::Value` as the value type (like SQLite does),
-you get struct conversion for free. Vantage has blanket implementations of `IntoRecord`
-and `TryFromRecord` for any type that implements serde's `Serialize`/`Deserialize`:
+If your type system uses `serde_json::Value` as the value type (like SQLite does), you get struct
+conversion for free. Vantage has blanket implementations of `IntoRecord` and `TryFromRecord` for any
+type that implements serde's `Serialize`/`Deserialize`:
 
 ```rust
 #[derive(Serialize, Deserialize)]
@@ -117,14 +114,14 @@ let record: Record<serde_json::Value> = product.into_record();
 let restored: Product = Product::from_record(record).unwrap();
 ```
 
-This works because serde already knows how to turn structs into JSON objects and back.
-No extra code needed on your part.
+This works because serde already knows how to turn structs into JSON objects and back. No extra code
+needed on your part.
 
 #### Path B: Custom value type (the #[entity] path)
 
 If your type system uses something other than `serde_json::Value` — like SurrealDB's
-`ciborium::Value` — then serde's blanket impls don't apply. You need the `#[entity]`
-proc macro to generate the conversion code:
+`ciborium::Value` — then serde's blanket impls don't apply. You need the `#[entity]` proc macro to
+generate the conversion code:
 
 ```rust
 #[entity(SurrealType)]
@@ -141,11 +138,10 @@ The `#[entity(SurrealType)]` macro looks at each field, and generates:
 - `IntoRecord<AnySurrealType>` — calls `AnySurrealType::new(self.name)` for each field
 - `TryFromRecord<AnySurrealType>` — calls `record["name"].try_get::<String>()` for each field
 
-This is where the type markers from Step 1 become critical. When you read a record
-back from the database, each value is an `AnySurrealType` with a variant tag. The
-`try_get::<String>()` call checks that the variant is `Text` before extracting. If
-someone stored an integer in a field that should be a string, you get an error instead
-of garbage.
+This is where the type markers from Step 1 become critical. When you read a record back from the
+database, each value is an `AnySurrealType` with a variant tag. The `try_get::<String>()` call
+checks that the variant is `Text` before extracting. If someone stored an integer in a field that
+should be a string, you get an error instead of garbage.
 
 You can even target multiple type systems at once:
 
@@ -157,15 +153,15 @@ struct Product {
 }
 ```
 
-This generates conversions for both `Record<AnySurrealType>` and `Record<AnyCsvType>`,
-so the same struct works across different backends.
+This generates conversions for both `Record<AnySurrealType>` and `Record<AnyCsvType>`, so the same
+struct works across different backends.
 
 #### Testing Record conversions
 
 Test `Record<AnySqliteType>` in both modes — typed (write path) and untyped (read path).
 
-**Typed records** simulate what you'd build when inserting data. Values have variant
-tags, and `try_get` enforces them:
+**Typed records** simulate what you'd build when inserting data. Values have variant tags, and
+`try_get` enforces them:
 
 ```rust
 #[test]
@@ -181,8 +177,8 @@ fn test_typed_record() {
 }
 ```
 
-**Untyped records** simulate what comes back from the database. Values have
-`type_variant: None`, so `try_get` is permissive — it just attempts the conversion:
+**Untyped records** simulate what comes back from the database. Values have `type_variant: None`, so
+`try_get` is permissive — it just attempts the conversion:
 
 ```rust
 #[test]
@@ -198,17 +194,17 @@ fn test_untyped_record() {
 }
 ```
 
-The key difference: a typed `AnySqliteType::new(42i64)` blocks `try_get::<f64>()`
-because Integer ≠ Real. An untyped `AnySqliteType::untyped(json!(42))` allows it
-because there's no variant to check — it just asks "can JSON number 42 be read as f64?"
+The key difference: a typed `AnySqliteType::new(42i64)` blocks `try_get::<f64>()` because Integer ≠
+Real. An untyped `AnySqliteType::untyped(json!(42))` allows it because there's no variant to check —
+it just asks "can JSON number 42 be read as f64?"
 
 Also test `Option<T>` fields, null handling, and missing fields.
 
 ### TryFrom<AnyType> for common types
 
-You also need `TryFrom<AnyType>` implementations for scalar types and Records.
-These are used later by `AssociatedExpression::get()` in Step 2, but they belong
-here because they're part of the type system:
+You also need `TryFrom<AnyType>` implementations for scalar types and Records. These are used later
+by `AssociatedExpression::get()` in Step 2, but they belong here because they're part of the type
+system:
 
 ```rust
 // Scalars — extract single value from single-row results
@@ -221,18 +217,17 @@ impl TryFrom<AnySqliteType> for Record<AnySqliteType> { ... }
 impl TryFrom<AnySqliteType> for Record<serde_json::Value> { ... }
 ```
 
-For scalars, if the result is a single-row, single-column array like `[{"COUNT(*)": 3}]`,
-extract the value automatically. For Records, extract the first row and wrap each
-field as an untyped `AnyType`.
+For scalars, if the result is a single-row, single-column array like `[{"COUNT(*)": 3}]`, extract
+the value automatically. For Records, extract the first row and wrap each field as an untyped
+`AnyType`.
 
 ### Step 1 conclusion
 
 At this point you should have:
 
-1. **Type impls** in `src/<backend>/types/` — the `vantage_type_system!` macro call,
-   trait implementations for each Rust type, `From` conversions on `AnyType`,
-   variant detection in `TypeVariants::from_*()`, and `TryFrom<AnyType>` for
-   scalars and Records.
+1. **Type impls** in `src/<backend>/types/` — the `vantage_type_system!` macro call, trait
+   implementations for each Rust type, `From` conversions on `AnyType`, variant detection in
+   `TypeVariants::from_*()`, and `TryFrom<AnyType>` for scalars and Records.
 
 2. **Tests** in `tests/<backend>/1_types_round_trip.rs` covering:
    - In-memory `AnyType` round-trips for each supported type
@@ -242,17 +237,17 @@ At this point you should have:
 
 ### How type markers flow through the system
 
-The `AnyType` wrapper has an `Option<Variant>` field — `Some(Integer)` means "I know
-this is an integer", `None` means "I don't know, just try whatever conversion you need."
+The `AnyType` wrapper has an `Option<Variant>` field — `Some(Integer)` means "I know this is an
+integer", `None` means "I don't know, just try whatever conversion you need."
 
 **Writing (you → database):** Values created with `AnySqliteType::new(42i64)` get
-`type_variant: Some(Integer)`. The bind layer uses the variant to pick the right sqlx
-bind call — Integer binds as `i64`, Text as `&str`, Real as `f64`. No guessing.
+`type_variant: Some(Integer)`. The bind layer uses the variant to pick the right sqlx bind call —
+Integer binds as `i64`, Text as `&str`, Real as `f64`. No guessing.
 
 **Reading (database → you):** Values coming back from the database are created with
-`AnySqliteType::untyped(json_value)` which sets `type_variant: None`. This means
-`try_get::<i64>()` won't be blocked by a variant mismatch — it just attempts the
-conversion. The type checking happens later when you deserialize into a struct.
+`AnySqliteType::untyped(json_value)` which sets `type_variant: None`. This means `try_get::<i64>()`
+won't be blocked by a variant mismatch — it just attempts the conversion. The type checking happens
+later when you deserialize into a struct.
 
 ```rust
 // Writing — typed, variant enforced
@@ -276,51 +271,51 @@ Writing:  Struct → Record<AnySqliteType> (typed) → bind_sqlite_value() → s
 Reading:  sqlx → Record<AnySqliteType> (untyped) → try_get / serde → Struct
 ```
 
-
 ## Step 2: Make expressions work
 
-With the type system in place, you can now use `Expression<AnySqliteType>` to build
-and execute queries. This step has two deliverables: a convenience macro and the
-`ExprDataSource` trait implementation.
+With the type system in place, you can now use `Expression<AnySqliteType>` to build and execute
+queries. This step has two deliverables: a convenience macro and the `ExprDataSource` trait
+implementation.
 
 ### The vendor macro
 
-Define a macro that produces `Expression<YourAnyType>`. SurrealDB has `surreal_expr!`,
-we create `sqlite_expr!`:
+Define a macro that produces `Expression<YourAnyType>`. SurrealDB has `surreal_expr!`, we create
+`sqlite_expr!`:
 
 ```rust
 let expr = sqlite_expr!("SELECT * FROM product WHERE price > {}", 100i64);
 ```
 
-Under the hood, `100i64` gets wrapped as `AnySqliteType::new(100i64)` with variant
-`Integer`. When this expression hits the database, the bind layer knows to call
-`query.bind(100i64)` — not `query.bind("100")` or `query.bind(100.0)`.
+Under the hood, `100i64` gets wrapped as `AnySqliteType::new(100i64)` with variant `Integer`. When
+this expression hits the database, the bind layer knows to call `query.bind(100i64)` — not
+`query.bind("100")` or `query.bind(100.0)`.
 
 The macro handles three kinds of parameters:
+
 - `42i64` → scalar with type marker
 - `(sub_expr)` → nested expression (composed into the template)
 - `{deferred}` → lazy evaluation (resolved at execution time)
 
 ### ExprDataSource
 
-Implement `DataSource` (marker) and `ExprDataSource<AnySqliteType>` on your DB struct.
-The `execute` method takes an expression, flattens nested sub-expressions, converts
-`{}` placeholders to your driver's syntax (`?N` for SQLite, `$N` for Postgres), binds
-parameters using type markers, and returns results.
+Implement `DataSource` (marker) and `ExprDataSource<AnySqliteType>` on your DB struct. The `execute`
+method takes an expression, flattens nested sub-expressions, converts `{}` placeholders to your
+driver's syntax (`?N` for SQLite, `$N` for Postgres), binds parameters using type markers, and
+returns results.
 
-Results come back as `AnySqliteType` with `type_variant: None` — the database doesn't
-preserve our markers, so results are permissive (see Step 1). For SQLite that's
-especially natural since it doesn't distinguish boolean from integer on the wire.
+Results come back as `AnySqliteType` with `type_variant: None` — the database doesn't preserve our
+markers, so results are permissive (see Step 1). For SQLite that's especially natural since it
+doesn't distinguish boolean from integer on the wire.
 
-If the persistence layer you're implementing *does* preserve type information in
-responses (like SurrealDB with CBOR tags), set the correct `type_variant` when
-constructing result values in your `execute()` implementation. That way `try_get`
-enforces type boundaries on both sides of the round-trip.
+If the persistence layer you're implementing _does_ preserve type information in responses (like
+SurrealDB with CBOR tags), set the correct `type_variant` when constructing result values in your
+`execute()` implementation. That way `try_get` enforces type boundaries on both sides of the
+round-trip.
 
 ### Validating with INSERT expressions
 
-The best way to test this is INSERT + SELECT round-trips. A single insert exercises
-all the pieces — macro, parameter binding, type markers, and result parsing:
+The best way to test this is INSERT + SELECT round-trips. A single insert exercises all the pieces —
+macro, parameter binding, type markers, and result parsing:
 
 ```rust
 let insert = sqlite_expr!(
@@ -350,17 +345,16 @@ let insert = Expression::<AnySqliteType>::new(
 db.execute(&insert).await?;
 ```
 
-The `ExpressionFlattener` collapses all nesting into one flat template with positional
-parameters — each one still carrying its type marker for correct binding.
+The `ExpressionFlattener` collapses all nesting into one flat template with positional parameters —
+each one still carrying its type marker for correct binding.
 
 ### Deferring: cross-database value resolution
 
-Sometimes a query on one database needs a value from another database. That's what
-`defer()` is for — it wraps a query as a closure that executes later, when the outer
-query runs.
+Sometimes a query on one database needs a value from another database. That's what `defer()` is for
+— it wraps a query as a closure that executes later, when the outer query runs.
 
-This is not a subquery. The deferred query runs first, produces a concrete value, and
-that value gets bound as a regular parameter in the outer query.
+This is not a subquery. The deferred query runs first, produces a concrete value, and that value
+gets bound as a regular parameter in the outer query.
 
 ```rust
 let (config_db, shop_db) = setup().await;
@@ -382,20 +376,18 @@ let shop_query = Expression::<AnySqliteType>::new(
 let result = shop_db.execute(&shop_query).await?;
 ```
 
-Your `execute()` implementation needs to resolve deferred parameters before flattening.
-Walk the parameter list, call `.call().await` on any `Deferred`, and leave `Scalar`
-and `Nested` untouched.
+Your `execute()` implementation needs to resolve deferred parameters before flattening. Walk the
+parameter list, call `.call().await` on any `Deferred`, and leave `Scalar` and `Nested` untouched.
 
-The resolved value comes back as an untyped `AnySqliteType` (no variant marker), so
-it gets bound via JSON-inference. For SQLite this is fine — the loose type system
-handles it. For stricter databases, you may want `defer()` to preserve type
-information from the source query's result.
+The resolved value comes back as an untyped `AnySqliteType` (no variant marker), so it gets bound
+via JSON-inference. For SQLite this is fine — the loose type system handles it. For stricter
+databases, you may want `defer()` to preserve type information from the source query's result.
 
 ### Reading query results
 
-So far we've been calling `db.execute(&expr).await` which returns `AnySqliteType`.
-For a SELECT query, that value wraps a JSON array of row objects. To work with
-individual rows, you convert into Records:
+So far we've been calling `db.execute(&expr).await` which returns `AnySqliteType`. For a SELECT
+query, that value wraps a JSON array of row objects. To work with individual rows, you convert into
+Records:
 
 ```rust
 let result = db.execute(&sqlite_expr!("SELECT * FROM product")).await?;
@@ -409,10 +401,9 @@ let rows: Vec<JsonValue> = match result.into_value() {
 let record: Record<JsonValue> = rows[0].clone().into();
 ```
 
-That works but it's verbose. The `TryFrom<AnyType>` impls from Step 1 make this
-cleaner through `AssociatedExpression`. When you call `db.associate::<R>(expr)`,
-you get an expression that knows its return type — `.get()` executes and converts
-in one step:
+That works but it's verbose. The `TryFrom<AnyType>` impls from Step 1 make this cleaner through
+`AssociatedExpression`. When you call `db.associate::<R>(expr)`, you get an expression that knows
+its return type — `.get()` executes and converts in one step:
 
 ```rust
 // Scalar — extracts single value from single-row result
@@ -449,18 +440,18 @@ let record: Record<JsonValue> = db
 let product: Product = Product::from_record(record)?;
 ```
 
-Testing the failure modes (missing fields, NULL into required field, wrong types)
-can help spot issues in your implementation.
+Testing the failure modes (missing fields, NULL into required field, wrong types) can help spot
+issues in your implementation.
 
 ### Step 2 conclusion
 
 At this point you should have:
 
-1. **A vendor macro** (`sqlite_expr!`, `surreal_expr!`, etc.) that produces
-   `Expression<AnyType>` with typed parameters.
+1. **A vendor macro** (`sqlite_expr!`, `surreal_expr!`, etc.) that produces `Expression<AnyType>`
+   with typed parameters.
 
-2. **Trait impls** in `src/<backend>/impls/` — `DataSource` (marker) and
-   `ExprDataSource<AnyType>` with `execute()` and `defer()`.
+2. **Trait impls** in `src/<backend>/impls/` — `DataSource` (marker) and `ExprDataSource<AnyType>`
+   with `execute()` and `defer()`.
 
 3. **Tests** in `tests/<backend>/2_*.rs` covering:
    - INSERT with typed parameters, read back and verify
@@ -471,24 +462,22 @@ At this point you should have:
 
 ## Step 3: Statement builders and SelectableDataSource
 
-In practice, nobody writes raw expressions for every query. This step adds the
-`Selectable` trait implementation for your SELECT builder and wires it up through
-`SelectableDataSource` so the rest of vantage can create and execute queries
-through a standard interface.
+In practice, nobody writes raw expressions for every query. This step adds the `Selectable` trait
+implementation for your SELECT builder and wires it up through `SelectableDataSource` so the rest of
+vantage can create and execute queries through a standard interface.
 
 ### Implement Selectable for your SELECT builder
 
-The `Selectable<T>` trait is the standard interface for building SELECT queries
-across all vantage backends. Your SELECT struct needs to implement it. The trait
-has two kinds of methods:
+The `Selectable<T>` trait is the standard interface for building SELECT queries across all vantage
+backends. Your SELECT struct needs to implement it. The trait has two kinds of methods:
 
-**Mutating methods** you must implement — `set_source`, `add_field`,
-`add_where_condition`, `add_order_by`, `add_group_by`, `set_limit`, `set_distinct`,
-the `clear_*` methods, the `has_*` methods, `as_count`, and `as_sum`.
+**Mutating methods** you must implement — `set_source`, `add_field`, `add_where_condition`,
+`add_order_by`, `add_group_by`, `set_limit`, `set_distinct`, the `clear_*` methods, the `has_*`
+methods, `as_count`, and `as_sum`.
 
-**Builder methods** you get for free — `with_source`, `with_field`, `with_condition`,
-`with_order`, `with_expression`, `with_limit`. These are default implementations
-that call the mutating methods and return `self`.
+**Builder methods** you get for free — `with_source`, `with_field`, `with_condition`, `with_order`,
+`with_expression`, `with_limit`. These are default implementations that call the mutating methods
+and return `self`.
 
 This means your builder code is just the struct definition and `new()`:
 
@@ -509,8 +498,8 @@ impl SqliteSelect {
 }
 ```
 
-The `Selectable` impl goes in its own file (e.g., `statements/select/impls/selectable.rs`)
-and the builder methods come from the trait:
+The `Selectable` impl goes in its own file (e.g., `statements/select/impls/selectable.rs`) and the
+builder methods come from the trait:
 
 ```rust
 let select = SqliteSelect::new()
@@ -522,9 +511,8 @@ let select = SqliteSelect::new()
     .with_limit(Some(10), None);
 ```
 
-The `as_count()` and `as_sum()` methods should clone the current query, replace
-the fields with `COUNT(*)` or `SUM(column)`, drop the ORDER BY (unnecessary for
-aggregates), and render:
+The `as_count()` and `as_sum()` methods should clone the current query, replace the fields with
+`COUNT(*)` or `SUM(column)`, drop the ORDER BY (unnecessary for aggregates), and render:
 
 ```rust
 let count_expr = select.as_count();  // SELECT COUNT(*) FROM product WHERE ...
@@ -533,8 +521,8 @@ let sum_expr = select.as_sum(sqlite_expr!("\"price\""));  // SELECT SUM("price")
 
 ### Implement SelectableDataSource
 
-This trait connects the SELECT builder to execution. It tells vantage "this
-database can create SELECT queries and run them":
+This trait connects the SELECT builder to execution. It tells vantage "this database can create
+SELECT queries and run them":
 
 ```rust
 impl SelectableDataSource<AnySqliteType> for SqliteDB {
@@ -552,14 +540,12 @@ impl SelectableDataSource<AnySqliteType> for SqliteDB {
 
 ### Live tests
 
-Up to now, most tests used in-memory databases created in `setup()`. For Step 3,
-start running tests against a real pre-populated database. This catches issues
-that in-memory tests miss — schema mismatches, type affinity surprises, data
-edge cases.
+Up to now, most tests used in-memory databases created in `setup()`. For Step 3, start running tests
+against a real pre-populated database. This catches issues that in-memory tests miss — schema
+mismatches, type affinity surprises, data edge cases.
 
-Set up a test database with known data (we use a bakery schema translated from
-SurrealDB's test fixture), and write tests that query it through the `Selectable`
-interface:
+Set up a test database with known data (we use a bakery schema translated from SurrealDB's test
+fixture), and write tests that query it through the `Selectable` interface:
 
 ```rust
 let db = SqliteDB::connect("sqlite:../target/bakery.sqlite?mode=ro").await?;
@@ -574,23 +560,55 @@ let product = Product::from_record(record)?;
 assert_eq!(product.name, "Enchantment Under the Sea Pie");
 ```
 
+### Implementing complex queries
+
+The `Selectable` interface gives you the bare bones — fields, conditions, ordering, limits,
+aggregates. Your database can do much more: JOINs, subqueries, CTEs, window functions, HAVING,
+UNION, JSON operators, CASE expressions.
+
+The best way to build this out is incrementally, driven by real queries:
+
+1. **Create a test database scaffold** with enough tables and data to exercise complex features.
+   Foreign keys, self-referential hierarchies, many-to-many junctions, JSON columns, generated
+   columns — the more variety, the better. (See `scripts/sqlite/db/v3.sql` for an example.)
+
+2. **Write the queries first** in raw SQL, as comments in your test file. Start with queries you
+   know work against your scaffold. Each query should target specific features (JOINs, GROUP BY +
+   HAVING, window functions, etc.).
+
+3. **Implement one query at a time.** For each query:
+   - Read the SQL and identify which builder methods are missing
+   - Add the methods to your SELECT struct (e.g., `add_join`, `add_having`, `with_cte`)
+   - Write a render test that checks the generated SQL matches
+   - Write a live test that executes against the scaffold and verifies results
+
+This approach has two advantages. First, you don't over-design — you only add features you actually
+need. Second, every new feature ships with a test that proves it works against a real database, not
+just string comparison.
+
+As you proceed - you can add new structs, for example "CASE" can be implemented as SqliteCase. Make
+sure it implements `Expressive` and then it can be used inside your queries.
+
+The select builder does not require to validate query logic during build, it only need to render.
+Most methods will accept either scalar values or other expressions. A good time to look into
+ExpressiveOr and use it for argument types in your query builder.
+
 ### Other statements
 
-`Selectable` only covers SELECT. INSERT, UPDATE, and DELETE don't need a trait
-at this stage — they just need to implement `Expressive<AnySqliteType>` so they
-can be passed to `ExprDataSource::execute()`. The statement builders from earlier
-steps still work, they just need their expression type migrated from `JsonValue`
-to `AnySqliteType` to flow directly into `execute()`.
+`Selectable` only covers SELECT. INSERT, UPDATE, and DELETE don't need a trait at this stage — they
+just need to implement `Expressive<AnySqliteType>` so they can be passed to
+`ExprDataSource::execute()`. The statement builders from earlier steps still work, they just need
+their expression type migrated from `JsonValue` to `AnySqliteType` to flow directly into
+`execute()`.
 
 ### Step 3 conclusion
 
 At this point you should have:
 
-1. **`Selectable<AnyType>` impl** for your SELECT builder — all standard methods
-   implemented, builder pattern provided by trait defaults.
+1. **`Selectable<AnyType>` impl** for your SELECT builder — all standard methods implemented,
+   builder pattern provided by trait defaults.
 
-2. **`SelectableDataSource<AnyType>` impl** for your DB struct — `select()` and
-   `execute_select()`.
+2. **`SelectableDataSource<AnyType>` impl** for your DB struct — `select()` and `execute_select()`.
 
 3. **Tests** in `tests/<backend>/3_*.rs` covering:
    - SQL rendering via `preview()` — fields, conditions, ordering, limits, distinct, group by
