@@ -3,9 +3,11 @@
 //! This module provides a minimalistic mock implementation of the Selectable trait
 //! that uses the expr! macro pattern for building queries.
 
-use crate::traits::expressive::ExpressiveEnum;
+use crate::traits::expressive::{Expressive, ExpressiveEnum};
 use crate::traits::selectable::{Selectable, SourceRef};
 use crate::{Expression, expr};
+
+type Value = serde_json::Value;
 
 /// Minimalistic mock implementation of Selectable trait
 ///
@@ -141,25 +143,25 @@ impl Selectable<serde_json::Value> for MockSelect {
 
     fn add_expression(
         &mut self,
-        _expression: Expression<serde_json::Value>,
+        _expression: impl Expressive<Value>,
         _alias: Option<String>,
     ) {
-        panic!("You may only use field() wihis mock")
+        panic!("You may only use field() in this mock")
     }
 
-    fn add_where_condition(&mut self, condition: Expression<serde_json::Value>) {
-        self.where_conditions.push(condition);
+    fn add_where_condition(&mut self, condition: impl Expressive<Value>) {
+        self.where_conditions.push(condition.expr());
     }
 
     fn set_distinct(&mut self, distinct: bool) {
         self.distinct = distinct;
     }
 
-    fn add_order_by(&mut self, expression: Expression<serde_json::Value>, ascending: bool) {
-        self.order_by.push((expression, ascending));
+    fn add_order_by(&mut self, expression: impl Expressive<Value>, ascending: bool) {
+        self.order_by.push((expression.expr(), ascending));
     }
 
-    fn add_group_by(&mut self, _expression: Expression<serde_json::Value>) {
+    fn add_group_by(&mut self, _expression: impl Expressive<Value>) {
         // Not implemented in minimal version
     }
 
@@ -217,7 +219,7 @@ impl Selectable<serde_json::Value> for MockSelect {
         expr!("SELECT COUNT(*) FROM {}", source)
     }
 
-    fn as_sum(&self, column: Expression<serde_json::Value>) -> Expression<serde_json::Value> {
+    fn as_sum(&self, column: impl Expressive<Value>) -> Expression<Value> {
         let source = self.source.as_ref().unwrap().as_str();
         expr!("SELECT SUM({}) FROM {}", (column), source)
     }
