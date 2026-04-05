@@ -125,7 +125,7 @@ async fn test_insert_multiple_products() {
     assert_eq!(parsed[2].inventory_stock, 0);
 }
 
-// ── Type marker verification ─────────────────────────────────────────���─────
+// ── Type marker verification ────────────────────────────────────────────────
 //
 // The point of using sqlite_expr! (AnySqliteType) instead of sql_expr! (JsonValue)
 // is that parameters carry variant tags. Let's verify that matters.

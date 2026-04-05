@@ -35,7 +35,7 @@ impl std::fmt::Display for AnySqliteType {
             Value::Null => write!(f, "NULL"),
             Value::Bool(b) => write!(f, "{}", b),
             Value::Number(n) => write!(f, "{}", n),
-            Value::String(s) => write!(f, "'{}'", s),
+            Value::String(s) => write!(f, "'{}'", s.replace('\'', "''")),
             other => write!(f, "{}", other),
         }
     }

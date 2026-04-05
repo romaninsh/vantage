@@ -9,7 +9,10 @@ fn render_condition_list(conditions: &[Expr], keyword: &str) -> Expr {
         Expression::new("", vec![])
     } else {
         let combined = Expression::from_vec(conditions.to_vec(), " AND ");
-        Expression::new(format!(" {} {{}}", keyword), vec![ExpressiveEnum::Nested(combined)])
+        Expression::new(
+            format!(" {} {{}}", keyword),
+            vec![ExpressiveEnum::Nested(combined)],
+        )
     }
 }
 
@@ -99,10 +102,7 @@ impl SqliteSelect {
                     if *asc {
                         expr.clone()
                     } else {
-                        Expression::new(
-                            "{} DESC",
-                            vec![ExpressiveEnum::Nested(expr.clone())],
-                        )
+                        Expression::new("{} DESC", vec![ExpressiveEnum::Nested(expr.clone())])
                     }
                 })
                 .collect();
@@ -149,7 +149,11 @@ impl SqliteSelect {
                     )
                 })
                 .collect();
-            let keyword = if is_recursive { "WITH RECURSIVE" } else { "WITH" };
+            let keyword = if is_recursive {
+                "WITH RECURSIVE"
+            } else {
+                "WITH"
+            };
             Expression::new(
                 format!("{} {{}} ", keyword),
                 vec![ExpressiveEnum::Nested(Expression::from_vec(parts, ", "))],

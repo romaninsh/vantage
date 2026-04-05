@@ -25,43 +25,41 @@ pub(crate) fn bind_sqlite_value<'q>(
         Some(SqliteTypeVariants::Null) => query.bind(None::<String>),
         // Untyped values (from deferred results, database reads) — infer from JSON
         None => bind_by_json(query, json),
-        Some(SqliteTypeVariants::Bool) => {
-            match json {
-                JsonValue::Number(n) => query.bind(n.as_i64().unwrap_or(0) != 0),
-                JsonValue::Bool(b) => query.bind(*b),
-                _ => query.bind(false),
+        Some(SqliteTypeVariants::Bool) => match json {
+            JsonValue::Null => query.bind(None::<bool>),
+            JsonValue::Number(n) => query.bind(n.as_i64().unwrap_or(0) != 0),
+            JsonValue::Bool(b) => query.bind(*b),
+            _ => query.bind(None::<bool>),
+        },
+        Some(SqliteTypeVariants::Integer) => match json {
+            JsonValue::Null => query.bind(None::<i64>),
+            JsonValue::Number(n) => query.bind(n.as_i64().unwrap_or(0)),
+            _ => query.bind(None::<i64>),
+        },
+        Some(SqliteTypeVariants::Real) => match json {
+            JsonValue::Null => query.bind(None::<f64>),
+            _ => query.bind(json.as_f64().unwrap_or(0.0)),
+        },
+        Some(SqliteTypeVariants::Text) => match json {
+            JsonValue::Null => query.bind(None::<String>),
+            _ => query.bind(json.as_str().unwrap_or("")),
+        },
+        Some(SqliteTypeVariants::Numeric) => match json {
+            JsonValue::Null => query.bind(None::<String>),
+            JsonValue::Object(o) => {
+                let s = o.get("numeric").and_then(|v| v.as_str()).unwrap_or("0");
+                query.bind(s)
             }
-        }
-        Some(SqliteTypeVariants::Integer) => {
-            match json {
-                JsonValue::Number(n) => query.bind(n.as_i64().unwrap_or(0)),
-                _ => query.bind(None::<String>),
+            _ => query.bind(None::<String>),
+        },
+        Some(SqliteTypeVariants::Blob) => match json {
+            JsonValue::Null => query.bind(None::<String>),
+            JsonValue::Object(o) => {
+                let s = o.get("blob").and_then(|v| v.as_str()).unwrap_or("");
+                query.bind(s)
             }
-        }
-        Some(SqliteTypeVariants::Real) => {
-            let f = json.as_f64().unwrap_or(0.0);
-            query.bind(f)
-        }
-        Some(SqliteTypeVariants::Text) => {
-            let s = json.as_str().unwrap_or("");
-            query.bind(s)
-        }
-        Some(SqliteTypeVariants::Numeric) => {
-            let s = json
-                .as_object()
-                .and_then(|o| o.get("numeric"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("0");
-            query.bind(s)
-        }
-        Some(SqliteTypeVariants::Blob) => {
-            let s = json
-                .as_object()
-                .and_then(|o| o.get("blob"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            query.bind(s)
-        }
+            _ => query.bind(None::<String>),
+        },
     }
 }
 

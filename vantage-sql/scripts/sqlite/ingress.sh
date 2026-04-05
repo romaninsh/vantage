@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-source .env
+DB_FILE="${DB_FILE:-../../target/bakery.sqlite}"
 
 echo "Setting up SQLite database at $DB_FILE..."
 
