@@ -4,6 +4,9 @@ DB_FILE="${DB_FILE:-../../target/bakery.sqlite}"
 
 echo "Setting up SQLite database at $DB_FILE..."
 
+# Ensure parent directory exists
+mkdir -p "$(dirname "$DB_FILE")"
+
 # Remove existing database
 rm -f "$DB_FILE"
 
