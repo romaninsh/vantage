@@ -85,6 +85,10 @@ async fn resolve_deferred(
                 let result = deferred_fn.call().await?;
                 resolved_params.push(result);
             }
+            ExpressiveEnum::Nested(inner) => {
+                let resolved_inner = Box::pin(resolve_deferred(inner)).await?;
+                resolved_params.push(ExpressiveEnum::Nested(resolved_inner));
+            }
             other => {
                 resolved_params.push(other.clone());
             }
