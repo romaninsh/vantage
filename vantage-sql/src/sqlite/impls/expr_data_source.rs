@@ -1,6 +1,6 @@
 use serde_json::Value as JsonValue;
 use vantage_expressions::traits::expressive::DeferredFn;
-use vantage_expressions::{Expression, ExpressionFlattener, Flatten};
+use vantage_expressions::{ExpressiveEnum, Expression, ExpressionFlattener, Flatten};
 
 use crate::sqlite::types::AnySqliteType;
 use crate::sqlite::SqliteDB;
@@ -11,8 +11,13 @@ impl vantage_expressions::ExprDataSource<AnySqliteType> for SqliteDB {
         &self,
         expr: &Expression<AnySqliteType>,
     ) -> vantage_core::Result<AnySqliteType> {
-        let (sql, params) = prepare_typed_query(expr);
+        // 1. Resolve deferred parameters (async — may call other databases)
+        let resolved = resolve_deferred(expr).await?;
 
+        // 2. Flatten nested expressions + convert {} to ?N
+        let (sql, params) = prepare_typed_query(&resolved);
+
+        // 3. Bind and execute
         let mut query = sqlx::query(&sql);
         for value in &params {
             query = bind_sqlite_value(query, value);
@@ -23,13 +28,11 @@ impl vantage_expressions::ExprDataSource<AnySqliteType> for SqliteDB {
             .await
             .map_err(|e| vantage_core::error!("SQLite query failed", details = e.to_string()))?;
 
-        // Each row becomes a Record<AnySqliteType> (marker-less values).
-        // We wrap the whole result as a JSON array → AnySqliteType with type_variant: None.
+        // 4. Convert rows to AnySqliteType (untyped — type_variant: None)
         let arr: Vec<JsonValue> = rows
             .iter()
             .map(|row| {
                 let record = row_to_record(row);
-                // Convert Record<AnySqliteType> → JSON object by extracting inner values
                 let json_map: serde_json::Map<String, JsonValue> = record
                     .into_iter()
                     .map(|(k, v)| (k, v.into_value()))
@@ -39,8 +42,6 @@ impl vantage_expressions::ExprDataSource<AnySqliteType> for SqliteDB {
             .collect();
 
         let json_arr = JsonValue::Array(arr);
-        // from_json on an array → type_variant: None (not in our variant list)
-        // This is intentional — the result is an opaque container, not a typed value.
         Ok(AnySqliteType::from_json(&json_arr)
             .expect("JSON array should always convert to AnySqliteType"))
     }
@@ -51,10 +52,46 @@ impl vantage_expressions::ExprDataSource<AnySqliteType> for SqliteDB {
             let db = db.clone();
             let expr = expr.clone();
             Box::pin(async move {
-                vantage_expressions::ExprDataSource::execute(&db, &expr).await
+                let result = vantage_expressions::ExprDataSource::execute(&db, &expr).await?;
+                // execute() returns rows as a JSON array. For use as a deferred
+                // parameter (scalar subquery), extract the first column of the
+                // first row. If the result is empty or not an array, return as-is.
+                let scalar = match result.value() {
+                    serde_json::Value::Array(arr) => {
+                        arr.first()
+                            .and_then(|row| row.as_object())
+                            .and_then(|obj| obj.values().next())
+                            .map(|v| AnySqliteType::untyped(v.clone()))
+                            .unwrap_or(result)
+                    }
+                    _ => result,
+                };
+                Ok(scalar)
             })
         })
     }
+}
+
+/// Resolve all Deferred parameters in an expression by calling them.
+/// Deferred closures may execute queries on other databases.
+async fn resolve_deferred(
+    expr: &Expression<AnySqliteType>,
+) -> vantage_core::Result<Expression<AnySqliteType>> {
+    let mut resolved_params = Vec::new();
+
+    for param in &expr.parameters {
+        match param {
+            ExpressiveEnum::Deferred(deferred_fn) => {
+                let result = deferred_fn.call().await?;
+                resolved_params.push(result);
+            }
+            other => {
+                resolved_params.push(other.clone());
+            }
+        }
+    }
+
+    Ok(Expression::new(expr.template.clone(), resolved_params))
 }
 
 /// Flatten an Expression<AnySqliteType> and convert `{}` placeholders to `?N`.
@@ -73,16 +110,16 @@ fn prepare_typed_query(
 
     for (i, param) in flattened.parameters.iter().enumerate() {
         match param {
-            vantage_expressions::ExpressiveEnum::Scalar(value) => {
+            ExpressiveEnum::Scalar(value) => {
                 param_counter += 1;
                 sql.push_str(&format!("?{}", param_counter));
                 params.push(value.clone());
             }
-            vantage_expressions::ExpressiveEnum::Nested(_) => {
+            ExpressiveEnum::Nested(_) => {
                 panic!("nested expression should have been flattened");
             }
-            vantage_expressions::ExpressiveEnum::Deferred(_) => {
-                panic!("deferred expression should have been resolved");
+            ExpressiveEnum::Deferred(_) => {
+                panic!("deferred expression should have been resolved before prepare");
             }
         }
 
