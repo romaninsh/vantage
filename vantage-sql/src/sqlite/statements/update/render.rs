@@ -1,5 +1,6 @@
-use serde_json::Value as JsonValue;
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
+
+use crate::sqlite::types::AnySqliteType;
 
 use super::{Expr, SqliteUpdate};
 
@@ -16,7 +17,7 @@ impl SqliteUpdate {
     }
 }
 
-impl Expressive<JsonValue> for SqliteUpdate {
+impl Expressive<AnySqliteType> for SqliteUpdate {
     fn expr(&self) -> Expr {
         if self.fields.is_empty() {
             return Expression::new(format!("UPDATE \"{}\"", self.table), vec![]);
@@ -29,7 +30,7 @@ impl Expressive<JsonValue> for SqliteUpdate {
             .collect();
         let template_base = format!("UPDATE \"{}\" SET {}", self.table, set_parts.join(", "));
 
-        let mut params: Vec<ExpressiveEnum<JsonValue>> = self
+        let mut params: Vec<ExpressiveEnum<AnySqliteType>> = self
             .fields
             .values()
             .map(|v| ExpressiveEnum::Scalar(v.clone()))

@@ -1,5 +1,6 @@
-use serde_json::Value as JsonValue;
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
+
+use crate::sqlite::types::AnySqliteType;
 
 use super::{Expr, SqliteDelete};
 
@@ -9,7 +10,7 @@ impl SqliteDelete {
     }
 }
 
-impl Expressive<JsonValue> for SqliteDelete {
+impl Expressive<AnySqliteType> for SqliteDelete {
     fn expr(&self) -> Expr {
         if self.conditions.is_empty() {
             return Expression::new(format!("DELETE FROM \"{}\"", self.table), vec![]);

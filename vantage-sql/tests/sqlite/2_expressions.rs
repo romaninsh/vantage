@@ -1,7 +1,7 @@
 //! Test 2: ExprDataSource — execute Expression<AnySqliteType> against live SQLite.
 
 use serde_json::Value as JsonValue;
-use vantage_expressions::{Expression, ExprDataSource, ExpressiveEnum};
+use vantage_expressions::{ExprDataSource, Expression, ExpressiveEnum};
 use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 
 async fn setup() -> SqliteDB {

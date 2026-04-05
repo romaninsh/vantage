@@ -5,9 +5,9 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use vantage_expressions::{ExprDataSource, Expression, ExpressiveEnum};
 #[allow(unused_imports)]
 use vantage_expressions::Expressive;
+use vantage_expressions::{ExprDataSource, Expression, ExpressiveEnum};
 use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 use vantage_sql::sqlite_expr;
 use vantage_types::{Record, TryFromRecord};
@@ -58,18 +58,21 @@ async fn test_insert_product() {
     // INSERT using sqlite_expr! — each parameter is AnySqliteType with proper variant
     let insert = sqlite_expr!(
         "INSERT INTO \"product\" (\"id\", \"name\", \"price\", \"calories\", \"is_deleted\", \"inventory_stock\") VALUES ({}, {}, {}, {}, {}, {})",
-        "cupcake",            // Text
-        "Flux Cupcake",       // Text
-        120i64,               // Integer
-        300i64,               // Integer
-        false,                // Integer (bool → 0)
-        50i64                 // Integer
+        "cupcake",      // Text
+        "Flux Cupcake", // Text
+        120i64,         // Integer
+        300i64,         // Integer
+        false,          // Integer (bool → 0)
+        50i64           // Integer
     );
 
     db.execute(&insert).await.unwrap();
 
     // Read back and verify
-    let select = sqlite_expr!("SELECT name, price, calories, is_deleted, inventory_stock FROM product WHERE id = {}", "cupcake");
+    let select = sqlite_expr!(
+        "SELECT name, price, calories, is_deleted, inventory_stock FROM product WHERE id = {}",
+        "cupcake"
+    );
     let result = rows(db.execute(&select).await.unwrap());
 
     assert_eq!(result.len(), 1);
@@ -91,9 +94,33 @@ async fn test_insert_multiple_products() {
     let db = setup().await;
 
     // Build each row as a nested expression
-    let row1 = sqlite_expr!("({}, {}, {}, {}, {}, {})", "tart", "Time Tart", 220i64, 200i64, false, 20i64);
-    let row2 = sqlite_expr!("({}, {}, {}, {}, {}, {})", "donut", "DeLorean Doughnut", 135i64, 250i64, false, 30i64);
-    let row3 = sqlite_expr!("({}, {}, {}, {}, {}, {})", "pie", "Sea Pie", 299i64, 350i64, true, 0i64);
+    let row1 = sqlite_expr!(
+        "({}, {}, {}, {}, {}, {})",
+        "tart",
+        "Time Tart",
+        220i64,
+        200i64,
+        false,
+        20i64
+    );
+    let row2 = sqlite_expr!(
+        "({}, {}, {}, {}, {}, {})",
+        "donut",
+        "DeLorean Doughnut",
+        135i64,
+        250i64,
+        false,
+        30i64
+    );
+    let row3 = sqlite_expr!(
+        "({}, {}, {}, {}, {}, {})",
+        "pie",
+        "Sea Pie",
+        299i64,
+        350i64,
+        true,
+        0i64
+    );
 
     // Combine into one INSERT with nested row expressions
     let rows_expr = Expression::from_vec(vec![row1, row2, row3], ", ");
@@ -105,7 +132,9 @@ async fn test_insert_multiple_products() {
     db.execute(&insert).await.unwrap();
 
     // Read back and verify
-    let select = sqlite_expr!("SELECT name, price, calories, is_deleted, inventory_stock FROM product ORDER BY price");
+    let select = sqlite_expr!(
+        "SELECT name, price, calories, is_deleted, inventory_stock FROM product ORDER BY price"
+    );
     let result = rows(db.execute(&select).await.unwrap());
 
     assert_eq!(result.len(), 3);
@@ -137,15 +166,17 @@ async fn test_bool_binds_correctly() {
     // Insert with bool = true → should bind as INTEGER 1
     let insert = sqlite_expr!(
         "INSERT INTO \"product\" (\"id\", \"name\", \"price\", \"calories\", \"is_deleted\", \"inventory_stock\") VALUES ({}, {}, {}, {}, {}, {})",
-        "deleted_item", "Gone", 100i64, 100i64, true, 0i64
+        "deleted_item",
+        "Gone",
+        100i64,
+        100i64,
+        true,
+        0i64
     );
     db.execute(&insert).await.unwrap();
 
     // Query with bool parameter — the type marker ensures it binds as bool, not as string "true"
-    let select = sqlite_expr!(
-        "SELECT name FROM product WHERE is_deleted = {}",
-        true
-    );
+    let select = sqlite_expr!("SELECT name FROM product WHERE is_deleted = {}", true);
     let result = rows(db.execute(&select).await.unwrap());
 
     assert_eq!(result.len(), 1);
@@ -159,7 +190,12 @@ async fn test_integer_vs_text_binding() {
     // Insert a product
     let insert = sqlite_expr!(
         "INSERT INTO \"product\" (\"id\", \"name\", \"price\", \"calories\", \"is_deleted\", \"inventory_stock\") VALUES ({}, {}, {}, {}, {}, {})",
-        "item1", "Test", 100i64, 100i64, false, 10i64
+        "item1",
+        "Test",
+        100i64,
+        100i64,
+        false,
+        10i64
     );
     db.execute(&insert).await.unwrap();
 

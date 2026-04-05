@@ -478,13 +478,13 @@ fn insert_set_field_types() {
         .with_id("t1")
         .with_field("s", "hello".to_string())
         .with_field("i", 42i64)
-        .with_field("f", 3.14f64)
+        .with_field("f", 3.21f64)
         .with_field("b", true);
 
     let p = ins.preview();
     assert!(p.contains("s = \"hello\""), "string field: {}", p);
     assert!(p.contains("i = 42"), "int field: {}", p);
-    assert!(p.contains("f = 3.14"), "float field: {}", p);
+    assert!(p.contains("f = 3.21"), "float field: {}", p);
     assert!(p.contains("b = true"), "bool field: {}", p);
 }
 
@@ -578,7 +578,7 @@ async fn insert_live_all_types() {
         .with_id("t1")
         .with_field("str_val", "hello".to_string())
         .with_field("int_val", 42i64)
-        .with_field("float_val", 2.718f64)
+        .with_field("float_val", 2.81f64)
         .with_field("bool_val", false)
         .with_field("ref_val", Thing::new("other", "x"));
 
@@ -591,7 +591,7 @@ async fn insert_live_all_types() {
     assert_eq!(read_value::<i64>(&db, "si_types:t1", "int_val").await, 42);
     assert_eq!(
         read_value::<f64>(&db, "si_types:t1", "float_val").await,
-        2.718
+        2.81
     );
     assert!(!read_value::<bool>(&db, "si_types:t1", "bool_val").await);
 

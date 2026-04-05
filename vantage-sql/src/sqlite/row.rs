@@ -112,24 +112,28 @@ pub(crate) fn row_to_record(row: &SqliteRow) -> Record<AnySqliteType> {
 fn sqlite_column_to_json(row: &SqliteRow, ordinal: usize, declared_type: &str) -> JsonValue {
     use sqlx::ValueRef;
 
-    if row.try_get_raw(ordinal).map(|v| v.is_null()).unwrap_or(true) {
+    if row
+        .try_get_raw(ordinal)
+        .map(|v| v.is_null())
+        .unwrap_or(true)
+    {
         return JsonValue::Null;
     }
 
     let dt = declared_type.to_uppercase();
-    if dt == "BOOLEAN" || dt == "BOOL" {
-        if let Ok(v) = row.try_get::<bool, _>(ordinal) {
-            return JsonValue::Bool(v);
-        }
+    if (dt == "BOOLEAN" || dt == "BOOL")
+        && let Ok(v) = row.try_get::<bool, _>(ordinal)
+    {
+        return JsonValue::Bool(v);
     }
 
     if let Ok(v) = row.try_get::<i64, _>(ordinal) {
         return JsonValue::Number(v.into());
     }
-    if let Ok(v) = row.try_get::<f64, _>(ordinal) {
-        if let Some(n) = serde_json::Number::from_f64(v) {
-            return JsonValue::Number(n);
-        }
+    if let Ok(v) = row.try_get::<f64, _>(ordinal)
+        && let Some(n) = serde_json::Number::from_f64(v)
+    {
+        return JsonValue::Number(n);
     }
     if let Ok(v) = row.try_get::<String, _>(ordinal) {
         return JsonValue::String(v);
@@ -169,7 +173,7 @@ mod tests {
         .await
         .unwrap();
 
-        sqlx::query("INSERT INTO t VALUES ('Alice', 42, 3.14, 1, NULL)")
+        sqlx::query("INSERT INTO t VALUES ('Alice', 42, 3.15, 1, NULL)")
             .execute(db.pool())
             .await
             .unwrap();
@@ -183,9 +187,12 @@ mod tests {
 
         // Values have type_variant from from_json detection, but try_get
         // is permissive — it attempts conversion regardless
-        assert_eq!(record["name"].try_get::<String>(), Some("Alice".to_string()));
+        assert_eq!(
+            record["name"].try_get::<String>(),
+            Some("Alice".to_string())
+        );
         assert_eq!(record["score"].try_get::<i64>(), Some(42));
-        assert!((record["ratio"].try_get::<f64>().unwrap() - 3.14).abs() < f64::EPSILON);
+        assert!((record["ratio"].try_get::<f64>().unwrap() - 3.15).abs() < f64::EPSILON);
         assert_eq!(record["active"].try_get::<bool>(), Some(true));
 
         // NULL column — try_get on Option works
@@ -235,8 +242,22 @@ mod tests {
             .collect();
 
         assert_eq!(products.len(), 2);
-        assert_eq!(products[0], Product { name: "Cupcake".into(), price: 120, is_deleted: false });
-        assert_eq!(products[1], Product { name: "Tart".into(), price: 220, is_deleted: true });
+        assert_eq!(
+            products[0],
+            Product {
+                name: "Cupcake".into(),
+                price: 120,
+                is_deleted: false
+            }
+        );
+        assert_eq!(
+            products[1],
+            Product {
+                name: "Tart".into(),
+                price: 220,
+                is_deleted: true
+            }
+        );
     }
 
     #[tokio::test]

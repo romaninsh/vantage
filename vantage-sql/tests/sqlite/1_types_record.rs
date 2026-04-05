@@ -15,7 +15,10 @@ fn test_typed_record_creation() {
     record.insert("is_deleted".into(), AnySqliteType::new(false));
 
     // Values carry their type markers
-    assert_eq!(record["name"].try_get::<String>(), Some("Cupcake".to_string()));
+    assert_eq!(
+        record["name"].try_get::<String>(),
+        Some("Cupcake".to_string())
+    );
     assert_eq!(record["price"].try_get::<i64>(), Some(120));
     assert_eq!(record["is_deleted"].try_get::<bool>(), Some(false));
 
@@ -27,7 +30,10 @@ fn test_typed_record_creation() {
 #[test]
 fn test_typed_record_with_option() {
     let mut record: Record<AnySqliteType> = Record::new();
-    record.insert("nickname".into(), AnySqliteType::new(Some("Ali".to_string())));
+    record.insert(
+        "nickname".into(),
+        AnySqliteType::new(Some("Ali".to_string())),
+    );
     record.insert("note".into(), AnySqliteType::new(None::<String>));
 
     assert_eq!(
@@ -44,12 +50,24 @@ fn test_typed_record_with_option() {
 #[test]
 fn test_untyped_record_creation() {
     let mut record: Record<AnySqliteType> = Record::new();
-    record.insert("name".into(), AnySqliteType::untyped(serde_json::json!("Cupcake")));
-    record.insert("price".into(), AnySqliteType::untyped(serde_json::json!(120)));
-    record.insert("active".into(), AnySqliteType::untyped(serde_json::json!(true)));
+    record.insert(
+        "name".into(),
+        AnySqliteType::untyped(serde_json::json!("Cupcake")),
+    );
+    record.insert(
+        "price".into(),
+        AnySqliteType::untyped(serde_json::json!(120)),
+    );
+    record.insert(
+        "active".into(),
+        AnySqliteType::untyped(serde_json::json!(true)),
+    );
 
     // Untyped values — try_get just attempts the conversion
-    assert_eq!(record["name"].try_get::<String>(), Some("Cupcake".to_string()));
+    assert_eq!(
+        record["name"].try_get::<String>(),
+        Some("Cupcake".to_string())
+    );
     assert_eq!(record["price"].try_get::<i64>(), Some(120));
     assert_eq!(record["active"].try_get::<bool>(), Some(true));
 
@@ -61,7 +79,10 @@ fn test_untyped_record_creation() {
 #[test]
 fn test_untyped_null() {
     let mut record: Record<AnySqliteType> = Record::new();
-    record.insert("note".into(), AnySqliteType::untyped(serde_json::json!(null)));
+    record.insert(
+        "note".into(),
+        AnySqliteType::untyped(serde_json::json!(null)),
+    );
 
     // Untyped null → Option<String> works (no variant blocking it)
     assert_eq!(record["note"].try_get::<Option<String>>(), Some(None));

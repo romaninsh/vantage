@@ -1,10 +1,10 @@
 use serde_json::Value as JsonValue;
 use vantage_expressions::traits::expressive::DeferredFn;
-use vantage_expressions::{ExpressiveEnum, Expression, ExpressionFlattener, Flatten};
+use vantage_expressions::{Expression, ExpressionFlattener, ExpressiveEnum, Flatten};
 
-use crate::sqlite::types::AnySqliteType;
 use crate::sqlite::SqliteDB;
 use crate::sqlite::row::{bind_sqlite_value, row_to_record};
+use crate::sqlite::types::AnySqliteType;
 
 impl vantage_expressions::ExprDataSource<AnySqliteType> for SqliteDB {
     async fn execute(
@@ -57,13 +57,12 @@ impl vantage_expressions::ExprDataSource<AnySqliteType> for SqliteDB {
                 // parameter (scalar subquery), extract the first column of the
                 // first row. If the result is empty or not an array, return as-is.
                 let scalar = match result.value() {
-                    serde_json::Value::Array(arr) => {
-                        arr.first()
-                            .and_then(|row| row.as_object())
-                            .and_then(|obj| obj.values().next())
-                            .map(|v| AnySqliteType::untyped(v.clone()))
-                            .unwrap_or(result)
-                    }
+                    serde_json::Value::Array(arr) => arr
+                        .first()
+                        .and_then(|row| row.as_object())
+                        .and_then(|obj| obj.values().next())
+                        .map(|v| AnySqliteType::untyped(v.clone()))
+                        .unwrap_or(result),
                     _ => result,
                 };
                 Ok(scalar)
@@ -99,9 +98,7 @@ async fn resolve_deferred(
 }
 
 /// Flatten an Expression<AnySqliteType> and convert `{}` placeholders to `?N`.
-fn prepare_typed_query(
-    expr: &Expression<AnySqliteType>,
-) -> (String, Vec<AnySqliteType>) {
+fn prepare_typed_query(expr: &Expression<AnySqliteType>) -> (String, Vec<AnySqliteType>) {
     let flattener = ExpressionFlattener::new();
     let flattened = flattener.flatten(expr);
 

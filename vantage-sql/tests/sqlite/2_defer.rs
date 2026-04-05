@@ -41,9 +41,15 @@ async fn setup() -> (SqliteDB, SqliteDB) {
 
     let insert = sqlite_expr!(
         "INSERT INTO product VALUES ({}, {}, {}), ({}, {}, {}), ({}, {}, {})",
-        "a", "Cheap Thing", 50i64,
-        "b", "Mid Thing", 150i64,
-        "c", "Expensive Thing", 300i64
+        "a",
+        "Cheap Thing",
+        50i64,
+        "b",
+        "Mid Thing",
+        150i64,
+        "c",
+        "Expensive Thing",
+        300i64
     );
     shop_db.execute(&insert).await.unwrap();
 
@@ -115,10 +121,7 @@ async fn test_nested_deferred() {
         vec![ExpressiveEnum::Deferred(deferred_threshold)],
     );
 
-    let shop_query = sqlite_expr!(
-        "SELECT name FROM product WHERE {} ORDER BY price",
-        (inner)
-    );
+    let shop_query = sqlite_expr!("SELECT name FROM product WHERE {} ORDER BY price", (inner));
 
     let result = rows(shop_db.execute(&shop_query).await.unwrap());
 

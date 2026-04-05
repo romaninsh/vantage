@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
-DB_FILE="${DB_FILE:-../../target/bakery.sqlite}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DB_FILE="${DB_FILE:-${SCRIPT_DIR}/../../../target/bakery.sqlite}"
 
 echo "Setting up SQLite database at $DB_FILE..."
 

@@ -30,8 +30,20 @@ async fn setup() -> SqliteDB {
 
     let insert = sqlite_expr!(
         "INSERT INTO product VALUES ({}, {}, {}, {}, {}, {}, {}), ({}, {}, {}, {}, {}, {}, {})",
-        "cupcake", "Flux Cupcake", 120i64, 300i64, 0.25f64, false, "A tasty cupcake",
-        "tart", "Time Tart", 220i64, 200i64, 0.15f64, true, "tart"
+        "cupcake",
+        "Flux Cupcake",
+        120i64,
+        300i64,
+        0.25f64,
+        false,
+        "A tasty cupcake",
+        "tart",
+        "Time Tart",
+        220i64,
+        200i64,
+        0.15f64,
+        true,
+        "tart"
     );
     db.execute(&insert).await.unwrap();
 
@@ -59,7 +71,10 @@ async fn test_select_single_record_into_entity() {
     let db = setup().await;
 
     let record: Record<JsonValue> = db
-        .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "cupcake"))
+        .associate(sqlite_expr!(
+            "SELECT * FROM product WHERE id = {}",
+            "cupcake"
+        ))
         .get()
         .await
         .unwrap();
@@ -77,7 +92,10 @@ async fn test_null_into_optional_field() {
     let db = setup().await;
 
     let record: Record<JsonValue> = db
-        .associate(sqlite_expr!("SELECT name, price, weight, description FROM product WHERE id = {}", "plain"))
+        .associate(sqlite_expr!(
+            "SELECT name, price, weight, description FROM product WHERE id = {}",
+            "plain"
+        ))
         .get()
         .await
         .unwrap();
@@ -101,7 +119,10 @@ async fn test_missing_field_fails() {
     let db = setup().await;
 
     let record: Record<JsonValue> = db
-        .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "cupcake"))
+        .associate(sqlite_expr!(
+            "SELECT * FROM product WHERE id = {}",
+            "cupcake"
+        ))
         .get()
         .await
         .unwrap();
@@ -121,7 +142,10 @@ async fn test_null_into_required_field_fails() {
     let db = setup().await;
 
     let record: Record<JsonValue> = db
-        .associate(sqlite_expr!("SELECT name, weight FROM product WHERE id = {}", "plain"))
+        .associate(sqlite_expr!(
+            "SELECT name, weight FROM product WHERE id = {}",
+            "plain"
+        ))
         .get()
         .await
         .unwrap();
@@ -141,7 +165,10 @@ async fn test_wrong_field_type_fails() {
     let db = setup().await;
 
     let record: Record<JsonValue> = db
-        .associate(sqlite_expr!("SELECT name, price FROM product WHERE id = {}", "cupcake"))
+        .associate(sqlite_expr!(
+            "SELECT name, price FROM product WHERE id = {}",
+            "cupcake"
+        ))
         .get()
         .await
         .unwrap();

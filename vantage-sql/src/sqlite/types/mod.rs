@@ -83,9 +83,9 @@ mod tests {
 
     #[test]
     fn test_real_round_trip() {
-        let val = AnySqliteType::new(3.14f64);
+        let val = AnySqliteType::new(3.15f64);
         assert_eq!(val.type_variant(), Some(SqliteTypeVariants::Real));
-        assert_eq!(val.try_get::<f64>(), Some(3.14));
+        assert_eq!(val.try_get::<f64>(), Some(3.15));
     }
 
     #[test]
@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn test_type_mismatch_real_as_integer() {
-        let val = AnySqliteType::new(3.14f64);
+        let val = AnySqliteType::new(3.15f64);
         // Real variant should not convert to i64
         assert_eq!(val.try_get::<i64>(), None);
     }

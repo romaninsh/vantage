@@ -18,7 +18,11 @@ impl<T: QueryResult> Selectable<AnySurrealType> for SurrealSelect<T> {
         self.fields.push(SelectField::new(Identifier::new(field)));
     }
 
-    fn add_expression(&mut self, expression: impl Expressive<AnySurrealType>, alias: Option<String>) {
+    fn add_expression(
+        &mut self,
+        expression: impl Expressive<AnySurrealType>,
+        alias: Option<String>,
+    ) {
         let mut field = SelectField::new(expression.expr());
         if let Some(alias) = alias {
             field = field.with_alias(alias);

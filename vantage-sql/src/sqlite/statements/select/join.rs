@@ -31,7 +31,11 @@ pub struct SqliteSelectJoin {
 
 impl SqliteSelectJoin {
     fn new(join_type: SqliteJoinType, table: Expr, on_condition: Expr) -> Self {
-        Self { join_type, table, on_condition }
+        Self {
+            join_type,
+            table,
+            on_condition,
+        }
     }
 
     fn table_expr(table: impl Into<String>, alias: impl Into<String>) -> Expr {
@@ -50,22 +54,46 @@ impl SqliteSelectJoin {
 
     /// INNER JOIN on a named table.
     pub fn inner(table: impl Into<String>, alias: impl Into<String>, on_condition: Expr) -> Self {
-        Self::new(SqliteJoinType::Inner, Self::table_expr(table, alias), on_condition)
+        Self::new(
+            SqliteJoinType::Inner,
+            Self::table_expr(table, alias),
+            on_condition,
+        )
     }
 
     /// LEFT JOIN on a named table.
     pub fn left(table: impl Into<String>, alias: impl Into<String>, on_condition: Expr) -> Self {
-        Self::new(SqliteJoinType::Left, Self::table_expr(table, alias), on_condition)
+        Self::new(
+            SqliteJoinType::Left,
+            Self::table_expr(table, alias),
+            on_condition,
+        )
     }
 
     /// INNER JOIN on a subquery/expression.
-    pub fn inner_expr(subquery: impl Expressive<AnySqliteType>, alias: impl Into<String>, on_condition: Expr) -> Self {
-        Self::new(SqliteJoinType::Inner, Self::subquery_expr(subquery, alias), on_condition)
+    pub fn inner_expr(
+        subquery: impl Expressive<AnySqliteType>,
+        alias: impl Into<String>,
+        on_condition: Expr,
+    ) -> Self {
+        Self::new(
+            SqliteJoinType::Inner,
+            Self::subquery_expr(subquery, alias),
+            on_condition,
+        )
     }
 
     /// LEFT JOIN on a subquery/expression.
-    pub fn left_expr(subquery: impl Expressive<AnySqliteType>, alias: impl Into<String>, on_condition: Expr) -> Self {
-        Self::new(SqliteJoinType::Left, Self::subquery_expr(subquery, alias), on_condition)
+    pub fn left_expr(
+        subquery: impl Expressive<AnySqliteType>,
+        alias: impl Into<String>,
+        on_condition: Expr,
+    ) -> Self {
+        Self::new(
+            SqliteJoinType::Left,
+            Self::subquery_expr(subquery, alias),
+            on_condition,
+        )
     }
 
     pub fn render(&self) -> Expr {

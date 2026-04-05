@@ -66,7 +66,12 @@ impl SqliteSelect {
         self
     }
 
-    pub fn with_cte(mut self, name: impl Into<String>, query: impl vantage_expressions::Expressive<AnySqliteType>, recursive: bool) -> Self {
+    pub fn with_cte(
+        mut self,
+        name: impl Into<String>,
+        query: impl vantage_expressions::Expressive<AnySqliteType>,
+        recursive: bool,
+    ) -> Self {
         self.ctes.push((name.into(), query.expr(), recursive));
         self
     }

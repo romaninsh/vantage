@@ -84,7 +84,9 @@ impl Expressive<AnySqliteType> for &str {
     fn expr(&self) -> Expression<AnySqliteType> {
         Expression::new(
             "{}",
-            vec![ExpressiveEnum::Scalar(AnySqliteType::from(self.to_string()))],
+            vec![ExpressiveEnum::Scalar(AnySqliteType::from(
+                self.to_string(),
+            ))],
         )
     }
 }
@@ -160,21 +162,20 @@ impl TryFrom<AnySqliteType> for vantage_types::Record<AnySqliteType> {
         })?;
         // Convert JSON object → Record<AnySqliteType> with untyped values
         match row {
-            serde_json::Value::Object(map) => {
-                Ok(map.into_iter()
-                    .map(|(k, v)| (k, AnySqliteType::untyped(v)))
-                    .collect())
-            }
-            _ => Err(vantage_core::error!("Expected object row", value = format!("{:?}", row))),
+            serde_json::Value::Object(map) => Ok(map
+                .into_iter()
+                .map(|(k, v)| (k, AnySqliteType::untyped(v)))
+                .collect()),
+            _ => Err(vantage_core::error!(
+                "Expected object row",
+                value = format!("{:?}", row)
+            )),
         }
     }
 }
 
 impl Expressive<AnySqliteType> for AnySqliteType {
     fn expr(&self) -> Expression<AnySqliteType> {
-        Expression::new(
-            "{}",
-            vec![ExpressiveEnum::Scalar(self.clone())],
-        )
+        Expression::new("{}", vec![ExpressiveEnum::Scalar(self.clone())])
     }
 }
