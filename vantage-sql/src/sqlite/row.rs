@@ -27,22 +27,27 @@ pub(crate) fn bind_sqlite_value<'q>(
         None => bind_by_json(query, json),
         Some(SqliteTypeVariants::Bool) => match json {
             JsonValue::Null => query.bind(None::<bool>),
-            JsonValue::Number(n) => query.bind(n.as_i64().unwrap_or(0) != 0),
+            JsonValue::Number(n) => match n.as_i64() {
+                Some(i) => query.bind(i != 0),
+                None => query.bind(None::<bool>),
+            },
             JsonValue::Bool(b) => query.bind(*b),
             _ => query.bind(None::<bool>),
         },
         Some(SqliteTypeVariants::Integer) => match json {
             JsonValue::Null => query.bind(None::<i64>),
-            JsonValue::Number(n) => query.bind(n.as_i64().unwrap_or(0)),
+            JsonValue::Number(n) => query.bind(n.as_i64()),
             _ => query.bind(None::<i64>),
         },
         Some(SqliteTypeVariants::Real) => match json {
             JsonValue::Null => query.bind(None::<f64>),
-            _ => query.bind(json.as_f64().unwrap_or(0.0)),
+            JsonValue::Number(n) => query.bind(n.as_f64()),
+            _ => query.bind(None::<f64>),
         },
         Some(SqliteTypeVariants::Text) => match json {
             JsonValue::Null => query.bind(None::<String>),
-            _ => query.bind(json.as_str().unwrap_or("")),
+            JsonValue::String(s) => query.bind(s.as_str()),
+            _ => query.bind(None::<String>),
         },
         Some(SqliteTypeVariants::Numeric) => match json {
             JsonValue::Null => query.bind(None::<String>),

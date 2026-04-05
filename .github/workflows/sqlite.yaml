@@ -33,3 +33,6 @@ jobs:
 
       - name: Run vantage-sql tests
         run: cargo test -p vantage-sql
+
+      - name: Run clippy
+        run: cargo clippy -p vantage-sql --all-targets -- -D warnings
