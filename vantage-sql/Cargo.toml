@@ -24,7 +24,6 @@ paste = "1.0"
 vantage-dataset = { path = "../vantage-dataset" }
 vantage-table = { path = "../vantage-table" }
 async-trait = "0.1"
-futures-core = "0.3"
 sqlx = { version = "0.8", features = ["runtime-tokio"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde = { version = "1.0", features = ["derive"] }

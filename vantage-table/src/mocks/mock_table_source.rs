@@ -26,7 +26,7 @@ use crate::mocks::mock_type_system::AnyMockType;
 use crate::traits::table_expr_source::TableExprSource;
 use crate::{
     table::Table,
-    traits::{column_like::ColumnLike, table_like::TableLike, table_source::TableSource},
+    traits::{column_like::ColumnLike, table_source::TableSource},
 };
 
 #[derive(Clone)]
@@ -154,18 +154,15 @@ impl TableSource for MockTableSource {
         Expression::new(template, parameters)
     }
 
-    fn search_table_expr(
+    fn search_table_expr<E>(
         &self,
-        _table: &impl TableLike,
+        _table: &Table<Self, E>,
         search_value: &str,
-    ) -> Expression<Self::Value> {
-        // Mock implementation: search in "name" field if it exists
-        // Simple mock - search in name field if exists (mock implementation)
-        if true {
-            expr_any!("name LIKE '%{}%'", search_value)
-        } else {
-            panic!("Mock can only search column `name` as fulltext search")
-        }
+    ) -> Expression<Self::Value>
+    where
+        E: Entity<Self::Value>,
+    {
+        expr_any!("name LIKE '%{}%'", search_value)
     }
 
     async fn list_table_values<E>(

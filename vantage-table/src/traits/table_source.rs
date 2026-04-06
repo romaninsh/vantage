@@ -16,7 +16,7 @@ use vantage_types::{Entity, Record};
 use crate::{
     column::core::ColumnType,
     table::Table,
-    traits::{column_like::ColumnLike, table_like::TableLike},
+    traits::column_like::ColumnLike,
 };
 
 /// Trait for table data sources that defines column type separate from execution
@@ -60,11 +60,14 @@ pub trait TableSource: DataSource + Clone + 'static {
     /// - MongoDB: `{ field: { $regex: 'value', $options: 'i' } }`
     ///
     /// The implementation should search across appropriate fields in the table.
-    fn search_table_expr(
+    fn search_table_expr<E>(
         &self,
-        table: &impl TableLike,
+        table: &Table<Self, E>,
         search_value: &str,
-    ) -> Expression<Self::Value>;
+    ) -> Expression<Self::Value>
+    where
+        E: Entity<Self::Value>,
+        Self: Sized;
 
     /// Get all data from a table as Record values with IDs (for ReadableValueSet implementation)
     async fn list_table_values<E>(

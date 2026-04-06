@@ -9,7 +9,6 @@ use vantage_expressions::traits::datasource::DataSource;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_table::column::core::{Column, ColumnType};
 use vantage_table::table::Table;
-use vantage_table::traits::table_like::TableLike;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
@@ -83,11 +82,14 @@ impl TableSource for RestApi {
         Expression::new(template, parameters)
     }
 
-    fn search_table_expr(
+    fn search_table_expr<E>(
         &self,
-        _table: &impl TableLike,
+        _table: &Table<Self, E>,
         search_value: &str,
-    ) -> Expression<Self::Value> {
+    ) -> Expression<Self::Value>
+    where
+        E: Entity<Self::Value>,
+    {
         Expression::new(format!("SEARCH '{}'", search_value), vec![])
     }
 

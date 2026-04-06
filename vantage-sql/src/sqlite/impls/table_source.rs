@@ -7,7 +7,6 @@ use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_expressions::{Expression, Expressive, Selectable};
 use vantage_table::column::core::{Column, ColumnType};
 use vantage_table::table::Table;
-use vantage_table::traits::table_like::TableLike;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
@@ -87,12 +86,32 @@ impl TableSource for SqliteDB {
         Expression::new(template, parameters)
     }
 
-    fn search_table_expr(
+    fn search_table_expr<E>(
         &self,
-        _table: &impl TableLike,
-        _search_value: &str,
-    ) -> Expression<Self::Value> {
-        todo!("search_table_expr")
+        table: &Table<Self, E>,
+        search_value: &str,
+    ) -> Expression<Self::Value>
+    where
+        E: Entity<Self::Value>,
+    {
+        let pattern = format!("%{}%", search_value.replace('%', "\\%"));
+        let conditions: Vec<Expression<AnySqliteType>> = table
+            .columns()
+            .values()
+            .map(|col| {
+                Expression::new(
+                    format!("\"{}\" LIKE {{}}", col.name()),
+                    vec![ExpressiveEnum::Scalar(AnySqliteType::from(
+                        pattern.clone(),
+                    ))],
+                )
+            })
+            .collect();
+
+        if conditions.is_empty() {
+            return sqlite_expr!("0");
+        }
+        Expression::from_vec(conditions, " OR ")
     }
 
     async fn list_table_values<E>(
@@ -166,7 +185,7 @@ impl TableSource for SqliteDB {
         let result = self.aggregate(&select, "count", sqlite_expr!("*")).await?;
         result
             .try_get::<i64>()
-            .ok_or_else(|| error!("get_count: expected i64", result = format!("{}", result)))
+            .ok_or_else(|| error!("get_table_count: expected i64", result = format!("{}", result)))
     }
 
     async fn get_table_sum<E>(

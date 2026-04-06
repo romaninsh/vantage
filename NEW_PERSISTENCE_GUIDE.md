@@ -637,7 +637,6 @@ Start by adding the required dependencies:
 # in your backend's Cargo.toml
 vantage-table = { path = "../vantage-table" }
 async-trait = "0.1"
-futures-core = "0.3"
 ```
 
 Create a new test file (e.g. `tests/<backend>/4_table_def.rs`) that defines a table and populates
@@ -885,9 +884,10 @@ table.add_condition(table["is_deleted"].eq(false));
 
 ### Implement aggregates
 
-Implement `get_count`, `get_sum`, `get_max`, and `get_min` in your `TableSource`. These build
-aggregate queries from `table.select()` and extract the scalar result. Once implemented, `Table`
-exposes them directly:
+Implement `get_table_count`, `get_table_sum`, `get_table_max`, and `get_table_min` in your
+`TableSource`. These build aggregate queries from `table.select()` and extract the scalar result.
+Once implemented, `Table` exposes shorter `get_count`, `get_sum`, `get_max`, `get_min` methods
+directly:
 
 ```rust
 let table = Product::sqlite_table(db);

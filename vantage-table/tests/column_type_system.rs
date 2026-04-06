@@ -39,7 +39,6 @@ use vantage_table::column::core::ColumnType;
 use vantage_table::column::flags::ColumnFlag;
 use vantage_table::table::Table;
 use vantage_table::traits::column_like::ColumnLike;
-use vantage_table::traits::table_like::TableLike;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record, vantage_type_system};
 
@@ -285,12 +284,14 @@ impl TableSource for Type3TableSource {
         Expression::new(template, parameters)
     }
 
-    fn search_table_expr(
+    fn search_table_expr<E>(
         &self,
-        _table: &impl TableLike,
+        _table: &Table<Self, E>,
         search_value: &str,
-    ) -> Expression<Self::Value> {
-        // Simple mock - search in name field if exists
+    ) -> Expression<Self::Value>
+    where
+        E: Entity<Self::Value>,
+    {
         Expression::new(
             "name CONTAINS {}",
             vec![ExpressiveEnum::Scalar(ciborium::Value::Text(
