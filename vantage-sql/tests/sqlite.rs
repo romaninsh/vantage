@@ -24,6 +24,8 @@ mod sqlite {
     mod readable_value_set;
     #[path = "2_records.rs"]
     mod records;
+    #[path = "5_references.rs"]
+    mod references;
     #[path = "3_select.rs"]
     mod select;
     #[path = "4_table_def.rs"]
@@ -32,6 +34,4 @@ mod sqlite {
     mod types_record;
     #[path = "1_types_round_trip.rs"]
     mod types_round_trip;
-    #[path = "5_references.rs"]
-    mod references;
 }

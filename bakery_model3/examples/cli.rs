@@ -130,10 +130,7 @@ async fn build_table(
             let db = SqliteDB::connect("sqlite:target/bakery.sqlite")
                 .await
                 .map_err(|e| {
-                    vantage_core::error!(
-                        "Failed to connect to SQLite",
-                        details = e.to_string()
-                    )
+                    vantage_core::error!("Failed to connect to SQLite", details = e.to_string())
                 })?;
             let table = match entity_name {
                 "bakery" => AnyTable::from_table(Bakery::sqlite_table(db)),

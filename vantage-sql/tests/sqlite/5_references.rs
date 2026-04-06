@@ -117,9 +117,7 @@ async fn test_has_one_client_for_order() {
     let mut orders = order_table(db.clone());
     orders.add_condition(sqlite_expr!("{} = {}", (orders["id"]), "order1"));
 
-    let client = orders
-        .get_ref_as::<SqliteDB, Client>("client")
-        .unwrap();
+    let client = orders.get_ref_as::<SqliteDB, Client>("client").unwrap();
 
     let preview = client.select().preview();
     assert_eq!(

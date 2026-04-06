@@ -7,7 +7,6 @@ use vantage_types::entity;
 
 use crate::Bakery;
 
-
 #[entity(CsvType, SurrealType, SqliteType)]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Product {
