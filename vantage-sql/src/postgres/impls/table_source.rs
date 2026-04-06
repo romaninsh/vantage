@@ -107,16 +107,16 @@ impl TableSource for PostgresDB {
         E: Entity<Self::Value>,
     {
         let escaped = search_value
-            .replace('\\', "\\\\")
-            .replace('%', "\\%")
-            .replace('_', "\\_");
+            .replace('$', "$$")
+            .replace('%', "$%")
+            .replace('_', "$_");
         let pattern = format!("%{}%", escaped);
         let conditions: Vec<Expression<AnyPostgresType>> = table
             .columns()
             .values()
             .map(|col| {
                 let p = pattern.clone();
-                postgres_expr!("{}::text LIKE {} ESCAPE '\\\\'", (ident(col.name())), p)
+                postgres_expr!("{}::text LIKE {} ESCAPE '$'", (ident(col.name())), p)
             })
             .collect();
 

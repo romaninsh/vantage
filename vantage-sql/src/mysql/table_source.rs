@@ -104,16 +104,16 @@ impl TableSource for MysqlDB {
         E: Entity<Self::Value>,
     {
         let escaped = search_value
-            .replace('\\', "\\\\")
-            .replace('%', "\\%")
-            .replace('_', "\\_");
+            .replace('$', "$$")
+            .replace('%', "$%")
+            .replace('_', "$_");
         let pattern = format!("%{}%", escaped);
         let conditions: Vec<Expression<AnyMysqlType>> = table
             .columns()
             .values()
             .map(|col| {
                 let p = pattern.clone();
-                mysql_expr!("{} LIKE {} ESCAPE '\\\\'", (ident(col.name())), p)
+                mysql_expr!("{} LIKE {} ESCAPE '$'", (ident(col.name())), p)
             })
             .collect();
 
