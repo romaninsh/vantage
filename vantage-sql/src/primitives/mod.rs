@@ -1,6 +1,10 @@
 pub mod case;
+pub mod concat;
+pub mod date_format;
 pub mod fx;
 pub mod identifier;
 pub mod iif;
+pub mod json_extract;
 pub mod select;
+pub mod ternary;
 pub mod union;

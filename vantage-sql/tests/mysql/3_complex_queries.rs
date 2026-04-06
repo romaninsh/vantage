@@ -841,7 +841,6 @@ struct DeptTree {
 
 #[tokio::test]
 async fn test_q11() {
-    use vantage_sql::concat_sql;
     use vantage_sql::primitives::union::Union;
 
     let base = SqliteSelect::new()
@@ -861,10 +860,10 @@ async fn test_q11() {
             None,
         )
         .with_expression(
-            concat_sql!(
-                ident("path").dot_of("dt"),
-                " > ",
-                ident("name").dot_of("d")
+            sqlite_expr!(
+                "{} || ' > ' || {}",
+                (ident("path").dot_of("dt")),
+                (ident("name").dot_of("d"))
             ),
             None,
         )

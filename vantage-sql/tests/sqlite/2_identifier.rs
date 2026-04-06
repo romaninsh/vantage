@@ -23,7 +23,7 @@ fn test_id_with_alias() {
 
 #[test]
 fn test_id_qualified() {
-    let expr = sqlite_expr!("SELECT {}", (Identifier::with_dot("t", "name")));
+    let expr = sqlite_expr!("SELECT {}", (ident("name").dot_of("t")));
     assert_eq!(expr.preview(), "SELECT \"t\".\"name\"");
 }
 

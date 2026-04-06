@@ -24,6 +24,8 @@ mod postgres {
     mod references;
     #[path = "2_search.rs"]
     mod search;
+    #[path = "3_complex_queries.rs"]
+    mod complex_queries;
     #[path = "3_select.rs"]
     mod select;
     #[path = "4_table_def.rs"]

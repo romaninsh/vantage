@@ -155,18 +155,20 @@ fn pg_column_to_json(row: &PgRow, ordinal: usize, type_name: &str) -> JsonValue 
             }
         }
         "NUMERIC" | "DECIMAL" => {
-            // PostgreSQL NUMERIC: SUM(BIGINT) returns NUMERIC.
-            // Try numeric types first, then fall through to fallback chain.
-            if let Ok(v) = row.try_get::<i64, _>(ordinal) {
-                return JsonValue::Number(v.into());
-            }
-            if let Ok(v) = row.try_get::<i32, _>(ordinal) {
-                return JsonValue::Number((v as i64).into());
-            }
-            if let Ok(v) = row.try_get::<f64, _>(ordinal)
-                && let Some(n) = serde_json::Number::from_f64(v)
-            {
-                return JsonValue::Number(n);
+            // PostgreSQL NUMERIC: use rust_decimal for lossless decoding,
+            // then convert to JSON number via f64.
+            if let Ok(v) = row.try_get::<rust_decimal::Decimal, _>(ordinal) {
+                use rust_decimal::prelude::ToPrimitive;
+                if v.scale() == 0 {
+                    if let Some(i) = v.to_i64() {
+                        return JsonValue::Number(i.into());
+                    }
+                }
+                if let Some(f) = v.to_f64() {
+                    if let Some(n) = serde_json::Number::from_f64(f) {
+                        return JsonValue::Number(n);
+                    }
+                }
             }
         }
         _ => {}

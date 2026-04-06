@@ -6,25 +6,25 @@
 use serde::Deserialize;
 use vantage_expressions::{ExprDataSource, Expressive, Selectable};
 use vantage_sql::primitives::identifier::ident;
-use vantage_sql::sqlite::SqliteDB;
-use vantage_sql::sqlite::statements::SqliteSelect;
-use vantage_sql::sqlite::statements::select::join::SqliteSelectJoin;
-use vantage_sql::sqlite_expr;
+use vantage_sql::postgres::PostgresDB;
+use vantage_sql::postgres::statements::PostgresSelect;
+use vantage_sql::postgres::statements::select::join::PostgresSelectJoin;
+use vantage_sql::postgres_expr;
 use vantage_table::operation::Operation;
 use vantage_types::{Record, TryFromRecord};
 
-const DB_PATH: &str = "sqlite:../target/bakery.sqlite?mode=ro";
+const PG_URL: &str = "postgres://vantage:vantage@localhost:5433/vantage";
 
-async fn get_db() -> SqliteDB {
-    SqliteDB::connect(DB_PATH)
+async fn get_db() -> PostgresDB {
+    PostgresDB::connect(PG_URL)
         .await
-        .expect("Failed to connect to bakery.sqlite")
+        .expect("Failed to connect to PostgreSQL")
 }
 
 /// Checks that `select.preview()` matches `expected_sql`, then executes the
 /// query and returns deserialized rows.
 async fn check_and_run<T: for<'de> Deserialize<'de>>(
-    select: &SqliteSelect,
+    select: &PostgresSelect,
     expected_sql: &str,
 ) -> Vec<T> {
     assert_eq!(select.preview(), expected_sql);
@@ -62,14 +62,14 @@ struct UserBasic {
 #[tokio::test]
 async fn test_q1() {
     let users: Vec<UserBasic> = check_and_run(
-        &SqliteSelect::new()
+        &PostgresSelect::new()
             .with_source("users")
             .with_field("id")
             .with_field("name")
             .with_field("email")
-            .with_condition(sqlite_expr!("\"role\" = {}", "admin"))
-            .with_condition(sqlite_expr!("\"salary\" > {}", 50000.0f64))
-            .with_order(sqlite_expr!("\"name\""), true),
+            .with_condition(postgres_expr!("\"role\" = {}", "admin"))
+            .with_condition(postgres_expr!("\"salary\" > {}", 50000.0f64))
+            .with_order(postgres_expr!("\"name\""), true),
         "SELECT \"id\", \"name\", \"email\" FROM \"users\" \
          WHERE \"role\" = 'admin' AND \"salary\" > 50000.0 \
          ORDER BY \"name\"",
@@ -102,7 +102,7 @@ struct UserWithDept {
 #[tokio::test]
 async fn test_q2() {
     let users: Vec<UserWithDept> = check_and_run(
-        &SqliteSelect::new()
+        &PostgresSelect::new()
             .with_source_as("users", "u")
             .with_expression(ident("id").dot_of("u"), None)
             .with_expression(ident("name").dot_of("u"), None)
@@ -110,16 +110,16 @@ async fn test_q2() {
                 ident("name").dot_of("d").with_alias("department_name"),
                 None,
             )
-            .with_join(SqliteSelectJoin::inner(
+            .with_join(PostgresSelectJoin::inner(
                 "departments",
                 "d",
-                sqlite_expr!(
+                postgres_expr!(
                     "{} = {}",
                     (ident("id").dot_of("d")),
                     (ident("department_id").dot_of("u"))
                 ),
             ))
-            .with_condition(sqlite_expr!(
+            .with_condition(postgres_expr!(
                 "{} >= {}",
                 (ident("salary").dot_of("u")),
                 30000.0f64
@@ -170,7 +170,7 @@ struct UserSpend {
 async fn test_q3() {
     use vantage_sql::primitives::fx::Fx;
 
-    let select = SqliteSelect::new()
+    let select = PostgresSelect::new()
         .with_source_as("users", "u")
         .with_expression(ident("id").dot_of("u"), None)
         .with_expression(ident("name").dot_of("u"), None)
@@ -179,15 +179,15 @@ async fn test_q3() {
                 "coalesce",
                 [
                     Fx::new("sum", [ident("total").dot_of("o").expr()]).expr(),
-                    sqlite_expr!("{}", 0.0f64),
+                    postgres_expr!("{}", 0.0f64),
                 ],
             ),
             Some("total_spent".into()),
         )
-        .with_join(SqliteSelectJoin::left(
+        .with_join(PostgresSelectJoin::left(
             "orders",
             "o",
-            sqlite_expr!(
+            postgres_expr!(
                 "{} = {}",
                 (ident("user_id").dot_of("o")),
                 (ident("id").dot_of("u"))
@@ -256,11 +256,11 @@ async fn test_q4() {
 
     let price = ident("price");
     let stats: Vec<CategoryStats> = check_and_run(
-        &SqliteSelect::new()
+        &PostgresSelect::new()
             .with_source("products")
             .with_field("category")
             .with_expression(
-                Fx::new("count", [sqlite_expr!("*")]),
+                Fx::new("count", [postgres_expr!("*")]),
                 Some("product_count".into()),
             )
             .with_expression(Fx::new("avg", [price.expr()]), Some("avg_price".into()))
@@ -270,12 +270,12 @@ async fn test_q4() {
                 Some("most_expensive".into()),
             )
             .with_group_by(ident("category"))
-            .with_having(sqlite_expr!(
+            .with_having(postgres_expr!(
                 "{} > {}",
-                (Fx::new("count", [sqlite_expr!("*")])),
+                (Fx::new("count", [postgres_expr!("*")])),
                 1i64
             ))
-            .with_having(sqlite_expr!(
+            .with_having(postgres_expr!(
                 "{} < {}",
                 (Fx::new("avg", [price.expr()])),
                 500.0f64
@@ -326,34 +326,34 @@ struct UserOrderCount {
 async fn test_q5() {
     use vantage_sql::primitives::fx::Fx;
 
-    let user_id_match = sqlite_expr!(
+    let user_id_match = postgres_expr!(
         "{} = {}",
         (ident("user_id").dot_of("o")),
         (ident("id").dot_of("u"))
     );
 
-    let count_subquery = SqliteSelect::new()
+    let count_subquery = PostgresSelect::new()
         .with_source_as("orders", "o")
-        .with_expression(Fx::new("count", [sqlite_expr!("*")]), None)
+        .with_expression(Fx::new("count", [postgres_expr!("*")]), None)
         .with_condition(user_id_match.clone());
 
-    let exists_subquery = SqliteSelect::new()
+    let exists_subquery = PostgresSelect::new()
         .with_source_as("orders", "o")
-        .with_expression(sqlite_expr!("1"), None)
+        .with_expression(postgres_expr!("1"), None)
         .with_condition(user_id_match)
-        .with_condition(sqlite_expr!(
+        .with_condition(postgres_expr!(
             "{} = {}",
             (ident("status").dot_of("o")),
             "completed"
         ));
 
     let users: Vec<UserOrderCount> = check_and_run(
-        &SqliteSelect::new()
+        &PostgresSelect::new()
             .with_source_as("users", "u")
             .with_expression(ident("id").dot_of("u"), None)
             .with_expression(ident("name").dot_of("u"), None)
             .with_expression(
-                sqlite_expr!("({})", (count_subquery)),
+                postgres_expr!("({})", (count_subquery)),
                 Some("order_count".into()),
             )
             .with_condition(Fx::new("exists", [exists_subquery.expr()]))
@@ -408,18 +408,18 @@ struct UserOrderStats {
 async fn test_q6() {
     use vantage_sql::primitives::fx::Fx;
 
-    let stats_subquery = SqliteSelect::new()
+    let stats_subquery = PostgresSelect::new()
         .with_source("orders")
         .with_field("user_id")
         .with_expression(
-            Fx::new("count", [sqlite_expr!("*")]),
+            Fx::new("count", [postgres_expr!("*")]),
             Some("order_count".into()),
         )
         .with_expression(
             Fx::new("avg", [ident("total").expr()]),
             Some("avg_total".into()),
         )
-        .with_condition(sqlite_expr!(
+        .with_condition(postgres_expr!(
             "{} != {}",
             (ident("status")),
             "cancelled"
@@ -427,21 +427,21 @@ async fn test_q6() {
         .with_group_by(ident("user_id"));
 
     let users: Vec<UserOrderStats> = check_and_run(
-        &SqliteSelect::new()
+        &PostgresSelect::new()
             .with_source_as("users", "u")
             .with_expression(ident("name").dot_of("u"), None)
             .with_expression(ident("order_count").dot_of("stats"), None)
             .with_expression(ident("avg_total").dot_of("stats"), None)
-            .with_join(SqliteSelectJoin::inner_expr(
+            .with_join(PostgresSelectJoin::inner_expr(
                 stats_subquery,
                 "stats",
-                sqlite_expr!(
+                postgres_expr!(
                     "{} = {}",
                     (ident("user_id").dot_of("stats")),
                     (ident("id").dot_of("u"))
                 ),
             ))
-            .with_condition(sqlite_expr!(
+            .with_condition(postgres_expr!(
                 "{} >= {}",
                 (ident("order_count").dot_of("stats")),
                 2i64
@@ -508,7 +508,7 @@ async fn test_q7() {
     let salary = ident("salary");
 
     let users: Vec<UserBand> = check_and_run(
-        &SqliteSelect::new()
+        &PostgresSelect::new()
             .with_source("users")
             .with_field("id")
             .with_field("name")
@@ -516,18 +516,18 @@ async fn test_q7() {
             .with_expression(
                 Case::new()
                     .when(
-                        sqlite_expr!("{} >= {}", (salary.clone()), 100000.0f64),
-                        sqlite_expr!("{}", "senior"),
+                        postgres_expr!("{} >= {}", (salary.clone()), 100000.0f64),
+                        postgres_expr!("{}", "senior"),
                     )
                     .when(
-                        sqlite_expr!("{} >= {}", (salary.clone()), 60000.0f64),
-                        sqlite_expr!("{}", "mid"),
+                        postgres_expr!("{} >= {}", (salary.clone()), 60000.0f64),
+                        postgres_expr!("{}", "mid"),
                     )
                     .when(
-                        sqlite_expr!("{} >= {}", (salary.clone()), 30000.0f64),
-                        sqlite_expr!("{}", "junior"),
+                        postgres_expr!("{} >= {}", (salary.clone()), 30000.0f64),
+                        postgres_expr!("{}", "junior"),
                     )
-                    .else_(sqlite_expr!("{}", "intern")),
+                    .else_(postgres_expr!("{}", "intern")),
                 Some("band".into()),
             )
             .with_expression(
@@ -543,7 +543,7 @@ async fn test_q7() {
         "SELECT \"id\", \"name\", \"salary\", \
          CASE WHEN \"salary\" >= 100000.0 THEN 'senior' WHEN \"salary\" >= 60000.0 THEN 'mid' \
          WHEN \"salary\" >= 30000.0 THEN 'junior' ELSE 'intern' END AS \"band\", \
-         IIF(\"role\" = 'admin', 'Yes', 'No') AS \"is_admin\", \
+         CASE WHEN \"role\" = 'admin' THEN 'Yes' ELSE 'No' END AS \"is_admin\", \
          \"display_name\" \
          FROM \"users\" \
          ORDER BY \"salary\" DESC",
@@ -586,26 +586,26 @@ struct NamedSource {
 async fn test_q8() {
     use vantage_sql::primitives::union::Union;
 
-    let admins = SqliteSelect::new()
+    let admins = PostgresSelect::new()
         .with_source("users")
         .with_field("id")
         .with_field("name")
-        .with_expression(sqlite_expr!("{}", "user"), Some("source".into()))
-        .with_condition(sqlite_expr!("{} = {}", (ident("role")), "admin"));
+        .with_expression(postgres_expr!("{}", "user"), Some("source".into()))
+        .with_condition(postgres_expr!("{} = {}", (ident("role")), "admin"));
 
-    let depts_with_budget = SqliteSelect::new()
+    let depts_with_budget = PostgresSelect::new()
         .with_source("departments")
         .with_field("id")
         .with_field("name")
-        .with_expression(sqlite_expr!("{}", "department"), Some("source".into()))
-        .with_condition(sqlite_expr!("{} IS NOT NULL", (ident("budget"))));
+        .with_expression(postgres_expr!("{}", "department"), Some("source".into()))
+        .with_condition(postgres_expr!("{} IS NOT NULL", (ident("budget"))));
 
-    let depts_zero_budget = SqliteSelect::new()
+    let depts_zero_budget = PostgresSelect::new()
         .with_source("departments")
         .with_field("id")
         .with_field("name")
-        .with_expression(sqlite_expr!("{}", "department"), Some("source".into()))
-        .with_condition(sqlite_expr!("{} = {}", (ident("budget")), 0.0f64));
+        .with_expression(postgres_expr!("{}", "department"), Some("source".into()))
+        .with_condition(postgres_expr!("{} = {}", (ident("budget")), 0.0f64));
 
     let compound = Union::new(admins)
         .union_all(depts_with_budget)
@@ -680,7 +680,7 @@ async fn test_q9() {
     let salary = ident("salary").dot_of("u");
 
     let rows: Vec<SalaryRanking> = check_and_run(
-        &SqliteSelect::new()
+        &PostgresSelect::new()
             .with_source_as("users", "u")
             .with_expression(dept.clone(), None)
             .with_expression(ident("name").dot_of("u"), None)
@@ -701,7 +701,7 @@ async fn test_q9() {
                     .apply(Fx::new("sum", [salary.expr()])),
                 Some("running_total".into()),
             )
-            .with_condition(sqlite_expr!("{} IS NOT NULL", (dept)))
+            .with_condition(postgres_expr!("{} IS NOT NULL", (dept)))
             .with_window("win", Window::new()
                 .partition_by(dept.clone())
                 .order_by(salary.clone(), false)),
@@ -764,25 +764,25 @@ async fn test_q10() {
     use vantage_sql::primitives::fx::Fx;
 
     let spenders: Vec<TopSpender> = check_and_run(
-        &SqliteSelect::new()
-            .with_cte("active_orders", SqliteSelect::new()
+        &PostgresSelect::new()
+            .with_cte("active_orders", PostgresSelect::new()
                 .with_source("orders")
                 .with_field("user_id")
-                .with_expression(Fx::new("count", [sqlite_expr!("*")]), Some("cnt".into()))
+                .with_expression(Fx::new("count", [postgres_expr!("*")]), Some("cnt".into()))
                 .with_expression(Fx::new("sum", [ident("total").expr()]), Some("revenue".into()))
-                .with_condition(sqlite_expr!("{} IN ({}, {})",
+                .with_condition(postgres_expr!("{} IN ({}, {})",
                     (ident("status")), "completed", "shipped"))
                 .with_group_by(ident("user_id")), false)
-            .with_cte("top_spenders", SqliteSelect::new()
+            .with_cte("top_spenders", PostgresSelect::new()
                 .with_source("active_orders")
                 .with_field("user_id")
                 .with_field("revenue")
-                .with_condition(sqlite_expr!("{} > {}", (ident("revenue")), 400.0f64)), false)
+                .with_condition(postgres_expr!("{} > {}", (ident("revenue")), 400.0f64)), false)
             .with_source_as("top_spenders", "t")
             .with_expression(ident("name").dot_of("u"), None)
             .with_expression(ident("revenue").dot_of("t"), None)
-            .with_join(SqliteSelectJoin::inner("users", "u",
-                sqlite_expr!("{} = {}",
+            .with_join(PostgresSelectJoin::inner("users", "u",
+                postgres_expr!("{} = {}",
                     (ident("id").dot_of("u")),
                     (ident("user_id").dot_of("t")))))
             .with_order(ident("revenue").dot_of("t"), false)
@@ -844,20 +844,20 @@ async fn test_q11() {
     use vantage_sql::concat_sql;
     use vantage_sql::primitives::union::Union;
 
-    let base = SqliteSelect::new()
+    let base = PostgresSelect::new()
         .with_source("departments")
         .with_field("id")
         .with_field("name")
-        .with_expression(sqlite_expr!("0"), None)
+        .with_expression(postgres_expr!("0"), None)
         .with_expression(ident("name"), None)
-        .with_condition(sqlite_expr!("{} IS NULL", (ident("parent_id"))));
+        .with_condition(postgres_expr!("{} IS NULL", (ident("parent_id"))));
 
-    let recursive = SqliteSelect::new()
+    let recursive = PostgresSelect::new()
         .with_source_as("departments", "d")
         .with_expression(ident("id").dot_of("d"), None)
         .with_expression(ident("name").dot_of("d"), None)
         .with_expression(
-            sqlite_expr!("{} + 1", (ident("depth").dot_of("dt"))),
+            postgres_expr!("{} + 1", (ident("depth").dot_of("dt"))),
             None,
         )
         .with_expression(
@@ -868,10 +868,10 @@ async fn test_q11() {
             ),
             None,
         )
-        .with_join(SqliteSelectJoin::inner(
+        .with_join(PostgresSelectJoin::inner(
             "dept_tree",
             "dt",
-            sqlite_expr!(
+            postgres_expr!(
                 "{} = {}",
                 (ident("id").dot_of("dt")),
                 (ident("parent_id").dot_of("d"))
@@ -879,7 +879,7 @@ async fn test_q11() {
         ));
 
     let rows: Vec<DeptTree> = check_and_run(
-        &SqliteSelect::new()
+        &PostgresSelect::new()
             .with_cte(
                 "dept_tree(id, name, depth, path)",
                 Union::new(base).union_all(recursive),
@@ -941,43 +941,43 @@ struct ProductMatch {
 #[tokio::test]
 async fn test_q12() {
     let products: Vec<ProductMatch> = check_and_run(
-        &SqliteSelect::new()
+        &PostgresSelect::new()
             .with_distinct(true)
             .with_source_as("products", "p")
             .with_expression(ident("id").dot_of("p"), None)
             .with_expression(ident("name").dot_of("p"), None)
             .with_expression(ident("price").dot_of("p"), None)
-            .with_join(SqliteSelectJoin::inner(
+            .with_join(PostgresSelectJoin::inner(
                 "product_tags",
                 "pt",
-                sqlite_expr!(
+                postgres_expr!(
                     "{} = {}",
                     (ident("product_id").dot_of("pt")),
                     (ident("id").dot_of("p"))
                 ),
             ))
-            .with_join(SqliteSelectJoin::inner(
+            .with_join(PostgresSelectJoin::inner(
                 "tags",
                 "t",
-                sqlite_expr!(
+                postgres_expr!(
                     "{} = {}",
                     (ident("id").dot_of("t")),
                     (ident("tag_id").dot_of("pt"))
                 ),
             ))
-            .with_condition(sqlite_expr!(
+            .with_condition(postgres_expr!(
                 "{} IN ({}, {}, {})",
                 (ident("name").dot_of("t")),
                 "electronics",
                 "sale",
                 "featured"
             ))
-            .with_condition(sqlite_expr!(
+            .with_condition(postgres_expr!(
                 "{} LIKE {}",
                 (ident("name").dot_of("p")),
                 "%Pro%"
             ))
-            .with_condition(sqlite_expr!(
+            .with_condition(postgres_expr!(
                 "{} > {}",
                 (ident("stock").dot_of("p")),
                 0i64
@@ -1037,8 +1037,10 @@ async fn test_q13() {
     use vantage_sql::primitives::json_extract::JsonExtract;
 
     let metadata = ident("metadata");
+    let rating_expr = JsonExtract::new(metadata.clone(), "rating");
+
     let products: Vec<ProductJson> = check_and_run(
-        &SqliteSelect::new()
+        &PostgresSelect::new()
             .with_source("products")
             .with_field("id")
             .with_field("name")
@@ -1047,11 +1049,11 @@ async fn test_q13() {
                 None,
             )
             .with_expression(
-                sqlite_expr!("{} ->> {}", (metadata.clone()), "$.weight_kg"),
+                postgres_expr!("CAST({} AS DOUBLE PRECISION)", (JsonExtract::new(metadata.clone(), "weight_kg"))),
                 Some("weight".into()),
             )
             .with_expression(
-                sqlite_expr!("CAST({} ->> {} AS REAL)", (metadata.clone()), "$.rating"),
+                postgres_expr!("CAST({} AS DOUBLE PRECISION)", (rating_expr.clone())),
                 Some("rating".into()),
             )
             .with_expression(
@@ -1059,29 +1061,28 @@ async fn test_q13() {
                     "nullif",
                     [
                         ident("category").expr(),
-                        sqlite_expr!("{}", "uncategorized"),
+                        postgres_expr!("{}", "uncategorized"),
                     ],
                 ),
                 Some("clean_category".into()),
             )
-            .with_condition(sqlite_expr!(
-                "CAST({} ->> {} AS REAL) BETWEEN {} AND {}",
-                (metadata.clone()),
-                "$.rating",
+            .with_condition(postgres_expr!(
+                "CAST({} AS DOUBLE PRECISION) BETWEEN {} AND {}",
+                (rating_expr),
                 4.0f64,
                 5.0f64
             ))
-            .with_condition(JsonExtract::new(metadata.clone(), "in_stock").eq(1i64))
+            .with_condition(JsonExtract::new(metadata.clone(), "in_stock").eq("1"))
             .with_order(ident("rating"), false),
         concat!(
             r#"SELECT "id", "name", "#,
-            r#"JSON_EXTRACT("metadata", '$.color') AS "color", "#,
-            r#""metadata" ->> '$.weight_kg' AS "weight", "#,
-            r#"CAST("metadata" ->> '$.rating' AS REAL) AS "rating", "#,
+            r#""metadata" ->> 'color' AS "color", "#,
+            r#"CAST("metadata" ->> 'weight_kg' AS DOUBLE PRECISION) AS "weight", "#,
+            r#"CAST("metadata" ->> 'rating' AS DOUBLE PRECISION) AS "rating", "#,
             r#"NULLIF("category", 'uncategorized') AS "clean_category" "#,
             r#"FROM "products" "#,
-            r#"WHERE CAST("metadata" ->> '$.rating' AS REAL) BETWEEN 4.0 AND 5.0 "#,
-            r#"AND JSON_EXTRACT("metadata", '$.in_stock') = 1 "#,
+            r#"WHERE CAST("metadata" ->> 'rating' AS DOUBLE PRECISION) BETWEEN 4.0 AND 5.0 "#,
+            r#"AND "metadata" ->> 'in_stock' = '1' "#,
             r#"ORDER BY "rating" DESC"#,
         ),
     )
@@ -1091,9 +1092,10 @@ async fn test_q13() {
     assert!(products.len() >= 5);
     // Highest rated first
     assert!(products[0].rating >= products[1].rating);
-    // Gadget Pro Max has rating 4.9
-    assert_eq!(products[0].name, "Gadget Pro Max");
-    assert_eq!(products[0].color, "silver");
+    // Both Gadget Pro Max and Standing Desk have rating 4.9
+    let top_names: Vec<&str> = products.iter().take(2).map(|p| p.name.as_str()).collect();
+    assert!(top_names.contains(&"Gadget Pro Max"));
+    assert!(products[0].rating == 4.9);
 }
 
 // -- ---------------------------------------------------------------------------
@@ -1121,7 +1123,6 @@ struct MonthlyRevenue {
     department: String,
     order_count: i64,
     monthly_revenue: f64,
-    sum_type: String,
 }
 
 #[tokio::test]
@@ -1134,7 +1135,7 @@ async fn test_q14() {
     let month_expr = DateFormat::new(ident("created_at").dot_of("o"), "%Y-%m");
 
     let rows: Vec<MonthlyRevenue> = check_and_run(
-        &SqliteSelect::new()
+        &PostgresSelect::new()
             .with_source_as("orders", "o")
             .with_expression(month_expr.clone(), Some("month".into()))
             .with_expression(ident("name").dot_of("d"), Some("department".into()))
@@ -1143,52 +1144,47 @@ async fn test_q14() {
                 Some("order_count".into()),
             )
             .with_expression(
-                Fx::new("round", [sum_total.expr(), sqlite_expr!("{}", 2i64)]),
+                Fx::new("round", [sum_total.expr(), postgres_expr!("{}", 2i32)]),
                 Some("monthly_revenue".into()),
             )
-            .with_expression(
-                Fx::new("typeof", [sum_total.expr()]),
-                Some("sum_type".into()),
-            )
-            .with_join(SqliteSelectJoin::inner(
+            .with_join(PostgresSelectJoin::inner(
                 "users",
                 "u",
-                sqlite_expr!(
+                postgres_expr!(
                     "{} = {}",
                     (ident("id").dot_of("u")),
                     (ident("user_id").dot_of("o"))
                 ),
             ))
-            .with_join(SqliteSelectJoin::inner(
+            .with_join(PostgresSelectJoin::inner(
                 "departments",
                 "d",
-                sqlite_expr!(
+                postgres_expr!(
                     "{} = {}",
                     (ident("id").dot_of("d")),
                     (ident("department_id").dot_of("u"))
                 ),
             ))
-            .with_condition(sqlite_expr!(
-                "{} >= {}",
+            .with_condition(postgres_expr!(
+                "{} >= CAST({} AS TIMESTAMP)",
                 (ident("created_at").dot_of("o")),
                 "2025-01-01"
             ))
-            .with_group_by(month_expr)
+            .with_group_by(ident("month"))
             .with_group_by(ident("name").dot_of("d"))
-            .with_having(sqlite_expr!("{} > {}", (sum_total), 100.0f64))
+            .with_having(postgres_expr!("{} > {}", (sum_total), 100.0f64))
             .with_order(ident("month"), false)
             .with_order(ident("monthly_revenue"), false),
         concat!(
-            r#"SELECT STRFTIME('%Y-%m', "o"."created_at") AS "month", "#,
+            r#"SELECT TO_CHAR("o"."created_at", 'YYYY-MM') AS "month", "#,
             r#""d"."name" AS "department", "#,
             r#"COUNT("o"."id") AS "order_count", "#,
-            r#"ROUND(SUM("o"."total"), 2) AS "monthly_revenue", "#,
-            r#"TYPEOF(SUM("o"."total")) AS "sum_type" "#,
+            r#"ROUND(SUM("o"."total"), 2) AS "monthly_revenue" "#,
             r#"FROM "orders" AS "o" "#,
             r#"INNER JOIN "users" AS "u" ON "u"."id" = "o"."user_id" "#,
             r#"INNER JOIN "departments" AS "d" ON "d"."id" = "u"."department_id" "#,
-            r#"WHERE "o"."created_at" >= '2025-01-01' "#,
-            r#"GROUP BY STRFTIME('%Y-%m', "o"."created_at"), "d"."name" "#,
+            r#"WHERE "o"."created_at" >= CAST('2025-01-01' AS TIMESTAMP) "#,
+            r#"GROUP BY "month", "d"."name" "#,
             r#"HAVING SUM("o"."total") > 100.0 "#,
             r#"ORDER BY "month" DESC, "monthly_revenue" DESC"#,
         ),
@@ -1196,11 +1192,6 @@ async fn test_q14() {
     .await;
 
     assert!(!rows.is_empty());
-    // typeof returns the SQLite storage type
-    assert!(
-        rows.iter()
-            .all(|r| r.sum_type == "real" || r.sum_type == "integer")
-    );
     // All rows have revenue > 100 (HAVING filter)
     assert!(rows.iter().all(|r| r.monthly_revenue > 100.0));
 }
@@ -1260,14 +1251,14 @@ async fn test_q15() {
         .order_by(salary.clone(), false);
 
     let rows: Vec<UserWindowStats> = check_and_run(
-        &SqliteSelect::new()
+        &PostgresSelect::new()
             .with_source_as("users", "u")
             .with_expression(ident("id").dot_of("u"), None)
             .with_expression(u_name.clone(), None)
             .with_expression(salary.clone(), None)
             .with_expression(dept.clone(), None)
             .with_expression(
-                sqlite_expr!(
+                postgres_expr!(
                     "COUNT(*) FILTER (WHERE {} = {}) OVER (PARTITION BY {})",
                     (ident("status").dot_of("o")), "completed",
                     (ident("id").dot_of("u"))
@@ -1276,12 +1267,12 @@ async fn test_q15() {
             )
             .with_expression(
                 Window::new().order_by(salary.clone(), true)
-                    .apply(sqlite_expr!("LAG({}, 1)", (salary.clone()))),
+                    .apply(postgres_expr!("LAG({}, 1)", (salary.clone()))),
                 Some("prev_salary".into()),
             )
             .with_expression(
                 Window::new().order_by(salary.clone(), true)
-                    .apply(sqlite_expr!("LEAD({}, 1)", (salary.clone()))),
+                    .apply(postgres_expr!("LEAD({}, 1)", (salary.clone()))),
                 Some("next_salary".into()),
             )
             .with_expression(
@@ -1293,14 +1284,14 @@ async fn test_q15() {
             .with_expression(
                 dept_salary_win.clone()
                     .rows("UNBOUNDED PRECEDING", "UNBOUNDED FOLLOWING")
-                    .apply(Fx::new("nth_value", [u_name.expr(), sqlite_expr!("2")])),
+                    .apply(Fx::new("nth_value", [u_name.expr(), postgres_expr!("2")])),
                 Some("second_earner".into()),
             )
-            .with_join(SqliteSelectJoin::left("orders", "o",
-                sqlite_expr!("{} = {}",
+            .with_join(PostgresSelectJoin::left("orders", "o",
+                postgres_expr!("{} = {}",
                     (ident("user_id").dot_of("o")),
                     (ident("id").dot_of("u")))))
-            .with_condition(sqlite_expr!("{} IS NOT NULL", (dept.clone())))
+            .with_condition(postgres_expr!("{} IS NOT NULL", (dept.clone())))
             .with_order(dept, true)
             .with_order(salary, false),
         concat!(
