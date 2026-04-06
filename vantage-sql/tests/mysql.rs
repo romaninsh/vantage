@@ -20,10 +20,10 @@ mod mysql {
     mod readable_data_set;
     #[path = "2_records.rs"]
     mod records;
-    #[path = "2_search.rs"]
-    mod search;
     #[path = "5_references.rs"]
     mod references;
+    #[path = "2_search.rs"]
+    mod search;
     #[path = "3_select.rs"]
     mod select;
     #[path = "4_table_def.rs"]
