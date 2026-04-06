@@ -1,4 +1,5 @@
 use vantage_csv::{AnyCsvType, Csv};
+use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::types::AnySurrealType;
 use vantage_table::table::Table;
@@ -6,7 +7,7 @@ use vantage_types::entity;
 
 use crate::Client;
 
-#[entity(CsvType, SurrealType)]
+#[entity(CsvType, SurrealType, SqliteType)]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Order {
     pub client_id: Option<String>,
@@ -32,5 +33,16 @@ impl Order {
         Table::new("order", db)
             .with_id_column("id")
             .with_column_of::<bool>("is_deleted")
+    }
+
+    pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Order> {
+        let db2 = db.clone();
+        Table::new("client_order", db)
+            .with_id_column("id")
+            .with_column_of::<String>("client_id")
+            .with_column_of::<bool>("is_deleted")
+            .with_one("client", "client_id", move || {
+                Client::sqlite_table(db2.clone())
+            })
     }
 }

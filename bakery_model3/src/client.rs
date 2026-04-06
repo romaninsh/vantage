@@ -1,4 +1,5 @@
 use vantage_csv::{AnyCsvType, Csv};
+use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::types::AnySurrealType;
 use vantage_table::table::Table;
@@ -6,7 +7,7 @@ use vantage_types::entity;
 
 use crate::{Bakery, Order};
 
-#[entity(CsvType, SurrealType)]
+#[entity(CsvType, SurrealType, SqliteType)]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Client {
     pub name: String,
@@ -41,5 +42,23 @@ impl Client {
             .with_column_of::<String>("email")
             .with_column_of::<String>("contact_details")
             .with_column_of::<bool>("is_paying_client")
+    }
+
+    pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Client> {
+        let db2 = db.clone();
+        let db3 = db.clone();
+        Table::new("client", db)
+            .with_id_column("id")
+            .with_column_of::<String>("name")
+            .with_column_of::<String>("email")
+            .with_column_of::<String>("contact_details")
+            .with_column_of::<bool>("is_paying_client")
+            .with_column_of::<String>("bakery_id")
+            .with_one("bakery", "bakery_id", move || {
+                Bakery::sqlite_table(db2.clone())
+            })
+            .with_many("orders", "client_id", move || {
+                Order::sqlite_table(db3.clone())
+            })
     }
 }

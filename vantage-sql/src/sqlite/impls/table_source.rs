@@ -359,13 +359,21 @@ impl TableSource for SqliteDB {
 
     fn column_table_values_expr<'a, E, Type: ColumnType>(
         &'a self,
-        _table: &Table<Self, E>,
-        _column: &Self::Column<Type>,
+        table: &Table<Self, E>,
+        column: &Self::Column<Type>,
     ) -> AssociatedExpression<'a, Self, Self::Value, Vec<Type>>
     where
         E: Entity<Self::Value> + 'static,
         Self: ExprDataSource<Self::Value> + Sized,
     {
-        todo!("column_table_values_expr")
+        // Build a subquery: SELECT "column" FROM "table" WHERE ...
+        let mut select = table.select();
+        select.clear_fields();
+        select.clear_order_by();
+        select.add_field(column.name());
+
+        // Render as a nested subquery expression
+        let subquery = select.expr();
+        AssociatedExpression::new(subquery, self)
     }
 }

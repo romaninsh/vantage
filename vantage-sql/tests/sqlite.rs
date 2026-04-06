@@ -32,4 +32,6 @@ mod sqlite {
     mod types_record;
     #[path = "1_types_round_trip.rs"]
     mod types_round_trip;
+    #[path = "5_references.rs"]
+    mod references;
 }
