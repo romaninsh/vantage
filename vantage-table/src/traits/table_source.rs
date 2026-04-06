@@ -13,11 +13,7 @@ use vantage_expressions::{
 };
 use vantage_types::{Entity, Record};
 
-use crate::{
-    column::core::ColumnType,
-    table::Table,
-    traits::column_like::ColumnLike,
-};
+use crate::{column::core::ColumnType, table::Table, traits::column_like::ColumnLike};
 
 /// Trait for table data sources that defines column type separate from execution
 /// TableSource represents a data source that can create and manage tables

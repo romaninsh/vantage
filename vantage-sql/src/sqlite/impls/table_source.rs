@@ -101,9 +101,7 @@ impl TableSource for SqliteDB {
             .map(|col| {
                 Expression::new(
                     format!("\"{}\" LIKE {{}}", col.name()),
-                    vec![ExpressiveEnum::Scalar(AnySqliteType::from(
-                        pattern.clone(),
-                    ))],
+                    vec![ExpressiveEnum::Scalar(AnySqliteType::from(pattern.clone()))],
                 )
             })
             .collect();
@@ -183,9 +181,12 @@ impl TableSource for SqliteDB {
     {
         let select = table.select();
         let result = self.aggregate(&select, "count", sqlite_expr!("*")).await?;
-        result
-            .try_get::<i64>()
-            .ok_or_else(|| error!("get_table_count: expected i64", result = format!("{}", result)))
+        result.try_get::<i64>().ok_or_else(|| {
+            error!(
+                "get_table_count: expected i64",
+                result = format!("{}", result)
+            )
+        })
     }
 
     async fn get_table_sum<E>(
