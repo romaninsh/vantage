@@ -1,5 +1,6 @@
-use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
+use vantage_expressions::{Expression, Expressive, ExpressiveEnum, expr_any};
 
+use crate::primitives::identifier::ident;
 use crate::sqlite::types::AnySqliteType;
 
 type Expr = Expression<AnySqliteType>;
@@ -39,17 +40,11 @@ impl SqliteSelectJoin {
     }
 
     fn table_expr(table: impl Into<String>, alias: impl Into<String>) -> Expr {
-        Expression::new(
-            format!("\"{}\" AS \"{}\"", table.into(), alias.into()),
-            vec![],
-        )
+        ident(table).with_alias(alias).expr()
     }
 
     fn subquery_expr(subquery: impl Expressive<AnySqliteType>, alias: impl Into<String>) -> Expr {
-        Expression::new(
-            format!("({{}}) AS \"{}\"", alias.into()),
-            vec![ExpressiveEnum::Nested(subquery.expr())],
-        )
+        expr_any!("({}) AS {}", (subquery), (ident(alias)))
     }
 
     /// INNER JOIN on a named table.

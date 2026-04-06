@@ -1,6 +1,7 @@
-use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
+use vantage_expressions::{Expression, Expressive, ExpressiveEnum, expr_any};
 
 use crate::postgres::types::AnyPostgresType;
+use crate::primitives::identifier::ident;
 
 use super::{Expr, PostgresInsert};
 
@@ -13,29 +14,25 @@ impl PostgresInsert {
 impl Expressive<AnyPostgresType> for PostgresInsert {
     fn expr(&self) -> Expr {
         if self.fields.is_empty() {
-            return Expression::new(
-                format!("INSERT INTO \"{}\" DEFAULT VALUES", self.table),
-                vec![],
-            );
+            return expr_any!("INSERT INTO {} DEFAULT VALUES", (ident(&self.table)));
         }
 
-        let columns: Vec<String> = self.fields.keys().map(|k| format!("\"{}\"", k)).collect();
-        let placeholders: Vec<&str> = (0..self.fields.len()).map(|_| "{}").collect();
+        let columns: Vec<Expr> = self.fields.keys().map(|k| ident(k).expr()).collect();
+        let cols = Expression::from_vec(columns, ", ");
 
-        let template = format!(
-            "INSERT INTO \"{}\" ({}) VALUES ({})",
-            self.table,
-            columns.join(", "),
-            placeholders.join(", ")
-        );
-
-        let params: Vec<ExpressiveEnum<AnyPostgresType>> = self
+        let values: Vec<Expr> = self
             .fields
             .values()
-            .map(|v| ExpressiveEnum::Scalar(v.clone()))
+            .map(|v| Expression::new("{}", vec![ExpressiveEnum::Scalar(v.clone())]))
             .collect();
+        let vals = Expression::from_vec(values, ", ");
 
-        Expression::new(template, params)
+        expr_any!(
+            "INSERT INTO {} ({}) VALUES ({})",
+            (ident(&self.table)),
+            (cols),
+            (vals)
+        )
     }
 }
 

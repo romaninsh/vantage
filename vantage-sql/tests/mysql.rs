@@ -12,12 +12,16 @@ mod mysql {
     mod editable_data_set;
     #[path = "2_expressions.rs"]
     mod expressions;
+    #[path = "2_identifier.rs"]
+    mod identifier;
     #[path = "2_insert.rs"]
     mod insert;
     #[path = "4_readable_data_set.rs"]
     mod readable_data_set;
     #[path = "2_records.rs"]
     mod records;
+    #[path = "2_search.rs"]
+    mod search;
     #[path = "5_references.rs"]
     mod references;
     #[path = "3_select.rs"]

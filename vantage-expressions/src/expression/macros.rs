@@ -3,6 +3,7 @@
 /// - expr_as!(T, "template", arg) -> arg becomes Scalar
 /// - expr_as!(T, "template", (expr)) -> expr becomes Nested
 /// - expr_as!(T, "template", {deferred}) -> deferred becomes Deferred
+///
 #[macro_export]
 macro_rules! expr_as {
     // Simple template without parameters: expr_as!(T, "age")
@@ -28,6 +29,8 @@ macro_rules! expr_as {
 /// - expr_any!("template", arg) -> arg becomes Scalar
 /// - expr_any!("template", (expr)) -> expr becomes Nested
 /// - expr_any!("template", {deferred}) -> deferred becomes Deferred
+///
+/// Function calls like `f(x)` work as scalar parameters without extra wrapping.
 #[macro_export]
 macro_rules! expr_any {
     // Simple template without parameters: expr_any!("age")
@@ -66,11 +69,17 @@ macro_rules! expr {
     };
 }
 
-/// Helper macro to handle different parameter syntaxes
+/// Helper macro to handle different parameter syntaxes.
+///
+/// - `(expr)` — nested expression (calls `.expr()` via `Expressive`)
+/// - `{expr}` — deferred function
+/// - `expr`   — scalar (calls `.into()`)
+///
+/// Function calls like `id_value(id)` work as scalars because `$($rest:tt)*`
+/// captures the entire token sequence before forwarding to the scalar arm.
 #[macro_export]
 macro_rules! expr_param {
     // Nested expression: (expr) -> ExpressiveEnum::Nested(expr)
-    // If expr implements Expressive, convert it to Expression first
     (($expr:expr)) => {
         $crate::traits::expressive::ExpressiveEnum::Nested({
             #[allow(unused_imports)]

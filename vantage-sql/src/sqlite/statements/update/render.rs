@@ -1,5 +1,6 @@
-use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
+use vantage_expressions::{Expression, Expressive, ExpressiveEnum, expr_any};
 
+use crate::primitives::identifier::ident;
 use crate::sqlite::types::AnySqliteType;
 
 use super::{Expr, SqliteUpdate};
@@ -20,31 +21,33 @@ impl SqliteUpdate {
 impl Expressive<AnySqliteType> for SqliteUpdate {
     fn expr(&self) -> Expr {
         if self.fields.is_empty() {
-            return Expression::new(format!("UPDATE \"{}\"", self.table), vec![]);
+            return expr_any!("UPDATE {}", (ident(&self.table)));
         }
 
-        let set_parts: Vec<String> = self
+        let set_parts: Vec<Expr> = self
             .fields
-            .keys()
-            .map(|k| format!("\"{}\" = {{}}", k))
+            .iter()
+            .map(|(k, v)| {
+                Expression::new(
+                    "{} = {}",
+                    vec![
+                        ExpressiveEnum::Nested(ident(k).expr()),
+                        ExpressiveEnum::Scalar(v.clone()),
+                    ],
+                )
+            })
             .collect();
-        let template_base = format!("UPDATE \"{}\" SET {}", self.table, set_parts.join(", "));
+        let set_list = Expression::from_vec(set_parts, ", ");
 
-        let mut params: Vec<ExpressiveEnum<AnySqliteType>> = self
-            .fields
-            .values()
-            .map(|v| ExpressiveEnum::Scalar(v.clone()))
-            .collect();
-
-        let template = match self.render_where() {
-            Some(cond) => {
-                params.push(ExpressiveEnum::Nested(cond));
-                format!("{} WHERE {{}}", template_base)
-            }
-            None => template_base,
-        };
-
-        Expression::new(template, params)
+        match self.render_where() {
+            Some(cond) => expr_any!(
+                "UPDATE {} SET {} WHERE {}",
+                (ident(&self.table)),
+                (set_list),
+                (cond)
+            ),
+            None => expr_any!("UPDATE {} SET {}", (ident(&self.table)), (set_list)),
+        }
     }
 }
 
