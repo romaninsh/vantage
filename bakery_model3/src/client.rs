@@ -1,4 +1,7 @@
 use vantage_csv::{AnyCsvType, Csv};
+#[allow(unused_imports)]
+use vantage_sql::postgres::AnyPostgresType;
+use vantage_sql::postgres::PostgresDB;
 use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::types::AnySurrealType;
@@ -7,7 +10,7 @@ use vantage_types::entity;
 
 use crate::{Bakery, Order};
 
-#[entity(CsvType, SurrealType, SqliteType)]
+#[entity(CsvType, SurrealType, SqliteType, PostgresType)]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Client {
     pub name: String,
@@ -63,6 +66,24 @@ impl Client {
             })
             .with_many("orders", "client_id", move || {
                 Order::sqlite_table(db3.clone())
+            })
+    }
+
+    pub fn postgres_table(db: PostgresDB) -> Table<PostgresDB, Client> {
+        let db2 = db.clone();
+        let db3 = db.clone();
+        Table::new("client", db)
+            .with_id_column("id")
+            .with_column_of::<String>("name")
+            .with_column_of::<String>("email")
+            .with_column_of::<String>("contact_details")
+            .with_column_of::<bool>("is_paying_client")
+            .with_column_of::<String>("bakery_id")
+            .with_one("bakery", "bakery_id", move || {
+                Bakery::postgres_table(db2.clone())
+            })
+            .with_many("orders", "client_id", move || {
+                Order::postgres_table(db3.clone())
             })
     }
 }

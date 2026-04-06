@@ -1,5 +1,6 @@
 use serde_json::Value as JsonValue;
 use vantage_csv::{CsvType, type_system::CsvTypeAnimalMarker};
+use vantage_sql::postgres::{PostgresType, types::PostgresTypeTextMarker};
 use vantage_sql::sqlite::{SqliteType, types::SqliteTypeTextMarker};
 use vantage_surrealdb::types::SurrealTypeStringMarker;
 use vantage_surrealdb::{CborValue, SurrealType};
@@ -68,6 +69,21 @@ impl CsvType for Animal {
 
 impl SqliteType for Animal {
     type Target = SqliteTypeTextMarker;
+
+    fn to_json(&self) -> JsonValue {
+        JsonValue::String(self.as_str().to_string())
+    }
+
+    fn from_json(value: JsonValue) -> Option<Self> {
+        match value {
+            JsonValue::String(s) => s.parse().ok(),
+            _ => None,
+        }
+    }
+}
+
+impl PostgresType for Animal {
+    type Target = PostgresTypeTextMarker;
 
     fn to_json(&self) -> JsonValue {
         JsonValue::String(self.as_str().to_string())

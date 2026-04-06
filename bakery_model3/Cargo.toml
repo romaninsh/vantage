@@ -10,7 +10,7 @@ vantage-csv = { path = "../vantage-csv" }
 vantage-expressions = { path = "../vantage-expressions" }
 vantage-dataset = { path = "../vantage-dataset" }
 vantage-types = { path = "../vantage-types" }
-vantage-sql = { path = "../vantage-sql" }
+vantage-sql = { path = "../vantage-sql", features = ["sqlite", "postgres"] }
 vantage-surrealdb = { path = "../vantage-surrealdb" }
 surreal-client = { path = "../surreal-client", features = ["decimal"] }
 serde_json = "1"

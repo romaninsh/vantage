@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS product (
     price INTEGER NOT NULL CHECK (price > 0),
     bakery_id TEXT NOT NULL REFERENCES bakery(id),
     is_deleted BOOLEAN NOT NULL DEFAULT 0,
-    inventory_stock INTEGER NOT NULL DEFAULT 0
+    inventory_stock INTEGER NOT NULL DEFAULT 0,
+    sticker TEXT
 );
 
 -- "order" is a reserved word in SQL, so we use "client_order"
@@ -73,20 +74,20 @@ INSERT INTO client (id, name, email, contact_details, is_paying_client, balance,
 VALUES ('biff', 'Biff Tannen', 'biff-3293@hotmail.com', '555-1955', 0, -50.25, 'hill_valley');
 
 -- Products
-INSERT INTO product (id, name, calories, price, bakery_id, is_deleted, inventory_stock)
-VALUES ('flux_cupcake', 'Flux Capacitor Cupcake', 300, 120, 'hill_valley', 0, 50);
+INSERT INTO product (id, name, calories, price, bakery_id, is_deleted, inventory_stock, sticker)
+VALUES ('flux_cupcake', 'Flux Capacitor Cupcake', 300, 120, 'hill_valley', 0, 50, 'cat');
 
-INSERT INTO product (id, name, calories, price, bakery_id, is_deleted, inventory_stock)
-VALUES ('delorean_donut', 'DeLorean Doughnut', 250, 135, 'hill_valley', 0, 30);
+INSERT INTO product (id, name, calories, price, bakery_id, is_deleted, inventory_stock, sticker)
+VALUES ('delorean_donut', 'DeLorean Doughnut', 250, 135, 'hill_valley', 0, 30, 'dog');
 
-INSERT INTO product (id, name, calories, price, bakery_id, is_deleted, inventory_stock)
-VALUES ('time_tart', 'Time Traveler Tart', 200, 220, 'hill_valley', 0, 20);
+INSERT INTO product (id, name, calories, price, bakery_id, is_deleted, inventory_stock, sticker)
+VALUES ('time_tart', 'Time Traveler Tart', 200, 220, 'hill_valley', 0, 20, NULL);
 
-INSERT INTO product (id, name, calories, price, bakery_id, is_deleted, inventory_stock)
-VALUES ('sea_pie', 'Enchantment Under the Sea Pie', 350, 299, 'hill_valley', 0, 15);
+INSERT INTO product (id, name, calories, price, bakery_id, is_deleted, inventory_stock, sticker)
+VALUES ('sea_pie', 'Enchantment Under the Sea Pie', 350, 299, 'hill_valley', 0, 15, 'pig');
 
-INSERT INTO product (id, name, calories, price, bakery_id, is_deleted, inventory_stock)
-VALUES ('hover_cookies', 'Hoverboard Cookies', 150, 199, 'hill_valley', 0, 40);
+INSERT INTO product (id, name, calories, price, bakery_id, is_deleted, inventory_stock, sticker)
+VALUES ('hover_cookies', 'Hoverboard Cookies', 150, 199, 'hill_valley', 0, 40, 'chicken');
 
 -- Orders (with client_id from the RELATE statements in SurrealDB)
 INSERT INTO client_order (id, bakery_id, client_id, is_deleted, created_at)
