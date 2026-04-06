@@ -308,17 +308,27 @@ impl TryFrom<AnySurrealType> for Record<AnySurrealType> {
                 .ok_or_else(|| vantage_core::error!("Expected map in array result"))?,
             _ => return Err(vantage_core::error!("Expected map or array result")),
         };
-        Ok(map
-            .into_iter()
-            .filter_map(|(k, v)| {
+        map.into_iter()
+            .map(|(k, v)| {
                 let key = match k {
                     ciborium::Value::Text(s) => s,
-                    _ => return None,
+                    other => {
+                        return Err(vantage_core::error!(
+                            "Expected text key in record conversion",
+                            key = format!("{:?}", other)
+                        ))
+                    }
                 };
-                let val = AnySurrealType::from_cbor(&v)?;
-                Some((key, val))
+                let val = AnySurrealType::from_cbor(&v).ok_or_else(|| {
+                    vantage_core::error!(
+                        "Failed to convert record value from CBOR",
+                        key = key.clone(),
+                        value = format!("{:?}", v)
+                    )
+                })?;
+                Ok((key, val))
             })
-            .collect())
+            .collect()
     }
 }
 

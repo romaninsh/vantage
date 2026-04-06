@@ -34,9 +34,9 @@ fn main() {
     println!("Into conversion: {}", value);
     assert_eq!(value, "hello");
 
-    // Test TryFrom: String -> AnySimpleType
-    let any_type2: AnySimpleType = "world".to_string().try_into().unwrap();
-    println!("TryFrom conversion: {:?}", any_type2.value());
+    // Test From: String -> AnySimpleType
+    let any_type2: AnySimpleType = "world".to_string().into();
+    println!("From conversion: {:?}", any_type2.value());
     assert_eq!(any_type2.value(), "world");
     assert_eq!(any_type2.type_variant(), Some(SimpleTypeVariants::Text));
 

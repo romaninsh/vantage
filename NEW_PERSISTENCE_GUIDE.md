@@ -835,21 +835,12 @@ let data = std::fs::read("config.json")
 This chains errors — the original `io::Error` is preserved as the source, so `Display` renders
 both messages and the source chain is available via `std::error::Error::source()`.
 
-### Implement Operation for your column type
+### Operation trait — condition building
 
-The `Operation` trait (from `vantage-table`) gives columns `.eq()`, `.ne()`, `.gt()`, `.gte()`,
-`.lt()`, `.lte()`, and `.in_()` methods for building conditions. The trait provides default
-implementations using standard SQL syntax, so for most backends you just need an empty impl:
-
-```rust
-use vantage_table::operation::Operation;
-
-impl Operation<AnySqliteType> for Column<AnySqliteType> {}
-```
-
-The defaults use standard SQL templates (`"{} = {}"`, `"{} != {}"`, `"{} > {}"`, etc.). Backends
-with non-SQL evaluation (like CSV's in-memory filtering) can override these with their own
-implementations.
+The `Operation` trait (from `vantage-table`) provides `.eq()`, `.ne()`, `.gt()`, `.gte()`,
+`.lt()`, `.lte()`, and `.in_()` methods for building conditions. It has a **blanket implementation**
+for all `Expressive<T>` types, so your columns get these methods automatically — no explicit impl
+needed.
 
 All methods accept `impl Expressive<YourAnyType>`, so you can pass native Rust values (`false`,
 `42`, `"hello"`), other columns (`table["other_field"]`), or full expressions. This requires your

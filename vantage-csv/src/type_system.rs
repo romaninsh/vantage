@@ -192,6 +192,15 @@ macro_rules! impl_expressive_for_csv_scalar {
 
 impl_expressive_for_csv_scalar!(i64, f64, bool, String);
 
+impl Expressive<AnyCsvType> for &str {
+    fn expr(&self) -> Expression<AnyCsvType> {
+        Expression::new(
+            "{}",
+            vec![ExpressiveEnum::Scalar(AnyCsvType::new(self.to_string()))],
+        )
+    }
+}
+
 impl Expressive<AnyCsvType> for AnyCsvType {
     fn expr(&self) -> Expression<AnyCsvType> {
         Expression::new("{}", vec![ExpressiveEnum::Scalar(self.clone())])

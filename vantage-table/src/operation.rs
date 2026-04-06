@@ -1,16 +1,15 @@
-//! Generic operation trait for building conditions on table columns.
+//! Generic operation trait for building conditions from any `Expressive` type.
 //!
-//! Each persistence backend provides its own implementation.
-//! CSV uses structured parameters evaluated in memory.
-//! SQL/SurrealDB render as query syntax.
+//! A blanket impl provides `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, and `in_` for
+//! every type that implements `Expressive<T>`. This includes table columns, fields,
+//! scalar values, and expressions across all backends.
 
 use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_expressions::{Expression, Expressive};
 
-/// Trait for building condition expressions from column references.
+/// Trait for building condition expressions.
 ///
-/// Provides default implementations using standard SQL syntax.
-/// Backends like CSV override these with structured parameters for in-memory evaluation.
+/// Blanket-implemented for all `Expressive<T>` types using standard SQL templates.
 pub trait Operation<T>: Expressive<T> {
     /// Creates an equality condition: field = value
     fn eq(&self, value: impl Expressive<T>) -> Expression<T> {
