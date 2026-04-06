@@ -65,7 +65,10 @@ pub(crate) async fn apply_condition(
                 })
                 .collect())
         }
-        _ => Ok(records), // Unknown operation, skip
+        other => Err(vantage_core::error!(
+            "Unsupported CSV condition operator",
+            template = other.to_string()
+        )),
     }
 }
 

@@ -172,6 +172,41 @@ impl From<bool> for AnyCsvType {
     }
 }
 
+// Expressive impls — allows passing scalars directly to Operation methods (eq, gt, etc.)
+use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
+
+macro_rules! impl_expressive_for_csv_scalar {
+    ($($ty:ty),*) => {
+        $(
+            impl Expressive<AnyCsvType> for $ty {
+                fn expr(&self) -> Expression<AnyCsvType> {
+                    Expression::new(
+                        "{}",
+                        vec![ExpressiveEnum::Scalar(AnyCsvType::new_ref(self))],
+                    )
+                }
+            }
+        )*
+    };
+}
+
+impl_expressive_for_csv_scalar!(i64, f64, bool, String);
+
+impl Expressive<AnyCsvType> for &str {
+    fn expr(&self) -> Expression<AnyCsvType> {
+        Expression::new(
+            "{}",
+            vec![ExpressiveEnum::Scalar(AnyCsvType::new(self.to_string()))],
+        )
+    }
+}
+
+impl Expressive<AnyCsvType> for AnyCsvType {
+    fn expr(&self) -> Expression<AnyCsvType> {
+        Expression::new("{}", vec![ExpressiveEnum::Scalar(self.clone())])
+    }
+}
+
 impl From<serde_json::Value> for AnyCsvType {
     fn from(v: serde_json::Value) -> Self {
         match v {

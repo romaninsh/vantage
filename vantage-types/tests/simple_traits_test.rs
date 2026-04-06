@@ -60,7 +60,7 @@ mod tests {
         assert_eq!(value, "hello");
 
         // ValueType -> AnyType
-        let any_type2: AnyTestType = "world".to_string().try_into().unwrap();
+        let any_type2: AnyTestType = "world".to_string().into();
         assert_eq!(any_type2.value(), "world");
         assert_eq!(any_type2.type_variant(), Some(TestTypeVariants::Text));
     }

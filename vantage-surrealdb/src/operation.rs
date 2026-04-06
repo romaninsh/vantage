@@ -1,24 +1,36 @@
-//! SurrealDB operations for expressions
+//! SurrealDB-specific operations for expressions.
 //!
-//! This module provides operations that extend expressions with SurrealDB-specific functionality.
+//! Common comparison methods (eq, ne, gt, gte, lt, lte, in_) are provided by the
+//! generic `Operation<T>` trait from vantage-table, which has a blanket impl for
+//! all `Expressive<T>` types. This module adds SurrealDB-specific operations:
+//! graph traversal (rref/lref), subtraction, CONTAINS, and a SurrealDB-flavored
+//! IN (without parentheses).
 
 use vantage_expressions::Expressive;
 
 use crate::{AnySurrealType, Expr, identifier::Identifier, surreal_expr};
 
-/// Extension trait to add reference traversal and comparison methods to expressions
+/// SurrealDB-specific operations: graph traversal, CONTAINS, subtraction,
+/// and parenthesis-free IN.
+///
+/// For standard comparisons (eq, ne, gt, gte, lt, lte), use `Operation<T>`
+/// from `vantage_table::operation` — it's blanket-implemented for all
+/// `Expressive<T>` types.
 pub trait RefOperation: Expressive<AnySurrealType> {
+    /// Right-side graph traversal: `self->reference->table`
     fn rref(&self, reference: impl Into<String>, table: impl Into<String>) -> Expr;
+    /// Left-side graph traversal: `self<-reference<-table`
     fn lref(&self, reference: impl Into<String>, table: impl Into<String>) -> Expr;
-    fn eq(&self, other: impl Expressive<AnySurrealType>) -> Expr;
-    fn ne(&self, other: impl Expressive<AnySurrealType>) -> Expr;
-    fn gt(&self, other: impl Expressive<AnySurrealType>) -> Expr;
-    fn gte(&self, other: impl Expressive<AnySurrealType>) -> Expr;
-    fn lt(&self, other: impl Expressive<AnySurrealType>) -> Expr;
-    fn lte(&self, other: impl Expressive<AnySurrealType>) -> Expr;
+    /// Subtraction: `self - other`
     fn sub(&self, other: impl Expressive<AnySurrealType>) -> Expr;
+    /// SurrealDB CONTAINS operator: `self CONTAINS other`
     fn contains_(&self, other: impl Expressive<AnySurrealType>) -> Expr;
-    fn in_(&self, other: impl Expressive<AnySurrealType>) -> Expr;
+    /// SurrealDB IN without parentheses: `self IN other`
+    ///
+    /// SurrealDB uses `value IN array` syntax where the right side can be
+    /// a graph traversal or array literal — no parentheses needed.
+    /// SQL backends should use `Operation::in_()` which adds parens for subqueries.
+    fn surreal_in(&self, other: impl Expressive<AnySurrealType>) -> Expr;
 }
 
 impl<T> RefOperation for T
@@ -43,30 +55,6 @@ where
         )
     }
 
-    fn eq(&self, other: impl Expressive<AnySurrealType>) -> Expr {
-        surreal_expr!("{} = {}", (self), (other))
-    }
-
-    fn ne(&self, other: impl Expressive<AnySurrealType>) -> Expr {
-        surreal_expr!("{} != {}", (self), (other))
-    }
-
-    fn gt(&self, other: impl Expressive<AnySurrealType>) -> Expr {
-        surreal_expr!("{} > {}", (self), (other))
-    }
-
-    fn gte(&self, other: impl Expressive<AnySurrealType>) -> Expr {
-        surreal_expr!("{} >= {}", (self), (other))
-    }
-
-    fn lt(&self, other: impl Expressive<AnySurrealType>) -> Expr {
-        surreal_expr!("{} < {}", (self), (other))
-    }
-
-    fn lte(&self, other: impl Expressive<AnySurrealType>) -> Expr {
-        surreal_expr!("{} <= {}", (self), (other))
-    }
-
     fn sub(&self, other: impl Expressive<AnySurrealType>) -> Expr {
         surreal_expr!("{} - {}", (self), (other))
     }
@@ -75,7 +63,7 @@ where
         surreal_expr!("{} CONTAINS {}", (self), (other))
     }
 
-    fn in_(&self, other: impl Expressive<AnySurrealType>) -> Expr {
+    fn surreal_in(&self, other: impl Expressive<AnySurrealType>) -> Expr {
         surreal_expr!("{} IN {}", (self), (other))
     }
 }
@@ -158,11 +146,15 @@ mod tests {
 
     #[test]
     fn test_comparison_operations() {
+        use vantage_table::operation::Operation;
+
         let field = surreal_expr!("age");
 
+        // eq comes from generic Operation<T>
         let eq_scalar = field.eq(25i64);
         assert_eq!(eq_scalar.preview(), "age = 25");
 
+        // sub is SurrealDB-specific
         let sub_result = field.sub(10i64);
         assert_eq!(sub_result.preview(), "age - 10");
 
@@ -170,9 +162,10 @@ mod tests {
         let contains_result = tags_field.contains_("bakery".to_string());
         assert_eq!(contains_result.preview(), r#"tags CONTAINS "bakery""#);
 
+        // surreal_in — paren-free SurrealDB syntax
         let status_field = surreal_expr!("status");
         let values_expr = surreal_expr!(r#"["active", "pending"]"#);
-        let in_result = status_field.in_(values_expr);
+        let in_result = status_field.surreal_in(values_expr);
         assert_eq!(in_result.preview(), r#"status IN ["active", "pending"]"#);
     }
 }

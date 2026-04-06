@@ -26,12 +26,17 @@ impl Product {
     }
 
     pub fn surreal_table(db: SurrealDB) -> Table<SurrealDB, Product> {
+        let db2 = db.clone();
         Table::new("product", db)
             .with_id_column("id")
             .with_column_of::<String>("name")
             .with_column_of::<i64>("calories")
             .with_column_of::<i64>("price")
             .with_column_of::<bool>("is_deleted")
+            .with_column_of::<String>("bakery") // record link, used for relationships
+            .with_one("bakery", "bakery", move || {
+                Bakery::surreal_table(db2.clone())
+            })
     }
 
     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Product> {

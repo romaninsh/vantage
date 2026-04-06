@@ -36,12 +36,16 @@ impl Client {
     }
 
     pub fn surreal_table(db: SurrealDB) -> Table<SurrealDB, Client> {
+        let db2 = db.clone();
         Table::new("client", db)
             .with_id_column("id")
             .with_column_of::<String>("name")
             .with_column_of::<String>("email")
             .with_column_of::<String>("contact_details")
             .with_column_of::<bool>("is_paying_client")
+            .with_one("bakery", "bakery", move || {
+                Bakery::surreal_table(db2.clone())
+            })
     }
 
     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Client> {

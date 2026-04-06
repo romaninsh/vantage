@@ -12,6 +12,7 @@ use vantage_surrealdb::{
     surrealdb::SurrealDB,
     thing::Thing,
 };
+use vantage_table::operation::Operation;
 
 fn snip(str: &str) -> String {
     str.split_whitespace()
@@ -201,7 +202,7 @@ fn query11() {
                 .with_source("product")
                 .with_condition(
                     Thing::new("bakery", "hill_valley")
-                        .in_(surreal_expr!("").lref("owns", "bakery")),
+                        .surreal_in(surreal_expr!("").lref("owns", "bakery")),
                 )
                 .with_condition(Identifier::new("is_deleted").eq(false))
                 .expr(),
