@@ -2,7 +2,7 @@
 //!
 //! Usage: db [--debug] <source> <entity> [command ...]
 //!
-//! Sources: csv, surreal, sqlite
+//! Sources: csv, surreal, sqlite, postgres
 //! Entities: bakery, client, product, order
 //!
 //! Commands:
@@ -45,7 +45,7 @@ async fn run() -> vantage_core::Result<()> {
         )
         .arg(
             Arg::new("source")
-                .help("Data source: csv, surreal, sqlite")
+                .help("Data source: csv, surreal, sqlite, postgres")
                 .required(true),
         )
         .arg(
@@ -144,8 +144,29 @@ async fn build_table(
             };
             Ok(Some(table))
         }
+        "postgres" => {
+            let url = std::env::var("POSTGRES_URL")
+                .unwrap_or_else(|_| "postgres://vantage:vantage@localhost:5433/vantage".to_string());
+            let db = PostgresDB::connect(&url).await.map_err(|e| {
+                vantage_core::error!("Failed to connect to PostgreSQL", details = e.to_string())
+            })?;
+            let table = match entity_name {
+                "bakery" => AnyTable::from_table(Bakery::postgres_table(db)),
+                "client" => AnyTable::from_table(Client::postgres_table(db)),
+                "product" => AnyTable::from_table(Product::postgres_table(db)),
+                "order" => AnyTable::from_table(Order::postgres_table(db)),
+                _ => {
+                    println!("Unknown entity: {}", entity_name);
+                    return Ok(None);
+                }
+            };
+            Ok(Some(table))
+        }
         _ => {
-            println!("Unknown source: {}. Use: csv, surreal, sqlite", source);
+            println!(
+                "Unknown source: {}. Use: csv, surreal, sqlite, postgres",
+                source
+            );
             Ok(None)
         }
     }
@@ -155,7 +176,7 @@ fn print_usage() {
     println!();
     println!("Usage: db [--debug] <source> <entity> <command>");
     println!();
-    println!("Sources: csv, surreal, sqlite");
+    println!("Sources: csv, surreal, sqlite, postgres");
     println!();
     println!("Commands:");
     println!("  list              List all records");

@@ -1,4 +1,5 @@
 use vantage_csv::{AnyCsvType, Csv};
+use vantage_sql::postgres::{AnyPostgresType, PostgresDB};
 use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::types::AnySurrealType;
@@ -7,7 +8,7 @@ use vantage_types::entity;
 
 use crate::Bakery;
 
-#[entity(CsvType, SurrealType, SqliteType)]
+#[entity(CsvType, SurrealType, SqliteType, PostgresType)]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Product {
     pub name: String,
@@ -49,6 +50,19 @@ impl Product {
             .with_column_of::<bool>("is_deleted")
             .with_one("bakery", "bakery_id", move || {
                 Bakery::sqlite_table(db2.clone())
+            })
+    }
+
+    pub fn postgres_table(db: PostgresDB) -> Table<PostgresDB, Product> {
+        let db2 = db.clone();
+        Table::new("product", db)
+            .with_id_column("id")
+            .with_column_of::<String>("name")
+            .with_column_of::<i64>("calories")
+            .with_column_of::<i64>("price")
+            .with_column_of::<bool>("is_deleted")
+            .with_one("bakery", "bakery_id", move || {
+                Bakery::postgres_table(db2.clone())
             })
     }
 }
