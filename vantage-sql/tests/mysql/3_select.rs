@@ -72,10 +72,7 @@ fn test_select_with_condition() {
     let s = MysqlSelect::new()
         .with_source("product")
         .with_condition(mysql_expr!("`price` > {}", 100i64));
-    assert_eq!(
-        s.preview(),
-        "SELECT * FROM `product` WHERE `price` > 100"
-    );
+    assert_eq!(s.preview(), "SELECT * FROM `product` WHERE `price` > 100");
 }
 
 #[test]
@@ -92,9 +89,7 @@ fn test_select_order_and_limit() {
 
 #[test]
 fn test_select_distinct() {
-    let mut s = MysqlSelect::new()
-        .with_source("product")
-        .with_field("name");
+    let mut s = MysqlSelect::new().with_source("product").with_field("name");
     s.set_distinct(true);
     assert_eq!(s.preview(), "SELECT DISTINCT `name` FROM `product`");
 }

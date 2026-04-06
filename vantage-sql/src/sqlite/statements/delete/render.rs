@@ -1,5 +1,6 @@
-use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
+use vantage_expressions::{Expression, Expressive, expr_any};
 
+use crate::primitives::identifier::ident;
 use crate::sqlite::types::AnySqliteType;
 
 use super::{Expr, SqliteDelete};
@@ -13,14 +14,11 @@ impl SqliteDelete {
 impl Expressive<AnySqliteType> for SqliteDelete {
     fn expr(&self) -> Expr {
         if self.conditions.is_empty() {
-            return Expression::new(format!("DELETE FROM \"{}\"", self.table), vec![]);
+            return expr_any!("DELETE FROM {}", (ident(&self.table)));
         }
 
         let combined = Expression::from_vec(self.conditions.clone(), " AND ");
-        Expression::new(
-            format!("DELETE FROM \"{}\" WHERE {{}}", self.table),
-            vec![ExpressiveEnum::Nested(combined)],
-        )
+        expr_any!("DELETE FROM {} WHERE {}", (ident(&self.table)), (combined))
     }
 }
 

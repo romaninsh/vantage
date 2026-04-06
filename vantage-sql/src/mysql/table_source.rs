@@ -12,15 +12,14 @@ use vantage_types::{Entity, Record};
 
 use crate::mysql::MysqlDB;
 use crate::mysql::types::AnyMysqlType;
+use crate::primitives::identifier::ident;
+use vantage_expressions::expr_any;
 
-/// Create an AnyMysqlType for an id value. If the id parses as an integer,
-/// use Int8 variant so MySQL doesn't complain about type mismatches.
+/// Create an AnyMysqlType for an id value. Always binds as string to
+/// preserve semantics of textual ids (e.g., leading zeros in "00123").
+/// MySQL will coerce to integer when the column type requires it.
 fn id_value(id: &str) -> AnyMysqlType {
-    if let Ok(n) = id.parse::<i64>() {
-        AnyMysqlType::new(n)
-    } else {
-        AnyMysqlType::from(id.to_string())
-    }
+    AnyMysqlType::from(id.to_string())
 }
 
 /// Parse the JSON array result from execute() into an IndexMap of id -> Record.
@@ -104,17 +103,17 @@ impl TableSource for MysqlDB {
     where
         E: Entity<Self::Value>,
     {
-        let pattern = format!("%{}%", search_value.replace('%', "\\%"));
+        let escaped = search_value
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        let pattern = format!("%{}%", escaped);
         let conditions: Vec<Expression<AnyMysqlType>> = table
             .columns()
             .values()
             .map(|col| {
-                Expression::new(
-                    format!("`{}` LIKE {{}}", col.name()),
-                    vec![ExpressiveEnum::Scalar(AnyMysqlType::from(
-                        pattern.clone(),
-                    ))],
-                )
+                let p = pattern.clone();
+                mysql_expr!("{} LIKE {} ESCAPE '\\\\'", (ident(col.name())), p)
             })
             .collect();
 
@@ -155,10 +154,10 @@ impl TableSource for MysqlDB {
             .map(|c| c.name().to_string())
             .unwrap_or_else(|| "id".to_string());
 
-        let condition = Expression::new(
-            format!("`{}` = {{}}", id_field_name),
-            vec![ExpressiveEnum::Scalar(id_value(id))],
-        );
+        let condition = {
+            let id_val = id_value(id);
+            mysql_expr!("{} = {}", (ident(&id_field_name)), id_val)
+        };
         let select = table.select().with_condition(condition);
         let result = self.execute(&select.expr()).await?;
 
@@ -192,9 +191,7 @@ impl TableSource for MysqlDB {
         E: Entity<Self::Value>,
     {
         let select = table.select();
-        let result = self
-            .aggregate(&select, "count", mysql_expr!("*"))
-            .await?;
+        let result = self.aggregate(&select, "count", mysql_expr!("*")).await?;
         result.try_get::<i64>().ok_or_else(|| {
             error!(
                 "get_table_count: expected i64",
@@ -278,23 +275,20 @@ impl TableSource for MysqlDB {
             .with_record(record);
         let base = insert.expr();
 
-        let set_parts: Vec<String> = record
-            .keys()
-            .map(|k| format!("`{}` = VALUES(`{}`)", k, k))
-            .collect();
-        let conflict_clause = if set_parts.is_empty() {
-            format!(" ON DUPLICATE KEY UPDATE `{}` = `{}`", id_field_name, id_field_name)
+        let set_parts: Vec<Expression<AnyMysqlType>> = if record.is_empty() {
+            vec![expr_any!(
+                "{} = {}",
+                (ident(&id_field_name)),
+                (ident(&id_field_name))
+            )]
         } else {
-            format!(
-                " ON DUPLICATE KEY UPDATE {}",
-                set_parts.join(", ")
-            )
+            record
+                .keys()
+                .map(|k| expr_any!("{} = VALUES({})", (ident(k)), (ident(k))))
+                .collect()
         };
-
-        let upsert = Expression::new(
-            format!("{}{}", base.template, conflict_clause),
-            base.parameters.clone(),
-        );
+        let conflict = Expression::from_vec(set_parts, ", ");
+        let upsert = expr_any!("{} ON DUPLICATE KEY UPDATE {}", (base), (conflict));
         self.execute(&upsert).await?;
 
         self.get_table_value(table, id).await
@@ -314,10 +308,10 @@ impl TableSource for MysqlDB {
             .map(|c| c.name().to_string())
             .unwrap_or_else(|| "id".to_string());
 
-        let id_condition = Expression::new(
-            format!("`{}` = {{}}", id_field_name),
-            vec![ExpressiveEnum::Scalar(id_value(id))],
-        );
+        let id_condition = {
+            let id_val = id_value(id);
+            mysql_expr!("{} = {}", (ident(&id_field_name)), id_val)
+        };
         let update = crate::mysql::statements::MysqlUpdate::new(table.table_name())
             .with_record(partial)
             .with_condition(id_condition);
@@ -335,10 +329,10 @@ impl TableSource for MysqlDB {
             .map(|c| c.name().to_string())
             .unwrap_or_else(|| "id".to_string());
 
-        let id_condition = Expression::new(
-            format!("`{}` = {{}}", id_field_name),
-            vec![ExpressiveEnum::Scalar(id_value(id))],
-        );
+        let id_condition = {
+            let id_val = id_value(id);
+            mysql_expr!("{} = {}", (ident(&id_field_name)), id_val)
+        };
         let delete = crate::mysql::statements::MysqlDelete::new(table.table_name())
             .with_condition(id_condition);
         self.execute(&delete.expr()).await?;
@@ -362,8 +356,8 @@ impl TableSource for MysqlDB {
     where
         E: Entity<Self::Value>,
     {
-        let insert = crate::mysql::statements::MysqlInsert::new(table.table_name())
-            .with_record(record);
+        let insert =
+            crate::mysql::statements::MysqlInsert::new(table.table_name()).with_record(record);
 
         // MySQL doesn't support RETURNING. Execute INSERT and SELECT LAST_INSERT_ID()
         // on the same connection to get the auto-generated id.
@@ -375,38 +369,59 @@ impl TableSource for MysqlDB {
         let flattened = flattener.flatten(&expr);
 
         // Build the INSERT query with ? placeholders
+        let template_parts: Vec<&str> = flattened.template.split("{}").collect();
+        if template_parts.len() != flattened.parameters.len() + 1 {
+            return Err(error!(
+                "MySQL insert expression placeholder mismatch",
+                placeholders = (template_parts.len() - 1).to_string(),
+                parameters = flattened.parameters.len().to_string()
+            ));
+        }
+
         let mut sql = String::new();
         let mut params = Vec::new();
-        let template_parts: Vec<&str> = flattened.template.split("{}").collect();
         sql.push_str(template_parts[0]);
         for (i, param) in flattened.parameters.iter().enumerate() {
-            if let ExpressiveEnum::Scalar(value) = param {
-                sql.push('?');
-                params.push(value.clone());
+            match param {
+                ExpressiveEnum::Scalar(value) => {
+                    sql.push('?');
+                    params.push(value.clone());
+                }
+                _ => {
+                    return Err(error!(
+                        "MySQL insert expression contains non-scalar parameter",
+                        index = i.to_string()
+                    ));
+                }
             }
-            if i + 1 < template_parts.len() {
-                sql.push_str(template_parts[i + 1]);
-            }
+            sql.push_str(template_parts[i + 1]);
         }
 
         // Acquire a single connection to ensure LAST_INSERT_ID() works
-        let mut conn = self.pool().acquire().await
+        let mut conn = self
+            .pool()
+            .acquire()
+            .await
             .map_err(|e| error!("MySQL acquire connection failed", details = e.to_string()))?;
 
         let mut query = sqlx::query(&sql);
         for value in &params {
             query = bind_mysql_value(query, value);
         }
-        query.execute(&mut *conn).await
+        query
+            .execute(&mut *conn)
+            .await
             .map_err(|e| error!("MySQL insert failed", details = e.to_string()))?;
 
-        let row = sqlx::query("SELECT LAST_INSERT_ID() AS `id`")
+        let last_id_sql = "SELECT LAST_INSERT_ID() AS id";
+        let row = sqlx::query(last_id_sql)
             .fetch_one(&mut *conn)
             .await
             .map_err(|e| error!("MySQL LAST_INSERT_ID failed", details = e.to_string()))?;
 
         use sqlx::Row;
-        let id: u64 = row.try_get("id")
+        let id: u64 = row
+            .try_get("id")
             .map_err(|e| error!("MySQL get id failed", details = e.to_string()))?;
 
         Ok(id.to_string())

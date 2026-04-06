@@ -7,10 +7,7 @@ use crate::mysql::row::{bind_mysql_value, row_to_record};
 use crate::mysql::types::AnyMysqlType;
 
 impl vantage_expressions::ExprDataSource<AnyMysqlType> for MysqlDB {
-    async fn execute(
-        &self,
-        expr: &Expression<AnyMysqlType>,
-    ) -> vantage_core::Result<AnyMysqlType> {
+    async fn execute(&self, expr: &Expression<AnyMysqlType>) -> vantage_core::Result<AnyMysqlType> {
         // 1. Resolve deferred parameters
         let resolved = resolve_deferred(expr).await?;
 
@@ -23,9 +20,10 @@ impl vantage_expressions::ExprDataSource<AnyMysqlType> for MysqlDB {
             query = bind_mysql_value(query, value);
         }
 
-        let rows = query.fetch_all(self.pool()).await.map_err(|e| {
-            vantage_core::error!("MySQL query failed", details = e.to_string())
-        })?;
+        let rows = query
+            .fetch_all(self.pool())
+            .await
+            .map_err(|e| vantage_core::error!("MySQL query failed", details = e.to_string()))?;
 
         // 4. Convert rows to AnyMysqlType (untyped)
         let arr: Vec<JsonValue> = rows

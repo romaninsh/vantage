@@ -10,8 +10,10 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
+use crate::primitives::identifier::ident;
 use crate::sqlite::SqliteDB;
 use crate::sqlite::types::AnySqliteType;
+use vantage_expressions::expr_any;
 
 /// Parse the JSON array result from execute() into an IndexMap of id → Record.
 fn parse_rows(
@@ -94,15 +96,17 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        let pattern = format!("%{}%", search_value.replace('%', "\\%"));
+        let escaped = search_value
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        let pattern = format!("%{}%", escaped);
         let conditions: Vec<Expression<AnySqliteType>> = table
             .columns()
             .values()
             .map(|col| {
-                Expression::new(
-                    format!("\"{}\" LIKE {{}}", col.name()),
-                    vec![ExpressiveEnum::Scalar(AnySqliteType::from(pattern.clone()))],
-                )
+                let p = pattern.clone();
+                sqlite_expr!("{} LIKE {} ESCAPE '\\\\'", (ident(col.name())), p)
             })
             .collect();
 
@@ -143,10 +147,8 @@ impl TableSource for SqliteDB {
             .map(|c| c.name().to_string())
             .unwrap_or_else(|| "id".to_string());
 
-        let condition = Expression::new(
-            format!("\"{}\" = {{}}", id_field_name),
-            vec![ExpressiveEnum::Scalar(AnySqliteType::from(id.clone()))],
-        );
+        let id_val = id.clone();
+        let condition = sqlite_expr!("{} = {}", (ident(&id_field_name)), id_val);
         let select = table.select().with_condition(condition);
         let result = self.execute(&select.expr()).await?;
 
@@ -288,10 +290,8 @@ impl TableSource for SqliteDB {
             .map(|c| c.name().to_string())
             .unwrap_or_else(|| "id".to_string());
 
-        let id_condition = Expression::new(
-            format!("\"{}\" = {{}}", id_field_name),
-            vec![ExpressiveEnum::Scalar(AnySqliteType::from(id.clone()))],
-        );
+        let id_val = id.clone();
+        let id_condition = sqlite_expr!("{} = {}", (ident(&id_field_name)), id_val);
         let update = crate::sqlite::statements::SqliteUpdate::new(table.table_name())
             .with_record(partial)
             .with_condition(id_condition);
@@ -309,10 +309,8 @@ impl TableSource for SqliteDB {
             .map(|c| c.name().to_string())
             .unwrap_or_else(|| "id".to_string());
 
-        let id_condition = Expression::new(
-            format!("\"{}\" = {{}}", id_field_name),
-            vec![ExpressiveEnum::Scalar(AnySqliteType::from(id.clone()))],
-        );
+        let id_val = id.clone();
+        let id_condition = sqlite_expr!("{} = {}", (ident(&id_field_name)), id_val);
         let delete = crate::sqlite::statements::SqliteDelete::new(table.table_name())
             .with_condition(id_condition);
         self.execute(&delete.expr()).await?;
@@ -346,10 +344,7 @@ impl TableSource for SqliteDB {
 
         // Append RETURNING id_field to get the generated ID back
         let base = insert.expr();
-        let returning = Expression::new(
-            format!("{} RETURNING \"{}\"", base.template, id_field_name),
-            base.parameters.clone(),
-        );
+        let returning = expr_any!("{} RETURNING {}", (base), (ident(&id_field_name)));
         let result = self.execute(&returning).await?;
         let mut rows = parse_rows(result, &id_field_name)?;
         rows.swap_remove_index(0)

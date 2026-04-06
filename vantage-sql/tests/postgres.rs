@@ -12,6 +12,8 @@ mod postgres {
     mod editable_data_set;
     #[path = "2_expressions.rs"]
     mod expressions;
+    #[path = "2_identifier.rs"]
+    mod identifier;
     #[path = "2_insert.rs"]
     mod insert;
     #[path = "4_readable_data_set.rs"]
