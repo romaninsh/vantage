@@ -2,7 +2,7 @@
 //!
 //! Usage: db [--debug] <source> <entity> [command ...]
 //!
-//! Sources: csv, surreal
+//! Sources: csv, surreal, sqlite
 //! Entities: bakery, client, product, order
 //!
 //! Commands:
@@ -45,7 +45,7 @@ async fn run() -> vantage_core::Result<()> {
         )
         .arg(
             Arg::new("source")
-                .help("Data source: csv, surreal")
+                .help("Data source: csv, surreal, sqlite")
                 .required(true),
         )
         .arg(
@@ -126,8 +126,26 @@ async fn build_table(
             };
             Ok(Some(table))
         }
+        "sqlite" => {
+            let db = SqliteDB::connect("sqlite:target/bakery.sqlite")
+                .await
+                .map_err(|e| {
+                    vantage_core::error!("Failed to connect to SQLite", details = e.to_string())
+                })?;
+            let table = match entity_name {
+                "bakery" => AnyTable::from_table(Bakery::sqlite_table(db)),
+                "client" => AnyTable::from_table(Client::sqlite_table(db)),
+                "product" => AnyTable::from_table(Product::sqlite_table(db)),
+                "order" => AnyTable::from_table(Order::sqlite_table(db)),
+                _ => {
+                    println!("Unknown entity: {}", entity_name);
+                    return Ok(None);
+                }
+            };
+            Ok(Some(table))
+        }
         _ => {
-            println!("Unknown source: {}. Use: csv, surreal", source);
+            println!("Unknown source: {}. Use: csv, surreal, sqlite", source);
             Ok(None)
         }
     }
@@ -137,7 +155,7 @@ fn print_usage() {
     println!();
     println!("Usage: db [--debug] <source> <entity> <command>");
     println!();
-    println!("Sources: csv, surreal");
+    println!("Sources: csv, surreal, sqlite");
     println!();
     println!("Commands:");
     println!("  list              List all records");

@@ -1,4 +1,5 @@
 pub use vantage_csv::{AnyCsvType, Csv, CsvType};
+pub use vantage_sql::sqlite::{AnySqliteType, SqliteDB, SqliteType};
 
 pub mod animal;
 pub mod bakery;

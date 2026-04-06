@@ -102,11 +102,9 @@ macro_rules! vantage_type_system {
                 }
             }
 
-            impl TryFrom<$value_type> for [<Any $trait_name>] {
-                type Error = vantage_core::VantageError;
-
-                fn try_from(value: $value_type) -> vantage_core::Result<Self> {
-                    Self::[<from_ $method_name>](&value).ok_or_else(|| vantage_core::error!("Failed to convert value to type"))
+            impl From<$value_type> for [<Any $trait_name>] {
+                fn from(value: $value_type) -> Self {
+                    Self::[<from_ $method_name>](&value).expect("Failed to convert value to type")
                 }
             }
 
