@@ -1,0 +1,58 @@
+#[macro_use]
+mod macros;
+mod operation;
+mod row;
+pub mod statements;
+mod table_source;
+pub mod types;
+
+use sqlx::mysql::MySqlPool;
+
+pub use types::{AnyMysqlType, MysqlType};
+
+/// MySQL provider. Wraps a connection pool.
+#[derive(Clone)]
+pub struct MysqlDB {
+    pool: MySqlPool,
+}
+
+impl MysqlDB {
+    pub async fn connect(url: &str) -> Result<Self, sqlx::Error> {
+        let pool = MySqlPool::connect(url).await?;
+        Ok(Self { pool })
+    }
+
+    pub fn pool(&self) -> &MySqlPool {
+        &self.pool
+    }
+
+    /// Execute an aggregate query (COUNT, SUM, MAX, MIN etc.) and return the scalar result.
+    pub async fn aggregate(
+        &self,
+        select: &statements::MysqlSelect,
+        func: &str,
+        column: impl vantage_expressions::Expressive<AnyMysqlType>,
+    ) -> vantage_core::Result<AnyMysqlType> {
+        use vantage_expressions::ExprDataSource;
+        let expr = select.as_aggregate(func, column);
+        let result = self.execute(&expr).await?;
+        Ok(match result.value() {
+            serde_json::Value::Array(arr) => arr
+                .first()
+                .and_then(|row| row.as_object())
+                .and_then(|obj| obj.values().next())
+                .map(|v| AnyMysqlType::untyped(v.clone()))
+                .unwrap_or(result),
+            _ => result,
+        })
+    }
+}
+
+// DataSource marker trait
+impl vantage_expressions::traits::datasource::DataSource for MysqlDB {}
+
+// ExprDataSource impl
+mod expr_data_source;
+
+// SelectableDataSource impl
+mod selectable_data_source;

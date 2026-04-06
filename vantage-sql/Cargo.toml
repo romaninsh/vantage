@@ -15,6 +15,7 @@ autoexamples = false
 default = ["sqlite"]
 sqlite = ["sqlx/sqlite"]
 postgres = ["sqlx/postgres"]
+mysql = ["sqlx/mysql"]
 
 [dependencies]
 vantage-core = { path = "../vantage-core" }

@@ -27,7 +27,7 @@ async fn test_build_select_basic() {
     let select = table.select();
     assert_eq!(
         select.preview(),
-        "SELECT id, name, calories, price, is_deleted, bakery FROM product"
+        "SELECT id, name, calories, price, is_deleted, sticker, bakery FROM product"
     );
 }
 
@@ -39,7 +39,7 @@ async fn test_build_select_with_condition() {
     let select = table.select();
     assert_eq!(
         select.preview(),
-        "SELECT id, name, calories, price, is_deleted, bakery FROM product WHERE active = true"
+        "SELECT id, name, calories, price, is_deleted, sticker, bakery FROM product WHERE active = true"
     );
 }
 
