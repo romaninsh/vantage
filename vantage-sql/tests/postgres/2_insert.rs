@@ -175,10 +175,7 @@ async fn test_bool_binds_correctly() {
     db.execute(&insert).await.unwrap();
 
     // Query with bool parameter — PostgreSQL has native BOOLEAN
-    let select = postgres_expr!(
-        "SELECT name FROM \"ins_bool\" WHERE is_deleted = {}",
-        true
-    );
+    let select = postgres_expr!("SELECT name FROM \"ins_bool\" WHERE is_deleted = {}", true);
     let result = rows(db.execute(&select).await.unwrap());
 
     assert_eq!(result.len(), 1);
@@ -200,17 +197,11 @@ async fn test_integer_vs_text_binding() {
     );
     db.execute(&insert).await.unwrap();
 
-    let by_price = postgres_expr!(
-        "SELECT id FROM \"ins_int_text\" WHERE price = {}",
-        100i64
-    );
+    let by_price = postgres_expr!("SELECT id FROM \"ins_int_text\" WHERE price = {}", 100i64);
     let result = rows(db.execute(&by_price).await.unwrap());
     assert_eq!(result.len(), 1);
 
-    let by_name = postgres_expr!(
-        "SELECT id FROM \"ins_int_text\" WHERE name = {}",
-        "Test"
-    );
+    let by_name = postgres_expr!("SELECT id FROM \"ins_int_text\" WHERE name = {}", "Test");
     let result = rows(db.execute(&by_name).await.unwrap());
     assert_eq!(result.len(), 1);
 }

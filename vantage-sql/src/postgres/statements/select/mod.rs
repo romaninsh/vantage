@@ -2,8 +2,8 @@ mod impls;
 pub mod join;
 mod render;
 
-use crate::primitives::select::window::Window;
 use crate::postgres::types::AnyPostgresType;
+use crate::primitives::select::window::Window;
 use join::PostgresSelectJoin;
 use vantage_expressions::Expression;
 

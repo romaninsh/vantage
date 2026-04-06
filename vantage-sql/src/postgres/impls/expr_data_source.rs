@@ -23,10 +23,9 @@ impl vantage_expressions::ExprDataSource<AnyPostgresType> for PostgresDB {
             query = bind_postgres_value(query, value);
         }
 
-        let rows = query
-            .fetch_all(self.pool())
-            .await
-            .map_err(|e| vantage_core::error!("PostgreSQL query failed", details = e.to_string()))?;
+        let rows = query.fetch_all(self.pool()).await.map_err(|e| {
+            vantage_core::error!("PostgreSQL query failed", details = e.to_string())
+        })?;
 
         // 4. Convert rows to AnyPostgresType (untyped -- type_variant: None)
         let arr: Vec<JsonValue> = rows

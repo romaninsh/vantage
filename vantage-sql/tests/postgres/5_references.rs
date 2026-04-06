@@ -60,7 +60,11 @@ fn order_table(db: PostgresDB) -> Table<PostgresDB, ClientOrder> {
 async fn test_has_many_orders_for_paying_clients() {
     let db = get_db().await;
     let mut clients = client_table(db.clone());
-    clients.add_condition(postgres_expr!("{} = {}", (clients["is_paying_client"]), true));
+    clients.add_condition(postgres_expr!(
+        "{} = {}",
+        (clients["is_paying_client"]),
+        true
+    ));
 
     let orders = clients
         .get_ref_as::<PostgresDB, ClientOrder>("orders")

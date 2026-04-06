@@ -53,8 +53,7 @@ struct Product {
 async fn test_associated_scalar() {
     let db = setup("assoc_scalar").await;
 
-    let associated =
-        db.associate::<i64>(postgres_expr!("SELECT COUNT(*) FROM \"assoc_scalar\""));
+    let associated = db.associate::<i64>(postgres_expr!("SELECT COUNT(*) FROM \"assoc_scalar\""));
     assert_eq!(associated.get().await.unwrap(), 3);
 }
 

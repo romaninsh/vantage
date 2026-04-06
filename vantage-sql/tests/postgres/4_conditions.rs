@@ -55,7 +55,11 @@ async fn test_multiple_conditions() {
     let db = get_db().await;
     let mut table = Product::postgres_table(db);
     table.add_condition(postgres_expr!("{} > {}", (table["price"]), 130i64));
-    table.add_condition(postgres_expr!("{} > {}", (table["price"]), (table["calories"])));
+    table.add_condition(postgres_expr!(
+        "{} > {}",
+        (table["price"]),
+        (table["calories"])
+    ));
 
     let products = table.list().await.unwrap();
     // price > 130 AND price > calories:

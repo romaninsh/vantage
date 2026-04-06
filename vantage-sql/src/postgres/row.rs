@@ -149,17 +149,17 @@ fn pg_column_to_json(row: &PgRow, ordinal: usize, type_name: &str) -> JsonValue 
             }
         }
         "FLOAT4" | "REAL" => {
-            if let Ok(v) = row.try_get::<f32, _>(ordinal) {
-                if let Some(n) = serde_json::Number::from_f64(v as f64) {
-                    return JsonValue::Number(n);
-                }
+            if let Ok(v) = row.try_get::<f32, _>(ordinal)
+                && let Some(n) = serde_json::Number::from_f64(v as f64)
+            {
+                return JsonValue::Number(n);
             }
         }
         "FLOAT8" | "DOUBLE PRECISION" => {
-            if let Ok(v) = row.try_get::<f64, _>(ordinal) {
-                if let Some(n) = serde_json::Number::from_f64(v) {
-                    return JsonValue::Number(n);
-                }
+            if let Ok(v) = row.try_get::<f64, _>(ordinal)
+                && let Some(n) = serde_json::Number::from_f64(v)
+            {
+                return JsonValue::Number(n);
             }
         }
         "NUMERIC" | "DECIMAL" => {
@@ -171,10 +171,10 @@ fn pg_column_to_json(row: &PgRow, ordinal: usize, type_name: &str) -> JsonValue 
             if let Ok(v) = row.try_get::<i32, _>(ordinal) {
                 return JsonValue::Number((v as i64).into());
             }
-            if let Ok(v) = row.try_get::<f64, _>(ordinal) {
-                if let Some(n) = serde_json::Number::from_f64(v) {
-                    return JsonValue::Number(n);
-                }
+            if let Ok(v) = row.try_get::<f64, _>(ordinal)
+                && let Some(n) = serde_json::Number::from_f64(v)
+            {
+                return JsonValue::Number(n);
             }
         }
         _ => {}
@@ -190,10 +190,10 @@ fn pg_column_to_json(row: &PgRow, ordinal: usize, type_name: &str) -> JsonValue 
     if let Ok(v) = row.try_get::<i32, _>(ordinal) {
         return JsonValue::Number((v as i64).into());
     }
-    if let Ok(v) = row.try_get::<f64, _>(ordinal) {
-        if let Some(n) = serde_json::Number::from_f64(v) {
-            return JsonValue::Number(n);
-        }
+    if let Ok(v) = row.try_get::<f64, _>(ordinal)
+        && let Some(n) = serde_json::Number::from_f64(v)
+    {
+        return JsonValue::Number(n);
     }
     if let Ok(v) = row.try_get::<String, _>(ordinal) {
         return JsonValue::String(v);

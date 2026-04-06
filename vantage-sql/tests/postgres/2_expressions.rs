@@ -52,10 +52,8 @@ fn rows(result: AnyPostgresType) -> Vec<JsonValue> {
 #[tokio::test]
 async fn test_select_all() {
     let db = setup("expr_select_all").await;
-    let expr = Expression::<AnyPostgresType>::new(
-        "SELECT * FROM \"expr_select_all\" ORDER BY id",
-        vec![],
-    );
+    let expr =
+        Expression::<AnyPostgresType>::new("SELECT * FROM \"expr_select_all\" ORDER BY id", vec![]);
     let result = rows(db.execute(&expr).await.unwrap());
 
     assert_eq!(result.len(), 3);

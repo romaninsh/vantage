@@ -145,8 +145,9 @@ async fn build_table(
             Ok(Some(table))
         }
         "postgres" => {
-            let url = std::env::var("POSTGRES_URL")
-                .unwrap_or_else(|_| "postgres://vantage:vantage@localhost:5433/vantage".to_string());
+            let url = std::env::var("POSTGRES_URL").unwrap_or_else(|_| {
+                "postgres://vantage:vantage@localhost:5433/vantage".to_string()
+            });
             let db = PostgresDB::connect(&url).await.map_err(|e| {
                 vantage_core::error!("Failed to connect to PostgreSQL", details = e.to_string())
             })?;

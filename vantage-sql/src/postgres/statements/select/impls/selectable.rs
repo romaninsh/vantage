@@ -1,9 +1,9 @@
 use vantage_expressions::traits::selectable::{Selectable, SourceRef};
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
-use crate::primitives::fx::Fx;
 use crate::postgres::statements::PostgresSelect;
 use crate::postgres::types::AnyPostgresType;
+use crate::primitives::fx::Fx;
 
 type Expr = Expression<AnyPostgresType>;
 

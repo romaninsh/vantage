@@ -111,7 +111,9 @@ impl TableSource for PostgresDB {
             .map(|col| {
                 Expression::new(
                     format!("\"{}\"::text LIKE {{}}", col.name()),
-                    vec![ExpressiveEnum::Scalar(AnyPostgresType::from(pattern.clone()))],
+                    vec![ExpressiveEnum::Scalar(AnyPostgresType::from(
+                        pattern.clone(),
+                    ))],
                 )
             })
             .collect();
@@ -190,7 +192,9 @@ impl TableSource for PostgresDB {
         E: Entity<Self::Value>,
     {
         let select = table.select();
-        let result = self.aggregate(&select, "count", postgres_expr!("*")).await?;
+        let result = self
+            .aggregate(&select, "count", postgres_expr!("*"))
+            .await?;
         result.try_get::<i64>().ok_or_else(|| {
             error!(
                 "get_table_count: expected i64",
@@ -364,8 +368,8 @@ impl TableSource for PostgresDB {
             .map(|c| c.name().to_string())
             .unwrap_or_else(|| "id".to_string());
 
-        let insert =
-            crate::postgres::statements::PostgresInsert::new(table.table_name()).with_record(record);
+        let insert = crate::postgres::statements::PostgresInsert::new(table.table_name())
+            .with_record(record);
 
         let base = insert.expr();
         let returning = Expression::new(
