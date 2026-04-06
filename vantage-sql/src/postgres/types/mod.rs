@@ -9,7 +9,6 @@
 //! - Float4     : REAL, FLOAT4
 //! - Float8     : DOUBLE PRECISION, FLOAT8
 //! - Text       : TEXT, VARCHAR(N), CHAR(N), NAME
-//! - Bytea      : BYTEA
 //!
 //! Uses `serde_json::Value` as the underlying value type with type variant
 //! tracking to prevent silent type confusion.
@@ -29,8 +28,7 @@ vantage_type_system! {
         Int8,       // i64
         Float4,     // f32
         Float8,     // f64
-        Text,       // String, &str
-        Bytea       // Vec<u8> — stored as base64 string
+        Text        // String, &str
     ]
 }
 
@@ -48,13 +46,6 @@ impl PostgresTypeVariants {
                 }
             }
             Value::String(_) => Some(Self::Text),
-            Value::Object(obj) => {
-                if obj.contains_key("bytea") {
-                    Some(Self::Bytea)
-                } else {
-                    None
-                }
-            }
             _ => None,
         }
     }

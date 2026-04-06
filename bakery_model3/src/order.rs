@@ -1,5 +1,7 @@
 use vantage_csv::{AnyCsvType, Csv};
-use vantage_sql::postgres::{AnyPostgresType, PostgresDB};
+#[allow(unused_imports)]
+use vantage_sql::postgres::AnyPostgresType;
+use vantage_sql::postgres::PostgresDB;
 use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::types::AnySurrealType;

@@ -64,14 +64,6 @@ pub(crate) fn bind_postgres_value<'q>(
             JsonValue::String(s) => query.bind(s.as_str()),
             _ => query.bind(None::<String>),
         },
-        Some(PostgresTypeVariants::Bytea) => match json {
-            JsonValue::Null => query.bind(None::<Vec<u8>>),
-            JsonValue::Object(o) => {
-                let s = o.get("bytea").and_then(|v| v.as_str()).unwrap_or("");
-                query.bind(s.as_bytes().to_vec())
-            }
-            _ => query.bind(None::<Vec<u8>>),
-        },
     }
 }
 

@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS product (
     price BIGINT NOT NULL CHECK (price > 0),
     bakery_id TEXT NOT NULL REFERENCES bakery(id),
     is_deleted BOOLEAN NOT NULL DEFAULT false,
-    inventory_stock BIGINT NOT NULL DEFAULT 0
+    inventory_stock BIGINT NOT NULL DEFAULT 0,
+    sticker TEXT
 );
 
 CREATE TABLE IF NOT EXISTS client_order (
@@ -60,13 +61,13 @@ VALUES
     ('biff', 'Biff Tannen', 'biff-3293@hotmail.com', '555-1955', false, -50.25, 'hill_valley')
 ON CONFLICT DO NOTHING;
 
-INSERT INTO product (id, name, calories, price, bakery_id, is_deleted, inventory_stock)
+INSERT INTO product (id, name, calories, price, bakery_id, is_deleted, inventory_stock, sticker)
 VALUES
-    ('flux_cupcake', 'Flux Capacitor Cupcake', 300, 120, 'hill_valley', false, 50),
-    ('delorean_donut', 'DeLorean Doughnut', 250, 135, 'hill_valley', false, 30),
-    ('time_tart', 'Time Traveler Tart', 200, 220, 'hill_valley', false, 20),
-    ('sea_pie', 'Enchantment Under the Sea Pie', 350, 299, 'hill_valley', false, 15),
-    ('hover_cookies', 'Hoverboard Cookies', 150, 199, 'hill_valley', false, 40)
+    ('flux_cupcake', 'Flux Capacitor Cupcake', 300, 120, 'hill_valley', false, 50, 'cat'),
+    ('delorean_donut', 'DeLorean Doughnut', 250, 135, 'hill_valley', false, 30, 'dog'),
+    ('time_tart', 'Time Traveler Tart', 200, 220, 'hill_valley', false, 20, NULL),
+    ('sea_pie', 'Enchantment Under the Sea Pie', 350, 299, 'hill_valley', false, 15, 'pig'),
+    ('hover_cookies', 'Hoverboard Cookies', 150, 199, 'hill_valley', false, 40, 'chicken')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO client_order (id, bakery_id, client_id, is_deleted, created_at)

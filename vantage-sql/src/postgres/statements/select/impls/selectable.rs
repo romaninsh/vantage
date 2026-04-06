@@ -11,14 +11,22 @@ impl PostgresSelect {
     pub fn as_aggregate(&self, func: &str, column: impl Expressive<AnyPostgresType>) -> Expr {
         let mut s = self.clone();
         s.clear_fields();
-        // PostgreSQL returns NUMERIC for SUM/AVG on integer types, which sqlx
-        // can't decode without bigdecimal. Cast to a decodable type.
         let agg = Fx::new(func, [column.expr()]);
-        let cast = Expression::new(
-            "CAST({} AS BIGINT)",
-            vec![ExpressiveEnum::Nested(agg.expr())],
-        );
-        s.add_expression(cast, None);
+
+        // PostgreSQL returns NUMERIC for SUM/AVG on integer types, which sqlx
+        // can't decode without bigdecimal. Cast those to BIGINT.
+        // MAX/MIN preserve the column's original type — no cast needed.
+        let needs_cast = matches!(func, "sum" | "avg");
+        if needs_cast {
+            let cast = Expression::new(
+                "CAST({} AS BIGINT)",
+                vec![ExpressiveEnum::Nested(agg.expr())],
+            );
+            s.add_expression(cast, None);
+        } else {
+            s.add_expression(agg, None);
+        }
+
         s.clear_order_by();
         s.render()
     }

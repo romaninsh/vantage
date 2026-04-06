@@ -20,7 +20,8 @@ impl PostgresUpdate {
 impl Expressive<AnyPostgresType> for PostgresUpdate {
     fn expr(&self) -> Expr {
         if self.fields.is_empty() {
-            return Expression::new(format!("UPDATE \"{}\"", self.table), vec![]);
+            // No fields to update — emit a no-op query rather than invalid SQL
+            return Expression::new("SELECT 1 WHERE FALSE", vec![]);
         }
 
         let set_parts: Vec<String> = self

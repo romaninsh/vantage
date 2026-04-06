@@ -103,6 +103,14 @@ fn prepare_typed_query(expr: &Expression<AnyPostgresType>) -> (String, Vec<AnyPo
     let template_parts: Vec<&str> = flattened.template.split("{}").collect();
     let mut param_counter = 0;
 
+    assert_eq!(
+        template_parts.len(),
+        flattened.parameters.len() + 1,
+        "template placeholder count ({}) doesn't match parameter count ({})",
+        template_parts.len() - 1,
+        flattened.parameters.len()
+    );
+
     sql.push_str(template_parts[0]);
 
     for (i, param) in flattened.parameters.iter().enumerate() {
