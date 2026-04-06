@@ -22,6 +22,8 @@ mod postgres {
     mod records;
     #[path = "5_references.rs"]
     mod references;
+    #[path = "2_search.rs"]
+    mod search;
     #[path = "3_select.rs"]
     mod select;
     #[path = "4_table_def.rs"]
