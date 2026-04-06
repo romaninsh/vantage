@@ -316,7 +316,7 @@ impl TryFrom<AnySurrealType> for Record<AnySurrealType> {
                         return Err(vantage_core::error!(
                             "Expected text key in record conversion",
                             key = format!("{:?}", other)
-                        ))
+                        ));
                     }
                 };
                 let val = AnySurrealType::from_cbor(&v).ok_or_else(|| {
