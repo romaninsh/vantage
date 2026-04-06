@@ -13,24 +13,82 @@ use vantage_expressions::{Expression, Expressive};
 /// Backends like CSV override these with structured parameters for in-memory evaluation.
 pub trait Operation<T>: Expressive<T> {
     /// Creates an equality condition: field = value
-    fn eq(&self, value: impl Into<T>) -> Expression<T> {
+    fn eq(&self, value: impl Expressive<T>) -> Expression<T> {
         Expression::new(
             "{} = {}",
             vec![
                 ExpressiveEnum::Nested(self.expr()),
-                ExpressiveEnum::Scalar(value.into()),
+                ExpressiveEnum::Nested(value.expr()),
+            ],
+        )
+    }
+
+    /// Creates a not-equal condition: field != value
+    fn ne(&self, value: impl Expressive<T>) -> Expression<T> {
+        Expression::new(
+            "{} != {}",
+            vec![
+                ExpressiveEnum::Nested(self.expr()),
+                ExpressiveEnum::Nested(value.expr()),
+            ],
+        )
+    }
+
+    /// Creates a greater-than condition: field > value
+    fn gt(&self, value: impl Expressive<T>) -> Expression<T> {
+        Expression::new(
+            "{} > {}",
+            vec![
+                ExpressiveEnum::Nested(self.expr()),
+                ExpressiveEnum::Nested(value.expr()),
+            ],
+        )
+    }
+
+    /// Creates a greater-than-or-equal condition: field >= value
+    fn gte(&self, value: impl Expressive<T>) -> Expression<T> {
+        Expression::new(
+            "{} >= {}",
+            vec![
+                ExpressiveEnum::Nested(self.expr()),
+                ExpressiveEnum::Nested(value.expr()),
+            ],
+        )
+    }
+
+    /// Creates a less-than condition: field < value
+    fn lt(&self, value: impl Expressive<T>) -> Expression<T> {
+        Expression::new(
+            "{} < {}",
+            vec![
+                ExpressiveEnum::Nested(self.expr()),
+                ExpressiveEnum::Nested(value.expr()),
+            ],
+        )
+    }
+
+    /// Creates a less-than-or-equal condition: field <= value
+    fn lte(&self, value: impl Expressive<T>) -> Expression<T> {
+        Expression::new(
+            "{} <= {}",
+            vec![
+                ExpressiveEnum::Nested(self.expr()),
+                ExpressiveEnum::Nested(value.expr()),
             ],
         )
     }
 
     /// Creates a membership condition: field IN (values_expression)
-    fn in_(&self, values: Expression<T>) -> Expression<T> {
+    fn in_(&self, values: impl Expressive<T>) -> Expression<T> {
         Expression::new(
             "{} IN ({})",
             vec![
                 ExpressiveEnum::Nested(self.expr()),
-                ExpressiveEnum::Nested(values),
+                ExpressiveEnum::Nested(values.expr()),
             ],
         )
     }
 }
+
+/// Blanket implementation: any type that implements `Expressive<T>` gets `Operation<T>` for free.
+impl<T, S: Expressive<T>> Operation<T> for S {}

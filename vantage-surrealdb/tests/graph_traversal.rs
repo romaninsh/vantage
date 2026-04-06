@@ -142,7 +142,8 @@ async fn query10_low_stock_products() {
         .field("name")
         .with_expression(surreal_expr!("inventory.stock"), None)
         .with_where(
-            Thing::new("bakery", "hill_valley").in_(surreal_expr!("").lref("owns", "bakery")),
+            Thing::new("bakery", "hill_valley")
+                .surreal_in(surreal_expr!("").lref("owns", "bakery")),
         )
         .with_where(surreal_expr!("inventory.stock < {}", 20i64))
         .with_where(surreal_expr!("is_deleted = {}", false))
@@ -253,7 +254,8 @@ fn render_query10() {
         .field("name")
         .with_expression(surreal_expr!("inventory.stock"), None)
         .with_where(
-            Thing::new("bakery", "hill_valley").in_(surreal_expr!("").lref("owns", "bakery")),
+            Thing::new("bakery", "hill_valley")
+                .surreal_in(surreal_expr!("").lref("owns", "bakery")),
         )
         .with_where(surreal_expr!("inventory.stock < {}", 20i64))
         .with_where(surreal_expr!("is_deleted = {}", false));

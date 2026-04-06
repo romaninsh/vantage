@@ -4,7 +4,7 @@
 //! It defines the core SurrealType trait and AnySurrealType for type-erased operations.
 
 use vantage_core::VantageError;
-use vantage_types::{TerminalRender, vantage_type_system};
+use vantage_types::{Record, TerminalRender, vantage_type_system};
 
 // Generate the SurrealDB type system
 vantage_type_system! {
@@ -290,6 +290,35 @@ impl TryFrom<AnySurrealType> for Vec<AnySurrealType> {
                 value = format!("{}", val)
             )
         })
+    }
+}
+
+impl TryFrom<AnySurrealType> for Record<AnySurrealType> {
+    type Error = VantageError;
+    fn try_from(val: AnySurrealType) -> Result<Self, Self::Error> {
+        let value = val.into_value();
+        let map = match value {
+            ciborium::Value::Map(m) => m,
+            ciborium::Value::Array(arr) => arr
+                .into_iter()
+                .find_map(|v| match v {
+                    ciborium::Value::Map(m) => Some(m),
+                    _ => None,
+                })
+                .ok_or_else(|| vantage_core::error!("Expected map in array result"))?,
+            _ => return Err(vantage_core::error!("Expected map or array result")),
+        };
+        Ok(map
+            .into_iter()
+            .filter_map(|(k, v)| {
+                let key = match k {
+                    ciborium::Value::Text(s) => s,
+                    _ => return None,
+                };
+                let val = AnySurrealType::from_cbor(&v)?;
+                Some((key, val))
+            })
+            .collect())
     }
 }
 
