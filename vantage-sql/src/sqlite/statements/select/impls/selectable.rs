@@ -1,10 +1,21 @@
 use vantage_expressions::traits::selectable::{Selectable, SourceRef};
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
+use crate::primitives::fx::Fx;
 use crate::sqlite::statements::SqliteSelect;
 use crate::sqlite::types::AnySqliteType;
 
 type Expr = Expression<AnySqliteType>;
+
+impl SqliteSelect {
+    pub fn as_aggregate(&self, func: &str, column: impl Expressive<AnySqliteType>) -> Expr {
+        let mut s = self.clone();
+        s.clear_fields();
+        s.add_expression(Fx::new(func, [column.expr()]), None);
+        s.clear_order_by();
+        s.render()
+    }
+}
 
 impl Selectable<AnySqliteType> for SqliteSelect {
     fn set_source(&mut self, source: impl Into<SourceRef<AnySqliteType>>, alias: Option<String>) {
@@ -130,13 +141,14 @@ impl Selectable<AnySqliteType> for SqliteSelect {
     }
 
     fn as_sum(&self, column: impl Expressive<AnySqliteType>) -> Expr {
-        let mut sum_select = self.clone();
-        sum_select.fields.clear();
-        sum_select.fields.push(Expression::new(
-            "SUM({})",
-            vec![ExpressiveEnum::Nested(column.expr())],
-        ));
-        sum_select.order_by.clear();
-        sum_select.render()
+        self.as_aggregate("sum", column)
+    }
+
+    fn as_max(&self, column: impl Expressive<AnySqliteType>) -> Expr {
+        self.as_aggregate("max", column)
+    }
+
+    fn as_min(&self, column: impl Expressive<AnySqliteType>) -> Expr {
+        self.as_aggregate("min", column)
     }
 }

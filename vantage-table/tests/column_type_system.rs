@@ -39,7 +39,6 @@ use vantage_table::column::core::ColumnType;
 use vantage_table::column::flags::ColumnFlag;
 use vantage_table::table::Table;
 use vantage_table::traits::column_like::ColumnLike;
-use vantage_table::traits::table_like::TableLike;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record, vantage_type_system};
 
@@ -285,12 +284,14 @@ impl TableSource for Type3TableSource {
         Expression::new(template, parameters)
     }
 
-    fn search_table_expr(
+    fn search_table_expr<E>(
         &self,
-        _table: &impl TableLike,
+        _table: &Table<Self, E>,
         search_value: &str,
-    ) -> Expression<Self::Value> {
-        // Simple mock - search in name field if exists
+    ) -> Expression<Self::Value>
+    where
+        E: Entity<Self::Value>,
+    {
         Expression::new(
             "name CONTAINS {}",
             vec![ExpressiveEnum::Scalar(ciborium::Value::Text(
@@ -349,7 +350,7 @@ impl TableSource for Type3TableSource {
         }
     }
 
-    async fn get_count<E>(&self, _table: &Table<Self, E>) -> Result<i64>
+    async fn get_table_count<E>(&self, _table: &Table<Self, E>) -> Result<i64>
     where
         E: Entity<Self::Value>,
         Self: Sized,
@@ -357,7 +358,7 @@ impl TableSource for Type3TableSource {
         Ok(self.data.len() as i64)
     }
 
-    async fn get_sum<E>(
+    async fn get_table_sum<E>(
         &self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Self::AnyType>,
@@ -371,7 +372,7 @@ impl TableSource for Type3TableSource {
         ))
     }
 
-    async fn get_max<E>(
+    async fn get_table_max<E>(
         &self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Self::AnyType>,
@@ -385,7 +386,7 @@ impl TableSource for Type3TableSource {
         ))
     }
 
-    async fn get_min<E>(
+    async fn get_table_min<E>(
         &self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Self::AnyType>,

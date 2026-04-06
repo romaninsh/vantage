@@ -52,22 +52,22 @@ where
     }
     /// Get count of records in the table
     pub async fn get_count(&self) -> Result<i64> {
-        self.data_source.get_count(self).await
+        self.data_source.get_table_count(self).await
     }
 
     /// Get sum of a column in the table
     pub async fn get_sum(&self, column: &T::Column<T::AnyType>) -> Result<T::Value> {
-        self.data_source.get_sum(self, column).await
+        self.data_source.get_table_sum(self, column).await
     }
 
     /// Get max of a column in the table
     pub async fn get_max(&self, column: &T::Column<T::AnyType>) -> Result<T::Value> {
-        self.data_source.get_max(self, column).await
+        self.data_source.get_table_max(self, column).await
     }
 
     /// Get min of a column in the table
     pub async fn get_min(&self, column: &T::Column<T::AnyType>) -> Result<T::Value> {
-        self.data_source.get_min(self, column).await
+        self.data_source.get_table_min(self, column).await
     }
 
     /// Create a count query expression (does not execute)

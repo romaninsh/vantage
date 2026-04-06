@@ -63,7 +63,7 @@ async fn test_build_select_count_query() {
 async fn test_get_count_products() {
     let db = get_db().await;
     let table = Product::surreal_table(db.clone());
-    let count = db.get_count(&table).await.unwrap();
+    let count = db.get_table_count(&table).await.unwrap();
     assert_eq!(count, 5);
 }
 
@@ -71,7 +71,7 @@ async fn test_get_count_products() {
 async fn test_get_count_clients() {
     let db = get_db().await;
     let table = Client::surreal_table(db.clone());
-    let count = db.get_count(&table).await.unwrap();
+    let count = db.get_table_count(&table).await.unwrap();
     assert_eq!(count, 3);
 }
 
@@ -80,7 +80,7 @@ async fn test_get_count_with_condition() {
     let db = get_db().await;
     let table = Client::surreal_table(db.clone())
         .with_condition(surreal_expr!("is_paying_client = {}", true));
-    let count = db.get_count(&table).await.unwrap();
+    let count = db.get_table_count(&table).await.unwrap();
     assert_eq!(count, 2);
 }
 
@@ -88,7 +88,7 @@ async fn test_get_count_with_condition() {
 async fn test_get_count_orders() {
     let db = get_db().await;
     let table = Order::surreal_table(db.clone());
-    let count = db.get_count(&table).await.unwrap();
+    let count = db.get_table_count(&table).await.unwrap();
     assert_eq!(count, 3);
 }
 
@@ -99,7 +99,7 @@ async fn test_get_sum_product_prices() {
     let db = get_db().await;
     let table = Product::surreal_table(db.clone());
     let col = Column::<AnySurrealType>::new("price");
-    let result = db.get_sum(&table, &col).await.unwrap();
+    let result = db.get_table_sum(&table, &col).await.unwrap();
     assert_eq!(result.try_get::<i64>().unwrap(), 973);
 }
 
@@ -108,7 +108,7 @@ async fn test_get_max_product_price() {
     let db = get_db().await;
     let table = Product::surreal_table(db.clone());
     let col = Column::<AnySurrealType>::new("price");
-    let result = db.get_max(&table, &col).await.unwrap();
+    let result = db.get_table_max(&table, &col).await.unwrap();
     assert_eq!(result.try_get::<i64>().unwrap(), 299);
 }
 
@@ -117,7 +117,7 @@ async fn test_get_min_product_price() {
     let db = get_db().await;
     let table = Product::surreal_table(db.clone());
     let col = Column::<AnySurrealType>::new("price");
-    let result = db.get_min(&table, &col).await.unwrap();
+    let result = db.get_table_min(&table, &col).await.unwrap();
     assert_eq!(result.try_get::<i64>().unwrap(), 120);
 }
 
@@ -128,7 +128,7 @@ async fn test_get_sum_with_condition() {
     let table =
         Product::surreal_table(db.clone()).with_condition(surreal_expr!("calories <= {}", 200));
     let col = Column::<AnySurrealType>::new("price");
-    let result = db.get_sum(&table, &col).await.unwrap();
+    let result = db.get_table_sum(&table, &col).await.unwrap();
     assert_eq!(result.try_get::<i64>().unwrap(), 419);
 }
 

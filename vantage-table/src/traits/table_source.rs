@@ -13,11 +13,7 @@ use vantage_expressions::{
 };
 use vantage_types::{Entity, Record};
 
-use crate::{
-    column::core::ColumnType,
-    table::Table,
-    traits::{column_like::ColumnLike, table_like::TableLike},
-};
+use crate::{column::core::ColumnType, table::Table, traits::column_like::ColumnLike};
 
 /// Trait for table data sources that defines column type separate from execution
 /// TableSource represents a data source that can create and manage tables
@@ -60,11 +56,14 @@ pub trait TableSource: DataSource + Clone + 'static {
     /// - MongoDB: `{ field: { $regex: 'value', $options: 'i' } }`
     ///
     /// The implementation should search across appropriate fields in the table.
-    fn search_table_expr(
+    fn search_table_expr<E>(
         &self,
-        table: &impl TableLike,
+        table: &Table<Self, E>,
         search_value: &str,
-    ) -> Expression<Self::Value>;
+    ) -> Expression<Self::Value>
+    where
+        E: Entity<Self::Value>,
+        Self: Sized;
 
     /// Get all data from a table as Record values with IDs (for ReadableValueSet implementation)
     async fn list_table_values<E>(
@@ -95,13 +94,13 @@ pub trait TableSource: DataSource + Clone + 'static {
         Self: Sized;
 
     /// Get count of records in the table
-    async fn get_count<E>(&self, table: &Table<Self, E>) -> Result<i64>
+    async fn get_table_count<E>(&self, table: &Table<Self, E>) -> Result<i64>
     where
         E: Entity<Self::Value>,
         Self: Sized;
 
     /// Get sum of a column in the table (returns native value type)
-    async fn get_sum<E>(
+    async fn get_table_sum<E>(
         &self,
         table: &Table<Self, E>,
         column: &Self::Column<Self::AnyType>,
@@ -111,7 +110,7 @@ pub trait TableSource: DataSource + Clone + 'static {
         Self: Sized;
 
     /// Get maximum value of a column in the table (returns native value type)
-    async fn get_max<E>(
+    async fn get_table_max<E>(
         &self,
         table: &Table<Self, E>,
         column: &Self::Column<Self::AnyType>,
@@ -121,7 +120,7 @@ pub trait TableSource: DataSource + Clone + 'static {
         Self: Sized;
 
     /// Get minimum value of a column in the table (returns native value type)
-    async fn get_min<E>(
+    async fn get_table_min<E>(
         &self,
         table: &Table<Self, E>,
         column: &Self::Column<Self::AnyType>,

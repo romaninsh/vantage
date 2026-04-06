@@ -1,6 +1,7 @@
 #[macro_use]
 mod macros;
 pub mod impls;
+mod operation;
 mod row;
 pub mod statements;
 pub mod types;
@@ -23,5 +24,26 @@ impl SqliteDB {
 
     pub fn pool(&self) -> &SqlitePool {
         &self.pool
+    }
+
+    /// Execute an aggregate query (COUNT, SUM, MAX, MIN etc.) and return the scalar result.
+    pub async fn aggregate(
+        &self,
+        select: &statements::SqliteSelect,
+        func: &str,
+        column: impl vantage_expressions::Expressive<AnySqliteType>,
+    ) -> vantage_core::Result<AnySqliteType> {
+        use vantage_expressions::ExprDataSource;
+        let expr = select.as_aggregate(func, column);
+        let result = self.execute(&expr).await?;
+        Ok(match result.value() {
+            serde_json::Value::Array(arr) => arr
+                .first()
+                .and_then(|row| row.as_object())
+                .and_then(|obj| obj.values().next())
+                .map(|v| AnySqliteType::untyped(v.clone()))
+                .unwrap_or(result),
+            _ => result,
+        })
     }
 }

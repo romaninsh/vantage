@@ -77,6 +77,12 @@ pub trait Selectable<T>: Send + Sync + Debug + Clone + Expressive<T> {
     /// Creates a SUM(column) expression from this query configuration.
     fn as_sum(&self, column: impl Expressive<T>) -> Expression<T>;
 
+    /// Creates a MAX(column) expression from this query configuration.
+    fn as_max(&self, column: impl Expressive<T>) -> Expression<T>;
+
+    /// Creates a MIN(column) expression from this query configuration.
+    fn as_min(&self, column: impl Expressive<T>) -> Expression<T>;
+
     // Default implementations for builder-style methods
 
     /// Builder pattern method identical to [`Self::set_source`] without alias.

@@ -14,7 +14,6 @@ use vantage_expressions::traits::expressive::{DeferredFn, ExpressiveEnum};
 use vantage_expressions::Expression;
 use vantage_table::column::core::{Column, ColumnType};
 use vantage_table::table::Table;
-use vantage_table::traits::table_like::TableLike;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
@@ -120,11 +119,14 @@ impl TableSource for PoolApi {
         Expression::new(template, parameters)
     }
 
-    fn search_table_expr(
+    fn search_table_expr<E>(
         &self,
-        _table: &impl TableLike,
+        _table: &Table<Self, E>,
         search_value: &str,
-    ) -> Expression<Self::Value> {
+    ) -> Expression<Self::Value>
+    where
+        E: Entity<Self::Value>,
+    {
         Expression::new(format!("SEARCH '{}'", search_value), vec![])
     }
 
@@ -194,7 +196,7 @@ impl TableSource for PoolApi {
         Ok(records.into_iter().next())
     }
 
-    async fn get_count<E>(&self, table: &Table<Self, E>) -> Result<i64>
+    async fn get_table_count<E>(&self, table: &Table<Self, E>) -> Result<i64>
     where
         E: Entity<Self::Value>,
         Self: Sized,
@@ -203,7 +205,7 @@ impl TableSource for PoolApi {
         Ok(records.len() as i64)
     }
 
-    async fn get_sum<E>(
+    async fn get_table_sum<E>(
         &self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Self::AnyType>,
@@ -215,7 +217,7 @@ impl TableSource for PoolApi {
         Err(error!("Sum not implemented for API pool backend"))
     }
 
-    async fn get_max<E>(
+    async fn get_table_max<E>(
         &self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Self::AnyType>,
@@ -227,7 +229,7 @@ impl TableSource for PoolApi {
         Err(error!("Max not implemented for API pool backend"))
     }
 
-    async fn get_min<E>(
+    async fn get_table_min<E>(
         &self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Self::AnyType>,
