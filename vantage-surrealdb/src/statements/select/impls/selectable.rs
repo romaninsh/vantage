@@ -103,4 +103,12 @@ impl<T: QueryResult> Selectable<AnySurrealType> for SurrealSelect<T> {
     fn as_sum(&self, column: impl Expressive<AnySurrealType>) -> Expr {
         Sum::new(column.expr()).into()
     }
+
+    fn as_max(&self, column: impl Expressive<AnySurrealType>) -> Expr {
+        Fx::new("math::max", vec![column.expr()]).into()
+    }
+
+    fn as_min(&self, column: impl Expressive<AnySurrealType>) -> Expr {
+        Fx::new("math::min", vec![column.expr()]).into()
+    }
 }
