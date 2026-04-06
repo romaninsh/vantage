@@ -12,6 +12,8 @@ use vantage_types::{Entity, Record};
 
 use crate::postgres::PostgresDB;
 use crate::postgres::types::AnyPostgresType;
+use crate::primitives::identifier::ident;
+use vantage_expressions::expr_any;
 
 /// Create an AnyPostgresType for an id value. If the id parses as an integer,
 /// use Int8 variant so PostgreSQL doesn't complain about `integer = text`.
@@ -104,17 +106,17 @@ impl TableSource for PostgresDB {
     where
         E: Entity<Self::Value>,
     {
-        let pattern = format!("%{}%", search_value.replace('%', "\\%"));
+        let escaped = search_value
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        let pattern = format!("%{}%", escaped);
         let conditions: Vec<Expression<AnyPostgresType>> = table
             .columns()
             .values()
             .map(|col| {
-                Expression::new(
-                    format!("\"{}\"::text LIKE {{}}", col.name()),
-                    vec![ExpressiveEnum::Scalar(AnyPostgresType::from(
-                        pattern.clone(),
-                    ))],
-                )
+                let p = pattern.clone();
+                postgres_expr!("{}::text LIKE {} ESCAPE '\\\\'", (ident(col.name())), p)
             })
             .collect();
 
@@ -155,10 +157,10 @@ impl TableSource for PostgresDB {
             .map(|c| c.name().to_string())
             .unwrap_or_else(|| "id".to_string());
 
-        let condition = Expression::new(
-            format!("\"{}\" = {{}}", id_field_name),
-            vec![ExpressiveEnum::Scalar(id_value(id))],
-        );
+        let condition = {
+            let id_val = id_value(id);
+            postgres_expr!("{} = {}", (ident(&id_field_name)), id_val)
+        };
         let select = table.select().with_condition(condition);
         let result = self.execute(&select.expr()).await?;
 
@@ -278,23 +280,26 @@ impl TableSource for PostgresDB {
             .with_record(record);
         let base = insert.expr();
 
-        let set_parts: Vec<String> = record
-            .keys()
-            .map(|k| format!("\"{}\" = EXCLUDED.\"{}\"", k, k))
-            .collect();
-        let conflict_clause = if set_parts.is_empty() {
-            format!(" ON CONFLICT (\"{}\") DO NOTHING", id_field_name)
+        let set_parts: Vec<Expression<AnyPostgresType>> = if record.is_empty() {
+            let upsert = expr_any!(
+                "{} ON CONFLICT ({}) DO NOTHING",
+                (base),
+                (ident(&id_field_name))
+            );
+            self.execute(&upsert).await?;
+            return self.get_table_value(table, id).await;
         } else {
-            format!(
-                " ON CONFLICT (\"{}\") DO UPDATE SET {}",
-                id_field_name,
-                set_parts.join(", ")
-            )
+            record
+                .keys()
+                .map(|k| expr_any!("{} = EXCLUDED.{}", (ident(k)), (ident(k))))
+                .collect()
         };
-
-        let upsert = Expression::new(
-            format!("{}{}", base.template, conflict_clause),
-            base.parameters.clone(),
+        let conflict_set = Expression::from_vec(set_parts, ", ");
+        let upsert = expr_any!(
+            "{} ON CONFLICT ({}) DO UPDATE SET {}",
+            (base),
+            (ident(&id_field_name)),
+            (conflict_set)
         );
         self.execute(&upsert).await?;
 
@@ -315,10 +320,10 @@ impl TableSource for PostgresDB {
             .map(|c| c.name().to_string())
             .unwrap_or_else(|| "id".to_string());
 
-        let id_condition = Expression::new(
-            format!("\"{}\" = {{}}", id_field_name),
-            vec![ExpressiveEnum::Scalar(id_value(id))],
-        );
+        let id_condition = {
+            let id_val = id_value(id);
+            postgres_expr!("{} = {}", (ident(&id_field_name)), id_val)
+        };
         let update = crate::postgres::statements::PostgresUpdate::new(table.table_name())
             .with_record(partial)
             .with_condition(id_condition);
@@ -336,10 +341,10 @@ impl TableSource for PostgresDB {
             .map(|c| c.name().to_string())
             .unwrap_or_else(|| "id".to_string());
 
-        let id_condition = Expression::new(
-            format!("\"{}\" = {{}}", id_field_name),
-            vec![ExpressiveEnum::Scalar(id_value(id))],
-        );
+        let id_condition = {
+            let id_val = id_value(id);
+            postgres_expr!("{} = {}", (ident(&id_field_name)), id_val)
+        };
         let delete = crate::postgres::statements::PostgresDelete::new(table.table_name())
             .with_condition(id_condition);
         self.execute(&delete.expr()).await?;
@@ -372,10 +377,7 @@ impl TableSource for PostgresDB {
             .with_record(record);
 
         let base = insert.expr();
-        let returning = Expression::new(
-            format!("{} RETURNING \"{}\"", base.template, id_field_name),
-            base.parameters.clone(),
-        );
+        let returning = expr_any!("{} RETURNING {}", (base), (ident(&id_field_name)));
         let result = self.execute(&returning).await?;
         let mut rows = parse_rows(result, &id_field_name)?;
         rows.swap_remove_index(0)

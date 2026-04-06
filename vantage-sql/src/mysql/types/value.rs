@@ -84,9 +84,7 @@ impl Expressive<AnyMysqlType> for &str {
     fn expr(&self) -> Expression<AnyMysqlType> {
         Expression::new(
             "{}",
-            vec![ExpressiveEnum::Scalar(AnyMysqlType::from(
-                self.to_string(),
-            ))],
+            vec![ExpressiveEnum::Scalar(AnyMysqlType::from(self.to_string()))],
         )
     }
 }

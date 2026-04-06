@@ -159,10 +159,10 @@ fn mysql_column_to_json(row: &MySqlRow, ordinal: usize, type_name: &str) -> Json
                 if let Ok(i) = v.parse::<i64>() {
                     return JsonValue::Number(i.into());
                 }
-                if let Ok(f) = v.parse::<f64>() {
-                    if let Some(n) = serde_json::Number::from_f64(f) {
-                        return JsonValue::Number(n);
-                    }
+                if let Ok(f) = v.parse::<f64>()
+                    && let Some(n) = serde_json::Number::from_f64(f)
+                {
+                    return JsonValue::Number(n);
                 }
                 return JsonValue::String(v);
             }

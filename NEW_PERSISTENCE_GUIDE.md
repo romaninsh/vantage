@@ -296,6 +296,58 @@ The macro handles three kinds of parameters:
 - `(sub_expr)` → nested expression (composed into the template)
 - `{deferred}` → lazy evaluation (resolved at execution time)
 
+### Identifier quoting
+
+SQL identifiers (table names, column names) need quoting to handle reserved words, spaces, and
+special characters. Different databases use different quote styles — PostgreSQL and SQLite use
+double quotes (`"name"`), MySQL uses backticks (`` `name` ``), SurrealDB uses something else
+entirely.
+
+Vantage centralises this in the `Identifier` struct (`vantage-sql/src/primitives/identifier.rs`).
+`Identifier` is quote-agnostic — it stores the name parts and optional alias, but the actual quoting
+happens in the `Expressive<T>` implementation for each backend type:
+
+```rust
+impl Expressive<AnyMysqlType> for Identifier {
+    fn expr(&self) -> Expression<AnyMysqlType> {
+        Expression::new(self.render_with('`'), vec![])  // `name`
+    }
+}
+```
+
+When you add a new SQL backend, add an `Expressive<YourAnyType>` impl with your quote character. The
+compiler picks the right impl based on the expression type context.
+
+In practice you use the `ident()` shorthand and pass it into the vendor macro with parentheses —
+the `(...)` syntax calls `.expr()` automatically, so quoting is handled by the type context:
+
+```rust
+use vantage_sql::primitives::identifier::{Identifier, ident};
+
+// The (ident(...)) syntax invokes Expressive — quoting is automatic
+let expr = mysql_expr!("SELECT {} FROM {} WHERE {} = {}",
+    (ident("name")), (ident("product")), (ident("price")), 100i64);
+// → SELECT `name` FROM `product` WHERE `price` = 100
+
+let expr = postgres_expr!("SELECT {} FROM {} WHERE {} = {}",
+    (ident("name")), (ident("product")), (ident("price")), 100i64);
+// → SELECT "name" FROM "product" WHERE "price" = 100
+```
+
+For qualified identifiers (table.column) and aliases:
+
+```rust
+let expr = sqlite_expr!("SELECT {}", (Identifier::with_dot("u", "name")));
+// → SELECT "u"."name"
+
+let expr = mysql_expr!("SELECT {}", (ident("name").with_alias("n")));
+// → SELECT `name` AS `n`
+```
+
+Test identifier quoting in `tests/<backend>/2_identifier.rs` — cover basic names, reserved words,
+spaces, hyphens, unicode, and names that start with numbers. These are all legal inside quoted
+identifiers in both PostgreSQL and MySQL.
+
 ### ExprDataSource
 
 Implement `DataSource` (marker) and `ExprDataSource<AnySqliteType>` on your DB struct. The `execute`
@@ -459,6 +511,7 @@ At this point you should have:
    - Type marker verification (bool binds as bool, not as string "true")
    - Cross-database deferred value resolution
    - AssociatedExpression with scalar, Record, and entity results
+   - Identifier quoting: basic names, reserved words, spaces, hyphens, unicode
 
 ## Step 3: Statement builders and SelectableDataSource
 
@@ -801,9 +854,8 @@ conditions get their own test file next.
 
 ### Error handling
 
-All `TableSource` methods return `vantage_core::Result<T>` (an alias for
-`Result<T, VantageError>`). Use the `error!` macro from `vantage_core` to create errors with
-structured context:
+All `TableSource` methods return `vantage_core::Result<T>` (an alias for `Result<T, VantageError>`).
+Use the `error!` macro from `vantage_core` to create errors with structured context:
 
 ```rust
 use vantage_core::error;
@@ -832,15 +884,14 @@ let data = std::fs::read("config.json")
     .context(error!("failed to load config"))?;
 ```
 
-This chains errors — the original `io::Error` is preserved as the source, so `Display` renders
-both messages and the source chain is available via `std::error::Error::source()`.
+This chains errors — the original `io::Error` is preserved as the source, so `Display` renders both
+messages and the source chain is available via `std::error::Error::source()`.
 
 ### Operation trait — condition building
 
-The `Operation` trait (from `vantage-table`) provides `.eq()`, `.ne()`, `.gt()`, `.gte()`,
-`.lt()`, `.lte()`, and `.in_()` methods for building conditions. It has a **blanket implementation**
-for all `Expressive<T>` types, so your columns get these methods automatically — no explicit impl
-needed.
+The `Operation` trait (from `vantage-table`) provides `.eq()`, `.ne()`, `.gt()`, `.gte()`, `.lt()`,
+`.lte()`, and `.in_()` methods for building conditions. It has a **blanket implementation** for all
+`Expressive<T>` types, so your columns get these methods automatically — no explicit impl needed.
 
 All methods accept `impl Expressive<YourAnyType>`, so you can pass native Rust values (`false`,
 `42`, `"hello"`), other columns (`table["other_field"]`), or full expressions. This requires your
@@ -924,14 +975,14 @@ let fetched = table.get(id).await.unwrap();
 ## Step 5: Relationships
 
 Tables can declare relationships using `with_one` and `with_many`, then traverse them at runtime
-with `get_ref_as`. The relationship system is provided by `vantage-table` — your backend just
-needs `column_table_values_expr` implemented to make it work.
+with `get_ref_as`. The relationship system is provided by `vantage-table` — your backend just needs
+`column_table_values_expr` implemented to make it work.
 
 Implement `column_table_values_expr` — it builds a subquery for a single column respecting current
 conditions. For SQL backends this is a `SELECT "col" FROM "table" WHERE ...` expression.
 
-Define relationships when constructing tables — `with_one` for foreign-key-to-parent,
-`with_many` for parent-to-children. Then traverse:
+Define relationships when constructing tables — `with_one` for foreign-key-to-parent, `with_many`
+for parent-to-children. Then traverse:
 
 ```rust
 let mut clients = client_table(db);
@@ -948,15 +999,15 @@ assert_eq!(orders.list().await.unwrap().len(), 3);
 ## Step 6: Using tables in a multi-backend application
 
 At this point your backend works — you can define tables, query data, and traverse relationships.
-But a real application typically has a *model crate* that defines entities once and offers table
+But a real application typically has a _model crate_ that defines entities once and offers table
 constructors for each backend. That's `bakery_model3` in the Vantage repo. The final piece is
 `AnyTable`, which lets you treat tables from different backends uniformly.
 
 ### AnyTable: the type-erased wrapper
 
 `AnyTable` erases the backend and entity types behind a uniform `serde_json::Value`-based interface.
-This is what makes it possible to write generic UI, CLI, or API code that doesn't care which database
-is behind it.
+This is what makes it possible to write generic UI, CLI, or API code that doesn't care which
+database is behind it.
 
 There are two ways to create one:
 
@@ -981,9 +1032,9 @@ matches on the user's chosen source, calls the right entity constructor, and wra
 identically regardless of which database is behind it.
 
 Because the values flow through as `serde_json::Value`, the CLI renderer can inspect types at
-runtime — booleans like `is_deleted` display as `true`/`false` with color highlighting, numbers
-stay numeric, and nulls render cleanly. Your type system work in Step 1 ensures these values
-arrive with the right JSON type rather than everything being a string.
+runtime — booleans like `is_deleted` display as `true`/`false` with color highlighting, numbers stay
+numeric, and nulls render cleanly. Your type system work in Step 1 ensures these values arrive with
+the right JSON type rather than everything being a string.
 
 Try it out:
 

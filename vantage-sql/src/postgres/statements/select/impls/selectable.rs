@@ -1,9 +1,10 @@
 use vantage_expressions::traits::selectable::{Selectable, SourceRef};
-use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
+use vantage_expressions::{Expression, Expressive, ExpressiveEnum, expr_any};
 
 use crate::postgres::statements::PostgresSelect;
 use crate::postgres::types::AnyPostgresType;
 use crate::primitives::fx::Fx;
+use crate::primitives::identifier::ident;
 
 type Expr = Expression<AnyPostgresType>;
 
@@ -13,15 +14,9 @@ impl PostgresSelect {
         s.clear_fields();
         let agg = Fx::new(func, [column.expr()]);
 
-        // PostgreSQL returns NUMERIC for SUM/AVG on integer types, which sqlx
-        // can't decode without bigdecimal. Cast those to BIGINT.
-        // MAX/MIN preserve the column's original type — no cast needed.
         let needs_cast = matches!(func, "sum" | "avg");
         if needs_cast {
-            let cast = Expression::new(
-                "CAST({} AS BIGINT)",
-                vec![ExpressiveEnum::Nested(agg.expr())],
-            );
+            let cast = expr_any!("CAST({} AS BIGINT)", (agg));
             s.add_expression(cast, None);
         } else {
             s.add_expression(agg, None);
@@ -37,31 +32,29 @@ impl Selectable<AnyPostgresType> for PostgresSelect {
         self.from.clear();
         let source_ref = source.into().into_expressive_enum();
         let expr = match (source_ref, alias) {
-            (ExpressiveEnum::Scalar(val), None) => Expression::new(
-                format!("\"{}\"", val.try_get::<String>().unwrap_or_default()),
-                vec![],
-            ),
-            (ExpressiveEnum::Scalar(val), Some(alias)) => Expression::new(
-                format!(
-                    "\"{}\" AS \"{}\"",
-                    val.try_get::<String>().unwrap_or_default(),
-                    alias
-                ),
-                vec![],
-            ),
+            (ExpressiveEnum::Scalar(val), None) => {
+                let Some(name) = val.try_get::<String>().filter(|s| !s.is_empty()) else {
+                    return;
+                };
+                ident(name).expr()
+            }
+            (ExpressiveEnum::Scalar(val), Some(alias)) => {
+                let Some(name) = val.try_get::<String>().filter(|s| !s.is_empty()) else {
+                    return;
+                };
+                ident(name).with_alias(alias).expr()
+            }
             (ExpressiveEnum::Nested(expr), None) => expr,
-            (ExpressiveEnum::Nested(expr), Some(alias)) => Expression::new(
-                format!("{{}} AS \"{}\"", alias),
-                vec![ExpressiveEnum::Nested(expr)],
-            ),
+            (ExpressiveEnum::Nested(expr), Some(alias)) => {
+                expr_any!("{} AS {}", (expr), (ident(alias)))
+            }
             _ => return,
         };
         self.from.push(expr);
     }
 
     fn add_field(&mut self, field: impl Into<String>) {
-        self.fields
-            .push(Expression::new(format!("\"{}\"", field.into()), vec![]));
+        self.fields.push(ident(field).expr());
     }
 
     fn add_expression(
@@ -71,10 +64,7 @@ impl Selectable<AnyPostgresType> for PostgresSelect {
     ) {
         let expr = expression.expr();
         let field = match alias {
-            Some(a) => Expression::new(
-                format!("{{}} AS \"{}\"", a),
-                vec![ExpressiveEnum::Nested(expr)],
-            ),
+            Some(a) => expr_any!("{} AS {}", (expr), (ident(a))),
             None => expr,
         };
         self.fields.push(field);
