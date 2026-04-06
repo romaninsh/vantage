@@ -3235,6 +3235,8 @@ dependencies = [
 name = "vantage-sql"
 version = "0.4.0"
 dependencies = [
+ "async-trait",
+ "futures-core",
  "indexmap",
  "paste",
  "serde",
@@ -3242,7 +3244,9 @@ dependencies = [
  "sqlx",
  "tokio",
  "vantage-core",
+ "vantage-dataset",
  "vantage-expressions",
+ "vantage-table",
  "vantage-types",
 ]
 

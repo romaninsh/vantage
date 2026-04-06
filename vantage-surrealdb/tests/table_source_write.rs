@@ -63,7 +63,7 @@ async fn test_insert_table_value() {
     );
 
     // Verify via direct read
-    let count = table.data_source().get_count(&table).await.unwrap();
+    let count = table.data_source().get_table_count(&table).await.unwrap();
     assert_eq!(count, 1);
 
     db.execute(&surreal_expr!("DELETE tw_insert")).await.ok();
@@ -140,7 +140,7 @@ async fn test_replace_table_value() {
     );
 
     // Verify only 1 record
-    let count = table.data_source().get_count(&table).await.unwrap();
+    let count = table.data_source().get_table_count(&table).await.unwrap();
     assert_eq!(count, 1);
 
     db.execute(&surreal_expr!("DELETE tw_replace")).await.ok();
@@ -210,7 +210,10 @@ async fn test_delete_table_value() {
         .await
         .unwrap();
 
-    assert_eq!(table.data_source().get_count(&table).await.unwrap(), 2);
+    assert_eq!(
+        table.data_source().get_table_count(&table).await.unwrap(),
+        2
+    );
 
     table
         .data_source()
@@ -218,7 +221,10 @@ async fn test_delete_table_value() {
         .await
         .expect("delete_table_value failed");
 
-    assert_eq!(table.data_source().get_count(&table).await.unwrap(), 1);
+    assert_eq!(
+        table.data_source().get_table_count(&table).await.unwrap(),
+        1
+    );
 
     // Deleted record should not be fetchable
     let remaining = table.data_source().list_table_values(&table).await.unwrap();
@@ -246,7 +252,10 @@ async fn test_delete_table_all_values() {
             .unwrap();
     }
 
-    assert_eq!(table.data_source().get_count(&table).await.unwrap(), 5);
+    assert_eq!(
+        table.data_source().get_table_count(&table).await.unwrap(),
+        5
+    );
 
     table
         .data_source()
@@ -254,7 +263,10 @@ async fn test_delete_table_all_values() {
         .await
         .expect("delete_table_all_values failed");
 
-    assert_eq!(table.data_source().get_count(&table).await.unwrap(), 0);
+    assert_eq!(
+        table.data_source().get_table_count(&table).await.unwrap(),
+        0
+    );
 }
 
 // -- round-trip: insert → read → patch → read → delete --
@@ -335,7 +347,10 @@ async fn test_full_crud_lifecycle() {
         .await
         .unwrap();
 
-    assert_eq!(table.data_source().get_count(&table).await.unwrap(), 0);
+    assert_eq!(
+        table.data_source().get_table_count(&table).await.unwrap(),
+        0
+    );
 
     db.execute(&surreal_expr!("DELETE tw_crud")).await.ok();
 }

@@ -107,7 +107,7 @@ impl TableSource for Csv {
         Ok(records.into_iter().next())
     }
 
-    async fn get_count<E>(&self, table: &Table<Self, E>) -> Result<i64>
+    async fn get_table_count<E>(&self, table: &Table<Self, E>) -> Result<i64>
     where
         E: Entity<Self::Value>,
         Self: Sized,
@@ -116,7 +116,7 @@ impl TableSource for Csv {
         Ok(records.len() as i64)
     }
 
-    async fn get_sum<E>(
+    async fn get_table_sum<E>(
         &self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Self::AnyType>,
@@ -128,7 +128,7 @@ impl TableSource for Csv {
         Err(error!("Sum not implemented for CSV backend"))
     }
 
-    async fn get_max<E>(
+    async fn get_table_max<E>(
         &self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Self::AnyType>,
@@ -140,7 +140,7 @@ impl TableSource for Csv {
         Err(error!("Max not implemented for CSV backend"))
     }
 
-    async fn get_min<E>(
+    async fn get_table_min<E>(
         &self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Self::AnyType>,
@@ -393,7 +393,7 @@ mod tests {
         let csv = test_csv();
         let table = Table::<Csv, EmptyEntity>::new("product", csv);
 
-        let count = table.data_source().get_count(&table).await.unwrap();
+        let count = table.data_source().get_table_count(&table).await.unwrap();
         assert_eq!(count, 5);
     }
 

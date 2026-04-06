@@ -85,6 +85,6 @@ where
     }
 
     async fn get_count(&self) -> Result<i64> {
-        self.data_source().get_count(self).await
+        self.data_source().get_table_count(self).await
     }
 }

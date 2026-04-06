@@ -135,7 +135,7 @@ impl TableSource for RestApi {
         Ok(records.into_iter().next())
     }
 
-    async fn get_count<E>(&self, table: &Table<Self, E>) -> Result<i64>
+    async fn get_table_count<E>(&self, table: &Table<Self, E>) -> Result<i64>
     where
         E: Entity<Self::Value>,
         Self: Sized,
@@ -146,7 +146,7 @@ impl TableSource for RestApi {
         Ok(records.len() as i64)
     }
 
-    async fn get_sum<E>(
+    async fn get_table_sum<E>(
         &self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Self::AnyType>,
@@ -158,7 +158,7 @@ impl TableSource for RestApi {
         Err(error!("Sum not implemented for API backend"))
     }
 
-    async fn get_max<E>(
+    async fn get_table_max<E>(
         &self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Self::AnyType>,
@@ -170,7 +170,7 @@ impl TableSource for RestApi {
         Err(error!("Max not implemented for API backend"))
     }
 
-    async fn get_min<E>(
+    async fn get_table_min<E>(
         &self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Self::AnyType>,

@@ -205,7 +205,7 @@ impl TableSource for MockTableSource {
         im_table.get_some_value().await
     }
 
-    async fn get_count<E>(&self, table: &Table<Self, E>) -> Result<i64>
+    async fn get_table_count<E>(&self, table: &Table<Self, E>) -> Result<i64>
     where
         E: Entity,
         Self: Sized,
@@ -216,7 +216,7 @@ impl TableSource for MockTableSource {
         }
     }
 
-    async fn get_sum<E>(
+    async fn get_table_sum<E>(
         &self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Self::AnyType>,
@@ -230,7 +230,7 @@ impl TableSource for MockTableSource {
         ))
     }
 
-    async fn get_max<E>(
+    async fn get_table_max<E>(
         &self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Self::AnyType>,
@@ -244,7 +244,7 @@ impl TableSource for MockTableSource {
         ))
     }
 
-    async fn get_min<E>(
+    async fn get_table_min<E>(
         &self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Self::AnyType>,
@@ -556,7 +556,7 @@ mod tests {
 
         let table =
             Table::<MockTableSource, TestUser>::new("users", mock).into_entity::<TestUser>();
-        let count = table.data_source().get_count(&table).await.unwrap();
+        let count = table.data_source().get_table_count(&table).await.unwrap();
         assert_eq!(count, 2);
     }
 }

@@ -10,8 +10,8 @@ use vantage_expressions::Expression;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_types::Record;
 
+use crate::operation::{OP_EQ, OP_IN};
 use crate::type_system::AnyCsvType;
-use vantage_table::operation::{OP_EQ, OP_IN};
 
 /// Evaluate a single condition expression against a set of records,
 /// returning only the records that match.

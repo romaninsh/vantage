@@ -219,6 +219,16 @@ impl Selectable<serde_json::Value> for MockSelect {
         let source = self.source.as_ref().unwrap().as_str();
         expr!("SELECT SUM({}) FROM {}", (column), source)
     }
+
+    fn as_max(&self, column: impl Expressive<Value>) -> Expression<Value> {
+        let source = self.source.as_ref().unwrap().as_str();
+        expr!("SELECT MAX({}) FROM {}", (column), source)
+    }
+
+    fn as_min(&self, column: impl Expressive<Value>) -> Expression<Value> {
+        let source = self.source.as_ref().unwrap().as_str();
+        expr!("SELECT MIN({}) FROM {}", (column), source)
+    }
 }
 
 impl From<MockSelect> for Expression<serde_json::Value> {

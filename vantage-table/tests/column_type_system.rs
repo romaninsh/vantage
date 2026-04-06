@@ -349,7 +349,7 @@ impl TableSource for Type3TableSource {
         }
     }
 
-    async fn get_count<E>(&self, _table: &Table<Self, E>) -> Result<i64>
+    async fn get_table_count<E>(&self, _table: &Table<Self, E>) -> Result<i64>
     where
         E: Entity<Self::Value>,
         Self: Sized,
@@ -357,7 +357,7 @@ impl TableSource for Type3TableSource {
         Ok(self.data.len() as i64)
     }
 
-    async fn get_sum<E>(
+    async fn get_table_sum<E>(
         &self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Self::AnyType>,
@@ -371,7 +371,7 @@ impl TableSource for Type3TableSource {
         ))
     }
 
-    async fn get_max<E>(
+    async fn get_table_max<E>(
         &self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Self::AnyType>,
@@ -385,7 +385,7 @@ impl TableSource for Type3TableSource {
         ))
     }
 
-    async fn get_min<E>(
+    async fn get_table_min<E>(
         &self,
         _table: &Table<Self, E>,
         _column: &Self::Column<Self::AnyType>,
