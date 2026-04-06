@@ -39,17 +39,10 @@ impl SurrealDB {
                     params.insert(param_name, s.clone());
                 }
                 vantage_expressions::ExpressiveEnum::Deferred(_) => {
-                    // Deferred expressions get parameterized as null for now
-                    param_counter += 1;
-                    let param_name = format!("_arg{}", param_counter);
-                    query.push_str(&format!("${}", param_name));
-                    panic!("deffered shouldn't be here!");
-                    // params.insert(param_name, Value::Null);
+                    unreachable!("Deferred params should be resolved before prepare_query");
                 }
                 vantage_expressions::ExpressiveEnum::Nested(_) => {
-                    // Nested expressions get rendered directly into the query
-                    panic!("neshed should have been flatened!");
-                    // query.push_str(&nested.preview());
+                    unreachable!("Nested params should be flattened before prepare_query");
                 }
             }
 

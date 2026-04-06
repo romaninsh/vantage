@@ -1,12 +1,35 @@
 use vantage_core::{Context, Result};
-use vantage_expressions::{DeferredFn, ExprDataSource, Expression};
+use vantage_expressions::{DeferredFn, ExprDataSource, Expression, ExpressiveEnum};
 
 use crate::{AnySurrealType, SurrealType, surrealdb::SurrealDB};
 
+/// Resolve all Deferred parameters in an expression by calling them.
+async fn resolve_deferred(expr: &Expression<AnySurrealType>) -> Result<Expression<AnySurrealType>> {
+    let mut resolved_params = Vec::new();
+
+    for param in &expr.parameters {
+        match param {
+            ExpressiveEnum::Deferred(deferred_fn) => {
+                let result = deferred_fn.call().await?;
+                resolved_params.push(result);
+            }
+            ExpressiveEnum::Nested(inner) => {
+                let resolved_inner = Box::pin(resolve_deferred(inner)).await?;
+                resolved_params.push(ExpressiveEnum::Nested(resolved_inner));
+            }
+            other => {
+                resolved_params.push(other.clone());
+            }
+        }
+    }
+
+    Ok(Expression::new(expr.template.clone(), resolved_params))
+}
+
 impl ExprDataSource<AnySurrealType> for SurrealDB {
-    // TODO: this implementation is too crude, might need to make it more elegant
     async fn execute(&self, expr: &Expression<AnySurrealType>) -> Result<AnySurrealType> {
-        let (query_str, params) = self.prepare_query(expr);
+        let resolved = resolve_deferred(expr).await?;
+        let (query_str, params) = self.prepare_query(&resolved);
         let params_cbor = params.to_cbor();
         let client = self.inner.lock().await;
         let result = client
