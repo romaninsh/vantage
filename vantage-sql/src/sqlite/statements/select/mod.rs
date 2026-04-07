@@ -16,7 +16,7 @@ pub struct SqliteSelect {
     pub from: Vec<Expr>,
     pub joins: Vec<SqliteSelectJoin>,
     pub where_conditions: Vec<Expr>,
-    pub order_by: Vec<(Expr, bool)>,
+    pub order_by: Vec<(Expr, vantage_expressions::Order)>,
     pub group_by: Vec<Expr>,
     pub having: Vec<Expr>,
     pub windows: Vec<(String, Window<AnySqliteType>)>,

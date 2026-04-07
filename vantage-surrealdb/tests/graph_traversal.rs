@@ -3,7 +3,7 @@
 //! Requires: `cd scripts && ./ingress.sh` to populate the v1 database.
 //! These tests are read-only — they don't modify the v1 data.
 
-use vantage_expressions::{ExprDataSource, Expressive, Selectable};
+use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
 use vantage_surrealdb::{
     operation::RefOperation, select::SurrealSelect, surreal_expr, surrealdb::SurrealDB,
     thing::Thing, types::AnySurrealType,
@@ -36,7 +36,7 @@ async fn query01_bakery_products_via_graph() {
     // Wrap in subquery to get ORDER BY working
     let mut outer = SurrealSelect::new();
     outer.set_source(inner.expr(), None);
-    outer.add_order_by(surreal_expr!("name"), true);
+    outer.add_order_by(surreal_expr!("name"), Order::Asc);
 
     let rows = outer.get(&db).await.unwrap();
     assert_eq!(rows.len(), 5);
@@ -61,7 +61,7 @@ async fn query02_bakery_clients_via_reverse_graph() {
     // Wrap to get ordered results
     let mut outer = SurrealSelect::new();
     outer.set_source(inner.expr(), None);
-    outer.add_order_by(surreal_expr!("name"), true);
+    outer.add_order_by(surreal_expr!("name"), Order::Asc);
 
     let rows = outer.get(&db).await.unwrap();
     assert_eq!(rows.len(), 3);
@@ -85,7 +85,7 @@ async fn query03_product_stock() {
         .field("price")
         .with_expression(surreal_expr!("inventory.stock"), Some("stock".into()))
         .with_where(surreal_expr!("is_deleted = {}", false))
-        .with_order_by("name", true);
+        .with_order_by("name", Order::Asc);
 
     let rows = select.get(&db).await.unwrap();
     assert_eq!(rows.len(), 5);
@@ -147,7 +147,7 @@ async fn query10_low_stock_products() {
         )
         .with_where(surreal_expr!("inventory.stock < {}", 20i64))
         .with_where(surreal_expr!("is_deleted = {}", false))
-        .with_order_by("name", true);
+        .with_order_by("name", Order::Asc);
 
     let rows = select.get(&db).await.unwrap();
 
@@ -175,7 +175,7 @@ async fn subquery_paying_clients() {
     // Wrap to get ordered results
     let mut outer = SurrealSelect::new();
     outer.set_source(inner.expr(), None);
-    outer.add_order_by(surreal_expr!("name"), true);
+    outer.add_order_by(surreal_expr!("name"), Order::Asc);
 
     let rows = outer.get(&db).await.unwrap();
     assert_eq!(rows.len(), 2); // Marty + Doc are paying
@@ -214,7 +214,7 @@ fn render_query01_wrapped() {
 
     let mut outer = SurrealSelect::new();
     outer.set_source(inner.expr(), None);
-    outer.add_order_by(surreal_expr!("name"), true);
+    outer.add_order_by(surreal_expr!("name"), Order::Asc);
 
     assert_eq!(
         outer.preview(),
@@ -229,7 +229,7 @@ fn render_query02_wrapped() {
 
     let mut outer = SurrealSelect::new();
     outer.set_source(inner.expr(), None);
-    outer.add_order_by(surreal_expr!("name"), true);
+    outer.add_order_by(surreal_expr!("name"), Order::Asc);
 
     assert_eq!(
         outer.preview(),

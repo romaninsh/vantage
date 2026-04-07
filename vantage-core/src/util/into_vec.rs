@@ -29,3 +29,17 @@ impl<T: Clone> IntoVec<T> for &[T] {
         self.to_vec()
     }
 }
+
+/// Single `&str` becomes a one-element `Vec<String>`.
+impl IntoVec<String> for &str {
+    fn into_vec(self) -> Vec<String> {
+        vec![self.to_string()]
+    }
+}
+
+/// Array of `&str` becomes `Vec<String>`.
+impl<const N: usize> IntoVec<String> for [&str; N] {
+    fn into_vec(self) -> Vec<String> {
+        self.into_iter().map(|s| s.to_string()).collect()
+    }
+}

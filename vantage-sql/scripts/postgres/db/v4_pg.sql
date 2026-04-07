@@ -20,6 +20,9 @@
 --
 -- =============================================================================
 
+-- Required for EXCLUDE USING GIST with non-geometric types
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
 -- Enum type for ticket priority
 CREATE TYPE priority_level AS ENUM ('low', 'medium', 'high', 'critical');
 
@@ -63,8 +66,7 @@ CREATE TABLE users (
     is_active       BOOLEAN NOT NULL DEFAULT TRUE,
     skills          TEXT[] DEFAULT '{}',
     last_login_ip   INET,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    tenure          INTERVAL GENERATED ALWAYS AS (NOW() - created_at) STORED
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 INSERT INTO users (id, name, email, role, department_id, salary, is_active, skills, last_login_ip, created_at) VALUES

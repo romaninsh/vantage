@@ -5,7 +5,7 @@
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use vantage_expressions::{ExprDataSource, Expressive, Selectable};
+use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
 use vantage_surrealdb::field::Field;
 use vantage_surrealdb::statements::delete::SurrealDelete;
 use vantage_surrealdb::statements::insert::SurrealInsert;
@@ -127,7 +127,7 @@ fn select_order_by() {
     let select = SurrealSelect::new()
         .from("products")
         .with_field("name")
-        .with_order_by(Field::new("price"), false);
+        .with_order_by(Field::new("price"), Order::Desc);
 
     assert!(select.preview().contains("ORDER BY price DESC"));
 }
@@ -136,7 +136,7 @@ fn select_order_by() {
 fn select_order_by_asc() {
     let select = SurrealSelect::new()
         .from("products")
-        .with_order_by(Field::new("name"), true);
+        .with_order_by(Field::new("name"), Order::Asc);
 
     let p = select.preview();
     assert!(p.contains("ORDER BY name"), "got: {}", p);
@@ -204,7 +204,7 @@ fn select_clear_methods() {
         .from("t")
         .with_field("a")
         .with_where(Field::new("x").eq(1i64))
-        .with_order_by(Field::new("a"), true)
+        .with_order_by(Field::new("a"), Order::Asc)
         .with_group_by(Field::new("a"));
 
     assert!(select.has_fields());
@@ -308,7 +308,7 @@ fn select_complex_query() {
         .with_expression(surreal_expr!("count()"), Some("cnt".to_string()))
         .with_where(Field::new("order.status").eq("confirmed"))
         .with_group_by(Field::new("product"))
-        .with_order_by(Field::new("total"), false)
+        .with_order_by(Field::new("total"), Order::Desc)
         .with_limit(10);
 
     let p = select.preview();
@@ -372,7 +372,7 @@ async fn select_live_with_where_and_order() {
         .with_field("name")
         .with_field("score")
         .with_where(Field::new("score").gt(60i64))
-        .with_order_by(Field::new("score"), false);
+        .with_order_by(Field::new("score"), Order::Desc);
 
     let result = db.execute(&select.expr()).await.unwrap();
     let rows: Vec<indexmap::IndexMap<String, AnySurrealType>> = result.try_get().unwrap();
@@ -1122,7 +1122,7 @@ async fn insert_select_update_flow() {
         .with_field("name")
         .with_field("score")
         .with_where(Field::new("score").gte(50i64))
-        .with_order_by(Field::new("score"), false);
+        .with_order_by(Field::new("score"), Order::Desc);
 
     let result = db.execute(&select.expr()).await.unwrap();
     let rows: Vec<indexmap::IndexMap<String, AnySurrealType>> = result.try_get().unwrap();

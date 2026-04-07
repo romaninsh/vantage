@@ -39,8 +39,11 @@ where
 
         // Add all order clauses
         for (expr, direction) in self.order_by.values() {
-            let ascending = matches!(direction, crate::sorting::SortDirection::Ascending);
-            select.add_order_by(expr.clone(), ascending);
+            let order = match direction {
+                crate::sorting::SortDirection::Ascending => vantage_expressions::Order::Asc,
+                crate::sorting::SortDirection::Descending => vantage_expressions::Order::Desc,
+            };
+            select.add_order_by(expr.clone(), order);
         }
 
         // Apply pagination

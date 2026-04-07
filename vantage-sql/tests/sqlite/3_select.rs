@@ -2,7 +2,7 @@
 //!
 //! All queries built using the Selectable trait methods, not custom builders.
 
-use vantage_expressions::{ExprDataSource, Expressive, Selectable};
+use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
 #[allow(unused_imports)]
 use vantage_sql::sqlite::SqliteType;
 use vantage_sql::sqlite::statements::SqliteSelect;
@@ -85,7 +85,7 @@ fn test_select_with_condition() {
 fn test_select_order_and_limit() {
     let s = SqliteSelect::new()
         .with_source("product")
-        .with_order(sqlite_expr!("\"price\""), false)
+        .with_order(sqlite_expr!("\"price\""), Order::Desc)
         .with_limit(Some(2), None);
     assert_eq!(
         s.preview(),
@@ -206,7 +206,7 @@ async fn test_execute_order_and_limit() {
 
     let select = SqliteSelect::new()
         .with_source("product")
-        .with_order(sqlite_expr!("\"price\""), false)
+        .with_order(sqlite_expr!("\"price\""), Order::Desc)
         .with_limit(Some(1), None);
 
     let record: Record<AnySqliteType> = db.associate(select.expr()).get().await.unwrap();

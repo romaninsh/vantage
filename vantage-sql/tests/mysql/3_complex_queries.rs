@@ -4,7 +4,7 @@
 #![allow(dead_code)]
 
 use serde::Deserialize;
-use vantage_expressions::{ExprDataSource, Expressive, Selectable};
+use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
 use vantage_sql::mysql::MysqlDB;
 use vantage_sql::mysql::statements::MysqlSelect;
 use vantage_sql::mysql::statements::select::join::MysqlSelectJoin;
@@ -69,7 +69,7 @@ async fn test_q1() {
             .with_field("email")
             .with_condition(ident("role").eq("admin"))
             .with_condition(ident("salary").gt(50000.0f64))
-            .with_order(ident("name"), true),
+            .with_order(ident("name"), Order::Asc),
         "SELECT `id`, `name`, `email` FROM `users` \
          WHERE `role` = 'admin' AND `salary` > 50000.0 \
          ORDER BY `name`",
@@ -124,8 +124,8 @@ async fn test_q2() {
                 (ident("salary").dot_of("u")),
                 30000.0f64
             ))
-            .with_order(ident("name").dot_of("d"), true)
-            .with_order(ident("name").dot_of("u"), true),
+            .with_order(ident("name").dot_of("d"), Order::Asc)
+            .with_order(ident("name").dot_of("u"), Order::Asc),
         "SELECT `u`.`id`, `u`.`name`, `d`.`name` AS `department_name` \
          FROM `users` AS `u` \
          INNER JOIN `departments` AS `d` ON `d`.`id` = `u`.`department_id` \
@@ -195,7 +195,7 @@ async fn test_q3() {
         ))
         .with_group_by(ident("id").dot_of("u"))
         .with_group_by(ident("name").dot_of("u"))
-        .with_order(ident("total_spent"), false);
+        .with_order(ident("total_spent"), Order::Desc);
 
     let users: Vec<UserSpend> = check_and_run(
         &select,
@@ -280,7 +280,7 @@ async fn test_q4() {
                 (Fx::new("avg", [price.expr()])),
                 500.0f64
             ))
-            .with_order(ident("product_count"), false),
+            .with_order(ident("product_count"), Order::Desc),
         "SELECT `category`, COUNT(*) AS `product_count`, AVG(`price`) AS `avg_price`, \
          MIN(`price`) AS `cheapest`, MAX(`price`) AS `most_expensive` \
          FROM `products` \
@@ -357,7 +357,7 @@ async fn test_q5() {
                 Some("order_count".into()),
             )
             .with_condition(Fx::new("exists", [exists_subquery.expr()]))
-            .with_order(ident("order_count"), false)
+            .with_order(ident("order_count"), Order::Desc)
             .with_limit(Some(20), None),
         concat!(
             r#"SELECT `u`.`id`, `u`.`name`, "#,
@@ -442,7 +442,7 @@ async fn test_q6() {
                 (ident("order_count").dot_of("stats")),
                 2i64
             ))
-            .with_order(ident("avg_total").dot_of("stats"), false),
+            .with_order(ident("avg_total").dot_of("stats"), Order::Desc),
         concat!(
             r#"SELECT `u`.`name`, `stats`.`order_count`, `stats`.`avg_total` "#,
             r#"FROM `users` AS `u` "#,
@@ -531,7 +531,7 @@ async fn test_q7() {
                 None,
             )
             .with_field("display_name")
-            .with_order(ident("salary"), false),
+            .with_order(ident("salary"), Order::Desc),
         "SELECT `id`, `name`, `salary`, \
          CASE WHEN `salary` >= 100000.0 THEN 'senior' WHEN `salary` >= 60000.0 THEN 'mid' \
          WHEN `salary` >= 30000.0 THEN 'junior' ELSE 'intern' END AS `band`, \
@@ -688,7 +688,7 @@ async fn test_q9() {
             .with_expression(
                 Window::new()
                     .partition_by(dept.clone())
-                    .order_by(salary.clone(), false)
+                    .order_by(salary.clone(), Order::Desc)
                     .rows("UNBOUNDED PRECEDING", "CURRENT ROW")
                     .apply(Fx::new("sum", [salary.expr()])),
                 Some("running_total".into()),
@@ -696,7 +696,7 @@ async fn test_q9() {
             .with_condition(mysql_expr!("{} IS NOT NULL", (dept)))
             .with_window("win", Window::new()
                 .partition_by(dept.clone())
-                .order_by(salary.clone(), false)),
+                .order_by(salary.clone(), Order::Desc)),
         concat!(
             r#"SELECT `u`.`department_id`, `u`.`name`, `u`.`salary`, "#,
             r#"ROW_NUMBER() OVER win AS `row_num`, "#,
@@ -777,7 +777,7 @@ async fn test_q10() {
                 mysql_expr!("{} = {}",
                     (ident("id").dot_of("u")),
                     (ident("user_id").dot_of("t")))))
-            .with_order(ident("revenue").dot_of("t"), false)
+            .with_order(ident("revenue").dot_of("t"), Order::Desc)
             .with_limit(Some(10), None),
         concat!(
             r#"WITH active_orders AS (SELECT `user_id`, COUNT(*) AS `cnt`, SUM(`total`) AS `revenue` "#,
@@ -875,7 +875,7 @@ async fn test_q11() {
             .with_field("name")
             .with_field("depth")
             .with_field("path")
-            .with_order(ident("path"), true),
+            .with_order(ident("path"), Order::Asc),
         concat!(
             r#"WITH RECURSIVE dept_tree(id, name, depth, path) AS "#,
             r#"(SELECT `id`, `name`, 0, `name` FROM `departments` WHERE `parent_id` IS NULL "#,
@@ -963,7 +963,7 @@ async fn test_q12() {
                 "%Pro%"
             ))
             .with_condition(mysql_expr!("{} > {}", (ident("stock").dot_of("p")), 0i64))
-            .with_order(ident("price").dot_of("p"), true)
+            .with_order(ident("price").dot_of("p"), Order::Asc)
             .with_limit(Some(50), None),
         concat!(
             r#"SELECT DISTINCT `p`.`id`, `p`.`name`, `p`.`price` "#,
@@ -1054,7 +1054,7 @@ async fn test_q13() {
                 5.0f64
             ))
             .with_condition(JsonExtract::new(metadata.clone(), "in_stock").eq(1i64))
-            .with_order(ident("rating"), false),
+            .with_order(ident("rating"), Order::Desc),
         concat!(
             r#"SELECT `id`, `name`, "#,
             r#"JSON_EXTRACT(`metadata`, '$.color') AS `color`, "#,
@@ -1153,8 +1153,8 @@ async fn test_q14() {
             .with_group_by(ident("month"))
             .with_group_by(ident("name").dot_of("d"))
             .with_having(mysql_expr!("{} > {}", (sum_total), 100.0f64))
-            .with_order(ident("month"), false)
-            .with_order(ident("monthly_revenue"), false),
+            .with_order(ident("month"), Order::Desc)
+            .with_order(ident("monthly_revenue"), Order::Desc),
         concat!(
             r#"SELECT DATE_FORMAT(`o`.`created_at`, '%Y-%m') AS `month`, "#,
             r#"`d`.`name` AS `department`, "#,

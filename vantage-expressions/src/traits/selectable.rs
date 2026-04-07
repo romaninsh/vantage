@@ -3,6 +3,63 @@ use std::fmt::Debug;
 use super::expressive::Expressive;
 use crate::{Expression, ExpressiveEnum};
 
+/// Sort direction and null handling for ORDER BY clauses.
+///
+/// ```ignore
+/// .with_order(ident("name"), Order::Asc)
+/// .with_order(ident("score"), Order::Desc.nulls_last())
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Order {
+    pub ascending: bool,
+    pub nulls: Option<Nulls>,
+}
+
+/// NULL placement in ORDER BY.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Nulls {
+    First,
+    Last,
+}
+
+#[allow(non_upper_case_globals)]
+impl Order {
+    pub const Asc: Order = Order {
+        ascending: true,
+        nulls: None,
+    };
+    pub const Desc: Order = Order {
+        ascending: false,
+        nulls: None,
+    };
+
+    pub fn nulls_last(self) -> Self {
+        Self {
+            nulls: Some(Nulls::Last),
+            ..self
+        }
+    }
+
+    pub fn nulls_first(self) -> Self {
+        Self {
+            nulls: Some(Nulls::First),
+            ..self
+        }
+    }
+
+    /// Returns the SQL suffix for this ordering, e.g. `""`, `" DESC"`, `" DESC NULLS LAST"`.
+    pub fn suffix(&self) -> &'static str {
+        match (self.ascending, self.nulls) {
+            (true, None) => "",
+            (false, None) => " DESC",
+            (true, Some(Nulls::Last)) => " NULLS LAST",
+            (true, Some(Nulls::First)) => " NULLS FIRST",
+            (false, Some(Nulls::Last)) => " DESC NULLS LAST",
+            (false, Some(Nulls::First)) => " DESC NULLS FIRST",
+        }
+    }
+}
+
 /// Unified protocol for building SELECT queries across different databases.
 ///
 /// The `Selectable` trait provides a standardized interface for building SELECT-style
@@ -29,8 +86,8 @@ pub trait Selectable<T>: Send + Sync + Debug + Clone + Expressive<T> {
     /// Sets whether the query should return distinct results.
     fn set_distinct(&mut self, distinct: bool);
 
-    /// Adds an ORDER BY clause with direction.
-    fn add_order_by(&mut self, expression: impl Expressive<T>, ascending: bool);
+    /// Adds an ORDER BY clause with direction and optional null handling.
+    fn add_order_by(&mut self, expression: impl Expressive<T>, order: Order);
 
     /// Adds a GROUP BY clause.
     fn add_group_by(&mut self, expression: impl Expressive<T>);
@@ -113,11 +170,11 @@ pub trait Selectable<T>: Send + Sync + Debug + Clone + Expressive<T> {
     }
 
     /// Builder pattern method identical to [`Self::add_order_by`].
-    fn with_order(mut self, expression: impl Expressive<T>, ascending: bool) -> Self
+    fn with_order(mut self, expression: impl Expressive<T>, order: Order) -> Self
     where
         Self: Sized,
     {
-        Self::add_order_by(&mut self, expression, ascending);
+        Self::add_order_by(&mut self, expression, order);
         self
     }
 

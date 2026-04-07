@@ -7,7 +7,7 @@ use super::SurrealSelect;
 use super::select_field::SelectField;
 use super::select_target::SelectTarget;
 use vantage_core::IntoVec;
-use vantage_expressions::Expressive;
+use vantage_expressions::{Expressive, Order};
 
 impl SurrealSelect {
     /// Creates a new SELECT query builder
@@ -55,9 +55,9 @@ impl<T: QueryResult> SurrealSelect<T> {
     pub fn with_order_by(
         mut self,
         field: impl ExpressiveOr<AnySurrealType, Identifier>,
-        ascending: bool,
+        order: Order,
     ) -> Self {
-        self.order_by.push((field.field_expr(), ascending));
+        self.order_by.push((field.field_expr(), order.ascending));
         self
     }
 

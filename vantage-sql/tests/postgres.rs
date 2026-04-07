@@ -6,6 +6,8 @@ mod postgres {
     mod associated;
     #[path = "3_complex_queries.rs"]
     mod complex_queries;
+    #[path = "3_complex_queries_pg.rs"]
+    mod complex_queries_pg;
     #[path = "4_conditions.rs"]
     mod conditions;
     #[path = "2_defer.rs"]

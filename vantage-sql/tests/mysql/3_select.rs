@@ -1,6 +1,6 @@
 //! Test 3a: MysqlSelect via Selectable trait + SelectableDataSource execution.
 
-use vantage_expressions::{ExprDataSource, Expressive, Selectable};
+use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
 #[allow(unused_imports)]
 use vantage_sql::mysql::MysqlType;
 use vantage_sql::mysql::statements::MysqlSelect;
@@ -79,7 +79,7 @@ fn test_select_with_condition() {
 fn test_select_order_and_limit() {
     let s = MysqlSelect::new()
         .with_source("product")
-        .with_order(mysql_expr!("`price`"), false)
+        .with_order(mysql_expr!("`price`"), Order::Desc)
         .with_limit(Some(2), None);
     assert_eq!(
         s.preview(),
@@ -200,7 +200,7 @@ async fn test_execute_order_and_limit() {
 
     let select = MysqlSelect::new()
         .with_source("sel_order")
-        .with_order(mysql_expr!("`price`"), false)
+        .with_order(mysql_expr!("`price`"), Order::Desc)
         .with_limit(Some(1), None);
 
     let record: Record<AnyMysqlType> = db.associate(select.expr()).get().await.unwrap();
