@@ -3,7 +3,7 @@ use crate::sum::{Fx, Sum};
 use crate::{AnySurrealType, Expr, surreal_expr};
 use vantage_expressions::result::QueryResult;
 use vantage_expressions::traits::expressive::Expressive;
-use vantage_expressions::traits::selectable::{Selectable, SourceRef};
+use vantage_expressions::traits::selectable::{Order, Selectable, SourceRef};
 
 use super::super::SurrealSelect;
 use super::super::select_field::SelectField;
@@ -38,8 +38,8 @@ impl<T: QueryResult> Selectable<AnySurrealType> for SurrealSelect<T> {
         self.distinct = distinct;
     }
 
-    fn add_order_by(&mut self, expression: impl Expressive<AnySurrealType>, ascending: bool) {
-        self.order_by.push((expression.expr(), ascending));
+    fn add_order_by(&mut self, expression: impl Expressive<AnySurrealType>, order: Order) {
+        self.order_by.push((expression.expr(), order.ascending));
     }
 
     fn add_group_by(&mut self, expression: impl Expressive<AnySurrealType>) {
