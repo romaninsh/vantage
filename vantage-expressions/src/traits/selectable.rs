@@ -8,7 +8,6 @@ use crate::{Expression, ExpressiveEnum};
 /// ```ignore
 /// .with_order(ident("name"), Order::Asc)
 /// .with_order(ident("score"), Order::Desc.nulls_last())
-/// .with_order(ident("id"), true)  // bool still works
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Order {

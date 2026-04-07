@@ -37,7 +37,7 @@ impl Interval {
             "month" | "months" => self.amount * 30,
             "week" | "weeks" => self.amount * 7,
             "day" | "days" => self.amount,
-            "hour" | "hours" => self.amount / 24,
+            "hour" | "hours" => (self.amount as f64 / 24.0).round() as i64,
             _ => self.amount,
         }
     }

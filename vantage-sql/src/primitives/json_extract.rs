@@ -57,7 +57,8 @@ pub fn json_extract<T: Debug + Display + Clone>(
 
 /// Helper: create an inline SQL literal (not a bind parameter).
 fn sql_lit<T: Debug + Display + Clone>(s: &str) -> Expression<T> {
-    Expression::new(format!("'{s}'"), vec![])
+    let escaped = s.replace('\'', "''");
+    Expression::new(format!("'{escaped}'"), vec![])
 }
 
 // -- SQLite: JSON_EXTRACT("col", '$.a.b') ------------------------------------
@@ -113,6 +114,10 @@ impl Expressive<crate::postgres::types::AnyPostgresType>
     fn expr(&self) -> Expression<crate::postgres::types::AnyPostgresType> {
         // Build chain: source -> 'a' -> 'b' ->> 'last'
         // All intermediate steps use -> (returns jsonb), final step uses ->> (returns text)
+        assert!(
+            !self.path.is_empty(),
+            "JsonExtract requires at least one path segment"
+        );
         let mut current = self.source.clone();
         let last = self.path.len() - 1;
 
