@@ -140,6 +140,31 @@ fn mysql_column_to_json(row: &MySqlRow, ordinal: usize, type_name: &str) -> Json
                 return JsonValue::Number(v.into());
             }
         }
+        "BIGINT UNSIGNED" => {
+            if let Ok(v) = row.try_get::<u64, _>(ordinal) {
+                return JsonValue::Number(v.into());
+            }
+        }
+        "INT UNSIGNED" | "MEDIUMINT UNSIGNED" => {
+            if let Ok(v) = row.try_get::<u32, _>(ordinal) {
+                return JsonValue::Number((v as i64).into());
+            }
+        }
+        "SMALLINT UNSIGNED" => {
+            if let Ok(v) = row.try_get::<u16, _>(ordinal) {
+                return JsonValue::Number((v as i64).into());
+            }
+        }
+        "TINYINT UNSIGNED" => {
+            if let Ok(v) = row.try_get::<u8, _>(ordinal) {
+                return JsonValue::Number((v as i64).into());
+            }
+        }
+        "JSON" => {
+            if let Ok(v) = row.try_get::<serde_json::Value, _>(ordinal) {
+                return v;
+            }
+        }
         "FLOAT" => {
             if let Ok(v) = row.try_get::<f32, _>(ordinal)
                 && let Some(n) = serde_json::Number::from_f64(v as f64)
@@ -154,7 +179,21 @@ fn mysql_column_to_json(row: &MySqlRow, ordinal: usize, type_name: &str) -> Json
                 return JsonValue::Number(n);
             }
         }
-        "DECIMAL" | "NUMERIC" => {
+        "DECIMAL" | "NUMERIC" | "NEWDECIMAL" => {
+            if let Ok(v) = row.try_get::<rust_decimal::Decimal, _>(ordinal) {
+                use rust_decimal::prelude::ToPrimitive;
+                if v.scale() == 0
+                    && let Some(i) = v.to_i64()
+                {
+                    return JsonValue::Number(i.into());
+                }
+                if let Some(f) = v.to_f64()
+                    && let Some(n) = serde_json::Number::from_f64(f)
+                {
+                    return JsonValue::Number(n);
+                }
+            }
+            // Fallback: try as string and parse
             if let Ok(v) = row.try_get::<String, _>(ordinal) {
                 if let Ok(i) = v.parse::<i64>() {
                     return JsonValue::Number(i.into());

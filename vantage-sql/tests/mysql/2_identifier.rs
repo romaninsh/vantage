@@ -3,7 +3,7 @@
 //! and handles unusual but valid MySQL identifier characters.
 
 use vantage_sql::mysql_expr;
-use vantage_sql::primitives::identifier::{Identifier, ident};
+use vantage_sql::primitives::identifier::ident;
 
 // ── ident() in expr macro via (parentheses) ───────────────────────────────────
 
@@ -27,7 +27,7 @@ fn test_id_with_alias() {
 
 #[test]
 fn test_id_qualified() {
-    let expr = mysql_expr!("SELECT {}", (Identifier::with_dot("t", "name")));
+    let expr = mysql_expr!("SELECT {}", (ident("name").dot_of("t")));
     assert_eq!(expr.preview(), "SELECT `t`.`name`");
 }
 

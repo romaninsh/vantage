@@ -4,6 +4,8 @@ mod postgres {
     mod aggregates;
     #[path = "2_associated.rs"]
     mod associated;
+    #[path = "3_complex_queries.rs"]
+    mod complex_queries;
     #[path = "4_conditions.rs"]
     mod conditions;
     #[path = "2_defer.rs"]

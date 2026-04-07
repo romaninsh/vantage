@@ -1,7 +1,7 @@
 //! Test 2e: Identifier quoting with postgres_expr! macro.
 
 use vantage_sql::postgres_expr;
-use vantage_sql::primitives::identifier::{Identifier, ident};
+use vantage_sql::primitives::identifier::ident;
 
 #[test]
 fn test_id_in_select() {
@@ -23,7 +23,7 @@ fn test_id_with_alias() {
 
 #[test]
 fn test_id_qualified() {
-    let expr = postgres_expr!("SELECT {}", (Identifier::with_dot("t", "name")));
+    let expr = postgres_expr!("SELECT {}", (ident("name").dot_of("t")));
     assert_eq!(expr.preview(), "SELECT \"t\".\"name\"");
 }
 

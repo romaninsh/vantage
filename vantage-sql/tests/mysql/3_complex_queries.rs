@@ -5,26 +5,26 @@
 
 use serde::Deserialize;
 use vantage_expressions::{ExprDataSource, Expressive, Selectable};
+use vantage_sql::mysql::MysqlDB;
+use vantage_sql::mysql::statements::MysqlSelect;
+use vantage_sql::mysql::statements::select::join::MysqlSelectJoin;
+use vantage_sql::mysql_expr;
 use vantage_sql::primitives::identifier::ident;
-use vantage_sql::sqlite::SqliteDB;
-use vantage_sql::sqlite::statements::SqliteSelect;
-use vantage_sql::sqlite::statements::select::join::SqliteSelectJoin;
-use vantage_sql::sqlite_expr;
 use vantage_table::operation::Operation;
 use vantage_types::{Record, TryFromRecord};
 
-const DB_PATH: &str = "sqlite:../target/bakery.sqlite?mode=ro";
+const MYSQL_URL: &str = "mysql://vantage:vantage@localhost:3306/vantage";
 
-async fn get_db() -> SqliteDB {
-    SqliteDB::connect(DB_PATH)
+async fn get_db() -> MysqlDB {
+    MysqlDB::connect(MYSQL_URL)
         .await
-        .expect("Failed to connect to bakery.sqlite")
+        .expect("Failed to connect to MySQL")
 }
 
 /// Checks that `select.preview()` matches `expected_sql`, then executes the
 /// query and returns deserialized rows.
 async fn check_and_run<T: for<'de> Deserialize<'de>>(
-    select: &SqliteSelect,
+    select: &MysqlSelect,
     expected_sql: &str,
 ) -> Vec<T> {
     assert_eq!(select.preview(), expected_sql);
@@ -62,17 +62,17 @@ struct UserBasic {
 #[tokio::test]
 async fn test_q1() {
     let users: Vec<UserBasic> = check_and_run(
-        &SqliteSelect::new()
+        &MysqlSelect::new()
             .with_source("users")
             .with_field("id")
             .with_field("name")
             .with_field("email")
-            .with_condition(sqlite_expr!("\"role\" = {}", "admin"))
-            .with_condition(sqlite_expr!("\"salary\" > {}", 50000.0f64))
-            .with_order(sqlite_expr!("\"name\""), true),
-        "SELECT \"id\", \"name\", \"email\" FROM \"users\" \
-         WHERE \"role\" = 'admin' AND \"salary\" > 50000.0 \
-         ORDER BY \"name\"",
+            .with_condition(ident("role").eq("admin"))
+            .with_condition(ident("salary").gt(50000.0f64))
+            .with_order(ident("name"), true),
+        "SELECT `id`, `name`, `email` FROM `users` \
+         WHERE `role` = 'admin' AND `salary` > 50000.0 \
+         ORDER BY `name`",
     )
     .await;
 
@@ -102,7 +102,7 @@ struct UserWithDept {
 #[tokio::test]
 async fn test_q2() {
     let users: Vec<UserWithDept> = check_and_run(
-        &SqliteSelect::new()
+        &MysqlSelect::new()
             .with_source_as("users", "u")
             .with_expression(ident("id").dot_of("u"), None)
             .with_expression(ident("name").dot_of("u"), None)
@@ -110,27 +110,27 @@ async fn test_q2() {
                 ident("name").dot_of("d").with_alias("department_name"),
                 None,
             )
-            .with_join(SqliteSelectJoin::inner(
+            .with_join(MysqlSelectJoin::inner(
                 "departments",
                 "d",
-                sqlite_expr!(
+                mysql_expr!(
                     "{} = {}",
                     (ident("id").dot_of("d")),
                     (ident("department_id").dot_of("u"))
                 ),
             ))
-            .with_condition(sqlite_expr!(
+            .with_condition(mysql_expr!(
                 "{} >= {}",
                 (ident("salary").dot_of("u")),
                 30000.0f64
             ))
             .with_order(ident("name").dot_of("d"), true)
             .with_order(ident("name").dot_of("u"), true),
-        "SELECT \"u\".\"id\", \"u\".\"name\", \"d\".\"name\" AS \"department_name\" \
-         FROM \"users\" AS \"u\" \
-         INNER JOIN \"departments\" AS \"d\" ON \"d\".\"id\" = \"u\".\"department_id\" \
-         WHERE \"u\".\"salary\" >= 30000.0 \
-         ORDER BY \"d\".\"name\", \"u\".\"name\"",
+        "SELECT `u`.`id`, `u`.`name`, `d`.`name` AS `department_name` \
+         FROM `users` AS `u` \
+         INNER JOIN `departments` AS `d` ON `d`.`id` = `u`.`department_id` \
+         WHERE `u`.`salary` >= 30000.0 \
+         ORDER BY `d`.`name`, `u`.`name`",
     )
     .await;
 
@@ -170,7 +170,7 @@ struct UserSpend {
 async fn test_q3() {
     use vantage_sql::primitives::fx::Fx;
 
-    let select = SqliteSelect::new()
+    let select = MysqlSelect::new()
         .with_source_as("users", "u")
         .with_expression(ident("id").dot_of("u"), None)
         .with_expression(ident("name").dot_of("u"), None)
@@ -179,15 +179,15 @@ async fn test_q3() {
                 "coalesce",
                 [
                     Fx::new("sum", [ident("total").dot_of("o").expr()]).expr(),
-                    sqlite_expr!("{}", 0.0f64),
+                    mysql_expr!("{}", 0.0f64),
                 ],
             ),
             Some("total_spent".into()),
         )
-        .with_join(SqliteSelectJoin::left(
+        .with_join(MysqlSelectJoin::left(
             "orders",
             "o",
-            sqlite_expr!(
+            mysql_expr!(
                 "{} = {}",
                 (ident("user_id").dot_of("o")),
                 (ident("id").dot_of("u"))
@@ -199,12 +199,12 @@ async fn test_q3() {
 
     let users: Vec<UserSpend> = check_and_run(
         &select,
-        "SELECT \"u\".\"id\", \"u\".\"name\", \
-         COALESCE(SUM(\"o\".\"total\"), 0.0) AS \"total_spent\" \
-         FROM \"users\" AS \"u\" \
-         LEFT JOIN \"orders\" AS \"o\" ON \"o\".\"user_id\" = \"u\".\"id\" \
-         GROUP BY \"u\".\"id\", \"u\".\"name\" \
-         ORDER BY \"total_spent\" DESC",
+        "SELECT `u`.`id`, `u`.`name`, \
+         COALESCE(SUM(`o`.`total`), 0.0) AS `total_spent` \
+         FROM `users` AS `u` \
+         LEFT JOIN `orders` AS `o` ON `o`.`user_id` = `u`.`id` \
+         GROUP BY `u`.`id`, `u`.`name` \
+         ORDER BY `total_spent` DESC",
     )
     .await;
 
@@ -256,11 +256,11 @@ async fn test_q4() {
 
     let price = ident("price");
     let stats: Vec<CategoryStats> = check_and_run(
-        &SqliteSelect::new()
+        &MysqlSelect::new()
             .with_source("products")
             .with_field("category")
             .with_expression(
-                Fx::new("count", [sqlite_expr!("*")]),
+                Fx::new("count", [mysql_expr!("*")]),
                 Some("product_count".into()),
             )
             .with_expression(Fx::new("avg", [price.expr()]), Some("avg_price".into()))
@@ -270,23 +270,23 @@ async fn test_q4() {
                 Some("most_expensive".into()),
             )
             .with_group_by(ident("category"))
-            .with_having(sqlite_expr!(
+            .with_having(mysql_expr!(
                 "{} > {}",
-                (Fx::new("count", [sqlite_expr!("*")])),
+                (Fx::new("count", [mysql_expr!("*")])),
                 1i64
             ))
-            .with_having(sqlite_expr!(
+            .with_having(mysql_expr!(
                 "{} < {}",
                 (Fx::new("avg", [price.expr()])),
                 500.0f64
             ))
             .with_order(ident("product_count"), false),
-        "SELECT \"category\", COUNT(*) AS \"product_count\", AVG(\"price\") AS \"avg_price\", \
-         MIN(\"price\") AS \"cheapest\", MAX(\"price\") AS \"most_expensive\" \
-         FROM \"products\" \
-         GROUP BY \"category\" \
-         HAVING COUNT(*) > 1 AND AVG(\"price\") < 500.0 \
-         ORDER BY \"product_count\" DESC",
+        "SELECT `category`, COUNT(*) AS `product_count`, AVG(`price`) AS `avg_price`, \
+         MIN(`price`) AS `cheapest`, MAX(`price`) AS `most_expensive` \
+         FROM `products` \
+         GROUP BY `category` \
+         HAVING COUNT(*) > 1 AND AVG(`price`) < 500.0 \
+         ORDER BY `product_count` DESC",
     )
     .await;
 
@@ -326,45 +326,45 @@ struct UserOrderCount {
 async fn test_q5() {
     use vantage_sql::primitives::fx::Fx;
 
-    let user_id_match = sqlite_expr!(
+    let user_id_match = mysql_expr!(
         "{} = {}",
         (ident("user_id").dot_of("o")),
         (ident("id").dot_of("u"))
     );
 
-    let count_subquery = SqliteSelect::new()
+    let count_subquery = MysqlSelect::new()
         .with_source_as("orders", "o")
-        .with_expression(Fx::new("count", [sqlite_expr!("*")]), None)
+        .with_expression(Fx::new("count", [mysql_expr!("*")]), None)
         .with_condition(user_id_match.clone());
 
-    let exists_subquery = SqliteSelect::new()
+    let exists_subquery = MysqlSelect::new()
         .with_source_as("orders", "o")
-        .with_expression(sqlite_expr!("1"), None)
+        .with_expression(mysql_expr!("1"), None)
         .with_condition(user_id_match)
-        .with_condition(sqlite_expr!(
+        .with_condition(mysql_expr!(
             "{} = {}",
             (ident("status").dot_of("o")),
             "completed"
         ));
 
     let users: Vec<UserOrderCount> = check_and_run(
-        &SqliteSelect::new()
+        &MysqlSelect::new()
             .with_source_as("users", "u")
             .with_expression(ident("id").dot_of("u"), None)
             .with_expression(ident("name").dot_of("u"), None)
             .with_expression(
-                sqlite_expr!("({})", (count_subquery)),
+                mysql_expr!("({})", (count_subquery)),
                 Some("order_count".into()),
             )
             .with_condition(Fx::new("exists", [exists_subquery.expr()]))
             .with_order(ident("order_count"), false)
             .with_limit(Some(20), None),
         concat!(
-            r#"SELECT "u"."id", "u"."name", "#,
-            r#"(SELECT COUNT(*) FROM "orders" AS "o" WHERE "o"."user_id" = "u"."id") AS "order_count" "#,
-            r#"FROM "users" AS "u" "#,
-            r#"WHERE EXISTS(SELECT 1 FROM "orders" AS "o" WHERE "o"."user_id" = "u"."id" AND "o"."status" = 'completed') "#,
-            r#"ORDER BY "order_count" DESC "#,
+            r#"SELECT `u`.`id`, `u`.`name`, "#,
+            r#"(SELECT COUNT(*) FROM `orders` AS `o` WHERE `o`.`user_id` = `u`.`id`) AS `order_count` "#,
+            r#"FROM `users` AS `u` "#,
+            r#"WHERE EXISTS(SELECT 1 FROM `orders` AS `o` WHERE `o`.`user_id` = `u`.`id` AND `o`.`status` = 'completed') "#,
+            r#"ORDER BY `order_count` DESC "#,
             r#"LIMIT 20"#,
         ),
     )
@@ -408,50 +408,50 @@ struct UserOrderStats {
 async fn test_q6() {
     use vantage_sql::primitives::fx::Fx;
 
-    let stats_subquery = SqliteSelect::new()
+    let stats_subquery = MysqlSelect::new()
         .with_source("orders")
         .with_field("user_id")
         .with_expression(
-            Fx::new("count", [sqlite_expr!("*")]),
+            Fx::new("count", [mysql_expr!("*")]),
             Some("order_count".into()),
         )
         .with_expression(
             Fx::new("avg", [ident("total").expr()]),
             Some("avg_total".into()),
         )
-        .with_condition(sqlite_expr!("{} != {}", (ident("status")), "cancelled"))
+        .with_condition(mysql_expr!("{} != {}", (ident("status")), "cancelled"))
         .with_group_by(ident("user_id"));
 
     let users: Vec<UserOrderStats> = check_and_run(
-        &SqliteSelect::new()
+        &MysqlSelect::new()
             .with_source_as("users", "u")
             .with_expression(ident("name").dot_of("u"), None)
             .with_expression(ident("order_count").dot_of("stats"), None)
             .with_expression(ident("avg_total").dot_of("stats"), None)
-            .with_join(SqliteSelectJoin::inner_expr(
+            .with_join(MysqlSelectJoin::inner_expr(
                 stats_subquery,
                 "stats",
-                sqlite_expr!(
+                mysql_expr!(
                     "{} = {}",
                     (ident("user_id").dot_of("stats")),
                     (ident("id").dot_of("u"))
                 ),
             ))
-            .with_condition(sqlite_expr!(
+            .with_condition(mysql_expr!(
                 "{} >= {}",
                 (ident("order_count").dot_of("stats")),
                 2i64
             ))
             .with_order(ident("avg_total").dot_of("stats"), false),
         concat!(
-            r#"SELECT "u"."name", "stats"."order_count", "stats"."avg_total" "#,
-            r#"FROM "users" AS "u" "#,
-            r#"INNER JOIN (SELECT "user_id", COUNT(*) AS "order_count", AVG("total") AS "avg_total" "#,
-            r#"FROM "orders" "#,
-            r#"WHERE "status" != 'cancelled' "#,
-            r#"GROUP BY "user_id") AS "stats" ON "stats"."user_id" = "u"."id" "#,
-            r#"WHERE "stats"."order_count" >= 2 "#,
-            r#"ORDER BY "stats"."avg_total" DESC"#,
+            r#"SELECT `u`.`name`, `stats`.`order_count`, `stats`.`avg_total` "#,
+            r#"FROM `users` AS `u` "#,
+            r#"INNER JOIN (SELECT `user_id`, COUNT(*) AS `order_count`, AVG(`total`) AS `avg_total` "#,
+            r#"FROM `orders` "#,
+            r#"WHERE `status` != 'cancelled' "#,
+            r#"GROUP BY `user_id`) AS `stats` ON `stats`.`user_id` = `u`.`id` "#,
+            r#"WHERE `stats`.`order_count` >= 2 "#,
+            r#"ORDER BY `stats`.`avg_total` DESC"#,
         ),
     )
     .await;
@@ -504,7 +504,7 @@ async fn test_q7() {
     let salary = ident("salary");
 
     let users: Vec<UserBand> = check_and_run(
-        &SqliteSelect::new()
+        &MysqlSelect::new()
             .with_source("users")
             .with_field("id")
             .with_field("name")
@@ -512,18 +512,18 @@ async fn test_q7() {
             .with_expression(
                 Case::new()
                     .when(
-                        sqlite_expr!("{} >= {}", (salary.clone()), 100000.0f64),
-                        sqlite_expr!("{}", "senior"),
+                        mysql_expr!("{} >= {}", (salary.clone()), 100000.0f64),
+                        mysql_expr!("{}", "senior"),
                     )
                     .when(
-                        sqlite_expr!("{} >= {}", (salary.clone()), 60000.0f64),
-                        sqlite_expr!("{}", "mid"),
+                        mysql_expr!("{} >= {}", (salary.clone()), 60000.0f64),
+                        mysql_expr!("{}", "mid"),
                     )
                     .when(
-                        sqlite_expr!("{} >= {}", (salary.clone()), 30000.0f64),
-                        sqlite_expr!("{}", "junior"),
+                        mysql_expr!("{} >= {}", (salary.clone()), 30000.0f64),
+                        mysql_expr!("{}", "junior"),
                     )
-                    .else_(sqlite_expr!("{}", "intern")),
+                    .else_(mysql_expr!("{}", "intern")),
                 Some("band".into()),
             )
             .with_expression(
@@ -532,13 +532,13 @@ async fn test_q7() {
             )
             .with_field("display_name")
             .with_order(ident("salary"), false),
-        "SELECT \"id\", \"name\", \"salary\", \
-         CASE WHEN \"salary\" >= 100000.0 THEN 'senior' WHEN \"salary\" >= 60000.0 THEN 'mid' \
-         WHEN \"salary\" >= 30000.0 THEN 'junior' ELSE 'intern' END AS \"band\", \
-         IIF(\"role\" = 'admin', 'Yes', 'No') AS \"is_admin\", \
-         \"display_name\" \
-         FROM \"users\" \
-         ORDER BY \"salary\" DESC",
+        "SELECT `id`, `name`, `salary`, \
+         CASE WHEN `salary` >= 100000.0 THEN 'senior' WHEN `salary` >= 60000.0 THEN 'mid' \
+         WHEN `salary` >= 30000.0 THEN 'junior' ELSE 'intern' END AS `band`, \
+         IF(`role` = 'admin', 'Yes', 'No') AS `is_admin`, \
+         `display_name` \
+         FROM `users` \
+         ORDER BY `salary` DESC",
     )
     .await;
 
@@ -578,26 +578,26 @@ struct NamedSource {
 async fn test_q8() {
     use vantage_sql::primitives::union::Union;
 
-    let admins = SqliteSelect::new()
+    let admins = MysqlSelect::new()
         .with_source("users")
         .with_field("id")
         .with_field("name")
-        .with_expression(sqlite_expr!("{}", "user"), Some("source".into()))
-        .with_condition(sqlite_expr!("{} = {}", (ident("role")), "admin"));
+        .with_expression(mysql_expr!("{}", "user"), Some("source".into()))
+        .with_condition(mysql_expr!("{} = {}", (ident("role")), "admin"));
 
-    let depts_with_budget = SqliteSelect::new()
+    let depts_with_budget = MysqlSelect::new()
         .with_source("departments")
         .with_field("id")
         .with_field("name")
-        .with_expression(sqlite_expr!("{}", "department"), Some("source".into()))
-        .with_condition(sqlite_expr!("{} IS NOT NULL", (ident("budget"))));
+        .with_expression(mysql_expr!("{}", "department"), Some("source".into()))
+        .with_condition(mysql_expr!("{} IS NOT NULL", (ident("budget"))));
 
-    let depts_zero_budget = SqliteSelect::new()
+    let depts_zero_budget = MysqlSelect::new()
         .with_source("departments")
         .with_field("id")
         .with_field("name")
-        .with_expression(sqlite_expr!("{}", "department"), Some("source".into()))
-        .with_condition(sqlite_expr!("{} = {}", (ident("budget")), 0.0f64));
+        .with_expression(mysql_expr!("{}", "department"), Some("source".into()))
+        .with_condition(mysql_expr!("{} = {}", (ident("budget")), 0.0f64));
 
     let compound = Union::new(admins)
         .union_all(depts_with_budget)
@@ -610,11 +610,11 @@ async fn test_q8() {
 
     assert_eq!(
         compound.preview(),
-        "SELECT \"id\", \"name\", 'user' AS \"source\" FROM \"users\" WHERE \"role\" = 'admin' \
+        "SELECT `id`, `name`, 'user' AS `source` FROM `users` WHERE `role` = 'admin' \
          UNION ALL \
-         SELECT \"id\", \"name\", 'department' AS \"source\" FROM \"departments\" WHERE \"budget\" IS NOT NULL \
+         SELECT `id`, `name`, 'department' AS `source` FROM `departments` WHERE `budget` IS NOT NULL \
          EXCEPT \
-         SELECT \"id\", \"name\", 'department' AS \"source\" FROM \"departments\" WHERE \"budget\" = 0.0"
+         SELECT `id`, `name`, 'department' AS `source` FROM `departments` WHERE `budget` = 0.0"
     );
 
     let records: Vec<Record<serde_json::Value>> = arr.iter().map(|v| v.clone().into()).collect();
@@ -672,7 +672,7 @@ async fn test_q9() {
     let salary = ident("salary").dot_of("u");
 
     let rows: Vec<SalaryRanking> = check_and_run(
-        &SqliteSelect::new()
+        &MysqlSelect::new()
             .with_source_as("users", "u")
             .with_expression(dept.clone(), None)
             .with_expression(ident("name").dot_of("u"), None)
@@ -693,19 +693,19 @@ async fn test_q9() {
                     .apply(Fx::new("sum", [salary.expr()])),
                 Some("running_total".into()),
             )
-            .with_condition(sqlite_expr!("{} IS NOT NULL", (dept)))
+            .with_condition(mysql_expr!("{} IS NOT NULL", (dept)))
             .with_window("win", Window::new()
                 .partition_by(dept.clone())
                 .order_by(salary.clone(), false)),
         concat!(
-            r#"SELECT "u"."department_id", "u"."name", "u"."salary", "#,
-            r#"ROW_NUMBER() OVER win AS "row_num", "#,
-            r#"RANK() OVER win AS "salary_rank", "#,
-            r#"SUM("u"."salary") OVER (PARTITION BY "u"."department_id" ORDER BY "u"."salary" DESC "#,
-            r#"ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS "running_total" "#,
-            r#"FROM "users" AS "u" "#,
-            r#"WHERE "u"."department_id" IS NOT NULL "#,
-            r#"WINDOW win AS (PARTITION BY "u"."department_id" ORDER BY "u"."salary" DESC)"#,
+            r#"SELECT `u`.`department_id`, `u`.`name`, `u`.`salary`, "#,
+            r#"ROW_NUMBER() OVER win AS `row_num`, "#,
+            r#"RANK() OVER win AS `salary_rank`, "#,
+            r#"SUM(`u`.`salary`) OVER (PARTITION BY `u`.`department_id` ORDER BY `u`.`salary` DESC "#,
+            r#"ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS `running_total` "#,
+            r#"FROM `users` AS `u` "#,
+            r#"WHERE `u`.`department_id` IS NOT NULL "#,
+            r#"WINDOW win AS (PARTITION BY `u`.`department_id` ORDER BY `u`.`salary` DESC)"#,
         ),
     )
     .await;
@@ -756,41 +756,41 @@ async fn test_q10() {
     use vantage_sql::primitives::fx::Fx;
 
     let spenders: Vec<TopSpender> = check_and_run(
-        &SqliteSelect::new()
-            .with_cte("active_orders", SqliteSelect::new()
+        &MysqlSelect::new()
+            .with_cte("active_orders", MysqlSelect::new()
                 .with_source("orders")
                 .with_field("user_id")
-                .with_expression(Fx::new("count", [sqlite_expr!("*")]), Some("cnt".into()))
+                .with_expression(Fx::new("count", [mysql_expr!("*")]), Some("cnt".into()))
                 .with_expression(Fx::new("sum", [ident("total").expr()]), Some("revenue".into()))
-                .with_condition(sqlite_expr!("{} IN ({}, {})",
+                .with_condition(mysql_expr!("{} IN ({}, {})",
                     (ident("status")), "completed", "shipped"))
                 .with_group_by(ident("user_id")), false)
-            .with_cte("top_spenders", SqliteSelect::new()
+            .with_cte("top_spenders", MysqlSelect::new()
                 .with_source("active_orders")
                 .with_field("user_id")
                 .with_field("revenue")
-                .with_condition(sqlite_expr!("{} > {}", (ident("revenue")), 400.0f64)), false)
+                .with_condition(mysql_expr!("{} > {}", (ident("revenue")), 400.0f64)), false)
             .with_source_as("top_spenders", "t")
             .with_expression(ident("name").dot_of("u"), None)
             .with_expression(ident("revenue").dot_of("t"), None)
-            .with_join(SqliteSelectJoin::inner("users", "u",
-                sqlite_expr!("{} = {}",
+            .with_join(MysqlSelectJoin::inner("users", "u",
+                mysql_expr!("{} = {}",
                     (ident("id").dot_of("u")),
                     (ident("user_id").dot_of("t")))))
             .with_order(ident("revenue").dot_of("t"), false)
             .with_limit(Some(10), None),
         concat!(
-            r#"WITH active_orders AS (SELECT "user_id", COUNT(*) AS "cnt", SUM("total") AS "revenue" "#,
-            r#"FROM "orders" "#,
-            r#"WHERE "status" IN ('completed', 'shipped') "#,
-            r#"GROUP BY "user_id"), "#,
-            r#"top_spenders AS (SELECT "user_id", "revenue" "#,
-            r#"FROM "active_orders" "#,
-            r#"WHERE "revenue" > 400.0) "#,
-            r#"SELECT "u"."name", "t"."revenue" "#,
-            r#"FROM "top_spenders" AS "t" "#,
-            r#"INNER JOIN "users" AS "u" ON "u"."id" = "t"."user_id" "#,
-            r#"ORDER BY "t"."revenue" DESC "#,
+            r#"WITH active_orders AS (SELECT `user_id`, COUNT(*) AS `cnt`, SUM(`total`) AS `revenue` "#,
+            r#"FROM `orders` "#,
+            r#"WHERE `status` IN ('completed', 'shipped') "#,
+            r#"GROUP BY `user_id`), "#,
+            r#"top_spenders AS (SELECT `user_id`, `revenue` "#,
+            r#"FROM `active_orders` "#,
+            r#"WHERE `revenue` > 400.0) "#,
+            r#"SELECT `u`.`name`, `t`.`revenue` "#,
+            r#"FROM `top_spenders` AS `t` "#,
+            r#"INNER JOIN `users` AS `u` ON `u`.`id` = `t`.`user_id` "#,
+            r#"ORDER BY `t`.`revenue` DESC "#,
             r#"LIMIT 10"#,
         ),
     )
@@ -836,27 +836,27 @@ async fn test_q11() {
     use vantage_sql::concat_sql;
     use vantage_sql::primitives::union::Union;
 
-    let base = SqliteSelect::new()
+    let base = MysqlSelect::new()
         .with_source("departments")
         .with_field("id")
         .with_field("name")
-        .with_expression(sqlite_expr!("0"), None)
+        .with_expression(mysql_expr!("0"), None)
         .with_expression(ident("name"), None)
-        .with_condition(sqlite_expr!("{} IS NULL", (ident("parent_id"))));
+        .with_condition(mysql_expr!("{} IS NULL", (ident("parent_id"))));
 
-    let recursive = SqliteSelect::new()
+    let recursive = MysqlSelect::new()
         .with_source_as("departments", "d")
         .with_expression(ident("id").dot_of("d"), None)
         .with_expression(ident("name").dot_of("d"), None)
-        .with_expression(sqlite_expr!("{} + 1", (ident("depth").dot_of("dt"))), None)
+        .with_expression(mysql_expr!("{} + 1", (ident("depth").dot_of("dt"))), None)
         .with_expression(
             concat_sql!(ident("path").dot_of("dt"), " > ", ident("name").dot_of("d")),
             None,
         )
-        .with_join(SqliteSelectJoin::inner(
+        .with_join(MysqlSelectJoin::inner(
             "dept_tree",
             "dt",
-            sqlite_expr!(
+            mysql_expr!(
                 "{} = {}",
                 (ident("id").dot_of("dt")),
                 (ident("parent_id").dot_of("d"))
@@ -864,7 +864,7 @@ async fn test_q11() {
         ));
 
     let rows: Vec<DeptTree> = check_and_run(
-        &SqliteSelect::new()
+        &MysqlSelect::new()
             .with_cte(
                 "dept_tree(id, name, depth, path)",
                 Union::new(base).union_all(recursive),
@@ -878,14 +878,14 @@ async fn test_q11() {
             .with_order(ident("path"), true),
         concat!(
             r#"WITH RECURSIVE dept_tree(id, name, depth, path) AS "#,
-            r#"(SELECT "id", "name", 0, "name" FROM "departments" WHERE "parent_id" IS NULL "#,
+            r#"(SELECT `id`, `name`, 0, `name` FROM `departments` WHERE `parent_id` IS NULL "#,
             r#"UNION ALL "#,
-            r#"SELECT "d"."id", "d"."name", "dt"."depth" + 1, "dt"."path" || ' > ' || "d"."name" "#,
-            r#"FROM "departments" AS "d" "#,
-            r#"INNER JOIN "dept_tree" AS "dt" ON "dt"."id" = "d"."parent_id") "#,
-            r#"SELECT "id", "name", "depth", "path" "#,
-            r#"FROM "dept_tree" "#,
-            r#"ORDER BY "path""#,
+            r#"SELECT `d`.`id`, `d`.`name`, `dt`.`depth` + 1, CONCAT(`dt`.`path`, ' > ', `d`.`name`) "#,
+            r#"FROM `departments` AS `d` "#,
+            r#"INNER JOIN `dept_tree` AS `dt` ON `dt`.`id` = `d`.`parent_id`) "#,
+            r#"SELECT `id`, `name`, `depth`, `path` "#,
+            r#"FROM `dept_tree` "#,
+            r#"ORDER BY `path`"#,
         ),
     )
     .await;
@@ -926,54 +926,54 @@ struct ProductMatch {
 #[tokio::test]
 async fn test_q12() {
     let products: Vec<ProductMatch> = check_and_run(
-        &SqliteSelect::new()
+        &MysqlSelect::new()
             .with_distinct(true)
             .with_source_as("products", "p")
             .with_expression(ident("id").dot_of("p"), None)
             .with_expression(ident("name").dot_of("p"), None)
             .with_expression(ident("price").dot_of("p"), None)
-            .with_join(SqliteSelectJoin::inner(
+            .with_join(MysqlSelectJoin::inner(
                 "product_tags",
                 "pt",
-                sqlite_expr!(
+                mysql_expr!(
                     "{} = {}",
                     (ident("product_id").dot_of("pt")),
                     (ident("id").dot_of("p"))
                 ),
             ))
-            .with_join(SqliteSelectJoin::inner(
+            .with_join(MysqlSelectJoin::inner(
                 "tags",
                 "t",
-                sqlite_expr!(
+                mysql_expr!(
                     "{} = {}",
                     (ident("id").dot_of("t")),
                     (ident("tag_id").dot_of("pt"))
                 ),
             ))
-            .with_condition(sqlite_expr!(
+            .with_condition(mysql_expr!(
                 "{} IN ({}, {}, {})",
                 (ident("name").dot_of("t")),
                 "electronics",
                 "sale",
                 "featured"
             ))
-            .with_condition(sqlite_expr!(
+            .with_condition(mysql_expr!(
                 "{} LIKE {}",
                 (ident("name").dot_of("p")),
                 "%Pro%"
             ))
-            .with_condition(sqlite_expr!("{} > {}", (ident("stock").dot_of("p")), 0i64))
+            .with_condition(mysql_expr!("{} > {}", (ident("stock").dot_of("p")), 0i64))
             .with_order(ident("price").dot_of("p"), true)
             .with_limit(Some(50), None),
         concat!(
-            r#"SELECT DISTINCT "p"."id", "p"."name", "p"."price" "#,
-            r#"FROM "products" AS "p" "#,
-            r#"INNER JOIN "product_tags" AS "pt" ON "pt"."product_id" = "p"."id" "#,
-            r#"INNER JOIN "tags" AS "t" ON "t"."id" = "pt"."tag_id" "#,
-            r#"WHERE "t"."name" IN ('electronics', 'sale', 'featured') "#,
-            r#"AND "p"."name" LIKE '%Pro%' "#,
-            r#"AND "p"."stock" > 0 "#,
-            r#"ORDER BY "p"."price" "#,
+            r#"SELECT DISTINCT `p`.`id`, `p`.`name`, `p`.`price` "#,
+            r#"FROM `products` AS `p` "#,
+            r#"INNER JOIN `product_tags` AS `pt` ON `pt`.`product_id` = `p`.`id` "#,
+            r#"INNER JOIN `tags` AS `t` ON `t`.`id` = `pt`.`tag_id` "#,
+            r#"WHERE `t`.`name` IN ('electronics', 'sale', 'featured') "#,
+            r#"AND `p`.`name` LIKE '%Pro%' "#,
+            r#"AND `p`.`stock` > 0 "#,
+            r#"ORDER BY `p`.`price` "#,
             r#"LIMIT 50"#,
         ),
     )
@@ -1018,8 +1018,10 @@ async fn test_q13() {
     use vantage_sql::primitives::json_extract::JsonExtract;
 
     let metadata = ident("metadata");
+    let rating_expr = JsonExtract::new(metadata.clone(), "rating");
+
     let products: Vec<ProductJson> = check_and_run(
-        &SqliteSelect::new()
+        &MysqlSelect::new()
             .with_source("products")
             .with_field("id")
             .with_field("name")
@@ -1028,42 +1030,41 @@ async fn test_q13() {
                 None,
             )
             .with_expression(
-                sqlite_expr!("{} ->> {}", (metadata.clone()), "$.weight_kg"),
+                mysql_expr!(
+                    "CAST({} AS DOUBLE)",
+                    (JsonExtract::new(metadata.clone(), "weight_kg"))
+                ),
                 Some("weight".into()),
             )
             .with_expression(
-                sqlite_expr!("CAST({} ->> {} AS REAL)", (metadata.clone()), "$.rating"),
+                mysql_expr!("CAST({} AS DOUBLE)", (rating_expr.clone())),
                 Some("rating".into()),
             )
             .with_expression(
                 Fx::new(
                     "nullif",
-                    [
-                        ident("category").expr(),
-                        sqlite_expr!("{}", "uncategorized"),
-                    ],
+                    [ident("category").expr(), mysql_expr!("{}", "uncategorized")],
                 ),
                 Some("clean_category".into()),
             )
-            .with_condition(sqlite_expr!(
-                "CAST({} ->> {} AS REAL) BETWEEN {} AND {}",
-                (metadata.clone()),
-                "$.rating",
+            .with_condition(mysql_expr!(
+                "CAST({} AS DOUBLE) BETWEEN {} AND {}",
+                (rating_expr),
                 4.0f64,
                 5.0f64
             ))
             .with_condition(JsonExtract::new(metadata.clone(), "in_stock").eq(1i64))
             .with_order(ident("rating"), false),
         concat!(
-            r#"SELECT "id", "name", "#,
-            r#"JSON_EXTRACT("metadata", '$.color') AS "color", "#,
-            r#""metadata" ->> '$.weight_kg' AS "weight", "#,
-            r#"CAST("metadata" ->> '$.rating' AS REAL) AS "rating", "#,
-            r#"NULLIF("category", 'uncategorized') AS "clean_category" "#,
-            r#"FROM "products" "#,
-            r#"WHERE CAST("metadata" ->> '$.rating' AS REAL) BETWEEN 4.0 AND 5.0 "#,
-            r#"AND JSON_EXTRACT("metadata", '$.in_stock') = 1 "#,
-            r#"ORDER BY "rating" DESC"#,
+            r#"SELECT `id`, `name`, "#,
+            r#"JSON_EXTRACT(`metadata`, '$.color') AS `color`, "#,
+            r#"CAST(JSON_EXTRACT(`metadata`, '$.weight_kg') AS DOUBLE) AS `weight`, "#,
+            r#"CAST(JSON_EXTRACT(`metadata`, '$.rating') AS DOUBLE) AS `rating`, "#,
+            r#"NULLIF(`category`, 'uncategorized') AS `clean_category` "#,
+            r#"FROM `products` "#,
+            r#"WHERE CAST(JSON_EXTRACT(`metadata`, '$.rating') AS DOUBLE) BETWEEN 4.0 AND 5.0 "#,
+            r#"AND JSON_EXTRACT(`metadata`, '$.in_stock') = 1 "#,
+            r#"ORDER BY `rating` DESC"#,
         ),
     )
     .await;
@@ -1102,7 +1103,6 @@ struct MonthlyRevenue {
     department: String,
     order_count: i64,
     monthly_revenue: f64,
-    sum_type: String,
 }
 
 #[tokio::test]
@@ -1115,7 +1115,7 @@ async fn test_q14() {
     let month_expr = DateFormat::new(ident("created_at").dot_of("o"), "%Y-%m");
 
     let rows: Vec<MonthlyRevenue> = check_and_run(
-        &SqliteSelect::new()
+        &MysqlSelect::new()
             .with_source_as("orders", "o")
             .with_expression(month_expr.clone(), Some("month".into()))
             .with_expression(ident("name").dot_of("d"), Some("department".into()))
@@ -1124,193 +1124,56 @@ async fn test_q14() {
                 Some("order_count".into()),
             )
             .with_expression(
-                Fx::new("round", [sum_total.expr(), sqlite_expr!("{}", 2i64)]),
+                Fx::new("round", [sum_total.expr(), mysql_expr!("{}", 2i64)]),
                 Some("monthly_revenue".into()),
             )
-            .with_expression(
-                Fx::new("typeof", [sum_total.expr()]),
-                Some("sum_type".into()),
-            )
-            .with_join(SqliteSelectJoin::inner(
+            .with_join(MysqlSelectJoin::inner(
                 "users",
                 "u",
-                sqlite_expr!(
+                mysql_expr!(
                     "{} = {}",
                     (ident("id").dot_of("u")),
                     (ident("user_id").dot_of("o"))
                 ),
             ))
-            .with_join(SqliteSelectJoin::inner(
+            .with_join(MysqlSelectJoin::inner(
                 "departments",
                 "d",
-                sqlite_expr!(
+                mysql_expr!(
                     "{} = {}",
                     (ident("id").dot_of("d")),
                     (ident("department_id").dot_of("u"))
                 ),
             ))
-            .with_condition(sqlite_expr!(
+            .with_condition(mysql_expr!(
                 "{} >= {}",
                 (ident("created_at").dot_of("o")),
                 "2025-01-01"
             ))
-            .with_group_by(month_expr)
+            .with_group_by(ident("month"))
             .with_group_by(ident("name").dot_of("d"))
-            .with_having(sqlite_expr!("{} > {}", (sum_total), 100.0f64))
+            .with_having(mysql_expr!("{} > {}", (sum_total), 100.0f64))
             .with_order(ident("month"), false)
             .with_order(ident("monthly_revenue"), false),
         concat!(
-            r#"SELECT STRFTIME('%Y-%m', "o"."created_at") AS "month", "#,
-            r#""d"."name" AS "department", "#,
-            r#"COUNT("o"."id") AS "order_count", "#,
-            r#"ROUND(SUM("o"."total"), 2) AS "monthly_revenue", "#,
-            r#"TYPEOF(SUM("o"."total")) AS "sum_type" "#,
-            r#"FROM "orders" AS "o" "#,
-            r#"INNER JOIN "users" AS "u" ON "u"."id" = "o"."user_id" "#,
-            r#"INNER JOIN "departments" AS "d" ON "d"."id" = "u"."department_id" "#,
-            r#"WHERE "o"."created_at" >= '2025-01-01' "#,
-            r#"GROUP BY STRFTIME('%Y-%m', "o"."created_at"), "d"."name" "#,
-            r#"HAVING SUM("o"."total") > 100.0 "#,
-            r#"ORDER BY "month" DESC, "monthly_revenue" DESC"#,
+            r#"SELECT DATE_FORMAT(`o`.`created_at`, '%Y-%m') AS `month`, "#,
+            r#"`d`.`name` AS `department`, "#,
+            r#"COUNT(`o`.`id`) AS `order_count`, "#,
+            r#"ROUND(SUM(`o`.`total`), 2) AS `monthly_revenue` "#,
+            r#"FROM `orders` AS `o` "#,
+            r#"INNER JOIN `users` AS `u` ON `u`.`id` = `o`.`user_id` "#,
+            r#"INNER JOIN `departments` AS `d` ON `d`.`id` = `u`.`department_id` "#,
+            r#"WHERE `o`.`created_at` >= '2025-01-01' "#,
+            r#"GROUP BY `month`, `d`.`name` "#,
+            r#"HAVING SUM(`o`.`total`) > 100.0 "#,
+            r#"ORDER BY `month` DESC, `monthly_revenue` DESC"#,
         ),
     )
     .await;
 
     assert!(!rows.is_empty());
-    // typeof returns the SQLite storage type
-    assert!(
-        rows.iter()
-            .all(|r| r.sum_type == "real" || r.sum_type == "integer")
-    );
     // All rows have revenue > 100 (HAVING filter)
     assert!(rows.iter().all(|r| r.monthly_revenue > 100.0));
 }
 
-// -- ---------------------------------------------------------------------------
-// -- 15. Window functions — FILTER, LAG, LEAD, FIRST_VALUE, NTH_VALUE
-// -- Features: aggregate FILTER (WHERE), LAG/LEAD with offset, FIRST_VALUE,
-// --           NTH_VALUE, RANGE and ROWS frame specs
-// -- Expected: each user with completed-order count, neighboring salaries,
-// --           top and 2nd earner per department
-// -- ---------------------------------------------------------------------------
-// SELECT
-//     u.id,
-//     u.name,
-//     u.salary,
-//     u.department_id,
-//     COUNT(*) FILTER (WHERE o.status = 'completed') OVER (PARTITION BY u.id) AS completed_count,
-//     LAG(u.salary, 1) OVER (ORDER BY u.salary) AS prev_salary,
-//     LEAD(u.salary, 1) OVER (ORDER BY u.salary) AS next_salary,
-//     FIRST_VALUE(u.name) OVER (
-//         PARTITION BY u.department_id ORDER BY u.salary DESC
-//         RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-//     ) AS top_earner,
-//     NTH_VALUE(u.name, 2) OVER (
-//         PARTITION BY u.department_id ORDER BY u.salary DESC
-//         ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-//     ) AS second_earner
-// FROM users AS u
-// LEFT JOIN orders AS o ON o.user_id = u.id
-// WHERE u.department_id IS NOT NULL
-// ORDER BY u.department_id, u.salary DESC;
-
-#[derive(Debug, Deserialize)]
-struct UserWindowStats {
-    id: i64,
-    name: String,
-    salary: f64,
-    department_id: i64,
-    completed_count: i64,
-    prev_salary: Option<f64>,
-    next_salary: Option<f64>,
-    top_earner: String,
-    second_earner: Option<String>,
-}
-
-#[tokio::test]
-async fn test_q15() {
-    use vantage_sql::primitives::fx::Fx;
-    use vantage_sql::primitives::select::window::Window;
-
-    let dept = ident("department_id").dot_of("u");
-    let salary = ident("salary").dot_of("u");
-    let u_name = ident("name").dot_of("u");
-
-    let dept_salary_win = Window::new()
-        .partition_by(dept.clone())
-        .order_by(salary.clone(), false);
-
-    let rows: Vec<UserWindowStats> = check_and_run(
-        &SqliteSelect::new()
-            .with_source_as("users", "u")
-            .with_expression(ident("id").dot_of("u"), None)
-            .with_expression(u_name.clone(), None)
-            .with_expression(salary.clone(), None)
-            .with_expression(dept.clone(), None)
-            .with_expression(
-                sqlite_expr!(
-                    "COUNT(*) FILTER (WHERE {} = {}) OVER (PARTITION BY {})",
-                    (ident("status").dot_of("o")), "completed",
-                    (ident("id").dot_of("u"))
-                ),
-                Some("completed_count".into()),
-            )
-            .with_expression(
-                Window::new().order_by(salary.clone(), true)
-                    .apply(sqlite_expr!("LAG({}, 1)", (salary.clone()))),
-                Some("prev_salary".into()),
-            )
-            .with_expression(
-                Window::new().order_by(salary.clone(), true)
-                    .apply(sqlite_expr!("LEAD({}, 1)", (salary.clone()))),
-                Some("next_salary".into()),
-            )
-            .with_expression(
-                dept_salary_win.clone()
-                    .range("UNBOUNDED PRECEDING", "UNBOUNDED FOLLOWING")
-                    .apply(Fx::new("first_value", [u_name.expr()])),
-                Some("top_earner".into()),
-            )
-            .with_expression(
-                dept_salary_win.clone()
-                    .rows("UNBOUNDED PRECEDING", "UNBOUNDED FOLLOWING")
-                    .apply(Fx::new("nth_value", [u_name.expr(), sqlite_expr!("2")])),
-                Some("second_earner".into()),
-            )
-            .with_join(SqliteSelectJoin::left("orders", "o",
-                sqlite_expr!("{} = {}",
-                    (ident("user_id").dot_of("o")),
-                    (ident("id").dot_of("u")))))
-            .with_condition(sqlite_expr!("{} IS NOT NULL", (dept.clone())))
-            .with_order(dept, true)
-            .with_order(salary, false),
-        concat!(
-            r#"SELECT "u"."id", "u"."name", "u"."salary", "u"."department_id", "#,
-            r#"COUNT(*) FILTER (WHERE "o"."status" = 'completed') OVER (PARTITION BY "u"."id") AS "completed_count", "#,
-            r#"LAG("u"."salary", 1) OVER (ORDER BY "u"."salary") AS "prev_salary", "#,
-            r#"LEAD("u"."salary", 1) OVER (ORDER BY "u"."salary") AS "next_salary", "#,
-            r#"FIRST_VALUE("u"."name") OVER (PARTITION BY "u"."department_id" ORDER BY "u"."salary" DESC "#,
-            r#"RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "top_earner", "#,
-            r#"NTH_VALUE("u"."name", 2) OVER (PARTITION BY "u"."department_id" ORDER BY "u"."salary" DESC "#,
-            r#"ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "second_earner" "#,
-            r#"FROM "users" AS "u" "#,
-            r#"LEFT JOIN "orders" AS "o" ON "o"."user_id" = "u"."id" "#,
-            r#"WHERE "u"."department_id" IS NOT NULL "#,
-            r#"ORDER BY "u"."department_id", "u"."salary" DESC"#,
-        ),
-    )
-    .await;
-
-    // LEFT JOIN duplicates rows for users with multiple orders
-    assert!(!rows.is_empty());
-
-    // Backend dept (id=2): Alice (120k) is top earner
-    let alice = rows.iter().find(|r| r.name == "Alice Chen").unwrap();
-    assert_eq!(alice.department_id, 2);
-    assert_eq!(alice.top_earner, "Alice Chen");
-
-    // Hank Patel is sole member of Engineering (dept 1) — no second earner
-    let hank = rows.iter().find(|r| r.name == "Hank Patel").unwrap();
-    assert_eq!(hank.top_earner, "Hank Patel");
-    assert_eq!(hank.second_earner, None);
-}
+// Q15 skipped for MySQL — FILTER (WHERE ...) is not supported.

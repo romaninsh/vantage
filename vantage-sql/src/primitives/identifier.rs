@@ -20,7 +20,7 @@ use vantage_expressions::{Expression, Expressive};
 /// let expr = mysql_expr!("SELECT {} FROM {}", (ident("name")), (ident("product")));
 ///
 /// // Qualified (table.column)
-/// let expr = mysql_expr!("SELECT {}", (Identifier::with_dot("u", "name")));
+/// let expr = mysql_expr!("SELECT {}", (ident("name").dot_of("u")));
 ///
 /// // With alias
 /// let expr = mysql_expr!("SELECT {}", (ident("name").with_alias("n")));
@@ -40,12 +40,11 @@ impl Identifier {
         }
     }
 
-    /// Qualified identifier: `prefix.name`.
-    pub fn with_dot(prefix: impl Into<String>, name: impl Into<String>) -> Self {
-        Self {
-            parts: vec![prefix.into(), name.into()],
-            alias: None,
-        }
+    /// Prepends a qualifier: `ident("name").dot_of("u")` → `u.name`.
+    /// Chaining adds further left: `ident("col").dot_of("t").dot_of("s")` → `s.t.col`.
+    pub fn dot_of(mut self, prefix: impl Into<String>) -> Self {
+        self.parts.insert(0, prefix.into());
+        self
     }
 
     /// Adds an AS alias.

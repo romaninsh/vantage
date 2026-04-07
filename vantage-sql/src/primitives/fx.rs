@@ -14,11 +14,11 @@ use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 /// use vantage_sql::primitives::fx::Fx;
 ///
 /// // Single arg: SUM("o"."total")
-/// Fx::new("sum", [Identifier::with_dot("o", "total").expr()])
+/// Fx::new("sum", [ident("total").dot_of("o").expr()])
 ///
 /// // Multiple args: COALESCE(SUM("o"."total"), 0.0)
 /// Fx::new("coalesce", [
-///     Fx::new("sum", [Identifier::with_dot("o", "total").expr()]).expr(),
+///     Fx::new("sum", [ident("total").dot_of("o").expr()]).expr(),
 ///     sqlite_expr!("{}", 0.0f64),
 /// ])
 /// ```

@@ -8,11 +8,11 @@ use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 ///
 /// ```ignore
 /// let win = Window::new()
-///     .partition_by(Identifier::with_dot("u", "department_id"))
-///     .order_by(Identifier::with_dot("u", "salary"), false);
+///     .partition_by(ident("department_id").dot_of("u"))
+///     .order_by(ident("salary").dot_of("u"), false);
 ///
 /// // Inline: SUM(u.salary) OVER (PARTITION BY ... ORDER BY ... DESC)
-/// win.apply(Fx::new("sum", [Identifier::with_dot("u", "salary").expr()]))
+/// win.apply(Fx::new("sum", [ident("salary").dot_of("u").expr()]))
 ///
 /// // Named reference: ROW_NUMBER() OVER win
 /// Window::named("win").apply(Fx::new("row_number", []))
