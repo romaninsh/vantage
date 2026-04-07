@@ -21,67 +21,55 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        backend:
-          - name: sqlite
-            feature: sqlite
-            test: sqlite
-            service: none
-          - name: postgres
-            feature: postgres
-            test: postgres
-            service: postgres
-          - name: mysql
-            feature: mysql
-            test: mysql
-            service: mysql
-          - name: csv
-            feature: sqlite
-            test: ""
-            service: none
+        backend: [sqlite, postgres, mysql]
 
-    name: ${{ matrix.backend.name }}
+    name: ${{ matrix.backend }}
 
     services:
       postgres:
-        image: ${{ matrix.backend.service == 'postgres' && 'postgres:17-alpine' || '' }}
+        image: postgres:17-alpine
         env:
           POSTGRES_USER: vantage
           POSTGRES_PASSWORD: vantage
           POSTGRES_DB: vantage
         ports:
-          - ${{ matrix.backend.service == 'postgres' && '5433:5432' || '' }}
+          - 5433:5432
         options: >-
-          ${{ matrix.backend.service == 'postgres' && '--health-cmd "pg_isready -U vantage -d vantage" --health-interval 10s --health-timeout 5s --health-retries 5' || '' }}
+          --health-cmd "pg_isready -U vantage -d vantage"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
       mysql:
-        image: ${{ matrix.backend.service == 'mysql' && 'mysql:8' || '' }}
+        image: mysql:8
         env:
           MYSQL_ROOT_PASSWORD: root
           MYSQL_USER: vantage
           MYSQL_PASSWORD: vantage
           MYSQL_DATABASE: vantage
         ports:
-          - ${{ matrix.backend.service == 'mysql' && '3306:3306' || '' }}
+          - 3306:3306
         options: >-
-          ${{ matrix.backend.service == 'mysql' && '--health-cmd "mysqladmin ping -h 127.0.0.1" --health-interval 10s --health-timeout 5s --health-retries 10' || '' }}
+          --health-cmd "mysqladmin ping -h 127.0.0.1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-          key: "vantage-sql-${{ matrix.backend.name }}-v01"
+          key: "vantage-sql-${{ matrix.backend }}-v01"
           cache-workspace-crates: true
           cache-all-crates: true
 
       - name: Populate SQLite database
-        if: matrix.backend.name == 'sqlite'
-        run: |
-          cd vantage-sql/scripts/sqlite
-          bash ingress.sh
+        if: matrix.backend == 'sqlite'
+        run: bash vantage-sql/scripts/sqlite/ingress.sh
 
       - name: Populate PostgreSQL database
-        if: matrix.backend.name == 'postgres'
+        if: matrix.backend == 'postgres'
         run: |
           cd vantage-sql/scripts/postgres
           for f in db/*.sql; do
@@ -90,7 +78,7 @@ jobs:
           done
 
       - name: Populate MySQL database
-        if: matrix.backend.name == 'mysql'
+        if: matrix.backend == 'mysql'
         run: |
           cd vantage-sql/scripts/mysql
           for f in db/*.sql; do
@@ -99,24 +87,28 @@ jobs:
           done
 
       - name: Build
-        if: matrix.backend.test != ''
-        run: cargo build -p vantage-sql --features ${{ matrix.backend.feature }}
+        run: cargo build -p vantage-sql --features ${{ matrix.backend }}
 
       - name: Test
-        if: matrix.backend.test != ''
-        run: cargo test -p vantage-sql --features ${{ matrix.backend.feature }} --test ${{ matrix.backend.test }}
+        run: cargo test -p vantage-sql --features ${{ matrix.backend }} --test ${{ matrix.backend }}
 
       - name: Clippy
-        if: matrix.backend.test != ''
-        run: cargo clippy -p vantage-sql --features ${{ matrix.backend.feature }} --all-targets -- -D warnings
+        run: cargo clippy -p vantage-sql --features ${{ matrix.backend }} --all-targets -- -D warnings
 
       - name: Build bakery_model3
-        if: matrix.backend.name != 'mysql'
+        if: matrix.backend != 'mysql'
         run: cargo build -p bakery_model3
 
       - name: bakery_model3 smoke test
-        if: matrix.backend.name != 'mysql'
+        if: matrix.backend == 'sqlite' || matrix.backend == 'postgres'
         run: |
-          cargo run -p bakery_model3 --example cli -- ${{ matrix.backend.name }} bakery list
-          cargo run -p bakery_model3 --example cli -- ${{ matrix.backend.name }} product count
-          cargo run -p bakery_model3 --example cli -- ${{ matrix.backend.name }} client list
+          cargo run -p bakery_model3 --example cli -- ${{ matrix.backend }} bakery list
+          cargo run -p bakery_model3 --example cli -- ${{ matrix.backend }} product count
+          cargo run -p bakery_model3 --example cli -- ${{ matrix.backend }} client list
+
+      - name: bakery_model3 CSV smoke test
+        if: matrix.backend == 'sqlite'
+        run: |
+          cargo run -p bakery_model3 --example cli -- csv bakery list
+          cargo run -p bakery_model3 --example cli -- csv product count
+          cargo run -p bakery_model3 --example cli -- csv client list
