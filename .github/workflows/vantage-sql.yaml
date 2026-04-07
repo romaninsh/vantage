@@ -77,6 +77,16 @@ jobs:
             PGPASSWORD=vantage psql -h localhost -p 5433 -U vantage -d vantage -f "$f"
           done
 
+      - name: Populate PostgreSQL-specific database
+        if: matrix.backend == 'postgres'
+        run: |
+          cd vantage-sql/scripts/postgres
+          PGPASSWORD=vantage psql -h localhost -p 5433 -U vantage -d postgres -c "CREATE DATABASE vantage_pg OWNER vantage;"
+          for f in db/v4*.sql; do
+            echo "Loading $f..."
+            PGPASSWORD=vantage psql -h localhost -p 5433 -U vantage -d vantage_pg -f "$f"
+          done
+
       - name: Populate MySQL database
         if: matrix.backend == 'mysql'
         run: |
