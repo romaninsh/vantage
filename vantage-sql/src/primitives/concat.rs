@@ -88,8 +88,10 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
 impl Expressive<crate::mysql::types::AnyMysqlType> for Concat<crate::mysql::types::AnyMysqlType> {
     fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
         let args = Expression::from_vec(self.parts.clone(), ", ");
-        let base =
-            Expression::new("CONCAT({})", vec![vantage_expressions::ExpressiveEnum::Nested(args)]);
+        let base = Expression::new(
+            "CONCAT({})",
+            vec![vantage_expressions::ExpressiveEnum::Nested(args)],
+        );
         match &self.alias {
             Some(alias) => expr_any!("{} AS {}", (base), (Identifier::new(alias))),
             None => base,
