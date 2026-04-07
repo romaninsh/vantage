@@ -81,7 +81,7 @@ use vantage_expressions::Selectable;
 let select = SurrealSelect::new()
     .with_source("product")
     .with_condition(Field::new("is_deleted").eq(false))
-    .with_order(surreal_expr!("name"), true);
+    .with_order(surreal_expr!("name"), Order::Asc);
 // SELECT * FROM product WHERE is_deleted = false ORDER BY name
 
 // Aggregation

@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 use vantage_core::{Context, Result, vantage_error};
 use vantage_expressions::protocol::result::{self, QueryResult};
-use vantage_expressions::{AssociatedQueryable, Expression, Selectable};
+use vantage_expressions::{AssociatedQueryable, Expression, Order, Selectable};
 use vantage_table::Entity;
 
 use crate::select::SurrealSelect;
@@ -64,9 +64,9 @@ impl<T: QueryResult, R> SurrealAssociated<SurrealSelect<T>, R> {
     pub fn with_order_by(
         mut self,
         expression: vantage_expressions::Expression,
-        ascending: bool,
+        order: Order,
     ) -> Self {
-        self.query.add_order_by(expression, ascending);
+        self.query.add_order_by(expression, order);
         self
     }
 
@@ -123,8 +123,8 @@ impl<Q: SurrealQueriable + Selectable + Clone, R: Send + Sync> Selectable
         self.query.set_distinct(distinct)
     }
 
-    fn add_order_by(&mut self, expression: vantage_expressions::Expression, ascending: bool) {
-        self.query.add_order_by(expression, ascending)
+    fn add_order_by(&mut self, expression: Expression, order: Order) {
+        self.query.add_order_by(expression, order)
     }
 
     fn add_group_by(&mut self, expression: vantage_expressions::Expression) {

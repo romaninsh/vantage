@@ -4,7 +4,7 @@ mod tests {
     use crate::select::SurrealSelect;
     use crate::select::select_field::SelectField;
     use crate::surreal_expr;
-    use vantage_expressions::traits::selectable::Selectable;
+    use vantage_expressions::traits::selectable::{Order, Selectable};
 
     #[test]
     fn test_basic_select() {
@@ -58,7 +58,7 @@ mod tests {
         let select = SurrealSelect::new()
             .from("users")
             .field("name")
-            .with_order_by(surreal_expr!("name"), true);
+            .with_order_by(surreal_expr!("name"), Order::Asc);
 
         assert_eq!(select.preview(), "SELECT name FROM users ORDER BY name");
     }
@@ -68,7 +68,7 @@ mod tests {
         let select = SurrealSelect::new()
             .from("users")
             .field("name")
-            .with_order_by(surreal_expr!("created_at"), false);
+            .with_order_by(surreal_expr!("created_at"), Order::Desc);
 
         assert_eq!(
             select.preview(),
@@ -122,7 +122,7 @@ mod tests {
             )
             .with_where(surreal_expr!("status = 'completed'"))
             .with_group_by(surreal_expr!("customer_id"))
-            .with_order_by(surreal_expr!("total_amount"), false)
+            .with_order_by(surreal_expr!("total_amount"), Order::Desc)
             .with_limit(5);
 
         assert_eq!(
@@ -141,7 +141,7 @@ mod tests {
         select.add_field("email".to_string());
         select.add_expression(surreal_expr!("age * 2"), Some("double_age".to_string()));
         select.add_where_condition(surreal_expr!("age > 18"));
-        select.add_order_by(surreal_expr!("name"), true);
+        select.add_order_by(surreal_expr!("name"), Order::Asc);
         select.add_group_by(surreal_expr!("department"));
         select.set_limit(Some(10), Some(5));
         select.set_distinct(true);
