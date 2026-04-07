@@ -155,8 +155,9 @@ fn pg_column_to_json(row: &PgRow, ordinal: usize, type_name: &str) -> JsonValue 
             }
         }
         "NUMERIC" | "DECIMAL" => {
-            // PostgreSQL NUMERIC: use rust_decimal for lossless decoding,
-            // then convert to JSON number via f64.
+            // PostgreSQL NUMERIC: decode via rust_decimal, then convert
+            // to JSON number. Integer values are exact; decimals go through
+            // f64 which may lose precision for very large or high-scale values.
             if let Ok(v) = row.try_get::<rust_decimal::Decimal, _>(ordinal) {
                 use rust_decimal::prelude::ToPrimitive;
                 if v.scale() == 0
