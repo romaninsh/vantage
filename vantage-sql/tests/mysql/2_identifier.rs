@@ -3,7 +3,7 @@
 //! and handles unusual but valid MySQL identifier characters.
 
 use vantage_sql::mysql_expr;
-use vantage_sql::primitives::identifier::{Identifier, ident};
+use vantage_sql::primitives::identifier::ident;
 
 // ── ident() in expr macro via (parentheses) ───────────────────────────────────
 

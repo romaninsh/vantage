@@ -107,7 +107,9 @@ fn strftime_to_mysql(fmt: &str) -> String {
 // -- SQLite: STRFTIME('%Y-%m', expr) -----------------------------------------
 
 #[cfg(feature = "sqlite")]
-impl Expressive<crate::sqlite::types::AnySqliteType> for DateFormat<crate::sqlite::types::AnySqliteType> {
+impl Expressive<crate::sqlite::types::AnySqliteType>
+    for DateFormat<crate::sqlite::types::AnySqliteType>
+{
     fn expr(&self) -> Expression<crate::sqlite::types::AnySqliteType> {
         let base = Expression::new(
             "STRFTIME({}, {})",
@@ -126,7 +128,9 @@ impl Expressive<crate::sqlite::types::AnySqliteType> for DateFormat<crate::sqlit
 // -- MySQL: DATE_FORMAT(expr, '%Y-%m') ---------------------------------------
 
 #[cfg(feature = "mysql")]
-impl Expressive<crate::mysql::types::AnyMysqlType> for DateFormat<crate::mysql::types::AnyMysqlType> {
+impl Expressive<crate::mysql::types::AnyMysqlType>
+    for DateFormat<crate::mysql::types::AnyMysqlType>
+{
     fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
         let fmt = strftime_to_mysql(&self.format);
         let base = Expression::new(
@@ -146,7 +150,9 @@ impl Expressive<crate::mysql::types::AnyMysqlType> for DateFormat<crate::mysql::
 // -- PostgreSQL: TO_CHAR(expr, 'YYYY-MM') ------------------------------------
 
 #[cfg(feature = "postgres")]
-impl Expressive<crate::postgres::types::AnyPostgresType> for DateFormat<crate::postgres::types::AnyPostgresType> {
+impl Expressive<crate::postgres::types::AnyPostgresType>
+    for DateFormat<crate::postgres::types::AnyPostgresType>
+{
     fn expr(&self) -> Expression<crate::postgres::types::AnyPostgresType> {
         let fmt = strftime_to_pg(&self.format);
         let base = Expression::new(

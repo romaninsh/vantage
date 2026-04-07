@@ -1,6 +1,6 @@
 //! Test 2e: Identifier quoting with sqlite_expr! macro.
 
-use vantage_sql::primitives::identifier::{Identifier, ident};
+use vantage_sql::primitives::identifier::ident;
 use vantage_sql::sqlite_expr;
 
 #[test]

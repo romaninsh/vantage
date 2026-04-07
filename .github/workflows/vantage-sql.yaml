@@ -1,0 +1,122 @@
+name: vantage-sql
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "vantage-sql/**"
+      - "vantage-expressions/**"
+      - "vantage-table/**"
+      - "vantage-types/**"
+      - "vantage-core/**"
+      - "bakery_model3/**"
+      - ".github/workflows/vantage-sql.yaml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        backend:
+          - name: sqlite
+            feature: sqlite
+            test: sqlite
+            service: none
+          - name: postgres
+            feature: postgres
+            test: postgres
+            service: postgres
+          - name: mysql
+            feature: mysql
+            test: mysql
+            service: mysql
+          - name: csv
+            feature: sqlite
+            test: ""
+            service: none
+
+    name: ${{ matrix.backend.name }}
+
+    services:
+      postgres:
+        image: ${{ matrix.backend.service == 'postgres' && 'postgres:17-alpine' || '' }}
+        env:
+          POSTGRES_USER: vantage
+          POSTGRES_PASSWORD: vantage
+          POSTGRES_DB: vantage
+        ports:
+          - ${{ matrix.backend.service == 'postgres' && '5433:5432' || '' }}
+        options: >-
+          ${{ matrix.backend.service == 'postgres' && '--health-cmd "pg_isready -U vantage -d vantage" --health-interval 10s --health-timeout 5s --health-retries 5' || '' }}
+
+      mysql:
+        image: ${{ matrix.backend.service == 'mysql' && 'mysql:8' || '' }}
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_USER: vantage
+          MYSQL_PASSWORD: vantage
+          MYSQL_DATABASE: vantage
+        ports:
+          - ${{ matrix.backend.service == 'mysql' && '3306:3306' || '' }}
+        options: >-
+          ${{ matrix.backend.service == 'mysql' && '--health-cmd "mysqladmin ping -h 127.0.0.1" --health-interval 10s --health-timeout 5s --health-retries 10' || '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          key: "vantage-sql-${{ matrix.backend.name }}-v01"
+          cache-workspace-crates: true
+          cache-all-crates: true
+
+      - name: Populate SQLite database
+        if: matrix.backend.name == 'sqlite'
+        run: |
+          cd vantage-sql/scripts/sqlite
+          bash ingress.sh
+
+      - name: Populate PostgreSQL database
+        if: matrix.backend.name == 'postgres'
+        run: |
+          cd vantage-sql/scripts/postgres
+          for f in db/*.sql; do
+            echo "Loading $f..."
+            PGPASSWORD=vantage psql -h localhost -p 5433 -U vantage -d vantage -f "$f"
+          done
+
+      - name: Populate MySQL database
+        if: matrix.backend.name == 'mysql'
+        run: |
+          cd vantage-sql/scripts/mysql
+          for f in db/*.sql; do
+            echo "Loading $f..."
+            mysql -h 127.0.0.1 -uvantage -pvantage vantage < "$f"
+          done
+
+      - name: Build
+        if: matrix.backend.test != ''
+        run: cargo build -p vantage-sql --features ${{ matrix.backend.feature }}
+
+      - name: Test
+        if: matrix.backend.test != ''
+        run: cargo test -p vantage-sql --features ${{ matrix.backend.feature }} --test ${{ matrix.backend.test }}
+
+      - name: Clippy
+        if: matrix.backend.test != ''
+        run: cargo clippy -p vantage-sql --features ${{ matrix.backend.feature }} --all-targets -- -D warnings
+
+      - name: Build bakery_model3
+        if: matrix.backend.name != 'mysql'
+        run: cargo build -p bakery_model3
+
+      - name: bakery_model3 smoke test
+        if: matrix.backend.name != 'mysql'
+        run: |
+          cargo run -p bakery_model3 --example cli -- ${{ matrix.backend.name }} bakery list
+          cargo run -p bakery_model3 --example cli -- ${{ matrix.backend.name }} product count
+          cargo run -p bakery_model3 --example cli -- ${{ matrix.backend.name }} client list

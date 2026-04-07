@@ -75,7 +75,9 @@ pub fn ternary<T: Debug + Display + Clone>(
 // -- SQLite: IIF(cond, true, false) -----------------------------------------
 
 #[cfg(feature = "sqlite")]
-impl Expressive<crate::sqlite::types::AnySqliteType> for Ternary<crate::sqlite::types::AnySqliteType> {
+impl Expressive<crate::sqlite::types::AnySqliteType>
+    for Ternary<crate::sqlite::types::AnySqliteType>
+{
     fn expr(&self) -> Expression<crate::sqlite::types::AnySqliteType> {
         let base = Expression::new("IIF({}, {}, {})", self.args());
         match &self.alias {
@@ -101,7 +103,9 @@ impl Expressive<crate::mysql::types::AnyMysqlType> for Ternary<crate::mysql::typ
 // -- PostgreSQL: CASE WHEN cond THEN true ELSE false END ---------------------
 
 #[cfg(feature = "postgres")]
-impl Expressive<crate::postgres::types::AnyPostgresType> for Ternary<crate::postgres::types::AnyPostgresType> {
+impl Expressive<crate::postgres::types::AnyPostgresType>
+    for Ternary<crate::postgres::types::AnyPostgresType>
+{
     fn expr(&self) -> Expression<crate::postgres::types::AnyPostgresType> {
         let base = Expression::new("CASE WHEN {} THEN {} ELSE {} END", self.args());
         match &self.alias {

@@ -70,7 +70,9 @@ macro_rules! concat_sql {
 // -- SQLite: a || b || c -----------------------------------------------------
 
 #[cfg(feature = "sqlite")]
-impl Expressive<crate::sqlite::types::AnySqliteType> for Concat<crate::sqlite::types::AnySqliteType> {
+impl Expressive<crate::sqlite::types::AnySqliteType>
+    for Concat<crate::sqlite::types::AnySqliteType>
+{
     fn expr(&self) -> Expression<crate::sqlite::types::AnySqliteType> {
         let base = Expression::from_vec(self.parts.clone(), " || ");
         match &self.alias {
@@ -86,10 +88,7 @@ impl Expressive<crate::sqlite::types::AnySqliteType> for Concat<crate::sqlite::t
 impl Expressive<crate::mysql::types::AnyMysqlType> for Concat<crate::mysql::types::AnyMysqlType> {
     fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
         let args = Expression::from_vec(self.parts.clone(), ", ");
-        let base = Expression::new(
-            "CONCAT({})",
-            vec![ExpressiveEnum::Nested(args)],
-        );
+        let base = Expression::new("CONCAT({})", vec![ExpressiveEnum::Nested(args)]);
         match &self.alias {
             Some(alias) => expr_any!("{} AS {}", (base), (Identifier::new(alias))),
             None => base,
@@ -100,7 +99,9 @@ impl Expressive<crate::mysql::types::AnyMysqlType> for Concat<crate::mysql::type
 // -- PostgreSQL: a || b || c --------------------------------------------------
 
 #[cfg(feature = "postgres")]
-impl Expressive<crate::postgres::types::AnyPostgresType> for Concat<crate::postgres::types::AnyPostgresType> {
+impl Expressive<crate::postgres::types::AnyPostgresType>
+    for Concat<crate::postgres::types::AnyPostgresType>
+{
     fn expr(&self) -> Expression<crate::postgres::types::AnyPostgresType> {
         let base = Expression::from_vec(self.parts.clone(), " || ");
         match &self.alias {

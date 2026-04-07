@@ -419,11 +419,7 @@ async fn test_q6() {
             Fx::new("avg", [ident("total").expr()]),
             Some("avg_total".into()),
         )
-        .with_condition(sqlite_expr!(
-            "{} != {}",
-            (ident("status")),
-            "cancelled"
-        ))
+        .with_condition(sqlite_expr!("{} != {}", (ident("status")), "cancelled"))
         .with_group_by(ident("user_id"));
 
     let users: Vec<UserOrderStats> = check_and_run(
@@ -531,11 +527,7 @@ async fn test_q7() {
                 Some("band".into()),
             )
             .with_expression(
-                ternary(
-                    ident("role").eq("admin"),
-                    "Yes",
-                    "No",
-                ).with_alias("is_admin"),
+                ternary(ident("role").eq("admin"), "Yes", "No").with_alias("is_admin"),
                 None,
             )
             .with_field("display_name")
@@ -856,16 +848,9 @@ async fn test_q11() {
         .with_source_as("departments", "d")
         .with_expression(ident("id").dot_of("d"), None)
         .with_expression(ident("name").dot_of("d"), None)
+        .with_expression(sqlite_expr!("{} + 1", (ident("depth").dot_of("dt"))), None)
         .with_expression(
-            sqlite_expr!("{} + 1", (ident("depth").dot_of("dt"))),
-            None,
-        )
-        .with_expression(
-            concat_sql!(
-                ident("path").dot_of("dt"),
-                " > ",
-                ident("name").dot_of("d")
-            ),
+            concat_sql!(ident("path").dot_of("dt"), " > ", ident("name").dot_of("d")),
             None,
         )
         .with_join(SqliteSelectJoin::inner(
@@ -977,11 +962,7 @@ async fn test_q12() {
                 (ident("name").dot_of("p")),
                 "%Pro%"
             ))
-            .with_condition(sqlite_expr!(
-                "{} > {}",
-                (ident("stock").dot_of("p")),
-                0i64
-            ))
+            .with_condition(sqlite_expr!("{} > {}", (ident("stock").dot_of("p")), 0i64))
             .with_order(ident("price").dot_of("p"), true)
             .with_limit(Some(50), None),
         concat!(

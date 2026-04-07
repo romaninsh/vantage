@@ -50,17 +50,23 @@ pub fn json_extract<T: Debug + Display + Clone>(
     JsonExtract::new(source, field)
 }
 
+/// Helper: create a SQL path literal as an inline expression (not a bind parameter).
+fn json_path<T: Debug + Display + Clone>(field: &str, prefix: &str) -> Expression<T> {
+    Expression::new(format!("'{prefix}{field}'"), vec![])
+}
+
 // -- SQLite: JSON_EXTRACT("col", '$.field') ----------------------------------
 
 #[cfg(feature = "sqlite")]
-impl Expressive<crate::sqlite::types::AnySqliteType> for JsonExtract<crate::sqlite::types::AnySqliteType> {
+impl Expressive<crate::sqlite::types::AnySqliteType>
+    for JsonExtract<crate::sqlite::types::AnySqliteType>
+{
     fn expr(&self) -> Expression<crate::sqlite::types::AnySqliteType> {
-        let path = format!("$.{}", self.field);
         let base = Expression::new(
             "JSON_EXTRACT({}, {})",
             vec![
                 ExpressiveEnum::Nested(self.source.clone()),
-                ExpressiveEnum::Scalar(path.into()),
+                ExpressiveEnum::Nested(json_path(&self.field, "$.")),
             ],
         );
         match &self.alias {
@@ -73,14 +79,15 @@ impl Expressive<crate::sqlite::types::AnySqliteType> for JsonExtract<crate::sqli
 // -- MySQL: JSON_EXTRACT(`col`, '$.field') -----------------------------------
 
 #[cfg(feature = "mysql")]
-impl Expressive<crate::mysql::types::AnyMysqlType> for JsonExtract<crate::mysql::types::AnyMysqlType> {
+impl Expressive<crate::mysql::types::AnyMysqlType>
+    for JsonExtract<crate::mysql::types::AnyMysqlType>
+{
     fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
-        let path = format!("$.{}", self.field);
         let base = Expression::new(
             "JSON_EXTRACT({}, {})",
             vec![
                 ExpressiveEnum::Nested(self.source.clone()),
-                ExpressiveEnum::Scalar(path.into()),
+                ExpressiveEnum::Nested(json_path(&self.field, "$.")),
             ],
         );
         match &self.alias {
@@ -93,13 +100,15 @@ impl Expressive<crate::mysql::types::AnyMysqlType> for JsonExtract<crate::mysql:
 // -- PostgreSQL: "col"->>'field' ---------------------------------------------
 
 #[cfg(feature = "postgres")]
-impl Expressive<crate::postgres::types::AnyPostgresType> for JsonExtract<crate::postgres::types::AnyPostgresType> {
+impl Expressive<crate::postgres::types::AnyPostgresType>
+    for JsonExtract<crate::postgres::types::AnyPostgresType>
+{
     fn expr(&self) -> Expression<crate::postgres::types::AnyPostgresType> {
         let base = Expression::new(
             "{} ->> {}",
             vec![
                 ExpressiveEnum::Nested(self.source.clone()),
-                ExpressiveEnum::Scalar(self.field.clone().into()),
+                ExpressiveEnum::Nested(json_path(&self.field, "")),
             ],
         );
         match &self.alias {

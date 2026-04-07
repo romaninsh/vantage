@@ -159,15 +159,15 @@ fn pg_column_to_json(row: &PgRow, ordinal: usize, type_name: &str) -> JsonValue 
             // then convert to JSON number via f64.
             if let Ok(v) = row.try_get::<rust_decimal::Decimal, _>(ordinal) {
                 use rust_decimal::prelude::ToPrimitive;
-                if v.scale() == 0 {
-                    if let Some(i) = v.to_i64() {
-                        return JsonValue::Number(i.into());
-                    }
+                if v.scale() == 0
+                    && let Some(i) = v.to_i64()
+                {
+                    return JsonValue::Number(i.into());
                 }
-                if let Some(f) = v.to_f64() {
-                    if let Some(n) = serde_json::Number::from_f64(f) {
-                        return JsonValue::Number(n);
-                    }
+                if let Some(f) = v.to_f64()
+                    && let Some(n) = serde_json::Number::from_f64(f)
+                {
+                    return JsonValue::Number(n);
                 }
             }
         }

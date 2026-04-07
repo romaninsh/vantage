@@ -5,11 +5,11 @@
 
 use serde::Deserialize;
 use vantage_expressions::{ExprDataSource, Expressive, Selectable};
-use vantage_sql::primitives::identifier::ident;
 use vantage_sql::postgres::PostgresDB;
 use vantage_sql::postgres::statements::PostgresSelect;
 use vantage_sql::postgres::statements::select::join::PostgresSelectJoin;
 use vantage_sql::postgres_expr;
+use vantage_sql::primitives::identifier::ident;
 use vantage_table::operation::Operation;
 use vantage_types::{Record, TryFromRecord};
 
@@ -419,11 +419,7 @@ async fn test_q6() {
             Fx::new("avg", [ident("total").expr()]),
             Some("avg_total".into()),
         )
-        .with_condition(postgres_expr!(
-            "{} != {}",
-            (ident("status")),
-            "cancelled"
-        ))
+        .with_condition(postgres_expr!("{} != {}", (ident("status")), "cancelled"))
         .with_group_by(ident("user_id"));
 
     let users: Vec<UserOrderStats> = check_and_run(
@@ -531,11 +527,7 @@ async fn test_q7() {
                 Some("band".into()),
             )
             .with_expression(
-                ternary(
-                    ident("role").eq("admin"),
-                    "Yes",
-                    "No",
-                ).with_alias("is_admin"),
+                ternary(ident("role").eq("admin"), "Yes", "No").with_alias("is_admin"),
                 None,
             )
             .with_field("display_name")
@@ -861,11 +853,7 @@ async fn test_q11() {
             None,
         )
         .with_expression(
-            concat_sql!(
-                ident("path").dot_of("dt"),
-                " > ",
-                ident("name").dot_of("d")
-            ),
+            concat_sql!(ident("path").dot_of("dt"), " > ", ident("name").dot_of("d")),
             None,
         )
         .with_join(PostgresSelectJoin::inner(
@@ -1049,7 +1037,10 @@ async fn test_q13() {
                 None,
             )
             .with_expression(
-                postgres_expr!("CAST({} AS DOUBLE PRECISION)", (JsonExtract::new(metadata.clone(), "weight_kg"))),
+                postgres_expr!(
+                    "CAST({} AS DOUBLE PRECISION)",
+                    (JsonExtract::new(metadata.clone(), "weight_kg"))
+                ),
                 Some("weight".into()),
             )
             .with_expression(

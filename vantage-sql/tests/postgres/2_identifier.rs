@@ -1,7 +1,7 @@
 //! Test 2e: Identifier quoting with postgres_expr! macro.
 
 use vantage_sql::postgres_expr;
-use vantage_sql::primitives::identifier::{Identifier, ident};
+use vantage_sql::primitives::identifier::ident;
 
 #[test]
 fn test_id_in_select() {
