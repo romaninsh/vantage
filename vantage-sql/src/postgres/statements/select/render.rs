@@ -98,12 +98,11 @@ impl PostgresSelect {
             let parts: Vec<Expr> = self
                 .order_by
                 .iter()
-                .map(|(expr, asc)| {
-                    if *asc {
-                        expr.clone()
-                    } else {
-                        Expression::new("{} DESC", vec![ExpressiveEnum::Nested(expr.clone())])
-                    }
+                .map(|(expr, order)| {
+                    Expression::new(
+                        format!("{{}}{}", order.suffix()),
+                        vec![ExpressiveEnum::Nested(expr.clone())],
+                    )
                 })
                 .collect();
             Expression::new(
@@ -161,14 +160,35 @@ impl PostgresSelect {
         }
     }
 
+    fn render_distinct(&self) -> &str {
+        if !self.distinct_on.is_empty() {
+            // DISTINCT ON is rendered as part of fields via render_distinct_on()
+            ""
+        } else if self.distinct {
+            " DISTINCT"
+        } else {
+            ""
+        }
+    }
+
+    fn render_distinct_on(&self) -> Expr {
+        if self.distinct_on.is_empty() {
+            Expression::new("", vec![])
+        } else {
+            let exprs = Expression::from_vec(self.distinct_on.clone(), ", ");
+            Expression::new("DISTINCT ON ({}) ", vec![ExpressiveEnum::Nested(exprs)])
+        }
+    }
+
     pub fn render(&self) -> Expr {
         Expression::new(
             format!(
-                "{{}}SELECT{} {{}}{{}}{{}}{{}}{{}}{{}}{{}}{{}}{{}}",
-                if self.distinct { " DISTINCT" } else { "" }
+                "{{}}SELECT{} {{}}{{}}{{}}{{}}{{}}{{}}{{}}{{}}{{}}{{}}",
+                self.render_distinct()
             ),
             vec![
                 ExpressiveEnum::Nested(self.render_ctes()),
+                ExpressiveEnum::Nested(self.render_distinct_on()),
                 ExpressiveEnum::Nested(self.render_fields()),
                 ExpressiveEnum::Nested(self.render_from()),
                 ExpressiveEnum::Nested(self.render_joins()),

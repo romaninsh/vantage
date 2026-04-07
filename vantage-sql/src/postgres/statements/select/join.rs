@@ -10,6 +10,10 @@ pub enum PostgresJoinType {
     Inner,
     Left,
     Right,
+    FullOuter,
+    // -- PostgreSQL-specific --
+    LeftLateral,
+    CrossLateral,
 }
 
 impl PostgresJoinType {
@@ -18,6 +22,9 @@ impl PostgresJoinType {
             PostgresJoinType::Inner => "INNER JOIN",
             PostgresJoinType::Left => "LEFT JOIN",
             PostgresJoinType::Right => "RIGHT JOIN",
+            PostgresJoinType::FullOuter => "FULL OUTER JOIN",
+            PostgresJoinType::LeftLateral => "LEFT JOIN LATERAL",
+            PostgresJoinType::CrossLateral => "CROSS JOIN LATERAL",
         }
     }
 }
@@ -63,6 +70,18 @@ impl PostgresSelectJoin {
         )
     }
 
+    pub fn full_outer(
+        table: impl Into<String>,
+        alias: impl Into<String>,
+        on_condition: Expr,
+    ) -> Self {
+        Self::new(
+            PostgresJoinType::FullOuter,
+            Self::table_expr(table, alias),
+            on_condition,
+        )
+    }
+
     pub fn inner_expr(
         subquery: impl Expressive<AnyPostgresType>,
         alias: impl Into<String>,
@@ -87,13 +106,56 @@ impl PostgresSelectJoin {
         )
     }
 
-    pub fn render(&self) -> Expr {
-        Expression::new(
-            format!(" {} {{}} ON {{}}", self.join_type.as_str()),
-            vec![
-                ExpressiveEnum::Nested(self.table.clone()),
-                ExpressiveEnum::Nested(self.on_condition.clone()),
-            ],
+    /// PostgreSQL-specific: `LEFT JOIN LATERAL (subquery) AS alias ON TRUE`
+    pub fn left_lateral(
+        subquery: impl Expressive<AnyPostgresType>,
+        alias: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            PostgresJoinType::LeftLateral,
+            Self::subquery_expr(subquery, alias),
+            Expression::new("TRUE", vec![]),
         )
+    }
+
+    /// PostgreSQL-specific: `CROSS JOIN LATERAL (subquery) AS alias`
+    pub fn cross_lateral(
+        subquery: impl Expressive<AnyPostgresType>,
+        alias: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            PostgresJoinType::CrossLateral,
+            Self::subquery_expr(subquery, alias),
+            Expression::new("", vec![]),
+        )
+    }
+
+    /// PostgreSQL-specific: `CROSS JOIN LATERAL expr` (no wrapping parens).
+    /// Useful for set-returning functions like `UNNEST(...) WITH ORDINALITY AS alias(col, col)`.
+    pub fn cross_lateral_raw(table_expr: impl Expressive<AnyPostgresType>) -> Self {
+        Self::new(
+            PostgresJoinType::CrossLateral,
+            table_expr.expr(),
+            Expression::new("", vec![]),
+        )
+    }
+
+    pub fn render(&self) -> Expr {
+        match self.join_type {
+            PostgresJoinType::CrossLateral => {
+                // CROSS JOIN LATERAL has no ON clause
+                Expression::new(
+                    format!(" {} {{}}", self.join_type.as_str()),
+                    vec![ExpressiveEnum::Nested(self.table.clone())],
+                )
+            }
+            _ => Expression::new(
+                format!(" {} {{}} ON {{}}", self.join_type.as_str()),
+                vec![
+                    ExpressiveEnum::Nested(self.table.clone()),
+                    ExpressiveEnum::Nested(self.on_condition.clone()),
+                ],
+            ),
+        }
     }
 }

@@ -1,6 +1,6 @@
 //! Test 3a: PostgresSelect via Selectable trait + SelectableDataSource execution.
 
-use vantage_expressions::{ExprDataSource, Expressive, Selectable};
+use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
 #[allow(unused_imports)]
 use vantage_sql::postgres::PostgresType;
 use vantage_sql::postgres::statements::PostgresSelect;
@@ -82,7 +82,7 @@ fn test_select_with_condition() {
 fn test_select_order_and_limit() {
     let s = PostgresSelect::new()
         .with_source("product")
-        .with_order(postgres_expr!("\"price\""), false)
+        .with_order(postgres_expr!("\"price\""), Order::Desc)
         .with_limit(Some(2), None);
     assert_eq!(
         s.preview(),
@@ -205,7 +205,7 @@ async fn test_execute_order_and_limit() {
 
     let select = PostgresSelect::new()
         .with_source("sel_order")
-        .with_order(postgres_expr!("\"price\""), false)
+        .with_order(postgres_expr!("\"price\""), Order::Desc)
         .with_limit(Some(1), None);
 
     let record: Record<AnyPostgresType> = db.associate(select.expr()).get().await.unwrap();

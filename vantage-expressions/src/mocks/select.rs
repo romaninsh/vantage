@@ -153,8 +153,8 @@ impl Selectable<serde_json::Value> for MockSelect {
         self.distinct = distinct;
     }
 
-    fn add_order_by(&mut self, expression: impl Expressive<Value>, ascending: bool) {
-        self.order_by.push((expression.expr(), ascending));
+    fn add_order_by(&mut self, expression: impl Expressive<Value>, order: crate::Order) {
+        self.order_by.push((expression.expr(), order.ascending));
     }
 
     fn add_group_by(&mut self, _expression: impl Expressive<Value>) {

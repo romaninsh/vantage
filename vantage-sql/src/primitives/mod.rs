@@ -4,6 +4,7 @@ pub mod date_format;
 pub mod fx;
 pub mod identifier;
 pub mod iif;
+pub mod interval;
 pub mod json_extract;
 pub mod select;
 pub mod ternary;

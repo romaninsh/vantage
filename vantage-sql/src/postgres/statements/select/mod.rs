@@ -16,7 +16,7 @@ pub struct PostgresSelect {
     pub from: Vec<Expr>,
     pub joins: Vec<PostgresSelectJoin>,
     pub where_conditions: Vec<Expr>,
-    pub order_by: Vec<(Expr, bool)>,
+    pub order_by: Vec<(Expr, vantage_expressions::Order)>,
     pub group_by: Vec<Expr>,
     pub having: Vec<Expr>,
     pub windows: Vec<(String, Window<AnyPostgresType>)>,
@@ -24,6 +24,9 @@ pub struct PostgresSelect {
     pub distinct: bool,
     pub limit: Option<i64>,
     pub skip: Option<i64>,
+
+    // -- PostgreSQL-specific fields --
+    pub distinct_on: Vec<Expr>,
 }
 
 impl PostgresSelect {
@@ -41,6 +44,7 @@ impl PostgresSelect {
             distinct: false,
             limit: None,
             skip: None,
+            distinct_on: Vec::new(),
         }
     }
 
@@ -73,6 +77,20 @@ impl PostgresSelect {
         recursive: bool,
     ) -> Self {
         self.ctes.push((name.into(), query.expr(), recursive));
+        self
+    }
+}
+
+// -- PostgreSQL-specific methods --
+
+impl PostgresSelect {
+    /// `SELECT DISTINCT ON (expr, ...) ...`
+    /// ORDER BY must start with the DISTINCT ON expressions.
+    pub fn with_distinct_on(
+        mut self,
+        expr: impl vantage_expressions::Expressive<AnyPostgresType>,
+    ) -> Self {
+        self.distinct_on.push(expr.expr());
         self
     }
 }

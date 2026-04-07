@@ -143,6 +143,48 @@ impl<T: std::fmt::Display + std::fmt::Debug> Expression<T> {
     }
 }
 
+// -- Arithmetic operators for Expression<T> ----------------------------------
+
+impl<T> std::ops::Add for Expression<T> {
+    type Output = Expression<T>;
+    fn add(self, rhs: Self) -> Self::Output {
+        Expression::new(
+            "{} + {}",
+            vec![ExpressiveEnum::Nested(self), ExpressiveEnum::Nested(rhs)],
+        )
+    }
+}
+
+impl<T> std::ops::Sub for Expression<T> {
+    type Output = Expression<T>;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Expression::new(
+            "{} - {}",
+            vec![ExpressiveEnum::Nested(self), ExpressiveEnum::Nested(rhs)],
+        )
+    }
+}
+
+impl<T> std::ops::Mul for Expression<T> {
+    type Output = Expression<T>;
+    fn mul(self, rhs: Self) -> Self::Output {
+        Expression::new(
+            "{} * {}",
+            vec![ExpressiveEnum::Nested(self), ExpressiveEnum::Nested(rhs)],
+        )
+    }
+}
+
+impl<T> std::ops::Div for Expression<T> {
+    type Output = Expression<T>;
+    fn div(self, rhs: Self) -> Self::Output {
+        Expression::new(
+            "{} / {}",
+            vec![ExpressiveEnum::Nested(self), ExpressiveEnum::Nested(rhs)],
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use vantage_expressions::{ExprDataSource, Expressive, Selectable};
+use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
 use vantage_sql::sqlite::SqliteDB;
 use vantage_sql::sqlite::statements::SqliteSelect;
 use vantage_sql::sqlite_expr;
@@ -119,7 +119,7 @@ async fn test_select_with_order_and_limit() {
     let db = get_db().await;
     let select = SqliteSelect::new()
         .with_source("product")
-        .with_order(sqlite_expr!("\"price\""), false)
+        .with_order(sqlite_expr!("\"price\""), Order::Desc)
         .with_limit(Some(2), None);
     let rows = exec_rows(db.execute(&select.expr()).await.unwrap().into_value());
 

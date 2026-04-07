@@ -87,6 +87,14 @@ pub trait Operation<T>: Expressive<T> {
             ],
         )
     }
+
+    /// Casts the expression to a SQL type: `CAST(expr AS type_name)`
+    fn cast(&self, type_name: &str) -> Expression<T> {
+        Expression::new(
+            format!("CAST({{}} AS {type_name})"),
+            vec![ExpressiveEnum::Nested(self.expr())],
+        )
+    }
 }
 
 /// Blanket implementation: any type that implements `Expressive<T>` gets `Operation<T>` for free.

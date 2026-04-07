@@ -78,8 +78,12 @@ impl Selectable<AnyPostgresType> for PostgresSelect {
         self.distinct = distinct;
     }
 
-    fn add_order_by(&mut self, expression: impl Expressive<AnyPostgresType>, ascending: bool) {
-        self.order_by.push((expression.expr(), ascending));
+    fn add_order_by(
+        &mut self,
+        expression: impl Expressive<AnyPostgresType>,
+        order: vantage_expressions::Order,
+    ) {
+        self.order_by.push((expression.expr(), order));
     }
 
     fn add_group_by(&mut self, expression: impl Expressive<AnyPostgresType>) {

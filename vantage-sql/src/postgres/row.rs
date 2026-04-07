@@ -172,6 +172,46 @@ fn pg_column_to_json(row: &PgRow, ordinal: usize, type_name: &str) -> JsonValue 
                 }
             }
         }
+        // -- PostgreSQL-specific types --
+        "_TEXT" | "TEXT[]" => {
+            if let Ok(v) = row.try_get::<Vec<String>, _>(ordinal) {
+                return JsonValue::Array(v.into_iter().map(JsonValue::String).collect());
+            }
+        }
+        "_INT4" | "INT4[]" | "INTEGER[]" => {
+            if let Ok(v) = row.try_get::<Vec<i32>, _>(ordinal) {
+                return JsonValue::Array(
+                    v.into_iter()
+                        .map(|i| JsonValue::Number((i as i64).into()))
+                        .collect(),
+                );
+            }
+        }
+        "UUID" => {
+            if let Ok(v) = row.try_get::<uuid::Uuid, _>(ordinal) {
+                return JsonValue::String(v.to_string());
+            }
+        }
+        "DATE" => {
+            if let Ok(v) = row.try_get::<chrono::NaiveDate, _>(ordinal) {
+                return JsonValue::String(v.format("%Y-%m-%d").to_string());
+            }
+        }
+        "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE" => {
+            if let Ok(v) = row.try_get::<chrono::DateTime<chrono::Utc>, _>(ordinal) {
+                return JsonValue::String(v.to_rfc3339());
+            }
+        }
+        "TIMESTAMP" | "TIMESTAMP WITHOUT TIME ZONE" => {
+            if let Ok(v) = row.try_get::<chrono::NaiveDateTime, _>(ordinal) {
+                return JsonValue::String(v.format("%Y-%m-%dT%H:%M:%S").to_string());
+            }
+        }
+        "JSONB" | "JSON" => {
+            if let Ok(v) = row.try_get::<serde_json::Value, _>(ordinal) {
+                return v;
+            }
+        }
         _ => {}
     }
 

@@ -98,12 +98,11 @@ impl SqliteSelect {
             let parts: Vec<Expr> = self
                 .order_by
                 .iter()
-                .map(|(expr, asc)| {
-                    if *asc {
-                        expr.clone()
-                    } else {
-                        Expression::new("{} DESC", vec![ExpressiveEnum::Nested(expr.clone())])
-                    }
+                .map(|(expr, order)| {
+                    Expression::new(
+                        format!("{{}}{}", order.suffix()),
+                        vec![ExpressiveEnum::Nested(expr.clone())],
+                    )
                 })
                 .collect();
             Expression::new(

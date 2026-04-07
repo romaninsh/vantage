@@ -52,6 +52,10 @@ for i in $(seq 1 30); do
     sleep 1
 done
 
+# Create additional databases
+echo "Creating additional databases..."
+docker exec $CONTAINER_NAME psql -U $USER -d $DB -c "CREATE DATABASE vantage_pg OWNER $USER;" 2>/dev/null || true
+
 # Check if container is running
 if docker ps -q -f name=$CONTAINER_NAME | grep -q .; then
     echo ""

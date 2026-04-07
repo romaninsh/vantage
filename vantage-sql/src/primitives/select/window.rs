@@ -9,7 +9,7 @@ use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 /// ```ignore
 /// let win = Window::new()
 ///     .partition_by(ident("department_id").dot_of("u"))
-///     .order_by(ident("salary").dot_of("u"), false);
+///     .order_by(ident("salary").dot_of("u"), Order::Desc);
 ///
 /// // Inline: SUM(u.salary) OVER (PARTITION BY ... ORDER BY ... DESC)
 /// win.apply(Fx::new("sum", [ident("salary").dot_of("u").expr()]))
@@ -20,7 +20,7 @@ use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 #[derive(Debug, Clone)]
 pub struct Window<T: Debug + Display + Clone> {
     partition_by: Vec<Expression<T>>,
-    order_by: Vec<(Expression<T>, bool)>,
+    order_by: Vec<(Expression<T>, vantage_expressions::Order)>,
     frame: Option<String>,
     named_ref: Option<String>,
 }
@@ -56,8 +56,8 @@ impl<T: Debug + Display + Clone> Window<T> {
         self
     }
 
-    pub fn order_by(mut self, expr: impl Expressive<T>, ascending: bool) -> Self {
-        self.order_by.push((expr.expr(), ascending));
+    pub fn order_by(mut self, expr: impl Expressive<T>, order: vantage_expressions::Order) -> Self {
+        self.order_by.push((expr.expr(), order));
         self
     }
 
@@ -104,12 +104,11 @@ impl<T: Debug + Display + Clone> Window<T> {
             let order_parts: Vec<Expression<T>> = self
                 .order_by
                 .iter()
-                .map(|(expr, asc)| {
-                    if *asc {
-                        expr.clone()
-                    } else {
-                        Expression::new("{} DESC", vec![ExpressiveEnum::Nested(expr.clone())])
-                    }
+                .map(|(expr, order)| {
+                    Expression::new(
+                        format!("{{}}{}", order.suffix()),
+                        vec![ExpressiveEnum::Nested(expr.clone())],
+                    )
                 })
                 .collect();
             parts.push(Expression::new(
