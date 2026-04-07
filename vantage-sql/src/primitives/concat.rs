@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display};
 
 use vantage_core::util::IntoVec;
-use vantage_expressions::{Expression, Expressive, ExpressiveEnum, expr_any};
+use vantage_expressions::{Expression, Expressive, expr_any};
 
 use super::identifier::Identifier;
 
@@ -88,7 +88,8 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
 impl Expressive<crate::mysql::types::AnyMysqlType> for Concat<crate::mysql::types::AnyMysqlType> {
     fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
         let args = Expression::from_vec(self.parts.clone(), ", ");
-        let base = Expression::new("CONCAT({})", vec![ExpressiveEnum::Nested(args)]);
+        let base =
+            Expression::new("CONCAT({})", vec![vantage_expressions::ExpressiveEnum::Nested(args)]);
         match &self.alias {
             Some(alias) => expr_any!("{} AS {}", (base), (Identifier::new(alias))),
             None => base,

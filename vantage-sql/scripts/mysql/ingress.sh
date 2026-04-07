@@ -8,7 +8,7 @@ DB="vantage"
 
 echo "Loading MySQL data..."
 
-for db_file in "$SCRIPT_DIR"/db/*.sql; do
+for db_file in "$SCRIPT_DIR"/db/v[0-3]*.sql; do
     db_name=$(basename "$db_file" .sql)
     echo "Loading $db_name..."
     docker exec -i $CONTAINER_NAME mysql -u$USER -p$PASS $DB < "$db_file"

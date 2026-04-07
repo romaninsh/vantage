@@ -72,7 +72,7 @@ jobs:
         if: matrix.backend == 'postgres'
         run: |
           cd vantage-sql/scripts/postgres
-          for f in db/*.sql; do
+          for f in db/v[0-3]*.sql; do
             echo "Loading $f..."
             PGPASSWORD=vantage psql -h localhost -p 5433 -U vantage -d vantage -f "$f"
           done
@@ -81,7 +81,7 @@ jobs:
         if: matrix.backend == 'mysql'
         run: |
           cd vantage-sql/scripts/mysql
-          for f in db/*.sql; do
+          for f in db/v[0-3]*.sql; do
             echo "Loading $f..."
             mysql -h 127.0.0.1 -uvantage -pvantage vantage < "$f"
           done

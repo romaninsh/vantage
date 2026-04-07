@@ -55,6 +55,7 @@ pub fn date_format<T: Debug + Display + Clone>(
 }
 
 /// Translate strftime tokens to PostgreSQL TO_CHAR tokens.
+#[cfg(feature = "postgres")]
 fn strftime_to_pg(fmt: &str) -> String {
     let mut out = String::with_capacity(fmt.len() * 2);
     let mut chars = fmt.chars().peekable();
@@ -83,6 +84,7 @@ fn strftime_to_pg(fmt: &str) -> String {
 
 /// Translate strftime tokens to MySQL DATE_FORMAT tokens.
 /// MySQL is mostly the same as strftime, except minutes and seconds.
+#[cfg(feature = "mysql")]
 fn strftime_to_mysql(fmt: &str) -> String {
     let mut out = String::with_capacity(fmt.len());
     let mut chars = fmt.chars().peekable();

@@ -7,7 +7,7 @@ DB="vantage"
 
 echo "Loading PostgreSQL data..."
 
-for db_file in "$SCRIPT_DIR"/db/*.sql; do
+for db_file in "$SCRIPT_DIR"/db/v[0-3]*.sql; do
     db_name=$(basename "$db_file" .sql)
     echo "Loading $db_name..."
     docker exec -i $CONTAINER_NAME psql -U $USER -d $DB < "$db_file"
