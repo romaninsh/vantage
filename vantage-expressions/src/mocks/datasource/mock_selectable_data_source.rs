@@ -18,7 +18,7 @@
 //!     ]));
 //!
 //!     let mut select = mock.select();
-//!     select.set_source("products", None);
+//!     select.add_source("products", None);
 //!     select.add_field("name");
 //!     select.add_field("price");
 //!
@@ -79,7 +79,7 @@ mod tests {
         ]));
 
         let mut select = mock.select();
-        select.set_source("users", None);
+        select.add_source("users", None);
         select.add_field("name");
 
         let results = mock.execute_select(&select).await.unwrap();

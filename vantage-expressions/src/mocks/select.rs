@@ -21,7 +21,7 @@ type Value = serde_json::Value;
 /// use vantage_expressions::traits::selectable::Selectable;
 ///
 /// let mut select = MockSelect::new();
-/// select.set_source("users", None);
+/// select.add_source("users", None);
 /// select.add_field("name");
 /// select.add_field("email");
 ///
@@ -124,7 +124,7 @@ impl MockSelect {
 }
 
 impl Selectable<serde_json::Value> for MockSelect {
-    fn set_source(
+    fn add_source(
         &mut self,
         source: impl Into<SourceRef<serde_json::Value>>,
         _alias: Option<String>,
@@ -251,7 +251,7 @@ mod tests {
     #[test]
     fn test_mock_select_basic() {
         let mut select = MockSelect::new();
-        select.set_source("users", None);
+        select.add_source("users", None);
 
         let query: Expression<serde_json::Value> = select.into();
         assert_eq!(query.preview(), "SELECT * FROM users");
@@ -260,7 +260,7 @@ mod tests {
     #[test]
     fn test_mock_select_with_fields() {
         let mut select = MockSelect::new();
-        select.set_source("users", None);
+        select.add_source("users", None);
         select.add_field("name");
         select.add_field("email");
 
@@ -271,7 +271,7 @@ mod tests {
     #[test]
     fn test_mock_select_with_conditions() {
         let mut select = MockSelect::new();
-        select.set_source("users", None);
+        select.add_source("users", None);
         select.add_field("name");
         select.add_where_condition(expr!("age > 18"));
 

@@ -31,7 +31,7 @@ use vantage_expressions::result;
 /// use vantage_surrealdb::{select::SurrealSelect, surreal_expr};
 ///
 /// let mut select = SurrealSelect::new();
-/// select.set_source("users", None);
+/// select.add_source("users", None);
 /// select.add_field("name");
 /// ```
 #[derive(Debug, Clone)]

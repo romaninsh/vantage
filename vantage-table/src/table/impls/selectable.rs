@@ -19,7 +19,7 @@ where
         let mut select = self.data_source.select();
 
         // Set the table as source
-        select.set_source(self.table_name(), None);
+        select.add_source(self.table_name(), None);
 
         // Add all columns as fields
         for column in self.columns.values() {

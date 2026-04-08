@@ -75,14 +75,26 @@ macro_rules! concat_sql {
     };
 }
 
-// -- SQLite: a || b || c -----------------------------------------------------
+// -- SQLite: a || b || c or a || sep || b || sep || c -------------------------
 
 #[cfg(feature = "sqlite")]
 impl Expressive<crate::sqlite::types::AnySqliteType>
     for Concat<crate::sqlite::types::AnySqliteType>
 {
     fn expr(&self) -> Expression<crate::sqlite::types::AnySqliteType> {
-        let base = Expression::from_vec(self.parts.clone(), " || ");
+        let base = if let Some(sep) = &self.separator {
+            // Interleave parts with separator: a || sep || b || sep || c
+            let mut interleaved = Vec::with_capacity(self.parts.len() * 2 - 1);
+            for (i, part) in self.parts.iter().enumerate() {
+                if i > 0 {
+                    interleaved.push(sep.clone());
+                }
+                interleaved.push(part.clone());
+            }
+            Expression::from_vec(interleaved, " || ")
+        } else {
+            Expression::from_vec(self.parts.clone(), " || ")
+        };
         match &self.alias {
             Some(alias) => expr_any!("{} AS {}", (base), (Identifier::new(alias))),
             None => base,

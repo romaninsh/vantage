@@ -374,7 +374,7 @@ impl TableSource for MockTableSource {
         use vantage_expressions::traits::associated_expressions::AssociatedExpression;
         use vantage_expressions::{Expressive, Selectable, SelectableDataSource};
         let mut select = self.select();
-        select.set_source(table.table_name(), None);
+        select.add_source(table.table_name(), None);
         select.clear_fields();
         select.add_field(column.name());
         for condition in table.conditions() {

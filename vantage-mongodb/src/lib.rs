@@ -11,7 +11,7 @@ pub use query::{MongoCount, MongoDelete, MongoInsert, MongoSelect, MongoUpdate};
 // Convenience constructors
 pub fn select(collection: impl Into<String>) -> MongoSelect {
     let mut select = MongoSelect::new();
-    select.set_source(expr!(collection.into()), None);
+    select.add_source(expr!(collection.into()), None);
     select
 }
 

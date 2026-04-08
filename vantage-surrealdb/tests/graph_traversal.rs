@@ -35,7 +35,7 @@ async fn query01_bakery_products_via_graph() {
 
     // Wrap in subquery to get ORDER BY working
     let mut outer = SurrealSelect::new();
-    outer.set_source(inner.expr(), None);
+    outer.add_source(inner.expr(), None);
     outer.add_order_by(surreal_expr!("name"), Order::Asc);
 
     let rows = outer.get(&db).await.unwrap();
@@ -60,7 +60,7 @@ async fn query02_bakery_clients_via_reverse_graph() {
 
     // Wrap to get ordered results
     let mut outer = SurrealSelect::new();
-    outer.set_source(inner.expr(), None);
+    outer.add_source(inner.expr(), None);
     outer.add_order_by(surreal_expr!("name"), Order::Asc);
 
     let rows = outer.get(&db).await.unwrap();
@@ -174,7 +174,7 @@ async fn subquery_paying_clients() {
 
     // Wrap to get ordered results
     let mut outer = SurrealSelect::new();
-    outer.set_source(inner.expr(), None);
+    outer.add_source(inner.expr(), None);
     outer.add_order_by(surreal_expr!("name"), Order::Asc);
 
     let rows = outer.get(&db).await.unwrap();
@@ -213,7 +213,7 @@ fn render_query01_wrapped() {
         .with_where(surreal_expr!("is_deleted = {}", false));
 
     let mut outer = SurrealSelect::new();
-    outer.set_source(inner.expr(), None);
+    outer.add_source(inner.expr(), None);
     outer.add_order_by(surreal_expr!("name"), Order::Asc);
 
     assert_eq!(
@@ -228,7 +228,7 @@ fn render_query02_wrapped() {
         SurrealSelect::new().from(Thing::new("bakery", "hill_valley").lref("belongs_to", "client"));
 
     let mut outer = SurrealSelect::new();
-    outer.set_source(inner.expr(), None);
+    outer.add_source(inner.expr(), None);
     outer.add_order_by(surreal_expr!("name"), Order::Asc);
 
     assert_eq!(

@@ -28,7 +28,7 @@ impl PostgresSelect {
 }
 
 impl Selectable<AnyPostgresType> for PostgresSelect {
-    fn set_source(&mut self, source: impl Into<SourceRef<AnyPostgresType>>, alias: Option<String>) {
+    fn add_source(&mut self, source: impl Into<SourceRef<AnyPostgresType>>, alias: Option<String>) {
         let source_ref = source.into().into_expressive_enum();
         let expr = match (source_ref, alias) {
             (ExpressiveEnum::Scalar(val), None) => {

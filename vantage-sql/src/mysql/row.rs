@@ -246,7 +246,16 @@ fn mysql_column_to_json(row: &MySqlRow, ordinal: usize, type_name: &str) -> Json
             }
         }
         "BIT" => {
+            if let Ok(v) = row.try_get::<bool, _>(ordinal) {
+                return JsonValue::Number((if v { 1u64 } else { 0u64 }).into());
+            }
             if let Ok(v) = row.try_get::<u64, _>(ordinal) {
+                return JsonValue::Number(v.into());
+            }
+            if let Ok(bytes) = row.try_get::<Vec<u8>, _>(ordinal) {
+                let v = bytes
+                    .into_iter()
+                    .fold(0u64, |acc, byte| (acc << 8) | u64::from(byte));
                 return JsonValue::Number(v.into());
             }
         }
@@ -269,6 +278,7 @@ fn mysql_column_to_json(row: &MySqlRow, ordinal: usize, type_name: &str) -> Json
         return JsonValue::String(v);
     }
 
+    // Intentional: surface decode failures so missing type handlers are noticed early.
     eprintln!(
         "vantage: failed to decode MySQL column '{}' (type '{}') — returning NULL",
         row.columns()[ordinal].name(),

@@ -89,7 +89,7 @@ impl<E: Entity> Default for RedbSelect<E> {
 }
 
 impl<E: Entity> Selectable<RedbExpression> for RedbSelect<E> {
-    fn set_source(
+    fn add_source(
         &mut self,
         source: impl Into<IntoExpressive<RedbExpression>>,
         _alias: Option<String>,

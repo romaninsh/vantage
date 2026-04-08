@@ -9,7 +9,7 @@ use super::super::SurrealSelect;
 use super::super::select_field::SelectField;
 
 impl<T: QueryResult> Selectable<AnySurrealType> for SurrealSelect<T> {
-    fn set_source(&mut self, source: impl Into<SourceRef<AnySurrealType>>, _alias: Option<String>) {
+    fn add_source(&mut self, source: impl Into<SourceRef<AnySurrealType>>, _alias: Option<String>) {
         self.add_from(source.into());
     }
 

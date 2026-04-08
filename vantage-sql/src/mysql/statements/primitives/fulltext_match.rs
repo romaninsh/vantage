@@ -69,7 +69,6 @@ impl FulltextMatch {
 impl Expressive<AnyMysqlType> for FulltextMatch {
     fn expr(&self) -> Expr {
         let cols = Expression::from_vec(self.columns.clone(), ", ");
-        let escaped = self.query.replace('\'', "''");
         let mode_suffix = match self.mode {
             FulltextMode::Default => "",
             FulltextMode::NaturalLanguage => " IN NATURAL LANGUAGE MODE",
@@ -78,8 +77,11 @@ impl Expressive<AnyMysqlType> for FulltextMatch {
         };
 
         Expression::new(
-            format!("MATCH({{}}) AGAINST('{escaped}'{mode_suffix})"),
-            vec![ExpressiveEnum::Nested(cols)],
+            format!("MATCH({{}}) AGAINST({{}}{mode_suffix})"),
+            vec![
+                ExpressiveEnum::Nested(cols),
+                ExpressiveEnum::Scalar(AnyMysqlType::from(self.query.clone())),
+            ],
         )
     }
 }

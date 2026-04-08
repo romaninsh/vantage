@@ -127,10 +127,13 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
     for DateFormat<crate::sqlite::types::AnySqliteType>
 {
     fn expr(&self) -> Expression<crate::sqlite::types::AnySqliteType> {
+        // SQLite uses strftime natively — no translation needed regardless of `raw`
+        let fmt = self.format.clone();
+        let _ = self.raw;
         let base = Expression::new(
             "STRFTIME({}, {})",
             vec![
-                ExpressiveEnum::Scalar(self.format.clone().into()),
+                ExpressiveEnum::Scalar(fmt.into()),
                 ExpressiveEnum::Nested(self.expr.clone()),
             ],
         );
