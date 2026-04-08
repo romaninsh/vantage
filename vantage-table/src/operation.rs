@@ -88,6 +88,21 @@ pub trait Operation<T>: Expressive<T> {
         )
     }
 
+    /// Creates a membership condition from a list of scalar values: field IN (a, b, c)
+    fn in_list<V: Into<T> + Clone>(&self, values: &[V]) -> Expression<T> {
+        let params: Vec<Expression<T>> = values
+            .iter()
+            .map(|v| Expression::new("{}", vec![ExpressiveEnum::Scalar(v.clone().into())]))
+            .collect();
+        Expression::new(
+            "{} IN ({})",
+            vec![
+                ExpressiveEnum::Nested(self.expr()),
+                ExpressiveEnum::Nested(Expression::from_vec(params, ", ")),
+            ],
+        )
+    }
+
     /// Casts the expression to a SQL type: `CAST(expr AS type_name)`
     fn cast(&self, type_name: &str) -> Expression<T> {
         Expression::new(

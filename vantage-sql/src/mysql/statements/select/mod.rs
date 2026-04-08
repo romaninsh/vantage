@@ -22,6 +22,7 @@ pub struct MysqlSelect {
     pub windows: Vec<(String, Window<AnyMysqlType>)>,
     pub ctes: Vec<(String, Expr, bool)>,
     pub distinct: bool,
+    pub with_rollup: bool,
     pub limit: Option<i64>,
     pub skip: Option<i64>,
 }
@@ -39,9 +40,15 @@ impl MysqlSelect {
             windows: Vec::new(),
             ctes: Vec::new(),
             distinct: false,
+            with_rollup: false,
             limit: None,
             skip: None,
         }
+    }
+
+    pub fn with_rollup(mut self) -> Self {
+        self.with_rollup = true;
+        self
     }
 
     pub fn with_join(mut self, join: MysqlSelectJoin) -> Self {

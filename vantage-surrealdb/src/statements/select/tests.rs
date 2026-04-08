@@ -136,7 +136,7 @@ mod tests {
         let mut select = SurrealSelect::new();
 
         // Test Selectable trait methods
-        select.set_source("users", None);
+        select.add_source("users", None);
         select.add_field("name".to_string());
         select.add_field("email".to_string());
         select.add_expression(surreal_expr!("age * 2"), Some("double_age".to_string()));

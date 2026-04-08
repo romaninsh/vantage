@@ -1,3 +1,10 @@
+# Query Builder Improvements (from MySQL work, 2026-04)
+
+- [ ] `expr.as_alias()` — add alias method on `Expression<T>`, then remove `Option<String>` from `with_expression` and all `with_alias()` from primitives (Fx, Iif, Concat, GroupConcat, JsonExtract, DateFormat, Case). Also fixes Fx alias hardcoding `"` instead of backticks.
+- [ ] `sql_fx!()` macro — mixed-type args for function calls: `sql_fx!("find_in_set", "write", (ident("permissions")))` instead of wrapping every arg in `mysql_expr!`
+- [ ] PostgreSQL ingress — split into `vantage_v2`, `vantage_v3`, `vantage_v4_pg` with DROP+CREATE, matching MySQL pattern
+- [ ] `Expression::empty()` sweep — replace all `Expression::new("", vec![])` across the codebase
+
 # v0.2 (eta January 2025)
 
 - [x] Swap to sqlx

@@ -277,7 +277,7 @@ mod tests {
         );
 
         let mut select = mock.select();
-        select.set_source("products", None);
+        select.add_source("products", None);
 
         let results = mock.execute_select(&select).await.unwrap();
         assert_eq!(results.len(), 1);

@@ -31,7 +31,7 @@ pub struct SurrealDB {
 //     async fn test_select_with_thing_reference() {
 //         let shared_db = setup_test_db().await;
 //         let mut select = SurrealSelect::new();
-//         select.set_source("product", None);
+//         select.add_source("product", None);
 //         select.add_where_condition(expr!("bakery = {}", (Thing::new("bakery", "hill_valley"))));
 //         select.add_where_condition(expr!("is_deleted = {}", false));
 //         select.add_order_by(expr!("name"), true);
@@ -46,7 +46,7 @@ pub struct SurrealDB {
 //         let mut select = SurrealSelect::new();
 //         select.add_field("name");
 //         select.add_field("price");
-//         select.set_source("product", None);
+//         select.add_source("product", None);
 //         select.add_where_condition(expr!("price > {}", 100));
 
 //         let result = shared_db.execute(&select.expr()).await;
@@ -57,7 +57,7 @@ pub struct SurrealDB {
 //     async fn test_select_with_relationship_traversal() {
 //         let shared_db = setup_test_db().await;
 //         let mut select = SurrealSelect::new();
-//         select.set_source(
+//         select.add_source(
 //             Thing::new("bakery", "hill_valley").rref("owns", "product"),
 //             None,
 //         );
@@ -72,7 +72,7 @@ pub struct SurrealDB {
 //     async fn test_select_with_left_relationship() {
 //         let shared_db = setup_test_db().await;
 //         let mut select = SurrealSelect::new();
-//         select.set_source(
+//         select.add_source(
 //             Thing::new("bakery", "hill_valley").lref("belongs_to", "client"),
 //             None,
 //         );
@@ -94,7 +94,7 @@ pub struct SurrealDB {
 //         let mut main_select = SurrealSelect::new();
 //         main_select.add_field("name");
 //         main_select.add_field("email");
-//         main_select.set_source("client", None);
+//         main_select.add_source("client", None);
 //         main_select.add_where_condition(expr!("id IN ({})", (subquery)));
 
 //         let result = shared_db.execute(&main_select.expr()).await;

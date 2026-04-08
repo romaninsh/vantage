@@ -96,6 +96,16 @@ jobs:
             mysql -h 127.0.0.1 -uvantage -pvantage vantage < "$f"
           done
 
+      - name: Populate MySQL-specific database
+        if: matrix.backend == 'mysql'
+        run: |
+          cd vantage-sql/scripts/mysql
+          mysql -h 127.0.0.1 -uroot -proot -e "CREATE DATABASE vantage_v4_my; GRANT ALL PRIVILEGES ON vantage_v4_my.* TO 'vantage'@'%';"
+          for f in db/v4*.sql; do
+            echo "Loading $f..."
+            mysql -h 127.0.0.1 -uvantage -pvantage vantage_v4_my < "$f"
+          done
+
       - name: Build
         run: cargo build -p vantage-sql --features ${{ matrix.backend }}
 

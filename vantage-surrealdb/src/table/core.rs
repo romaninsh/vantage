@@ -50,7 +50,7 @@ impl<E: Entity> SurrealTableCore<E> for Table<SurrealDB, E> {
         SurrealAssociated::new(self.select(), self.data_source().clone())
         // let mut select = SurrealSelect::new();
 
-        // select.set_source(self.table_name(), None);
+        // select.add_source(self.table_name(), None);
 
         // for column in self.columns().values() {
         //     match column.alias() {

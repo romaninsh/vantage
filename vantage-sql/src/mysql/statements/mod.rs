@@ -1,5 +1,6 @@
 pub mod delete;
 pub mod insert;
+pub mod primitives;
 pub mod select;
 pub mod update;
 

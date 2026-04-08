@@ -1,17 +1,24 @@
 use std::fmt::{Debug, Display};
 
-use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
+use vantage_expressions::{Expression, Expressive, ExpressiveEnum, expr_any};
 
-/// SQL IIF(condition, true_val, false_val) expression.
+use super::identifier::Identifier;
+
+/// Vendor-aware conditional expression.
+///
+/// Renders as:
+/// - **SQLite:**     `IIF(cond, then, else)`
+/// - **MySQL:**      `IF(cond, then, else)`
+/// - **PostgreSQL:** `CASE WHEN cond THEN then ELSE else END`
 ///
 /// # Examples
 ///
 /// ```ignore
 /// Iif::new(
-///     sqlite_expr!("{} = {}", (Identifier::new("role")), "admin"),
-///     sqlite_expr!("{}", "Yes"),
-///     sqlite_expr!("{}", "No"),
-/// ).with_alias("is_admin")
+///     ident("status").eq(mysql_expr!("{}", "completed")),
+///     mysql_expr!("'Done'"),
+///     mysql_expr!("'Active'"),
+/// )
 /// ```
 #[derive(Debug, Clone)]
 pub struct Iif<T: Debug + Display + Clone> {
@@ -41,8 +48,25 @@ impl<T: Debug + Display + Clone> Iif<T> {
     }
 }
 
-impl<T: Debug + Display + Clone> Expressive<T> for Iif<T> {
-    fn expr(&self) -> Expression<T> {
+/// Helper: apply optional alias to an expression.
+fn apply_alias<T: Debug + Display + Clone>(
+    base: Expression<T>,
+    alias: &Option<String>,
+) -> Expression<T>
+where
+    Identifier: Expressive<T>,
+{
+    match alias {
+        Some(a) => expr_any!("{} AS {}", (base), (Identifier::new(a))),
+        None => base,
+    }
+}
+
+// -- SQLite: IIF(cond, then, else) --------------------------------------------
+
+#[cfg(feature = "sqlite")]
+impl Expressive<crate::sqlite::types::AnySqliteType> for Iif<crate::sqlite::types::AnySqliteType> {
+    fn expr(&self) -> Expression<crate::sqlite::types::AnySqliteType> {
         let base = Expression::new(
             "IIF({}, {}, {})",
             vec![
@@ -51,13 +75,42 @@ impl<T: Debug + Display + Clone> Expressive<T> for Iif<T> {
                 ExpressiveEnum::Nested(self.false_val.clone()),
             ],
         );
+        apply_alias(base, &self.alias)
+    }
+}
 
-        match &self.alias {
-            Some(alias) => Expression::new(
-                format!("{{}} AS \"{}\"", alias),
-                vec![ExpressiveEnum::Nested(base)],
-            ),
-            None => base,
-        }
+// -- MySQL: IF(cond, then, else) ----------------------------------------------
+
+#[cfg(feature = "mysql")]
+impl Expressive<crate::mysql::types::AnyMysqlType> for Iif<crate::mysql::types::AnyMysqlType> {
+    fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
+        let base = Expression::new(
+            "IF({}, {}, {})",
+            vec![
+                ExpressiveEnum::Nested(self.condition.clone()),
+                ExpressiveEnum::Nested(self.true_val.clone()),
+                ExpressiveEnum::Nested(self.false_val.clone()),
+            ],
+        );
+        apply_alias(base, &self.alias)
+    }
+}
+
+// -- PostgreSQL: CASE WHEN cond THEN then ELSE else END -----------------------
+
+#[cfg(feature = "postgres")]
+impl Expressive<crate::postgres::types::AnyPostgresType>
+    for Iif<crate::postgres::types::AnyPostgresType>
+{
+    fn expr(&self) -> Expression<crate::postgres::types::AnyPostgresType> {
+        let base = Expression::new(
+            "CASE WHEN {} THEN {} ELSE {} END",
+            vec![
+                ExpressiveEnum::Nested(self.condition.clone()),
+                ExpressiveEnum::Nested(self.true_val.clone()),
+                ExpressiveEnum::Nested(self.false_val.clone()),
+            ],
+        );
+        apply_alias(base, &self.alias)
     }
 }

@@ -71,8 +71,9 @@ impl Order {
 /// for field selection, filtering, sorting, grouping, and aggregation operations.
 /// The trait supports both mutable builder methods and fluent chainable methods.
 pub trait Selectable<T>: Send + Sync + Debug + Clone + Expressive<T> {
-    /// Sets the data source for the query (table name, subquery, etc.).
-    fn set_source(&mut self, source: impl Into<SourceRef<T>>, alias: Option<String>);
+    /// Adds a data source to the FROM clause (table name, subquery, etc.).
+    /// This is additive — calling it multiple times adds comma-separated sources.
+    fn add_source(&mut self, source: impl Into<SourceRef<T>>, alias: Option<String>);
 
     /// Adds a column name to the SELECT clause.
     fn add_field(&mut self, field: impl Into<String>);
@@ -142,21 +143,21 @@ pub trait Selectable<T>: Send + Sync + Debug + Clone + Expressive<T> {
 
     // Default implementations for builder-style methods
 
-    /// Builder pattern method identical to [`Self::set_source`] without alias.
+    /// Builder pattern method identical to [`Self::add_source`] without alias.
     fn with_source(mut self, source: impl Into<SourceRef<T>>) -> Self
     where
         Self: Sized,
     {
-        Self::set_source(&mut self, source, None);
+        Self::add_source(&mut self, source, None);
         self
     }
 
-    /// Builder pattern method identical to [`Self::set_source`] with alias.
+    /// Builder pattern method identical to [`Self::add_source`] with alias.
     fn with_source_as(mut self, source: impl Into<SourceRef<T>>, alias: impl Into<String>) -> Self
     where
         Self: Sized,
     {
-        Self::set_source(&mut self, source, Some(alias.into()));
+        Self::add_source(&mut self, source, Some(alias.into()));
         self
     }
 

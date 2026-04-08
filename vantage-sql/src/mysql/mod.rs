@@ -1,6 +1,6 @@
 #[macro_use]
 mod macros;
-mod operation;
+pub mod operation;
 mod row;
 pub mod statements;
 mod table_source;

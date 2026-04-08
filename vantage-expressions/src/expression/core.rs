@@ -107,6 +107,14 @@ impl<T> Expression<T> {
         }
     }
 
+    /// Create an empty expression that renders as "".
+    pub fn empty() -> Self {
+        Self {
+            template: String::new(),
+            parameters: Vec::new(),
+        }
+    }
+
     /// Create expression from vector of expressions and a delimiter
     ///
     /// See the [module-level documentation](crate::expression::core) for examples.

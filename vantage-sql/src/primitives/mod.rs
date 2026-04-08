@@ -6,6 +6,7 @@ pub mod identifier;
 pub mod iif;
 pub mod interval;
 pub mod json_extract;
+pub mod point;
 pub mod select;
 pub mod ternary;
 pub mod union;

@@ -11,10 +11,14 @@ use super::identifier::Identifier;
 /// intermediate steps use the JSON-object accessor and the final step
 /// extracts as text.
 ///
-/// Renders as:
-/// - **SQLite:**    `JSON_EXTRACT("col", '$.field')` or `JSON_EXTRACT("col", '$.a.b')`
-/// - **MySQL:**     `JSON_EXTRACT(\`col\`, '$.field')` or `JSON_EXTRACT(\`col\`, '$.a.b')`
-/// - **PostgreSQL:** `"col"->>'field'` or `"col"->'a'->>'b'`
+/// Renders as (extract as text by default):
+/// - **SQLite:**     `JSON_EXTRACT("col", '$.field')`
+/// - **MySQL:**      `` `col` ->> '$.field' ``
+/// - **PostgreSQL:** `"col" ->> 'field'` or `"col" -> 'a' ->> 'b'`
+///
+/// With `.as_json()` — return raw JSON instead of text:
+/// - **MySQL:**      `` `col` -> '$.field' ``
+/// - **PostgreSQL:** `"col" -> 'field'`
 ///
 /// # Examples
 ///
@@ -30,6 +34,9 @@ pub struct JsonExtract<T: Debug + Display + Clone> {
     source: Expression<T>,
     path: Vec<String>,
     alias: Option<String>,
+    /// When true, return the raw JSON value instead of extracting as text.
+    /// Affects MySQL (`->` vs `->>`) and PostgreSQL (all `->` vs final `->>`)
+    as_json: bool,
 }
 
 impl<T: Debug + Display + Clone> JsonExtract<T> {
@@ -38,7 +45,14 @@ impl<T: Debug + Display + Clone> JsonExtract<T> {
             source: source.expr(),
             path: path.into_vec(),
             alias: None,
+            as_json: false,
         }
+    }
+
+    /// Return raw JSON instead of text. Renders `->` instead of `->>` in MySQL/PG.
+    pub fn as_json(mut self) -> Self {
+        self.as_json = true;
+        self
     }
 
     pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
@@ -83,7 +97,7 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
     }
 }
 
-// -- MySQL: JSON_EXTRACT(`col`, '$.a.b') -------------------------------------
+// -- MySQL: `col` ->> '$.a.b' or `col` -> '$.a.b' ----------------------------
 
 #[cfg(feature = "mysql")]
 impl Expressive<crate::mysql::types::AnyMysqlType>
@@ -91,8 +105,9 @@ impl Expressive<crate::mysql::types::AnyMysqlType>
 {
     fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
         let json_path = format!("$.{}", self.path.join("."));
+        let op = if self.as_json { " -> " } else { " ->> " };
         let base = Expression::new(
-            "JSON_EXTRACT({}, {})",
+            format!("{{}}{op}{{}}"),
             vec![
                 ExpressiveEnum::Nested(self.source.clone()),
                 ExpressiveEnum::Nested(sql_lit(&json_path)),
@@ -122,7 +137,11 @@ impl Expressive<crate::postgres::types::AnyPostgresType>
         let last = self.path.len() - 1;
 
         for (i, field) in self.path.iter().enumerate() {
-            let op = if i == last { " ->> " } else { " -> " };
+            let op = if i == last && !self.as_json {
+                " ->> "
+            } else {
+                " -> "
+            };
             current = Expression::new(
                 format!("{{}}{op}{{}}"),
                 vec![

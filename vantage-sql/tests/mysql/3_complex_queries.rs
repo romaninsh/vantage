@@ -9,6 +9,7 @@ use vantage_sql::mysql::MysqlDB;
 use vantage_sql::mysql::statements::MysqlSelect;
 use vantage_sql::mysql::statements::select::join::MysqlSelectJoin;
 use vantage_sql::mysql_expr;
+use vantage_sql::primitives::fx::Fx;
 use vantage_sql::primitives::identifier::ident;
 use vantage_table::operation::Operation;
 use vantage_types::{Record, TryFromRecord};
@@ -1014,11 +1015,8 @@ struct ProductJson {
 
 #[tokio::test]
 async fn test_q13() {
-    use vantage_sql::primitives::fx::Fx;
-    use vantage_sql::primitives::json_extract::JsonExtract;
-
     let metadata = ident("metadata");
-    let rating_expr = JsonExtract::new(metadata.clone(), "rating");
+    let rating_expr = Fx::new("json_extract", [metadata.expr(), mysql_expr!("'$.rating'")]);
 
     let products: Vec<ProductJson> = check_and_run(
         &MysqlSelect::new()
@@ -1026,13 +1024,16 @@ async fn test_q13() {
             .with_field("id")
             .with_field("name")
             .with_expression(
-                JsonExtract::new(metadata.clone(), "color").with_alias("color"),
-                None,
+                Fx::new("json_extract", [metadata.expr(), mysql_expr!("'$.color'")]),
+                Some("color".into()),
             )
             .with_expression(
                 mysql_expr!(
                     "CAST({} AS DOUBLE)",
-                    (JsonExtract::new(metadata.clone(), "weight_kg"))
+                    (Fx::new(
+                        "json_extract",
+                        [metadata.expr(), mysql_expr!("'$.weight_kg'")]
+                    ))
                 ),
                 Some("weight".into()),
             )
@@ -1053,7 +1054,13 @@ async fn test_q13() {
                 4.0f64,
                 5.0f64
             ))
-            .with_condition(JsonExtract::new(metadata.clone(), "in_stock").eq(1i64))
+            .with_condition(
+                Fx::new(
+                    "json_extract",
+                    [metadata.expr(), mysql_expr!("'$.in_stock'")],
+                )
+                .eq(1i64),
+            )
             .with_order(ident("rating"), Order::Desc),
         concat!(
             r#"SELECT `id`, `name`, "#,

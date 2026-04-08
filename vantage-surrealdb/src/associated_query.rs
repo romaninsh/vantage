@@ -99,8 +99,8 @@ impl<Q: SurrealQueriable, R> Deref for SurrealAssociated<Q, R> {
 impl<Q: SurrealQueriable + Selectable + Clone, R: Send + Sync> Selectable
     for SurrealAssociated<Q, R>
 {
-    fn set_source(&mut self, source: impl Into<vantage_expressions::Expr>, alias: Option<String>) {
-        self.query.set_source(source, alias)
+    fn add_source(&mut self, source: impl Into<vantage_expressions::Expr>, alias: Option<String>) {
+        self.query.add_source(source, alias)
     }
 
     fn add_field(&mut self, field: impl Into<String>) {

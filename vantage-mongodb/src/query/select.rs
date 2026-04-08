@@ -184,7 +184,7 @@ impl MongoSelect {
 
 #[async_trait]
 impl Selectable for MongoSelect {
-    fn set_source(&mut self, source: impl Into<Expr>, alias: Option<String>) {
+    fn add_source(&mut self, source: impl Into<Expr>, alias: Option<String>) {
         self.source = Some(expr!("{}", source.into()));
         self.source_alias = alias;
     }
@@ -292,7 +292,7 @@ mod tests {
     #[test]
     fn test_basic_select() {
         let mut select = MongoSelect::new();
-        select.set_source(expr!("users"), None);
+        select.add_source(expr!("users"), None);
         let expr: Expression = select.into();
         assert_eq!(expr.preview(), "db.users.find({})");
     }
@@ -300,7 +300,7 @@ mod tests {
     #[test]
     fn test_select_with_filter() {
         let mut select = MongoSelect::new();
-        select.set_source(expr!("users"), None);
+        select.add_source(expr!("users"), None);
         select.add_where_condition(expr!("{\"name\": \"John\"}"));
         let expr: Expression = select.into();
         let result = expr.preview();
@@ -312,7 +312,7 @@ mod tests {
     #[test]
     fn test_select_with_projection() {
         let mut select = MongoSelect::new();
-        select.set_source(expr!("users"), None);
+        select.add_source(expr!("users"), None);
         select.add_field("name".to_string());
         select.add_field("email".to_string());
         let expr: Expression = select.into();
@@ -324,7 +324,7 @@ mod tests {
     #[test]
     fn test_select_with_sort() {
         let mut select = MongoSelect::new();
-        select.set_source(expr!("users"), None);
+        select.add_source(expr!("users"), None);
         select.add_order_by(expr!("{\"name\": 1}"), true);
         let expr: Expression = select.into();
         let result = expr.preview();
@@ -335,7 +335,7 @@ mod tests {
     #[test]
     fn test_select_with_limit() {
         let mut select = MongoSelect::new();
-        select.set_source(expr!("users"), None);
+        select.add_source(expr!("users"), None);
         select.set_limit(Some(10), None);
         let expr: Expression = select.into();
         assert_eq!(expr.preview(), "db.users.find({}).limit(10)");
@@ -344,7 +344,7 @@ mod tests {
     #[test]
     fn test_select_with_skip_and_limit() {
         let mut select = MongoSelect::new();
-        select.set_source(expr!("users"), None);
+        select.add_source(expr!("users"), None);
         select.set_limit(Some(10), Some(5));
         let expr: Expression = select.into();
         assert_eq!(expr.preview(), "db.users.find({}).skip(5).limit(10)");
@@ -353,7 +353,7 @@ mod tests {
     #[test]
     fn test_select_trait_methods() {
         let mut select = MongoSelect::new();
-        select.set_source(expr!("users"), None);
+        select.add_source(expr!("users"), None);
 
         // Test trait methods
         select.add_where_condition(expr!("{\"age\": {\"$gt\": 18}}"));
@@ -373,7 +373,7 @@ mod tests {
     #[test]
     fn test_select_with_expression_field() {
         let mut select = MongoSelect::new();
-        select.set_source(expr!("orders"), None);
+        select.add_source(expr!("orders"), None);
         select.add_expression(expr!("quantity*price"), Some("total".to_string()));
 
         let expr: Expression = select.into();
@@ -386,7 +386,7 @@ mod tests {
     fn test_find_vs_aggregate_rendering() {
         // Simple fields should use find
         let mut select_find = MongoSelect::new();
-        select_find.set_source(expr!("users"), None);
+        select_find.add_source(expr!("users"), None);
         select_find.add_field("name".to_string());
         select_find.add_field("email".to_string());
 
@@ -397,7 +397,7 @@ mod tests {
 
         // Expression fields should use aggregate
         let mut select_aggregate = MongoSelect::new();
-        select_aggregate.set_source(expr!("orders"), None);
+        select_aggregate.add_source(expr!("orders"), None);
         select_aggregate.add_field("customer".to_string());
         select_aggregate.add_expression(expr!("quantity*price"), Some("total".to_string()));
 
