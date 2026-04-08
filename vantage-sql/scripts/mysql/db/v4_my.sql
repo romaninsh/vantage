@@ -108,7 +108,7 @@ CREATE TABLE products (
     tags        VARCHAR(500) NOT NULL DEFAULT '' COMMENT 'Comma-separated for FIND_IN_SET',
     metadata    JSON DEFAULT NULL,
     description TEXT,
-    location    POINT SRID 0 DEFAULT NULL,
+    location    POINT SRID 0 NOT NULL DEFAULT (ST_GeomFromText('POINT(0 0)', 0)),
     created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     FULLTEXT INDEX ft_prod_desc (name, description),
@@ -116,19 +116,19 @@ CREATE TABLE products (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO products (id, name, category, price, cost, stock, tags, metadata, description, location) VALUES
-    (1,  'Widget Pro',      'electronics',    29.99,  15.0,  150, 'featured,bestseller',     '{"color":"black","weight_kg":0.3,"rating":4.7,"specs":{"voltage":5,"watts":10}}',  'Professional-grade widget with advanced features',                 ST_GeomFromText('POINT(51.95 -0.18)', 0)),
-    (2,  'Widget Basic',    'electronics',    14.99,   8.0,  300, 'sale',                    '{"color":"white","weight_kg":0.2,"rating":4.2,"specs":{"voltage":5,"watts":5}}',   'Entry-level widget for basic use',                                 ST_GeomFromText('POINT(52.52 13.40)', 0)),
-    (3,  'Gadget Pro Max',  'electronics',    99.99,  55.0,   50, 'featured,premium',        '{"color":"silver","weight_kg":0.8,"rating":4.9,"specs":{"voltage":12,"watts":25}}','Top-of-the-line gadget with pro features and maximum performance',  ST_GeomFromText('POINT(48.85 2.35)', 0)),
-    (4,  'Desk Lamp',       'home',           45.00,  20.0,   80, 'new',                     '{"color":"brass","weight_kg":2.1,"rating":4.1}',                                   'Adjustable brass desk lamp with warm LED',                         NULL),
-    (5,  'Ergo Chair',      'furniture',     350.00, 180.0,   20, 'featured,premium',        '{"color":"gray","weight_kg":15.0,"rating":4.8}',                                   'Ergonomic office chair with lumbar support',                       NULL),
-    (6,  'USB-C Cable',     'electronics',     9.99,   3.0,  500, 'sale,bestseller',         '{"color":"black","weight_kg":0.05,"rating":4.0}',                                  'Durable braided USB-C cable, 2 meters',                            ST_GeomFromText('POINT(40.71 -74.00)', 0)),
-    (7,  'Notebook A5',     'stationery',      5.50,   2.0, 1000, '',                        '{"color":"blue","weight_kg":0.15,"rating":3.8}',                                   'Lined A5 notebook, 200 pages',                                     NULL),
-    (8,  'Pen Set',         'stationery',     12.00,   5.0,  400, 'new',                     '{"color":"multi","weight_kg":0.1,"rating":4.3}',                                   'Premium ballpoint pen set of 5',                                   NULL),
-    (9,  'Monitor 27"',    'electronics',   450.00, 250.0,   15, 'premium',                 '{"color":"black","weight_kg":6.5,"rating":4.6,"specs":{"voltage":110,"watts":45}}','27-inch 4K IPS monitor with HDR support',                          ST_GeomFromText('POINT(35.68 139.69)', 0)),
-    (10, 'Keyboard Mech',   'electronics',    79.99,  40.0,   60, 'new,featured',            '{"color":"white","weight_kg":0.9,"rating":4.5}',                                   'Mechanical keyboard with Cherry MX switches',                      ST_GeomFromText('POINT(37.77 -122.41)', 0)),
-    (11, 'Mousepad XL',     'electronics',    19.99,   5.0,  200, 'sale',                    '{"color":"black","weight_kg":0.4,"rating":3.5}',                                   'Extended mousepad with stitched edges',                             NULL),
-    (12, 'Standing Desk',   'furniture',     600.00, 300.0,   10, 'premium',                 '{"color":"walnut","weight_kg":35.0,"rating":4.9}',                                 'Electric standing desk with memory presets',                       NULL),
-    (13, 'Clearance Item',  'uncategorized',   2.00,   1.0,    0, 'clearance',               '{"color":null,"weight_kg":0.01,"rating":2.0}',                                     NULL,                                                                NULL);
+    (1,  'Widget Pro',      'electronics',    29.99,  15.0,  150, 'featured,bestseller',     '{"color":"black","weight_kg":0.3,"rating":4.7,"specs":{"voltage":5,"watts":10}}',  'Professional-grade widget with advanced features',                 ST_GeomFromText('POINT(-0.18 51.95)', 0)),
+    (2,  'Widget Basic',    'electronics',    14.99,   8.0,  300, 'sale',                    '{"color":"white","weight_kg":0.2,"rating":4.2,"specs":{"voltage":5,"watts":5}}',   'Entry-level widget for basic use',                                 ST_GeomFromText('POINT(13.40 52.52)', 0)),
+    (3,  'Gadget Pro Max',  'electronics',    99.99,  55.0,   50, 'featured,premium',        '{"color":"silver","weight_kg":0.8,"rating":4.9,"specs":{"voltage":12,"watts":25}}','Top-of-the-line gadget with pro features and maximum performance',  ST_GeomFromText('POINT(2.35 48.85)', 0)),
+    (4,  'Desk Lamp',       'home',           45.00,  20.0,   80, 'new',                     '{"color":"brass","weight_kg":2.1,"rating":4.1}',                                   'Adjustable brass desk lamp with warm LED',                         ST_GeomFromText('POINT(0 0)', 0)),
+    (5,  'Ergo Chair',      'furniture',     350.00, 180.0,   20, 'featured,premium',        '{"color":"gray","weight_kg":15.0,"rating":4.8}',                                   'Ergonomic office chair with lumbar support',                       ST_GeomFromText('POINT(0 0)', 0)),
+    (6,  'USB-C Cable',     'electronics',     9.99,   3.0,  500, 'sale,bestseller',         '{"color":"black","weight_kg":0.05,"rating":4.0}',                                  'Durable braided USB-C cable, 2 meters',                            ST_GeomFromText('POINT(-74.00 40.71)', 0)),
+    (7,  'Notebook A5',     'stationery',      5.50,   2.0, 1000, '',                        '{"color":"blue","weight_kg":0.15,"rating":3.8}',                                   'Lined A5 notebook, 200 pages',                                     ST_GeomFromText('POINT(0 0)', 0)),
+    (8,  'Pen Set',         'stationery',     12.00,   5.0,  400, 'new',                     '{"color":"multi","weight_kg":0.1,"rating":4.3}',                                   'Premium ballpoint pen set of 5',                                   ST_GeomFromText('POINT(0 0)', 0)),
+    (9,  'Monitor 27"',    'electronics',   450.00, 250.0,   15, 'premium',                 '{"color":"black","weight_kg":6.5,"rating":4.6,"specs":{"voltage":110,"watts":45}}','27-inch 4K IPS monitor with HDR support',                          ST_GeomFromText('POINT(139.69 35.68)', 0)),
+    (10, 'Keyboard Mech',   'electronics',    79.99,  40.0,   60, 'new,featured',            '{"color":"white","weight_kg":0.9,"rating":4.5}',                                   'Mechanical keyboard with Cherry MX switches',                      ST_GeomFromText('POINT(-122.41 37.77)', 0)),
+    (11, 'Mousepad XL',     'electronics',    19.99,   5.0,  200, 'sale',                    '{"color":"black","weight_kg":0.4,"rating":3.5}',                                   'Extended mousepad with stitched edges',                             ST_GeomFromText('POINT(0 0)', 0)),
+    (12, 'Standing Desk',   'furniture',     600.00, 300.0,   10, 'premium',                 '{"color":"walnut","weight_kg":35.0,"rating":4.9}',                                 'Electric standing desk with memory presets',                       ST_GeomFromText('POINT(0 0)', 0)),
+    (13, 'Clearance Item',  'uncategorized',   2.00,   1.0,    0, 'clearance',               '{"color":null,"weight_kg":0.01,"rating":2.0}',                                     NULL,                                                                ST_GeomFromText('POINT(0 0)', 0));
 
 
 -- -----------------------------------------------------------------------------

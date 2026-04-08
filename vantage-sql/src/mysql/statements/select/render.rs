@@ -61,12 +61,20 @@ impl MysqlSelect {
             Expression::new("", vec![])
         } else {
             Expression::new(
-                " GROUP BY {}",
-                vec![ExpressiveEnum::Nested(Expression::from_vec(
-                    self.group_by.clone(),
-                    ", ",
-                ))],
+                " GROUP BY {}{}",
+                vec![
+                    ExpressiveEnum::Nested(Expression::from_vec(self.group_by.clone(), ", ")),
+                    ExpressiveEnum::Nested(self.render_rollup()),
+                ],
             )
+        }
+    }
+
+    fn render_rollup(&self) -> Expr {
+        if self.with_rollup {
+            Expression::new(" WITH ROLLUP", vec![])
+        } else {
+            Expression::empty()
         }
     }
 

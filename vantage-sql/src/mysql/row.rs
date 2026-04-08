@@ -206,6 +206,50 @@ fn mysql_column_to_json(row: &MySqlRow, ordinal: usize, type_name: &str) -> Json
                 return JsonValue::String(v);
             }
         }
+        "TEXT" | "TINYTEXT" | "MEDIUMTEXT" | "LONGTEXT" | "VARCHAR" | "CHAR" | "ENUM" | "SET" => {
+            if let Ok(v) = row.try_get::<String, _>(ordinal) {
+                return JsonValue::String(v);
+            }
+        }
+        "BLOB" | "TINYBLOB" | "MEDIUMBLOB" | "LONGBLOB" => {
+            // sqlx decodes BLOB types as Vec<u8>; try String first, then bytes
+            if let Ok(v) = row.try_get::<String, _>(ordinal) {
+                return JsonValue::String(v);
+            }
+            if let Ok(v) = row.try_get::<Vec<u8>, _>(ordinal) {
+                return JsonValue::String(String::from_utf8_lossy(&v).into_owned());
+            }
+        }
+        "TIME" => {
+            if let Ok(v) = row.try_get::<chrono::NaiveTime, _>(ordinal) {
+                return JsonValue::String(v.format("%H:%M:%S").to_string());
+            }
+        }
+        "DATE" => {
+            if let Ok(v) = row.try_get::<chrono::NaiveDate, _>(ordinal) {
+                return JsonValue::String(v.format("%Y-%m-%d").to_string());
+            }
+        }
+        "DATETIME" => {
+            if let Ok(v) = row.try_get::<chrono::NaiveDateTime, _>(ordinal) {
+                return JsonValue::String(v.format("%Y-%m-%d %H:%M:%S%.f").to_string());
+            }
+        }
+        "TIMESTAMP" | "TIMESTAMP(6)" => {
+            if let Ok(v) = row.try_get::<chrono::DateTime<chrono::Utc>, _>(ordinal) {
+                return JsonValue::String(v.format("%Y-%m-%d %H:%M:%S%.f").to_string());
+            }
+        }
+        "YEAR" => {
+            if let Ok(v) = row.try_get::<u16, _>(ordinal) {
+                return JsonValue::Number((v as i64).into());
+            }
+        }
+        "BIT" => {
+            if let Ok(v) = row.try_get::<u64, _>(ordinal) {
+                return JsonValue::Number(v.into());
+            }
+        }
         _ => {}
     }
 
@@ -225,5 +269,10 @@ fn mysql_column_to_json(row: &MySqlRow, ordinal: usize, type_name: &str) -> Json
         return JsonValue::String(v);
     }
 
+    eprintln!(
+        "vantage: failed to decode MySQL column '{}' (type '{}') — returning NULL",
+        row.columns()[ordinal].name(),
+        type_name,
+    );
     JsonValue::Null
 }

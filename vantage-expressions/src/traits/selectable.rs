@@ -71,7 +71,9 @@ impl Order {
 /// for field selection, filtering, sorting, grouping, and aggregation operations.
 /// The trait supports both mutable builder methods and fluent chainable methods.
 pub trait Selectable<T>: Send + Sync + Debug + Clone + Expressive<T> {
-    /// Sets the data source for the query (table name, subquery, etc.).
+    /// Adds a data source to the FROM clause (table name, subquery, etc.).
+    /// This is additive — calling it multiple times adds comma-separated sources.
+    /// Implementations must NOT clear existing sources.
     fn set_source(&mut self, source: impl Into<SourceRef<T>>, alias: Option<String>);
 
     /// Adds a column name to the SELECT clause.

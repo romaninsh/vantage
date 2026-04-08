@@ -29,14 +29,28 @@ pub struct DateFormat<T: Debug + Display + Clone> {
     expr: Expression<T>,
     format: String,
     alias: Option<String>,
+    /// When true, pass the format string as-is without token translation.
+    raw: bool,
 }
 
 impl<T: Debug + Display + Clone> DateFormat<T> {
+    /// Create with a portable strftime-style format that gets translated per backend.
     pub fn new(expr: impl Expressive<T>, format: impl Into<String>) -> Self {
         Self {
             expr: expr.expr(),
             format: format.into(),
             alias: None,
+            raw: false,
+        }
+    }
+
+    /// Create with a native format string that is passed as-is (no token translation).
+    pub fn raw_format(expr: impl Expressive<T>, format: impl Into<String>) -> Self {
+        Self {
+            expr: expr.expr(),
+            format: format.into(),
+            alias: None,
+            raw: true,
         }
     }
 
@@ -134,7 +148,11 @@ impl Expressive<crate::mysql::types::AnyMysqlType>
     for DateFormat<crate::mysql::types::AnyMysqlType>
 {
     fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
-        let fmt = strftime_to_mysql(&self.format);
+        let fmt = if self.raw {
+            self.format.clone()
+        } else {
+            strftime_to_mysql(&self.format)
+        };
         let base = Expression::new(
             "DATE_FORMAT({}, {})",
             vec![
@@ -156,7 +174,11 @@ impl Expressive<crate::postgres::types::AnyPostgresType>
     for DateFormat<crate::postgres::types::AnyPostgresType>
 {
     fn expr(&self) -> Expression<crate::postgres::types::AnyPostgresType> {
-        let fmt = strftime_to_pg(&self.format);
+        let fmt = if self.raw {
+            self.format.clone()
+        } else {
+            strftime_to_pg(&self.format)
+        };
         let base = Expression::new(
             "TO_CHAR({}, {})",
             vec![

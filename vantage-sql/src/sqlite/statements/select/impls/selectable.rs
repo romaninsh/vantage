@@ -20,7 +20,6 @@ impl SqliteSelect {
 
 impl Selectable<AnySqliteType> for SqliteSelect {
     fn set_source(&mut self, source: impl Into<SourceRef<AnySqliteType>>, alias: Option<String>) {
-        self.from.clear();
         let source_ref = source.into().into_expressive_enum();
         let expr = match (source_ref, alias) {
             (ExpressiveEnum::Scalar(val), None) => {

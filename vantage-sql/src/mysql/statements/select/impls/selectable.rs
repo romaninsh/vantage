@@ -29,7 +29,6 @@ impl MysqlSelect {
 
 impl Selectable<AnyMysqlType> for MysqlSelect {
     fn set_source(&mut self, source: impl Into<SourceRef<AnyMysqlType>>, alias: Option<String>) {
-        self.from.clear();
         let source_ref = source.into().into_expressive_enum();
         let expr = match (source_ref, alias) {
             (ExpressiveEnum::Scalar(val), None) => {
