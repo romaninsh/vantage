@@ -45,7 +45,7 @@
 //!     {"id": "delorean_donut", "name": "DeLorean Doughnut", "price": 135}
 //! ]));
 //! let mut select = mock.select();
-//! select.set_source("product".to_string(), None);
+//! select.add_source("product".to_string(), None);
 //! let products = mock.execute_select(&select).await.unwrap();
 //! assert_eq!(products.len(), 2);
 //! assert_eq!(products[0]["name"], "Flux Capacitor Cupcake");

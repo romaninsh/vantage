@@ -361,7 +361,7 @@ use vantage_surrealdb::select::SurrealSelect;
 let mut select = SurrealSelect::new();
 
 // Build query using Selectable trait methods
-select.set_source(expr!("users"), None);
+select.add_source(expr!("users"), None);
 select.add_field("name".to_string());
 select.add_field("email".to_string());
 select.add_expression(expr!("age * 2"), Some("double_age".to_string()));
