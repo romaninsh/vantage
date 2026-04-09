@@ -7,3 +7,4 @@ target
 .claude/
 vantage-sql-old
 tmp-*
+vantage-mongodb-old
