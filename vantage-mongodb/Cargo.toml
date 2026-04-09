@@ -1,22 +1,24 @@
 [package]
-edition = "2024"
 name = "vantage-mongodb"
 version = "0.3.0"
+edition = "2024"
 license = "MIT OR Apache-2.0"
-authors = ["Romans Malinovskis <me@nearly.guru>"]
-description = "Vantage extension for MongoDB"
-documentation = "https://docs.rs/vantage"
-homepage = "https://romaninsh.github.io/vantage"
-repository = "https://github.com/romaninsh/vantage"
-readme = "../README.md"
-
+description = "MongoDB persistence backend for Vantage framework"
 
 [dependencies]
-async-trait = "0.1"
+vantage-core = { path = "../vantage-core" }
+vantage-types = { path = "../vantage-types" }
 vantage-expressions = { path = "../vantage-expressions" }
-indexmap = { version = "2.12.0", features = ["serde"] }
-serde_json = { version = "1", features = [
-    "preserve_order",
-    "raw_value",
-    "arbitrary_precision",
-] }
+
+bson = { version = "3", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+indexmap = { version = "2", features = ["serde"] }
+paste = "1"
+async-trait = "0.1"
+mongodb = "3"
+tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+pretty_assertions = "1"

@@ -5,7 +5,7 @@ members = [
     "vantage-sql",
     "vantage-surrealdb",
     # "vantage-redb",
-    # "vantage-mongodb",
+    "vantage-mongodb",
     # "vantage-live",
     "bakery_model3",
     # "bakery_model4",
