@@ -26,6 +26,7 @@ impl TableSource for Csv {
     type AnyType = AnyCsvType;
     type Value = AnyCsvType;
     type Id = String;
+    type Condition = vantage_expressions::Expression<Self::Value>;
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
         Column::new(name)

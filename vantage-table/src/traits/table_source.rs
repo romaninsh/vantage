@@ -26,6 +26,11 @@ pub trait TableSource: DataSource + Clone + 'static {
     type Value: Clone + Send + Sync + 'static;
     type Id: Send + Sync + Clone + Hash + Eq + 'static;
 
+    /// The condition type stored by `Table`. SQL/SurrealDB backends use
+    /// `Expression<Self::Value>`; document-oriented backends like MongoDB
+    /// can use a native filter type (e.g. `bson::Document`).
+    type Condition: Clone + Send + Sync + 'static;
+
     /// Create a new column with the given name
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type>;
 

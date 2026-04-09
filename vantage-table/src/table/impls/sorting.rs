@@ -1,12 +1,11 @@
 use vantage_core::{Result, error};
-use vantage_expressions::Expression;
 use vantage_types::Entity;
 
 use crate::{sorting::*, table::Table, traits::table_source::TableSource};
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// Add a permanent order clause
-    pub fn add_order(&mut self, order: OrderBy<Expression<T::Value>>) {
+    pub fn add_order(&mut self, order: OrderBy<T::Condition>) {
         let id = -self.next_order_id;
         self.next_order_id += 1;
         self.order_by
@@ -14,7 +13,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     }
 
     /// Add a temporary order clause that can be removed later
-    pub fn temp_add_order(&mut self, order: OrderBy<Expression<T::Value>>) -> OrderHandle {
+    pub fn temp_add_order(&mut self, order: OrderBy<T::Condition>) -> OrderHandle {
         let id = self.next_order_id;
         self.next_order_id += 1;
         self.order_by
@@ -36,36 +35,33 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     }
 
     /// Get all order clauses
-    pub fn orders(&self) -> impl Iterator<Item = &(Expression<T::Value>, SortDirection)> {
+    pub fn orders(&self) -> impl Iterator<Item = &(T::Condition, SortDirection)> {
         self.order_by.values()
     }
 
     /// Add an order clause using the builder pattern
-    pub fn with_order(mut self, order: OrderBy<Expression<T::Value>>) -> Self {
+    pub fn with_order(mut self, order: OrderBy<T::Condition>) -> Self {
         self.add_order(order);
         self
     }
 }
 
 /// Extension trait for creating OrderBy from expressions and columns
-pub trait OrderByExt<V> {
+pub trait OrderByExt<C> {
     /// Create an ascending order specification
-    fn ascending(&self) -> OrderBy<Expression<V>>;
+    fn ascending(&self) -> OrderBy<C>;
 
     /// Create a descending order specification
-    fn descending(&self) -> OrderBy<Expression<V>>;
+    fn descending(&self) -> OrderBy<C>;
 }
 
-// Note: ColumnLike implementation removed since ColumnLike doesn't have expr() method
-// Users should create expressions from columns using other means
-
-// Direct implementation for Expression
-impl<T: Clone + Send + Sync + 'static> OrderByExt<T> for Expression<T> {
-    fn ascending(&self) -> OrderBy<Expression<T>> {
+// Direct implementation for any Clone type (Expression, bson::Document, etc.)
+impl<C: Clone> OrderByExt<C> for C {
+    fn ascending(&self) -> OrderBy<C> {
         OrderBy::ascending(self.clone())
     }
 
-    fn descending(&self) -> OrderBy<Expression<T>> {
+    fn descending(&self) -> OrderBy<C> {
         OrderBy::descending(self.clone())
     }
 }

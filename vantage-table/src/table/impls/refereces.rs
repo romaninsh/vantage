@@ -6,6 +6,7 @@ use indexmap::IndexMap;
 use std::sync::Arc;
 
 use vantage_core::{Result, error};
+use vantage_expressions::Expression;
 use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_types::Entity;
 
@@ -38,6 +39,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         T: ExprDataSource<T::Value>,
         T::Value: Clone + Send + Sync + 'static,
         T::Column<T::AnyType>: crate::operation::Operation<T::Value>,
+        T::Condition: From<Expression<T::Value>>,
     {
         let reference = ReferenceOne::<T, E, E2>::new(foreign_key, get_table);
         self.add_ref(relation, Box::new(reference));
@@ -66,6 +68,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         T: ExprDataSource<T::Value>,
         T::Value: Clone + Send + Sync + 'static,
         T::Column<T::AnyType>: crate::operation::Operation<T::Value>,
+        T::Condition: From<Expression<T::Value>>,
     {
         let reference = ReferenceMany::<T, E, E2>::new(foreign_key, get_table);
         self.add_ref(relation, Box::new(reference));

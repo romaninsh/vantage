@@ -1,5 +1,6 @@
 use vantage_core::Result;
-use vantage_expressions::{Expression, Expressive, Selectable, SelectableDataSource};
+use vantage_expressions::traits::selectable::Selectable;
+use vantage_expressions::{Expression, Expressive, SelectableDataSource};
 use vantage_types::Entity;
 
 use crate::{
@@ -10,7 +11,7 @@ use crate::{
 impl<T, E> Table<T, E>
 where
     T: SelectableDataSource<T::Value> + TableSource,
-    T::Select: Selectable<T::Value>,
+    T::Select: Selectable<T::Value, T::Condition>,
     T::Value: From<String>, // that's because table is specified as a string
     E: Entity<T::Value>,
 {
@@ -94,7 +95,8 @@ where
     T: SelectableDataSource<serde_json::Value>
         + TableSource<Value = serde_json::Value>
         + vantage_expressions::traits::datasource::ExprDataSource<serde_json::Value>,
-    T::Select: Selectable<serde_json::Value>,
+    T::Select: Selectable<serde_json::Value, T::Condition>,
+    T::Value: From<String>,
     E: Entity<serde_json::Value>,
 {
     /// Get count using QuerySource for serde_json::Value

@@ -81,6 +81,7 @@ impl TableSource for SurrealDB {
     type AnyType = AnySurrealType;
     type Value = AnySurrealType;
     type Id = Thing;
+    type Condition = vantage_expressions::Expression<Self::Value>;
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
         Column::new(name)

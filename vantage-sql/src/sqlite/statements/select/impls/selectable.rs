@@ -60,8 +60,8 @@ impl Selectable<AnySqliteType> for SqliteSelect {
         self.fields.push(field);
     }
 
-    fn add_where_condition(&mut self, condition: impl Expressive<AnySqliteType>) {
-        self.where_conditions.push(condition.expr());
+    fn add_where_condition(&mut self, condition: impl Into<Expression<AnySqliteType>>) {
+        self.where_conditions.push(condition.into());
     }
 
     fn set_distinct(&mut self, distinct: bool) {
@@ -70,10 +70,10 @@ impl Selectable<AnySqliteType> for SqliteSelect {
 
     fn add_order_by(
         &mut self,
-        expression: impl Expressive<AnySqliteType>,
-        order: vantage_expressions::Order,
+        order: impl Into<Expression<AnySqliteType>>,
+        direction: vantage_expressions::Order,
     ) {
-        self.order_by.push((expression.expr(), order));
+        self.order_by.push((order.into(), direction));
     }
 
     fn add_group_by(&mut self, expression: impl Expressive<AnySqliteType>) {

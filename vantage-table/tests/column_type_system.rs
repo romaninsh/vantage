@@ -235,6 +235,7 @@ impl TableSource for Type3TableSource {
     type AnyType = AnyType3;
     type Value = ciborium::Value;
     type Id = usize;
+    type Condition = vantage_expressions::Expression<Self::Value>;
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
         // Runtime check for Type3 compatibility

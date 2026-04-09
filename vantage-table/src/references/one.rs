@@ -1,8 +1,8 @@
 use std::{any::Any, marker::PhantomData, sync::Arc};
 
 use vantage_core::{Result, error};
-use vantage_expressions::Expressive;
 use vantage_expressions::traits::datasource::ExprDataSource;
+use vantage_expressions::{Expression, Expressive};
 use vantage_types::Entity;
 
 use crate::{
@@ -68,6 +68,7 @@ where
     T: ExprDataSource<T::Value>,
     T::Value: Clone + Send + Sync + 'static,
     T::Column<T::AnyType>: Operation<T::Value>,
+    T::Condition: From<Expression<T::Value>>,
 {
     fn get_related_table(&self, source_table: &dyn Any) -> Result<Box<dyn Any>> {
         let source = source_table
