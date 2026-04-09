@@ -314,10 +314,16 @@ SurrealTableExt adds type-narrowing query methods (select_first, select_column,
 select_single). Includes From/Into conversions between AnySurrealType and
 serde_json::Value, enabling AnyTable integration via from_table().
 
-**vantage-mongodb** generates native MongoDB JSON queries using Vantage
-patterns. It supports full CRUD operations and all common MongoDB operators
-($gt, $lt, $in, $or, $regex, etc.) through a fluent Document builder API that
-feels natural to MongoDB developers.
+**vantage-mongodb** provides a MongoDB persistence backend using the official
+`mongodb` crate with `bson::Bson` as the native value type. Unlike SQL/SurrealDB
+backends, it skips `Expression`-based queries entirely — `TableSource` methods
+use the mongodb driver directly and `type Condition = bson::Document` enables
+native MongoDB filters (`doc! { "price": { "$gt": 100 } }`). Includes
+`AnyMongoType` type system via `vantage_type_system!` macro with bson v2.
+Stub `ExprDataSource` provided for trait compatibility; `SelectableDataSource`
+intentionally skipped. Conditions, aggregates ($sum/$max/$min), and full CRUD
+work natively. Relationship traversal (`with_one`/`with_many`) not yet
+supported — requires further trait boundary work (see TODO.md).
 
 **vantage-dataset** defines internal traits that categorize different data
 source capabilities. ReadableDataSet handles read-only sources like CSV files,
