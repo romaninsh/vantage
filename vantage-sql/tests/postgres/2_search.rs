@@ -1,4 +1,4 @@
-//! Test 2f: search_table_expr LIKE escaping — verifies that %, _, and \ in
+//! Test 2f: search_table_condition LIKE escaping — verifies that %, _, and \ in
 //! search values don't act as wildcards.
 
 use vantage_dataset::ReadableDataSet;
@@ -54,7 +54,7 @@ async fn setup(suffix: &str, rows: &[&str]) -> (PostgresDB, Table<PostgresDB, It
 #[tokio::test]
 async fn test_search_percent_literal() {
     let (db, table) = setup("pct", &["100% organic", "regular item", "50% off"]).await;
-    let condition = db.search_table_expr(&table, "100%");
+    let condition = db.search_table_condition(&table, "100%");
     let mut table = table;
     table.add_condition(condition);
     let results = table.list().await.unwrap();
@@ -65,7 +65,7 @@ async fn test_search_percent_literal() {
 #[tokio::test]
 async fn test_search_underscore_literal() {
     let (db, table) = setup("usc", &["a_b", "axb", "a__b", "axxb"]).await;
-    let condition = db.search_table_expr(&table, "a_b");
+    let condition = db.search_table_condition(&table, "a_b");
     let mut table = table;
     table.add_condition(condition);
     let results = table.list().await.unwrap();
@@ -76,7 +76,7 @@ async fn test_search_underscore_literal() {
 #[tokio::test]
 async fn test_search_backslash_literal() {
     let (db, table) = setup("bs", &["path\\to\\file", "pathXtoXfile", "other"]).await;
-    let condition = db.search_table_expr(&table, "\\to\\");
+    let condition = db.search_table_condition(&table, "\\to\\");
     let mut table = table;
     table.add_condition(condition);
     let results = table.list().await.unwrap();

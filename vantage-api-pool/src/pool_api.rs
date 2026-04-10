@@ -120,7 +120,7 @@ impl TableSource for PoolApi {
         Expression::new(template, parameters)
     }
 
-    fn search_table_expr<E>(
+    fn search_table_condition<E>(
         &self,
         _table: &Table<Self, E>,
         search_value: &str,

@@ -53,19 +53,19 @@ pub trait TableSource: DataSource + Clone + 'static {
         parameters: Vec<ExpressiveEnum<Self::Value>>,
     ) -> Expression<Self::Value>;
 
-    /// Create a search expression for a table (e.g., searches across searchable fields)
+    /// Create a search condition for a table (e.g., searches across searchable fields)
     ///
     /// Different vendors implement search differently:
-    /// - SQL: `field LIKE '%value%'`
-    /// - SurrealDB: `field CONTAINS 'value'` or `field ~ 'value'`
-    /// - MongoDB: `{ field: { $regex: 'value', $options: 'i' } }`
+    /// - SQL: `field LIKE '%value%'` (returns Expression)
+    /// - SurrealDB: `field CONTAINS 'value'` (returns Expression)
+    /// - MongoDB: `{ field: { $regex: 'value' } }` (returns MongoCondition)
     ///
     /// The implementation should search across appropriate fields in the table.
-    fn search_table_expr<E>(
+    fn search_table_condition<E>(
         &self,
         table: &Table<Self, E>,
         search_value: &str,
-    ) -> Expression<Self::Value>
+    ) -> Self::Condition
     where
         E: Entity<Self::Value>,
         Self: Sized;

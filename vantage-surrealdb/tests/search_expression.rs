@@ -26,9 +26,9 @@ fn test_search_expression_basic() {
         .with_column(Column::<String>::new("password").with_flag(ColumnFlag::Hidden))
         .with_column(Column::<i64>::new("age"));
 
-    // search_table_expr currently returns a simple SEARCH expression
+    // search_table_condition currently returns a simple SEARCH expression
     // TODO: once implementation iterates searchable columns, update assertions
-    let search_expr = db.search_table_expr(&table, "john");
+    let search_expr = db.search_table_condition(&table, "john");
     let preview = search_expr.preview();
 
     assert!(
@@ -51,7 +51,7 @@ fn test_search_expression_special_characters() {
         .with_column(Column::<String>::new("id").with_flag(ColumnFlag::IdField))
         .with_column(Column::<String>::new("name").with_flag(ColumnFlag::Searchable));
 
-    let search_expr = db.search_table_expr(&table, "O'Brien");
+    let search_expr = db.search_table_condition(&table, "O'Brien");
     let preview = search_expr.preview();
 
     assert!(

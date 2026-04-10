@@ -105,16 +105,35 @@ impl TableSource for MongoDB {
         Expression::new(template, parameters)
     }
 
-    fn search_table_expr<E>(
+    fn search_table_condition<E>(
         &self,
-        _table: &Table<Self, E>,
+        table: &Table<Self, E>,
         search_value: &str,
-    ) -> Expression<Self::Value>
+    ) -> Self::Condition
     where
         E: Entity<Self::Value>,
     {
-        // Preview-only expression
-        Expression::new(format!("{{\"$regex\": \"{}\"}}", search_value), vec![])
+        // Build $or across all string-like columns with case-insensitive regex
+        let conditions: Vec<bson::Bson> = table
+            .columns()
+            .values()
+            .map(|col| {
+                bson::Bson::Document(
+                    doc! { col.name(): { "$regex": search_value, "$options": "i" } },
+                )
+            })
+            .collect();
+
+        if conditions.is_empty() {
+            doc! {}.into()
+        } else if conditions.len() == 1 {
+            match conditions.into_iter().next().unwrap() {
+                bson::Bson::Document(d) => d.into(),
+                _ => unreachable!(),
+            }
+        } else {
+            doc! { "$or": conditions }.into()
+        }
     }
 
     // ── Read ─────────────────────────────────────────────────────────
