@@ -1,8 +1,8 @@
 use std::{any::Any, marker::PhantomData, sync::Arc};
 
 use vantage_core::{Result, error};
-use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::Expression;
+use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_types::Entity;
 
 use crate::{
@@ -78,11 +78,10 @@ where
             .map(|c| c.name().to_string())
             .unwrap_or_else(|| "id".to_string());
 
-        let condition = target.data_source().related_in_condition(
-            &self.target_foreign_key,
-            source,
-            &source_id,
-        );
+        let condition =
+            target
+                .data_source()
+                .related_in_condition(&self.target_foreign_key, source, &source_id);
         target.add_condition(condition);
         Ok(Box::new(target))
     }

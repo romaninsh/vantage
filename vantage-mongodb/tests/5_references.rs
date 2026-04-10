@@ -8,7 +8,7 @@ use vantage_dataset::ReadableDataSet;
 use vantage_mongodb::AnyMongoType;
 use vantage_mongodb::MongoDB;
 use vantage_table::table::Table;
-use vantage_types::{entity, Entity};
+use vantage_types::entity;
 
 fn mongo_url() -> String {
     std::env::var("MONGODB_URL").unwrap_or_else(|_| "mongodb://localhost:27017".into())

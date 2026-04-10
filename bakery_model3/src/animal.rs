@@ -1,8 +1,8 @@
 use bson::Bson;
 use serde_json::Value as JsonValue;
 use vantage_csv::{CsvType, type_system::CsvTypeAnimalMarker};
-use vantage_mongodb::types::MongoTypeStringMarker;
 use vantage_mongodb::MongoType;
+use vantage_mongodb::types::MongoTypeStringMarker;
 use vantage_sql::postgres::{PostgresType, types::PostgresTypeTextMarker};
 use vantage_sql::sqlite::{SqliteType, types::SqliteTypeTextMarker};
 use vantage_surrealdb::types::SurrealTypeStringMarker;

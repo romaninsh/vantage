@@ -213,7 +213,11 @@ fn print_usage() {
     println!("  db surreal bakery delete myid");
 }
 
-async fn handle_commands(table: AnyTable, commands: Vec<String>, source: &str) -> vantage_core::Result<()> {
+async fn handle_commands(
+    table: AnyTable,
+    commands: Vec<String>,
+    source: &str,
+) -> vantage_core::Result<()> {
     if commands.is_empty() {
         println!("No command. Try: list, get, count, add, delete");
         return Ok(());
