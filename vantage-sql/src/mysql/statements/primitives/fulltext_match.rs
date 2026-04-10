@@ -66,6 +66,12 @@ impl FulltextMatch {
     }
 }
 
+impl From<FulltextMatch> for Expr {
+    fn from(fm: FulltextMatch) -> Self {
+        fm.expr()
+    }
+}
+
 impl Expressive<AnyMysqlType> for FulltextMatch {
     fn expr(&self) -> Expr {
         let cols = Expression::from_vec(self.columns.clone(), ", ");

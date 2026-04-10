@@ -6,7 +6,7 @@
 //! Write operations use the `mongodb` driver directly.
 
 use async_trait::async_trait;
-use bson::{Bson, doc, oid::ObjectId};
+use bson::{Bson, doc};
 use futures_util::TryStreamExt;
 use indexmap::IndexMap;
 
@@ -18,25 +18,24 @@ use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
 use crate::condition::MongoCondition;
+use crate::id::MongoId;
 use crate::mongodb::MongoDB;
 use crate::select::MongoSelect;
 use crate::types::AnyMongoType;
 
 /// Convert a bson::Document into a Record<AnyMongoType>, optionally extracting the _id.
-fn doc_to_record(doc: bson::Document) -> (Option<ObjectId>, Record<AnyMongoType>) {
+fn doc_to_record(doc: bson::Document) -> (Option<MongoId>, Record<AnyMongoType>) {
     let mut fields = IndexMap::new();
-    let mut oid: Option<ObjectId> = None;
+    let mut id: Option<MongoId> = None;
 
     for (k, v) in doc {
-        if k == "_id"
-            && let Bson::ObjectId(id) = &v
-        {
-            oid = Some(*id);
+        if k == "_id" {
+            id = MongoId::from_bson(&v);
         }
         fields.insert(k, AnyMongoType::untyped(v));
     }
 
-    (oid, Record::from_indexmap(fields))
+    (id, Record::from_indexmap(fields))
 }
 
 /// Build a `MongoSelect` from a `Table`'s current state (conditions, ordering, pagination).
@@ -77,7 +76,7 @@ impl TableSource for MongoDB {
         Type: ColumnType;
     type AnyType = AnyMongoType;
     type Value = AnyMongoType;
-    type Id = ObjectId;
+    type Id = MongoId;
     type Condition = MongoCondition;
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
@@ -167,7 +166,7 @@ impl TableSource for MongoDB {
             .find_one(doc! { "_id": id })
             .await
             .map_err(|e| error!("MongoDB find_one failed", details = e.to_string()))?
-            .ok_or_else(|| error!("Document not found", id = id.to_hex()))?;
+            .ok_or_else(|| error!("Document not found", id = id.to_string()))?;
 
         let (_oid, record) = doc_to_record(d);
         Ok(record)
@@ -316,7 +315,7 @@ impl TableSource for MongoDB {
     {
         let coll = self.doc_collection(table.table_name());
         let mut doc = bson::Document::new();
-        doc.insert("_id", Bson::ObjectId(*id));
+        doc.insert("_id", id);
         for (k, v) in record.iter() {
             doc.insert(k, v.value().clone());
         }
@@ -381,7 +380,7 @@ impl TableSource for MongoDB {
         E: Entity<Self::Value>,
     {
         let coll = self.doc_collection(table.table_name());
-        coll.delete_one(doc! { "_id": *id })
+        coll.delete_one(doc! { "_id": id })
             .await
             .map_err(|e| error!("MongoDB delete_one failed", details = e.to_string()))?;
         Ok(())
@@ -419,10 +418,8 @@ impl TableSource for MongoDB {
             .await
             .map_err(|e| error!("MongoDB insert_one failed", details = e.to_string()))?;
 
-        result
-            .inserted_id
-            .as_object_id()
-            .ok_or_else(|| error!("MongoDB insert did not return ObjectId"))
+        MongoId::from_bson(&result.inserted_id)
+            .ok_or_else(|| error!("MongoDB insert did not return a valid id"))
     }
 
     fn column_table_values_expr<'a, E, Type: ColumnType>(

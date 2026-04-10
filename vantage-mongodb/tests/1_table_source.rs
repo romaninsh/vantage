@@ -4,8 +4,9 @@
 //! to mongodb://localhost:27017. Uses a randomised database name so tests
 //! don't collide.
 
-use bson::{doc, oid::ObjectId};
+use bson::doc;
 use vantage_dataset::prelude::*;
+use vantage_mongodb::MongoId;
 use vantage_mongodb::{AnyMongoType, MongoDB};
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
@@ -16,7 +17,7 @@ fn mongo_url() -> String {
 }
 
 async fn setup() -> (MongoDB, String) {
-    let db_name = format!("vantage_test_{}", ObjectId::new().to_hex());
+    let db_name = format!("vantage_test_{}", bson::oid::ObjectId::new().to_hex());
     let db = MongoDB::connect(&mongo_url(), &db_name)
         .await
         .expect("Failed to connect to MongoDB");
@@ -63,7 +64,7 @@ async fn test_insert_and_list() {
     let (db, db_name) = setup().await;
     let table = product_table(db.clone());
 
-    let id = ObjectId::new();
+    let id = MongoId::from(bson::oid::ObjectId::new());
     let rec = record(&[
         ("name", AnyMongoType::new("Cupcake".to_string())),
         ("price", AnyMongoType::new(250i64)),
@@ -89,7 +90,7 @@ async fn test_get_value_by_id() {
     let (db, db_name) = setup().await;
     let table = product_table(db.clone());
 
-    let id = ObjectId::new();
+    let id = MongoId::from(bson::oid::ObjectId::new());
     let rec = record(&[
         ("name", AnyMongoType::new("Tart".to_string())),
         ("price", AnyMongoType::new(180i64)),
@@ -112,7 +113,7 @@ async fn test_get_some_value() {
     // Empty table → None
     assert!(table.get_some_value().await.unwrap().is_none());
 
-    let id = ObjectId::new();
+    let id = MongoId::from(bson::oid::ObjectId::new());
     let rec = record(&[("name", AnyMongoType::new("Pie".to_string()))]);
     table.insert_value(&id, &rec).await.unwrap();
 
@@ -134,7 +135,10 @@ async fn test_count() {
 
     for i in 0..3 {
         let rec = record(&[("name", AnyMongoType::new(format!("Item {}", i)))]);
-        table.insert_value(&ObjectId::new(), &rec).await.unwrap();
+        table
+            .insert_value(&MongoId::from(bson::oid::ObjectId::new()), &rec)
+            .await
+            .unwrap();
     }
 
     assert_eq!(table.get_count().await.unwrap(), 3);
@@ -155,7 +159,10 @@ async fn test_sum_max_min() {
             ("name", AnyMongoType::new(format!("P{}", p))),
             ("price", AnyMongoType::new(p)),
         ]);
-        table.insert_value(&ObjectId::new(), &rec).await.unwrap();
+        table
+            .insert_value(&MongoId::from(bson::oid::ObjectId::new()), &rec)
+            .await
+            .unwrap();
     }
 
     let price_col = db.to_any_column(db.create_column::<i64>("price"));
@@ -179,7 +186,7 @@ async fn test_replace() {
     let (db, db_name) = setup().await;
     let table = product_table(db.clone());
 
-    let id = ObjectId::new();
+    let id = MongoId::from(bson::oid::ObjectId::new());
     let rec = record(&[
         ("name", AnyMongoType::new("Old".to_string())),
         ("price", AnyMongoType::new(10i64)),
@@ -204,7 +211,7 @@ async fn test_patch() {
     let (db, db_name) = setup().await;
     let table = product_table(db.clone());
 
-    let id = ObjectId::new();
+    let id = MongoId::from(bson::oid::ObjectId::new());
     let rec = record(&[
         ("name", AnyMongoType::new("Original".to_string())),
         ("price", AnyMongoType::new(50i64)),
@@ -229,7 +236,7 @@ async fn test_delete() {
     let (db, db_name) = setup().await;
     let table = product_table(db.clone());
 
-    let id = ObjectId::new();
+    let id = MongoId::from(bson::oid::ObjectId::new());
     let rec = record(&[("name", AnyMongoType::new("Gone".to_string()))]);
     table.insert_value(&id, &rec).await.unwrap();
     assert_eq!(table.get_count().await.unwrap(), 1);
@@ -247,7 +254,10 @@ async fn test_delete_all() {
 
     for i in 0..4 {
         let rec = record(&[("name", AnyMongoType::new(format!("X{}", i)))]);
-        table.insert_value(&ObjectId::new(), &rec).await.unwrap();
+        table
+            .insert_value(&MongoId::from(bson::oid::ObjectId::new()), &rec)
+            .await
+            .unwrap();
     }
     assert_eq!(table.get_count().await.unwrap(), 4);
 
@@ -287,7 +297,10 @@ async fn test_condition_filter() {
             ("name", AnyMongoType::new(name.to_string())),
             ("is_deleted", AnyMongoType::new(deleted)),
         ]);
-        table.insert_value(&ObjectId::new(), &rec).await.unwrap();
+        table
+            .insert_value(&MongoId::from(bson::oid::ObjectId::new()), &rec)
+            .await
+            .unwrap();
     }
 
     // Add native MongoDB condition
@@ -317,7 +330,10 @@ async fn test_condition_gt() {
             ("name", AnyMongoType::new(name.to_string())),
             ("price", AnyMongoType::new(price)),
         ]);
-        table.insert_value(&ObjectId::new(), &rec).await.unwrap();
+        table
+            .insert_value(&MongoId::from(bson::oid::ObjectId::new()), &rec)
+            .await
+            .unwrap();
     }
 
     table.add_condition(doc! { "price": { "$gt": 100 } });
@@ -352,7 +368,10 @@ async fn test_multiple_conditions() {
             ("price", AnyMongoType::new(price)),
             ("is_deleted", AnyMongoType::new(deleted)),
         ]);
-        table.insert_value(&ObjectId::new(), &rec).await.unwrap();
+        table
+            .insert_value(&MongoId::from(bson::oid::ObjectId::new()), &rec)
+            .await
+            .unwrap();
     }
 
     // price > 100 AND not deleted
