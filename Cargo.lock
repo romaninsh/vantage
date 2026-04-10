@@ -172,6 +172,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 name = "bakery_model3"
 version = "0.1.0"
 dependencies = [
+ "bson",
  "clap",
  "indexmap",
  "serde_json",
@@ -182,6 +183,7 @@ dependencies = [
  "vantage-csv",
  "vantage-dataset",
  "vantage-expressions",
+ "vantage-mongodb",
  "vantage-sql",
  "vantage-surrealdb",
  "vantage-table",

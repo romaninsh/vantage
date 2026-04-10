@@ -1,6 +1,6 @@
 //! AnyMongoType extras: untyped constructor, From impls, Expressive impls.
 
-use super::{AnyMongoType, MongoType, MongoTypeNullMarker};
+use super::{AnyMongoType, MongoType, MongoTypeArrayMarker, MongoTypeNullMarker};
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
 impl AnyMongoType {
@@ -25,6 +25,35 @@ impl MongoType for AnyMongoType {
 
     fn from_bson(value: bson::Bson) -> Option<Self> {
         AnyMongoType::from_bson(&value)
+    }
+}
+
+/// Vec<AnyMongoType> is a MongoType — used by column_table_values_expr to
+/// return a list of column values wrapped in an AnyMongoType.
+impl MongoType for Vec<AnyMongoType> {
+    type Target = MongoTypeArrayMarker;
+
+    fn to_bson(&self) -> bson::Bson {
+        bson::Bson::Array(self.iter().map(|v| v.value().clone()).collect())
+    }
+
+    fn from_bson(value: bson::Bson) -> Option<Self> {
+        match value {
+            bson::Bson::Array(arr) => Some(arr.into_iter().map(AnyMongoType::untyped).collect()),
+            _ => None,
+        }
+    }
+}
+
+impl TryFrom<AnyMongoType> for Vec<AnyMongoType> {
+    type Error = vantage_core::VantageError;
+    fn try_from(val: AnyMongoType) -> Result<Self, Self::Error> {
+        val.try_get::<Vec<AnyMongoType>>().ok_or_else(|| {
+            vantage_core::error!(
+                "Cannot convert AnyMongoType to Vec<AnyMongoType>",
+                value = format!("{}", val)
+            )
+        })
     }
 }
 

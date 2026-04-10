@@ -194,7 +194,7 @@ async fn test_bulk_operations() {
     let _ = client.delete("products").await;
 
     // Test bulk CREATE
-    let products = vec![
+    let products = [
         json!({
             "name": "Laptop",
             "price": 999.99,
@@ -685,7 +685,7 @@ async fn test_import_export() {
     let _ = client.delete("import_test").await;
 
     // Create some test data
-    let test_data = vec![
+    let test_data = [
         json!({"name": "Item 1", "value": 100}),
         json!({"name": "Item 2", "value": 200}),
         json!({"name": "Item 3", "value": 300}),

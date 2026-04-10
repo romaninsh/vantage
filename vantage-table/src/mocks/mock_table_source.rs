@@ -155,7 +155,7 @@ impl TableSource for MockTableSource {
         Expression::new(template, parameters)
     }
 
-    fn search_table_expr<E>(
+    fn search_table_condition<E>(
         &self,
         _table: &Table<Self, E>,
         search_value: &str,
@@ -354,6 +354,18 @@ impl TableSource for MockTableSource {
     {
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
         im_table.insert_return_id_value(record).await
+    }
+
+    fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(
+        &self,
+        _target_field: &str,
+        _source_table: &Table<Self, SourceE>,
+        _source_column: &str,
+    ) -> Self::Condition
+    where
+        Self: Sized,
+    {
+        unimplemented!("related_in_condition not yet supported for MockTableSource")
     }
 
     fn column_table_values_expr<'a, E, Type: ColumnType>(

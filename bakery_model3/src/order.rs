@@ -1,4 +1,5 @@
 use vantage_csv::{AnyCsvType, Csv};
+use vantage_mongodb::{AnyMongoType, MongoDB};
 #[allow(unused_imports)]
 use vantage_sql::postgres::AnyPostgresType;
 use vantage_sql::postgres::PostgresDB;
@@ -10,7 +11,7 @@ use vantage_types::entity;
 
 use crate::Client;
 
-#[entity(CsvType, SurrealType, SqliteType, PostgresType)]
+#[entity(CsvType, SurrealType, SqliteType, PostgresType, MongoType)]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Order {
     pub client_id: Option<String>,
@@ -57,6 +58,17 @@ impl Order {
             .with_column_of::<bool>("is_deleted")
             .with_one("client", "client_id", move || {
                 Client::postgres_table(db2.clone())
+            })
+    }
+
+    pub fn mongo_table(db: MongoDB) -> Table<MongoDB, Order> {
+        let db2 = db.clone();
+        Table::new("client_order", db)
+            .with_id_column("_id")
+            .with_column_of::<String>("client_id")
+            .with_column_of::<bool>("is_deleted")
+            .with_one("client", "client_id", move || {
+                Client::mongo_table(db2.clone())
             })
     }
 }

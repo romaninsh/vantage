@@ -1,4 +1,5 @@
 use vantage_csv::{AnyCsvType, Csv};
+use vantage_mongodb::{AnyMongoType, MongoDB};
 #[allow(unused_imports)]
 use vantage_sql::postgres::AnyPostgresType;
 use vantage_sql::postgres::PostgresDB;
@@ -10,7 +11,7 @@ use vantage_types::entity;
 
 use crate::{Animal, Bakery};
 
-#[entity(CsvType, SurrealType, SqliteType, PostgresType)]
+#[entity(CsvType, SurrealType, SqliteType, PostgresType, MongoType)]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Product {
     pub name: String,
@@ -71,5 +72,15 @@ impl Product {
             .with_one("bakery", "bakery_id", move || {
                 Bakery::postgres_table(db2.clone())
             })
+    }
+
+    pub fn mongo_table(db: MongoDB) -> Table<MongoDB, Product> {
+        Table::new("product", db)
+            .with_id_column("_id")
+            .with_column_of::<String>("name")
+            .with_column_of::<i64>("calories")
+            .with_column_of::<i64>("price")
+            .with_column_of::<bool>("is_deleted")
+            .with_column_of::<Option<Animal>>("sticker")
     }
 }

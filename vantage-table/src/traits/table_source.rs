@@ -53,19 +53,19 @@ pub trait TableSource: DataSource + Clone + 'static {
         parameters: Vec<ExpressiveEnum<Self::Value>>,
     ) -> Expression<Self::Value>;
 
-    /// Create a search expression for a table (e.g., searches across searchable fields)
+    /// Create a search condition for a table (e.g., searches across searchable fields)
     ///
     /// Different vendors implement search differently:
-    /// - SQL: `field LIKE '%value%'`
-    /// - SurrealDB: `field CONTAINS 'value'` or `field ~ 'value'`
-    /// - MongoDB: `{ field: { $regex: 'value', $options: 'i' } }`
+    /// - SQL: `field LIKE '%value%'` (returns Expression)
+    /// - SurrealDB: `field CONTAINS 'value'` (returns Expression)
+    /// - MongoDB: `{ field: { $regex: 'value' } }` (returns MongoCondition)
     ///
     /// The implementation should search across appropriate fields in the table.
-    fn search_table_expr<E>(
+    fn search_table_condition<E>(
         &self,
         table: &Table<Self, E>,
         search_value: &str,
-    ) -> Expression<Self::Value>
+    ) -> Self::Condition
     where
         E: Entity<Self::Value>,
         Self: Sized;
@@ -216,6 +216,24 @@ pub trait TableSource: DataSource + Clone + 'static {
             }
         })
     }
+
+    /// Build a condition for "target_field IN (values of source_column from source_table)".
+    ///
+    /// Used by the relationship traversal system (`get_ref_as`) to filter
+    /// a target table by foreign key values from a source table.
+    ///
+    /// Each backend implements this natively:
+    /// - SQL backends build a subquery: `"id" IN (SELECT "bakery_id" FROM "client" WHERE ...)`
+    /// - MongoDB builds a deferred `{ field: { "$in": [...] } }` document
+    /// - CSV fetches values in memory and builds an IN condition
+    fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(
+        &self,
+        target_field: &str,
+        source_table: &Table<Self, SourceE>,
+        source_column: &str,
+    ) -> Self::Condition
+    where
+        Self: Sized;
 
     /// Return an associated expression that, when resolved, yields all values
     /// of the given typed column from this table (respecting current conditions).

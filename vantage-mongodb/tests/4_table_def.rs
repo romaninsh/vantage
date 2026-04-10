@@ -1,6 +1,6 @@
 //! Test 4: Table definition and query generation via TableSource.
 
-use vantage_mongodb::{AnyMongoType, MongoDB};
+use vantage_mongodb::MongoDB;
 use vantage_table::table::Table;
 use vantage_types::EmptyEntity;
 

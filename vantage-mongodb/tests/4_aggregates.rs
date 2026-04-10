@@ -2,7 +2,6 @@
 
 use vantage_mongodb::MongoDB;
 use vantage_table::table::Table;
-use vantage_table::traits::table_like::TableLike;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::EmptyEntity;
 

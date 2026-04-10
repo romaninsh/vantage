@@ -152,7 +152,7 @@ async fn query10_low_stock_products() {
     let rows = select.get(&db).await.unwrap();
 
     // sea_pie (15) and time_tart (20 — not < 20) => only sea_pie
-    assert!(rows.len() >= 1);
+    assert!(!rows.is_empty());
     let names: Vec<String> = rows
         .iter()
         .map(|r| r.get("name").unwrap().try_get::<String>().unwrap())

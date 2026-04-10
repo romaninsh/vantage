@@ -1,4 +1,5 @@
 use vantage_core::{Result, error};
+use vantage_expressions::Expression;
 use vantage_types::Entity;
 
 use crate::{sorting::*, table::Table, traits::table_source::TableSource};
@@ -46,7 +47,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     }
 }
 
-/// Extension trait for creating OrderBy from expressions and columns
+/// Extension trait for creating OrderBy from expressions.
 pub trait OrderByExt<C> {
     /// Create an ascending order specification
     fn ascending(&self) -> OrderBy<C>;
@@ -55,13 +56,13 @@ pub trait OrderByExt<C> {
     fn descending(&self) -> OrderBy<C>;
 }
 
-// Direct implementation for any Clone type (Expression, bson::Document, etc.)
-impl<C: Clone> OrderByExt<C> for C {
-    fn ascending(&self) -> OrderBy<C> {
+// Implementation for Expression<T> — the standard condition type for SQL/SurrealDB backends.
+impl<T: Clone + Send + Sync + 'static> OrderByExt<Expression<T>> for Expression<T> {
+    fn ascending(&self) -> OrderBy<Expression<T>> {
         OrderBy::ascending(self.clone())
     }
 
-    fn descending(&self) -> OrderBy<C> {
+    fn descending(&self) -> OrderBy<Expression<T>> {
         OrderBy::descending(self.clone())
     }
 }

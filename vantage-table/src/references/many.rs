@@ -1,12 +1,13 @@
 use std::{any::Any, marker::PhantomData, sync::Arc};
 
 use vantage_core::{Result, error};
+use vantage_expressions::Expression;
 use vantage_expressions::traits::datasource::ExprDataSource;
-use vantage_expressions::{Expression, Expressive};
 use vantage_types::Entity;
 
 use crate::{
-    operation::Operation, references::RelatedTable, table::Table, traits::table_source::TableSource,
+    references::RelatedTable, table::Table, traits::column_like::ColumnLike,
+    traits::table_source::TableSource,
 };
 
 /// One-to-many relationship reference
@@ -64,7 +65,6 @@ impl<T: TableSource, SourceE: Entity<T::Value> + 'static, TargetE: Entity<T::Val
 where
     T: ExprDataSource<T::Value>,
     T::Value: Clone + Send + Sync + 'static,
-    T::Column<T::AnyType>: Operation<T::Value>,
     T::Condition: From<Expression<T::Value>>,
 {
     fn get_related_table(&self, source_table: &dyn Any) -> Result<Box<dyn Any>> {
@@ -73,13 +73,16 @@ where
             .ok_or_else(|| error!("Source table type mismatch in ReferenceMany"))?;
         let mut target = (self.get_table)();
 
-        // Get source ID values, apply as IN condition on target FK
-        let id_col = source.data_source().create_column::<T::AnyType>("id");
-        let id_values = source
-            .data_source()
-            .column_table_values_expr(source, &id_col);
+        let source_id = source
+            .id_field()
+            .map(|c| c.name().to_string())
+            .unwrap_or_else(|| "id".to_string());
 
-        target.add_condition(target[self.target_foreign_key.as_str()].in_(id_values.expr()));
+        let condition =
+            target
+                .data_source()
+                .related_in_condition(&self.target_foreign_key, source, &source_id);
+        target.add_condition(condition);
         Ok(Box::new(target))
     }
 

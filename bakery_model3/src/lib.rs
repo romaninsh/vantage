@@ -1,4 +1,5 @@
 pub use vantage_csv::{AnyCsvType, Csv, CsvType};
+pub use vantage_mongodb::{AnyMongoType, MongoDB, MongoType};
 pub use vantage_sql::postgres::{AnyPostgresType, PostgresDB, PostgresType};
 pub use vantage_sql::sqlite::{AnySqliteType, SqliteDB, SqliteType};
 

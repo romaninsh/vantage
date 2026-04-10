@@ -6,6 +6,7 @@ use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_expressions::{Expression, Expressive, Selectable};
 use vantage_table::column::core::{Column, ColumnType};
+use vantage_table::operation::Operation;
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
@@ -96,7 +97,7 @@ impl TableSource for MysqlDB {
         Expression::new(template, parameters)
     }
 
-    fn search_table_expr<E>(
+    fn search_table_condition<E>(
         &self,
         table: &Table<Self, E>,
         search_value: &str,
@@ -426,6 +427,21 @@ impl TableSource for MysqlDB {
             .map_err(|e| error!("MySQL get id failed", details = e.to_string()))?;
 
         Ok(id.to_string())
+    }
+
+    fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(
+        &self,
+        target_field: &str,
+        source_table: &Table<Self, SourceE>,
+        source_column: &str,
+    ) -> Self::Condition
+    where
+        Self: Sized,
+    {
+        let src_col = self.create_column::<Self::AnyType>(source_column);
+        let fk_values = self.column_table_values_expr(source_table, &src_col);
+        let tgt_col = self.create_column::<Self::AnyType>(target_field);
+        tgt_col.in_(fk_values.expr())
     }
 
     fn column_table_values_expr<'a, E, Type: ColumnType>(

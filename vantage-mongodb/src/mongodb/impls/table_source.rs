@@ -11,7 +11,9 @@ use futures_util::TryStreamExt;
 use indexmap::IndexMap;
 
 use vantage_core::{Result, error};
-use vantage_expressions::{AssociatedExpression, ExprDataSource, Expression, ExpressiveEnum};
+use vantage_expressions::{
+    AssociatedExpression, DeferredFn, ExprDataSource, Expression, ExpressiveEnum, expr_any,
+};
 use vantage_table::column::core::{Column, ColumnType};
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
@@ -105,16 +107,37 @@ impl TableSource for MongoDB {
         Expression::new(template, parameters)
     }
 
-    fn search_table_expr<E>(
+    fn search_table_condition<E>(
         &self,
-        _table: &Table<Self, E>,
+        table: &Table<Self, E>,
         search_value: &str,
-    ) -> Expression<Self::Value>
+    ) -> Self::Condition
     where
         E: Entity<Self::Value>,
     {
-        // Preview-only expression
-        Expression::new(format!("{{\"$regex\": \"{}\"}}", search_value), vec![])
+        // Escape regex metacharacters so the search is a literal substring match
+        let escaped = regex_escape(search_value);
+
+        // Build $or across all string-like columns with case-insensitive regex
+        let conditions: Vec<bson::Bson> = table
+            .columns()
+            .values()
+            .map(|col| {
+                bson::Bson::Document(doc! { col.name(): { "$regex": &escaped, "$options": "i" } })
+            })
+            .collect();
+
+        if conditions.is_empty() {
+            // No columns — return always-false filter (consistent with SQL backends)
+            doc! { "_id": { "$exists": false } }.into()
+        } else if conditions.len() == 1 {
+            match conditions.into_iter().next().unwrap() {
+                bson::Bson::Document(d) => d.into(),
+                _ => unreachable!(),
+            }
+        } else {
+            doc! { "$or": conditions }.into()
+        }
     }
 
     // ── Read ─────────────────────────────────────────────────────────
@@ -422,15 +445,114 @@ impl TableSource for MongoDB {
             .ok_or_else(|| error!("MongoDB insert did not return a valid id"))
     }
 
+    fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(
+        &self,
+        target_field: &str,
+        source_table: &Table<Self, SourceE>,
+        source_column: &str,
+    ) -> Self::Condition
+    where
+        Self: Sized,
+    {
+        let db = self.clone();
+        let source = source_table.clone();
+        let col = source_column.to_string();
+        let field = target_field.to_string();
+
+        MongoCondition::Deferred(DeferredFn::new(move || {
+            let db = db.clone();
+            let source = source.clone();
+            let col = col.clone();
+            let field = field.clone();
+            Box::pin(async move {
+                // Build a projected query that only fetches the source column
+                let select = select_from_table(&source);
+                let filter = select.build_filter().await?;
+                let collection_name = select
+                    .collection
+                    .as_deref()
+                    .ok_or_else(|| error!("No collection name for related_in_condition"))?;
+
+                let mut projection = doc! { &col: 1 };
+                if col != "_id" {
+                    projection.insert("_id", 0);
+                }
+                let opts = mongodb::options::FindOptions::builder()
+                    .projection(projection)
+                    .build();
+
+                let coll = db.collection::<bson::Document>(collection_name);
+                let mut cursor = coll
+                    .find(filter)
+                    .with_options(opts)
+                    .await
+                    .map_err(|e| error!("MongoDB find failed", details = e.to_string()))?;
+
+                let mut values = Vec::new();
+                while cursor
+                    .advance()
+                    .await
+                    .map_err(|e| error!("MongoDB cursor error", details = e.to_string()))?
+                {
+                    let doc = cursor.deserialize_current().map_err(|e| {
+                        error!("MongoDB deserialize error", details = e.to_string())
+                    })?;
+                    if let Some(v) = doc.get(&col) {
+                        values.push(v.clone());
+                    }
+                }
+
+                let doc = doc! { &field: { "$in": values } };
+                Ok(ExpressiveEnum::Scalar(AnyMongoType::untyped(
+                    Bson::Document(doc),
+                )))
+            })
+        }))
+    }
+
     fn column_table_values_expr<'a, E, Type: ColumnType>(
         &'a self,
-        _table: &Table<Self, E>,
-        _column: &Self::Column<Type>,
+        table: &Table<Self, E>,
+        column: &Self::Column<Type>,
     ) -> AssociatedExpression<'a, Self, Self::Value, Vec<Type>>
     where
         E: Entity<Self::Value> + 'static,
         Self: ExprDataSource<Self::Value> + Sized,
     {
-        todo!("column_table_values_expr not yet implemented for MongoDB")
+        let table_clone = table.clone();
+        let col = column.name().to_string();
+        let db = self.clone();
+
+        let inner = expr_any!("{}", {
+            DeferredFn::new(move || {
+                let db = db.clone();
+                let table = table_clone.clone();
+                let col = col.clone();
+                Box::pin(async move {
+                    let records = db.list_table_values(&table).await?;
+                    let values: Vec<AnyMongoType> = records
+                        .values()
+                        .filter_map(|r| r.get(&col).cloned())
+                        .collect();
+                    Ok(ExpressiveEnum::Scalar(AnyMongoType::new(values)))
+                })
+            })
+        });
+
+        let expr = expr_any!("{}", { self.defer(inner) });
+        AssociatedExpression::new(expr, self)
     }
+}
+
+/// Escape regex metacharacters so a user-provided string is treated as a
+/// literal substring in a `$regex` filter.
+fn regex_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if ".*+?^${}()|[]\\".contains(c) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
 }

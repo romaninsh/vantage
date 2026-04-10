@@ -60,8 +60,10 @@ where
     }
 
     fn search_expression(&self, search_value: &str) -> Result<AnyExpression> {
-        let expr = self.data_source().search_table_expr(self, search_value);
-        Ok(AnyExpression::new(expr))
+        let cond = self
+            .data_source()
+            .search_table_condition(self, search_value);
+        Ok(AnyExpression::new(cond))
     }
 
     fn clone_box(&self) -> Box<dyn TableLike<Value = Self::Value, Id = Self::Id>> {
