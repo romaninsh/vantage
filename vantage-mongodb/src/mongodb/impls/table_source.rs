@@ -115,19 +115,21 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
+        // Escape regex metacharacters so the search is a literal substring match
+        let escaped = regex_escape(search_value);
+
         // Build $or across all string-like columns with case-insensitive regex
         let conditions: Vec<bson::Bson> = table
             .columns()
             .values()
             .map(|col| {
-                bson::Bson::Document(
-                    doc! { col.name(): { "$regex": search_value, "$options": "i" } },
-                )
+                bson::Bson::Document(doc! { col.name(): { "$regex": &escaped, "$options": "i" } })
             })
             .collect();
 
         if conditions.is_empty() {
-            doc! {}.into()
+            // No columns — return always-false filter (consistent with SQL backends)
+            doc! { "_id": { "$exists": false } }.into()
         } else if conditions.len() == 1 {
             match conditions.into_iter().next().unwrap() {
                 bson::Bson::Document(d) => d.into(),
@@ -463,11 +465,43 @@ impl TableSource for MongoDB {
             let col = col.clone();
             let field = field.clone();
             Box::pin(async move {
-                let records = db.list_table_values(&source).await?;
-                let values: Vec<Bson> = records
-                    .values()
-                    .filter_map(|r| r.get(&col).map(|v| v.value().clone()))
-                    .collect();
+                // Build a projected query that only fetches the source column
+                let select = select_from_table(&source);
+                let filter = select.build_filter().await?;
+                let collection_name = select
+                    .collection
+                    .as_deref()
+                    .ok_or_else(|| error!("No collection name for related_in_condition"))?;
+
+                let mut projection = doc! { &col: 1 };
+                if col != "_id" {
+                    projection.insert("_id", 0);
+                }
+                let opts = mongodb::options::FindOptions::builder()
+                    .projection(projection)
+                    .build();
+
+                let coll = db.collection::<bson::Document>(collection_name);
+                let mut cursor = coll
+                    .find(filter)
+                    .with_options(opts)
+                    .await
+                    .map_err(|e| error!("MongoDB find failed", details = e.to_string()))?;
+
+                let mut values = Vec::new();
+                while cursor
+                    .advance()
+                    .await
+                    .map_err(|e| error!("MongoDB cursor error", details = e.to_string()))?
+                {
+                    let doc = cursor.deserialize_current().map_err(|e| {
+                        error!("MongoDB deserialize error", details = e.to_string())
+                    })?;
+                    if let Some(v) = doc.get(&col) {
+                        values.push(v.clone());
+                    }
+                }
+
                 let doc = doc! { &field: { "$in": values } };
                 Ok(ExpressiveEnum::Scalar(AnyMongoType::untyped(
                     Bson::Document(doc),
@@ -508,4 +542,17 @@ impl TableSource for MongoDB {
         let expr = expr_any!("{}", { self.defer(inner) });
         AssociatedExpression::new(expr, self)
     }
+}
+
+/// Escape regex metacharacters so a user-provided string is treated as a
+/// literal substring in a `$regex` filter.
+fn regex_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if ".*+?^${}()|[]\\".contains(c) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
 }

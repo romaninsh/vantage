@@ -80,8 +80,7 @@ fn test_with_record() {
 #[test]
 fn test_thing_field() {
     use crate::thing::Thing;
-    let insert =
-        SurrealInsert::new("order").with_field("customer", Thing::new("user", "alice"));
+    let insert = SurrealInsert::new("order").with_field("customer", Thing::new("user", "alice"));
 
     let rendered = insert.preview();
     assert!(rendered.contains("CREATE order SET"));
