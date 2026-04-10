@@ -1,8 +1,52 @@
+# MongoDB PoC & Trait Boundary Improvements (from MongoDB work, 2026-04)
+
+## Completed
+
+- [x] Added `type Condition` associated type to `TableSource` — allows non-Expression condition
+      types (e.g. `bson::Document` for MongoDB). SQL/SurrealDB backends use
+      `type Condition = Expression<Self::Value>` (no change). References (`with_one`/`with_many`)
+      require `T::Condition: From<Expression<T::Value>>` bound.
+- [x] MongoDB type system (`AnyMongoType`, `bson::Bson` value type, bson v2)
+- [x] MongoDB `TableSource` impl — full CRUD using mongodb driver directly, no Expression queries.
+      `type Condition = bson::Document` for native MongoDB filters.
+
+## Trait boundary fixes needed
+
+- [ ] **Move `get_count`/`get_sum`/`get_max`/`get_min` off `SelectableDataSource`** — currently in
+      `table/impls/selectable.rs` behind `T: SelectableDataSource`. They just delegate to
+      `TableSource` methods. Move to a separate impl block requiring only `T: TableSource` so
+      MongoDB and other non-query backends can use them directly.
+- [ ] **Remove `delete`/`delete_all` from `WritableDataSet`** — `WritableValueSet` is the canonical
+      place for deletion (doesn't require entity type). Having both causes ambiguity when calling
+      `table.delete()`. Keep only in `WritableValueSet`.
+- [ ] **Decouple `column_table_values_expr` from `ExprDataSource`** — the method returns
+      `AssociatedExpression` which forces `ExprDataSource` dependency. The actual work is "get
+      column values from table" which `TableSource` can already do via `list_table_values`. Explore
+      returning a `Condition`-based result instead, or refactor `AssociatedExpression` to not
+      require `ExprDataSource`.
+- [ ] **Explore `Selectable` parameterized on condition type** — currently `add_where_condition`
+      takes `impl Expressive<T>`, hardcoding Expression-based conditions. MongoDB could implement
+      its own `select()` if `Selectable` (or a parallel trait) accepted `Condition` type directly.
+      Investigate parameterizing `Selectable<T, C>` where `C` is the condition type, or creating
+      `DocumentSelectable` for document-oriented backends.
+- [ ] **Analyse `with_one`/`with_many` for non-Expression backends** — currently requires
+      `T::Condition: From<Expression<T::Value>>`. For MongoDB, need to either: (a) implement
+      `From<Expression<AnyMongoType>> for bson::Document` by parsing common Operation templates
+      (`"{} = {}"` → `doc!{field: value}`, `"{} IN ({})"` → `doc!{field: {"$in": [...]}}`), (b)
+      create MongoDB-native reference types that produce `bson::Document` conditions directly, or
+      (c) refactor the reference system to work with `Condition` generically. Goal: relationship
+      traversal (`ref products list`) working for MongoDB.
+
 # Query Builder Improvements (from MySQL work, 2026-04)
 
-- [ ] `expr.as_alias()` — add alias method on `Expression<T>`, then remove `Option<String>` from `with_expression` and all `with_alias()` from primitives (Fx, Iif, Concat, GroupConcat, JsonExtract, DateFormat, Case). Also fixes Fx alias hardcoding `"` instead of backticks.
-- [ ] `sql_fx!()` macro — mixed-type args for function calls: `sql_fx!("find_in_set", "write", (ident("permissions")))` instead of wrapping every arg in `mysql_expr!`
-- [ ] PostgreSQL ingress — split into `vantage_v2`, `vantage_v3`, `vantage_v4_pg` with DROP+CREATE, matching MySQL pattern
+- [ ] `expr.as_alias()` — add alias method on `Expression<T>`, then remove `Option<String>` from
+      `with_expression` and all `with_alias()` from primitives (Fx, Iif, Concat, GroupConcat,
+      JsonExtract, DateFormat, Case). Also fixes Fx alias hardcoding `"` instead of backticks.
+- [ ] `sql_fx!()` macro — mixed-type args for function calls:
+      `sql_fx!("find_in_set", "write", (ident("permissions")))` instead of wrapping every arg in
+      `mysql_expr!`
+- [ ] PostgreSQL ingress — split into `vantage_v2`, `vantage_v3`, `vantage_v4_pg` with DROP+CREATE,
+      matching MySQL pattern
 - [ ] `Expression::empty()` sweep — replace all `Expression::new("", vec![])` across the codebase
 
 # v0.2 (eta January 2025)
@@ -13,7 +57,8 @@
 
 - [ ] Implement `only_column()` method for SurrealSelect query builder
 - [x] Implement prelude for vantage_surrealdb to avoid manual imports
-- [x] Fix get() method to accept (&select) instead of requiring select.expr() - should work with IntoExpression trait
+- [x] Fix get() method to accept (&select) instead of requiring select.expr() - should work with
+      IntoExpression trait
 - [ ] **BUG**: SurrealDB IN subquery returns record objects not scalar values
   - Reference traversal generates `WHERE bakery IN (SELECT id FROM bakery WHERE ...)`
   - SurrealDB returns `{id: "bakery:hill_valley"}` from subquery, not `"bakery:hill_valley"`
@@ -95,9 +140,8 @@ Minor Cases:
 
 ## Implement cross-datasource operations
 
-Developers who operate with the models do not have to be aware of the data source.
-If you want to implement this, then you can define your data sets to rely on
-factories for the data-set:
+Developers who operate with the models do not have to be aware of the data source. If you want to
+implement this, then you can define your data sets to rely on factories for the data-set:
 
 ```rust
 let client_set = ClientSet::factory();
@@ -116,14 +160,11 @@ basket.archive();  // stores archived basked into BigQuery
 
 ## Implement in-memory cache concept
 
-This allows to create in-memory cache of a dataset. Finding a record
-in a cache is faster. Cache will automatically invalidate items if
-they happen to change in the database, if the datasource allows
-subscription for the changes. There can also be other invalidation
-mechanics.
+This allows to create in-memory cache of a dataset. Finding a record in a cache is faster. Cache
+will automatically invalidate items if they happen to change in the database, if the datasource
+allows subscription for the changes. There can also be other invalidation mechanics.
 
-Cache provides a transparent layer, so that the business logic code
-would not be affected.
+Cache provides a transparent layer, so that the business logic code would not be affected.
 
 ```rust
 let client_set = ClientSet::new(ClientCache::new(postgres));

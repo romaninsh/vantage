@@ -1,0 +1,55 @@
+name: MongoDB Tests
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "vantage-mongodb/**"
+      - ".github/workflows/mongodb.yaml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ping:1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          key: "mongodb-workspace-v03"
+          cache-workspace-crates: true
+          cache-all-crates: true
+
+      - name: Seed database
+        run: |
+          docker exec ${{ job.services.mongodb.id }} mongosh vantage < vantage-mongodb/scripts/db/v2.js
+
+      - name: Build vantage-mongodb
+        run: cargo build -p vantage-mongodb
+
+      - name: Run unit tests
+        run: cargo test -p vantage-mongodb --lib
+
+      - name: Run integration tests
+        run: cargo test -p vantage-mongodb --test 1_table_source --test 1_types_record
+        env:
+          MONGODB_URL: mongodb://localhost:27017
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop ${{ job.services.mongodb.id }} || true

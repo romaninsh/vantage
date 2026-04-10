@@ -1,22 +1,21 @@
 use vantage_core::{Result, error};
-use vantage_expressions::Expression;
 use vantage_types::Entity;
 
 use crate::{conditions::ConditionHandle, table::Table, traits::table_source::TableSource};
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// Add a permanent condition to limit what records the table represents
-    pub fn add_condition(&mut self, condition: Expression<T::Value>) {
+    pub fn add_condition(&mut self, condition: impl Into<T::Condition>) {
         let id = -self.next_condition_id;
         self.next_condition_id += 1;
-        self.conditions.insert(id, condition);
+        self.conditions.insert(id, condition.into());
     }
 
     /// Add a temporary condition that can be removed later
-    pub fn temp_add_condition(&mut self, condition: Expression<T::Value>) -> ConditionHandle {
+    pub fn temp_add_condition(&mut self, condition: impl Into<T::Condition>) -> ConditionHandle {
         let id = self.next_condition_id;
         self.next_condition_id += 1;
-        self.conditions.insert(id, condition);
+        self.conditions.insert(id, condition.into());
         ConditionHandle::new(id)
     }
 
@@ -30,12 +29,12 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     }
 
     /// Get all conditions
-    pub fn conditions(&self) -> impl Iterator<Item = &Expression<T::Value>> {
+    pub fn conditions(&self) -> impl Iterator<Item = &T::Condition> {
         self.conditions.values()
     }
 
     /// Add a condition using the builder pattern
-    pub fn with_condition(mut self, condition: Expression<T::Value>) -> Self {
+    pub fn with_condition(mut self, condition: impl Into<T::Condition>) -> Self {
         self.add_condition(condition);
         self
     }

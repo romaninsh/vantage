@@ -4,7 +4,7 @@
 //! MongoDB's BSON type set.
 
 use vantage_core::VantageError;
-use vantage_types::{vantage_type_system, Record};
+use vantage_types::{Record, vantage_type_system};
 
 vantage_type_system! {
     type_trait: MongoType,
@@ -182,9 +182,9 @@ mod tests {
 
     #[test]
     fn test_f64_round_trip() {
-        let val = AnyMongoType::new(3.14f64);
+        let val = AnyMongoType::new(2.72f64);
         assert_eq!(val.type_variant(), Some(MongoTypeVariants::Double));
-        assert_eq!(val.try_get::<f64>(), Some(3.14));
+        assert_eq!(val.try_get::<f64>(), Some(2.72));
     }
 
     #[test]

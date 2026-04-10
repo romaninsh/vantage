@@ -29,16 +29,16 @@ impl<T: QueryResult> Selectable<AnySurrealType> for SurrealSelect<T> {
         self.fields.push(field);
     }
 
-    fn add_where_condition(&mut self, condition: impl Expressive<AnySurrealType>) {
-        self.where_conditions.push(condition.expr());
+    fn add_where_condition(&mut self, condition: impl Into<Expr>) {
+        self.where_conditions.push(condition.into());
     }
 
     fn set_distinct(&mut self, distinct: bool) {
         self.distinct = distinct;
     }
 
-    fn add_order_by(&mut self, expression: impl Expressive<AnySurrealType>, order: Order) {
-        self.order_by.push((expression.expr(), order.ascending));
+    fn add_order_by(&mut self, order: impl Into<Expr>, direction: Order) {
+        self.order_by.push((order.into(), direction.ascending));
     }
 
     fn add_group_by(&mut self, expression: impl Expressive<AnySurrealType>) {

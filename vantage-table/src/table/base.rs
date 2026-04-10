@@ -2,7 +2,6 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use indexmap::IndexMap;
-use vantage_expressions::Expression;
 use vantage_types::Entity;
 
 use crate::{
@@ -20,9 +19,9 @@ where
     pub(super) _phantom: PhantomData<E>,
     pub(super) table_name: String,
     pub(super) columns: IndexMap<String, T::Column<T::AnyType>>,
-    pub(super) conditions: IndexMap<i64, Expression<T::Value>>,
+    pub(super) conditions: IndexMap<i64, T::Condition>,
     pub(super) next_condition_id: i64,
-    pub(super) order_by: IndexMap<i64, (Expression<T::Value>, SortDirection)>,
+    pub(super) order_by: IndexMap<i64, (T::Condition, SortDirection)>,
     pub(super) next_order_id: i64,
     pub(super) refs: Option<IndexMap<String, Arc<dyn RelatedTable>>>,
     pub(super) pagination: Option<Pagination>,
@@ -87,7 +86,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     }
 
     /// Get mutable access to conditions (pub(crate) for TableLike impl)
-    pub(crate) fn conditions_mut(&mut self) -> &mut IndexMap<i64, Expression<T::Value>> {
+    pub(crate) fn conditions_mut(&mut self) -> &mut IndexMap<i64, T::Condition> {
         &mut self.conditions
     }
 

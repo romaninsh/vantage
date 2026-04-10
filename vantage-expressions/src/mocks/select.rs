@@ -145,16 +145,16 @@ impl Selectable<serde_json::Value> for MockSelect {
         panic!("You may only use field() in this mock")
     }
 
-    fn add_where_condition(&mut self, condition: impl Expressive<Value>) {
-        self.where_conditions.push(condition.expr());
+    fn add_where_condition(&mut self, condition: impl Into<Expression<Value>>) {
+        self.where_conditions.push(condition.into());
     }
 
     fn set_distinct(&mut self, distinct: bool) {
         self.distinct = distinct;
     }
 
-    fn add_order_by(&mut self, expression: impl Expressive<Value>, order: crate::Order) {
-        self.order_by.push((expression.expr(), order.ascending));
+    fn add_order_by(&mut self, order: impl Into<Expression<Value>>, direction: crate::Order) {
+        self.order_by.push((order.into(), direction.ascending));
     }
 
     fn add_group_by(&mut self, _expression: impl Expressive<Value>) {

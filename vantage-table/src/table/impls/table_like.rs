@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use vantage_core::{Result, error};
-use vantage_expressions::{AnyExpression, Expression};
+use vantage_expressions::AnyExpression;
 use vantage_types::Entity;
 
 use crate::{
@@ -25,29 +25,29 @@ where
     }
 
     fn add_condition(&mut self, condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()> {
-        // Downcast the boxed Any to Expression<T::Value>
-        let expr = condition
-            .downcast::<Expression<T::Value>>()
-            .map_err(|_| error!("Failed to downcast condition expression"))?;
+        // Downcast the boxed Any to T::Condition
+        let cond = condition
+            .downcast::<T::Condition>()
+            .map_err(|_| error!("Failed to downcast condition to datasource condition type"))?;
 
         // Add permanent condition
         let next_id = *self.next_condition_id_mut();
         let id = -next_id;
         *self.next_condition_id_mut() = next_id + 1;
-        self.conditions_mut().insert(id, *expr);
+        self.conditions_mut().insert(id, *cond);
         Ok(())
     }
 
     fn temp_add_condition(&mut self, condition: AnyExpression) -> Result<ConditionHandle> {
-        // Downcast AnyExpression to Expression<T::Value>
-        let expr = condition.downcast::<Expression<T::Value>>().map_err(|_| {
-            error!("Failed to downcast AnyExpression to datasource expression type")
-        })?;
+        // Downcast AnyExpression to T::Condition
+        let cond = condition
+            .downcast::<T::Condition>()
+            .map_err(|_| error!("Failed to downcast AnyExpression to datasource condition type"))?;
 
         // Add temporary condition
         let next_id = *self.next_condition_id_mut();
         *self.next_condition_id_mut() = next_id + 1;
-        self.conditions_mut().insert(next_id, expr);
+        self.conditions_mut().insert(next_id, cond);
         Ok(ConditionHandle::new(next_id))
     }
 

@@ -92,6 +92,7 @@ impl TableSource for PoolApi {
     type AnyType = Value;
     type Value = Value;
     type Id = String;
+    type Condition = vantage_expressions::Expression<Self::Value>;
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
         Column::new(name)

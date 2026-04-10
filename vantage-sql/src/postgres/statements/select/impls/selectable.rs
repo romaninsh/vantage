@@ -69,8 +69,8 @@ impl Selectable<AnyPostgresType> for PostgresSelect {
         self.fields.push(field);
     }
 
-    fn add_where_condition(&mut self, condition: impl Expressive<AnyPostgresType>) {
-        self.where_conditions.push(condition.expr());
+    fn add_where_condition(&mut self, condition: impl Into<Expression<AnyPostgresType>>) {
+        self.where_conditions.push(condition.into());
     }
 
     fn set_distinct(&mut self, distinct: bool) {
@@ -79,10 +79,10 @@ impl Selectable<AnyPostgresType> for PostgresSelect {
 
     fn add_order_by(
         &mut self,
-        expression: impl Expressive<AnyPostgresType>,
-        order: vantage_expressions::Order,
+        order: impl Into<Expression<AnyPostgresType>>,
+        direction: vantage_expressions::Order,
     ) {
-        self.order_by.push((expression.expr(), order));
+        self.order_by.push((order.into(), direction));
     }
 
     fn add_group_by(&mut self, expression: impl Expressive<AnyPostgresType>) {

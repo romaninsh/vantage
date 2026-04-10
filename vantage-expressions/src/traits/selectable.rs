@@ -67,10 +67,16 @@ impl Order {
 /// and aggregations. This allows the same query building patterns to work across
 /// SQL databases, SurrealDB, MongoDB, and other backends.
 ///
+/// The trait is parameterized on:
+/// - `T` — the value/expression type (e.g. `AnySqliteType`, `AnyMongoType`)
+/// - `C` — the condition type, defaults to `Expression<T>` for SQL backends.
+///   Document-oriented backends like MongoDB can use `bson::Document` or a custom
+///   condition type.
+///
 /// Implementations handle database-specific syntax while exposing a consistent API
 /// for field selection, filtering, sorting, grouping, and aggregation operations.
 /// The trait supports both mutable builder methods and fluent chainable methods.
-pub trait Selectable<T>: Send + Sync + Debug + Clone + Expressive<T> {
+pub trait Selectable<T, C = Expression<T>>: Send + Sync + Debug + Clone {
     /// Adds a data source to the FROM clause (table name, subquery, etc.).
     /// This is additive — calling it multiple times adds comma-separated sources.
     fn add_source(&mut self, source: impl Into<SourceRef<T>>, alias: Option<String>);
@@ -82,13 +88,13 @@ pub trait Selectable<T>: Send + Sync + Debug + Clone + Expressive<T> {
     fn add_expression(&mut self, expression: impl Expressive<T>, alias: Option<String>);
 
     /// Adds a condition to the WHERE clause.
-    fn add_where_condition(&mut self, condition: impl Expressive<T>);
+    fn add_where_condition(&mut self, condition: impl Into<C>);
 
     /// Sets whether the query should return distinct results.
     fn set_distinct(&mut self, distinct: bool);
 
     /// Adds an ORDER BY clause with direction and optional null handling.
-    fn add_order_by(&mut self, expression: impl Expressive<T>, order: Order);
+    fn add_order_by(&mut self, order: impl Into<C>, direction: Order);
 
     /// Adds a GROUP BY clause.
     fn add_group_by(&mut self, expression: impl Expressive<T>);
@@ -162,7 +168,7 @@ pub trait Selectable<T>: Send + Sync + Debug + Clone + Expressive<T> {
     }
 
     /// Builder pattern method identical to [`Self::add_where_condition`].
-    fn with_condition(mut self, condition: impl Expressive<T>) -> Self
+    fn with_condition(mut self, condition: impl Into<C>) -> Self
     where
         Self: Sized,
     {
@@ -171,11 +177,11 @@ pub trait Selectable<T>: Send + Sync + Debug + Clone + Expressive<T> {
     }
 
     /// Builder pattern method identical to [`Self::add_order_by`].
-    fn with_order(mut self, expression: impl Expressive<T>, order: Order) -> Self
+    fn with_order(mut self, order: impl Into<C>, direction: Order) -> Self
     where
         Self: Sized,
     {
-        Self::add_order_by(&mut self, expression, order);
+        Self::add_order_by(&mut self, order, direction);
         self
     }
 
