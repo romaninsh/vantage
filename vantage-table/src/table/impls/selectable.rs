@@ -10,8 +10,7 @@ use crate::{
 
 impl<T, E> Table<T, E>
 where
-    T: SelectableDataSource<T::Value> + TableSource,
-    T::Select: Selectable<T::Value, T::Condition>,
+    T: SelectableDataSource<T::Value, T::Condition> + TableSource,
     T::Value: From<String>, // that's because table is specified as a string
     E: Entity<T::Value>,
 {
@@ -92,10 +91,9 @@ where
 // Specific implementation for serde_json::Value that can use QuerySource
 impl<T, E> Table<T, E>
 where
-    T: SelectableDataSource<serde_json::Value>
+    T: SelectableDataSource<serde_json::Value, T::Condition>
         + TableSource<Value = serde_json::Value>
         + vantage_expressions::traits::datasource::ExprDataSource<serde_json::Value>,
-    T::Select: Selectable<serde_json::Value, T::Condition>,
     T::Value: From<String>,
     E: Entity<serde_json::Value>,
 {

@@ -94,14 +94,15 @@ impl Expressive<AnyMongoType> for AnyMongoType {
 impl From<AnyMongoType> for serde_json::Value {
     fn from(val: AnyMongoType) -> Self {
         // Bson implements Serialize, serde_json::Value implements Deserialize
-        serde_json::to_value(val.into_value()).unwrap_or(serde_json::Value::Null)
+        serde_json::to_value(val.into_value()).expect("Bson value should always serialize to JSON")
     }
 }
 
 impl From<serde_json::Value> for AnyMongoType {
     fn from(val: serde_json::Value) -> Self {
         // serde_json::Value implements Serialize, Bson implements Deserialize
-        let bson: bson::Bson = serde_json::from_value(val).unwrap_or(bson::Bson::Null);
+        let bson: bson::Bson =
+            serde_json::from_value(val).expect("JSON value should always deserialize to Bson");
         AnyMongoType::untyped(bson)
     }
 }

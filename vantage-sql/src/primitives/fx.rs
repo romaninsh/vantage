@@ -60,3 +60,9 @@ impl<T: Debug + Display + Clone> Expressive<T> for Fx<T> {
         }
     }
 }
+
+impl<T: Debug + Display + Clone> From<Fx<T>> for Expression<T> {
+    fn from(fx: Fx<T>) -> Self {
+        fx.expr()
+    }
+}

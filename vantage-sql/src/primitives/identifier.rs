@@ -82,6 +82,13 @@ impl Expressive<crate::sqlite::types::AnySqliteType> for Identifier {
     }
 }
 
+#[cfg(feature = "sqlite")]
+impl From<Identifier> for Expression<crate::sqlite::types::AnySqliteType> {
+    fn from(id: Identifier) -> Self {
+        id.expr()
+    }
+}
+
 #[cfg(feature = "postgres")]
 impl Expressive<crate::postgres::types::AnyPostgresType> for Identifier {
     fn expr(&self) -> Expression<crate::postgres::types::AnyPostgresType> {
@@ -89,9 +96,23 @@ impl Expressive<crate::postgres::types::AnyPostgresType> for Identifier {
     }
 }
 
+#[cfg(feature = "postgres")]
+impl From<Identifier> for Expression<crate::postgres::types::AnyPostgresType> {
+    fn from(id: Identifier) -> Self {
+        id.expr()
+    }
+}
+
 #[cfg(feature = "mysql")]
 impl Expressive<crate::mysql::types::AnyMysqlType> for Identifier {
     fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
         Expression::new(self.render_with('`'), vec![])
+    }
+}
+
+#[cfg(feature = "mysql")]
+impl From<Identifier> for Expression<crate::mysql::types::AnyMysqlType> {
+    fn from(id: Identifier) -> Self {
+        id.expr()
     }
 }

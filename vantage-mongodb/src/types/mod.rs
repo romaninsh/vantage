@@ -64,8 +64,8 @@ impl std::fmt::Display for AnyMongoType {
             bson::Bson::Int32(i) => write!(f, "{}", i),
             bson::Bson::Int64(i) => write!(f, "{}", i),
             bson::Bson::Double(d) => write!(f, "{}", d),
-            bson::Bson::String(s) => write!(f, "\"{}\"", s),
-            bson::Bson::ObjectId(oid) => write!(f, "ObjectId(\"{}\")", oid),
+            bson::Bson::String(s) => write!(f, "{:?}", s),
+            bson::Bson::ObjectId(oid) => write!(f, "ObjectId({:?})", oid.to_string()),
             bson::Bson::DateTime(dt) => write!(f, "{}", dt),
             bson::Bson::Array(arr) => write!(f, "{:?}", arr),
             bson::Bson::Document(doc) => write!(f, "{}", doc),
@@ -115,13 +115,7 @@ impl TryFrom<AnyMongoType> for Record<AnyMongoType> {
         match value {
             bson::Bson::Document(doc) => Ok(doc
                 .into_iter()
-                .map(|(k, v)| {
-                    let any = AnyMongoType::from_bson(&v).unwrap_or_else(|| AnyMongoType {
-                        value: v,
-                        type_variant: None,
-                    });
-                    (k, any)
-                })
+                .map(|(k, v)| (k, AnyMongoType::untyped(v)))
                 .collect()),
             bson::Bson::Array(arr) => {
                 // Extract first document from array result
@@ -134,13 +128,7 @@ impl TryFrom<AnyMongoType> for Record<AnyMongoType> {
                     .ok_or_else(|| vantage_core::error!("Expected document in array result"))?;
                 Ok(doc
                     .into_iter()
-                    .map(|(k, v)| {
-                        let any = AnyMongoType::from_bson(&v).unwrap_or_else(|| AnyMongoType {
-                            value: v,
-                            type_variant: None,
-                        });
-                        (k, any)
-                    })
+                    .map(|(k, v)| (k, AnyMongoType::untyped(v)))
                     .collect())
             }
             _ => Err(vantage_core::error!("Expected document or array result")),

@@ -1,6 +1,7 @@
 use serde_json::Value;
 use std::future::Future;
 
+use crate::Expression;
 use crate::Selectable;
 use crate::traits::associated_expressions::AssociatedExpression;
 use crate::traits::expressive::DeferredFn;
@@ -38,8 +39,8 @@ pub trait ExprDataSource<T = Value>: DataSource {
 }
 
 /// Datasource that support creation and execution of select queries
-pub trait SelectableDataSource<T = Value>: DataSource {
-    type Select: Selectable<T>;
+pub trait SelectableDataSource<T = Value, C = Expression<T>>: DataSource {
+    type Select: Selectable<T, C>;
 
     // Return SelectQuery
     fn select(&self) -> Self::Select;
