@@ -1,4 +1,5 @@
 use vantage_csv::{AnyCsvType, Csv};
+use vantage_mongodb::{AnyMongoType, MongoDB};
 #[allow(unused_imports)]
 use vantage_sql::postgres::AnyPostgresType;
 use vantage_sql::postgres::PostgresDB;
@@ -10,7 +11,7 @@ use vantage_types::entity;
 
 use crate::{Bakery, Order};
 
-#[entity(CsvType, SurrealType, SqliteType, PostgresType)]
+#[entity(CsvType, SurrealType, SqliteType, PostgresType, MongoType)]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Client {
     pub name: String,
@@ -84,6 +85,24 @@ impl Client {
             })
             .with_many("orders", "client_id", move || {
                 Order::postgres_table(db3.clone())
+            })
+    }
+
+    pub fn mongo_table(db: MongoDB) -> Table<MongoDB, Client> {
+        let db2 = db.clone();
+        let db3 = db.clone();
+        Table::new("client", db)
+            .with_id_column("_id")
+            .with_column_of::<String>("name")
+            .with_column_of::<String>("email")
+            .with_column_of::<String>("contact_details")
+            .with_column_of::<bool>("is_paying_client")
+            .with_column_of::<String>("bakery_id")
+            .with_one("bakery", "bakery_id", move || {
+                Bakery::mongo_table(db2.clone())
+            })
+            .with_many("orders", "client_id", move || {
+                Order::mongo_table(db3.clone())
             })
     }
 }

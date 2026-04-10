@@ -1,5 +1,8 @@
+use bson::Bson;
 use serde_json::Value as JsonValue;
 use vantage_csv::{CsvType, type_system::CsvTypeAnimalMarker};
+use vantage_mongodb::types::MongoTypeStringMarker;
+use vantage_mongodb::MongoType;
 use vantage_sql::postgres::{PostgresType, types::PostgresTypeTextMarker};
 use vantage_sql::sqlite::{SqliteType, types::SqliteTypeTextMarker};
 use vantage_surrealdb::types::SurrealTypeStringMarker;
@@ -107,6 +110,21 @@ impl SurrealType for Animal {
     fn from_cbor(cbor: CborValue) -> Option<Self> {
         match cbor {
             CborValue::Text(s) => s.parse().ok(),
+            _ => None,
+        }
+    }
+}
+
+impl MongoType for Animal {
+    type Target = MongoTypeStringMarker;
+
+    fn to_bson(&self) -> Bson {
+        Bson::String(self.as_str().to_string())
+    }
+
+    fn from_bson(value: Bson) -> Option<Self> {
+        match value {
+            Bson::String(s) => s.parse().ok(),
             _ => None,
         }
     }

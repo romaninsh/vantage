@@ -11,7 +11,9 @@ use futures_util::TryStreamExt;
 use indexmap::IndexMap;
 
 use vantage_core::{Result, error};
-use vantage_expressions::{AssociatedExpression, ExprDataSource, Expression, ExpressiveEnum};
+use vantage_expressions::{
+    AssociatedExpression, DeferredFn, ExprDataSource, Expression, ExpressiveEnum, expr_any,
+};
 use vantage_table::column::core::{Column, ColumnType};
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
@@ -441,15 +443,69 @@ impl TableSource for MongoDB {
             .ok_or_else(|| error!("MongoDB insert did not return a valid id"))
     }
 
+    fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(
+        &self,
+        target_field: &str,
+        source_table: &Table<Self, SourceE>,
+        source_column: &str,
+    ) -> Self::Condition
+    where
+        Self: Sized,
+    {
+        let db = self.clone();
+        let source = source_table.clone();
+        let col = source_column.to_string();
+        let field = target_field.to_string();
+
+        MongoCondition::Deferred(DeferredFn::new(move || {
+            let db = db.clone();
+            let source = source.clone();
+            let col = col.clone();
+            let field = field.clone();
+            Box::pin(async move {
+                let records = db.list_table_values(&source).await?;
+                let values: Vec<Bson> = records
+                    .values()
+                    .filter_map(|r| r.get(&col).map(|v| v.value().clone()))
+                    .collect();
+                let doc = doc! { &field: { "$in": values } };
+                Ok(ExpressiveEnum::Scalar(AnyMongoType::untyped(
+                    Bson::Document(doc),
+                )))
+            })
+        }))
+    }
+
     fn column_table_values_expr<'a, E, Type: ColumnType>(
         &'a self,
-        _table: &Table<Self, E>,
-        _column: &Self::Column<Type>,
+        table: &Table<Self, E>,
+        column: &Self::Column<Type>,
     ) -> AssociatedExpression<'a, Self, Self::Value, Vec<Type>>
     where
         E: Entity<Self::Value> + 'static,
         Self: ExprDataSource<Self::Value> + Sized,
     {
-        todo!("column_table_values_expr not yet implemented for MongoDB")
+        let table_clone = table.clone();
+        let col = column.name().to_string();
+        let db = self.clone();
+
+        let inner = expr_any!("{}", {
+            DeferredFn::new(move || {
+                let db = db.clone();
+                let table = table_clone.clone();
+                let col = col.clone();
+                Box::pin(async move {
+                    let records = db.list_table_values(&table).await?;
+                    let values: Vec<AnyMongoType> = records
+                        .values()
+                        .filter_map(|r| r.get(&col).cloned())
+                        .collect();
+                    Ok(ExpressiveEnum::Scalar(AnyMongoType::new(values)))
+                })
+            })
+        });
+
+        let expr = expr_any!("{}", { self.defer(inner) });
+        AssociatedExpression::new(expr, self)
     }
 }

@@ -2,7 +2,7 @@
 //!
 //! Usage: db [--debug] <source> <entity> [command ...]
 //!
-//! Sources: csv, surreal, sqlite, postgres
+//! Sources: csv, surreal, sqlite, postgres, mongo
 //! Entities: bakery, client, product, order
 //!
 //! Commands:
@@ -45,7 +45,7 @@ async fn run() -> vantage_core::Result<()> {
         )
         .arg(
             Arg::new("source")
-                .help("Data source: csv, surreal, sqlite, postgres")
+                .help("Data source: csv, surreal, sqlite, postgres, mongo")
                 .required(true),
         )
         .arg(
@@ -86,7 +86,7 @@ async fn run() -> vantage_core::Result<()> {
         None => return Ok(()),
     };
 
-    handle_commands(table, commands).await
+    handle_commands(table, commands, source).await
 }
 
 async fn build_table(
@@ -163,9 +163,28 @@ async fn build_table(
             };
             Ok(Some(table))
         }
+        "mongo" => {
+            let url = std::env::var("MONGODB_URL")
+                .unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
+            let db_name = std::env::var("MONGODB_DB").unwrap_or_else(|_| "vantage".to_string());
+            let db = MongoDB::connect(&url, &db_name).await.map_err(|e| {
+                vantage_core::error!("Failed to connect to MongoDB", details = e.to_string())
+            })?;
+            let table = match entity_name {
+                "bakery" => AnyTable::from_table(Bakery::mongo_table(db)),
+                "client" => AnyTable::from_table(Client::mongo_table(db)),
+                "product" => AnyTable::from_table(Product::mongo_table(db)),
+                "order" => AnyTable::from_table(Order::mongo_table(db)),
+                _ => {
+                    println!("Unknown entity: {}", entity_name);
+                    return Ok(None);
+                }
+            };
+            Ok(Some(table))
+        }
         _ => {
             println!(
-                "Unknown source: {}. Use: csv, surreal, sqlite, postgres",
+                "Unknown source: {}. Use: csv, surreal, sqlite, postgres, mongo",
                 source
             );
             Ok(None)
@@ -177,7 +196,7 @@ fn print_usage() {
     println!();
     println!("Usage: db [--debug] <source> <entity> <command>");
     println!();
-    println!("Sources: csv, surreal, sqlite, postgres");
+    println!("Sources: csv, surreal, sqlite, postgres, mongo");
     println!();
     println!("Commands:");
     println!("  list              List all records");
@@ -189,12 +208,12 @@ fn print_usage() {
     println!("Examples:");
     println!("  db csv bakery list");
     println!("  db surreal product list");
-    println!("  db surreal bakery count");
+    println!("  db mongo bakery count");
     println!(r#"  db surreal bakery add myid '{{"name":"Test","profit_margin":10}}'"#);
     println!("  db surreal bakery delete myid");
 }
 
-async fn handle_commands(table: AnyTable, commands: Vec<String>) -> vantage_core::Result<()> {
+async fn handle_commands(table: AnyTable, commands: Vec<String>, source: &str) -> vantage_core::Result<()> {
     if commands.is_empty() {
         println!("No command. Try: list, get, count, add, delete");
         return Ok(());
@@ -243,7 +262,7 @@ async fn handle_commands(table: AnyTable, commands: Vec<String>) -> vantage_core
                     break;
                 }
 
-                let id = qualify_id(table.table_name(), id_str);
+                let id = qualify_id(source, table.table_name(), id_str);
                 let record = vantage_types::Record::from(json_val);
                 table.insert_value(&id, &record).await?;
                 println!("Inserted: {}", id);
@@ -256,7 +275,7 @@ async fn handle_commands(table: AnyTable, commands: Vec<String>) -> vantage_core
                 let id_str = &commands[i];
                 i += 1;
 
-                let id = qualify_id(table.table_name(), id_str);
+                let id = qualify_id(source, table.table_name(), id_str);
                 table.delete(&id).await?;
                 println!("Deleted: {}", id);
             }
@@ -269,14 +288,12 @@ async fn handle_commands(table: AnyTable, commands: Vec<String>) -> vantage_core
     Ok(())
 }
 
-/// Qualify a bare id with the table name if it doesn't already contain ':'.
-///
-/// "foo" stays "foo" for CSV, but SurrealDB ids pass through JsonAdapter's
-/// `T::Id::from(String)` which parses "table:id" into a Thing.
-fn qualify_id(table_name: &str, id: &str) -> String {
-    if id.contains(':') {
-        id.to_string()
-    } else {
+/// Qualify a bare id for SurrealDB (which needs "table:id" format).
+/// All other backends use the id as-is.
+fn qualify_id(source: &str, table_name: &str, id: &str) -> String {
+    if source == "surreal" && !id.contains(':') {
         format!("{}:{}", table_name, id)
+    } else {
+        id.to_string()
     }
 }

@@ -468,6 +468,18 @@ impl TableSource for Type3TableSource {
         Err(vantage_core::error!("Insert operations not supported"))
     }
 
+    fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(
+        &self,
+        _target_field: &str,
+        _source_table: &Table<Self, SourceE>,
+        _source_column: &str,
+    ) -> Self::Condition
+    where
+        Self: Sized,
+    {
+        unimplemented!("Type3 does not support related_in_condition")
+    }
+
     fn column_table_values_expr<'a, E, Type: ColumnType>(
         &'a self,
         _table: &Table<Self, E>,

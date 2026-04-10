@@ -3,10 +3,12 @@ use indexmap::IndexMap;
 use vantage_core::error;
 use vantage_dataset::traits::Result;
 use vantage_expressions::Expression;
+use vantage_expressions::Expressive;
 use vantage_expressions::traits::associated_expressions::AssociatedExpression;
 use vantage_expressions::traits::datasource::DataSource;
 use vantage_expressions::traits::expressive::{DeferredFn, ExpressiveEnum};
 use vantage_table::column::core::{Column, ColumnType};
+use vantage_table::operation::Operation;
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
@@ -220,6 +222,21 @@ impl TableSource for Csv {
         Self: Sized,
     {
         Err(error!("CSV is a read-only data source"))
+    }
+
+    fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(
+        &self,
+        target_field: &str,
+        source_table: &Table<Self, SourceE>,
+        source_column: &str,
+    ) -> Self::Condition
+    where
+        Self: Sized,
+    {
+        let src_col = self.create_column::<Self::AnyType>(source_column);
+        let fk_values = self.column_table_values_expr(source_table, &src_col);
+        let tgt_col = self.create_column::<Self::AnyType>(target_field);
+        tgt_col.in_(fk_values.expr())
     }
 
     fn column_table_values_expr<'a, E, Type: ColumnType>(

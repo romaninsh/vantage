@@ -361,6 +361,18 @@ impl TableSource for PoolApi {
         Err(error!("REST API pool is a read-only data source"))
     }
 
+    fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(
+        &self,
+        _target_field: &str,
+        _source_table: &Table<Self, SourceE>,
+        _source_column: &str,
+    ) -> Self::Condition
+    where
+        Self: Sized,
+    {
+        unimplemented!("related_in_condition not yet supported for API pool")
+    }
+
     fn column_table_values_expr<'a, E, Type: ColumnType>(
         &'a self,
         _table: &Table<Self, E>,

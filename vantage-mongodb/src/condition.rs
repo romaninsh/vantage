@@ -70,6 +70,15 @@ impl From<Document> for MongoCondition {
     }
 }
 
+/// Required by `ReferenceOne`/`ReferenceMany` trait bounds for `get_linked_table`
+/// (JOIN-style queries). MongoDB does not support JOINs — this will never be called
+/// via `get_related_table` (which uses `related_in_condition` instead).
+impl From<vantage_expressions::Expression<AnyMongoType>> for MongoCondition {
+    fn from(_expr: vantage_expressions::Expression<AnyMongoType>) -> Self {
+        unimplemented!("MongoDB does not support Expression-based conditions (JOINs)")
+    }
+}
+
 impl std::fmt::Debug for MongoCondition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
