@@ -2,19 +2,19 @@
 //! MySQL has BOOLEAN type (alias for TINYINT(1)).
 
 use super::{MysqlType, MysqlTypeBoolMarker};
-use serde_json::Value;
+use ciborium::Value;
 
 impl MysqlType for bool {
     type Target = MysqlTypeBoolMarker;
 
-    fn to_json(&self) -> Value {
+    fn to_cbor(&self) -> Value {
         Value::Bool(*self)
     }
 
-    fn from_json(value: Value) -> Option<Self> {
+    fn from_cbor(value: Value) -> Option<Self> {
         match value {
             Value::Bool(b) => Some(b),
-            Value::Number(n) => n.as_i64().map(|i| i != 0),
+            Value::Integer(i) => i64::try_from(i).ok().map(|n| n != 0),
             _ => None,
         }
     }

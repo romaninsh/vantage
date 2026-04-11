@@ -41,6 +41,11 @@ impl Client {
             .with_column_of::<String>("contact_details")
             .with_column_of::<bool>("is_paying_client")
             .with_one("bakery", "bakery", Bakery::surreal_table)
+            .with_many("orders", "client", Order::surreal_table)
+            .with_expression("order_count", |t| {
+                let orders = t.get_subquery_as::<Order>("orders").unwrap();
+                orders.get_count_query()
+            })
     }
 
     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Client> {
@@ -53,6 +58,10 @@ impl Client {
             .with_column_of::<String>("bakery_id")
             .with_one("bakery", "bakery_id", Bakery::sqlite_table)
             .with_many("orders", "client_id", Order::sqlite_table)
+            .with_expression("order_count", |t| {
+                let orders = t.get_subquery_as::<Order>("orders").unwrap();
+                orders.get_count_query()
+            })
     }
 
     pub fn postgres_table(db: PostgresDB) -> Table<PostgresDB, Client> {
@@ -65,6 +74,10 @@ impl Client {
             .with_column_of::<String>("bakery_id")
             .with_one("bakery", "bakery_id", Bakery::postgres_table)
             .with_many("orders", "client_id", Order::postgres_table)
+            .with_expression("order_count", |t| {
+                let orders = t.get_subquery_as::<Order>("orders").unwrap();
+                orders.get_count_query()
+            })
     }
 
     pub fn mongo_table(db: MongoDB) -> Table<MongoDB, Client> {

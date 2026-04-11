@@ -1,6 +1,6 @@
 use crate::identifier::Identifier;
 use crate::sum::{Fx, Sum};
-use crate::{AnySurrealType, Expr, surreal_expr};
+use crate::{AnySurrealType, Expr};
 use vantage_expressions::result::QueryResult;
 use vantage_expressions::traits::expressive::Expressive;
 use vantage_expressions::traits::selectable::{Order, Selectable, SourceRef};
@@ -95,8 +95,14 @@ impl<T: QueryResult> Selectable<AnySurrealType> for SurrealSelect<T> {
     }
 
     fn as_count(&self) -> Expr {
-        let id_expr = surreal_expr!("id");
-        Fx::new("count", vec![id_expr]).into()
+        let mut count_select = self.clone();
+        count_select.fields.clear();
+        count_select
+            .fields
+            .push(SelectField::new(Identifier::new("id")));
+        count_select.order_by.clear();
+        let subquery = count_select.render();
+        Fx::new("count", vec![subquery]).into()
     }
 
     fn as_sum(&self, column: impl Expressive<AnySurrealType>) -> Expr {

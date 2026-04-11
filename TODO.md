@@ -18,10 +18,16 @@
       `get_ref_as::<PostgresDB, Order>("orders")`. Backend type inferred from self.
 - [x] **`get_ref()` returns `AnyTable`** — works for both same-backend and foreign refs via
       `Reference::resolve_as_any`.
-- [x] MongoDB relationship traversal working — `with_one`/`with_many` + `get_ref_as` tested
-      for has_many and has_one patterns.
+- [x] MongoDB relationship traversal working — `with_one`/`with_many` + `get_ref_as` tested for
+      has_many and has_one patterns.
 - [x] MongoDB search regex escaping — metacharacters escaped, empty columns return always-false.
 - [x] MongoDB `related_in_condition` uses projected query (only fetches needed column).
+- [x] **`with_expression` / `get_subquery_as` / `related_correlated_condition`** — Table supports
+      computed expression fields via closure-based lazy evaluation. `get_subquery_as` produces
+      correlated conditions (`target.fk = source.id`) for embedding subqueries in SELECT.
+      `related_correlated_condition` on `TableSource` (default `unimplemented!`). Implemented for
+      Postgres, MySQL, SQLite (`ident().dot_of()`), SurrealDB (`$parent` syntax). Tested via CLI
+      across Postgres, SQLite, SurrealDB with `order_count` expression on Client table.
 
 ## Trait boundary fixes needed
 
@@ -147,7 +153,7 @@
 Implement extensions:
 
 - [ ] Lazy table joins (read-only)
-- [ ] Implement add_field_lazy()
+- [x] Implement add_field_lazy() — implemented as `with_expression` on Table
 
 Minor Cases:
 

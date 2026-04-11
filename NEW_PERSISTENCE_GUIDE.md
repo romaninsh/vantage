@@ -318,8 +318,8 @@ impl Expressive<AnyMysqlType> for Identifier {
 When you add a new SQL backend, add an `Expressive<YourAnyType>` impl with your quote character. The
 compiler picks the right impl based on the expression type context.
 
-In practice you use the `ident()` shorthand and pass it into the vendor macro with parentheses —
-the `(...)` syntax calls `.expr()` automatically, so quoting is handled by the type context:
+In practice you use the `ident()` shorthand and pass it into the vendor macro with parentheses — the
+`(...)` syntax calls `.expr()` automatically, so quoting is handled by the type context:
 
 ```rust
 use vantage_sql::primitives::identifier::{Identifier, ident};
@@ -995,6 +995,35 @@ let orders = clients.get_ref_as::<SqliteDB, ClientOrder>("orders").unwrap();
 //   WHERE client_id IN (SELECT "id" FROM "client" WHERE is_paying_client = 1)
 assert_eq!(orders.list().await.unwrap().len(), 3);
 ```
+
+## Step 5.1: Expression Fields (Correlated Subqueries)
+
+`with_expression` adds computed fields to a table using correlated subqueries. It pairs with
+`get_subquery_as` which produces `target.fk = source.id` conditions (vs `get_ref_as` which uses
+`IN (subquery)`).
+
+```rust
+.with_many("orders", "client_id", Order::sqlite_table)
+.with_expression("order_count", |t| {
+    t.get_subquery_as::<Order>("orders").unwrap().get_count_query()
+})
+// Generates: (SELECT COUNT(*) FROM "client_order"
+//   WHERE "client_order"."client_id" = "client"."id") AS "order_count"
+```
+
+**What to implement:** override `related_correlated_condition` in your `TableSource` to produce
+table-qualified equality. Default panics — backends without correlated subquery support (CSV) simply
+can't use this feature.
+
+```rust
+fn related_correlated_condition(&self, target_table: &str, target_field: &str,
+    source_table: &str, source_column: &str) -> Self::Condition {
+    sqlite_expr!("{} = {}", (ident(target_field).dot_of(target_table)),
+        (ident(source_column).dot_of(source_table)))
+}
+```
+
+Requires `SelectableDataSource` (Step 3) since aggregate query builders use `table.select()`.
 
 ## Step 6: Using tables in a multi-backend application
 

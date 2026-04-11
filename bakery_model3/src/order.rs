@@ -5,6 +5,7 @@ use vantage_sql::postgres::AnyPostgresType;
 use vantage_sql::postgres::PostgresDB;
 use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 use vantage_surrealdb::surrealdb::SurrealDB;
+use vantage_surrealdb::thing::Thing;
 use vantage_surrealdb::types::AnySurrealType;
 use vantage_table::table::Table;
 use vantage_types::entity;
@@ -33,7 +34,9 @@ impl Order {
     pub fn surreal_table(db: SurrealDB) -> Table<SurrealDB, Order> {
         Table::new("order", db)
             .with_id_column("id")
+            .with_column_of::<Thing>("client")
             .with_column_of::<bool>("is_deleted")
+            .with_one("client", "client", Client::surreal_table)
     }
 
     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Order> {
