@@ -1,5 +1,5 @@
 pub mod primitives;
-pub mod types;
+pub(crate) mod types;
 
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
