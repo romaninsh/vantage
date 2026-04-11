@@ -131,7 +131,23 @@ macro_rules! impl_from_for_any_postgres {
     };
 }
 
-impl_from_for_any_postgres!(i8, i16, i32, i64, u8, u16, u32, f32, f64, bool, String);
+impl_from_for_any_postgres!(
+    i8,
+    i16,
+    i32,
+    i64,
+    u8,
+    u16,
+    u32,
+    f32,
+    f64,
+    bool,
+    String,
+    chrono::NaiveDate,
+    chrono::NaiveTime,
+    chrono::NaiveDateTime,
+    chrono::DateTime<chrono::Utc>
+);
 
 impl From<&str> for AnyPostgresType {
     fn from(val: &str) -> Self {
@@ -174,7 +190,23 @@ macro_rules! impl_expressive_for_postgres_scalar {
     };
 }
 
-impl_expressive_for_postgres_scalar!(i8, i16, i32, i64, u8, u16, u32, f32, f64, bool, String);
+impl_expressive_for_postgres_scalar!(
+    i8,
+    i16,
+    i32,
+    i64,
+    u8,
+    u16,
+    u32,
+    f32,
+    f64,
+    bool,
+    String,
+    chrono::NaiveDate,
+    chrono::NaiveTime,
+    chrono::NaiveDateTime,
+    chrono::DateTime<chrono::Utc>
+);
 
 impl Expressive<AnyPostgresType> for &str {
     fn expr(&self) -> Expression<AnyPostgresType> {

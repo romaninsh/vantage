@@ -52,6 +52,7 @@ impl SqliteTypeVariants {
 }
 
 mod bool;
+mod chrono;
 mod numbers;
 mod string;
 mod value;

@@ -68,6 +68,13 @@ pub(crate) fn bind_postgres_value<'q>(
         Some(PostgresTypeVariants::Text) => match cbor {
             CborValue::Null => query.bind(None::<String>),
             CborValue::Text(s) => query.bind(s.as_str()),
+            CborValue::Tag(_, inner) => {
+                if let CborValue::Text(s) = inner.as_ref() {
+                    query.bind(s.as_str())
+                } else {
+                    query.bind(None::<String>)
+                }
+            }
             _ => query.bind(None::<String>),
         },
         Some(PostgresTypeVariants::Decimal) => match cbor {
@@ -299,6 +306,17 @@ fn pg_column_to_cbor(
                 return (
                     CborValue::Tag(9, Box::new(CborValue::Text(v.to_string()))),
                     Some(PostgresTypeVariants::Uuid),
+                );
+            }
+        }
+        "TIME" | "TIME WITHOUT TIME ZONE" => {
+            if let Ok(v) = row.try_get::<chrono::NaiveTime, _>(ordinal) {
+                return (
+                    CborValue::Tag(
+                        101,
+                        Box::new(CborValue::Text(v.format("%H:%M:%S").to_string())),
+                    ),
+                    Some(PostgresTypeVariants::Time),
                 );
             }
         }

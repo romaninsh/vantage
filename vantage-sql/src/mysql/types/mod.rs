@@ -56,6 +56,7 @@ impl MysqlTypeVariants {
 }
 
 mod bool;
+mod chrono;
 mod numbers;
 mod string;
 mod value;

@@ -125,7 +125,23 @@ macro_rules! impl_from_for_any_mysql {
     };
 }
 
-impl_from_for_any_mysql!(i8, i16, i32, i64, u8, u16, u32, f32, f64, bool, String);
+impl_from_for_any_mysql!(
+    i8,
+    i16,
+    i32,
+    i64,
+    u8,
+    u16,
+    u32,
+    f32,
+    f64,
+    bool,
+    String,
+    chrono::NaiveDate,
+    chrono::NaiveTime,
+    chrono::NaiveDateTime,
+    chrono::DateTime<chrono::Utc>
+);
 
 impl From<&str> for AnyMysqlType {
     fn from(val: &str) -> Self {
@@ -168,7 +184,23 @@ macro_rules! impl_expressive_for_mysql_scalar {
     };
 }
 
-impl_expressive_for_mysql_scalar!(i8, i16, i32, i64, u8, u16, u32, f32, f64, bool, String);
+impl_expressive_for_mysql_scalar!(
+    i8,
+    i16,
+    i32,
+    i64,
+    u8,
+    u16,
+    u32,
+    f32,
+    f64,
+    bool,
+    String,
+    chrono::NaiveDate,
+    chrono::NaiveTime,
+    chrono::NaiveDateTime,
+    chrono::DateTime<chrono::Utc>
+);
 
 impl Expressive<AnyMysqlType> for &str {
     fn expr(&self) -> Expression<AnyMysqlType> {

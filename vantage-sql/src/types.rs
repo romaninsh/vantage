@@ -1,4 +1,4 @@
-//! Shared CBOR ↔ JSON bridge functions.
+//! Shared helpers: CBOR ↔ JSON bridge.
 //!
 //! CBOR→JSON is value-preserving: every CBOR value produces a JSON value that
 //! retains the original data (possibly as a string when JSON has no matching
@@ -82,19 +82,16 @@ pub(crate) fn cbor_to_json(val: CborValue) -> JsonValue {
             JsonValue::Object(obj)
         }
         CborValue::Tag(10, inner) => {
-            // Decimal — only use f64 if it round-trips without precision loss
+            // Decimal — try to produce a JSON number, fall back to string.
+            // JSON bridge is lossy by design; trailing zeros and high precision
+            // may be lost but the numeric value is preserved when f64 suffices.
             if let CborValue::Text(s) = *inner {
                 if let Ok(i) = s.parse::<i64>() {
                     JsonValue::Number(i.into())
                 } else if let Ok(f) = s.parse::<f64>() {
-                    // Check that f64 round-trips to the same string
-                    if f.to_string() == s {
-                        serde_json::Number::from_f64(f)
-                            .map(JsonValue::Number)
-                            .unwrap_or(JsonValue::String(s))
-                    } else {
-                        JsonValue::String(s)
-                    }
+                    serde_json::Number::from_f64(f)
+                        .map(JsonValue::Number)
+                        .unwrap_or(JsonValue::String(s))
                 } else {
                     JsonValue::String(s)
                 }
@@ -137,10 +134,10 @@ mod tests {
 
     #[test]
     fn float_round_trips() {
-        let json = cbor_to_json(CborValue::Float(3.14));
-        assert_eq!(json, serde_json::json!(3.14));
+        let json = cbor_to_json(CborValue::Float(1.337));
+        assert_eq!(json, serde_json::json!(1.337));
         // JSON→CBOR for floats goes through as_f64
-        assert_eq!(json_to_cbor(json), CborValue::Float(3.14));
+        assert_eq!(json_to_cbor(json), CborValue::Float(1.337));
     }
 
     #[test]
@@ -221,11 +218,11 @@ mod tests {
     }
 
     #[test]
-    fn tag_decimal_trailing_zeros_stay_string() {
-        // "1.10" → f64 → "1.1" — doesn't match, so preserve as string
+    fn tag_decimal_trailing_zeros_become_number() {
+        // "1.10" → f64 1.1 — trailing zeros lost but value preserved
         let cbor = CborValue::Tag(10, Box::new(CborValue::Text("1.10".into())));
         let json = cbor_to_json(cbor);
-        assert_eq!(json, JsonValue::String("1.10".into()));
+        assert_eq!(json, serde_json::json!(1.1));
     }
 
     // ── Nested structures ────────────────────────────────────────────────

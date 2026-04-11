@@ -14,7 +14,7 @@ use vantage_sql::primitives::identifier::ident;
 use vantage_table::operation::Operation;
 use vantage_types::{Record, TryFromRecord};
 
-const PG_URL: &str = "postgres://vantage:vantage@localhost:5433/vantage_pg";
+const PG_URL: &str = "postgres://vantage:vantage@localhost:5433/vantage_v4_pg";
 
 async fn get_db() -> PostgresDB {
     PostgresDB::connect(PG_URL)

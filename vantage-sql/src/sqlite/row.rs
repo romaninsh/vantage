@@ -47,6 +47,13 @@ pub(crate) fn bind_sqlite_value<'q>(
         Some(SqliteTypeVariants::Text) => match cbor {
             CborValue::Null => query.bind(None::<String>),
             CborValue::Text(s) => query.bind(s.as_str()),
+            CborValue::Tag(_, inner) => {
+                if let CborValue::Text(s) = inner.as_ref() {
+                    query.bind(s.as_str())
+                } else {
+                    query.bind(None::<String>)
+                }
+            }
             _ => query.bind(None::<String>),
         },
         Some(SqliteTypeVariants::Numeric) => match cbor {

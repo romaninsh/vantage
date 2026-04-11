@@ -4,6 +4,8 @@ mod mysql {
     mod aggregates;
     #[path = "2_associated.rs"]
     mod associated;
+    #[path = "1_chrono.rs"]
+    mod chrono;
     #[path = "3_complex_queries.rs"]
     mod complex_queries;
     #[path = "3_complex_queries_my.rs"]
