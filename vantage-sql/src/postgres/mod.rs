@@ -2,10 +2,11 @@
 mod macros;
 pub mod impls;
 mod operation;
-mod row;
+pub(crate) mod row;
 pub mod statements;
 pub mod types;
 
+use ciborium::Value as CborValue;
 use sqlx::postgres::PgPool;
 
 pub use types::{AnyPostgresType, PostgresType};
@@ -37,11 +38,14 @@ impl PostgresDB {
         let expr = select.as_aggregate(func, column);
         let result = self.execute(&expr).await?;
         Ok(match result.value() {
-            serde_json::Value::Array(arr) => arr
+            CborValue::Array(arr) => arr
                 .first()
-                .and_then(|row| row.as_object())
-                .and_then(|obj| obj.values().next())
-                .map(|v| AnyPostgresType::untyped(v.clone()))
+                .and_then(|row| match row {
+                    CborValue::Map(map) => map
+                        .first()
+                        .map(|(_, v)| AnyPostgresType::untyped(v.clone())),
+                    _ => None,
+                })
                 .unwrap_or(result),
             _ => result,
         })
