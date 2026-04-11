@@ -4,8 +4,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
-use vantage_sql::sqlite::SqliteDB;
 use vantage_sql::sqlite::statements::SqliteSelect;
+use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 use vantage_sql::sqlite_expr;
 use vantage_types::{Record, TryFromRecord};
 
@@ -17,8 +17,9 @@ async fn get_db() -> SqliteDB {
         .expect("Failed to connect to bakery.sqlite")
 }
 
-fn exec_rows(result: serde_json::Value) -> Vec<Record<JsonValue>> {
-    match result {
+fn exec_rows(result: AnySqliteType) -> Vec<Record<JsonValue>> {
+    let json: JsonValue = result.into();
+    match json {
         JsonValue::Array(arr) => arr.into_iter().map(|v| v.into()).collect(),
         other => panic!("expected array, got: {:?}", other),
     }
@@ -57,7 +58,7 @@ struct Product {
 async fn test_read_bakery() {
     let db = get_db().await;
     let select = SqliteSelect::new().with_source("bakery");
-    let rows = exec_rows(db.execute(&select.expr()).await.unwrap().into_value());
+    let rows = exec_rows(db.execute(&select.expr()).await.unwrap());
 
     assert_eq!(rows.len(), 1);
     let bakery: Bakery = Bakery::from_record(rows[0].clone()).unwrap();
@@ -70,7 +71,7 @@ async fn test_read_bakery() {
 async fn test_read_clients() {
     let db = get_db().await;
     let select = SqliteSelect::new().with_source("client");
-    let rows = exec_rows(db.execute(&select.expr()).await.unwrap().into_value());
+    let rows = exec_rows(db.execute(&select.expr()).await.unwrap());
 
     assert_eq!(rows.len(), 3);
     let clients: Vec<Client> = rows
@@ -90,7 +91,7 @@ async fn test_read_clients() {
 async fn test_read_products() {
     let db = get_db().await;
     let select = SqliteSelect::new().with_source("product");
-    let rows = exec_rows(db.execute(&select.expr()).await.unwrap().into_value());
+    let rows = exec_rows(db.execute(&select.expr()).await.unwrap());
 
     assert_eq!(rows.len(), 5);
     let products: Vec<Product> = rows
@@ -109,7 +110,7 @@ async fn test_select_with_where() {
     let select = SqliteSelect::new()
         .with_source("client")
         .with_condition(sqlite_expr!("\"is_paying_client\" = {}", true));
-    let rows = exec_rows(db.execute(&select.expr()).await.unwrap().into_value());
+    let rows = exec_rows(db.execute(&select.expr()).await.unwrap());
 
     assert_eq!(rows.len(), 2);
 }
@@ -121,7 +122,7 @@ async fn test_select_with_order_and_limit() {
         .with_source("product")
         .with_order(sqlite_expr!("\"price\""), Order::Desc)
         .with_limit(Some(2), None);
-    let rows = exec_rows(db.execute(&select.expr()).await.unwrap().into_value());
+    let rows = exec_rows(db.execute(&select.expr()).await.unwrap());
 
     assert_eq!(rows.len(), 2);
     let products: Vec<Product> = rows
@@ -140,7 +141,7 @@ async fn test_select_specific_fields() {
         .with_field("name")
         .with_field("price")
         .with_condition(sqlite_expr!("\"id\" = {}", "flux_cupcake"));
-    let rows = exec_rows(db.execute(&select.expr()).await.unwrap().into_value());
+    let rows = exec_rows(db.execute(&select.expr()).await.unwrap());
 
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].len(), 2);
@@ -158,8 +159,7 @@ async fn test_read_orders_with_lines() {
     let orders = exec_rows(
         db.execute(&SqliteSelect::new().with_source("client_order").expr())
             .await
-            .unwrap()
-            .into_value(),
+            .unwrap(),
     );
     assert_eq!(orders.len(), 3);
 
@@ -171,8 +171,7 @@ async fn test_read_orders_with_lines() {
                 .expr(),
         )
         .await
-        .unwrap()
-        .into_value(),
+        .unwrap(),
     );
     assert_eq!(doc_orders.len(), 2);
 
@@ -184,8 +183,7 @@ async fn test_read_orders_with_lines() {
                 .expr(),
         )
         .await
-        .unwrap()
-        .into_value(),
+        .unwrap(),
     );
     assert_eq!(order1_lines.len(), 3);
 }

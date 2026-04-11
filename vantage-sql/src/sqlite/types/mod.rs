@@ -1,58 +1,51 @@
 //! SQLite Type System
 //!
-//! Defines type variants aligned with SQLite's affinity system:
+//! Uses `ciborium::Value` as the underlying value type for lossless storage.
+//! CBOR tags follow the same conventions as MySQL/Postgres backends:
+//!   Tag(0)   = DateTime (RFC 3339)
+//!   Tag(10)  = Decimal/Numeric (string representation)
+//!   Tag(100) = Date (YYYY-MM-DD string)
+//!   Tag(101) = Time (HH:MM:SS string)
 //!
+//! SQLite type variants map to SQLite's affinity system:
 //! - INTEGER affinity: INTEGER, INT, TINYINT, SMALLINT, MEDIUMINT, BIGINT
 //! - TEXT    affinity: TEXT, VARCHAR(N), CHAR(N), CLOB, NVARCHAR(N)
 //! - REAL    affinity: REAL, FLOAT, DOUBLE, DOUBLE PRECISION
 //! - NUMERIC affinity: NUMERIC, DECIMAL(P,S), BOOLEAN, DATE, DATETIME
 //! - BLOB    affinity: BLOB
-//! - ANY     (STRICT): ANY
-//!
-//! Uses `serde_json::Value` as the underlying value type with type variant
-//! tracking to prevent silent type confusion.
 
-use serde_json::Value;
 use vantage_types::vantage_type_system;
 
 vantage_type_system! {
     type_trait: SqliteType,
-    method_name: json,
-    value_type: serde_json::Value,
+    method_name: cbor,
+    value_type: ciborium::Value,
     type_variants: [
         Null,
-        Bool,       // bool — stored as 0/1 on disk, but distinct from Integer at type level
-        Integer,    // i8, i16, i32, i64
+        Bool,       // BOOLEAN — stored as 0/1 on disk, distinct from Integer
+        Integer,    // i8..i64, u8..u32
         Text,       // String, &str
         Real,       // f32, f64
-        Numeric,    // Decimal — stored as {"numeric": "string"} to preserve precision
-        Blob        // Vec<u8> — stored as base64 string
+        Numeric,    // DECIMAL — Tag(10, Text("..."))
+        Blob        // Vec<u8> — CborValue::Bytes
     ]
 }
 
 impl SqliteTypeVariants {
-    /// Detect the type variant from a JSON value.
-    pub fn from_json(value: &Value) -> Option<Self> {
+    /// Detect the type variant from a CBOR value.
+    pub fn from_cbor(value: &ciborium::Value) -> Option<Self> {
+        use ciborium::Value::*;
+
         match value {
-            Value::Null => Some(Self::Null),
-            Value::Bool(_) => Some(Self::Bool),
-            Value::Number(n) => {
-                if n.is_i64() || n.is_u64() {
-                    Some(Self::Integer)
-                } else {
-                    Some(Self::Real)
-                }
-            }
-            Value::String(_) => Some(Self::Text),
-            Value::Object(obj) => {
-                if obj.contains_key("numeric") {
-                    Some(Self::Numeric)
-                } else if obj.contains_key("blob") {
-                    Some(Self::Blob)
-                } else {
-                    None
-                }
-            }
+            Null => Some(Self::Null),
+            Bool(_) => Some(Self::Bool),
+            Integer(_) => Some(Self::Integer),
+            Float(_) => Some(Self::Real),
+            Text(_) => Some(Self::Text),
+            Bytes(_) => Some(Self::Blob),
+            Tag(10, _) => Some(Self::Numeric),
+            Tag(0 | 100 | 101, _) => Some(Self::Text),
+            Tag(_, inner) => Self::from_cbor(inner),
             _ => None,
         }
     }
@@ -93,43 +86,61 @@ mod tests {
         let val = AnySqliteType::new(true);
         assert_eq!(val.type_variant(), Some(SqliteTypeVariants::Bool));
         assert_eq!(val.try_get::<bool>(), Some(true));
-        // Bool is a distinct variant — i64 extraction blocked by type boundary
         assert_eq!(val.try_get::<i64>(), None);
     }
 
     #[test]
     fn test_null_round_trip() {
         let val = AnySqliteType::new(None::<i64>);
-        // Value is Null, variant is Integer (from Option<i64>::Target)
-        assert_eq!(*val.value(), serde_json::Value::Null);
+        assert_eq!(*val.value(), ciborium::Value::Null);
         assert_eq!(val.type_variant(), Some(SqliteTypeVariants::Integer));
 
-        // from_json on the value directly should work
-        let direct = <Option<i64> as SqliteType>::from_json(serde_json::Value::Null);
+        let direct = <Option<i64> as SqliteType>::from_cbor(ciborium::Value::Null);
         assert_eq!(direct, Some(None));
 
-        // try_get: variant matches (Integer == Integer), then from_json(Null) → Some(None)
         assert_eq!(val.try_get::<Option<i64>>(), Some(None));
     }
 
     #[test]
     fn test_type_mismatch_text_as_integer() {
         let val = AnySqliteType::new("hello".to_string());
-        // Text variant should not convert to i64
         assert_eq!(val.try_get::<i64>(), None);
     }
 
     #[test]
     fn test_type_mismatch_integer_as_text() {
         let val = AnySqliteType::new(42i64);
-        // Integer variant should not convert to String
         assert_eq!(val.try_get::<String>(), None);
     }
 
     #[test]
     fn test_type_mismatch_real_as_integer() {
         let val = AnySqliteType::new(3.15f64);
-        // Real variant should not convert to i64
         assert_eq!(val.try_get::<i64>(), None);
+    }
+
+    #[test]
+    fn test_untyped_integer_try_get() {
+        let val = AnySqliteType::untyped(ciborium::Value::Integer(42.into()));
+        assert_eq!(val.try_get::<i64>(), Some(42));
+        assert_eq!(val.try_get::<i32>(), Some(42));
+    }
+
+    #[test]
+    fn test_untyped_text_try_get() {
+        let val = AnySqliteType::untyped(ciborium::Value::Text("world".into()));
+        assert_eq!(val.try_get::<String>(), Some("world".to_string()));
+    }
+
+    #[test]
+    fn test_untyped_numeric_tag() {
+        let val = AnySqliteType::untyped(ciborium::Value::Tag(
+            10,
+            Box::new(ciborium::Value::Text("123.456".into())),
+        ));
+        assert_eq!(
+            SqliteTypeVariants::from_cbor(val.value()),
+            Some(SqliteTypeVariants::Numeric)
+        );
     }
 }

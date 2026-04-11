@@ -1,20 +1,15 @@
 //! Test 2b: Deferred expressions — cross-database value resolution.
 //!
 //! A deferred expression runs a query on one database at execution time,
-//! and the resulting value gets placed as a parameter in another database's
-//! query. This is NOT a subquery — the deferred query executes first,
-//! produces a concrete value, and that value gets bound into the outer query.
+//! and the resulting value gets placed as a parameter in another database's query.
 
-use serde_json::Value as JsonValue;
 use vantage_expressions::{ExprDataSource, Expression, ExpressiveEnum};
 use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 use vantage_sql::sqlite_expr;
+use vantage_types::Record;
 
-fn rows(result: AnySqliteType) -> Vec<JsonValue> {
-    match result.into_value() {
-        JsonValue::Array(arr) => arr,
-        other => panic!("expected array, got: {:?}", other),
-    }
+fn records(result: AnySqliteType) -> Vec<Record<AnySqliteType>> {
+    Vec::<Record<AnySqliteType>>::try_from(result).unwrap()
 }
 
 async fn setup() -> (SqliteDB, SqliteDB) {
@@ -74,11 +69,17 @@ async fn test_cross_database_deferred() {
 
     // shop_db.execute() resolves the deferred first (calls config_db),
     // gets 150, then runs: SELECT name FROM product WHERE price >= 150
-    let result = rows(shop_db.execute(&shop_query).await.unwrap());
+    let result = records(shop_db.execute(&shop_query).await.unwrap());
 
     assert_eq!(result.len(), 2);
-    assert_eq!(result[0]["name"], "Mid Thing");
-    assert_eq!(result[1]["name"], "Expensive Thing");
+    assert_eq!(
+        result[0]["name"].try_get::<String>(),
+        Some("Mid Thing".to_string())
+    );
+    assert_eq!(
+        result[1]["name"].try_get::<String>(),
+        Some("Expensive Thing".to_string())
+    );
 }
 
 // ── Deferred mixed with regular scalar parameters ──────────────────────────
@@ -98,11 +99,14 @@ async fn test_deferred_mixed_with_scalars() {
         ],
     );
 
-    let result = rows(shop_db.execute(&shop_query).await.unwrap());
+    let result = records(shop_db.execute(&shop_query).await.unwrap());
 
     // 150 threshold, excluding "Mid Thing" → only "Expensive Thing"
     assert_eq!(result.len(), 1);
-    assert_eq!(result[0]["name"], "Expensive Thing");
+    assert_eq!(
+        result[0]["name"].try_get::<String>(),
+        Some("Expensive Thing".to_string())
+    );
 }
 
 // ── Deferred inside a nested expression ───────────────────────────────────
@@ -123,9 +127,15 @@ async fn test_nested_deferred() {
 
     let shop_query = sqlite_expr!("SELECT name FROM product WHERE {} ORDER BY price", (inner));
 
-    let result = rows(shop_db.execute(&shop_query).await.unwrap());
+    let result = records(shop_db.execute(&shop_query).await.unwrap());
 
     assert_eq!(result.len(), 2);
-    assert_eq!(result[0]["name"], "Mid Thing");
-    assert_eq!(result[1]["name"], "Expensive Thing");
+    assert_eq!(
+        result[0]["name"].try_get::<String>(),
+        Some("Mid Thing".to_string())
+    );
+    assert_eq!(
+        result[1]["name"].try_get::<String>(),
+        Some("Expensive Thing".to_string())
+    );
 }

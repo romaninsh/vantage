@@ -1,17 +1,46 @@
-//! AnySqliteType extras: From conversions, Display, Expressive.
+//! AnySqliteType extras: From conversions, Display, Expressive, TryFrom.
+//!
+//! Uses ciborium::Value (CBOR) as the underlying value type.
 
-use super::{AnySqliteType, SqliteType, SqliteTypeNullMarker};
-use serde_json::Value;
+use super::{AnySqliteType, SqliteType, SqliteTypeNullMarker, SqliteTypeVariants};
+use ciborium::Value as CborValue;
+use serde_json::Value as JsonValue;
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
 impl AnySqliteType {
     /// Create an AnySqliteType with no type marker. Used for values coming
     /// back from the database where we don't know the original type.
     /// `try_get` on these values bypasses variant checking.
-    pub fn untyped(value: serde_json::Value) -> Self {
+    pub fn untyped(value: CborValue) -> Self {
         Self {
             value,
             type_variant: None,
+        }
+    }
+
+    /// Create an AnySqliteType with an explicit type variant.
+    /// Used by row_to_record where the SQLite column type is known.
+    pub fn with_variant(value: CborValue, variant: SqliteTypeVariants) -> Self {
+        Self {
+            value,
+            type_variant: Some(variant),
+        }
+    }
+
+    /// If this is a single-row, single-column result `[{col: value}]`,
+    /// extract the scalar value. Otherwise return self unchanged.
+    pub fn unwrap_scalar(self) -> Self {
+        match self.value() {
+            CborValue::Array(arr) if arr.len() == 1 => {
+                if let CborValue::Map(map) = &arr[0] {
+                    if map.len() == 1 {
+                        let (_, v) = &map[0];
+                        return AnySqliteType::untyped(v.clone());
+                    }
+                }
+                self
+            }
+            _ => self,
         }
     }
 }
@@ -20,28 +49,83 @@ impl AnySqliteType {
 impl SqliteType for AnySqliteType {
     type Target = SqliteTypeNullMarker;
 
-    fn to_json(&self) -> Value {
+    fn to_cbor(&self) -> CborValue {
         self.value().clone()
     }
 
-    fn from_json(value: Value) -> Option<Self> {
-        AnySqliteType::from_json(&value)
+    fn from_cbor(value: CborValue) -> Option<Self> {
+        AnySqliteType::from_cbor(&value)
     }
 }
 
 impl std::fmt::Display for AnySqliteType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.value() {
-            Value::Null => write!(f, "NULL"),
-            Value::Bool(b) => write!(f, "{}", b),
-            Value::Number(n) => write!(f, "{}", n),
-            Value::String(s) => write!(f, "'{}'", s.replace('\'', "''")),
-            other => write!(f, "{}", other),
+            CborValue::Null => write!(f, "NULL"),
+            CborValue::Bool(b) => write!(f, "{}", b),
+            CborValue::Integer(i) => write!(f, "{}", i128::from(*i)),
+            CborValue::Float(v) => {
+                if v.fract() == 0.0 {
+                    write!(f, "{:.1}", v)
+                } else {
+                    write!(f, "{}", v)
+                }
+            }
+            CborValue::Text(s) => write!(f, "'{}'", s.replace('\'', "''")),
+            CborValue::Bytes(b) => write!(f, "x'{}'", hex::encode(b)),
+            CborValue::Tag(10, inner) => {
+                if let CborValue::Text(s) = inner.as_ref() {
+                    write!(f, "{}", s)
+                } else {
+                    write!(f, "{:?}", inner)
+                }
+            }
+            CborValue::Tag(0, inner) | CborValue::Tag(100, inner) | CborValue::Tag(101, inner) => {
+                if let CborValue::Text(s) = inner.as_ref() {
+                    write!(f, "'{}'", s)
+                } else {
+                    write!(f, "{:?}", inner)
+                }
+            }
+            CborValue::Array(arr) => {
+                write!(f, "[")?;
+                for (i, item) in arr.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    if let Some(any) = AnySqliteType::from_cbor(item) {
+                        write!(f, "{}", any)?;
+                    } else {
+                        write!(f, "{:?}", item)?;
+                    }
+                }
+                write!(f, "]")
+            }
+            CborValue::Map(map) => {
+                write!(f, "{{")?;
+                for (i, (k, v)) in map.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    let key_str = match k {
+                        CborValue::Text(s) => s.clone(),
+                        _ => format!("{:?}", k),
+                    };
+                    if let Some(any) = AnySqliteType::from_cbor(v) {
+                        write!(f, "{}: {}", key_str, any)?;
+                    } else {
+                        write!(f, "{}: {:?}", key_str, v)?;
+                    }
+                }
+                write!(f, "}}")
+            }
+            other => write!(f, "{:?}", other),
         }
     }
 }
 
-// From impls for common types
+// -- From impls for common types ----------------------------------------------
+
 macro_rules! impl_from_for_any_sqlite {
     ($($ty:ty),*) => {
         $(
@@ -62,7 +146,100 @@ impl From<&str> for AnySqliteType {
     }
 }
 
-// Expressive impls — allows passing scalars directly into sql_expr!
+// -- JSON <-> CBOR bridge (for AnyTable interop) ------------------------------
+
+impl From<JsonValue> for AnySqliteType {
+    fn from(val: JsonValue) -> Self {
+        if val.is_null() {
+            return AnySqliteType::untyped(CborValue::Null);
+        }
+        let cbor = json_to_cbor(val);
+        AnySqliteType::from_cbor(&cbor).expect("json_to_cbor produced unconvertible CBOR")
+    }
+}
+
+impl From<AnySqliteType> for JsonValue {
+    fn from(val: AnySqliteType) -> Self {
+        cbor_to_json(val.into_value())
+    }
+}
+
+fn json_to_cbor(val: JsonValue) -> CborValue {
+    match val {
+        JsonValue::Null => CborValue::Null,
+        JsonValue::Bool(b) => CborValue::Bool(b),
+        JsonValue::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                CborValue::Integer(i.into())
+            } else if let Some(u) = n.as_u64() {
+                CborValue::Integer(u.into())
+            } else if let Some(f) = n.as_f64() {
+                CborValue::Float(f)
+            } else {
+                CborValue::Text(n.to_string())
+            }
+        }
+        JsonValue::String(s) => CborValue::Text(s),
+        JsonValue::Array(arr) => CborValue::Array(arr.into_iter().map(json_to_cbor).collect()),
+        JsonValue::Object(map) => CborValue::Map(
+            map.into_iter()
+                .map(|(k, v)| (CborValue::Text(k), json_to_cbor(v)))
+                .collect(),
+        ),
+    }
+}
+
+fn cbor_to_json(val: CborValue) -> JsonValue {
+    match val {
+        CborValue::Null => JsonValue::Null,
+        CborValue::Bool(b) => JsonValue::Bool(b),
+        CborValue::Integer(i) => {
+            let n = i128::from(i);
+            if let Ok(v) = i64::try_from(n) {
+                JsonValue::Number(v.into())
+            } else if let Ok(v) = u64::try_from(n) {
+                JsonValue::Number(v.into())
+            } else {
+                JsonValue::String(n.to_string())
+            }
+        }
+        CborValue::Float(f) => serde_json::Number::from_f64(f)
+            .map(JsonValue::Number)
+            .unwrap_or(JsonValue::Null),
+        CborValue::Text(s) => JsonValue::String(s),
+        CborValue::Bytes(b) => match String::from_utf8(b) {
+            Ok(s) => JsonValue::String(s),
+            Err(e) => JsonValue::String(hex::encode(e.as_bytes())),
+        },
+        CborValue::Array(arr) => JsonValue::Array(arr.into_iter().map(cbor_to_json).collect()),
+        CborValue::Map(map) => {
+            let obj: serde_json::Map<String, JsonValue> = map
+                .into_iter()
+                .map(|(k, v)| {
+                    let key = match k {
+                        CborValue::Text(s) => s,
+                        other => format!("{:?}", other),
+                    };
+                    (key, cbor_to_json(v))
+                })
+                .collect();
+            JsonValue::Object(obj)
+        }
+        CborValue::Tag(10, inner) => {
+            // Decimal — preserve as string to avoid precision loss
+            if let CborValue::Text(s) = *inner {
+                JsonValue::String(s)
+            } else {
+                cbor_to_json(*inner)
+            }
+        }
+        CborValue::Tag(_, inner) => cbor_to_json(*inner),
+        _ => JsonValue::Null,
+    }
+}
+
+// -- Expressive impls ---------------------------------------------------------
+
 macro_rules! impl_expressive_for_sqlite_scalar {
     ($($ty:ty),*) => {
         $(
@@ -91,34 +268,27 @@ impl Expressive<AnySqliteType> for &str {
     }
 }
 
-// TryFrom<AnySqliteType> impls — enables AssociatedExpression::get()
-//
-// If the value is a single-row, single-column result (common for COUNT, MAX, etc.),
-// extracts the scalar automatically. Otherwise falls back to try_get.
+impl Expressive<AnySqliteType> for AnySqliteType {
+    fn expr(&self) -> Expression<AnySqliteType> {
+        Expression::new("{}", vec![ExpressiveEnum::Scalar(self.clone())])
+    }
+}
+
+// -- TryFrom impls (for AssociatedExpression::get()) --------------------------
+
 macro_rules! impl_try_from_sqlite {
     ($($ty:ty),*) => {
         $(
             impl TryFrom<AnySqliteType> for $ty {
                 type Error = vantage_core::VantageError;
                 fn try_from(val: AnySqliteType) -> Result<Self, Self::Error> {
-                    // Try direct extraction first
                     if let Some(v) = val.try_get::<$ty>() {
                         return Ok(v);
                     }
                     // If result is [{col: value}], extract the scalar
-                    if let serde_json::Value::Array(arr) = val.value() {
-                        if arr.len() == 1 {
-                            if let Some(obj) = arr[0].as_object() {
-                                if obj.len() == 1 {
-                                    let inner = AnySqliteType::untyped(
-                                        obj.values().next().unwrap().clone()
-                                    );
-                                    if let Some(v) = inner.try_get::<$ty>() {
-                                        return Ok(v);
-                                    }
-                                }
-                            }
-                        }
+                    let val = val.unwrap_scalar();
+                    if let Some(v) = val.try_get::<$ty>() {
+                        return Ok(v);
                     }
                     Err(vantage_core::error!(
                         "Cannot convert AnySqliteType to target type",
@@ -133,25 +303,26 @@ macro_rules! impl_try_from_sqlite {
 
 impl_try_from_sqlite!(i64, i32, f64, bool, String);
 
-/// Extract first row from a result array as a JSON object.
-/// Used by TryFrom impls for Record and serde structs.
-fn extract_first_row(val: &AnySqliteType) -> Option<serde_json::Value> {
+/// Extract first row from a CBOR result array as a map.
+fn extract_first_row(val: &AnySqliteType) -> Option<CborValue> {
     match val.value() {
-        serde_json::Value::Array(arr) => arr.first().cloned(),
-        // Already a single object (shouldn't happen from execute, but handle it)
-        obj @ serde_json::Value::Object(_) => Some(obj.clone()),
+        CborValue::Array(arr) => arr.first().cloned(),
+        obj @ CborValue::Map(_) => Some(obj.clone()),
         _ => None,
     }
 }
 
-impl TryFrom<AnySqliteType> for vantage_types::Record<serde_json::Value> {
-    type Error = vantage_core::VantageError;
-    fn try_from(val: AnySqliteType) -> Result<Self, Self::Error> {
-        let row = extract_first_row(&val).ok_or_else(|| {
-            vantage_core::error!("Expected row result", value = format!("{}", val))
-        })?;
-        Ok(row.into())
-    }
+/// Convert a CBOR Map into a Record<AnySqliteType>.
+fn cbor_map_to_record(map: Vec<(CborValue, CborValue)>) -> vantage_types::Record<AnySqliteType> {
+    map.into_iter()
+        .map(|(k, v)| {
+            let key = match k {
+                CborValue::Text(s) => s,
+                other => format!("{:?}", other),
+            };
+            (key, AnySqliteType::untyped(v))
+        })
+        .collect()
 }
 
 impl TryFrom<AnySqliteType> for vantage_types::Record<AnySqliteType> {
@@ -160,22 +331,80 @@ impl TryFrom<AnySqliteType> for vantage_types::Record<AnySqliteType> {
         let row = extract_first_row(&val).ok_or_else(|| {
             vantage_core::error!("Expected row result", value = format!("{}", val))
         })?;
-        // Convert JSON object → Record<AnySqliteType> with untyped values
         match row {
-            serde_json::Value::Object(map) => Ok(map
-                .into_iter()
-                .map(|(k, v)| (k, AnySqliteType::untyped(v)))
-                .collect()),
+            CborValue::Map(map) => Ok(cbor_map_to_record(map)),
             _ => Err(vantage_core::error!(
-                "Expected object row",
+                "Expected map row",
                 value = format!("{:?}", row)
             )),
         }
     }
 }
 
-impl Expressive<AnySqliteType> for AnySqliteType {
-    fn expr(&self) -> Expression<AnySqliteType> {
-        Expression::new("{}", vec![ExpressiveEnum::Scalar(self.clone())])
+impl TryFrom<AnySqliteType> for Vec<vantage_types::Record<AnySqliteType>> {
+    type Error = vantage_core::VantageError;
+    fn try_from(val: AnySqliteType) -> Result<Self, Self::Error> {
+        match val.into_value() {
+            CborValue::Array(arr) => arr
+                .into_iter()
+                .map(|item| match item {
+                    CborValue::Map(map) => Ok(cbor_map_to_record(map)),
+                    other => Err(vantage_core::error!(
+                        "Expected map row",
+                        value = format!("{:?}", other)
+                    )),
+                })
+                .collect(),
+            CborValue::Map(map) => Ok(vec![cbor_map_to_record(map)]),
+            other => Err(vantage_core::error!(
+                "Expected array or map result",
+                value = format!("{:?}", other)
+            )),
+        }
+    }
+}
+
+impl TryFrom<AnySqliteType> for vantage_types::Record<serde_json::Value> {
+    type Error = vantage_core::VantageError;
+    fn try_from(val: AnySqliteType) -> Result<Self, Self::Error> {
+        let record: vantage_types::Record<AnySqliteType> = val.try_into()?;
+        Ok(record
+            .into_iter()
+            .map(|(k, v)| (k, cbor_to_json(v.into_value())))
+            .collect())
+    }
+}
+
+impl vantage_types::TerminalRender for AnySqliteType {
+    fn render(&self) -> String {
+        match self.value() {
+            CborValue::Null => "-".to_string(),
+            CborValue::Text(s) => s.clone(),
+            CborValue::Bool(b) => b.to_string(),
+            CborValue::Tag(10, inner) => {
+                if let CborValue::Text(s) = inner.as_ref() {
+                    s.clone()
+                } else {
+                    format!("{}", self)
+                }
+            }
+            CborValue::Tag(0, inner) | CborValue::Tag(100, inner) | CborValue::Tag(101, inner) => {
+                if let CborValue::Text(s) = inner.as_ref() {
+                    s.clone()
+                } else {
+                    format!("{}", self)
+                }
+            }
+            _ => format!("{}", self),
+        }
+    }
+
+    fn color_hint(&self) -> Option<&'static str> {
+        match self.value() {
+            CborValue::Bool(true) => Some("green"),
+            CborValue::Bool(false) => Some("red"),
+            CborValue::Null => Some("dim"),
+            _ => None,
+        }
     }
 }

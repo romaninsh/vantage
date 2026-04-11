@@ -197,7 +197,7 @@ fn mysql_column_to_cbor(
         .map(|v| v.is_null())
         .unwrap_or(true)
     {
-        return (CborValue::Null, Some(MysqlTypeVariants::Null));
+        return (CborValue::Null, None);
     }
 
     match type_name {
@@ -407,7 +407,7 @@ fn mysql_column_to_cbor(
         row.columns()[ordinal].name(),
         type_name,
     );
-    (CborValue::Null, Some(MysqlTypeVariants::Null))
+    (CborValue::Null, None)
 }
 
 /// Convert a serde_json::Value to CborValue (used for JSON columns).

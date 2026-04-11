@@ -2,7 +2,7 @@
 mod macros;
 pub mod impls;
 mod operation;
-mod row;
+pub(crate) mod row;
 pub mod statements;
 pub mod types;
 
@@ -36,14 +36,6 @@ impl SqliteDB {
         use vantage_expressions::ExprDataSource;
         let expr = select.as_aggregate(func, column);
         let result = self.execute(&expr).await?;
-        Ok(match result.value() {
-            serde_json::Value::Array(arr) => arr
-                .first()
-                .and_then(|row| row.as_object())
-                .and_then(|obj| obj.values().next())
-                .map(|v| AnySqliteType::untyped(v.clone()))
-                .unwrap_or(result),
-            _ => result,
-        })
+        Ok(result.unwrap_scalar())
     }
 }

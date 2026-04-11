@@ -1,24 +1,25 @@
 //! Numeric type implementations for SQLite.
 //!
-//! - Integer types (i8..i64, u8..u32) → SqliteType::Integer
-//! - Float types (f32, f64) → SqliteType::Real
+//! Uses ciborium::Value (CBOR) as the underlying storage:
+//! - Integer types (i8..i64, u8..u32) → CborValue::Integer
+//! - Float types (f32, f64) → CborValue::Float
 //! - Option<T> delegates to T, with Null for None
 
 use super::{SqliteType, SqliteTypeIntegerMarker, SqliteTypeRealMarker};
-use serde_json::Value;
+use ciborium::Value;
 
 // -- Signed integers → Integer affinity ------------------------------------
 
 impl SqliteType for i64 {
     type Target = SqliteTypeIntegerMarker;
 
-    fn to_json(&self) -> Value {
-        Value::Number((*self).into())
+    fn to_cbor(&self) -> Value {
+        Value::Integer((*self).into())
     }
 
-    fn from_json(value: Value) -> Option<Self> {
+    fn from_cbor(value: Value) -> Option<Self> {
         match value {
-            Value::Number(n) => n.as_i64(),
+            Value::Integer(i) => i64::try_from(i).ok(),
             _ => None,
         }
     }
@@ -27,13 +28,13 @@ impl SqliteType for i64 {
 impl SqliteType for i32 {
     type Target = SqliteTypeIntegerMarker;
 
-    fn to_json(&self) -> Value {
-        Value::Number((*self as i64).into())
+    fn to_cbor(&self) -> Value {
+        Value::Integer((*self).into())
     }
 
-    fn from_json(value: Value) -> Option<Self> {
+    fn from_cbor(value: Value) -> Option<Self> {
         match value {
-            Value::Number(n) => n.as_i64().and_then(|i| i32::try_from(i).ok()),
+            Value::Integer(i) => i32::try_from(i).ok(),
             _ => None,
         }
     }
@@ -42,13 +43,13 @@ impl SqliteType for i32 {
 impl SqliteType for i16 {
     type Target = SqliteTypeIntegerMarker;
 
-    fn to_json(&self) -> Value {
-        Value::Number((*self as i64).into())
+    fn to_cbor(&self) -> Value {
+        Value::Integer((*self).into())
     }
 
-    fn from_json(value: Value) -> Option<Self> {
+    fn from_cbor(value: Value) -> Option<Self> {
         match value {
-            Value::Number(n) => n.as_i64().and_then(|i| i16::try_from(i).ok()),
+            Value::Integer(i) => i16::try_from(i).ok(),
             _ => None,
         }
     }
@@ -57,13 +58,13 @@ impl SqliteType for i16 {
 impl SqliteType for i8 {
     type Target = SqliteTypeIntegerMarker;
 
-    fn to_json(&self) -> Value {
-        Value::Number((*self as i64).into())
+    fn to_cbor(&self) -> Value {
+        Value::Integer((*self).into())
     }
 
-    fn from_json(value: Value) -> Option<Self> {
+    fn from_cbor(value: Value) -> Option<Self> {
         match value {
-            Value::Number(n) => n.as_i64().and_then(|i| i8::try_from(i).ok()),
+            Value::Integer(i) => i8::try_from(i).ok(),
             _ => None,
         }
     }
@@ -74,13 +75,13 @@ impl SqliteType for i8 {
 impl SqliteType for u32 {
     type Target = SqliteTypeIntegerMarker;
 
-    fn to_json(&self) -> Value {
-        Value::Number((*self as i64).into())
+    fn to_cbor(&self) -> Value {
+        Value::Integer((*self).into())
     }
 
-    fn from_json(value: Value) -> Option<Self> {
+    fn from_cbor(value: Value) -> Option<Self> {
         match value {
-            Value::Number(n) => n.as_i64().and_then(|i| u32::try_from(i).ok()),
+            Value::Integer(i) => u32::try_from(i).ok(),
             _ => None,
         }
     }
@@ -89,13 +90,13 @@ impl SqliteType for u32 {
 impl SqliteType for u16 {
     type Target = SqliteTypeIntegerMarker;
 
-    fn to_json(&self) -> Value {
-        Value::Number((*self as i64).into())
+    fn to_cbor(&self) -> Value {
+        Value::Integer((*self).into())
     }
 
-    fn from_json(value: Value) -> Option<Self> {
+    fn from_cbor(value: Value) -> Option<Self> {
         match value {
-            Value::Number(n) => n.as_i64().and_then(|i| u16::try_from(i).ok()),
+            Value::Integer(i) => u16::try_from(i).ok(),
             _ => None,
         }
     }
@@ -104,13 +105,13 @@ impl SqliteType for u16 {
 impl SqliteType for u8 {
     type Target = SqliteTypeIntegerMarker;
 
-    fn to_json(&self) -> Value {
-        Value::Number((*self as i64).into())
+    fn to_cbor(&self) -> Value {
+        Value::Integer((*self).into())
     }
 
-    fn from_json(value: Value) -> Option<Self> {
+    fn from_cbor(value: Value) -> Option<Self> {
         match value {
-            Value::Number(n) => n.as_i64().and_then(|i| u8::try_from(i).ok()),
+            Value::Integer(i) => u8::try_from(i).ok(),
             _ => None,
         }
     }
@@ -121,15 +122,14 @@ impl SqliteType for u8 {
 impl SqliteType for f64 {
     type Target = SqliteTypeRealMarker;
 
-    fn to_json(&self) -> Value {
-        serde_json::Number::from_f64(*self)
-            .map(Value::Number)
-            .unwrap_or(Value::Null)
+    fn to_cbor(&self) -> Value {
+        Value::Float(*self)
     }
 
-    fn from_json(value: Value) -> Option<Self> {
+    fn from_cbor(value: Value) -> Option<Self> {
         match value {
-            Value::Number(n) => n.as_f64(),
+            Value::Float(f) => Some(f),
+            Value::Integer(i) => i64::try_from(i).ok().map(|n| n as f64),
             _ => None,
         }
     }
@@ -138,15 +138,14 @@ impl SqliteType for f64 {
 impl SqliteType for f32 {
     type Target = SqliteTypeRealMarker;
 
-    fn to_json(&self) -> Value {
-        serde_json::Number::from_f64(*self as f64)
-            .map(Value::Number)
-            .unwrap_or(Value::Null)
+    fn to_cbor(&self) -> Value {
+        Value::Float((*self) as f64)
     }
 
-    fn from_json(value: Value) -> Option<Self> {
+    fn from_cbor(value: Value) -> Option<Self> {
         match value {
-            Value::Number(n) => n.as_f64().map(|f| f as f32),
+            Value::Float(f) => Some(f as f32),
+            Value::Integer(i) => i64::try_from(i).ok().map(|n| n as f32),
             _ => None,
         }
     }
@@ -157,17 +156,17 @@ impl SqliteType for f32 {
 impl<T: SqliteType> SqliteType for Option<T> {
     type Target = T::Target;
 
-    fn to_json(&self) -> Value {
+    fn to_cbor(&self) -> Value {
         match self {
-            Some(v) => v.to_json(),
+            Some(v) => v.to_cbor(),
             None => Value::Null,
         }
     }
 
-    fn from_json(value: Value) -> Option<Self> {
+    fn from_cbor(value: Value) -> Option<Self> {
         match value {
             Value::Null => Some(None),
-            other => T::from_json(other).map(Some),
+            other => T::from_cbor(other).map(Some),
         }
     }
 }

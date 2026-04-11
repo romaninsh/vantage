@@ -4,22 +4,22 @@ use vantage_expressions::{ExprDataSource, Expression, ExpressiveEnum};
 use vantage_sql::postgres::{AnyPostgresType, PostgresDB};
 use vantage_types::Record;
 
-const PG_URL: &str = "postgres://vantage:vantage@localhost:5432/vantage";
+const PG_URL: &str = "postgres://vantage:vantage@localhost:5433/vantage";
 
 async fn setup(table: &str) -> PostgresDB {
     let db = PostgresDB::connect(PG_URL).await.unwrap();
 
-    sqlx::query(&format!("DROP TABLE IF EXISTS `{}`", table))
+    sqlx::query(&format!("DROP TABLE IF EXISTS \"{}\"", table))
         .execute(db.pool())
         .await
         .unwrap();
 
     sqlx::query(&format!(
-        "CREATE TABLE `{}` (
+        "CREATE TABLE \"{}\" (
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
             price BIGINT NOT NULL,
-            weight DOUBLE NOT NULL,
+            weight DOUBLE PRECISION NOT NULL,
             active BOOLEAN NOT NULL
         )",
         table
@@ -29,7 +29,7 @@ async fn setup(table: &str) -> PostgresDB {
     .unwrap();
 
     sqlx::query(&format!(
-        "INSERT INTO `{}` VALUES (1, 'Apple', 100, 0.2, true), (2, 'Banana', 50, 0.15, true), (3, 'Cherry', 200, 0.01, false)",
+        "INSERT INTO \"{}\" VALUES (1, 'Apple', 100, 0.2, true), (2, 'Banana', 50, 0.15, true), (3, 'Cherry', 200, 0.01, false)",
         table
     ))
     .execute(db.pool())
@@ -50,7 +50,7 @@ fn records(result: AnyPostgresType) -> Vec<Record<AnyPostgresType>> {
 async fn test_select_all() {
     let db = setup("expr_select_all").await;
     let expr =
-        Expression::<AnyPostgresType>::new("SELECT * FROM `expr_select_all` ORDER BY id", vec![]);
+        Expression::<AnyPostgresType>::new("SELECT * FROM \"expr_select_all\" ORDER BY id", vec![]);
     let result = records(db.execute(&expr).await.unwrap());
 
     assert_eq!(result.len(), 3);
@@ -70,7 +70,7 @@ async fn test_select_all() {
 async fn test_parameterized_integer() {
     let db = setup("expr_param_int").await;
     let expr = Expression::<AnyPostgresType>::new(
-        "SELECT name FROM `expr_param_int` WHERE id = {}",
+        "SELECT name FROM \"expr_param_int\" WHERE id = {}",
         vec![ExpressiveEnum::Scalar(AnyPostgresType::new(2i64))],
     );
     let result = records(db.execute(&expr).await.unwrap());
@@ -86,7 +86,7 @@ async fn test_parameterized_integer() {
 async fn test_parameterized_text() {
     let db = setup("expr_param_text").await;
     let expr = Expression::<AnyPostgresType>::new(
-        "SELECT price FROM `expr_param_text` WHERE name = {}",
+        "SELECT price FROM \"expr_param_text\" WHERE name = {}",
         vec![ExpressiveEnum::Scalar(AnyPostgresType::new(
             "Cherry".to_string(),
         ))],
@@ -101,7 +101,7 @@ async fn test_parameterized_text() {
 async fn test_parameterized_bool() {
     let db = setup("expr_param_bool").await;
     let expr = Expression::<AnyPostgresType>::new(
-        "SELECT name FROM `expr_param_bool` WHERE active = {} ORDER BY name",
+        "SELECT name FROM \"expr_param_bool\" WHERE active = {} ORDER BY name",
         vec![ExpressiveEnum::Scalar(AnyPostgresType::new(true))],
     );
     let result = records(db.execute(&expr).await.unwrap());
@@ -123,7 +123,7 @@ async fn test_parameterized_bool() {
 async fn test_multiple_params() {
     let db = setup("expr_multi_params").await;
     let expr = Expression::<AnyPostgresType>::new(
-        "SELECT name FROM `expr_multi_params` WHERE price >= {} AND active = {}",
+        "SELECT name FROM \"expr_multi_params\" WHERE price >= {} AND active = {}",
         vec![
             ExpressiveEnum::Scalar(AnyPostgresType::new(100i64)),
             ExpressiveEnum::Scalar(AnyPostgresType::new(true)),
@@ -149,7 +149,7 @@ async fn test_nested_expression() {
         vec![ExpressiveEnum::Scalar(AnyPostgresType::new(75i64))],
     );
     let full_query = Expression::<AnyPostgresType>::new(
-        "SELECT name FROM `expr_nested` WHERE {} ORDER BY name",
+        "SELECT name FROM \"expr_nested\" WHERE {} ORDER BY name",
         vec![ExpressiveEnum::Nested(where_clause)],
     );
 
@@ -171,7 +171,7 @@ async fn test_nested_expression() {
 async fn test_empty_result() {
     let db = setup("expr_empty").await;
     let expr = Expression::<AnyPostgresType>::new(
-        "SELECT name FROM `expr_empty` WHERE id = {}",
+        "SELECT name FROM \"expr_empty\" WHERE id = {}",
         vec![ExpressiveEnum::Scalar(AnyPostgresType::new(999i64))],
     );
     let result = records(db.execute(&expr).await.unwrap());
