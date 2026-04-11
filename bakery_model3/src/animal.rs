@@ -1,5 +1,4 @@
 use bson::Bson;
-use serde_json::Value as JsonValue;
 use vantage_csv::{CsvType, type_system::CsvTypeAnimalMarker};
 use vantage_mongodb::MongoType;
 use vantage_mongodb::types::MongoTypeStringMarker;
@@ -73,13 +72,13 @@ impl CsvType for Animal {
 impl SqliteType for Animal {
     type Target = SqliteTypeTextMarker;
 
-    fn to_json(&self) -> JsonValue {
-        JsonValue::String(self.as_str().to_string())
+    fn to_cbor(&self) -> CborValue {
+        CborValue::Text(self.as_str().to_string())
     }
 
-    fn from_json(value: JsonValue) -> Option<Self> {
+    fn from_cbor(value: CborValue) -> Option<Self> {
         match value {
-            JsonValue::String(s) => s.parse().ok(),
+            CborValue::Text(s) => s.parse().ok(),
             _ => None,
         }
     }
@@ -88,13 +87,13 @@ impl SqliteType for Animal {
 impl PostgresType for Animal {
     type Target = PostgresTypeTextMarker;
 
-    fn to_json(&self) -> JsonValue {
-        JsonValue::String(self.as_str().to_string())
+    fn to_cbor(&self) -> CborValue {
+        CborValue::Text(self.as_str().to_string())
     }
 
-    fn from_json(value: JsonValue) -> Option<Self> {
+    fn from_cbor(value: CborValue) -> Option<Self> {
         match value {
-            JsonValue::String(s) => s.parse().ok(),
+            CborValue::Text(s) => s.parse().ok(),
             _ => None,
         }
     }
