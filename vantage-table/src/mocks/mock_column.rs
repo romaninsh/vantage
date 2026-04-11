@@ -8,6 +8,7 @@ use crate::traits::column_like::ColumnLike;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::marker::PhantomData;
+use vantage_expressions::{Expression, Expressive, expr_any};
 
 /// Simple column implementation for testing mocks
 #[derive(Debug, Clone)]
@@ -39,6 +40,12 @@ impl<T: ColumnType> MockColumn<T> {
             flags: self.flags,
             _phantom: PhantomData,
         }
+    }
+}
+
+impl<T: ColumnType> Expressive<T> for MockColumn<T> {
+    fn expr(&self) -> Expression<T> {
+        expr_any!(self.name.clone())
     }
 }
 

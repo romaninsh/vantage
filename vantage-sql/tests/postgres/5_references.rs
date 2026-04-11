@@ -36,7 +36,6 @@ struct ClientOrder {
 }
 
 fn client_table(db: PostgresDB) -> Table<PostgresDB, Client> {
-    let db2 = db.clone();
     Table::new("client", db)
         .with_id_column("id")
         .with_column_of::<String>("name")
@@ -44,17 +43,16 @@ fn client_table(db: PostgresDB) -> Table<PostgresDB, Client> {
         .with_column_of::<String>("contact_details")
         .with_column_of::<bool>("is_paying_client")
         .with_column_of::<String>("bakery_id")
-        .with_many("orders", "client_id", move || order_table(db2.clone()))
+        .with_many("orders", "client_id", order_table)
 }
 
 fn order_table(db: PostgresDB) -> Table<PostgresDB, ClientOrder> {
-    let db2 = db.clone();
     Table::new("client_order", db)
         .with_id_column("id")
         .with_column_of::<String>("bakery_id")
         .with_column_of::<String>("client_id")
         .with_column_of::<bool>("is_deleted")
-        .with_one("client", "client_id", move || client_table(db2.clone()))
+        .with_one("client", "client_id", client_table)
 }
 
 /// Traverse has_many: paying clients -> their orders
@@ -68,9 +66,7 @@ async fn test_has_many_orders_for_paying_clients() {
         true
     ));
 
-    let orders = clients
-        .get_ref_as::<PostgresDB, ClientOrder>("orders")
-        .unwrap();
+    let orders = clients.get_ref_as::<ClientOrder>("orders").unwrap();
 
     let order_list = orders.list().await.unwrap();
     // Marty has 1 order, Doc has 2 orders -> 3 total
@@ -84,9 +80,7 @@ async fn test_has_many_orders_for_single_client() {
     let mut clients = client_table(db.clone());
     clients.add_condition(postgres_expr!("{} = {}", (clients["name"]), "Doc Brown"));
 
-    let orders = clients
-        .get_ref_as::<PostgresDB, ClientOrder>("orders")
-        .unwrap();
+    let orders = clients.get_ref_as::<ClientOrder>("orders").unwrap();
 
     let order_list = orders.list().await.unwrap();
     assert_eq!(order_list.len(), 2);
@@ -99,7 +93,7 @@ async fn test_has_one_client_for_order() {
     let mut orders = order_table(db.clone());
     orders.add_condition(postgres_expr!("{} = {}", (orders["id"]), "order1"));
 
-    let client = orders.get_ref_as::<PostgresDB, Client>("client").unwrap();
+    let client = orders.get_ref_as::<Client>("client").unwrap();
 
     let client_list = client.list().await.unwrap();
     assert_eq!(client_list.len(), 1);

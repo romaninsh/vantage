@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
     }
 
     println!("\n-[ orders for paying clients (traversal) ]------------------------------------");
-    let orders_for_paying = paying_clients.get_ref_as::<Csv, Order>("orders")?;
+    let orders_for_paying = paying_clients.get_ref_as::<Order>("orders")?;
     for order in orders_for_paying
         .list()
         .await

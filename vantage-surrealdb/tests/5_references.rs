@@ -22,7 +22,7 @@ async fn test_has_many_products_for_bakery() {
     let db = get_db().await;
     let bakery = Bakery::surreal_table(db.clone());
 
-    let products = bakery.get_ref_as::<SurrealDB, Product>("products").unwrap();
+    let products = bakery.get_ref_as::<Product>("products").unwrap();
 
     let product_list = products.list().await.unwrap();
     // v2 has 5 products all belonging to hill_valley bakery
@@ -36,7 +36,7 @@ async fn test_has_one_bakery_for_product() {
     let mut products = Product::surreal_table(db.clone());
     products.add_condition(surreal_expr!("name = {}", "Flux Capacitor Cupcake"));
 
-    let bakery = products.get_ref_as::<SurrealDB, Bakery>("bakery").unwrap();
+    let bakery = products.get_ref_as::<Bakery>("bakery").unwrap();
 
     let bakery_list = bakery.list().await.unwrap();
     assert_eq!(bakery_list.len(), 1);
@@ -53,7 +53,7 @@ async fn test_has_one_bakery_for_paying_clients() {
     let mut clients = Client::surreal_table(db.clone());
     clients.add_condition(surreal_expr!("is_paying_client = {}", true));
 
-    let bakery = clients.get_ref_as::<SurrealDB, Bakery>("bakery").unwrap();
+    let bakery = clients.get_ref_as::<Bakery>("bakery").unwrap();
 
     let bakery_list = bakery.list().await.unwrap();
     // Both paying clients (Marty, Doc) belong to the same bakery

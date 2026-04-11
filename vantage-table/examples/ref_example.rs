@@ -40,21 +40,18 @@ impl Bakery {
 
 impl Client {
     pub fn table(ds: MockTableSource) -> Table<MockTableSource, Client> {
-        let ds2 = ds.clone();
-        let ds3 = ds.clone();
         Table::new("client", ds)
             .into_entity::<Client>()
-            // Define relationships using with_one and with_many
-            .with_one("bakery", "bakery_id", move || Bakery::table(ds2.clone()))
-            .with_many("orders", "client_id", move || Order::table(ds3.clone()))
+            .with_one("bakery", "bakery_id", Bakery::table)
+            .with_many("orders", "client_id", Order::table)
     }
 }
 
 impl Order {
     pub fn table(ds: MockTableSource) -> Table<MockTableSource, Order> {
-        Table::new("order", ds.clone())
+        Table::new("order", ds)
             .into_entity::<Order>()
-            .with_one("client", "client_id", move || Client::table(ds.clone()))
+            .with_one("client", "client_id", Client::table)
     }
 }
 

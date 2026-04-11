@@ -42,7 +42,6 @@ struct ClientOrder {
 // ── Table constructors with relationships ──────────────────────────────────
 
 fn client_table(db: SqliteDB) -> Table<SqliteDB, Client> {
-    let db2 = db.clone();
     Table::new("client", db)
         .with_id_column("id")
         .with_column_of::<String>("name")
@@ -50,17 +49,16 @@ fn client_table(db: SqliteDB) -> Table<SqliteDB, Client> {
         .with_column_of::<String>("contact_details")
         .with_column_of::<bool>("is_paying_client")
         .with_column_of::<String>("bakery_id")
-        .with_many("orders", "client_id", move || order_table(db2.clone()))
+        .with_many("orders", "client_id", order_table)
 }
 
 fn order_table(db: SqliteDB) -> Table<SqliteDB, ClientOrder> {
-    let db2 = db.clone();
     Table::new("client_order", db)
         .with_id_column("id")
         .with_column_of::<String>("bakery_id")
         .with_column_of::<String>("client_id")
         .with_column_of::<bool>("is_deleted")
-        .with_one("client", "client_id", move || client_table(db2.clone()))
+        .with_one("client", "client_id", client_table)
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -72,9 +70,7 @@ async fn test_has_many_orders_for_paying_clients() {
     let mut clients = client_table(db.clone());
     clients.add_condition(sqlite_expr!("{} = {}", (clients["is_paying_client"]), true));
 
-    let orders = clients
-        .get_ref_as::<SqliteDB, ClientOrder>("orders")
-        .unwrap();
+    let orders = clients.get_ref_as::<ClientOrder>("orders").unwrap();
 
     let preview = orders.select().preview();
     assert_eq!(
@@ -95,9 +91,7 @@ async fn test_has_many_orders_for_single_client() {
     let mut clients = client_table(db.clone());
     clients.add_condition(sqlite_expr!("{} = {}", (clients["name"]), "Doc Brown"));
 
-    let orders = clients
-        .get_ref_as::<SqliteDB, ClientOrder>("orders")
-        .unwrap();
+    let orders = clients.get_ref_as::<ClientOrder>("orders").unwrap();
 
     let preview = orders.select().preview();
     assert_eq!(
@@ -117,7 +111,7 @@ async fn test_has_one_client_for_order() {
     let mut orders = order_table(db.clone());
     orders.add_condition(sqlite_expr!("{} = {}", (orders["id"]), "order1"));
 
-    let client = orders.get_ref_as::<SqliteDB, Client>("client").unwrap();
+    let client = orders.get_ref_as::<Client>("client").unwrap();
 
     let preview = client.select().preview();
     assert_eq!(

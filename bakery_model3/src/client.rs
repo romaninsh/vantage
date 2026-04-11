@@ -23,38 +23,27 @@ pub struct Client {
 
 impl Client {
     pub fn csv_table(csv: Csv) -> Table<Csv, Client> {
-        let csv2 = csv.clone();
-        let csv3 = csv.clone();
         Table::new("client", csv)
             .with_column_of::<String>("name")
             .with_column_of::<String>("email")
             .with_column_of::<String>("contact_details")
             .with_column_of::<bool>("is_paying_client")
             .with_column_of::<String>("bakery_id")
-            .with_one("bakery", "bakery_id", move || {
-                Bakery::csv_table(csv2.clone())
-            })
-            .with_many("orders", "client_id", move || {
-                Order::csv_table(csv3.clone())
-            })
+            .with_one("bakery", "bakery_id", Bakery::csv_table)
+            .with_many("orders", "client_id", Order::csv_table)
     }
 
     pub fn surreal_table(db: SurrealDB) -> Table<SurrealDB, Client> {
-        let db2 = db.clone();
         Table::new("client", db)
             .with_id_column("id")
             .with_column_of::<String>("name")
             .with_column_of::<String>("email")
             .with_column_of::<String>("contact_details")
             .with_column_of::<bool>("is_paying_client")
-            .with_one("bakery", "bakery", move || {
-                Bakery::surreal_table(db2.clone())
-            })
+            .with_one("bakery", "bakery", Bakery::surreal_table)
     }
 
     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Client> {
-        let db2 = db.clone();
-        let db3 = db.clone();
         Table::new("client", db)
             .with_id_column("id")
             .with_column_of::<String>("name")
@@ -62,17 +51,11 @@ impl Client {
             .with_column_of::<String>("contact_details")
             .with_column_of::<bool>("is_paying_client")
             .with_column_of::<String>("bakery_id")
-            .with_one("bakery", "bakery_id", move || {
-                Bakery::sqlite_table(db2.clone())
-            })
-            .with_many("orders", "client_id", move || {
-                Order::sqlite_table(db3.clone())
-            })
+            .with_one("bakery", "bakery_id", Bakery::sqlite_table)
+            .with_many("orders", "client_id", Order::sqlite_table)
     }
 
     pub fn postgres_table(db: PostgresDB) -> Table<PostgresDB, Client> {
-        let db2 = db.clone();
-        let db3 = db.clone();
         Table::new("client", db)
             .with_id_column("id")
             .with_column_of::<String>("name")
@@ -80,17 +63,11 @@ impl Client {
             .with_column_of::<String>("contact_details")
             .with_column_of::<bool>("is_paying_client")
             .with_column_of::<String>("bakery_id")
-            .with_one("bakery", "bakery_id", move || {
-                Bakery::postgres_table(db2.clone())
-            })
-            .with_many("orders", "client_id", move || {
-                Order::postgres_table(db3.clone())
-            })
+            .with_one("bakery", "bakery_id", Bakery::postgres_table)
+            .with_many("orders", "client_id", Order::postgres_table)
     }
 
     pub fn mongo_table(db: MongoDB) -> Table<MongoDB, Client> {
-        let db2 = db.clone();
-        let db3 = db.clone();
         Table::new("client", db)
             .with_id_column("_id")
             .with_column_of::<String>("name")
@@ -98,11 +75,7 @@ impl Client {
             .with_column_of::<String>("contact_details")
             .with_column_of::<bool>("is_paying_client")
             .with_column_of::<String>("bakery_id")
-            .with_one("bakery", "bakery_id", move || {
-                Bakery::mongo_table(db2.clone())
-            })
-            .with_many("orders", "client_id", move || {
-                Order::mongo_table(db3.clone())
-            })
+            .with_one("bakery", "bakery_id", Bakery::mongo_table)
+            .with_many("orders", "client_id", Order::mongo_table)
     }
 }

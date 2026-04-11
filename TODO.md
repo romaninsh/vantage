@@ -4,11 +4,24 @@
 
 - [x] Added `type Condition` associated type to `TableSource` — allows non-Expression condition
       types (e.g. `bson::Document` for MongoDB). SQL/SurrealDB backends use
-      `type Condition = Expression<Self::Value>` (no change). References (`with_one`/`with_many`)
-      require `T::Condition: From<Expression<T::Value>>` bound.
+      `type Condition = Expression<Self::Value>` (no change).
 - [x] MongoDB type system (`AnyMongoType`, `bson::Bson` value type, bson v2)
 - [x] MongoDB `TableSource` impl — full CRUD using mongodb driver directly, no Expression queries.
-      `type Condition = bson::Document` for native MongoDB filters.
+      `type Condition = MongoCondition` for native MongoDB filters with deferred support.
+- [x] **Refactored reference system** — replaced `RelatedTable` trait with `Reference` trait.
+      `HasOne`/`HasMany` describe relationships (field names + factory). Resolution happens in
+      `Table::get_ref_as` via `related_in_condition`. Factory takes `T` (data source) instead of
+      closures — enables `with_many("orders", "client_id", Order::postgres_table)`.
+- [x] **Added `HasForeign` for cross-persistence refs** — `with_foreign()` accepts a closure that
+      returns `AnyTable` with deferred conditions. Enables lazy cross-backend traversal.
+- [x] **`get_ref_as` takes one type param** — `get_ref_as::<Order>("orders")` instead of
+      `get_ref_as::<PostgresDB, Order>("orders")`. Backend type inferred from self.
+- [x] **`get_ref()` returns `AnyTable`** — works for both same-backend and foreign refs via
+      `Reference::resolve_as_any`.
+- [x] MongoDB relationship traversal working — `with_one`/`with_many` + `get_ref_as` tested
+      for has_many and has_one patterns.
+- [x] MongoDB search regex escaping — metacharacters escaped, empty columns return always-false.
+- [x] MongoDB `related_in_condition` uses projected query (only fetches needed column).
 
 ## Trait boundary fixes needed
 
@@ -20,22 +33,27 @@
       place for deletion (doesn't require entity type). Having both causes ambiguity when calling
       `table.delete()`. Keep only in `WritableValueSet`.
 - [ ] **Decouple `column_table_values_expr` from `ExprDataSource`** — the method returns
-      `AssociatedExpression` which forces `ExprDataSource` dependency. The actual work is "get
-      column values from table" which `TableSource` can already do via `list_table_values`. Explore
-      returning a `Condition`-based result instead, or refactor `AssociatedExpression` to not
-      require `ExprDataSource`.
+      `AssociatedExpression` which forces `ExprDataSource` dependency. Consider moving to a
+      sub-trait so non-SQL backends don't carry dead code. SQL backends use it internally in
+      `related_in_condition`; MongoDB never touches it.
 - [ ] **Explore `Selectable` parameterized on condition type** — currently `add_where_condition`
       takes `impl Expressive<T>`, hardcoding Expression-based conditions. MongoDB could implement
       its own `select()` if `Selectable` (or a parallel trait) accepted `Condition` type directly.
-      Investigate parameterizing `Selectable<T, C>` where `C` is the condition type, or creating
-      `DocumentSelectable` for document-oriented backends.
-- [ ] **Analyse `with_one`/`with_many` for non-Expression backends** — currently requires
-      `T::Condition: From<Expression<T::Value>>`. For MongoDB, need to either: (a) implement
-      `From<Expression<AnyMongoType>> for bson::Document` by parsing common Operation templates
-      (`"{} = {}"` → `doc!{field: value}`, `"{} IN ({})"` → `doc!{field: {"$in": [...]}}`), (b)
-      create MongoDB-native reference types that produce `bson::Document` conditions directly, or
-      (c) refactor the reference system to work with `Condition` generically. Goal: relationship
-      traversal (`ref products list`) working for MongoDB.
+- [x] ~~**Analyse `with_one`/`with_many` for non-Expression backends**~~ — **RESOLVED**: Refactored
+      reference system. `HasOne`/`HasMany` use `related_in_condition` (each backend builds its own
+      native condition). `From<Expression<T::Value>>` bound still exists on `with_one`/`with_many`
+      via `resolve_as_any` but MongoDB implements it as a no-op panic (never called for traversal —
+      `get_ref_as` uses `related_in_condition` directly). Could be cleaned up further by moving
+      `resolve_as_any` bounds into the impl block.
+
+## Cleanup (lower priority)
+
+- [ ] **Remove `From<Expression<AnyMongoType>> for MongoCondition` panic impl** — exists only to
+      satisfy trait bounds. Could be eliminated by separating the `resolve_as_any` bounds or
+      splitting `with_one`/`with_many` bounds from the `Reference` impl bounds.
+- [ ] **Consider removing `related_in_condition` from `TableSource`** — now only used by
+      `Table::get_ref_as` (same-backend resolution). Could be moved into the `HasOne`/`HasMany`
+      `resolve_as_any` implementations directly, removing it from the trait surface.
 
 # Query Builder Improvements (from MySQL work, 2026-04)
 
