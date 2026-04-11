@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_expressions::traits::associated_expressions::AssociatedExpression;
@@ -26,37 +27,47 @@ fn id_value(id: &str) -> AnyPostgresType {
     }
 }
 
-/// Parse the JSON array result from execute() into an IndexMap of id -> Record.
+/// Parse the CBOR array result from execute() into an IndexMap of id -> Record.
 fn parse_rows(
     result: AnyPostgresType,
     id_field_name: &str,
 ) -> Result<IndexMap<String, Record<AnyPostgresType>>> {
     let arr = match result.into_value() {
-        serde_json::Value::Array(arr) => arr,
-        other => return Err(error!("expected array result", details = other.to_string())),
+        CborValue::Array(arr) => arr,
+        other => {
+            return Err(error!(
+                "expected array result",
+                details = format!("{:?}", other)
+            ));
+        }
     };
 
     let mut records = IndexMap::new();
     for item in arr {
-        let obj = match item {
-            serde_json::Value::Object(map) => map,
+        let map = match item {
+            CborValue::Map(map) => map,
             _ => continue,
         };
 
-        let id = obj
-            .get(id_field_name)
-            .and_then(|v| match v {
-                serde_json::Value::String(s) => Some(s.clone()),
-                serde_json::Value::Number(n) => Some(n.to_string()),
-                _ => None,
-            })
-            .ok_or_else(|| error!("row missing id field", field = id_field_name))?;
+        let mut id = None;
+        let mut record = Record::new();
+        for (k, v) in map {
+            let key = match k {
+                CborValue::Text(s) => s,
+                _ => continue,
+            };
+            if key == id_field_name {
+                id = Some(match &v {
+                    CborValue::Text(s) => s.clone(),
+                    CborValue::Integer(i) => i128::from(*i).to_string(),
+                    CborValue::Float(f) => f.to_string(),
+                    _ => format!("{:?}", v),
+                });
+            }
+            record.insert(key, AnyPostgresType::untyped(v));
+        }
 
-        let record: Record<AnyPostgresType> = obj
-            .into_iter()
-            .map(|(k, v)| (k, AnyPostgresType::untyped(v)))
-            .collect();
-
+        let id = id.ok_or_else(|| error!("row missing id field", field = id_field_name))?;
         records.insert(id, record);
     }
 

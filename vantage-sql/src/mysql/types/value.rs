@@ -47,7 +47,13 @@ impl std::fmt::Display for AnyMysqlType {
             CborValue::Null => write!(f, "NULL"),
             CborValue::Bool(b) => write!(f, "{}", b),
             CborValue::Integer(i) => write!(f, "{}", i128::from(*i)),
-            CborValue::Float(v) => write!(f, "{}", v),
+            CborValue::Float(v) => {
+                if v.fract() == 0.0 {
+                    write!(f, "{:.1}", v)
+                } else {
+                    write!(f, "{}", v)
+                }
+            }
             CborValue::Text(s) => write!(f, "'{}'", s.replace('\'', "''")),
             CborValue::Bytes(b) => write!(f, "x'{}'", hex::encode(b)),
             CborValue::Tag(10, inner) => {
@@ -186,7 +192,10 @@ fn cbor_to_json(val: CborValue) -> JsonValue {
             .map(JsonValue::Number)
             .unwrap_or(JsonValue::Null),
         CborValue::Text(s) => JsonValue::String(s),
-        CborValue::Bytes(b) => JsonValue::String(hex::encode(b)),
+        CborValue::Bytes(b) => match String::from_utf8(b) {
+            Ok(s) => JsonValue::String(s),
+            Err(e) => JsonValue::String(hex::encode(e.as_bytes())),
+        },
         CborValue::Array(arr) => JsonValue::Array(arr.into_iter().map(cbor_to_json).collect()),
         CborValue::Map(map) => {
             let obj: serde_json::Map<String, JsonValue> = map
@@ -203,9 +212,17 @@ fn cbor_to_json(val: CborValue) -> JsonValue {
         }
         // Tagged values: extract the inner value for JSON (tags have no JSON equivalent)
         CborValue::Tag(10, inner) => {
-            // Decimal — preserve as string
+            // Decimal — try to parse as JSON number, fall back to string
             if let CborValue::Text(s) = *inner {
-                JsonValue::String(s)
+                if let Ok(i) = s.parse::<i64>() {
+                    JsonValue::Number(i.into())
+                } else if let Ok(f) = s.parse::<f64>() {
+                    serde_json::Number::from_f64(f)
+                        .map(JsonValue::Number)
+                        .unwrap_or(JsonValue::String(s))
+                } else {
+                    JsonValue::String(s)
+                }
             } else {
                 cbor_to_json(*inner)
             }

@@ -21,7 +21,7 @@ impl SelectableDataSource<AnyPostgresType> for PostgresDB {
         let result = self.execute(&select.expr()).await?;
 
         match result.value() {
-            serde_json::Value::Array(arr) => Ok(arr
+            ciborium::Value::Array(arr) => Ok(arr
                 .iter()
                 .map(|v| AnyPostgresType::untyped(v.clone()))
                 .collect()),
