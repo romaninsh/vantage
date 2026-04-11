@@ -36,12 +36,16 @@ pub(crate) fn bind_postgres_value<'q>(
         },
         Some(PostgresTypeVariants::Int2) => match cbor {
             CborValue::Null => query.bind(None::<i16>),
-            CborValue::Integer(i) => query.bind(i64::try_from(*i).ok().map(|n| n as i16)),
+            CborValue::Integer(i) => {
+                query.bind(i64::try_from(*i).ok().and_then(|n| i16::try_from(n).ok()))
+            }
             _ => query.bind(None::<i16>),
         },
         Some(PostgresTypeVariants::Int4) => match cbor {
             CborValue::Null => query.bind(None::<i32>),
-            CborValue::Integer(i) => query.bind(i64::try_from(*i).ok().map(|n| n as i32)),
+            CborValue::Integer(i) => {
+                query.bind(i64::try_from(*i).ok().and_then(|n| i32::try_from(n).ok()))
+            }
             _ => query.bind(None::<i32>),
         },
         Some(PostgresTypeVariants::Int8) => match cbor {
