@@ -5,7 +5,7 @@ use indexmap::IndexMap;
 use vantage_types::Entity;
 
 use crate::{
-    pagination::Pagination, references::RelatedTable, sorting::SortDirection,
+    pagination::Pagination, references::Reference, sorting::SortDirection,
     traits::table_source::TableSource,
 };
 
@@ -23,7 +23,7 @@ where
     pub(super) next_condition_id: i64,
     pub(super) order_by: IndexMap<i64, (T::Condition, SortDirection)>,
     pub(super) next_order_id: i64,
-    pub(super) refs: Option<IndexMap<String, Arc<dyn RelatedTable>>>,
+    pub(super) refs: Option<IndexMap<String, Arc<dyn Reference>>>,
     pub(super) pagination: Option<Pagination>,
     pub(super) title_field: Option<String>,
     pub(super) id_field: Option<String>,

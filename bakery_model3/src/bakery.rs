@@ -24,14 +24,11 @@ impl Bakery {
     }
 
     pub fn surreal_table(db: SurrealDB) -> Table<SurrealDB, Bakery> {
-        let db2 = db.clone();
         Table::new("bakery", db)
             .with_id_column("id")
             .with_column_of::<String>("name")
             .with_column_of::<i64>("profit_margin")
-            .with_many("products", "bakery", move || {
-                crate::Product::surreal_table(db2.clone())
-            })
+            .with_many("products", "bakery", crate::Product::surreal_table)
     }
 
     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Bakery> {

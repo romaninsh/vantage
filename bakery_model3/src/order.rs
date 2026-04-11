@@ -22,15 +22,12 @@ pub struct Order {
 
 impl Order {
     pub fn csv_table(csv: Csv) -> Table<Csv, Order> {
-        let csv2 = csv.clone();
         Table::new("order", csv)
             .with_column_of::<String>("client_id")
             .with_column_of::<bool>("is_deleted")
             .with_column_of::<String>("created_at")
             .with_column_of::<String>("lines")
-            .with_one("client", "client_id", move || {
-                Client::csv_table(csv2.clone())
-            })
+            .with_one("client", "client_id", Client::csv_table)
     }
 
     pub fn surreal_table(db: SurrealDB) -> Table<SurrealDB, Order> {
@@ -40,35 +37,26 @@ impl Order {
     }
 
     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Order> {
-        let db2 = db.clone();
         Table::new("client_order", db)
             .with_id_column("id")
             .with_column_of::<String>("client_id")
             .with_column_of::<bool>("is_deleted")
-            .with_one("client", "client_id", move || {
-                Client::sqlite_table(db2.clone())
-            })
+            .with_one("client", "client_id", Client::sqlite_table)
     }
 
     pub fn postgres_table(db: PostgresDB) -> Table<PostgresDB, Order> {
-        let db2 = db.clone();
         Table::new("client_order", db)
             .with_id_column("id")
             .with_column_of::<String>("client_id")
             .with_column_of::<bool>("is_deleted")
-            .with_one("client", "client_id", move || {
-                Client::postgres_table(db2.clone())
-            })
+            .with_one("client", "client_id", Client::postgres_table)
     }
 
     pub fn mongo_table(db: MongoDB) -> Table<MongoDB, Order> {
-        let db2 = db.clone();
         Table::new("client_order", db)
             .with_id_column("_id")
             .with_column_of::<String>("client_id")
             .with_column_of::<bool>("is_deleted")
-            .with_one("client", "client_id", move || {
-                Client::mongo_table(db2.clone())
-            })
+            .with_one("client", "client_id", Client::mongo_table)
     }
 }

@@ -32,7 +32,6 @@ impl Product {
     }
 
     pub fn surreal_table(db: SurrealDB) -> Table<SurrealDB, Product> {
-        let db2 = db.clone();
         Table::new("product", db)
             .with_id_column("id")
             .with_column_of::<String>("name")
@@ -40,14 +39,11 @@ impl Product {
             .with_column_of::<i64>("price")
             .with_column_of::<bool>("is_deleted")
             .with_column_of::<Option<Animal>>("sticker")
-            .with_column_of::<String>("bakery") // record link, used for relationships
-            .with_one("bakery", "bakery", move || {
-                Bakery::surreal_table(db2.clone())
-            })
+            .with_column_of::<String>("bakery")
+            .with_one("bakery", "bakery", Bakery::surreal_table)
     }
 
     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Product> {
-        let db2 = db.clone();
         Table::new("product", db)
             .with_id_column("id")
             .with_column_of::<String>("name")
@@ -55,13 +51,10 @@ impl Product {
             .with_column_of::<i64>("price")
             .with_column_of::<bool>("is_deleted")
             .with_column_of::<Option<Animal>>("sticker")
-            .with_one("bakery", "bakery_id", move || {
-                Bakery::sqlite_table(db2.clone())
-            })
+            .with_one("bakery", "bakery_id", Bakery::sqlite_table)
     }
 
     pub fn postgres_table(db: PostgresDB) -> Table<PostgresDB, Product> {
-        let db2 = db.clone();
         Table::new("product", db)
             .with_id_column("id")
             .with_column_of::<String>("name")
@@ -69,9 +62,7 @@ impl Product {
             .with_column_of::<i64>("price")
             .with_column_of::<bool>("is_deleted")
             .with_column_of::<Option<Animal>>("sticker")
-            .with_one("bakery", "bakery_id", move || {
-                Bakery::postgres_table(db2.clone())
-            })
+            .with_one("bakery", "bakery_id", Bakery::postgres_table)
     }
 
     pub fn mongo_table(db: MongoDB) -> Table<MongoDB, Product> {

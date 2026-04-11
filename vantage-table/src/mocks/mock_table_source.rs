@@ -358,14 +358,33 @@ impl TableSource for MockTableSource {
 
     fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(
         &self,
-        _target_field: &str,
-        _source_table: &Table<Self, SourceE>,
-        _source_column: &str,
+        target_field: &str,
+        source_table: &Table<Self, SourceE>,
+        source_column: &str,
     ) -> Self::Condition
     where
         Self: Sized,
     {
-        unimplemented!("related_in_condition not yet supported for MockTableSource")
+        use vantage_expressions::{Expressive, Selectable, SelectableDataSource};
+
+        // Build a subquery for source column values
+        let mut select = self.select();
+        select.add_source(source_table.table_name(), None);
+        select.clear_fields();
+        select.add_field(source_column);
+        for condition in source_table.conditions() {
+            select.add_where_condition(condition.clone());
+        }
+
+        // target_field IN (subquery)
+        let tgt_col: Expression<Value> = Expression::new(target_field, vec![]);
+        Expression::new(
+            "{} IN ({})",
+            vec![
+                ExpressiveEnum::Nested(tgt_col),
+                ExpressiveEnum::Nested(select.expr()),
+            ],
+        )
     }
 
     fn column_table_values_expr<'a, E, Type: ColumnType>(
