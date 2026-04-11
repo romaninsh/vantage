@@ -235,6 +235,24 @@ pub trait TableSource: DataSource + Clone + 'static {
     where
         Self: Sized;
 
+    /// Build a correlated condition: `target_table.target_field = source_table.source_column`.
+    ///
+    /// Used by `get_subquery_as` for embedding correlated subqueries inside SELECT
+    /// expressions (e.g. `(SELECT COUNT(*) FROM order WHERE order.client_id = client.id)`).
+    ///
+    /// SQL backends produce table-qualified equality; non-SQL backends may not support
+    /// correlated subqueries and should leave the default (which panics).
+    fn related_correlated_condition(
+        &self,
+        target_table: &str,
+        target_field: &str,
+        source_table: &str,
+        source_column: &str,
+    ) -> Self::Condition {
+        let _ = (target_table, target_field, source_table, source_column);
+        unimplemented!("correlated subqueries not supported by this backend")
+    }
+
     /// Return an associated expression that, when resolved, yields all values
     /// of the given typed column from this table (respecting current conditions).
     ///

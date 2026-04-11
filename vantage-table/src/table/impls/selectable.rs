@@ -1,6 +1,6 @@
 use vantage_core::Result;
 use vantage_expressions::traits::selectable::Selectable;
-use vantage_expressions::{Expression, Expressive, SelectableDataSource};
+use vantage_expressions::{Expression, Expressive, SelectableDataSource, expr_any};
 use vantage_types::Entity;
 
 use crate::{
@@ -21,14 +21,27 @@ where
         // Set the table as source
         select.add_source(self.table_name(), None);
 
-        // Add all columns as fields
+        // Add all columns as fields (or expressions if defined)
         for column in self.columns.values() {
-            match column.alias() {
-                Some(alias) => select.add_expression(
-                    self.data_source.expr(column.name(), vec![]),
-                    Some(alias.to_string()),
-                ),
-                None => select.add_field(column.name()),
+            if let Some(expr_fn) = self.expressions.get(column.name()) {
+                let expr = expr_fn(self);
+                select.add_expression(expr_any!("({})", (expr)), Some(column.name().to_string()));
+            } else {
+                match column.alias() {
+                    Some(alias) => select.add_expression(
+                        self.data_source.expr(column.name(), vec![]),
+                        Some(alias.to_string()),
+                    ),
+                    None => select.add_field(column.name()),
+                }
+            }
+        }
+
+        // Add expressions that don't correspond to any column
+        for (name, expr_fn) in &self.expressions {
+            if !self.columns.contains_key(name) {
+                let expr = expr_fn(self);
+                select.add_expression(expr_any!("({})", (expr)), Some(name.clone()));
             }
         }
 

@@ -398,6 +398,21 @@ impl TableSource for SurrealDB {
         tgt_col.in_(fk_values.expr())
     }
 
+    fn related_correlated_condition(
+        &self,
+        _target_table: &str,
+        target_field: &str,
+        _source_table: &str,
+        source_column: &str,
+    ) -> Self::Condition {
+        use crate::identifier::Parent;
+        crate::surreal_expr!(
+            "{} = {}",
+            (Identifier::new(target_field)),
+            (Parent::identifier().dot(source_column))
+        )
+    }
+
     fn column_table_values_expr<'a, E, Type: ColumnType>(
         &'a self,
         table: &Table<Self, E>,

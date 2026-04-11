@@ -1,4 +1,4 @@
-use serde_json::Value as JsonValue;
+use ciborium::Value as CborValue;
 use vantage_expressions::traits::expressive::DeferredFn;
 use vantage_expressions::{Expression, ExpressionFlattener, ExpressiveEnum, Flatten};
 
@@ -25,22 +25,22 @@ impl vantage_expressions::ExprDataSource<AnyMysqlType> for MysqlDB {
             .await
             .map_err(|e| vantage_core::error!("MySQL query failed", details = e.to_string()))?;
 
-        // 4. Convert rows to AnyMysqlType (untyped)
-        let arr: Vec<JsonValue> = rows
+        // 4. Convert rows to AnyMysqlType — each row becomes a CBOR Map
+        let arr: Vec<CborValue> = rows
             .iter()
             .map(|row| {
                 let record = row_to_record(row);
-                let json_map: serde_json::Map<String, JsonValue> = record
+                let map: Vec<(CborValue, CborValue)> = record
                     .into_iter()
-                    .map(|(k, v)| (k, v.into_value()))
+                    .map(|(k, v)| (CborValue::Text(k), v.into_value()))
                     .collect();
-                JsonValue::Object(json_map)
+                CborValue::Map(map)
             })
             .collect();
 
-        let json_arr = JsonValue::Array(arr);
-        Ok(AnyMysqlType::from_json(&json_arr)
-            .expect("JSON array should always convert to AnyMysqlType"))
+        let cbor_arr = CborValue::Array(arr);
+        Ok(AnyMysqlType::from_cbor(&cbor_arr)
+            .expect("CBOR array should always convert to AnyMysqlType"))
     }
 
     fn defer(&self, expr: Expression<AnyMysqlType>) -> DeferredFn<AnyMysqlType> {
@@ -50,16 +50,18 @@ impl vantage_expressions::ExprDataSource<AnyMysqlType> for MysqlDB {
             let expr = expr.clone();
             Box::pin(async move {
                 let result = vantage_expressions::ExprDataSource::execute(&db, &expr).await?;
-                let scalar = match result.value() {
-                    serde_json::Value::Array(arr) => arr
+                Ok(match result.value() {
+                    CborValue::Array(arr) => arr
                         .first()
-                        .and_then(|row| row.as_object())
-                        .and_then(|obj| obj.values().next())
-                        .map(|v| AnyMysqlType::untyped(v.clone()))
+                        .and_then(|row| match row {
+                            CborValue::Map(map) => {
+                                map.first().map(|(_, v)| AnyMysqlType::untyped(v.clone()))
+                            }
+                            _ => None,
+                        })
                         .unwrap_or(result),
                     _ => result,
-                };
-                Ok(scalar)
+                })
             })
         })
     }

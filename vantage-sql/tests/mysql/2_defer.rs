@@ -3,18 +3,15 @@
 //! A deferred expression runs a query on one database at execution time,
 //! and the resulting value gets placed as a parameter in another database's query.
 
-use serde_json::Value as JsonValue;
 use vantage_expressions::{ExprDataSource, Expression, ExpressiveEnum};
 use vantage_sql::mysql::{AnyMysqlType, MysqlDB};
 use vantage_sql::mysql_expr;
+use vantage_types::Record;
 
 const MYSQL_URL: &str = "mysql://vantage:vantage@localhost:3306/vantage";
 
-fn rows(result: AnyMysqlType) -> Vec<JsonValue> {
-    match result.into_value() {
-        JsonValue::Array(arr) => arr,
-        other => panic!("expected array, got: {:?}", other),
-    }
+fn records(result: AnyMysqlType) -> Vec<Record<AnyMysqlType>> {
+    Vec::<Record<AnyMysqlType>>::try_from(result).unwrap()
 }
 
 async fn setup(prefix: &str) -> (MysqlDB, MysqlDB) {
@@ -84,11 +81,17 @@ async fn test_cross_database_deferred() {
         vec![ExpressiveEnum::Deferred(deferred_threshold)],
     );
 
-    let result = rows(shop_db.execute(&shop_query).await.unwrap());
+    let result = records(shop_db.execute(&shop_query).await.unwrap());
 
     assert_eq!(result.len(), 2);
-    assert_eq!(result[0]["name"], "Mid Thing");
-    assert_eq!(result[1]["name"], "Expensive Thing");
+    assert_eq!(
+        result[0]["name"].try_get::<String>(),
+        Some("Mid Thing".to_string())
+    );
+    assert_eq!(
+        result[1]["name"].try_get::<String>(),
+        Some("Expensive Thing".to_string())
+    );
 }
 
 // ── Deferred mixed with regular scalar parameters ──────────────────────────
@@ -111,10 +114,13 @@ async fn test_deferred_mixed_with_scalars() {
         ],
     );
 
-    let result = rows(shop_db.execute(&shop_query).await.unwrap());
+    let result = records(shop_db.execute(&shop_query).await.unwrap());
 
     assert_eq!(result.len(), 1);
-    assert_eq!(result[0]["name"], "Expensive Thing");
+    assert_eq!(
+        result[0]["name"].try_get::<String>(),
+        Some("Expensive Thing".to_string())
+    );
 }
 
 // ── Deferred inside a nested expression ───────────────────────────────────
@@ -139,9 +145,15 @@ async fn test_nested_deferred() {
         (inner)
     );
 
-    let result = rows(shop_db.execute(&shop_query).await.unwrap());
+    let result = records(shop_db.execute(&shop_query).await.unwrap());
 
     assert_eq!(result.len(), 2);
-    assert_eq!(result[0]["name"], "Mid Thing");
-    assert_eq!(result[1]["name"], "Expensive Thing");
+    assert_eq!(
+        result[0]["name"].try_get::<String>(),
+        Some("Mid Thing".to_string())
+    );
+    assert_eq!(
+        result[1]["name"].try_get::<String>(),
+        Some("Expensive Thing".to_string())
+    );
 }

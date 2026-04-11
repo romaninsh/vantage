@@ -3833,6 +3833,8 @@ version = "0.4.0"
 dependencies = [
  "async-trait",
  "chrono",
+ "ciborium",
+ "hex",
  "indexmap",
  "paste",
  "rust_decimal",

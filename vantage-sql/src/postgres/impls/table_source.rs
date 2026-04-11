@@ -402,6 +402,20 @@ impl TableSource for PostgresDB {
         tgt_col.in_(fk_values.expr())
     }
 
+    fn related_correlated_condition(
+        &self,
+        target_table: &str,
+        target_field: &str,
+        source_table: &str,
+        source_column: &str,
+    ) -> Self::Condition {
+        postgres_expr!(
+            "{} = {}",
+            (ident(target_field).dot_of(target_table)),
+            (ident(source_column).dot_of(source_table))
+        )
+    }
+
     fn column_table_values_expr<'a, E, Type: ColumnType>(
         &'a self,
         table: &Table<Self, E>,

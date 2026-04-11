@@ -2,12 +2,17 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use indexmap::IndexMap;
+use vantage_expressions::Expression;
 use vantage_types::Entity;
 
 use crate::{
     pagination::Pagination, references::Reference, sorting::SortDirection,
     traits::table_source::TableSource,
 };
+
+/// Type alias for expression closures stored on Table.
+pub type ExpressionFn<T, E> =
+    Arc<dyn Fn(&Table<T, E>) -> Expression<<T as TableSource>::Value> + Send + Sync>;
 
 #[derive(Clone)]
 pub struct Table<T, E>
@@ -24,6 +29,7 @@ where
     pub(super) order_by: IndexMap<i64, (T::Condition, SortDirection)>,
     pub(super) next_order_id: i64,
     pub(super) refs: Option<IndexMap<String, Arc<dyn Reference>>>,
+    pub(super) expressions: IndexMap<String, ExpressionFn<T, E>>,
     pub(super) pagination: Option<Pagination>,
     pub(super) title_field: Option<String>,
     pub(super) id_field: Option<String>,
@@ -42,6 +48,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             order_by: IndexMap::new(),
             next_order_id: 1,
             refs: None,
+            expressions: IndexMap::new(),
             pagination: None,
             title_field: None,
             id_field: None,
@@ -60,6 +67,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             order_by: self.order_by,
             next_order_id: self.next_order_id,
             refs: self.refs,
+            expressions: IndexMap::new(),
             pagination: self.pagination,
             title_field: self.title_field,
             id_field: self.id_field,
@@ -133,6 +141,7 @@ impl<T: TableSource, E: Entity<T::Value>> std::fmt::Debug for Table<T, E> {
                 "refs_count",
                 &self.refs.as_ref().map(|r| r.len()).unwrap_or(0),
             )
+            .field("expressions_count", &self.expressions.len())
             .finish()
     }
 }

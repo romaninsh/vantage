@@ -4,6 +4,7 @@ use indexmap::IndexMap;
 use std::sync::Arc;
 
 use vantage_core::{Result, error};
+use vantage_expressions::Expression;
 use vantage_types::Entity;
 
 use crate::{
@@ -153,6 +154,79 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
     pub fn get_ref(&self, relation: &str) -> Result<AnyTable> {
         let (reference, _) = self.lookup_ref(relation)?;
         reference.resolve_as_any(self as &dyn std::any::Any)
+    }
+
+    /// Get a correlated related table for use inside SELECT expressions.
+    ///
+    /// Unlike `get_ref_as` (which uses `IN (subquery)`), this produces a
+    /// correlated condition like `order.client_id = client.id`, suitable
+    /// for embedding as a subquery in a SELECT clause.
+    pub fn get_subquery_as<E2: Entity<T::Value> + 'static>(
+        &self,
+        relation: &str,
+    ) -> Result<Table<T, E2>> {
+        let (reference, relation_str) = self.lookup_ref(relation)?;
+
+        if reference.is_foreign() {
+            return Err(error!(
+                "Cannot use get_subquery_as for foreign references",
+                relation = relation_str.as_str()
+            ));
+        }
+
+        // 1. Build target
+        let source_id = self
+            .id_field()
+            .map(|c| c.name().to_string())
+            .unwrap_or_else(|| "id".to_string());
+
+        let mut target: Table<T, E2> = *reference
+            .build_target(self.data_source() as &dyn std::any::Any)
+            .downcast::<Table<T, E2>>()
+            .map_err(|_| {
+                error!(
+                    "Failed to downcast related table",
+                    relation = relation_str.as_str()
+                )
+            })?;
+
+        // 2. Get columns
+        let target_id = target
+            .id_field()
+            .map(|c| c.name().to_string())
+            .unwrap_or_else(|| "id".to_string());
+
+        let (src_col, tgt_col) = reference.columns(&source_id, &target_id);
+
+        // 3. Build correlated condition: target_table.tgt_col = source_table.src_col
+        let condition = self.data_source().related_correlated_condition(
+            target.table_name(),
+            &tgt_col,
+            self.table_name(),
+            &src_col,
+        );
+        target.add_condition(condition);
+
+        Ok(target)
+    }
+
+    /// Add a computed expression field using builder pattern.
+    ///
+    /// The closure receives `&Table<T, E>` and returns an `Expression<T::Value>`.
+    /// It is evaluated lazily when `select()` builds the query.
+    ///
+    /// ```rust,ignore
+    /// .with_expression("order_count", |t| {
+    ///     t.get_subquery_as::<Order>("orders").unwrap().get_count_query()
+    /// })
+    /// ```
+    pub fn with_expression(
+        mut self,
+        name: &str,
+        expr_fn: impl Fn(&Table<T, E>) -> Expression<T::Value> + Send + Sync + 'static,
+    ) -> Self {
+        self.expressions.insert(name.to_string(), Arc::new(expr_fn));
+        self
     }
 
     fn lookup_ref(&self, relation: &str) -> Result<(&dyn Reference, String)> {

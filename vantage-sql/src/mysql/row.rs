@@ -1,11 +1,14 @@
 //! Helpers for converting between sqlx rows/values and vantage types.
 //!
-//! **Writing** (bind): Takes `AnyMysqlType` with variant tags -- the variant
+//! **Writing** (bind): Takes `AnyMysqlType` with variant tags — the variant
 //! tells us exactly how to bind each value to sqlx.
 //!
-//! **Reading** (row): Returns `Record<AnyMysqlType>` with `type_variant: None`.
+//! **Reading** (row): Returns `Record<AnyMysqlType>` with variant inferred from
+//! the MySQL column type. Values are stored as `ciborium::Value` (CBOR) for
+//! lossless type preservation — decimals stay as tagged strings, datetimes
+//! keep their type identity, booleans aren't confused with integers.
 
-use serde_json::Value as JsonValue;
+use ciborium::Value as CborValue;
 use sqlx::mysql::MySqlRow;
 use sqlx::{Column, Row, TypeInfo};
 use vantage_types::Record;
@@ -17,89 +20,172 @@ pub(crate) fn bind_mysql_value<'q>(
     query: sqlx::query::Query<'q, sqlx::MySql, sqlx::mysql::MySqlArguments>,
     value: &'q AnyMysqlType,
 ) -> sqlx::query::Query<'q, sqlx::MySql, sqlx::mysql::MySqlArguments> {
-    let json = value.value();
+    let cbor = value.value();
     match value.type_variant() {
         Some(MysqlTypeVariants::Null) => query.bind(None::<String>),
-        None => bind_by_json(query, json),
-        Some(MysqlTypeVariants::Bool) => match json {
-            JsonValue::Null => query.bind(None::<bool>),
-            JsonValue::Bool(b) => query.bind(*b),
-            JsonValue::Number(n) => match n.as_i64() {
-                Some(i) => query.bind(i != 0),
-                None => query.bind(None::<bool>),
+        None => bind_by_cbor(query, cbor),
+        Some(MysqlTypeVariants::Bool) => match cbor {
+            CborValue::Null => query.bind(None::<bool>),
+            CborValue::Bool(b) => query.bind(*b),
+            CborValue::Integer(i) => match i64::try_from(*i) {
+                Ok(n) => query.bind(n != 0),
+                Err(_) => query.bind(None::<bool>),
             },
             _ => query.bind(None::<bool>),
         },
-        Some(MysqlTypeVariants::Int2) => match json {
-            JsonValue::Null => query.bind(None::<i16>),
-            JsonValue::Number(n) => query.bind(n.as_i64().map(|i| i as i16)),
+        Some(MysqlTypeVariants::Int2) => match cbor {
+            CborValue::Null => query.bind(None::<i16>),
+            CborValue::Integer(i) => query.bind(i64::try_from(*i).ok().map(|n| n as i16)),
             _ => query.bind(None::<i16>),
         },
-        Some(MysqlTypeVariants::Int4) => match json {
-            JsonValue::Null => query.bind(None::<i32>),
-            JsonValue::Number(n) => query.bind(n.as_i64().map(|i| i as i32)),
+        Some(MysqlTypeVariants::Int4) => match cbor {
+            CborValue::Null => query.bind(None::<i32>),
+            CborValue::Integer(i) => query.bind(i64::try_from(*i).ok().map(|n| n as i32)),
             _ => query.bind(None::<i32>),
         },
-        Some(MysqlTypeVariants::Int8) => match json {
-            JsonValue::Null => query.bind(None::<i64>),
-            JsonValue::Number(n) => query.bind(n.as_i64()),
+        Some(MysqlTypeVariants::Int8) => match cbor {
+            CborValue::Null => query.bind(None::<i64>),
+            CborValue::Integer(i) => query.bind(i64::try_from(*i).ok()),
             _ => query.bind(None::<i64>),
         },
-        Some(MysqlTypeVariants::Float4) => match json {
-            JsonValue::Null => query.bind(None::<f32>),
-            JsonValue::Number(n) => query.bind(n.as_f64().map(|f| f as f32)),
+        Some(MysqlTypeVariants::Float4) => match cbor {
+            CborValue::Null => query.bind(None::<f32>),
+            CborValue::Float(f) => query.bind(*f as f32),
+            CborValue::Integer(i) => query.bind(i64::try_from(*i).ok().map(|n| n as f32)),
             _ => query.bind(None::<f32>),
         },
-        Some(MysqlTypeVariants::Float8) => match json {
-            JsonValue::Null => query.bind(None::<f64>),
-            JsonValue::Number(n) => query.bind(n.as_f64()),
+        Some(MysqlTypeVariants::Float8) => match cbor {
+            CborValue::Null => query.bind(None::<f64>),
+            CborValue::Float(f) => query.bind(*f),
+            CborValue::Integer(i) => query.bind(i64::try_from(*i).ok().map(|n| n as f64)),
             _ => query.bind(None::<f64>),
         },
-        Some(MysqlTypeVariants::Text) => match json {
-            JsonValue::Null => query.bind(None::<String>),
-            JsonValue::String(s) => query.bind(s.as_str()),
+        Some(MysqlTypeVariants::Text) => match cbor {
+            CborValue::Null => query.bind(None::<String>),
+            CborValue::Text(s) => query.bind(s.as_str()),
             _ => query.bind(None::<String>),
+        },
+        Some(MysqlTypeVariants::Decimal) => match cbor {
+            CborValue::Null => query.bind(None::<String>),
+            CborValue::Tag(10, inner) => {
+                if let CborValue::Text(s) = inner.as_ref() {
+                    query.bind(s.as_str())
+                } else {
+                    query.bind(None::<String>)
+                }
+            }
+            CborValue::Text(s) => query.bind(s.as_str()),
+            _ => query.bind(None::<String>),
+        },
+        Some(MysqlTypeVariants::DateTime) => match cbor {
+            CborValue::Null => query.bind(None::<String>),
+            CborValue::Tag(0, inner) => {
+                if let CborValue::Text(s) = inner.as_ref() {
+                    query.bind(s.as_str())
+                } else {
+                    query.bind(None::<String>)
+                }
+            }
+            CborValue::Text(s) => query.bind(s.as_str()),
+            _ => query.bind(None::<String>),
+        },
+        Some(MysqlTypeVariants::Date) => match cbor {
+            CborValue::Null => query.bind(None::<String>),
+            CborValue::Tag(100, inner) => {
+                if let CborValue::Text(s) = inner.as_ref() {
+                    query.bind(s.as_str())
+                } else {
+                    query.bind(None::<String>)
+                }
+            }
+            CborValue::Text(s) => query.bind(s.as_str()),
+            _ => query.bind(None::<String>),
+        },
+        Some(MysqlTypeVariants::Time) => match cbor {
+            CborValue::Null => query.bind(None::<String>),
+            CborValue::Tag(101, inner) => {
+                if let CborValue::Text(s) = inner.as_ref() {
+                    query.bind(s.as_str())
+                } else {
+                    query.bind(None::<String>)
+                }
+            }
+            CborValue::Text(s) => query.bind(s.as_str()),
+            _ => query.bind(None::<String>),
+        },
+        Some(MysqlTypeVariants::Blob) => match cbor {
+            CborValue::Null => query.bind(None::<Vec<u8>>),
+            CborValue::Bytes(b) => query.bind(b.as_slice()),
+            CborValue::Text(s) => query.bind(s.as_bytes()),
+            _ => query.bind(None::<Vec<u8>>),
         },
     }
 }
 
-/// Bind a JSON value without type variant -- infers from the value itself.
-fn bind_by_json<'q>(
+/// Bind a CBOR value without type variant — infers from the value itself.
+fn bind_by_cbor<'q>(
     query: sqlx::query::Query<'q, sqlx::MySql, sqlx::mysql::MySqlArguments>,
-    json: &'q JsonValue,
+    cbor: &'q CborValue,
 ) -> sqlx::query::Query<'q, sqlx::MySql, sqlx::mysql::MySqlArguments> {
-    match json {
-        JsonValue::Null => query.bind(None::<String>),
-        JsonValue::Bool(b) => query.bind(*b),
-        JsonValue::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                query.bind(i)
-            } else if let Some(f) = n.as_f64() {
-                query.bind(f)
+    match cbor {
+        CborValue::Null => query.bind(None::<String>),
+        CborValue::Bool(b) => query.bind(*b),
+        CborValue::Integer(i) => {
+            if let Ok(n) = i64::try_from(*i) {
+                query.bind(n)
             } else {
-                query.bind(n.to_string())
+                query.bind(i128::from(*i).to_string())
             }
         }
-        JsonValue::String(s) => query.bind(s.as_str()),
-        other => query.bind(other.to_string()),
+        CborValue::Float(f) => query.bind(*f),
+        CborValue::Text(s) => query.bind(s.as_str()),
+        CborValue::Bytes(b) => query.bind(b.as_slice()),
+        CborValue::Tag(10, inner) => {
+            // Decimal — bind as string, MySQL will coerce
+            if let CborValue::Text(s) = inner.as_ref() {
+                query.bind(s.as_str())
+            } else {
+                query.bind(None::<String>)
+            }
+        }
+        CborValue::Tag(0 | 100 | 101, inner) => {
+            // DateTime / Date / Time — bind as string
+            if let CborValue::Text(s) = inner.as_ref() {
+                query.bind(s.as_str())
+            } else {
+                query.bind(None::<String>)
+            }
+        }
+        _ => query.bind(None::<String>),
     }
 }
 
 /// Convert a MySqlRow to Record<AnyMysqlType>.
+///
+/// Each value is stored as CBOR with the type variant inferred from the
+/// MySQL column type, preserving full type fidelity.
 pub(crate) fn row_to_record(row: &MySqlRow) -> Record<AnyMysqlType> {
     let mut record = Record::new();
     for col in row.columns() {
         let name = col.name().to_string();
         let type_name = col.type_info().name();
-        let json = mysql_column_to_json(row, col.ordinal(), type_name);
-        let value = AnyMysqlType::untyped(json);
+        let (cbor, variant) = mysql_column_to_cbor(row, col.ordinal(), type_name);
+        let value = match variant {
+            Some(v) => AnyMysqlType::with_variant(cbor, v),
+            None => AnyMysqlType::untyped(cbor),
+        };
         record.insert(name, value);
     }
     record
 }
 
-/// Read a single column from a MySQL row as JsonValue.
-fn mysql_column_to_json(row: &MySqlRow, ordinal: usize, type_name: &str) -> JsonValue {
+/// Read a single column from a MySQL row as CborValue, returning both the
+/// value and the detected type variant.
+fn mysql_column_to_cbor(
+    row: &MySqlRow,
+    ordinal: usize,
+    type_name: &str,
+) -> (CborValue, Option<MysqlTypeVariants>) {
     use sqlx::ValueRef;
 
     if row
@@ -107,156 +193,188 @@ fn mysql_column_to_json(row: &MySqlRow, ordinal: usize, type_name: &str) -> Json
         .map(|v| v.is_null())
         .unwrap_or(true)
     {
-        return JsonValue::Null;
+        return (CborValue::Null, Some(MysqlTypeVariants::Null));
     }
 
     match type_name {
         "BOOLEAN" | "BOOL" => {
             // MySQL BOOLEAN is TINYINT(1). sqlx decodes as i8.
             if let Ok(v) = row.try_get::<i8, _>(ordinal) {
-                return JsonValue::Bool(v != 0);
+                return (CborValue::Bool(v != 0), Some(MysqlTypeVariants::Bool));
             }
             if let Ok(v) = row.try_get::<bool, _>(ordinal) {
-                return JsonValue::Bool(v);
+                return (CborValue::Bool(v), Some(MysqlTypeVariants::Bool));
             }
         }
         "TINYINT" => {
             if let Ok(v) = row.try_get::<i8, _>(ordinal) {
-                return JsonValue::Number((v as i64).into());
-            }
-        }
-        "SMALLINT" => {
-            if let Ok(v) = row.try_get::<i16, _>(ordinal) {
-                return JsonValue::Number((v as i64).into());
-            }
-        }
-        "INT" | "INTEGER" | "MEDIUMINT" => {
-            if let Ok(v) = row.try_get::<i32, _>(ordinal) {
-                return JsonValue::Number((v as i64).into());
-            }
-        }
-        "BIGINT" => {
-            if let Ok(v) = row.try_get::<i64, _>(ordinal) {
-                return JsonValue::Number(v.into());
-            }
-        }
-        "BIGINT UNSIGNED" => {
-            if let Ok(v) = row.try_get::<u64, _>(ordinal) {
-                return JsonValue::Number(v.into());
-            }
-        }
-        "INT UNSIGNED" | "MEDIUMINT UNSIGNED" => {
-            if let Ok(v) = row.try_get::<u32, _>(ordinal) {
-                return JsonValue::Number((v as i64).into());
-            }
-        }
-        "SMALLINT UNSIGNED" => {
-            if let Ok(v) = row.try_get::<u16, _>(ordinal) {
-                return JsonValue::Number((v as i64).into());
+                return (
+                    CborValue::Integer((v as i64).into()),
+                    Some(MysqlTypeVariants::Int2),
+                );
             }
         }
         "TINYINT UNSIGNED" => {
             if let Ok(v) = row.try_get::<u8, _>(ordinal) {
-                return JsonValue::Number((v as i64).into());
+                return (
+                    CborValue::Integer((v as i64).into()),
+                    Some(MysqlTypeVariants::Int2),
+                );
+            }
+        }
+        "SMALLINT" => {
+            if let Ok(v) = row.try_get::<i16, _>(ordinal) {
+                return (
+                    CborValue::Integer((v as i64).into()),
+                    Some(MysqlTypeVariants::Int2),
+                );
+            }
+        }
+        "SMALLINT UNSIGNED" => {
+            if let Ok(v) = row.try_get::<u16, _>(ordinal) {
+                return (
+                    CborValue::Integer((v as i64).into()),
+                    Some(MysqlTypeVariants::Int2),
+                );
+            }
+        }
+        "INT" | "INTEGER" | "MEDIUMINT" => {
+            if let Ok(v) = row.try_get::<i32, _>(ordinal) {
+                return (
+                    CborValue::Integer((v as i64).into()),
+                    Some(MysqlTypeVariants::Int4),
+                );
+            }
+        }
+        "INT UNSIGNED" | "MEDIUMINT UNSIGNED" => {
+            if let Ok(v) = row.try_get::<u32, _>(ordinal) {
+                return (
+                    CborValue::Integer((v as i64).into()),
+                    Some(MysqlTypeVariants::Int4),
+                );
+            }
+        }
+        "BIGINT" => {
+            if let Ok(v) = row.try_get::<i64, _>(ordinal) {
+                return (CborValue::Integer(v.into()), Some(MysqlTypeVariants::Int8));
+            }
+        }
+        "BIGINT UNSIGNED" => {
+            if let Ok(v) = row.try_get::<u64, _>(ordinal) {
+                return (CborValue::Integer(v.into()), Some(MysqlTypeVariants::Int8));
+            }
+        }
+        "FLOAT" => {
+            if let Ok(v) = row.try_get::<f32, _>(ordinal) {
+                return (CborValue::Float(v as f64), Some(MysqlTypeVariants::Float4));
+            }
+        }
+        "DOUBLE" => {
+            if let Ok(v) = row.try_get::<f64, _>(ordinal) {
+                return (CborValue::Float(v), Some(MysqlTypeVariants::Float8));
+            }
+        }
+        "DECIMAL" | "NUMERIC" | "NEWDECIMAL" => {
+            // Lossless: store decimal as Tag(10, Text("..."))
+            if let Ok(v) = row.try_get::<rust_decimal::Decimal, _>(ordinal) {
+                return (
+                    CborValue::Tag(10, Box::new(CborValue::Text(v.to_string()))),
+                    Some(MysqlTypeVariants::Decimal),
+                );
+            }
+            // Fallback: try as string
+            if let Ok(v) = row.try_get::<String, _>(ordinal) {
+                return (
+                    CborValue::Tag(10, Box::new(CborValue::Text(v))),
+                    Some(MysqlTypeVariants::Decimal),
+                );
             }
         }
         "JSON" => {
             if let Ok(v) = row.try_get::<serde_json::Value, _>(ordinal) {
-                return v;
-            }
-        }
-        "FLOAT" => {
-            if let Ok(v) = row.try_get::<f32, _>(ordinal)
-                && let Some(n) = serde_json::Number::from_f64(v as f64)
-            {
-                return JsonValue::Number(n);
-            }
-        }
-        "DOUBLE" => {
-            if let Ok(v) = row.try_get::<f64, _>(ordinal)
-                && let Some(n) = serde_json::Number::from_f64(v)
-            {
-                return JsonValue::Number(n);
-            }
-        }
-        "DECIMAL" | "NUMERIC" | "NEWDECIMAL" => {
-            if let Ok(v) = row.try_get::<rust_decimal::Decimal, _>(ordinal) {
-                use rust_decimal::prelude::ToPrimitive;
-                if v.scale() == 0
-                    && let Some(i) = v.to_i64()
-                {
-                    return JsonValue::Number(i.into());
-                }
-                if let Some(f) = v.to_f64()
-                    && let Some(n) = serde_json::Number::from_f64(f)
-                {
-                    return JsonValue::Number(n);
-                }
-            }
-            // Fallback: try as string and parse
-            if let Ok(v) = row.try_get::<String, _>(ordinal) {
-                if let Ok(i) = v.parse::<i64>() {
-                    return JsonValue::Number(i.into());
-                }
-                if let Ok(f) = v.parse::<f64>()
-                    && let Some(n) = serde_json::Number::from_f64(f)
-                {
-                    return JsonValue::Number(n);
-                }
-                return JsonValue::String(v);
+                // JSON columns: convert the serde_json::Value to CBOR
+                let cbor = json_value_to_cbor(v);
+                return (cbor, Some(MysqlTypeVariants::Text));
             }
         }
         "TEXT" | "TINYTEXT" | "MEDIUMTEXT" | "LONGTEXT" | "VARCHAR" | "CHAR" | "ENUM" | "SET" => {
             if let Ok(v) = row.try_get::<String, _>(ordinal) {
-                return JsonValue::String(v);
+                return (CborValue::Text(v), Some(MysqlTypeVariants::Text));
             }
         }
-        "BLOB" | "TINYBLOB" | "MEDIUMBLOB" | "LONGBLOB" => {
-            // sqlx decodes BLOB types as Vec<u8>; try String first, then bytes
-            if let Ok(v) = row.try_get::<String, _>(ordinal) {
-                return JsonValue::String(v);
-            }
+        "BLOB" | "TINYBLOB" | "MEDIUMBLOB" | "LONGBLOB" | "BINARY" | "VARBINARY" => {
             if let Ok(v) = row.try_get::<Vec<u8>, _>(ordinal) {
-                return JsonValue::String(String::from_utf8_lossy(&v).into_owned());
+                return (CborValue::Bytes(v), Some(MysqlTypeVariants::Blob));
             }
         }
         "TIME" => {
             if let Ok(v) = row.try_get::<chrono::NaiveTime, _>(ordinal) {
-                return JsonValue::String(v.format("%H:%M:%S").to_string());
+                return (
+                    CborValue::Tag(
+                        101,
+                        Box::new(CborValue::Text(v.format("%H:%M:%S").to_string())),
+                    ),
+                    Some(MysqlTypeVariants::Time),
+                );
             }
         }
         "DATE" => {
             if let Ok(v) = row.try_get::<chrono::NaiveDate, _>(ordinal) {
-                return JsonValue::String(v.format("%Y-%m-%d").to_string());
+                return (
+                    CborValue::Tag(
+                        100,
+                        Box::new(CborValue::Text(v.format("%Y-%m-%d").to_string())),
+                    ),
+                    Some(MysqlTypeVariants::Date),
+                );
             }
         }
         "DATETIME" => {
             if let Ok(v) = row.try_get::<chrono::NaiveDateTime, _>(ordinal) {
-                return JsonValue::String(v.format("%Y-%m-%d %H:%M:%S%.f").to_string());
+                return (
+                    CborValue::Tag(
+                        0,
+                        Box::new(CborValue::Text(
+                            v.format("%Y-%m-%d %H:%M:%S%.f").to_string(),
+                        )),
+                    ),
+                    Some(MysqlTypeVariants::DateTime),
+                );
             }
         }
         "TIMESTAMP" | "TIMESTAMP(6)" => {
             if let Ok(v) = row.try_get::<chrono::DateTime<chrono::Utc>, _>(ordinal) {
-                return JsonValue::String(v.format("%Y-%m-%d %H:%M:%S%.f").to_string());
+                return (
+                    CborValue::Tag(
+                        0,
+                        Box::new(CborValue::Text(
+                            v.format("%Y-%m-%d %H:%M:%S%.f").to_string(),
+                        )),
+                    ),
+                    Some(MysqlTypeVariants::DateTime),
+                );
             }
         }
         "YEAR" => {
             if let Ok(v) = row.try_get::<u16, _>(ordinal) {
-                return JsonValue::Number((v as i64).into());
+                return (
+                    CborValue::Integer((v as i64).into()),
+                    Some(MysqlTypeVariants::Int4),
+                );
             }
         }
         "BIT" => {
             if let Ok(v) = row.try_get::<bool, _>(ordinal) {
-                return JsonValue::Number((if v { 1u64 } else { 0u64 }).into());
+                return (CborValue::Bool(v), Some(MysqlTypeVariants::Bool));
             }
             if let Ok(v) = row.try_get::<u64, _>(ordinal) {
-                return JsonValue::Number(v.into());
+                return (CborValue::Integer(v.into()), Some(MysqlTypeVariants::Int8));
             }
             if let Ok(bytes) = row.try_get::<Vec<u8>, _>(ordinal) {
                 let v = bytes
                     .into_iter()
                     .fold(0u64, |acc, byte| (acc << 8) | u64::from(byte));
-                return JsonValue::Number(v.into());
+                return (CborValue::Integer(v.into()), Some(MysqlTypeVariants::Int8));
             }
         }
         _ => {}
@@ -264,18 +382,19 @@ fn mysql_column_to_json(row: &MySqlRow, ordinal: usize, type_name: &str) -> Json
 
     // Fallback: try common types in order
     if let Ok(v) = row.try_get::<i64, _>(ordinal) {
-        return JsonValue::Number(v.into());
+        return (CborValue::Integer(v.into()), Some(MysqlTypeVariants::Int8));
     }
     if let Ok(v) = row.try_get::<i32, _>(ordinal) {
-        return JsonValue::Number((v as i64).into());
+        return (
+            CborValue::Integer((v as i64).into()),
+            Some(MysqlTypeVariants::Int4),
+        );
     }
-    if let Ok(v) = row.try_get::<f64, _>(ordinal)
-        && let Some(n) = serde_json::Number::from_f64(v)
-    {
-        return JsonValue::Number(n);
+    if let Ok(v) = row.try_get::<f64, _>(ordinal) {
+        return (CborValue::Float(v), Some(MysqlTypeVariants::Float8));
     }
     if let Ok(v) = row.try_get::<String, _>(ordinal) {
-        return JsonValue::String(v);
+        return (CborValue::Text(v), Some(MysqlTypeVariants::Text));
     }
 
     // Intentional: surface decode failures so missing type handlers are noticed early.
@@ -284,5 +403,33 @@ fn mysql_column_to_json(row: &MySqlRow, ordinal: usize, type_name: &str) -> Json
         row.columns()[ordinal].name(),
         type_name,
     );
-    JsonValue::Null
+    (CborValue::Null, Some(MysqlTypeVariants::Null))
+}
+
+/// Convert a serde_json::Value to CborValue (used for JSON columns).
+fn json_value_to_cbor(val: serde_json::Value) -> CborValue {
+    match val {
+        serde_json::Value::Null => CborValue::Null,
+        serde_json::Value::Bool(b) => CborValue::Bool(b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                CborValue::Integer(i.into())
+            } else if let Some(u) = n.as_u64() {
+                CborValue::Integer(u.into())
+            } else if let Some(f) = n.as_f64() {
+                CborValue::Float(f)
+            } else {
+                CborValue::Text(n.to_string())
+            }
+        }
+        serde_json::Value::String(s) => CborValue::Text(s),
+        serde_json::Value::Array(arr) => {
+            CborValue::Array(arr.into_iter().map(json_value_to_cbor).collect())
+        }
+        serde_json::Value::Object(map) => CborValue::Map(
+            map.into_iter()
+                .map(|(k, v)| (CborValue::Text(k), json_value_to_cbor(v)))
+                .collect(),
+        ),
+    }
 }

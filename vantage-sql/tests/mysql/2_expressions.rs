@@ -1,8 +1,8 @@
 //! Test 2: ExprDataSource — execute Expression<AnyMysqlType> against live MySQL.
 
-use serde_json::Value as JsonValue;
 use vantage_expressions::{ExprDataSource, Expression, ExpressiveEnum};
 use vantage_sql::mysql::{AnyMysqlType, MysqlDB};
+use vantage_types::Record;
 
 const MYSQL_URL: &str = "mysql://vantage:vantage@localhost:3306/vantage";
 
@@ -39,12 +39,9 @@ async fn setup(table: &str) -> MysqlDB {
     db
 }
 
-/// Helper: unwrap result into JSON array of row objects.
-fn rows(result: AnyMysqlType) -> Vec<JsonValue> {
-    match result.into_value() {
-        JsonValue::Array(arr) => arr,
-        other => panic!("expected array, got: {:?}", other),
-    }
+/// Helper: unwrap result into Vec of Record<AnyMysqlType>.
+fn records(result: AnyMysqlType) -> Vec<Record<AnyMysqlType>> {
+    Vec::<Record<AnyMysqlType>>::try_from(result).unwrap()
 }
 
 // ── Basic select via ExprDataSource ────────────────────────────────────────
@@ -54,11 +51,17 @@ async fn test_select_all() {
     let db = setup("expr_select_all").await;
     let expr =
         Expression::<AnyMysqlType>::new("SELECT * FROM `expr_select_all` ORDER BY id", vec![]);
-    let result = rows(db.execute(&expr).await.unwrap());
+    let result = records(db.execute(&expr).await.unwrap());
 
     assert_eq!(result.len(), 3);
-    assert_eq!(result[0]["name"], "Apple");
-    assert_eq!(result[2]["name"], "Cherry");
+    assert_eq!(
+        result[0]["name"].try_get::<String>(),
+        Some("Apple".to_string())
+    );
+    assert_eq!(
+        result[2]["name"].try_get::<String>(),
+        Some("Cherry".to_string())
+    );
 }
 
 // ── Parameterized query ────────────────────────────────────────────────────
@@ -70,10 +73,13 @@ async fn test_parameterized_integer() {
         "SELECT name FROM `expr_param_int` WHERE id = {}",
         vec![ExpressiveEnum::Scalar(AnyMysqlType::new(2i64))],
     );
-    let result = rows(db.execute(&expr).await.unwrap());
+    let result = records(db.execute(&expr).await.unwrap());
 
     assert_eq!(result.len(), 1);
-    assert_eq!(result[0]["name"], "Banana");
+    assert_eq!(
+        result[0]["name"].try_get::<String>(),
+        Some("Banana".to_string())
+    );
 }
 
 #[tokio::test]
@@ -85,10 +91,10 @@ async fn test_parameterized_text() {
             "Cherry".to_string(),
         ))],
     );
-    let result = rows(db.execute(&expr).await.unwrap());
+    let result = records(db.execute(&expr).await.unwrap());
 
     assert_eq!(result.len(), 1);
-    assert_eq!(result[0]["price"], 200);
+    assert_eq!(result[0]["price"].try_get::<i64>(), Some(200));
 }
 
 #[tokio::test]
@@ -98,11 +104,17 @@ async fn test_parameterized_bool() {
         "SELECT name FROM `expr_param_bool` WHERE active = {} ORDER BY name",
         vec![ExpressiveEnum::Scalar(AnyMysqlType::new(true))],
     );
-    let result = rows(db.execute(&expr).await.unwrap());
+    let result = records(db.execute(&expr).await.unwrap());
 
     assert_eq!(result.len(), 2);
-    assert_eq!(result[0]["name"], "Apple");
-    assert_eq!(result[1]["name"], "Banana");
+    assert_eq!(
+        result[0]["name"].try_get::<String>(),
+        Some("Apple".to_string())
+    );
+    assert_eq!(
+        result[1]["name"].try_get::<String>(),
+        Some("Banana".to_string())
+    );
 }
 
 // ── Multiple parameters ───────────────────────────────────────────────────
@@ -117,10 +129,13 @@ async fn test_multiple_params() {
             ExpressiveEnum::Scalar(AnyMysqlType::new(true)),
         ],
     );
-    let result = rows(db.execute(&expr).await.unwrap());
+    let result = records(db.execute(&expr).await.unwrap());
 
     assert_eq!(result.len(), 1);
-    assert_eq!(result[0]["name"], "Apple");
+    assert_eq!(
+        result[0]["name"].try_get::<String>(),
+        Some("Apple".to_string())
+    );
 }
 
 // ── Nested expressions ────────────────────────────────────────────────────
@@ -138,10 +153,16 @@ async fn test_nested_expression() {
         vec![ExpressiveEnum::Nested(where_clause)],
     );
 
-    let result = rows(db.execute(&full_query).await.unwrap());
+    let result = records(db.execute(&full_query).await.unwrap());
     assert_eq!(result.len(), 2);
-    assert_eq!(result[0]["name"], "Apple");
-    assert_eq!(result[1]["name"], "Cherry");
+    assert_eq!(
+        result[0]["name"].try_get::<String>(),
+        Some("Apple".to_string())
+    );
+    assert_eq!(
+        result[1]["name"].try_get::<String>(),
+        Some("Cherry".to_string())
+    );
 }
 
 // ── Empty result ──────────────────────────────────────────────────────────
@@ -153,7 +174,7 @@ async fn test_empty_result() {
         "SELECT name FROM `expr_empty` WHERE id = {}",
         vec![ExpressiveEnum::Scalar(AnyMysqlType::new(999i64))],
     );
-    let result = rows(db.execute(&expr).await.unwrap());
+    let result = records(db.execute(&expr).await.unwrap());
 
     assert!(result.is_empty());
 }

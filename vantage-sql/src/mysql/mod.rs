@@ -1,11 +1,12 @@
 #[macro_use]
 mod macros;
 pub mod operation;
-mod row;
+pub(crate) mod row;
 pub mod statements;
 mod table_source;
 pub mod types;
 
+use ciborium::Value as CborValue;
 use sqlx::mysql::MySqlPool;
 
 pub use types::{AnyMysqlType, MysqlType};
@@ -37,11 +38,14 @@ impl MysqlDB {
         let expr = select.as_aggregate(func, column);
         let result = self.execute(&expr).await?;
         Ok(match result.value() {
-            serde_json::Value::Array(arr) => arr
+            CborValue::Array(arr) => arr
                 .first()
-                .and_then(|row| row.as_object())
-                .and_then(|obj| obj.values().next())
-                .map(|v| AnyMysqlType::untyped(v.clone()))
+                .and_then(|row| match row {
+                    CborValue::Map(map) => {
+                        map.first().map(|(_, v)| AnyMysqlType::untyped(v.clone()))
+                    }
+                    _ => None,
+                })
                 .unwrap_or(result),
             _ => result,
         })

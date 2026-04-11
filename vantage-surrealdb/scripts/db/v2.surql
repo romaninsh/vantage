@@ -38,6 +38,7 @@ DEFINE FIELD inventory.stock ON product TYPE int DEFAULT 0;
 
 -- Order table (schema-full with embedded line items)
 DEFINE TABLE order SCHEMAFULL;
+DEFINE FIELD client ON order TYPE record<client>; -- Direct link to client
 DEFINE FIELD bakery ON order TYPE record<bakery>; -- Direct link to bakery
 DEFINE FIELD is_deleted ON order TYPE bool DEFAULT false;
 DEFINE FIELD created_at ON order TYPE datetime DEFAULT time::now();
@@ -132,6 +133,7 @@ CREATE product:hover_cookies SET
 -- Create orders with embedded line items
 -- Order 1: Marty's order
 CREATE order:order1 SET
+    client = client:marty,
     bakery = bakery:hill_valley,
     lines = [
         {
@@ -153,6 +155,7 @@ CREATE order:order1 SET
 
 -- Order 2: Doc's order
 CREATE order:order2 SET
+    client = client:doc,
     bakery = bakery:hill_valley,
     lines = [
         {
@@ -164,6 +167,7 @@ CREATE order:order2 SET
 
 -- Order 3: Doc's second order
 CREATE order:order3 SET
+    client = client:doc,
     bakery = bakery:hill_valley,
     lines = [
         {
