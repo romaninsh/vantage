@@ -297,7 +297,7 @@ fn mysql_column_to_cbor(
         "JSON" => {
             if let Ok(v) = row.try_get::<serde_json::Value, _>(ordinal) {
                 // JSON columns: convert the serde_json::Value to CBOR
-                let cbor = json_value_to_cbor(v);
+                let cbor = crate::types::json_to_cbor(v);
                 return (cbor, Some(MysqlTypeVariants::Text));
             }
         }
@@ -408,32 +408,4 @@ fn mysql_column_to_cbor(
         type_name,
     );
     (CborValue::Null, None)
-}
-
-/// Convert a serde_json::Value to CborValue (used for JSON columns).
-fn json_value_to_cbor(val: serde_json::Value) -> CborValue {
-    match val {
-        serde_json::Value::Null => CborValue::Null,
-        serde_json::Value::Bool(b) => CborValue::Bool(b),
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                CborValue::Integer(i.into())
-            } else if let Some(u) = n.as_u64() {
-                CborValue::Integer(u.into())
-            } else if let Some(f) = n.as_f64() {
-                CborValue::Float(f)
-            } else {
-                CborValue::Text(n.to_string())
-            }
-        }
-        serde_json::Value::String(s) => CborValue::Text(s),
-        serde_json::Value::Array(arr) => {
-            CborValue::Array(arr.into_iter().map(json_value_to_cbor).collect())
-        }
-        serde_json::Value::Object(map) => CborValue::Map(
-            map.into_iter()
-                .map(|(k, v)| (CborValue::Text(k), json_value_to_cbor(v)))
-                .collect(),
-        ),
-    }
 }
