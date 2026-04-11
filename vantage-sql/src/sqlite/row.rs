@@ -3,11 +3,11 @@
 //! **Writing** (bind): Takes `AnySqliteType` with variant tags — the variant
 //! tells us exactly how to bind each value to sqlx.
 //!
-//! **Reading** (row): Returns `Record<AnySqliteType>` with `type_variant: None`.
-//! The values are marker-less — `try_get` will attempt conversion without
-//! variant enforcement, and struct deserialization validates the actual types.
+//! **Reading** (row): Returns `Record<AnySqliteType>` with variant inferred from
+//! the SQLite column type. Values are stored as `ciborium::Value` (CBOR) for
+//! lossless type preservation.
 
-use serde_json::Value as JsonValue;
+use ciborium::Value as CborValue;
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Column, Row, TypeInfo};
 use vantage_types::Record;
@@ -15,106 +15,123 @@ use vantage_types::Record;
 use super::types::{AnySqliteType, SqliteTypeVariants};
 
 /// Bind an AnySqliteType to a sqlx query. Uses the variant tag to pick
-/// the right sqlx bind type — no guessing from the JSON number format.
+/// the right sqlx bind type — no guessing from the CBOR value format.
 pub(crate) fn bind_sqlite_value<'q>(
     query: sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>>,
     value: &'q AnySqliteType,
 ) -> sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>> {
-    let json = value.value();
+    let cbor = value.value();
     match value.type_variant() {
         Some(SqliteTypeVariants::Null) => query.bind(None::<String>),
-        // Untyped values (from deferred results, database reads) — infer from JSON
-        None => bind_by_json(query, json),
-        Some(SqliteTypeVariants::Bool) => match json {
-            JsonValue::Null => query.bind(None::<bool>),
-            JsonValue::Number(n) => match n.as_i64() {
-                Some(i) => query.bind(i != 0),
-                None => query.bind(None::<bool>),
+        None => bind_by_cbor(query, cbor),
+        Some(SqliteTypeVariants::Bool) => match cbor {
+            CborValue::Null => query.bind(None::<bool>),
+            CborValue::Integer(i) => match i64::try_from(*i) {
+                Ok(n) => query.bind(n != 0),
+                Err(_) => query.bind(None::<bool>),
             },
-            JsonValue::Bool(b) => query.bind(*b),
+            CborValue::Bool(b) => query.bind(*b),
             _ => query.bind(None::<bool>),
         },
-        Some(SqliteTypeVariants::Integer) => match json {
-            JsonValue::Null => query.bind(None::<i64>),
-            JsonValue::Number(n) => query.bind(n.as_i64()),
+        Some(SqliteTypeVariants::Integer) => match cbor {
+            CborValue::Null => query.bind(None::<i64>),
+            CborValue::Integer(i) => query.bind(i64::try_from(*i).ok()),
             _ => query.bind(None::<i64>),
         },
-        Some(SqliteTypeVariants::Real) => match json {
-            JsonValue::Null => query.bind(None::<f64>),
-            JsonValue::Number(n) => query.bind(n.as_f64()),
+        Some(SqliteTypeVariants::Real) => match cbor {
+            CborValue::Null => query.bind(None::<f64>),
+            CborValue::Float(f) => query.bind(*f),
+            CborValue::Integer(i) => query.bind(i64::try_from(*i).ok().map(|n| n as f64)),
             _ => query.bind(None::<f64>),
         },
-        Some(SqliteTypeVariants::Text) => match json {
-            JsonValue::Null => query.bind(None::<String>),
-            JsonValue::String(s) => query.bind(s.as_str()),
+        Some(SqliteTypeVariants::Text) => match cbor {
+            CborValue::Null => query.bind(None::<String>),
+            CborValue::Text(s) => query.bind(s.as_str()),
             _ => query.bind(None::<String>),
         },
-        Some(SqliteTypeVariants::Numeric) => match json {
-            JsonValue::Null => query.bind(None::<String>),
-            JsonValue::Object(o) => {
-                let s = o.get("numeric").and_then(|v| v.as_str()).unwrap_or("0");
-                query.bind(s)
+        Some(SqliteTypeVariants::Numeric) => match cbor {
+            CborValue::Null => query.bind(None::<String>),
+            CborValue::Tag(10, inner) => {
+                if let CborValue::Text(s) = inner.as_ref() {
+                    query.bind(s.as_str())
+                } else {
+                    query.bind(None::<String>)
+                }
             }
+            CborValue::Text(s) => query.bind(s.as_str()),
             _ => query.bind(None::<String>),
         },
-        Some(SqliteTypeVariants::Blob) => match json {
-            JsonValue::Null => query.bind(None::<String>),
-            JsonValue::Object(o) => {
-                let s = o.get("blob").and_then(|v| v.as_str()).unwrap_or("");
-                query.bind(s)
-            }
-            _ => query.bind(None::<String>),
+        Some(SqliteTypeVariants::Blob) => match cbor {
+            CborValue::Null => query.bind(None::<Vec<u8>>),
+            CborValue::Bytes(b) => query.bind(b.as_slice()),
+            CborValue::Text(s) => query.bind(s.as_bytes()),
+            _ => query.bind(None::<Vec<u8>>),
         },
     }
 }
 
-/// Bind a JSON value without type variant — infers the bind type from the value itself.
-/// Used for untyped values (deferred results, database reads).
-fn bind_by_json<'q>(
+/// Bind a CBOR value without type variant — infers from the value itself.
+fn bind_by_cbor<'q>(
     query: sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>>,
-    json: &'q JsonValue,
+    cbor: &'q CborValue,
 ) -> sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>> {
-    match json {
-        JsonValue::Null => query.bind(None::<String>),
-        JsonValue::Bool(b) => query.bind(*b),
-        JsonValue::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                query.bind(i)
-            } else if let Some(f) = n.as_f64() {
-                query.bind(f)
+    match cbor {
+        CborValue::Null => query.bind(None::<String>),
+        CborValue::Bool(b) => query.bind(*b),
+        CborValue::Integer(i) => {
+            if let Ok(n) = i64::try_from(*i) {
+                query.bind(n)
             } else {
-                query.bind(n.to_string())
+                query.bind(i128::from(*i).to_string())
             }
         }
-        JsonValue::String(s) => query.bind(s.as_str()),
-        other => query.bind(other.to_string()),
+        CborValue::Float(f) => query.bind(*f),
+        CborValue::Text(s) => query.bind(s.as_str()),
+        CborValue::Bytes(b) => query.bind(b.as_slice()),
+        CborValue::Tag(10, inner) => {
+            if let CborValue::Text(s) = inner.as_ref() {
+                query.bind(s.as_str())
+            } else {
+                query.bind(None::<String>)
+            }
+        }
+        CborValue::Tag(0 | 100 | 101, inner) => {
+            if let CborValue::Text(s) = inner.as_ref() {
+                query.bind(s.as_str())
+            } else {
+                query.bind(None::<String>)
+            }
+        }
+        _ => query.bind(None::<String>),
     }
 }
 
 /// Convert a SqliteRow to Record<AnySqliteType>.
 ///
-/// Each value has `type_variant: None` — the database doesn't preserve our
-/// type markers. This means `try_get` on these values bypasses variant
-/// checking and just attempts the conversion, which is the right behavior
-/// for data coming back from the database.
+/// Each value is stored as CBOR with the type variant inferred from the
+/// SQLite column type, preserving full type fidelity.
 pub(crate) fn row_to_record(row: &SqliteRow) -> Record<AnySqliteType> {
     let mut record = Record::new();
     for col in row.columns() {
         let name = col.name().to_string();
         let declared_type = col.type_info().name();
-        let json = sqlite_column_to_json(row, col.ordinal(), declared_type);
-        // Wrap as AnySqliteType with type_variant: None — we intentionally
-        // don't assign variants to values coming from the database, so that
-        // try_get is permissive and attempts any conversion.
-        let value = AnySqliteType::untyped(json);
+        let (cbor, variant) = sqlite_column_to_cbor(row, col.ordinal(), declared_type);
+        let value = match variant {
+            Some(v) => AnySqliteType::with_variant(cbor, v),
+            None => AnySqliteType::untyped(cbor),
+        };
         record.insert(name, value);
     }
     record
 }
 
-/// Read a single column from a SQLite row as JsonValue.
-/// Uses the declared column type to disambiguate (e.g., INTEGER vs BOOLEAN).
-fn sqlite_column_to_json(row: &SqliteRow, ordinal: usize, declared_type: &str) -> JsonValue {
+/// Read a single column from a SQLite row as CborValue, returning both the
+/// value and the detected type variant.
+fn sqlite_column_to_cbor(
+    row: &SqliteRow,
+    ordinal: usize,
+    declared_type: &str,
+) -> (CborValue, Option<SqliteTypeVariants>) {
     use sqlx::ValueRef;
 
     if row
@@ -122,29 +139,45 @@ fn sqlite_column_to_json(row: &SqliteRow, ordinal: usize, declared_type: &str) -
         .map(|v| v.is_null())
         .unwrap_or(true)
     {
-        return JsonValue::Null;
+        return (CborValue::Null, None);
     }
 
     let dt = declared_type.to_uppercase();
+
+    // Boolean — SQLite stores as 0/1 INTEGER
     if (dt == "BOOLEAN" || dt == "BOOL")
         && let Ok(v) = row.try_get::<bool, _>(ordinal)
     {
-        return JsonValue::Bool(v);
+        return (CborValue::Bool(v), Some(SqliteTypeVariants::Bool));
     }
 
-    if let Ok(v) = row.try_get::<i64, _>(ordinal) {
-        return JsonValue::Number(v.into());
-    }
-    if let Ok(v) = row.try_get::<f64, _>(ordinal)
-        && let Some(n) = serde_json::Number::from_f64(v)
+    // BLOB
+    if dt == "BLOB"
+        && let Ok(v) = row.try_get::<Vec<u8>, _>(ordinal)
     {
-        return JsonValue::Number(n);
+        return (CborValue::Bytes(v), Some(SqliteTypeVariants::Blob));
+    }
+
+    // Fallback: try common types in order
+    if let Ok(v) = row.try_get::<i64, _>(ordinal) {
+        return (
+            CborValue::Integer(v.into()),
+            Some(SqliteTypeVariants::Integer),
+        );
+    }
+    if let Ok(v) = row.try_get::<f64, _>(ordinal) {
+        return (CborValue::Float(v), Some(SqliteTypeVariants::Real));
     }
     if let Ok(v) = row.try_get::<String, _>(ordinal) {
-        return JsonValue::String(v);
+        return (CborValue::Text(v), Some(SqliteTypeVariants::Text));
     }
 
-    JsonValue::Null
+    eprintln!(
+        "vantage: failed to decode SQLite column '{}' (type '{}') — returning NULL",
+        row.columns()[ordinal].name(),
+        declared_type,
+    );
+    (CborValue::Null, Some(SqliteTypeVariants::Null))
 }
 
 #[cfg(test)]
@@ -152,6 +185,7 @@ mod tests {
     use super::*;
     use crate::sqlite::SqliteDB;
     use serde::{Deserialize, Serialize};
+    use serde_json::Value as JsonValue;
     use vantage_types::TryFromRecord;
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -190,8 +224,6 @@ mod tests {
 
         let record = row_to_record(&rows[0]);
 
-        // Values have type_variant from from_json detection, but try_get
-        // is permissive — it attempts conversion regardless
         assert_eq!(
             record["name"].try_get::<String>(),
             Some("Alice".to_string())
@@ -233,14 +265,14 @@ mod tests {
             .await
             .unwrap();
 
-        // Record<AnySqliteType> → Record<JsonValue> → struct via serde
+        // Record<AnySqliteType> → Record<JsonValue> via JSON bridge → struct via serde
         let products: Vec<Product> = rows
             .iter()
             .map(|row| {
                 let record = row_to_record(row);
                 let json_record: Record<JsonValue> = record
                     .into_iter()
-                    .map(|(k, v)| (k, v.into_value()))
+                    .map(|(k, v)| (k, JsonValue::from(v)))
                     .collect();
                 Product::from_record(json_record).unwrap()
             })

@@ -157,8 +157,8 @@ async fn test_execute_select_with_condition() {
         .with_condition(sqlite_expr!("\"is_deleted\" = {}", false));
 
     let result = db.execute(&select.expr()).await.unwrap();
-    let rows = result.into_value();
-    assert_eq!(rows.as_array().unwrap().len(), 2);
+    let json: serde_json::Value = result.into();
+    assert_eq!(json.as_array().unwrap().len(), 2);
 }
 
 #[tokio::test]

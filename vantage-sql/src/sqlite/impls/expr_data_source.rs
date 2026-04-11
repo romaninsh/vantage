@@ -1,4 +1,4 @@
-use serde_json::Value as JsonValue;
+use ciborium::Value as CborValue;
 use vantage_expressions::traits::expressive::DeferredFn;
 use vantage_expressions::{Expression, ExpressionFlattener, ExpressiveEnum, Flatten};
 
@@ -28,22 +28,22 @@ impl vantage_expressions::ExprDataSource<AnySqliteType> for SqliteDB {
             .await
             .map_err(|e| vantage_core::error!("SQLite query failed", details = e.to_string()))?;
 
-        // 4. Convert rows to AnySqliteType (untyped — type_variant: None)
-        let arr: Vec<JsonValue> = rows
+        // 4. Convert rows to AnySqliteType — each row becomes a CBOR Map
+        let arr: Vec<CborValue> = rows
             .iter()
             .map(|row| {
                 let record = row_to_record(row);
-                let json_map: serde_json::Map<String, JsonValue> = record
+                let map: Vec<(CborValue, CborValue)> = record
                     .into_iter()
-                    .map(|(k, v)| (k, v.into_value()))
+                    .map(|(k, v)| (CborValue::Text(k), v.into_value()))
                     .collect();
-                JsonValue::Object(json_map)
+                CborValue::Map(map)
             })
             .collect();
 
-        let json_arr = JsonValue::Array(arr);
-        Ok(AnySqliteType::from_json(&json_arr)
-            .expect("JSON array should always convert to AnySqliteType"))
+        let cbor_arr = CborValue::Array(arr);
+        Ok(AnySqliteType::from_cbor(&cbor_arr)
+            .expect("CBOR array should always convert to AnySqliteType"))
     }
 
     fn defer(&self, expr: Expression<AnySqliteType>) -> DeferredFn<AnySqliteType> {
@@ -53,19 +53,18 @@ impl vantage_expressions::ExprDataSource<AnySqliteType> for SqliteDB {
             let expr = expr.clone();
             Box::pin(async move {
                 let result = vantage_expressions::ExprDataSource::execute(&db, &expr).await?;
-                // execute() returns rows as a JSON array. For use as a deferred
-                // parameter (scalar subquery), extract the first column of the
-                // first row. If the result is empty or not an array, return as-is.
-                let scalar = match result.value() {
-                    serde_json::Value::Array(arr) => arr
+                Ok(match result.value() {
+                    CborValue::Array(arr) => arr
                         .first()
-                        .and_then(|row| row.as_object())
-                        .and_then(|obj| obj.values().next())
-                        .map(|v| AnySqliteType::untyped(v.clone()))
+                        .and_then(|row| match row {
+                            CborValue::Map(map) => {
+                                map.first().map(|(_, v)| AnySqliteType::untyped(v.clone()))
+                            }
+                            _ => None,
+                        })
                         .unwrap_or(result),
                     _ => result,
-                };
-                Ok(scalar)
+                })
             })
         })
     }

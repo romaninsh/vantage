@@ -22,7 +22,7 @@ impl SelectableDataSource<AnySqliteType> for SqliteDB {
 
         // Result is an array of row objects — unwrap into individual AnySqliteType values
         match result.value() {
-            serde_json::Value::Array(arr) => Ok(arr
+            ciborium::Value::Array(arr) => Ok(arr
                 .iter()
                 .map(|v| AnySqliteType::untyped(v.clone()))
                 .collect()),

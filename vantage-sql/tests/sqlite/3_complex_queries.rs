@@ -31,8 +31,8 @@ async fn check_and_run<T: for<'de> Deserialize<'de>>(
 
     let db = get_db().await;
     let result = db.execute(&select.expr()).await.unwrap();
-    let rows = result.into_value();
-    let arr = rows.as_array().unwrap();
+    let json: serde_json::Value = result.into();
+    let arr = json.as_array().unwrap();
 
     let records: Vec<Record<serde_json::Value>> = arr.iter().map(|v| v.clone().into()).collect();
     records
@@ -605,8 +605,8 @@ async fn test_q8() {
 
     let db = get_db().await;
     let result = db.execute(&compound.expr()).await.unwrap();
-    let rows = result.into_value();
-    let arr = rows.as_array().unwrap();
+    let json: serde_json::Value = result.into();
+    let arr = json.as_array().unwrap();
 
     assert_eq!(
         compound.preview(),

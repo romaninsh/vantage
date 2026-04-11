@@ -218,7 +218,7 @@ fn pg_column_to_cbor(
         .map(|v| v.is_null())
         .unwrap_or(true)
     {
-        return (CborValue::Null, Some(PostgresTypeVariants::Null));
+        return (CborValue::Null, None);
     }
 
     match type_name {
