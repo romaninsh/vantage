@@ -335,7 +335,7 @@ fn pg_column_to_cbor(
         "JSONB" | "JSON" => {
             if let Ok(v) = row.try_get::<serde_json::Value, _>(ordinal) {
                 let cbor = json_value_to_cbor(v);
-                return (cbor, Some(PostgresTypeVariants::Text));
+                return (cbor, None);
             }
         }
         "BYTEA" => {

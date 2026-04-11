@@ -53,18 +53,7 @@ impl vantage_expressions::ExprDataSource<AnySqliteType> for SqliteDB {
             let expr = expr.clone();
             Box::pin(async move {
                 let result = vantage_expressions::ExprDataSource::execute(&db, &expr).await?;
-                Ok(match result.value() {
-                    CborValue::Array(arr) => arr
-                        .first()
-                        .and_then(|row| match row {
-                            CborValue::Map(map) => {
-                                map.first().map(|(_, v)| AnySqliteType::untyped(v.clone()))
-                            }
-                            _ => None,
-                        })
-                        .unwrap_or(result),
-                    _ => result,
-                })
+                Ok(result.unwrap_scalar())
             })
         })
     }

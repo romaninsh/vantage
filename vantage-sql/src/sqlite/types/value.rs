@@ -26,6 +26,23 @@ impl AnySqliteType {
             type_variant: Some(variant),
         }
     }
+
+    /// If this is a single-row, single-column result `[{col: value}]`,
+    /// extract the scalar value. Otherwise return self unchanged.
+    pub fn unwrap_scalar(self) -> Self {
+        match self.value() {
+            CborValue::Array(arr) if arr.len() == 1 => {
+                if let CborValue::Map(map) = &arr[0] {
+                    if map.len() == 1 {
+                        let (_, v) = &map[0];
+                        return AnySqliteType::untyped(v.clone());
+                    }
+                }
+                self
+            }
+            _ => self,
+        }
+    }
 }
 
 /// AnySqliteType is itself a SqliteType — passthrough for type-erased values.
@@ -209,17 +226,9 @@ fn cbor_to_json(val: CborValue) -> JsonValue {
             JsonValue::Object(obj)
         }
         CborValue::Tag(10, inner) => {
-            // Decimal — try to parse as JSON number, fall back to string
+            // Decimal — preserve as string to avoid precision loss
             if let CborValue::Text(s) = *inner {
-                if let Ok(i) = s.parse::<i64>() {
-                    JsonValue::Number(i.into())
-                } else if let Ok(f) = s.parse::<f64>() {
-                    serde_json::Number::from_f64(f)
-                        .map(JsonValue::Number)
-                        .unwrap_or(JsonValue::String(s))
-                } else {
-                    JsonValue::String(s)
-                }
+                JsonValue::String(s)
             } else {
                 cbor_to_json(*inner)
             }
@@ -277,18 +286,9 @@ macro_rules! impl_try_from_sqlite {
                         return Ok(v);
                     }
                     // If result is [{col: value}], extract the scalar
-                    if let CborValue::Array(ref arr) = *val.value() {
-                        if arr.len() == 1 {
-                            if let CborValue::Map(ref map) = arr[0] {
-                                if map.len() == 1 {
-                                    let (_, v) = &map[0];
-                                    let inner = AnySqliteType::untyped(v.clone());
-                                    if let Some(v) = inner.try_get::<$ty>() {
-                                        return Ok(v);
-                                    }
-                                }
-                            }
-                        }
+                    let val = val.unwrap_scalar();
+                    if let Some(v) = val.try_get::<$ty>() {
+                        return Ok(v);
                     }
                     Err(vantage_core::error!(
                         "Cannot convert AnySqliteType to target type",

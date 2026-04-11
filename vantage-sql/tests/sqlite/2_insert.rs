@@ -30,7 +30,6 @@ async fn setup() -> SqliteDB {
     db
 }
 
-/// Helper: execute expression, unwrap result into JSON rows.
 /// Helper: unwrap result into Vec of Record<AnySqliteType>.
 fn records(result: AnySqliteType) -> Vec<Record<AnySqliteType>> {
     Vec::<Record<AnySqliteType>>::try_from(result).unwrap()

@@ -102,7 +102,10 @@ fn bind_by_cbor<'q>(
                 query.bind(None::<String>)
             }
         }
-        _ => query.bind(None::<String>),
+        other => panic!(
+            "bind_by_cbor: unexpected CBOR value type {:?} — this is a bug upstream",
+            other
+        ),
     }
 }
 
@@ -177,7 +180,7 @@ fn sqlite_column_to_cbor(
         row.columns()[ordinal].name(),
         declared_type,
     );
-    (CborValue::Null, Some(SqliteTypeVariants::Null))
+    (CborValue::Null, None)
 }
 
 #[cfg(test)]

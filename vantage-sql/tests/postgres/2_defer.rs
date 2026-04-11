@@ -8,7 +8,7 @@ use vantage_sql::postgres::{AnyPostgresType, PostgresDB};
 use vantage_sql::postgres_expr;
 use vantage_types::Record;
 
-const PG_URL: &str = "postgres://vantage:vantage@localhost:5432/vantage";
+const PG_URL: &str = "postgres://vantage:vantage@localhost:5433/vantage";
 
 fn records(result: AnyPostgresType) -> Vec<Record<AnyPostgresType>> {
     Vec::<Record<AnyPostgresType>>::try_from(result).unwrap()
@@ -21,24 +21,24 @@ async fn setup(prefix: &str) -> (PostgresDB, PostgresDB) {
     let config_table = format!("{}_config", prefix);
     let product_table = format!("{}_product", prefix);
 
-    sqlx::query(&format!("DROP TABLE IF EXISTS `{}`", config_table))
+    sqlx::query(&format!("DROP TABLE IF EXISTS \"{}\"", config_table))
         .execute(db.pool())
         .await
         .unwrap();
-    sqlx::query(&format!("DROP TABLE IF EXISTS `{}`", product_table))
+    sqlx::query(&format!("DROP TABLE IF EXISTS \"{}\"", product_table))
         .execute(db.pool())
         .await
         .unwrap();
 
     sqlx::query(&format!(
-        "CREATE TABLE `{}` (`key` VARCHAR(255) PRIMARY KEY, value BIGINT NOT NULL)",
+        "CREATE TABLE \"{}\" (key TEXT PRIMARY KEY, value BIGINT NOT NULL)",
         config_table
     ))
     .execute(db.pool())
     .await
     .unwrap();
     sqlx::query(&format!(
-        "INSERT INTO `{}` VALUES ('min_price', 150)",
+        "INSERT INTO \"{}\" VALUES ('min_price', 150)",
         config_table
     ))
     .execute(db.pool())
@@ -46,14 +46,14 @@ async fn setup(prefix: &str) -> (PostgresDB, PostgresDB) {
     .unwrap();
 
     sqlx::query(&format!(
-        "CREATE TABLE `{}` (id VARCHAR(255) PRIMARY KEY, name TEXT NOT NULL, price BIGINT NOT NULL)",
+        "CREATE TABLE \"{}\" (id TEXT PRIMARY KEY, name TEXT NOT NULL, price BIGINT NOT NULL)",
         product_table
     ))
     .execute(db.pool())
     .await
     .unwrap();
     sqlx::query(&format!(
-        "INSERT INTO `{}` VALUES ('a', 'Cheap Thing', 50), ('b', 'Mid Thing', 150), ('c', 'Expensive Thing', 300)",
+        "INSERT INTO \"{}\" VALUES ('a', 'Cheap Thing', 50), ('b', 'Mid Thing', 150), ('c', 'Expensive Thing', 300)",
         product_table
     ))
     .execute(db.pool())
@@ -71,13 +71,13 @@ async fn test_cross_database_deferred() {
     let (config_db, shop_db) = setup("defer1").await;
 
     let threshold_query = postgres_expr!(
-        "SELECT value FROM `defer1_config` WHERE `key` = {}",
+        "SELECT value FROM \"defer1_config\" WHERE key = {}",
         "min_price"
     );
     let deferred_threshold = config_db.defer(threshold_query);
 
     let shop_query = Expression::<AnyPostgresType>::new(
-        "SELECT name FROM `defer1_product` WHERE price >= {} ORDER BY price",
+        "SELECT name FROM \"defer1_product\" WHERE price >= {} ORDER BY price",
         vec![ExpressiveEnum::Deferred(deferred_threshold)],
     );
 
@@ -101,13 +101,13 @@ async fn test_deferred_mixed_with_scalars() {
     let (config_db, shop_db) = setup("defer2").await;
 
     let threshold_query = postgres_expr!(
-        "SELECT value FROM `defer2_config` WHERE `key` = {}",
+        "SELECT value FROM \"defer2_config\" WHERE key = {}",
         "min_price"
     );
     let deferred_threshold = config_db.defer(threshold_query);
 
     let shop_query = Expression::<AnyPostgresType>::new(
-        "SELECT name FROM `defer2_product` WHERE price >= {} AND name != {} ORDER BY price",
+        "SELECT name FROM \"defer2_product\" WHERE price >= {} AND name != {} ORDER BY price",
         vec![
             ExpressiveEnum::Deferred(deferred_threshold),
             ExpressiveEnum::Scalar(AnyPostgresType::new("Mid Thing".to_string())),
@@ -130,7 +130,7 @@ async fn test_nested_deferred() {
     let (config_db, shop_db) = setup("defer3").await;
 
     let threshold_query = postgres_expr!(
-        "SELECT value FROM `defer3_config` WHERE `key` = {}",
+        "SELECT value FROM \"defer3_config\" WHERE key = {}",
         "min_price"
     );
     let deferred_threshold = config_db.defer(threshold_query);
@@ -141,7 +141,7 @@ async fn test_nested_deferred() {
     );
 
     let shop_query = postgres_expr!(
-        "SELECT name FROM `defer3_product` WHERE {} ORDER BY price",
+        "SELECT name FROM \"defer3_product\" WHERE {} ORDER BY price",
         (inner)
     );
 

@@ -6,7 +6,6 @@ pub(crate) mod row;
 pub mod statements;
 pub mod types;
 
-use ciborium::Value as CborValue;
 use sqlx::sqlite::SqlitePool;
 
 pub use types::{AnySqliteType, SqliteType};
@@ -37,17 +36,6 @@ impl SqliteDB {
         use vantage_expressions::ExprDataSource;
         let expr = select.as_aggregate(func, column);
         let result = self.execute(&expr).await?;
-        Ok(match result.value() {
-            CborValue::Array(arr) => arr
-                .first()
-                .and_then(|row| match row {
-                    CborValue::Map(map) => {
-                        map.first().map(|(_, v)| AnySqliteType::untyped(v.clone()))
-                    }
-                    _ => None,
-                })
-                .unwrap_or(result),
-            _ => result,
-        })
+        Ok(result.unwrap_scalar())
     }
 }
