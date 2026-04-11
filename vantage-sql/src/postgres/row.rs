@@ -375,5 +375,5 @@ fn pg_column_to_cbor(
         row.columns()[ordinal].name(),
         type_name,
     );
-    (CborValue::Null, Some(PostgresTypeVariants::Null))
+    (CborValue::Null, None)
 }
