@@ -68,42 +68,41 @@ jobs:
         if: matrix.backend == 'sqlite'
         run: bash vantage-sql/scripts/sqlite/ingress.sh
 
-      - name: Populate PostgreSQL database
+      - name: Populate PostgreSQL databases
         if: matrix.backend == 'postgres'
         run: |
           cd vantage-sql/scripts/postgres
+          # Load into shared vantage db (existing tests)
           for f in db/v[0-3]*.sql; do
-            echo "Loading $f..."
+            echo "Loading $f into vantage..."
             PGPASSWORD=vantage psql -h localhost -p 5433 -U vantage -d vantage -f "$f"
           done
-
-      - name: Populate PostgreSQL-specific database
-        if: matrix.backend == 'postgres'
-        run: |
-          cd vantage-sql/scripts/postgres
-          PGPASSWORD=vantage psql -h localhost -p 5433 -U vantage -d postgres -c "CREATE DATABASE vantage_pg OWNER vantage;"
-          for f in db/v4*.sql; do
-            echo "Loading $f..."
-            PGPASSWORD=vantage psql -h localhost -p 5433 -U vantage -d vantage_pg -f "$f"
+          # Create per-file databases (new pattern)
+          for f in db/v*.sql; do
+            db_name="vantage_$(basename "$f" .sql)"
+            echo "Creating $db_name and loading $(basename "$f")..."
+            PGPASSWORD=vantage psql -h localhost -p 5433 -U vantage -d postgres \
+              -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$db_name' AND pid <> pg_backend_pid();" \
+              -c "DROP DATABASE IF EXISTS \"$db_name\";" \
+              -c "CREATE DATABASE \"$db_name\" OWNER vantage;"
+            PGPASSWORD=vantage psql -h localhost -p 5433 -U vantage -d "$db_name" -f "$f"
           done
 
-      - name: Populate MySQL database
+      - name: Populate MySQL databases
         if: matrix.backend == 'mysql'
         run: |
           cd vantage-sql/scripts/mysql
+          # Load into shared vantage db (existing tests)
           for f in db/v[0-3]*.sql; do
-            echo "Loading $f..."
+            echo "Loading $f into vantage..."
             mysql -h 127.0.0.1 -uvantage -pvantage vantage < "$f"
           done
-
-      - name: Populate MySQL-specific database
-        if: matrix.backend == 'mysql'
-        run: |
-          cd vantage-sql/scripts/mysql
-          mysql -h 127.0.0.1 -uroot -proot -e "CREATE DATABASE vantage_v4_my; GRANT ALL PRIVILEGES ON vantage_v4_my.* TO 'vantage'@'%';"
-          for f in db/v4*.sql; do
-            echo "Loading $f..."
-            mysql -h 127.0.0.1 -uvantage -pvantage vantage_v4_my < "$f"
+          # Create per-file databases (new pattern)
+          for f in db/v*.sql; do
+            db_name="vantage_$(basename "$f" .sql)"
+            echo "Creating $db_name and loading $(basename "$f")..."
+            mysql -h 127.0.0.1 -uroot -proot -e "DROP DATABASE IF EXISTS \`$db_name\`; CREATE DATABASE \`$db_name\`; GRANT ALL PRIVILEGES ON \`$db_name\`.* TO 'vantage'@'%';"
+            mysql -h 127.0.0.1 -uvantage -pvantage "$db_name" < "$f"
           done
 
       - name: Build

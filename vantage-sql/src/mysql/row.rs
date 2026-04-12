@@ -303,7 +303,8 @@ fn mysql_column_to_cbor(
         }
         "TEXT" | "TINYTEXT" | "MEDIUMTEXT" | "LONGTEXT" | "VARCHAR" | "CHAR" | "ENUM" | "SET" => {
             if let Ok(v) = row.try_get::<String, _>(ordinal) {
-                return (CborValue::Text(v), Some(MysqlTypeVariants::Text));
+                // Untyped — allows try_get to attempt parsing as DateTime, Decimal, etc.
+                return (CborValue::Text(v), None);
             }
         }
         "BLOB" | "TINYBLOB" | "MEDIUMBLOB" | "LONGBLOB" | "BINARY" | "VARBINARY" => {
@@ -316,7 +317,7 @@ fn mysql_column_to_cbor(
                 return (
                     CborValue::Tag(
                         101,
-                        Box::new(CborValue::Text(v.format("%H:%M:%S").to_string())),
+                        Box::new(CborValue::Text(v.format("%H:%M:%S%.f").to_string())),
                     ),
                     Some(MysqlTypeVariants::Time),
                 );
@@ -398,7 +399,7 @@ fn mysql_column_to_cbor(
         return (CborValue::Float(v), Some(MysqlTypeVariants::Float8));
     }
     if let Ok(v) = row.try_get::<String, _>(ordinal) {
-        return (CborValue::Text(v), Some(MysqlTypeVariants::Text));
+        return (CborValue::Text(v), None);
     }
 
     // Intentional: surface decode failures so missing type handlers are noticed early.

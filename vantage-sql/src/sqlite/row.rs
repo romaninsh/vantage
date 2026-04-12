@@ -47,6 +47,13 @@ pub(crate) fn bind_sqlite_value<'q>(
         Some(SqliteTypeVariants::Text) => match cbor {
             CborValue::Null => query.bind(None::<String>),
             CborValue::Text(s) => query.bind(s.as_str()),
+            CborValue::Tag(_, inner) => {
+                if let CborValue::Text(s) = inner.as_ref() {
+                    query.bind(s.as_str())
+                } else {
+                    query.bind(None::<String>)
+                }
+            }
             _ => query.bind(None::<String>),
         },
         Some(SqliteTypeVariants::Numeric) => match cbor {
@@ -172,7 +179,8 @@ fn sqlite_column_to_cbor(
         return (CborValue::Float(v), Some(SqliteTypeVariants::Real));
     }
     if let Ok(v) = row.try_get::<String, _>(ordinal) {
-        return (CborValue::Text(v), Some(SqliteTypeVariants::Text));
+        // Untyped — allows try_get to attempt parsing as DateTime, Decimal, etc.
+        return (CborValue::Text(v), None);
     }
 
     eprintln!(

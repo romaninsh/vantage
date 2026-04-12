@@ -140,7 +140,24 @@ macro_rules! impl_from_for_any_sqlite {
     };
 }
 
-impl_from_for_any_sqlite!(i8, i16, i32, i64, u8, u16, u32, f32, f64, bool, String);
+impl_from_for_any_sqlite!(
+    i8,
+    i16,
+    i32,
+    i64,
+    u8,
+    u16,
+    u32,
+    f32,
+    f64,
+    bool,
+    String,
+    chrono::NaiveDate,
+    chrono::NaiveTime,
+    chrono::NaiveDateTime,
+    chrono::DateTime<chrono::Utc>,
+    rust_decimal::Decimal
+);
 
 impl From<&str> for AnySqliteType {
     fn from(val: &str) -> Self {
@@ -183,7 +200,24 @@ macro_rules! impl_expressive_for_sqlite_scalar {
     };
 }
 
-impl_expressive_for_sqlite_scalar!(i8, i16, i32, i64, u8, u16, u32, f32, f64, bool, String);
+impl_expressive_for_sqlite_scalar!(
+    i8,
+    i16,
+    i32,
+    i64,
+    u8,
+    u16,
+    u32,
+    f32,
+    f64,
+    bool,
+    String,
+    chrono::NaiveDate,
+    chrono::NaiveTime,
+    chrono::NaiveDateTime,
+    chrono::DateTime<chrono::Utc>,
+    rust_decimal::Decimal
+);
 
 impl Expressive<AnySqliteType> for &str {
     fn expr(&self) -> Expression<AnySqliteType> {
@@ -229,7 +263,7 @@ macro_rules! impl_try_from_sqlite {
     };
 }
 
-impl_try_from_sqlite!(i64, i32, f64, bool, String);
+impl_try_from_sqlite!(i64, i32, f64, bool, String, rust_decimal::Decimal);
 
 /// Extract first row from a CBOR result array as a map.
 fn extract_first_row(val: &AnySqliteType) -> Option<CborValue> {
