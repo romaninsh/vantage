@@ -1,8 +1,9 @@
 use vantage_core::Result;
-use vantage_expressions::Expressive;
 use vantage_expressions::traits::datasource::SelectableDataSource;
+use vantage_expressions::{Expression, Expressive};
 
 use crate::select::SurrealSelect;
+use crate::select::select_field::SelectField;
 use crate::surrealdb::SurrealDB;
 use crate::types::AnySurrealType;
 
@@ -11,6 +12,19 @@ impl SelectableDataSource<AnySurrealType> for SurrealDB {
 
     fn select(&self) -> Self::Select {
         SurrealSelect::new()
+    }
+
+    fn add_select_column(
+        &self,
+        select: &mut Self::Select,
+        expression: Expression<AnySurrealType>,
+        alias: Option<&str>,
+    ) {
+        let mut field = SelectField::new(expression);
+        if let Some(a) = alias {
+            field = field.with_alias(a.to_string());
+        }
+        select.fields.push(field);
     }
 
     async fn execute_select(&self, select: &Self::Select) -> Result<Vec<AnySurrealType>> {

@@ -20,7 +20,7 @@ use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 /// use vantage_sql::primitives::date_format::DateFormat;
 ///
 /// DateFormat::new(ident("created_at").dot_of("o"), "%Y-%m")
-///     .with_alias("month")
+///     .as_alias("month")
 /// ```
 #[derive(Debug, Clone)]
 pub struct DateFormat<T: Debug + Display + Clone> {

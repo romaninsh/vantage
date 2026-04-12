@@ -109,7 +109,7 @@ fn query03() {
     let result = select.preview();
     assert_eq!(
         result,
-        "SELECT name, price, inventory.stock AS stock FROM product WHERE is_deleted = false"
+        "SELECT name, price, inventory.stock FROM product WHERE is_deleted = false"
     );
 }
 

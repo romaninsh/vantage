@@ -3,15 +3,15 @@ use vantage_expressions::{Expression, Expressive, expr_any};
 
 /// Extension trait that adds `.as_alias()` to any [`Expressive<T>`] type.
 ///
-/// Wraps the expression as `(expr) AS <quoted_alias>`, using [`Identifier`]
+/// Wraps the expression as `expr AS <quoted_alias>`, using [`Identifier`]
 /// for backend-aware quoting.
 ///
 /// ```ignore
 /// use vantage_sql::primitives::alias::AliasExt;
 ///
 /// Fx::new("count", [mysql_expr!("*")]).as_alias("cnt")
-/// // → (COUNT(*)) AS `cnt`   (MySQL)
-/// // → (COUNT(*)) AS "cnt"   (PostgreSQL)
+/// // → COUNT(*) AS `cnt`   (MySQL)
+/// // → COUNT(*) AS "cnt"   (PostgreSQL)
 /// ```
 pub trait AliasExt<T>: Expressive<T> + Sized {
     #[allow(clippy::wrong_self_convention)]

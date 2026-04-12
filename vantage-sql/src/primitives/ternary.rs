@@ -16,7 +16,7 @@ use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 ///
 /// // With Identifier + Operation:
 /// ternary(Identifier::new("role").eq("admin"), "Yes", "No")
-///     .with_alias("is_admin")
+///     .as_alias("is_admin")
 ///
 /// // With vendor expression for the condition:
 /// ternary(

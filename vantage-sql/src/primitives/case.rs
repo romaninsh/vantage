@@ -11,7 +11,7 @@ use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 ///     .when(sqlite_expr!("{} >= {}", (Identifier::new("salary")), 100000.0f64), sqlite_expr!("{}", "senior"))
 ///     .when(sqlite_expr!("{} >= {}", (Identifier::new("salary")), 60000.0f64), sqlite_expr!("{}", "mid"))
 ///     .else_(sqlite_expr!("{}", "intern"))
-///     .with_alias("band")
+///     .as_alias("band")
 /// ```
 #[derive(Debug, Clone)]
 pub struct Case<T: Debug + Display + Clone> {

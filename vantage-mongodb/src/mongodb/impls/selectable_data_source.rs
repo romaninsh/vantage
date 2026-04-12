@@ -5,6 +5,7 @@
 
 use futures_util::TryStreamExt;
 
+use vantage_expressions::Expression;
 use vantage_expressions::traits::datasource::SelectableDataSource;
 
 use crate::condition::MongoCondition;
@@ -17,6 +18,19 @@ impl SelectableDataSource<AnyMongoType, MongoCondition> for MongoDB {
 
     fn select(&self) -> Self::Select {
         MongoSelect::new()
+    }
+
+    fn add_select_column(
+        &self,
+        select: &mut Self::Select,
+        _expression: Expression<AnyMongoType>,
+        alias: Option<&str>,
+    ) {
+        // MongoDB projections use field names, not expressions.
+        // If an alias is given, use it as the projected field name.
+        if let Some(alias) = alias {
+            select.fields.push(alias.to_string());
+        }
     }
 
     async fn execute_select(
