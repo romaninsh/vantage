@@ -17,6 +17,11 @@ pub struct SqliteDB {
 }
 
 impl SqliteDB {
+    /// Create from an existing sqlx connection pool.
+    pub fn new(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+
     pub async fn connect(url: &str) -> Result<Self, sqlx::Error> {
         let pool = SqlitePool::connect(url).await?;
         Ok(Self { pool })

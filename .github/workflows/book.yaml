@@ -29,19 +29,29 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cargo/bin
-          key: mdbook-preprocessors-${{ runner.os }}-v1
+          key: mdbook-preprocessors-${{ runner.os }}-v2
+
+      - name: Install Rust toolchain
+        run: rustup component add rust-analyzer
 
       - name: Install preprocessors
         run: |
           command -v mdbook-toc || cargo install mdbook-toc --locked
           command -v mdbook-mermaid || cargo install mdbook-mermaid --locked
           command -v mdbook-admonish || cargo install mdbook-admonish --git https://github.com/padamson/mdbook-admonish --branch feat/mdbook-0.5-compat --locked
+          command -v mdbook-rustdoc-links || cargo install mdbook-rustdoc-links --locked
 
       - name: Install assets
         working-directory: ./docs4
         run: |
           mdbook-admonish install
           mdbook-mermaid install
+
+      - name: Enable rustdoc-links
+        working-directory: ./docs4
+        run: |
+          sed -i 's/^# \[preprocessor\.rustdoc-links\]/[preprocessor.rustdoc-links]/' book.toml
+          sed -i 's/^# manifest-dir = "."/manifest-dir = "."/' book.toml
 
       - name: Build
         working-directory: ./docs4

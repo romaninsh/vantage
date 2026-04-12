@@ -7,6 +7,10 @@ title = "Vantage 0.4 Framework"
 [preprocessor.toc]
 max-level = 3
 
+# rustdoc-links is slow (~2min); disabled locally, enabled in CI workflow
+# [preprocessor.rustdoc-links]
+# manifest-dir = "."
+
 [preprocessor.admonish]
 assets_version = "3.1.0" # do not edit: managed by `mdbook-admonish install`
 command = "mdbook-admonish"

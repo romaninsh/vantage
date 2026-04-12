@@ -1,0 +1,9 @@
+[package]
+name = "learn-1"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1.51.1", features = ["full"] }
+vantage-expressions = { version = "0.3.0", path = "../vantage-expressions" }
+vantage-sql = { version = "0.4.0", path = "../vantage-sql", features = ["sqlite"] }
