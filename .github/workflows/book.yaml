@@ -5,11 +5,11 @@ on:
     branches:
       - main
     paths:
-      - "docs/**"
+      - "docs4/**"
 
   pull_request:
     paths:
-      - "docs/**"
+      - "docs4/**"
 
 jobs:
   deploy:
@@ -18,19 +18,32 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Setup mdBook
         uses: peaceiris/actions-mdbook@v2
         with:
-          mdbook-version: "latest"
+          mdbook-version: "0.5.2"
 
-      - run: mdbook build
-        working-directory: ./docs
+      - name: Install preprocessors
+        run: |
+          cargo install mdbook-toc --locked
+          cargo install mdbook-mermaid --locked
+          cargo install mdbook-admonish --git https://github.com/padamson/mdbook-admonish --branch feat/mdbook-0.5-compat --locked
+
+      - name: Install assets
+        working-directory: ./docs4
+        run: |
+          mdbook-admonish install
+          mdbook-mermaid install
+
+      - name: Build
+        working-directory: ./docs4
+        run: mdbook build
 
       - name: Deploy
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v4
         if: ${{ github.ref == 'refs/heads/main' }}
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./docs/book
+          publish_dir: ./docs4/book

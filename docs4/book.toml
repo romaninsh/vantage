@@ -1,0 +1,18 @@
+[book]
+authors = ["Romans Malinovskis"]
+language = "en"
+src = "src"
+title = "Vantage 0.4 Framework"
+
+[preprocessor.toc]
+max-level = 3
+
+[preprocessor.admonish]
+assets_version = "3.1.0" # do not edit: managed by `mdbook-admonish install`
+command = "mdbook-admonish"
+
+[preprocessor.mermaid]
+
+[output.html]
+additional-css = ["./mdbook-admonish.css"]
+additional-js = ["mermaid.min.js", "mermaid-init.js"]

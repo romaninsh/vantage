@@ -32,13 +32,20 @@ and calculated columns entirely by cleverly building queries. What's even more
 impressive is that it's done without the need for a user to understand which
 DataSource is used.
 
-## rewrite
+## Version History
 
-Vantage is under rewrite. The vantage/ folder contains version 0.2. It had some
-limitation, so it's undergoing a rewrite and restructure, majority of crates
-(vantage-surrealdb, vantage-expressions, etc) are part of 0.3 rewrite.
+- **DORM (pre-0.1)** — Original name, Postgres-only, monolithic. April–November 2024.
+- **Vantage 0.1** — Renamed to Vantage. First published crate. December 2024.
+- **Vantage 0.2** — Focus on Entity Framework and Model-Driven Architecture. The `vantage/`
+  crate contains this version. February 2025.
+- **Vantage 0.3** — Initial separation into crates, strong focus on SurrealDB, culminated
+  with UI adapters (egui, gpui, slint, cursive, tauri, tui). October 2025.
+- **Vantage 0.4** — Global rewrite starting with type system. CBOR migration, MongoDB and
+  CSV backends, API client/pool, strict type conversions, vantage-core error handling.
+  Current version.
 
-Eventually all the features of vantage/ will be migrated into appropriate crates.
+The `vantage/` folder still contains the 0.2 monolith. All active development happens in
+the separate crates (vantage-expressions, vantage-table, vantage-surrealdb, etc).
 
 ## Example
 
@@ -134,25 +141,26 @@ stuff:
     let report = orders.generate_report().await?;
 ```
 
-## What changes in 0.3
+## What changed in 0.3
 
-I started rewrite of vantage/ in order to add support for multiple databases,
-async nested queries, support for query return types and better implementation
-of protocols. Also rather than having a monolithic library, we now support
-datasource crates (e.g. vantage-surrealdb) which provide comprehensive
-extension across multiple Vantage features. This is done by implementing
-protocols such as trait Selectable - interface for querybuilders or trait
-Expressionable.
+Version 0.3 broke the monolith into crates, added SurrealDB as the primary
+backend, and introduced protocol-based design (traits like Selectable,
+Expressionable). Generic table usage through dyn box or concrete structs.
+Culminated with UI adapters for 6 frameworks.
 
-Basically with version 0.3 it's possible to have a generic table usage (through
-a dyn box) but you can also declare it using structs if you are certain about
-specific database use. Benefits of structs is access to some vendor-specific
-features. Dyn box though allows to create generic code that would work with any
-query builder, any table or any datasource.
+## What changes in 0.4
 
-### Migration Status (0.2 → 0.3)
+Version 0.4 is a global rewrite starting with the type system. Key changes:
+- Custom type systems per datasource via `vantage_type_system!` macro
+- CBOR binary protocol replacing JSON for SurrealDB
+- New backends: MongoDB, CSV, API client/pool, SQLite (via sqlx)
+- Strict type conversions (no silent casting)
+- vantage-core with unified error handling
+- Cross-database integration via `AnyTable::from_table()`
 
-**bakery_model3** demonstrates complete migration path from 0.2 to 0.3:
+### Migration Status (0.2 → 0.4)
+
+**bakery_model3** demonstrates complete migration path from 0.2 to 0.4:
 - ✅ Entity definitions adapted for SurrealDB (string IDs, embedded documents)
 - ✅ Table trait patterns established using vantage-table
 - ✅ Expression system integrated via vantage-expressions
@@ -180,7 +188,7 @@ query builder, any table or any datasource.
 - ⏳ Condition propagation in references (WHERE clauses for related queries)
 - ⏳ get_linked_table for JOIN scenarios
 
-Key architectural changes:
+Key architectural changes (0.3 → 0.4):
 - Table definitions use builder pattern instead of static initialization
 - Field accessors return Expression instead of typed column objects
 - Database-specific features (like SurrealDB embedded docs) properly supported
@@ -408,7 +416,7 @@ building data applications where entity schemas are defined in config files
 rather than Rust code. Relations can be traversed via CLI commands like
 `cli bakery name="X" ref products list`.
 
-**vantage-table** provides the core Table<DataSource, Entity> abstraction in
+**vantage-table** provides the core Table<DataSource, Entity> abstraction since
 0.3, replacing the monolithic table implementation from 0.2. Supports table
 definition with columns, conditions, ordering, pagination, and relationships.
 AnyTable provides type erasure with downcasting (stores TypeId and type names
@@ -419,11 +427,11 @@ relationship traversal with .get_ref() returning AnyTable and .get_ref_as()
 for automatic downcasting. The .with_id_column() helper simplifies ID column
 definition.
 
-The Vantage 0.3 ecosystem consists of three main layers: core query building
+The Vantage 0.4 ecosystem consists of three main layers: core query building
 framework (expressions, database-specific builders), data management (dataset
 traits, caching, adapters), and UI integration (framework adapters and
 examples). This architecture enables building data applications that work
 across multiple databases and UI frameworks while maintaining type safety and
-performance. The 0.3 rewrite prioritizes protocol-based design over
-inheritance, enabling better cross-database compatibility but requiring
-significant API changes from 0.2.
+performance. The protocol-based design (introduced in 0.3, refined in 0.4)
+prioritizes traits over inheritance, enabling cross-database compatibility
+with strict type safety.

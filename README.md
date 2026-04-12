@@ -49,13 +49,13 @@ Vantage offers the following features out of the box:
 With all of the fundamental blocks and interfaces in place, Vantage can be extended in several ways.
 First - persistence implementation:
 
-- [`vantage-surrealdb`](vantage-surrealdb/README.md) - Full implementation for SurrealDB with
-  custom types, graph-based queries, CRUD, relationships, and aggregations. Built on
+- [`vantage-surrealdb`](vantage-surrealdb/README.md) - Full implementation for SurrealDB with custom
+  types, graph-based queries, CRUD, relationships, and aggregations. Built on
   [`surreal-client`](surreal-client/README.md).
 - [`vantage-sql`](vantage-sql/README.md) - SQLite implementation (via sqlx) with full CRUD,
   relationships, aggregations, and query builder with JOINs, window functions, and CTEs.
-- `vantage-csv` - CSV file persistence with read support, conditions, relationships, and custom
-  type system. No query builder (conditions are evaluated in-memory).
+- `vantage-csv` - CSV file persistence with read support, conditions, relationships, and custom type
+  system. No query builder (conditions are evaluated in-memory).
 - [`vantage-api-pool`](vantage-api-pool/README.md) - High-performance REST API client pool with
   auto-pagination, prefetching, and rate limiting. Read-only `TableSource` over paginated APIs.
 - `vantage-api-client` - Simple REST API client implementing read-only `TableSource`.
@@ -71,13 +71,16 @@ implement generic UI or API component:
 
 (`*` indicate commercial component)
 
-Vantage `0.3` is the current version. Recent additions:
+Vantage `0.4` is the current version — a global rewrite starting with the type system. Key
+additions:
 
-- **Full type system overhaul** - Custom type systems per datasource (`SurrealType`, `SqliteType`,
-  `CsvType`) with `vantage_type_system!` macro
-- **SQLite backend** - Full implementation with query builder, JOINs, window functions, CTEs
+- **Custom type systems** - Per-datasource types (`SurrealType`, `SqliteType`, `CsvType`,
+  `AnyMongoType`) via `vantage_type_system!` macro
+- **CBOR binary protocol** - Replacing JSON for SurrealDB communication
+- **New backends** - MongoDB, CSV persistence, API client/pool, SQLite (via sqlx)
+- **Strict type conversions** - No silent casting between incompatible types
+- **vantage-core** - Unified error handling with `VantageError`
 - **Cross-database integration** - `AnyTable::from_table()` wraps any datasource for generic code
-- **Binary CBOR support** - SurrealDB client uses binary CBOR for improved performance
 - **References** - Traverse between `Table<Client>` into `Table<Order>`, even across databases
 - **Generic Operation trait** - Blanket `eq`/`ne`/`gt`/`lt`/`in_` for all `Expressive` types
 - **Multi-source CLI** - Same `handle_commands` function works with CSV, SQLite, and SurrealDB
@@ -642,15 +645,17 @@ API response for `GET /orders?client_id=2&page=1`
 
 Work-in-progress features for the next release:
 
+- **Condition propagation** - WHERE clauses flowing through references automatically.
 - **PostgreSQL / MySQL** - Extend `vantage-sql` beyond SQLite using sqlx's multi-database support.
 - **Live Tables** - Mutexed tables with real-time updates and CDC integration.
+- **get_linked_table** - JOIN scenarios across table references.
 
 ## Roadmap
 
 Vantage needs a bit more work. Large number of features is already implemented, but some notable
 features are still missing:
 
-- Joins - present in SQLite query builder, not yet in SurrealDB 0.3 table layer
+- Condition propagation in references (WHERE clauses for related queries)
 - Column hooks - allowing field mappings and custom calculation is still TODO
 - Graph relations - implement hasMany support for SurrealDB graph edges
 - Implement some RestAPI adaptors (e.g. GitLab)
@@ -658,7 +663,7 @@ features are still missing:
 
 ## Installation
 
-For 0.3, clone this repository and specify path to a crate in your `Cargo.toml`:
+For 0.4, clone this repository and specify path to a crate in your `Cargo.toml`:
 
 ```toml
 vantage-table = { path = "../vantage/vantage-table" }
@@ -670,18 +675,17 @@ If you like what you see so far - reach out to me on BlueSky:
 
 ## Current status
 
-Vantage `0.3` is under active development. The table below shows implementation progress for each
-backend, measured against the steps in the
-[Persistence Guide](NEW_PERSISTENCE_GUIDE.md):
+Vantage `0.4` is under active development. The table below shows implementation progress for each
+backend, measured against the steps in the [Persistence Guide](NEW_PERSISTENCE_GUIDE.md):
 
-| Step | Feature | SurrealDB | SQLite | CSV | REST API |
-|------|---------|-----------|--------|-----|----------|
-| 1 | Type system (`vantage_type_system!`, type markers) | Full | Full | Full | serde (Path A) |
-| 2 | Expressions (`ExprDataSource`, `defer()`, vendor macro) | Full | Full | In-memory eval | Minimal |
-| 3 | Query builder (`Selectable`, `SelectableDataSource`) | Full | Full (JOINs, CTEs, window fn) | -- | -- |
-| 4 | Table abstraction (`TableSource`, CRUD, aggregates) | Full | Full | Read-only | Read-only |
-| 5 | Relationships (`with_one`, `with_many`, `get_ref_as`) | Full | Full | Full | -- |
-| 6 | Multi-backend (`AnyTable`, CLI) | Full | Full | Full | Full |
+| Step | Feature                                                 | SurrealDB | SQLite                        | CSV            | MongoDB | REST API       |
+| ---- | ------------------------------------------------------- | --------- | ----------------------------- | -------------- | ------- | -------------- |
+| 1    | Type system (`vantage_type_system!`, type markers)      | Full      | Full                          | Full           | Full    | serde (Path A) |
+| 2    | Expressions (`ExprDataSource`, `defer()`, vendor macro) | Full      | Full                          | In-memory eval | Stub    | Minimal        |
+| 3    | Query builder (`Selectable`, `SelectableDataSource`)    | Full      | Full (JOINs, CTEs, window fn) | --             | --      | --             |
+| 4    | Table abstraction (`TableSource`, CRUD, aggregates)     | Full      | Full                          | Read-only      | Full    | Read-only      |
+| 5    | Relationships (`with_one`, `with_many`, `get_ref_as`)   | Full      | Full                          | Full           | --      | --             |
+| 6    | Multi-backend (`AnyTable`, CLI)                         | Full      | Full                          | Full           | Full    | Full           |
 
 ## Author
 
