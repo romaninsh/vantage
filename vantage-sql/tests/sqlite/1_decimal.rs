@@ -136,11 +136,9 @@ async fn test_real_simple() {
         name: "d".into(),
         value: dec("123.456"),
     };
-    let result = t.insert(&"r1".to_string(), &orig).await;
-    if let Ok(inserted) = result {
-        let diff = (inserted.value - orig.value).abs();
-        assert!(diff < dec("0.001"), "diff too large: {}", diff);
-    }
+    let inserted = t.insert(&"r1".to_string(), &orig).await.unwrap();
+    let diff = (inserted.value - orig.value).abs();
+    assert!(diff < dec("0.001"), "diff too large: {}", diff);
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -155,10 +153,8 @@ async fn test_integer_whole() {
         name: "d".into(),
         value: dec("42"),
     };
-    let result = t.insert(&"i1".to_string(), &orig).await;
-    if let Ok(inserted) = result {
-        assert_eq!(inserted.value, dec("42"));
-    }
+    let inserted = t.insert(&"i1".to_string(), &orig).await.unwrap();
+    assert_eq!(inserted.value, dec("42"));
 }
 
 #[tokio::test]
@@ -169,11 +165,9 @@ async fn test_integer_truncates() {
         name: "frac".into(),
         value: dec("123.999"),
     };
-    let result = t.insert(&"i2".to_string(), &orig).await;
-    if let Ok(inserted) = result {
-        // SQLite INTEGER affinity — the tag string "123.999" is bound as text,
-        // SQLite may store as-is or convert depending on affinity rules
-        let v = inserted.value;
-        assert!(v == dec("123.999") || v == dec("124"), "unexpected: {}", v);
-    }
+    let inserted = t.insert(&"i2".to_string(), &orig).await.unwrap();
+    // SQLite INTEGER affinity — the tag string "123.999" is bound as text,
+    // SQLite may store as-is or convert depending on affinity rules
+    let v = inserted.value;
+    assert!(v == dec("123.999") || v == dec("124"), "unexpected: {}", v);
 }

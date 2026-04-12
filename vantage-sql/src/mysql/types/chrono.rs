@@ -13,7 +13,7 @@
 //! VARCHAR columns (untyped) can still be extracted as chrono types.
 
 use super::{MysqlType, MysqlTypeDateMarker, MysqlTypeDateTimeMarker, MysqlTypeTimeMarker};
-use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use ciborium::Value;
 
 impl MysqlType for NaiveDate {
@@ -47,7 +47,7 @@ impl MysqlType for NaiveTime {
     fn to_cbor(&self) -> Value {
         Value::Tag(
             101,
-            Box::new(Value::Text(self.format("%H:%M:%S").to_string())),
+            Box::new(Value::Text(self.format("%H:%M:%S%.f").to_string())),
         )
     }
 
@@ -73,7 +73,7 @@ impl MysqlType for NaiveDateTime {
         // MySQL-native format: space separator, no T
         Value::Tag(
             0,
-            Box::new(Value::Text(self.format("%Y-%m-%d %H:%M:%S").to_string())),
+            Box::new(Value::Text(self.format("%Y-%m-%d %H:%M:%S%.f").to_string())),
         )
     }
 
@@ -96,10 +96,10 @@ impl MysqlType for DateTime<Utc> {
     type Target = MysqlTypeDateTimeMarker;
 
     fn to_cbor(&self) -> Value {
-        // MySQL expects "YYYY-MM-DD HH:MM:SS" format, not RFC 3339
+        // MySQL-native format with fractional seconds
         Value::Tag(
             0,
-            Box::new(Value::Text(self.format("%Y-%m-%d %H:%M:%S").to_string())),
+            Box::new(Value::Text(self.format("%Y-%m-%d %H:%M:%S%.f").to_string())),
         )
     }
 
@@ -113,6 +113,33 @@ impl MysqlType for DateTime<Utc> {
                 }
             }
             Value::Text(s) => parse_datetime_utc(&s),
+            _ => None,
+        }
+    }
+}
+
+impl MysqlType for DateTime<FixedOffset> {
+    type Target = MysqlTypeDateTimeMarker;
+
+    fn to_cbor(&self) -> Value {
+        Value::Tag(
+            0,
+            Box::new(Value::Text(
+                self.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string(),
+            )),
+        )
+    }
+
+    fn from_cbor(value: Value) -> Option<Self> {
+        match value {
+            Value::Tag(0, inner) => {
+                if let Value::Text(s) = *inner {
+                    parse_datetime_fixed(&s)
+                } else {
+                    None
+                }
+            }
+            Value::Text(s) => parse_datetime_fixed(&s),
             _ => None,
         }
     }
@@ -136,4 +163,18 @@ fn parse_datetime_utc(s: &str) -> Option<DateTime<Utc>> {
     s.parse::<DateTime<Utc>>()
         .or_else(|_| parse_naive_datetime(s).map(|ndt| ndt.and_utc()).ok_or(()))
         .ok()
+}
+
+fn parse_datetime_fixed(s: &str) -> Option<DateTime<FixedOffset>> {
+    DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%:z")
+        .or_else(|_| DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f%:z"))
+        .or_else(|_| DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%#z"))
+        .or_else(|_| DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f%#z"))
+        .ok()
+        .or_else(|| s.parse::<DateTime<FixedOffset>>().ok())
+        // Naive: assume UTC
+        .or_else(|| {
+            parse_naive_datetime(s)
+                .map(|ndt| ndt.and_utc().fixed_offset())
+        })
 }

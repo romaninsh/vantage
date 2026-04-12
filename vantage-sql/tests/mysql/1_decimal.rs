@@ -167,12 +167,10 @@ async fn test_double_simple() {
         name: "d".into(),
         value: dec("123.456"),
     };
-    let result = try_round_trip(&t, "dbl_s", &orig).await;
-    if let Ok(fetched) = result {
-        // DOUBLE may lose trailing precision
-        let diff = (fetched.value - orig.value).abs();
-        assert!(diff < dec("0.001"), "diff too large: {}", diff);
-    }
+    let fetched = try_round_trip(&t, "dbl_s", &orig).await.unwrap();
+    // DOUBLE may lose trailing precision
+    let diff = (fetched.value - orig.value).abs();
+    assert!(diff < dec("0.001"), "diff too large: {}", diff);
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -186,12 +184,10 @@ async fn test_float_simple() {
         name: "d".into(),
         value: dec("123.456"),
     };
-    let result = try_round_trip(&t, "flt_s", &orig).await;
-    if let Ok(fetched) = result {
-        // FLOAT has ~7 significant digits
-        let diff = (fetched.value - orig.value).abs();
-        assert!(diff < dec("0.01"), "diff too large: {}", diff);
-    }
+    let fetched = try_round_trip(&t, "flt_s", &orig).await.unwrap();
+    // FLOAT has ~7 significant digits
+    let diff = (fetched.value - orig.value).abs();
+    assert!(diff < dec("0.01"), "diff too large: {}", diff);
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -205,10 +201,8 @@ async fn test_bigint_integer() {
         name: "d".into(),
         value: dec("42"),
     };
-    let result = try_round_trip(&t, "bi_int", &orig).await;
-    if let Ok(fetched) = result {
-        assert_eq!(fetched.value, dec("42"));
-    }
+    let fetched = try_round_trip(&t, "bi_int", &orig).await.unwrap();
+    assert_eq!(fetched.value, dec("42"));
 }
 
 #[tokio::test]
@@ -218,11 +212,9 @@ async fn test_bigint_truncates_fraction() {
         name: "frac".into(),
         value: dec("123.999"),
     };
-    let result = try_round_trip(&t, "bi_frac", &orig).await;
-    if let Ok(fetched) = result {
-        // BIGINT truncates fractional part
-        assert_eq!(fetched.value, dec("124"));
-    }
+    let fetched = try_round_trip(&t, "bi_frac", &orig).await.unwrap();
+    // BIGINT truncates fractional part
+    assert_eq!(fetched.value, dec("124"));
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -298,11 +290,8 @@ async fn test_i64_double_large() {
         name: "big".into(),
         value: 9_007_199_254_740_993,
     }; // 2^53 + 1
-    let result = try_i64(&t, "i64_dbl_big", &orig).await;
-    if let Ok(fetched) = result {
-        // DOUBLE can't represent this exactly
-        assert_ne!(fetched.value, orig.value);
-    }
+    // DOUBLE returns Float — no Float→Integer cross-conversion
+    assert!(try_i64(&t, "i64_dbl_big", &orig).await.is_err());
 }
 
 #[tokio::test]
@@ -406,16 +395,13 @@ async fn test_f64_float() {
 
 #[tokio::test]
 async fn test_f64_bigint() {
-    // BIGINT truncates fractional part
+    // BIGINT returns Integer — no Integer→Float cross-conversion
     let t = table_f64!("decimal_bigint", db().await);
     let orig = ValF64 {
         name: "f".into(),
         value: 123.999,
     };
-    let result = try_f64(&t, "f64_bi", &orig).await;
-    if let Ok(fetched) = result {
-        assert_eq!(fetched.value, 124.0);
-    }
+    assert!(try_f64(&t, "f64_bi", &orig).await.is_err());
 }
 
 #[tokio::test]

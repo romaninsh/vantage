@@ -317,7 +317,7 @@ fn mysql_column_to_cbor(
                 return (
                     CborValue::Tag(
                         101,
-                        Box::new(CborValue::Text(v.format("%H:%M:%S").to_string())),
+                        Box::new(CborValue::Text(v.format("%H:%M:%S%.f").to_string())),
                     ),
                     Some(MysqlTypeVariants::Time),
                 );

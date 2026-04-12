@@ -340,7 +340,7 @@ fn pg_column_to_cbor(
                 return (
                     CborValue::Tag(
                         101,
-                        Box::new(CborValue::Text(v.format("%H:%M:%S").to_string())),
+                        Box::new(CborValue::Text(v.format("%H:%M:%S%.f").to_string())),
                     ),
                     Some(PostgresTypeVariants::Time),
                 );
@@ -363,7 +363,7 @@ fn pg_column_to_cbor(
                     CborValue::Tag(
                         0,
                         Box::new(CborValue::Text(
-                            v.format("%Y-%m-%d %H:%M:%S+00").to_string(),
+                            v.format("%Y-%m-%d %H:%M:%S%.f+00").to_string(),
                         )),
                     ),
                     Some(PostgresTypeVariants::DateTime),
@@ -375,7 +375,7 @@ fn pg_column_to_cbor(
                 return (
                     CborValue::Tag(
                         0,
-                        Box::new(CborValue::Text(v.format("%Y-%m-%d %H:%M:%S").to_string())),
+                        Box::new(CborValue::Text(v.format("%Y-%m-%d %H:%M:%S%.f").to_string())),
                     ),
                     Some(PostgresTypeVariants::DateTime),
                 );

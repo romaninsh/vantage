@@ -38,10 +38,9 @@ pub(crate) fn json_to_cbor(val: JsonValue) -> CborValue {
 
 /// Convert a `ciborium::Value` into a `serde_json::Value`.
 ///
-/// Value-preserving: tags are stripped but inner values kept, floats that
-/// can't be represented as JSON numbers become strings, bytes become hex
-/// strings, and high-precision decimals stay as strings when f64 would
-/// lose precision.
+/// Lossy for some types: tags are stripped, bytes become hex strings,
+/// NaN/Infinity become string representations, and decimals are converted
+/// to f64 (losing trailing zeros and precision beyond ~15 digits).
 pub(crate) fn cbor_to_json(val: CborValue) -> JsonValue {
     match val {
         CborValue::Null => JsonValue::Null,

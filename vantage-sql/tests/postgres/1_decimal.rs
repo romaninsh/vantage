@@ -165,11 +165,9 @@ async fn test_double_simple() {
         name: "d".into(),
         value: dec("123.456"),
     };
-    let result = try_round_trip(&t, "dbl_s", &orig).await;
-    if let Ok(fetched) = result {
-        let diff = (fetched.value - orig.value).abs();
-        assert!(diff < dec("0.001"), "diff too large: {}", diff);
-    }
+    let fetched = try_round_trip(&t, "dbl_s", &orig).await.unwrap();
+    let diff = (fetched.value - orig.value).abs();
+    assert!(diff < dec("0.001"), "diff too large: {}", diff);
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -183,11 +181,9 @@ async fn test_real_simple() {
         name: "d".into(),
         value: dec("123.456"),
     };
-    let result = try_round_trip(&t, "real_s", &orig).await;
-    if let Ok(fetched) = result {
-        let diff = (fetched.value - orig.value).abs();
-        assert!(diff < dec("0.01"), "diff too large: {}", diff);
-    }
+    let fetched = try_round_trip(&t, "real_s", &orig).await.unwrap();
+    let diff = (fetched.value - orig.value).abs();
+    assert!(diff < dec("0.01"), "diff too large: {}", diff);
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -201,10 +197,8 @@ async fn test_bigint_integer() {
         name: "d".into(),
         value: dec("42"),
     };
-    let result = try_round_trip(&t, "bi_int", &orig).await;
-    if let Ok(fetched) = result {
-        assert_eq!(fetched.value, dec("42"));
-    }
+    let fetched = try_round_trip(&t, "bi_int", &orig).await.unwrap();
+    assert_eq!(fetched.value, dec("42"));
 }
 
 #[tokio::test]
@@ -214,9 +208,7 @@ async fn test_bigint_truncates_fraction() {
         name: "frac".into(),
         value: dec("123.999"),
     };
-    let result = try_round_trip(&t, "bi_frac", &orig).await;
-    if let Ok(fetched) = result {
-        // BIGINT truncates fractional part
-        assert_eq!(fetched.value, dec("124"));
-    }
+    let fetched = try_round_trip(&t, "bi_frac", &orig).await.unwrap();
+    // BIGINT truncates fractional part
+    assert_eq!(fetched.value, dec("124"));
 }

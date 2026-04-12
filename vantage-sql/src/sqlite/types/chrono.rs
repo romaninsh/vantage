@@ -12,7 +12,7 @@
 //! from SQLite (which come back as untagged strings) still work.
 
 use super::{SqliteType, SqliteTypeTextMarker};
-use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use ciborium::Value;
 
 impl SqliteType for NaiveDate {
@@ -47,7 +47,7 @@ impl SqliteType for NaiveTime {
     fn to_cbor(&self) -> Value {
         Value::Tag(
             101,
-            Box::new(Value::Text(self.format("%H:%M:%S").to_string())),
+            Box::new(Value::Text(self.format("%H:%M:%S%.f").to_string())),
         )
     }
 
@@ -72,7 +72,7 @@ impl SqliteType for NaiveDateTime {
     fn to_cbor(&self) -> Value {
         Value::Tag(
             0,
-            Box::new(Value::Text(self.format("%Y-%m-%dT%H:%M:%S").to_string())),
+            Box::new(Value::Text(self.format("%Y-%m-%dT%H:%M:%S%.f").to_string())),
         )
     }
 
@@ -98,7 +98,7 @@ impl SqliteType for DateTime<Utc> {
         Value::Tag(
             0,
             Box::new(Value::Text(
-                self.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                self.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true),
             )),
         )
     }
@@ -113,6 +113,33 @@ impl SqliteType for DateTime<Utc> {
                 }
             }
             Value::Text(s) => parse_datetime_utc(&s),
+            _ => None,
+        }
+    }
+}
+
+impl SqliteType for DateTime<FixedOffset> {
+    type Target = SqliteTypeTextMarker;
+
+    fn to_cbor(&self) -> Value {
+        Value::Tag(
+            0,
+            Box::new(Value::Text(
+                self.format("%Y-%m-%dT%H:%M:%S%.f%:z").to_string(),
+            )),
+        )
+    }
+
+    fn from_cbor(value: Value) -> Option<Self> {
+        match value {
+            Value::Tag(0, inner) => {
+                if let Value::Text(s) = *inner {
+                    parse_datetime_fixed(&s)
+                } else {
+                    None
+                }
+            }
+            Value::Text(s) => parse_datetime_fixed(&s),
             _ => None,
         }
     }
@@ -139,4 +166,20 @@ fn parse_datetime_utc(s: &str) -> Option<DateTime<Utc>> {
             parse_naive_datetime(s).map(|ndt| ndt.and_utc()).ok_or(())
         })
         .ok()
+}
+
+fn parse_datetime_fixed(s: &str) -> Option<DateTime<FixedOffset>> {
+    s.parse::<DateTime<FixedOffset>>()
+        .ok()
+        .or_else(|| {
+            DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%:z")
+                .or_else(|_| DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f%:z"))
+                .or_else(|_| DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%#z"))
+                .or_else(|_| DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f%#z"))
+                .ok()
+        })
+        // Naive: assume UTC
+        .or_else(|| {
+            parse_naive_datetime(s).map(|ndt| ndt.and_utc().fixed_offset())
+        })
 }

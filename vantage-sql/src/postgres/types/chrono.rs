@@ -15,7 +15,7 @@
 use super::{
     PostgresType, PostgresTypeDateMarker, PostgresTypeDateTimeMarker, PostgresTypeTimeMarker,
 };
-use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use ciborium::Value;
 
 impl PostgresType for NaiveDate {
@@ -49,7 +49,7 @@ impl PostgresType for NaiveTime {
     fn to_cbor(&self) -> Value {
         Value::Tag(
             101,
-            Box::new(Value::Text(self.format("%H:%M:%S").to_string())),
+            Box::new(Value::Text(self.format("%H:%M:%S%.f").to_string())),
         )
     }
 
@@ -75,7 +75,7 @@ impl PostgresType for NaiveDateTime {
         // Postgres-native format: space separator, no T
         Value::Tag(
             0,
-            Box::new(Value::Text(self.format("%Y-%m-%d %H:%M:%S").to_string())),
+            Box::new(Value::Text(self.format("%Y-%m-%d %H:%M:%S%.f").to_string())),
         )
     }
 
@@ -102,7 +102,7 @@ impl PostgresType for DateTime<Utc> {
         // Matches what Postgres returns when storing DateTime into VARCHAR.
         Value::Tag(
             0,
-            Box::new(Value::Text(self.format("%Y-%m-%d %H:%M:%S+00").to_string())),
+            Box::new(Value::Text(self.format("%Y-%m-%d %H:%M:%S%.f+00").to_string())),
         )
     }
 
@@ -116,6 +116,33 @@ impl PostgresType for DateTime<Utc> {
                 }
             }
             Value::Text(s) => parse_datetime_utc(&s),
+            _ => None,
+        }
+    }
+}
+
+impl PostgresType for DateTime<FixedOffset> {
+    type Target = PostgresTypeDateTimeMarker;
+
+    fn to_cbor(&self) -> Value {
+        Value::Tag(
+            0,
+            Box::new(Value::Text(
+                self.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string(),
+            )),
+        )
+    }
+
+    fn from_cbor(value: Value) -> Option<Self> {
+        match value {
+            Value::Tag(0, inner) => {
+                if let Value::Text(s) = *inner {
+                    parse_datetime_fixed(&s)
+                } else {
+                    None
+                }
+            }
+            Value::Text(s) => parse_datetime_fixed(&s),
             _ => None,
         }
     }
@@ -150,10 +177,18 @@ fn parse_datetime_utc(s: &str) -> Option<DateTime<Utc>> {
         // RFC 3339: "2025-01-10T12:00:00Z"
         .or_else(|| s.parse::<DateTime<Utc>>().ok())
         // Naive: assume UTC
+        .or_else(|| parse_naive_datetime(s).map(|ndt| ndt.and_utc()))
+}
+
+fn parse_datetime_fixed(s: &str) -> Option<DateTime<FixedOffset>> {
+    DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%:z")
+        .or_else(|_| DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f%:z"))
+        .or_else(|_| DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%#z"))
+        .or_else(|_| DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f%#z"))
+        .ok()
+        .or_else(|| s.parse::<DateTime<FixedOffset>>().ok())
+        // Naive: assume UTC
         .or_else(|| {
-            NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
-                .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S"))
-                .ok()
-                .map(|ndt| ndt.and_utc())
+            parse_naive_datetime(s).map(|ndt| ndt.and_utc().fixed_offset())
         })
 }
