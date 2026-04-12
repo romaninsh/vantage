@@ -13,7 +13,7 @@ use vantage_types::entity;
 
 use vantage_dataset::{ReadableDataSet, WritableDataSet};
 
-const MYSQL_URL: &str = "mysql://vantage:vantage@localhost:3306/vantage_v5_chrono";
+const MYSQL_URL: &str = "mysql://vantage:vantage@localhost:3306/vantage_v5";
 
 async fn db() -> MysqlDB {
     MysqlDB::connect(MYSQL_URL).await.unwrap()

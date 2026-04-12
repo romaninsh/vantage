@@ -60,6 +60,7 @@ impl PostgresTypeVariants {
 
 mod bool;
 mod chrono;
+mod decimal;
 mod numbers;
 mod string;
 mod value;

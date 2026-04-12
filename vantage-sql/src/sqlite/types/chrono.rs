@@ -1,9 +1,12 @@
 //! Chrono type implementations for SQLite.
 //!
-//! SQLite stores dates as TEXT. We use CBOR tags for type preservation:
+//! SQLite stores all dates as TEXT. CBOR tags for type preservation:
 //!   Tag(100) = Date (YYYY-MM-DD)
 //!   Tag(101) = Time (HH:MM:SS)
-//!   Tag(0)   = DateTime (ISO 8601 / RFC 3339)
+//!   Tag(0)   = DateTime
+//!
+//! **Format**: Uses ISO 8601 with T separator (`"2025-01-10T12:00:00Z"`)
+//! since SQLite has no native date type — the format is ours to choose.
 //!
 //! `from_cbor` accepts both tagged and plain Text values, so dates read
 //! from SQLite (which come back as untagged strings) still work.

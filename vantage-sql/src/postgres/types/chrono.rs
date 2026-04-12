@@ -3,9 +3,14 @@
 //! CBOR tags for type preservation:
 //!   Tag(100) = Date (YYYY-MM-DD)
 //!   Tag(101) = Time (HH:MM:SS)
-//!   Tag(0)   = DateTime (ISO 8601 / RFC 3339)
+//!   Tag(0)   = DateTime
 //!
-//! `from_cbor` accepts both tagged and plain Text values.
+//! **Format**: Postgres uses `"2025-01-10 12:00:00+00"` (space separator,
+//! abbreviated tz offset) — NOT RFC 3339. We store and parse in this format
+//! so that what we write is what we read back, even through VARCHAR columns.
+//!
+//! `from_cbor` accepts both tagged and plain Text values, so values from
+//! VARCHAR columns (untyped) can still be extracted as chrono types.
 
 use super::{
     PostgresType, PostgresTypeDateMarker, PostgresTypeDateTimeMarker, PostgresTypeTimeMarker,
@@ -67,9 +72,10 @@ impl PostgresType for NaiveDateTime {
     type Target = PostgresTypeDateTimeMarker;
 
     fn to_cbor(&self) -> Value {
+        // Postgres-native format: space separator, no T
         Value::Tag(
             0,
-            Box::new(Value::Text(self.format("%Y-%m-%dT%H:%M:%S").to_string())),
+            Box::new(Value::Text(self.format("%Y-%m-%d %H:%M:%S").to_string())),
         )
     }
 
@@ -92,11 +98,11 @@ impl PostgresType for DateTime<Utc> {
     type Target = PostgresTypeDateTimeMarker;
 
     fn to_cbor(&self) -> Value {
+        // Postgres-native format: "2025-01-10 12:00:00+00"
+        // Matches what Postgres returns when storing DateTime into VARCHAR.
         Value::Tag(
             0,
-            Box::new(Value::Text(
-                self.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-            )),
+            Box::new(Value::Text(self.format("%Y-%m-%d %H:%M:%S+00").to_string())),
         )
     }
 
@@ -121,16 +127,33 @@ fn parse_time(s: &str) -> Option<NaiveTime> {
         .ok()
 }
 
+/// Parse NaiveDateTime from Postgres-native or ISO formats.
+/// Also handles TIMESTAMPTZ strings by stripping the timezone.
 fn parse_naive_datetime(s: &str) -> Option<NaiveDateTime> {
-    NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S")
-        .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f"))
-        .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S"))
+    NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
         .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f"))
+        .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S"))
+        .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f"))
         .ok()
+        // Fallback: TIMESTAMPTZ format like "2025-01-10 12:00:00+00" — strip tz
+        .or_else(|| parse_datetime_utc(s).map(|dt| dt.naive_utc()))
 }
 
+/// Parse DateTime<Utc> from Postgres-native format first (`+00` without colon),
+/// then RFC 3339, then naive (assumed UTC).
 fn parse_datetime_utc(s: &str) -> Option<DateTime<Utc>> {
-    s.parse::<DateTime<Utc>>()
-        .or_else(|_| parse_naive_datetime(s).map(|ndt| ndt.and_utc()).ok_or(()))
+    // Postgres: "2025-01-10 12:00:00+00" — %#z accepts +00, +00:00, +0000
+    DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%#z")
+        .or_else(|_| DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f%#z"))
         .ok()
+        .map(|dt| dt.with_timezone(&Utc))
+        // RFC 3339: "2025-01-10T12:00:00Z"
+        .or_else(|| s.parse::<DateTime<Utc>>().ok())
+        // Naive: assume UTC
+        .or_else(|| {
+            NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
+                .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S"))
+                .ok()
+                .map(|ndt| ndt.and_utc())
+        })
 }

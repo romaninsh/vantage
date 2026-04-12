@@ -15,7 +15,7 @@ use vantage_types::entity;
 
 use vantage_dataset::{ReadableDataSet, WritableDataSet};
 
-const PG_URL: &str = "postgres://vantage:vantage@localhost:5433/vantage_v5_chrono";
+const PG_URL: &str = "postgres://vantage:vantage@localhost:5433/vantage_v5";
 
 async fn db() -> PostgresDB {
     PostgresDB::connect(PG_URL).await.unwrap()
@@ -166,17 +166,18 @@ async fn test_varchar_utc() {
 
 #[tokio::test]
 async fn test_date_date() {
-    // Postgres rejects text bind for DATE column — needs typed parameter
     let t = table_for!("chrono_date", db().await, ValDate);
     let orig = ValDate {
         name: "d".into(),
         value: date_val(),
     };
-    assert!(try_round_trip(&t, "da_d", &orig).await.is_err());
+    let fetched = try_round_trip(&t, "da_d", &orig).await.unwrap();
+    assert_eq!(fetched, orig);
 }
 
 #[tokio::test]
 async fn test_date_time() {
+    // TIME into DATE — Postgres rejects incompatible type
     let t = table_for!("chrono_date", db().await, ValTime);
     let orig = ValTime {
         name: "t".into(),
@@ -187,6 +188,7 @@ async fn test_date_time() {
 
 #[tokio::test]
 async fn test_date_ndt() {
+    // NaiveDateTime into DATE — date part kept via typed bind
     let t = table_for!("chrono_date", db().await, ValNaiveDateTime);
     let orig = ValNaiveDateTime {
         name: "ndt".into(),
@@ -200,6 +202,7 @@ async fn test_date_ndt() {
 
 #[tokio::test]
 async fn test_date_utc() {
+    // DateTime<Utc> into DATE — date part kept
     let t = table_for!("chrono_date", db().await, ValUtc);
     let orig = ValUtc {
         name: "utc".into(),
@@ -217,6 +220,7 @@ async fn test_date_utc() {
 
 #[tokio::test]
 async fn test_time_date() {
+    // DATE into TIME — Postgres rejects incompatible type
     let t = table_for!("chrono_time", db().await, ValDate);
     let orig = ValDate {
         name: "d".into(),
@@ -227,17 +231,18 @@ async fn test_time_date() {
 
 #[tokio::test]
 async fn test_time_time() {
-    // Postgres rejects text bind for TIME column — needs typed parameter
     let t = table_for!("chrono_time", db().await, ValTime);
     let orig = ValTime {
         name: "t".into(),
         value: time_val(),
     };
-    assert!(try_round_trip(&t, "ti_t", &orig).await.is_err());
+    let fetched = try_round_trip(&t, "ti_t", &orig).await.unwrap();
+    assert_eq!(fetched, orig);
 }
 
 #[tokio::test]
 async fn test_time_ndt() {
+    // NaiveDateTime into TIME — time part extracted via typed bind
     let t = table_for!("chrono_time", db().await, ValNaiveDateTime);
     let orig = ValNaiveDateTime {
         name: "ndt".into(),
@@ -251,6 +256,7 @@ async fn test_time_ndt() {
 
 #[tokio::test]
 async fn test_time_utc() {
+    // DateTime<Utc> into TIME — time part extracted
     let t = table_for!("chrono_time", db().await, ValUtc);
     let orig = ValUtc {
         name: "utc".into(),
@@ -268,6 +274,7 @@ async fn test_time_utc() {
 
 #[tokio::test]
 async fn test_timestamp_date() {
+    // NaiveDate into TIMESTAMP — may get midnight appended or fail
     let t = table_for!("chrono_timestamp", db().await, ValDate);
     let orig = ValDate {
         name: "d".into(),
@@ -281,6 +288,7 @@ async fn test_timestamp_date() {
 
 #[tokio::test]
 async fn test_timestamp_time() {
+    // TIME into TIMESTAMP — Postgres rejects
     let t = table_for!("chrono_timestamp", db().await, ValTime);
     let orig = ValTime {
         name: "t".into(),
@@ -291,24 +299,24 @@ async fn test_timestamp_time() {
 
 #[tokio::test]
 async fn test_timestamp_ndt() {
-    // Postgres rejects text bind for TIMESTAMP column
     let t = table_for!("chrono_timestamp", db().await, ValNaiveDateTime);
     let orig = ValNaiveDateTime {
         name: "ndt".into(),
         value: ndt_val(),
     };
-    assert!(try_round_trip(&t, "ts_ndt", &orig).await.is_err());
+    let fetched = try_round_trip(&t, "ts_ndt", &orig).await.unwrap();
+    assert_eq!(fetched, orig);
 }
 
 #[tokio::test]
 async fn test_timestamp_utc() {
-    // Postgres rejects text bind for TIMESTAMP column
     let t = table_for!("chrono_timestamp", db().await, ValUtc);
     let orig = ValUtc {
         name: "utc".into(),
         value: utc_val(),
     };
-    assert!(try_round_trip(&t, "ts_utc", &orig).await.is_err());
+    let fetched = try_round_trip(&t, "ts_utc", &orig).await.unwrap();
+    assert_eq!(fetched, orig);
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -317,6 +325,7 @@ async fn test_timestamp_utc() {
 
 #[tokio::test]
 async fn test_timestamptz_date() {
+    // NaiveDate into TIMESTAMPTZ — may get midnight UTC or fail
     let t = table_for!("chrono_timestamptz", db().await, ValDate);
     let orig = ValDate {
         name: "d".into(),
@@ -330,6 +339,7 @@ async fn test_timestamptz_date() {
 
 #[tokio::test]
 async fn test_timestamptz_time() {
+    // TIME into TIMESTAMPTZ — Postgres rejects
     let t = table_for!("chrono_timestamptz", db().await, ValTime);
     let orig = ValTime {
         name: "t".into(),
@@ -340,22 +350,22 @@ async fn test_timestamptz_time() {
 
 #[tokio::test]
 async fn test_timestamptz_ndt() {
-    // Postgres rejects text bind for TIMESTAMPTZ column
     let t = table_for!("chrono_timestamptz", db().await, ValNaiveDateTime);
     let orig = ValNaiveDateTime {
         name: "ndt".into(),
         value: ndt_val(),
     };
-    assert!(try_round_trip(&t, "tz_ndt", &orig).await.is_err());
+    let fetched = try_round_trip(&t, "tz_ndt", &orig).await.unwrap();
+    assert_eq!(fetched, orig);
 }
 
 #[tokio::test]
 async fn test_timestamptz_utc() {
-    // Postgres rejects text bind for TIMESTAMPTZ column
     let t = table_for!("chrono_timestamptz", db().await, ValUtc);
     let orig = ValUtc {
         name: "utc".into(),
         value: utc_val(),
     };
-    assert!(try_round_trip(&t, "tz_utc", &orig).await.is_err());
+    let fetched = try_round_trip(&t, "tz_utc", &orig).await.unwrap();
+    assert_eq!(fetched, orig);
 }

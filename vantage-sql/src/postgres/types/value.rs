@@ -146,7 +146,8 @@ impl_from_for_any_postgres!(
     chrono::NaiveDate,
     chrono::NaiveTime,
     chrono::NaiveDateTime,
-    chrono::DateTime<chrono::Utc>
+    chrono::DateTime<chrono::Utc>,
+    rust_decimal::Decimal
 );
 
 impl From<&str> for AnyPostgresType {
@@ -205,7 +206,8 @@ impl_expressive_for_postgres_scalar!(
     chrono::NaiveDate,
     chrono::NaiveTime,
     chrono::NaiveDateTime,
-    chrono::DateTime<chrono::Utc>
+    chrono::DateTime<chrono::Utc>,
+    rust_decimal::Decimal
 );
 
 impl Expressive<AnyPostgresType> for &str {
@@ -261,7 +263,7 @@ macro_rules! impl_try_from_postgres {
     };
 }
 
-impl_try_from_postgres!(i64, i32, f64, bool, String);
+impl_try_from_postgres!(i64, i32, f64, bool, String, rust_decimal::Decimal);
 
 /// Extract first row from a CBOR result array as a map.
 fn extract_first_row(val: &AnyPostgresType) -> Option<CborValue> {

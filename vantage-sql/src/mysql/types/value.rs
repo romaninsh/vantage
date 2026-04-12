@@ -140,7 +140,8 @@ impl_from_for_any_mysql!(
     chrono::NaiveDate,
     chrono::NaiveTime,
     chrono::NaiveDateTime,
-    chrono::DateTime<chrono::Utc>
+    chrono::DateTime<chrono::Utc>,
+    rust_decimal::Decimal
 );
 
 impl From<&str> for AnyMysqlType {
@@ -199,7 +200,8 @@ impl_expressive_for_mysql_scalar!(
     chrono::NaiveDate,
     chrono::NaiveTime,
     chrono::NaiveDateTime,
-    chrono::DateTime<chrono::Utc>
+    chrono::DateTime<chrono::Utc>,
+    rust_decimal::Decimal
 );
 
 impl Expressive<AnyMysqlType> for &str {
@@ -254,7 +256,7 @@ macro_rules! impl_try_from_mysql {
     };
 }
 
-impl_try_from_mysql!(i64, i32, f64, bool, String);
+impl_try_from_mysql!(i64, i32, f64, bool, String, rust_decimal::Decimal);
 
 /// Extract first row from a CBOR result array as a map.
 fn extract_first_row(val: &AnyMysqlType) -> Option<CborValue> {

@@ -179,7 +179,8 @@ fn sqlite_column_to_cbor(
         return (CborValue::Float(v), Some(SqliteTypeVariants::Real));
     }
     if let Ok(v) = row.try_get::<String, _>(ordinal) {
-        return (CborValue::Text(v), Some(SqliteTypeVariants::Text));
+        // Untyped — allows try_get to attempt parsing as DateTime, Decimal, etc.
+        return (CborValue::Text(v), None);
     }
 
     eprintln!(

@@ -3,10 +3,14 @@
 //! CBOR tags for type preservation:
 //!   Tag(100) = Date (YYYY-MM-DD)
 //!   Tag(101) = Time (HH:MM:SS)
-//!   Tag(0)   = DateTime (ISO 8601 / RFC 3339)
+//!   Tag(0)   = DateTime
 //!
-//! `from_cbor` accepts both tagged and plain Text values, so dates read
-//! from MySQL (which may come back as untagged strings) still work.
+//! **Format**: MySQL uses `"2025-01-10 12:00:00"` (space separator, no T,
+//! no timezone). DateTime<Utc> drops the timezone since MySQL DATETIME
+//! doesn't store it (TIMESTAMP handles UTC conversion internally).
+//!
+//! `from_cbor` accepts both tagged and plain Text values, so values from
+//! VARCHAR columns (untyped) can still be extracted as chrono types.
 
 use super::{MysqlType, MysqlTypeDateMarker, MysqlTypeDateTimeMarker, MysqlTypeTimeMarker};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
