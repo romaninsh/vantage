@@ -173,8 +173,5 @@ fn parse_datetime_fixed(s: &str) -> Option<DateTime<FixedOffset>> {
         .ok()
         .or_else(|| s.parse::<DateTime<FixedOffset>>().ok())
         // Naive: assume UTC
-        .or_else(|| {
-            parse_naive_datetime(s)
-                .map(|ndt| ndt.and_utc().fixed_offset())
-        })
+        .or_else(|| parse_naive_datetime(s).map(|ndt| ndt.and_utc().fixed_offset()))
 }

@@ -171,7 +171,10 @@ async fn test_chrono_text_subsec() {
     let table = setup().await;
     let original = test_event_subsec();
 
-    let inserted = table.insert(&"evt_sub".to_string(), &original).await.unwrap();
+    let inserted = table
+        .insert(&"evt_sub".to_string(), &original)
+        .await
+        .unwrap();
     assert_eq!(inserted, original);
 
     let fetched = table.get("evt_sub").await.unwrap();

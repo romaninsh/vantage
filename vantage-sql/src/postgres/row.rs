@@ -375,7 +375,9 @@ fn pg_column_to_cbor(
                 return (
                     CborValue::Tag(
                         0,
-                        Box::new(CborValue::Text(v.format("%Y-%m-%d %H:%M:%S%.f").to_string())),
+                        Box::new(CborValue::Text(
+                            v.format("%Y-%m-%d %H:%M:%S%.f").to_string(),
+                        )),
                     ),
                     Some(PostgresTypeVariants::DateTime),
                 );

@@ -102,7 +102,9 @@ impl PostgresType for DateTime<Utc> {
         // Matches what Postgres returns when storing DateTime into VARCHAR.
         Value::Tag(
             0,
-            Box::new(Value::Text(self.format("%Y-%m-%d %H:%M:%S%.f+00").to_string())),
+            Box::new(Value::Text(
+                self.format("%Y-%m-%d %H:%M:%S%.f+00").to_string(),
+            )),
         )
     }
 
@@ -188,7 +190,5 @@ fn parse_datetime_fixed(s: &str) -> Option<DateTime<FixedOffset>> {
         .ok()
         .or_else(|| s.parse::<DateTime<FixedOffset>>().ok())
         // Naive: assume UTC
-        .or_else(|| {
-            parse_naive_datetime(s).map(|ndt| ndt.and_utc().fixed_offset())
-        })
+        .or_else(|| parse_naive_datetime(s).map(|ndt| ndt.and_utc().fixed_offset()))
 }
