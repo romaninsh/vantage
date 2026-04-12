@@ -55,7 +55,6 @@ impl GroupConcat {
         self.separator = Some(sep.into());
         self
     }
-
 }
 
 impl Expressive<AnyMysqlType> for GroupConcat {

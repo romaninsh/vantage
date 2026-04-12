@@ -1,5 +1,5 @@
 use super::identifier::Identifier;
-use vantage_expressions::{expr_any, Expression, Expressive};
+use vantage_expressions::{Expression, Expressive, expr_any};
 
 /// Extension trait that adds `.as_alias()` to any [`Expressive<T>`] type.
 ///
@@ -14,6 +14,7 @@ use vantage_expressions::{expr_any, Expression, Expressive};
 /// // → (COUNT(*)) AS "cnt"   (PostgreSQL)
 /// ```
 pub trait AliasExt<T>: Expressive<T> + Sized {
+    #[allow(clippy::wrong_self_convention)]
     fn as_alias(self, alias: impl Into<String>) -> Expression<T>
     where
         Identifier: Expressive<T>,

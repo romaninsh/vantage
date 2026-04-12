@@ -7,9 +7,9 @@ use serde::Deserialize;
 use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
 use vantage_sql::mysql::MysqlDB;
 use vantage_sql::mysql::statements::MysqlSelect;
-use vantage_sql::primitives::alias::AliasExt;
 use vantage_sql::mysql::statements::select::join::MysqlSelectJoin;
 use vantage_sql::mysql_expr;
+use vantage_sql::primitives::alias::AliasExt;
 use vantage_sql::primitives::fx::Fx;
 use vantage_sql::primitives::identifier::ident;
 use vantage_table::operation::Operation;
@@ -261,16 +261,10 @@ async fn test_q4() {
         &MysqlSelect::new()
             .with_source("products")
             .with_field("category")
-            .with_expression(
-                Fx::new("count", [mysql_expr!("*")])
-                .as_alias("product_count"),
-            )
+            .with_expression(Fx::new("count", [mysql_expr!("*")]).as_alias("product_count"))
             .with_expression(Fx::new("avg", [price.expr()]).as_alias("avg_price"))
             .with_expression(Fx::new("min", [price.expr()]).as_alias("cheapest"))
-            .with_expression(
-                Fx::new("max", [price.expr()])
-                .as_alias("most_expensive"),
-            )
+            .with_expression(Fx::new("max", [price.expr()]).as_alias("most_expensive"))
             .with_group_by(ident("category"))
             .with_having(mysql_expr!(
                 "{} > {}",
@@ -413,14 +407,8 @@ async fn test_q6() {
     let stats_subquery = MysqlSelect::new()
         .with_source("orders")
         .with_field("user_id")
-        .with_expression(
-            Fx::new("count", [mysql_expr!("*")])
-            .as_alias("order_count"),
-        )
-        .with_expression(
-            Fx::new("avg", [ident("total").expr()])
-            .as_alias("avg_total"),
-        )
+        .with_expression(Fx::new("count", [mysql_expr!("*")]).as_alias("order_count"))
+        .with_expression(Fx::new("avg", [ident("total").expr()]).as_alias("avg_total"))
         .with_condition(mysql_expr!("{} != {}", (ident("status")), "cancelled"))
         .with_group_by(ident("user_id"));
 
@@ -526,7 +514,7 @@ async fn test_q7() {
                         mysql_expr!("{}", "junior"),
                     )
                     .else_(mysql_expr!("{}", "intern"))
-                .as_alias("band"),
+                    .as_alias("band"),
             )
             .with_expression(
                 ternary(ident("role").eq("admin"), "Yes", "No").with_alias("is_admin"),
@@ -1026,7 +1014,7 @@ async fn test_q13() {
             .with_field("name")
             .with_expression(
                 Fx::new("json_extract", [metadata.expr(), mysql_expr!("'$.color'")])
-                .as_alias("color"),
+                    .as_alias("color"),
             )
             .with_expression(
                 mysql_expr!(
@@ -1039,8 +1027,7 @@ async fn test_q13() {
                 .as_alias("weight"),
             )
             .with_expression(
-                mysql_expr!("CAST({} AS DOUBLE)", (rating_expr.clone()))
-                .as_alias("rating"),
+                mysql_expr!("CAST({} AS DOUBLE)", (rating_expr.clone())).as_alias("rating"),
             )
             .with_expression(
                 Fx::new(
@@ -1128,12 +1115,11 @@ async fn test_q14() {
             .with_expression(month_expr.clone().as_alias("month"))
             .with_expression(ident("name").dot_of("d").as_alias("department"))
             .with_expression(
-                Fx::new("count", [ident("id").dot_of("o").expr()])
-                .as_alias("order_count"),
+                Fx::new("count", [ident("id").dot_of("o").expr()]).as_alias("order_count"),
             )
             .with_expression(
                 Fx::new("round", [sum_total.expr(), mysql_expr!("{}", 2i64)])
-                .as_alias("monthly_revenue"),
+                    .as_alias("monthly_revenue"),
             )
             .with_join(MysqlSelectJoin::inner(
                 "users",

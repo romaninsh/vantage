@@ -7,9 +7,9 @@ use serde::Deserialize;
 use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
 use vantage_sql::postgres::PostgresDB;
 use vantage_sql::postgres::statements::PostgresSelect;
-use vantage_sql::primitives::alias::AliasExt;
 use vantage_sql::postgres::statements::select::join::PostgresSelectJoin;
 use vantage_sql::postgres_expr;
+use vantage_sql::primitives::alias::AliasExt;
 use vantage_sql::primitives::identifier::ident;
 use vantage_table::operation::Operation;
 use vantage_types::{Record, TryFromRecord};
@@ -257,16 +257,10 @@ async fn test_q4() {
         &PostgresSelect::new()
             .with_source("products")
             .with_field("category")
-            .with_expression(
-                Fx::new("count", [postgres_expr!("*")])
-                .as_alias("product_count"),
-            )
+            .with_expression(Fx::new("count", [postgres_expr!("*")]).as_alias("product_count"))
             .with_expression(Fx::new("avg", [price.expr()]).as_alias("avg_price"))
             .with_expression(Fx::new("min", [price.expr()]).as_alias("cheapest"))
-            .with_expression(
-                Fx::new("max", [price.expr()])
-                .as_alias("most_expensive"),
-            )
+            .with_expression(Fx::new("max", [price.expr()]).as_alias("most_expensive"))
             .with_group_by(ident("category"))
             .with_having(postgres_expr!(
                 "{} > {}",
@@ -409,14 +403,8 @@ async fn test_q6() {
     let stats_subquery = PostgresSelect::new()
         .with_source("orders")
         .with_field("user_id")
-        .with_expression(
-            Fx::new("count", [postgres_expr!("*")])
-            .as_alias("order_count"),
-        )
-        .with_expression(
-            Fx::new("avg", [ident("total").expr()])
-            .as_alias("avg_total"),
-        )
+        .with_expression(Fx::new("count", [postgres_expr!("*")]).as_alias("order_count"))
+        .with_expression(Fx::new("avg", [ident("total").expr()]).as_alias("avg_total"))
         .with_condition(postgres_expr!("{} != {}", (ident("status")), "cancelled"))
         .with_group_by(ident("user_id"));
 
@@ -522,11 +510,9 @@ async fn test_q7() {
                         postgres_expr!("{}", "junior"),
                     )
                     .else_(postgres_expr!("{}", "intern"))
-                .as_alias("band"),
+                    .as_alias("band"),
             )
-            .with_expression(
-                ternary(ident("role").eq("admin"), "Yes", "No").as_alias("is_admin"),
-            )
+            .with_expression(ternary(ident("role").eq("admin"), "Yes", "No").as_alias("is_admin"))
             .with_field("display_name")
             .with_order(ident("salary"), Order::Desc),
         "SELECT \"id\", \"name\", \"salary\", \
@@ -845,12 +831,12 @@ async fn test_q11() {
         .with_source_as("departments", "d")
         .with_expression(ident("id").dot_of("d"))
         .with_expression(ident("name").dot_of("d"))
-        .with_expression(
-            postgres_expr!("{} + 1", (ident("depth").dot_of("dt"))),
-        )
-        .with_expression(
-            concat_sql!(ident("path").dot_of("dt"), " > ", ident("name").dot_of("d")),
-        )
+        .with_expression(postgres_expr!("{} + 1", (ident("depth").dot_of("dt"))))
+        .with_expression(concat_sql!(
+            ident("path").dot_of("dt"),
+            " > ",
+            ident("name").dot_of("d")
+        ))
         .with_join(PostgresSelectJoin::inner(
             "dept_tree",
             "dt",
@@ -1027,9 +1013,7 @@ async fn test_q13() {
             .with_source("products")
             .with_field("id")
             .with_field("name")
-            .with_expression(
-                JsonExtract::new(metadata.clone(), "color").as_alias("color"),
-            )
+            .with_expression(JsonExtract::new(metadata.clone(), "color").as_alias("color"))
             .with_expression(
                 postgres_expr!(
                     "CAST({} AS DOUBLE PRECISION)",
@@ -1039,7 +1023,7 @@ async fn test_q13() {
             )
             .with_expression(
                 postgres_expr!("CAST({} AS DOUBLE PRECISION)", (rating_expr.clone()))
-                .as_alias("rating"),
+                    .as_alias("rating"),
             )
             .with_expression(
                 Fx::new(
@@ -1125,12 +1109,11 @@ async fn test_q14() {
             .with_expression(month_expr.clone().as_alias("month"))
             .with_expression(ident("name").dot_of("d").as_alias("department"))
             .with_expression(
-                Fx::new("count", [ident("id").dot_of("o").expr()])
-                .as_alias("order_count"),
+                Fx::new("count", [ident("id").dot_of("o").expr()]).as_alias("order_count"),
             )
             .with_expression(
                 Fx::new("round", [sum_total.expr(), postgres_expr!("{}", 2i32)])
-                .as_alias("monthly_revenue"),
+                    .as_alias("monthly_revenue"),
             )
             .with_join(PostgresSelectJoin::inner(
                 "users",

@@ -73,7 +73,6 @@ pub fn ident(name: impl Into<String>) -> Identifier {
     Identifier::new(name)
 }
 
-
 // Each backend impl owns its quoting style.
 
 #[cfg(feature = "sqlite")]

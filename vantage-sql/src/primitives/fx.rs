@@ -35,7 +35,6 @@ impl<T: Debug + Display + Clone> Fx<T> {
             args: args.into_vec(),
         }
     }
-
 }
 
 impl<T: Debug + Display + Clone> Expressive<T> for Fx<T> {

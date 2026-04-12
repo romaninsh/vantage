@@ -74,14 +74,13 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
 {
     fn expr(&self) -> Expression<crate::sqlite::types::AnySqliteType> {
         let json_path = format!("$.{}", self.path.join("."));
-        let base = Expression::new(
+        Expression::new(
             "JSON_EXTRACT({}, {})",
             vec![
                 ExpressiveEnum::Nested(self.source.clone()),
                 ExpressiveEnum::Nested(sql_lit(&json_path)),
             ],
-        );
-        base
+        )
     }
 }
 

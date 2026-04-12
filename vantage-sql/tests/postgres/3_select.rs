@@ -1,12 +1,12 @@
 //! Test 3a: PostgresSelect via Selectable trait + SelectableDataSource execution.
 
 use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
-use vantage_sql::primitives::alias::AliasExt;
 #[allow(unused_imports)]
 use vantage_sql::postgres::PostgresType;
 use vantage_sql::postgres::statements::PostgresSelect;
 use vantage_sql::postgres::{AnyPostgresType, PostgresDB};
 use vantage_sql::postgres_expr;
+use vantage_sql::primitives::alias::AliasExt;
 use vantage_types::{Record, TryFromRecord, entity};
 
 const PG_URL: &str = "postgres://vantage:vantage@localhost:5433/vantage";

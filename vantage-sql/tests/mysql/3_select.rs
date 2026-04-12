@@ -1,12 +1,12 @@
 //! Test 3a: MysqlSelect via Selectable trait + SelectableDataSource execution.
 
 use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
-use vantage_sql::primitives::alias::AliasExt;
 #[allow(unused_imports)]
 use vantage_sql::mysql::MysqlType;
 use vantage_sql::mysql::statements::MysqlSelect;
 use vantage_sql::mysql::{AnyMysqlType, MysqlDB};
 use vantage_sql::mysql_expr;
+use vantage_sql::primitives::alias::AliasExt;
 use vantage_types::{Record, TryFromRecord, entity};
 
 const MYSQL_URL: &str = "mysql://vantage:vantage@localhost:3306/vantage";

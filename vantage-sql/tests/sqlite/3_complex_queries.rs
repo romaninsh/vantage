@@ -257,16 +257,10 @@ async fn test_q4() {
         &SqliteSelect::new()
             .with_source("products")
             .with_field("category")
-            .with_expression(
-                Fx::new("count", [sqlite_expr!("*")])
-                .as_alias("product_count"),
-            )
+            .with_expression(Fx::new("count", [sqlite_expr!("*")]).as_alias("product_count"))
             .with_expression(Fx::new("avg", [price.expr()]).as_alias("avg_price"))
             .with_expression(Fx::new("min", [price.expr()]).as_alias("cheapest"))
-            .with_expression(
-                Fx::new("max", [price.expr()])
-                .as_alias("most_expensive"),
-            )
+            .with_expression(Fx::new("max", [price.expr()]).as_alias("most_expensive"))
             .with_group_by(ident("category"))
             .with_having(sqlite_expr!(
                 "{} > {}",
@@ -409,14 +403,8 @@ async fn test_q6() {
     let stats_subquery = SqliteSelect::new()
         .with_source("orders")
         .with_field("user_id")
-        .with_expression(
-            Fx::new("count", [sqlite_expr!("*")])
-            .as_alias("order_count"),
-        )
-        .with_expression(
-            Fx::new("avg", [ident("total").expr()])
-            .as_alias("avg_total"),
-        )
+        .with_expression(Fx::new("count", [sqlite_expr!("*")]).as_alias("order_count"))
+        .with_expression(Fx::new("avg", [ident("total").expr()]).as_alias("avg_total"))
         .with_condition(sqlite_expr!("{} != {}", (ident("status")), "cancelled"))
         .with_group_by(ident("user_id"));
 
@@ -522,11 +510,9 @@ async fn test_q7() {
                         sqlite_expr!("{}", "junior"),
                     )
                     .else_(sqlite_expr!("{}", "intern"))
-                .as_alias("band"),
+                    .as_alias("band"),
             )
-            .with_expression(
-                ternary(ident("role").eq("admin"), "Yes", "No").as_alias("is_admin"),
-            )
+            .with_expression(ternary(ident("role").eq("admin"), "Yes", "No").as_alias("is_admin"))
             .with_field("display_name")
             .with_order(ident("salary"), Order::Desc),
         "SELECT \"id\", \"name\", \"salary\", \
@@ -846,9 +832,11 @@ async fn test_q11() {
         .with_expression(ident("id").dot_of("d"))
         .with_expression(ident("name").dot_of("d"))
         .with_expression(sqlite_expr!("{} + 1", (ident("depth").dot_of("dt"))))
-        .with_expression(
-            concat_sql!(ident("path").dot_of("dt"), " > ", ident("name").dot_of("d")),
-        )
+        .with_expression(concat_sql!(
+            ident("path").dot_of("dt"),
+            " > ",
+            ident("name").dot_of("d")
+        ))
         .with_join(SqliteSelectJoin::inner(
             "dept_tree",
             "dt",
@@ -1019,16 +1007,13 @@ async fn test_q13() {
             .with_source("products")
             .with_field("id")
             .with_field("name")
+            .with_expression(JsonExtract::new(metadata.clone(), "color").as_alias("color"))
             .with_expression(
-                JsonExtract::new(metadata.clone(), "color").as_alias("color"),
-            )
-            .with_expression(
-                sqlite_expr!("{} ->> {}", (metadata.clone()), "$.weight_kg")
-                .as_alias("weight"),
+                sqlite_expr!("{} ->> {}", (metadata.clone()), "$.weight_kg").as_alias("weight"),
             )
             .with_expression(
                 sqlite_expr!("CAST({} ->> {} AS REAL)", (metadata.clone()), "$.rating")
-                .as_alias("rating"),
+                    .as_alias("rating"),
             )
             .with_expression(
                 Fx::new(
@@ -1115,17 +1100,13 @@ async fn test_q14() {
             .with_expression(month_expr.clone().as_alias("month"))
             .with_expression(ident("name").dot_of("d").as_alias("department"))
             .with_expression(
-                Fx::new("count", [ident("id").dot_of("o").expr()])
-                .as_alias("order_count"),
+                Fx::new("count", [ident("id").dot_of("o").expr()]).as_alias("order_count"),
             )
             .with_expression(
                 Fx::new("round", [sum_total.expr(), sqlite_expr!("{}", 2i64)])
-                .as_alias("monthly_revenue"),
+                    .as_alias("monthly_revenue"),
             )
-            .with_expression(
-                Fx::new("typeof", [sum_total.expr()])
-                .as_alias("sum_type"),
-            )
+            .with_expression(Fx::new("typeof", [sum_total.expr()]).as_alias("sum_type"))
             .with_join(SqliteSelectJoin::inner(
                 "users",
                 "u",

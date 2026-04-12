@@ -8,9 +8,9 @@ use serde::Deserialize;
 use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
 use vantage_sql::postgres::PostgresDB;
 use vantage_sql::postgres::statements::PostgresSelect;
-use vantage_sql::primitives::alias::AliasExt;
 use vantage_sql::postgres::statements::select::join::PostgresSelectJoin;
 use vantage_sql::postgres_expr;
+use vantage_sql::primitives::alias::AliasExt;
 use vantage_sql::primitives::identifier::ident;
 use vantage_table::operation::Operation;
 use vantage_types::{Record, TryFromRecord};
@@ -129,7 +129,7 @@ async fn test_pg_q2_array_ops() {
             .with_expression(skills.clone())
             .with_expression(
                 Fx::new("array_length", [skills.expr(), postgres_expr!("{}", 1i32)])
-                .as_alias("skill_count"),
+                    .as_alias("skill_count"),
             )
             .with_condition(postgres_expr!(
                 "{} @> ARRAY[{}] OR {} = ANY({})",
@@ -194,16 +194,14 @@ async fn test_pg_q3_jsonb_ops() {
             .with_source_as("products", "p")
             .with_expression(ident("id").dot_of("p"))
             .with_expression(ident("name").dot_of("p"))
-            .with_expression(
-                JsonExtract::new(metadata.clone(), "color").as_alias("color"),
-            )
+            .with_expression(JsonExtract::new(metadata.clone(), "color").as_alias("color"))
             .with_expression(rating.clone().as_alias("rating"))
             .with_expression(
                 JsonExtract::new(metadata.clone(), ["specs", "voltage"]).as_alias("voltage"),
             )
             .with_expression(
                 postgres_expr!("{} #> {}", (metadata.clone()), (lit("{specs,watts}")))
-                .as_alias("watts_json"),
+                    .as_alias("watts_json"),
             )
             .with_condition(postgres_expr!(
                 "{} @> {}",
@@ -419,10 +417,7 @@ async fn test_pg_q6_array_aggregation() {
         &PostgresSelect::new()
             .with_source_as("products", "p")
             .with_expression(ident("category").dot_of("p"))
-            .with_expression(
-                Fx::new("count", [postgres_expr!("*")])
-                .as_alias("total"),
-            )
+            .with_expression(Fx::new("count", [postgres_expr!("*")]).as_alias("total"))
             .with_expression(
                 postgres_expr!(
                     "array_agg(DISTINCT {} ORDER BY {})",
@@ -450,7 +445,7 @@ async fn test_pg_q6_array_aggregation() {
             )
             .with_expression(
                 postgres_expr!("COUNT(*) FILTER (WHERE {} @> ARRAY[{}])", (tags), "sale")
-                .as_alias("sale_count"),
+                    .as_alias("sale_count"),
             )
             .with_group_by(ident("category").dot_of("p"))
             .with_order(ident("total"), Order::Desc),
@@ -592,14 +587,14 @@ async fn test_pg_q8_date_time() {
             .with_expression(ident("name").dot_of("u"))
             .with_expression(
                 postgres_expr!("EXTRACT(DOW FROM {})", (created.clone()))
-                .as_alias("signup_day_of_week"),
+                    .as_alias("signup_day_of_week"),
             )
             .with_expression(
                 Case::new()
                     .when(age.clone().gte(Interval::new(1, "year")), "veteran")
                     .when(age.clone().gte(Interval::new(6, "month")), "established")
                     .else_(postgres_expr!("{}", "new"))
-                .as_alias("cohort"),
+                    .as_alias("cohort"),
             )
             .with_condition(ident("is_active").dot_of("u").eq(true))
             .with_order(created, Order::Asc)
@@ -657,8 +652,10 @@ async fn test_pg_q9_enum() {
             .with_expression(ident("title").dot_of("t"))
             .with_expression(priority.cast("TEXT").as_alias("priority_text"))
             .with_expression(
-                ident("status").dot_of("t").cast("TEXT")
-                .as_alias("status_text"),
+                ident("status")
+                    .dot_of("t")
+                    .cast("TEXT")
+                    .as_alias("status_text"),
             )
             .with_expression(
                 {
@@ -734,8 +731,10 @@ async fn test_pg_q10_daterange() {
             .with_expression(Fx::new("lower", [during.expr()]).as_alias("check_in"))
             .with_expression(Fx::new("upper", [during.expr()]).as_alias("check_out"))
             .with_expression(
-                Fx::new("upper", [during.expr()]).expr() - Fx::new("lower", [during.expr()]).expr()
-                .as_alias("duration_days"),
+                Fx::new("upper", [during.expr()]).expr()
+                    - Fx::new("lower", [during.expr()])
+                        .expr()
+                        .as_alias("duration_days"),
             )
             .with_join(PostgresSelectJoin::inner(
                 "users",
@@ -869,12 +868,12 @@ async fn test_pg_q12_recursive_cte() {
         .with_expression(ident("id").dot_of("d"))
         .with_expression(ident("name").dot_of("d"))
         .with_expression(ident("parent_id").dot_of("d"))
-        .with_expression(
-            ident("depth").dot_of("dt").expr() + postgres_expr!("1"),
-        )
-        .with_expression(
-            concat_sql!(ident("path").dot_of("dt"), " > ", ident("name").dot_of("d")),
-        )
+        .with_expression(ident("depth").dot_of("dt").expr() + postgres_expr!("1"))
+        .with_expression(concat_sql!(
+            ident("path").dot_of("dt"),
+            " > ",
+            ident("name").dot_of("d")
+        ))
         .with_join(PostgresSelectJoin::inner(
             "dept_tree",
             "dt",
@@ -1027,26 +1026,24 @@ async fn test_pg_q14_jsonb_aggregation() {
 
     let order_summary_subquery = PostgresSelect::new()
         .with_source_as("orders", "o")
-        .with_expression(
-            Fx::new(
-                "jsonb_build_object",
-                [
-                    postgres_expr!("{}", "count"),
-                    Fx::new("count", [postgres_expr!("*")]).expr(),
-                    postgres_expr!("{}", "total"),
-                    Fx::new(
-                        "coalesce",
-                        [
-                            Fx::new("sum", [o_total.expr()]).expr(),
-                            postgres_expr!("{}", 0i64),
-                        ],
-                    )
-                    .expr(),
-                    postgres_expr!("{}", "statuses"),
-                    postgres_expr!("jsonb_agg(DISTINCT {})", (o_status)),
-                ],
-            ),
-        )
+        .with_expression(Fx::new(
+            "jsonb_build_object",
+            [
+                postgres_expr!("{}", "count"),
+                Fx::new("count", [postgres_expr!("*")]).expr(),
+                postgres_expr!("{}", "total"),
+                Fx::new(
+                    "coalesce",
+                    [
+                        Fx::new("sum", [o_total.expr()]).expr(),
+                        postgres_expr!("{}", 0i64),
+                    ],
+                )
+                .expr(),
+                postgres_expr!("{}", "statuses"),
+                postgres_expr!("jsonb_agg(DISTINCT {})", (o_status)),
+            ],
+        ))
         .with_condition(ident("user_id").dot_of("o").eq(ident("id").dot_of("u")));
 
     let rows: Vec<UserProfile> = check_and_run(
@@ -1163,7 +1160,7 @@ async fn test_pg_q15_inet_ilike_full_join() {
                     )
                     .when(postgres_expr!("{} IS NULL", (ip)), "unknown")
                     .else_(postgres_expr!("{}", "public"))
-                .as_alias("network_class"),
+                    .as_alias("network_class"),
             )
             .with_expression(
                 Fx::new(

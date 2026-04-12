@@ -44,15 +44,14 @@ impl<T: Debug + Display + Clone> Iif<T> {
 #[cfg(feature = "sqlite")]
 impl Expressive<crate::sqlite::types::AnySqliteType> for Iif<crate::sqlite::types::AnySqliteType> {
     fn expr(&self) -> Expression<crate::sqlite::types::AnySqliteType> {
-        let base = Expression::new(
+        Expression::new(
             "IIF({}, {}, {})",
             vec![
                 ExpressiveEnum::Nested(self.condition.clone()),
                 ExpressiveEnum::Nested(self.true_val.clone()),
                 ExpressiveEnum::Nested(self.false_val.clone()),
             ],
-        );
-        base
+        )
     }
 }
 
@@ -61,15 +60,14 @@ impl Expressive<crate::sqlite::types::AnySqliteType> for Iif<crate::sqlite::type
 #[cfg(feature = "mysql")]
 impl Expressive<crate::mysql::types::AnyMysqlType> for Iif<crate::mysql::types::AnyMysqlType> {
     fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
-        let base = Expression::new(
+        Expression::new(
             "IF({}, {}, {})",
             vec![
                 ExpressiveEnum::Nested(self.condition.clone()),
                 ExpressiveEnum::Nested(self.true_val.clone()),
                 ExpressiveEnum::Nested(self.false_val.clone()),
             ],
-        );
-        base
+        )
     }
 }
 
@@ -80,14 +78,13 @@ impl Expressive<crate::postgres::types::AnyPostgresType>
     for Iif<crate::postgres::types::AnyPostgresType>
 {
     fn expr(&self) -> Expression<crate::postgres::types::AnyPostgresType> {
-        let base = Expression::new(
+        Expression::new(
             "CASE WHEN {} THEN {} ELSE {} END",
             vec![
                 ExpressiveEnum::Nested(self.condition.clone()),
                 ExpressiveEnum::Nested(self.true_val.clone()),
                 ExpressiveEnum::Nested(self.false_val.clone()),
             ],
-        );
-        base
+        )
     }
 }

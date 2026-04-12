@@ -25,11 +25,8 @@ where
         for column in self.columns.values() {
             if let Some(expr_fn) = self.expressions.get(column.name()) {
                 let expr = expr_fn(self);
-                self.data_source.add_select_column(
-                    &mut select,
-                    expr,
-                    Some(column.name()),
-                );
+                self.data_source
+                    .add_select_column(&mut select, expr, Some(column.name()));
             } else if let Some(alias) = column.alias() {
                 let expr = self.data_source.expr(column.name(), vec![]);
                 self.data_source

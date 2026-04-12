@@ -120,14 +120,13 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
         // SQLite uses strftime natively — no translation needed regardless of `raw`
         let fmt = self.format.clone();
         let _ = self.raw;
-        let base = Expression::new(
+        Expression::new(
             "STRFTIME({}, {})",
             vec![
                 ExpressiveEnum::Scalar(fmt.into()),
                 ExpressiveEnum::Nested(self.expr.clone()),
             ],
-        );
-        base
+        )
     }
 }
 
@@ -143,14 +142,13 @@ impl Expressive<crate::mysql::types::AnyMysqlType>
         } else {
             strftime_to_mysql(&self.format)
         };
-        let base = Expression::new(
+        Expression::new(
             "DATE_FORMAT({}, {})",
             vec![
                 ExpressiveEnum::Nested(self.expr.clone()),
                 ExpressiveEnum::Scalar(fmt.into()),
             ],
-        );
-        base
+        )
     }
 }
 
@@ -166,13 +164,12 @@ impl Expressive<crate::postgres::types::AnyPostgresType>
         } else {
             strftime_to_pg(&self.format)
         };
-        let base = Expression::new(
+        Expression::new(
             "TO_CHAR({}, {})",
             vec![
                 ExpressiveEnum::Nested(self.expr.clone()),
                 ExpressiveEnum::Scalar(fmt.into()),
             ],
-        );
-        base
+        )
     }
 }

@@ -8,11 +8,11 @@ use serde::Deserialize;
 use vantage_expressions::{ExprDataSource, Expression, Expressive, Order, Selectable};
 use vantage_sql::mysql::MysqlDB;
 use vantage_sql::mysql::operation::MysqlOperation;
-use vantage_sql::primitives::alias::AliasExt;
 use vantage_sql::mysql::statements::MysqlSelect;
 use vantage_sql::mysql::statements::primitives::GroupConcat;
 use vantage_sql::mysql::statements::select::join::MysqlSelectJoin;
 use vantage_sql::mysql_expr;
+use vantage_sql::primitives::alias::AliasExt;
 use vantage_sql::primitives::concat::Concat;
 use vantage_sql::primitives::fx::Fx;
 use vantage_sql::primitives::identifier::ident;
@@ -405,13 +405,9 @@ async fn test_my_q5_json_agg() {
                     .eq(ident("id").dot_of("d")),
             ))
             .with_expression(ident("name").dot_of("d").as_alias("department"))
+            .with_expression(Fx::new("json_arrayagg", [u_name.expr()]).as_alias("user_names"))
             .with_expression(
-                Fx::new("json_arrayagg", [u_name.expr()])
-                .as_alias("user_names"),
-            )
-            .with_expression(
-                Fx::new("json_objectagg", [u_name.expr(), u_salary.expr()])
-                .as_alias("salary_map"),
+                Fx::new("json_objectagg", [u_name.expr(), u_salary.expr()]).as_alias("salary_map"),
             )
             .with_condition(mysql_expr!("{} = b'1'", (ident("is_active").dot_of("u"))))
             .with_group_by(ident("id").dot_of("d"))
@@ -532,11 +528,11 @@ async fn test_my_q7_regexp() {
             .with_expression(u_email.clone())
             .with_expression(
                 Fx::new("regexp_substr", [u_email.expr(), mysql_expr!("'@(.+)$'")])
-                .as_alias("domain_part"),
+                    .as_alias("domain_part"),
             )
             .with_expression(
                 Fx::new("regexp_like", [u_name.expr(), mysql_expr!("'^[A-E]'")])
-                .as_alias("name_starts_a_to_e"),
+                    .as_alias("name_starts_a_to_e"),
             )
             .with_condition(u_email.regexp(mysql_expr!("{}", "^[a-z]+@example\\.com$")))
             .with_order(ident("name").dot_of("u"), Order::Asc),
@@ -698,13 +694,9 @@ async fn test_my_q9_rollup() {
             .with_source_as("orders", "o")
             .with_expression(o_status.clone())
             .with_expression(date_fmt.clone().as_alias("month"))
+            .with_expression(Fx::new("count", [mysql_expr!("*")]).as_alias("order_count"))
             .with_expression(
-                Fx::new("count", [mysql_expr!("*")])
-                .as_alias("order_count"),
-            )
-            .with_expression(
-                Fx::new("sum", [ident("total").dot_of("o").expr()])
-                .as_alias("revenue"),
+                Fx::new("sum", [ident("total").dot_of("o").expr()]).as_alias("revenue"),
             )
             .with_expression(grouping_status.clone().as_alias("is_status_total"))
             .with_expression(grouping_month.clone().as_alias("is_month_total"))
@@ -820,10 +812,7 @@ async fn test_my_q10_bit_operations() {
                 )
                 .as_alias("is_oncall"),
             )
-            .with_expression(
-                Fx::new("bit_count", [flags.expr()])
-                .as_alias("active_flag_count"),
-            )
+            .with_expression(Fx::new("bit_count", [flags.expr()]).as_alias("active_flag_count"))
             .with_expression(
                 Fx::new(
                     "timediff",
@@ -908,15 +897,12 @@ async fn test_my_q11_year_date_functions() {
             .with_expression(created_at.clone())
             .with_expression(
                 DateFormat::raw_format(created_at.clone(), "%W, %M %D %Y")
-                .as_alias("formatted_date"),
+                    .as_alias("formatted_date"),
             )
-            .with_expression(
-                Fx::new("last_day", [created_at.expr()])
-                .as_alias("month_end"),
-            )
+            .with_expression(Fx::new("last_day", [created_at.expr()]).as_alias("month_end"))
             .with_expression(
                 Fx::new("datediff", [now.expr(), created_at.expr()])
-                .as_alias("days_since_creation"),
+                    .as_alias("days_since_creation"),
             )
             .with_expression(
                 Fx::new(
@@ -1256,20 +1242,24 @@ async fn test_my_q15_window_functions() {
             .with_expression(ident("name").dot_of("d").as_alias("department"))
             .with_expression(salary.clone())
             .with_expression(
-                named.apply(Fx::new("row_number", Vec::<Expression<_>>::new()))
-                .as_alias("row_num"),
+                named
+                    .apply(Fx::new("row_number", Vec::<Expression<_>>::new()))
+                    .as_alias("row_num"),
             )
             .with_expression(
-                named.apply(Fx::new("dense_rank", Vec::<Expression<_>>::new()))
-                .as_alias("salary_rank"),
+                named
+                    .apply(Fx::new("dense_rank", Vec::<Expression<_>>::new()))
+                    .as_alias("salary_rank"),
             )
             .with_expression(
-                named.apply(Fx::new("ntile", [mysql_expr!("{}", 3i64)]))
-                .as_alias("salary_tercile"),
+                named
+                    .apply(Fx::new("ntile", [mysql_expr!("{}", 3i64)]))
+                    .as_alias("salary_tercile"),
             )
             .with_expression(
-                named.apply(Fx::new("percent_rank", Vec::<Expression<_>>::new()))
-                .as_alias("pct_rank"),
+                named
+                    .apply(Fx::new("percent_rank", Vec::<Expression<_>>::new()))
+                    .as_alias("pct_rank"),
             )
             .with_expression(
                 Window::new()
@@ -1277,11 +1267,12 @@ async fn test_my_q15_window_functions() {
                     .order_by(salary.clone(), Order::Desc)
                     .rows("UNBOUNDED PRECEDING", "CURRENT ROW")
                     .apply(Fx::new("sum", [salary.expr()]))
-                .as_alias("running_total"),
+                    .as_alias("running_total"),
             )
             .with_expression(
-                named.apply(Fx::new("first_value", [ident("name").dot_of("u").expr()]))
-                .as_alias("top_earner"),
+                named
+                    .apply(Fx::new("first_value", [ident("name").dot_of("u").expr()]))
+                    .as_alias("top_earner"),
             )
             .with_condition(mysql_expr!("{} = b'1'", (ident("is_active").dot_of("u"))))
             .with_window(

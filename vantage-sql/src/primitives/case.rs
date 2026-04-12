@@ -42,7 +42,6 @@ impl<T: Debug + Display + Clone> Case<T> {
         self.else_branch = Some(value.expr());
         self
     }
-
 }
 
 impl<T: Debug + Display + Clone> Expressive<T> for Case<T> {
@@ -60,7 +59,7 @@ impl<T: Debug + Display + Clone> Expressive<T> for Case<T> {
 
         let branches_expr = Expression::from_vec(parts, "");
 
-        let base = match &self.else_branch {
+        match &self.else_branch {
             Some(else_val) => Expression::new(
                 "CASE{} ELSE {} END",
                 vec![
@@ -69,8 +68,6 @@ impl<T: Debug + Display + Clone> Expressive<T> for Case<T> {
                 ],
             ),
             None => Expression::new("CASE{} END", vec![ExpressiveEnum::Nested(branches_expr)]),
-        };
-
-        base
+        }
     }
 }
