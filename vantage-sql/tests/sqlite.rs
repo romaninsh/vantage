@@ -10,6 +10,8 @@ mod sqlite {
     mod complex_queries;
     #[path = "4_conditions.rs"]
     mod conditions;
+    #[path = "1_decimal.rs"]
+    mod decimal;
     #[path = "2_defer.rs"]
     mod defer;
     #[path = "4_editable_data_set.rs"]

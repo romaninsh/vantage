@@ -4,6 +4,10 @@
 //! - Integers → CborValue::Integer
 //! - Floats → CborValue::Float
 //! - Option<T> delegates to T, with Null for None
+//!
+//! `from_cbor` accepts Text as a fallback — allows extraction from VARCHAR
+//! columns where the database returns strings instead of native numeric types.
+//! No cross-conversion between Integer and Float — use the matching type.
 
 use super::{
     MysqlType, MysqlTypeFloat4Marker, MysqlTypeFloat8Marker, MysqlTypeInt2Marker,
@@ -23,6 +27,7 @@ impl MysqlType for i16 {
     fn from_cbor(value: Value) -> Option<Self> {
         match value {
             Value::Integer(i) => i16::try_from(i).ok(),
+            Value::Text(s) => s.parse().ok(),
             _ => None,
         }
     }
@@ -40,6 +45,7 @@ impl MysqlType for i32 {
     fn from_cbor(value: Value) -> Option<Self> {
         match value {
             Value::Integer(i) => i32::try_from(i).ok(),
+            Value::Text(s) => s.parse().ok(),
             _ => None,
         }
     }
@@ -57,6 +63,7 @@ impl MysqlType for i64 {
     fn from_cbor(value: Value) -> Option<Self> {
         match value {
             Value::Integer(i) => i64::try_from(i).ok(),
+            Value::Text(s) => s.parse().ok(),
             _ => None,
         }
     }
@@ -74,6 +81,7 @@ impl MysqlType for i8 {
     fn from_cbor(value: Value) -> Option<Self> {
         match value {
             Value::Integer(i) => i8::try_from(i).ok(),
+            Value::Text(s) => s.parse().ok(),
             _ => None,
         }
     }
@@ -89,6 +97,7 @@ impl MysqlType for u8 {
     fn from_cbor(value: Value) -> Option<Self> {
         match value {
             Value::Integer(i) => u8::try_from(i).ok(),
+            Value::Text(s) => s.parse().ok(),
             _ => None,
         }
     }
@@ -104,6 +113,7 @@ impl MysqlType for u16 {
     fn from_cbor(value: Value) -> Option<Self> {
         match value {
             Value::Integer(i) => u16::try_from(i).ok(),
+            Value::Text(s) => s.parse().ok(),
             _ => None,
         }
     }
@@ -119,6 +129,7 @@ impl MysqlType for u32 {
     fn from_cbor(value: Value) -> Option<Self> {
         match value {
             Value::Integer(i) => u32::try_from(i).ok(),
+            Value::Text(s) => s.parse().ok(),
             _ => None,
         }
     }
@@ -136,7 +147,7 @@ impl MysqlType for f32 {
     fn from_cbor(value: Value) -> Option<Self> {
         match value {
             Value::Float(f) => Some(f as f32),
-            Value::Integer(i) => i64::try_from(i).ok().map(|n| n as f32),
+            Value::Text(s) => s.parse().ok(),
             _ => None,
         }
     }
@@ -152,7 +163,7 @@ impl MysqlType for f64 {
     fn from_cbor(value: Value) -> Option<Self> {
         match value {
             Value::Float(f) => Some(f),
-            Value::Integer(i) => i64::try_from(i).ok().map(|n| n as f64),
+            Value::Text(s) => s.parse().ok(),
             _ => None,
         }
     }

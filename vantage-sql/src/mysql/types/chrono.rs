@@ -70,9 +70,10 @@ impl MysqlType for NaiveDateTime {
     type Target = MysqlTypeDateTimeMarker;
 
     fn to_cbor(&self) -> Value {
+        // MySQL-native format: space separator, no T
         Value::Tag(
             0,
-            Box::new(Value::Text(self.format("%Y-%m-%dT%H:%M:%S").to_string())),
+            Box::new(Value::Text(self.format("%Y-%m-%d %H:%M:%S").to_string())),
         )
     }
 

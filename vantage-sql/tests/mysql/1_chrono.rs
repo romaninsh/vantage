@@ -368,3 +368,88 @@ async fn test_timestamp_utc() {
     let fetched = try_round_trip(&t, "ts_utc", &orig).await.unwrap();
     assert_eq!(fetched, orig);
 }
+
+// ═════════════════════════════════════════════════════════════════════════
+// 6. Non-UTC timezone — offset is converted to UTC, offset lost
+// ═════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn test_datetime_fixed_offset() {
+    // "2025-01-10 14:30:00+05:30" is the same instant as "2025-01-10 09:00:00 UTC"
+    // MySQL DATETIME doesn't store timezone — we store as UTC wall clock.
+    use chrono::FixedOffset;
+    let offset = FixedOffset::east_opt(5 * 3600 + 30 * 60).unwrap();
+    let fixed: DateTime<FixedOffset> = NaiveDate::from_ymd_opt(2025, 1, 10)
+        .unwrap()
+        .and_hms_opt(14, 30, 0)
+        .unwrap()
+        .and_local_timezone(offset)
+        .unwrap();
+
+    // Convert to UTC for storage — this is what DateTime<Utc> stores
+    let as_utc: DateTime<Utc> = fixed.with_timezone(&Utc);
+
+    let t = table_for!("chrono_datetime", db().await, ValUtc);
+    let orig = ValUtc {
+        name: "india".into(),
+        value: as_utc,
+    };
+    let fetched = try_round_trip(&t, "dt_tz530", &orig).await.unwrap();
+
+    // Comes back as UTC — same instant, offset lost
+    assert_eq!(fetched.value, as_utc);
+    assert_eq!(
+        fetched.value,
+        NaiveDate::from_ymd_opt(2025, 1, 10)
+            .unwrap()
+            .and_hms_opt(9, 0, 0)
+            .unwrap()
+            .and_utc()
+    );
+}
+
+#[tokio::test]
+async fn test_timestamp_fixed_offset() {
+    // TIMESTAMP stores UTC — same behavior as DATETIME for DateTime<Utc>
+    use chrono::FixedOffset;
+    let offset = FixedOffset::east_opt(5 * 3600 + 30 * 60).unwrap();
+    let fixed: DateTime<FixedOffset> = NaiveDate::from_ymd_opt(2025, 1, 10)
+        .unwrap()
+        .and_hms_opt(14, 30, 0)
+        .unwrap()
+        .and_local_timezone(offset)
+        .unwrap();
+
+    let as_utc: DateTime<Utc> = fixed.with_timezone(&Utc);
+
+    let t = table_for!("chrono_timestamp", db().await, ValUtc);
+    let orig = ValUtc {
+        name: "india".into(),
+        value: as_utc,
+    };
+    let fetched = try_round_trip(&t, "ts_tz530", &orig).await.unwrap();
+    assert_eq!(fetched.value, as_utc);
+}
+
+#[tokio::test]
+async fn test_varchar_fixed_offset() {
+    // VARCHAR stores the UTC string as-is
+    use chrono::FixedOffset;
+    let offset = FixedOffset::east_opt(5 * 3600 + 30 * 60).unwrap();
+    let fixed: DateTime<FixedOffset> = NaiveDate::from_ymd_opt(2025, 1, 10)
+        .unwrap()
+        .and_hms_opt(14, 30, 0)
+        .unwrap()
+        .and_local_timezone(offset)
+        .unwrap();
+
+    let as_utc: DateTime<Utc> = fixed.with_timezone(&Utc);
+
+    let t = table_for!("chrono_varchar", db().await, ValUtc);
+    let orig = ValUtc {
+        name: "india".into(),
+        value: as_utc,
+    };
+    let fetched = try_round_trip(&t, "vc_tz530", &orig).await.unwrap();
+    assert_eq!(fetched.value, as_utc);
+}
