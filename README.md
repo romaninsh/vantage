@@ -676,7 +676,7 @@ If you like what you see so far - reach out to me on BlueSky:
 ## Current status
 
 Vantage `0.4` is under active development. The table below shows implementation progress for each
-backend, measured against the steps in the [Persistence Guide](NEW_PERSISTENCE_GUIDE.md):
+backend, measured against the steps in the [Persistence Guide](docs4/src/new-persistence.md):
 
 | Step | Feature                                                 | SurrealDB | SQLite                        | CSV            | MongoDB | REST API       |
 | ---- | ------------------------------------------------------- | --------- | ----------------------------- | -------------- | ------- | -------------- |

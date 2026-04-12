@@ -25,11 +25,17 @@ jobs:
         with:
           mdbook-version: "0.5.2"
 
+      - name: Cache cargo bin
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin
+          key: mdbook-preprocessors-${{ runner.os }}-v1
+
       - name: Install preprocessors
         run: |
-          cargo install mdbook-toc --locked
-          cargo install mdbook-mermaid --locked
-          cargo install mdbook-admonish --git https://github.com/padamson/mdbook-admonish --branch feat/mdbook-0.5-compat --locked
+          command -v mdbook-toc || cargo install mdbook-toc --locked
+          command -v mdbook-mermaid || cargo install mdbook-mermaid --locked
+          command -v mdbook-admonish || cargo install mdbook-admonish --git https://github.com/padamson/mdbook-admonish --branch feat/mdbook-0.5-compat --locked
 
       - name: Install assets
         working-directory: ./docs4
