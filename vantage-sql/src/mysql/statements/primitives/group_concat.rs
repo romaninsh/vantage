@@ -99,8 +99,6 @@ impl Expressive<AnyMysqlType> for GroupConcat {
         }
 
         let inner = Expression::from_vec(parts, " ");
-        let base = Expression::new("GROUP_CONCAT({})", vec![ExpressiveEnum::Nested(inner)]);
-
-        base
+        Expression::new("GROUP_CONCAT({})", vec![ExpressiveEnum::Nested(inner)])
     }
 }

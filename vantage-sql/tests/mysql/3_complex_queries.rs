@@ -108,10 +108,7 @@ async fn test_q2() {
             .with_source_as("users", "u")
             .with_expression(ident("id").dot_of("u"))
             .with_expression(ident("name").dot_of("u"))
-            .with_expression(
-                ident("name").dot_of("d").with_alias("department_name"),
-                None,
-            )
+            .with_expression(ident("name").dot_of("d").with_alias("department_name"))
             .with_join(MysqlSelectJoin::inner(
                 "departments",
                 "d",
@@ -516,10 +513,7 @@ async fn test_q7() {
                     .else_(mysql_expr!("{}", "intern"))
                     .as_alias("band"),
             )
-            .with_expression(
-                ternary(ident("role").eq("admin"), "Yes", "No").with_alias("is_admin"),
-                None,
-            )
+            .with_expression(ternary(ident("role").eq("admin"), "Yes", "No").as_alias("is_admin"))
             .with_field("display_name")
             .with_order(ident("salary"), Order::Desc),
         "SELECT `id`, `name`, `salary`, \
@@ -839,10 +833,11 @@ async fn test_q11() {
         .with_expression(ident("id").dot_of("d"))
         .with_expression(ident("name").dot_of("d"))
         .with_expression(mysql_expr!("{} + 1", (ident("depth").dot_of("dt"))))
-        .with_expression(
-            concat_sql!(ident("path").dot_of("dt"), " > ", ident("name").dot_of("d")),
-            None,
-        )
+        .with_expression(concat_sql!(
+            ident("path").dot_of("dt"),
+            " > ",
+            ident("name").dot_of("d")
+        ))
         .with_join(MysqlSelectJoin::inner(
             "dept_tree",
             "dt",

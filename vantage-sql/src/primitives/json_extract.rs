@@ -93,14 +93,13 @@ impl Expressive<crate::mysql::types::AnyMysqlType>
     fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
         let json_path = format!("$.{}", self.path.join("."));
         let op = if self.as_json { " -> " } else { " ->> " };
-        let base = Expression::new(
+        Expression::new(
             format!("{{}}{op}{{}}"),
             vec![
                 ExpressiveEnum::Nested(self.source.clone()),
                 ExpressiveEnum::Nested(sql_lit(&json_path)),
             ],
-        );
-        base
+        )
     }
 }
 
