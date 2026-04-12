@@ -1,6 +1,7 @@
-use vantage_expressions::Expressive;
 use vantage_expressions::traits::datasource::SelectableDataSource;
+use vantage_expressions::{Expression, Expressive, Selectable};
 
+use crate::primitives::alias::AliasExt;
 use crate::sqlite::SqliteDB;
 use crate::sqlite::statements::SqliteSelect;
 use crate::sqlite::types::AnySqliteType;
@@ -10,6 +11,18 @@ impl SelectableDataSource<AnySqliteType> for SqliteDB {
 
     fn select(&self) -> Self::Select {
         SqliteSelect::new()
+    }
+
+    fn add_select_column(
+        &self,
+        select: &mut Self::Select,
+        expression: Expression<AnySqliteType>,
+        alias: Option<&str>,
+    ) {
+        match alias {
+            Some(a) => select.add_expression(expression.as_alias(a)),
+            None => select.add_expression(expression),
+        }
     }
 
     async fn execute_select(

@@ -101,10 +101,7 @@ fn query03() {
 
     select.add_field("name");
     select.add_field("price");
-    select.add_expression(
-        Identifier::new("inventory").dot("stock"),
-        Some("stock".to_string()),
-    );
+    select.add_expression(Identifier::new("inventory").dot("stock"));
 
     select.add_source("product", None);
     select.add_where_condition(Field::new("is_deleted").eq(false));
@@ -112,7 +109,7 @@ fn query03() {
     let result = select.preview();
     assert_eq!(
         result,
-        "SELECT name, price, inventory.stock AS stock FROM product WHERE is_deleted = false"
+        "SELECT name, price, inventory.stock FROM product WHERE is_deleted = false"
     );
 }
 

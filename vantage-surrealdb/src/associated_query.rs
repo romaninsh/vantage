@@ -107,12 +107,8 @@ impl<Q: SurrealQueriable + Selectable + Clone, R: Send + Sync> Selectable
         self.query.add_field(field)
     }
 
-    fn add_expression(
-        &mut self,
-        expression: vantage_expressions::Expression,
-        alias: Option<String>,
-    ) {
-        self.query.add_expression(expression, alias)
+    fn add_expression(&mut self, expression: vantage_expressions::Expression) {
+        self.query.add_expression(expression)
     }
 
     fn add_where_condition(&mut self, condition: vantage_expressions::Expression) {

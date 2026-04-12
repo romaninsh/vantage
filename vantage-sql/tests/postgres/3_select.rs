@@ -6,6 +6,7 @@ use vantage_sql::postgres::PostgresType;
 use vantage_sql::postgres::statements::PostgresSelect;
 use vantage_sql::postgres::{AnyPostgresType, PostgresDB};
 use vantage_sql::postgres_expr;
+use vantage_sql::primitives::alias::AliasExt;
 use vantage_types::{Record, TryFromRecord, entity};
 
 const PG_URL: &str = "postgres://vantage:vantage@localhost:5433/vantage";
@@ -104,7 +105,7 @@ fn test_select_group_by_with_expression() {
     let s = PostgresSelect::new()
         .with_source("product")
         .with_field("is_deleted")
-        .with_expression(postgres_expr!("COUNT(*)"), Some("cnt".to_string()));
+        .with_expression(postgres_expr!("COUNT(*)").as_alias("cnt"));
     let mut s = s;
     s.add_group_by(postgres_expr!("\"is_deleted\""));
     assert_eq!(

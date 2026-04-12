@@ -1,8 +1,6 @@
 use std::fmt::{Debug, Display};
 
-use vantage_expressions::{Expression, Expressive, ExpressiveEnum, expr_any};
-
-use super::identifier::Identifier;
+use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
 /// Vendor-aware date formatting expression.
 ///
@@ -22,13 +20,12 @@ use super::identifier::Identifier;
 /// use vantage_sql::primitives::date_format::DateFormat;
 ///
 /// DateFormat::new(ident("created_at").dot_of("o"), "%Y-%m")
-///     .with_alias("month")
+///     .as_alias("month")
 /// ```
 #[derive(Debug, Clone)]
 pub struct DateFormat<T: Debug + Display + Clone> {
     expr: Expression<T>,
     format: String,
-    alias: Option<String>,
     /// When true, pass the format string as-is without token translation.
     raw: bool,
 }
@@ -39,7 +36,6 @@ impl<T: Debug + Display + Clone> DateFormat<T> {
         Self {
             expr: expr.expr(),
             format: format.into(),
-            alias: None,
             raw: false,
         }
     }
@@ -49,14 +45,8 @@ impl<T: Debug + Display + Clone> DateFormat<T> {
         Self {
             expr: expr.expr(),
             format: format.into(),
-            alias: None,
             raw: true,
         }
-    }
-
-    pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
-        self.alias = Some(alias.into());
-        self
     }
 }
 
@@ -130,17 +120,13 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
         // SQLite uses strftime natively — no translation needed regardless of `raw`
         let fmt = self.format.clone();
         let _ = self.raw;
-        let base = Expression::new(
+        Expression::new(
             "STRFTIME({}, {})",
             vec![
                 ExpressiveEnum::Scalar(fmt.into()),
                 ExpressiveEnum::Nested(self.expr.clone()),
             ],
-        );
-        match &self.alias {
-            Some(alias) => expr_any!("{} AS {}", (base), (Identifier::new(alias))),
-            None => base,
-        }
+        )
     }
 }
 
@@ -156,17 +142,13 @@ impl Expressive<crate::mysql::types::AnyMysqlType>
         } else {
             strftime_to_mysql(&self.format)
         };
-        let base = Expression::new(
+        Expression::new(
             "DATE_FORMAT({}, {})",
             vec![
                 ExpressiveEnum::Nested(self.expr.clone()),
                 ExpressiveEnum::Scalar(fmt.into()),
             ],
-        );
-        match &self.alias {
-            Some(alias) => expr_any!("{} AS {}", (base), (Identifier::new(alias))),
-            None => base,
-        }
+        )
     }
 }
 
@@ -182,16 +164,12 @@ impl Expressive<crate::postgres::types::AnyPostgresType>
         } else {
             strftime_to_pg(&self.format)
         };
-        let base = Expression::new(
+        Expression::new(
             "TO_CHAR({}, {})",
             vec![
                 ExpressiveEnum::Nested(self.expr.clone()),
                 ExpressiveEnum::Scalar(fmt.into()),
             ],
-        );
-        match &self.alias {
-            Some(alias) => expr_any!("{} AS {}", (base), (Identifier::new(alias))),
-            None => base,
-        }
+        )
     }
 }

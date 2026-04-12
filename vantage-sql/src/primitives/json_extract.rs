@@ -1,9 +1,7 @@
 use std::fmt::{Debug, Display};
 
 use vantage_core::util::IntoVec;
-use vantage_expressions::{Expression, Expressive, ExpressiveEnum, expr_any};
-
-use super::identifier::Identifier;
+use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
 /// Vendor-aware JSON field extraction.
 ///
@@ -33,7 +31,6 @@ use super::identifier::Identifier;
 pub struct JsonExtract<T: Debug + Display + Clone> {
     source: Expression<T>,
     path: Vec<String>,
-    alias: Option<String>,
     /// When true, return the raw JSON value instead of extracting as text.
     /// Affects MySQL (`->` vs `->>`) and PostgreSQL (all `->` vs final `->>`)
     as_json: bool,
@@ -44,7 +41,6 @@ impl<T: Debug + Display + Clone> JsonExtract<T> {
         Self {
             source: source.expr(),
             path: path.into_vec(),
-            alias: None,
             as_json: false,
         }
     }
@@ -52,11 +48,6 @@ impl<T: Debug + Display + Clone> JsonExtract<T> {
     /// Return raw JSON instead of text. Renders `->` instead of `->>` in MySQL/PG.
     pub fn as_json(mut self) -> Self {
         self.as_json = true;
-        self
-    }
-
-    pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
-        self.alias = Some(alias.into());
         self
     }
 }
@@ -83,17 +74,13 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
 {
     fn expr(&self) -> Expression<crate::sqlite::types::AnySqliteType> {
         let json_path = format!("$.{}", self.path.join("."));
-        let base = Expression::new(
+        Expression::new(
             "JSON_EXTRACT({}, {})",
             vec![
                 ExpressiveEnum::Nested(self.source.clone()),
                 ExpressiveEnum::Nested(sql_lit(&json_path)),
             ],
-        );
-        match &self.alias {
-            Some(alias) => expr_any!("{} AS {}", (base), (Identifier::new(alias))),
-            None => base,
-        }
+        )
     }
 }
 
@@ -106,17 +93,13 @@ impl Expressive<crate::mysql::types::AnyMysqlType>
     fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
         let json_path = format!("$.{}", self.path.join("."));
         let op = if self.as_json { " -> " } else { " ->> " };
-        let base = Expression::new(
+        Expression::new(
             format!("{{}}{op}{{}}"),
             vec![
                 ExpressiveEnum::Nested(self.source.clone()),
                 ExpressiveEnum::Nested(sql_lit(&json_path)),
             ],
-        );
-        match &self.alias {
-            Some(alias) => expr_any!("{} AS {}", (base), (Identifier::new(alias))),
-            None => base,
-        }
+        )
     }
 }
 
@@ -151,9 +134,6 @@ impl Expressive<crate::postgres::types::AnyPostgresType>
             );
         }
 
-        match &self.alias {
-            Some(alias) => expr_any!("{} AS {}", (current), (Identifier::new(alias))),
-            None => current,
-        }
+        current
     }
 }

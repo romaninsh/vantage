@@ -84,8 +84,8 @@ pub trait Selectable<T, C = Expression<T>>: Send + Sync + Debug + Clone {
     /// Adds a column name to the SELECT clause.
     fn add_field(&mut self, field: impl Into<String>);
 
-    /// Adds a complex expression to the SELECT clause with optional alias.
-    fn add_expression(&mut self, expression: impl Expressive<T>, alias: Option<String>);
+    /// Adds a complex expression to the SELECT clause.
+    fn add_expression(&mut self, expression: impl Expressive<T>);
 
     /// Adds a condition to the WHERE clause.
     fn add_where_condition(&mut self, condition: impl Into<C>);
@@ -195,11 +195,11 @@ pub trait Selectable<T, C = Expression<T>>: Send + Sync + Debug + Clone {
     }
 
     /// Builder pattern method identical to [`Self::add_expression`].
-    fn with_expression(mut self, expression: impl Expressive<T>, alias: Option<String>) -> Self
+    fn with_expression(mut self, expression: impl Expressive<T>) -> Self
     where
         Self: Sized,
     {
-        Self::add_expression(&mut self, expression, alias);
+        Self::add_expression(&mut self, expression);
         self
     }
 

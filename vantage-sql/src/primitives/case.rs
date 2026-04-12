@@ -11,13 +11,12 @@ use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 ///     .when(sqlite_expr!("{} >= {}", (Identifier::new("salary")), 100000.0f64), sqlite_expr!("{}", "senior"))
 ///     .when(sqlite_expr!("{} >= {}", (Identifier::new("salary")), 60000.0f64), sqlite_expr!("{}", "mid"))
 ///     .else_(sqlite_expr!("{}", "intern"))
-///     .with_alias("band")
+///     .as_alias("band")
 /// ```
 #[derive(Debug, Clone)]
 pub struct Case<T: Debug + Display + Clone> {
     branches: Vec<(Expression<T>, Expression<T>)>,
     else_branch: Option<Expression<T>>,
-    alias: Option<String>,
 }
 
 impl<T: Debug + Display + Clone> Default for Case<T> {
@@ -31,7 +30,6 @@ impl<T: Debug + Display + Clone> Case<T> {
         Self {
             branches: Vec::new(),
             else_branch: None,
-            alias: None,
         }
     }
 
@@ -42,11 +40,6 @@ impl<T: Debug + Display + Clone> Case<T> {
 
     pub fn else_(mut self, value: impl Expressive<T>) -> Self {
         self.else_branch = Some(value.expr());
-        self
-    }
-
-    pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
-        self.alias = Some(alias.into());
         self
     }
 }
@@ -66,7 +59,7 @@ impl<T: Debug + Display + Clone> Expressive<T> for Case<T> {
 
         let branches_expr = Expression::from_vec(parts, "");
 
-        let base = match &self.else_branch {
+        match &self.else_branch {
             Some(else_val) => Expression::new(
                 "CASE{} ELSE {} END",
                 vec![
@@ -75,14 +68,6 @@ impl<T: Debug + Display + Clone> Expressive<T> for Case<T> {
                 ],
             ),
             None => Expression::new("CASE{} END", vec![ExpressiveEnum::Nested(branches_expr)]),
-        };
-
-        match &self.alias {
-            Some(alias) => Expression::new(
-                format!("{{}} AS \"{}\"", alias),
-                vec![ExpressiveEnum::Nested(base)],
-            ),
-            None => base,
         }
     }
 }

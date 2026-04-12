@@ -3,6 +3,7 @@
 //! All queries built using the Selectable trait methods, not custom builders.
 
 use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
+use vantage_sql::primitives::alias::AliasExt;
 #[allow(unused_imports)]
 use vantage_sql::sqlite::SqliteType;
 use vantage_sql::sqlite::statements::SqliteSelect;
@@ -107,7 +108,7 @@ fn test_select_group_by_with_expression() {
     let s = SqliteSelect::new()
         .with_source("product")
         .with_field("is_deleted")
-        .with_expression(sqlite_expr!("COUNT(*)"), Some("cnt".to_string()));
+        .with_expression(sqlite_expr!("COUNT(*)").as_alias("cnt"));
     let mut s = s;
     s.add_group_by(sqlite_expr!("\"is_deleted\""));
     assert_eq!(

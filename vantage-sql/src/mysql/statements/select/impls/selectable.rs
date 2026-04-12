@@ -17,9 +17,9 @@ impl MysqlSelect {
         let needs_cast = matches!(func, "sum" | "avg");
         if needs_cast {
             let cast = expr_any!("CAST({} AS SIGNED)", (agg));
-            s.add_expression(cast, None);
+            s.add_expression(cast);
         } else {
-            s.add_expression(agg, None);
+            s.add_expression(agg);
         }
 
         s.clear_order_by();
@@ -56,13 +56,8 @@ impl Selectable<AnyMysqlType> for MysqlSelect {
         self.fields.push(ident(field).expr());
     }
 
-    fn add_expression(&mut self, expression: impl Expressive<AnyMysqlType>, alias: Option<String>) {
-        let expr = expression.expr();
-        let field = match alias {
-            Some(a) => expr_any!("{} AS {}", (expr), (ident(a))),
-            None => expr,
-        };
-        self.fields.push(field);
+    fn add_expression(&mut self, expression: impl Expressive<AnyMysqlType>) {
+        self.fields.push(expression.expr());
     }
 
     fn add_where_condition(&mut self, condition: impl Into<Expression<AnyMysqlType>>) {

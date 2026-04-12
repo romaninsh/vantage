@@ -21,16 +21,8 @@ impl Selectable<AnyMongoType, MongoCondition> for MongoSelect {
         self.fields.push(field.into());
     }
 
-    fn add_expression(
-        &mut self,
-        _expression: impl Expressive<AnyMongoType>,
-        alias: Option<String>,
-    ) {
+    fn add_expression(&mut self, _expression: impl Expressive<AnyMongoType>) {
         // MongoDB projections don't support arbitrary expressions in find().
-        // If an alias is given, treat it as a renamed field.
-        if let Some(alias) = alias {
-            self.fields.push(alias);
-        }
     }
 
     fn add_where_condition(&mut self, condition: impl Into<MongoCondition>) {

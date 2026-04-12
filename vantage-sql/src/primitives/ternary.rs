@@ -1,8 +1,6 @@
 use std::fmt::{Debug, Display};
 
-use vantage_expressions::{Expression, Expressive, ExpressiveEnum, expr_any};
-
-use super::identifier::Identifier;
+use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
 /// Vendor-aware inline conditional expression.
 ///
@@ -18,7 +16,7 @@ use super::identifier::Identifier;
 ///
 /// // With Identifier + Operation:
 /// ternary(Identifier::new("role").eq("admin"), "Yes", "No")
-///     .with_alias("is_admin")
+///     .as_alias("is_admin")
 ///
 /// // With vendor expression for the condition:
 /// ternary(
@@ -32,7 +30,6 @@ pub struct Ternary<T: Debug + Display + Clone> {
     condition: Expression<T>,
     true_val: Expression<T>,
     false_val: Expression<T>,
-    alias: Option<String>,
 }
 
 impl<T: Debug + Display + Clone> Ternary<T> {
@@ -45,13 +42,7 @@ impl<T: Debug + Display + Clone> Ternary<T> {
             condition: condition.expr(),
             true_val: true_val.expr(),
             false_val: false_val.expr(),
-            alias: None,
         }
-    }
-
-    pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
-        self.alias = Some(alias.into());
-        self
     }
 
     fn args(&self) -> Vec<ExpressiveEnum<T>> {
@@ -79,11 +70,7 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
     for Ternary<crate::sqlite::types::AnySqliteType>
 {
     fn expr(&self) -> Expression<crate::sqlite::types::AnySqliteType> {
-        let base = Expression::new("IIF({}, {}, {})", self.args());
-        match &self.alias {
-            Some(alias) => expr_any!("{} AS {}", (base), (Identifier::new(alias))),
-            None => base,
-        }
+        Expression::new("IIF({}, {}, {})", self.args())
     }
 }
 
@@ -92,11 +79,7 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
 #[cfg(feature = "mysql")]
 impl Expressive<crate::mysql::types::AnyMysqlType> for Ternary<crate::mysql::types::AnyMysqlType> {
     fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
-        let base = Expression::new("IF({}, {}, {})", self.args());
-        match &self.alias {
-            Some(alias) => expr_any!("{} AS {}", (base), (Identifier::new(alias))),
-            None => base,
-        }
+        Expression::new("IF({}, {}, {})", self.args())
     }
 }
 
@@ -107,10 +90,6 @@ impl Expressive<crate::postgres::types::AnyPostgresType>
     for Ternary<crate::postgres::types::AnyPostgresType>
 {
     fn expr(&self) -> Expression<crate::postgres::types::AnyPostgresType> {
-        let base = Expression::new("CASE WHEN {} THEN {} ELSE {} END", self.args());
-        match &self.alias {
-            Some(alias) => expr_any!("{} AS {}", (base), (Identifier::new(alias))),
-            None => base,
-        }
+        Expression::new("CASE WHEN {} THEN {} ELSE {} END", self.args())
     }
 }

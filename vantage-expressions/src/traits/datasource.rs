@@ -47,4 +47,20 @@ pub trait SelectableDataSource<T = Value, C = Expression<T>>: DataSource {
 
     // Execute select query directly
     fn execute_select(&self, select: &Self::Select) -> impl Future<Output = Result<Vec<T>>> + Send;
+
+    /// Add a column expression to a select query with optional alias.
+    /// Backends must override this if they support aliases.
+    fn add_select_column(
+        &self,
+        select: &mut Self::Select,
+        expression: Expression<T>,
+        alias: Option<&str>,
+    ) where
+        T: Clone,
+    {
+        if alias.is_some() {
+            panic!("add_select_column with alias not implemented for this backend");
+        }
+        select.add_expression(expression);
+    }
 }

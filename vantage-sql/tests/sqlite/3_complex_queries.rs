@@ -5,6 +5,7 @@
 
 use serde::Deserialize;
 use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
+use vantage_sql::primitives::alias::AliasExt;
 use vantage_sql::primitives::identifier::ident;
 use vantage_sql::sqlite::SqliteDB;
 use vantage_sql::sqlite::statements::SqliteSelect;
@@ -104,12 +105,9 @@ async fn test_q2() {
     let users: Vec<UserWithDept> = check_and_run(
         &SqliteSelect::new()
             .with_source_as("users", "u")
-            .with_expression(ident("id").dot_of("u"), None)
-            .with_expression(ident("name").dot_of("u"), None)
-            .with_expression(
-                ident("name").dot_of("d").with_alias("department_name"),
-                None,
-            )
+            .with_expression(ident("id").dot_of("u"))
+            .with_expression(ident("name").dot_of("u"))
+            .with_expression(ident("name").dot_of("d").with_alias("department_name"))
             .with_join(SqliteSelectJoin::inner(
                 "departments",
                 "d",
@@ -172,8 +170,8 @@ async fn test_q3() {
 
     let select = SqliteSelect::new()
         .with_source_as("users", "u")
-        .with_expression(ident("id").dot_of("u"), None)
-        .with_expression(ident("name").dot_of("u"), None)
+        .with_expression(ident("id").dot_of("u"))
+        .with_expression(ident("name").dot_of("u"))
         .with_expression(
             Fx::new(
                 "coalesce",
@@ -181,8 +179,8 @@ async fn test_q3() {
                     Fx::new("sum", [ident("total").dot_of("o").expr()]).expr(),
                     sqlite_expr!("{}", 0.0f64),
                 ],
-            ),
-            Some("total_spent".into()),
+            )
+            .as_alias("total_spent"),
         )
         .with_join(SqliteSelectJoin::left(
             "orders",
@@ -259,16 +257,10 @@ async fn test_q4() {
         &SqliteSelect::new()
             .with_source("products")
             .with_field("category")
-            .with_expression(
-                Fx::new("count", [sqlite_expr!("*")]),
-                Some("product_count".into()),
-            )
-            .with_expression(Fx::new("avg", [price.expr()]), Some("avg_price".into()))
-            .with_expression(Fx::new("min", [price.expr()]), Some("cheapest".into()))
-            .with_expression(
-                Fx::new("max", [price.expr()]),
-                Some("most_expensive".into()),
-            )
+            .with_expression(Fx::new("count", [sqlite_expr!("*")]).as_alias("product_count"))
+            .with_expression(Fx::new("avg", [price.expr()]).as_alias("avg_price"))
+            .with_expression(Fx::new("min", [price.expr()]).as_alias("cheapest"))
+            .with_expression(Fx::new("max", [price.expr()]).as_alias("most_expensive"))
             .with_group_by(ident("category"))
             .with_having(sqlite_expr!(
                 "{} > {}",
@@ -334,12 +326,12 @@ async fn test_q5() {
 
     let count_subquery = SqliteSelect::new()
         .with_source_as("orders", "o")
-        .with_expression(Fx::new("count", [sqlite_expr!("*")]), None)
+        .with_expression(Fx::new("count", [sqlite_expr!("*")]))
         .with_condition(user_id_match.clone());
 
     let exists_subquery = SqliteSelect::new()
         .with_source_as("orders", "o")
-        .with_expression(sqlite_expr!("1"), None)
+        .with_expression(sqlite_expr!("1"))
         .with_condition(user_id_match)
         .with_condition(sqlite_expr!(
             "{} = {}",
@@ -350,11 +342,11 @@ async fn test_q5() {
     let users: Vec<UserOrderCount> = check_and_run(
         &SqliteSelect::new()
             .with_source_as("users", "u")
-            .with_expression(ident("id").dot_of("u"), None)
-            .with_expression(ident("name").dot_of("u"), None)
+            .with_expression(ident("id").dot_of("u"))
+            .with_expression(ident("name").dot_of("u"))
             .with_expression(
-                sqlite_expr!("({})", (count_subquery)),
-                Some("order_count".into()),
+                sqlite_expr!("({})", (count_subquery))
+                .as_alias("order_count"),
             )
             .with_condition(Fx::new("exists", [exists_subquery.expr()]))
             .with_order(ident("order_count"), Order::Desc)
@@ -411,23 +403,17 @@ async fn test_q6() {
     let stats_subquery = SqliteSelect::new()
         .with_source("orders")
         .with_field("user_id")
-        .with_expression(
-            Fx::new("count", [sqlite_expr!("*")]),
-            Some("order_count".into()),
-        )
-        .with_expression(
-            Fx::new("avg", [ident("total").expr()]),
-            Some("avg_total".into()),
-        )
+        .with_expression(Fx::new("count", [sqlite_expr!("*")]).as_alias("order_count"))
+        .with_expression(Fx::new("avg", [ident("total").expr()]).as_alias("avg_total"))
         .with_condition(sqlite_expr!("{} != {}", (ident("status")), "cancelled"))
         .with_group_by(ident("user_id"));
 
     let users: Vec<UserOrderStats> = check_and_run(
         &SqliteSelect::new()
             .with_source_as("users", "u")
-            .with_expression(ident("name").dot_of("u"), None)
-            .with_expression(ident("order_count").dot_of("stats"), None)
-            .with_expression(ident("avg_total").dot_of("stats"), None)
+            .with_expression(ident("name").dot_of("u"))
+            .with_expression(ident("order_count").dot_of("stats"))
+            .with_expression(ident("avg_total").dot_of("stats"))
             .with_join(SqliteSelectJoin::inner_expr(
                 stats_subquery,
                 "stats",
@@ -523,13 +509,10 @@ async fn test_q7() {
                         sqlite_expr!("{} >= {}", (salary.clone()), 30000.0f64),
                         sqlite_expr!("{}", "junior"),
                     )
-                    .else_(sqlite_expr!("{}", "intern")),
-                Some("band".into()),
+                    .else_(sqlite_expr!("{}", "intern"))
+                    .as_alias("band"),
             )
-            .with_expression(
-                ternary(ident("role").eq("admin"), "Yes", "No").with_alias("is_admin"),
-                None,
-            )
+            .with_expression(ternary(ident("role").eq("admin"), "Yes", "No").as_alias("is_admin"))
             .with_field("display_name")
             .with_order(ident("salary"), Order::Desc),
         "SELECT \"id\", \"name\", \"salary\", \
@@ -582,21 +565,21 @@ async fn test_q8() {
         .with_source("users")
         .with_field("id")
         .with_field("name")
-        .with_expression(sqlite_expr!("{}", "user"), Some("source".into()))
+        .with_expression(sqlite_expr!("{}", "user").as_alias("source"))
         .with_condition(sqlite_expr!("{} = {}", (ident("role")), "admin"));
 
     let depts_with_budget = SqliteSelect::new()
         .with_source("departments")
         .with_field("id")
         .with_field("name")
-        .with_expression(sqlite_expr!("{}", "department"), Some("source".into()))
+        .with_expression(sqlite_expr!("{}", "department").as_alias("source"))
         .with_condition(sqlite_expr!("{} IS NOT NULL", (ident("budget"))));
 
     let depts_zero_budget = SqliteSelect::new()
         .with_source("departments")
         .with_field("id")
         .with_field("name")
-        .with_expression(sqlite_expr!("{}", "department"), Some("source".into()))
+        .with_expression(sqlite_expr!("{}", "department").as_alias("source"))
         .with_condition(sqlite_expr!("{} = {}", (ident("budget")), 0.0f64));
 
     let compound = Union::new(admins)
@@ -674,24 +657,24 @@ async fn test_q9() {
     let rows: Vec<SalaryRanking> = check_and_run(
         &SqliteSelect::new()
             .with_source_as("users", "u")
-            .with_expression(dept.clone(), None)
-            .with_expression(ident("name").dot_of("u"), None)
-            .with_expression(salary.clone(), None)
+            .with_expression(dept.clone())
+            .with_expression(ident("name").dot_of("u"))
+            .with_expression(salary.clone())
             .with_expression(
-                Window::named("win").apply(Fx::new("row_number", vec![])),
-                Some("row_num".into()),
+                Window::named("win").apply(Fx::new("row_number", vec![]))
+                .as_alias("row_num"),
             )
             .with_expression(
-                Window::named("win").apply(Fx::new("rank", vec![])),
-                Some("salary_rank".into()),
+                Window::named("win").apply(Fx::new("rank", vec![]))
+                .as_alias("salary_rank"),
             )
             .with_expression(
                 Window::new()
                     .partition_by(dept.clone())
                     .order_by(salary.clone(), Order::Desc)
                     .rows("UNBOUNDED PRECEDING", "CURRENT ROW")
-                    .apply(Fx::new("sum", [salary.expr()])),
-                Some("running_total".into()),
+                    .apply(Fx::new("sum", [salary.expr()]))
+                .as_alias("running_total"),
             )
             .with_condition(sqlite_expr!("{} IS NOT NULL", (dept)))
             .with_window("win", Window::new()
@@ -760,8 +743,8 @@ async fn test_q10() {
             .with_cte("active_orders", SqliteSelect::new()
                 .with_source("orders")
                 .with_field("user_id")
-                .with_expression(Fx::new("count", [sqlite_expr!("*")]), Some("cnt".into()))
-                .with_expression(Fx::new("sum", [ident("total").expr()]), Some("revenue".into()))
+                .with_expression(Fx::new("count", [sqlite_expr!("*")]).as_alias("cnt"))
+                .with_expression(Fx::new("sum", [ident("total").expr()]).as_alias("revenue"))
                 .with_condition(sqlite_expr!("{} IN ({}, {})",
                     (ident("status")), "completed", "shipped"))
                 .with_group_by(ident("user_id")), false)
@@ -771,8 +754,8 @@ async fn test_q10() {
                 .with_field("revenue")
                 .with_condition(sqlite_expr!("{} > {}", (ident("revenue")), 400.0f64)), false)
             .with_source_as("top_spenders", "t")
-            .with_expression(ident("name").dot_of("u"), None)
-            .with_expression(ident("revenue").dot_of("t"), None)
+            .with_expression(ident("name").dot_of("u"))
+            .with_expression(ident("revenue").dot_of("t"))
             .with_join(SqliteSelectJoin::inner("users", "u",
                 sqlite_expr!("{} = {}",
                     (ident("id").dot_of("u")),
@@ -840,19 +823,20 @@ async fn test_q11() {
         .with_source("departments")
         .with_field("id")
         .with_field("name")
-        .with_expression(sqlite_expr!("0"), None)
-        .with_expression(ident("name"), None)
+        .with_expression(sqlite_expr!("0"))
+        .with_expression(ident("name"))
         .with_condition(sqlite_expr!("{} IS NULL", (ident("parent_id"))));
 
     let recursive = SqliteSelect::new()
         .with_source_as("departments", "d")
-        .with_expression(ident("id").dot_of("d"), None)
-        .with_expression(ident("name").dot_of("d"), None)
-        .with_expression(sqlite_expr!("{} + 1", (ident("depth").dot_of("dt"))), None)
-        .with_expression(
-            concat_sql!(ident("path").dot_of("dt"), " > ", ident("name").dot_of("d")),
-            None,
-        )
+        .with_expression(ident("id").dot_of("d"))
+        .with_expression(ident("name").dot_of("d"))
+        .with_expression(sqlite_expr!("{} + 1", (ident("depth").dot_of("dt"))))
+        .with_expression(concat_sql!(
+            ident("path").dot_of("dt"),
+            " > ",
+            ident("name").dot_of("d")
+        ))
         .with_join(SqliteSelectJoin::inner(
             "dept_tree",
             "dt",
@@ -929,9 +913,9 @@ async fn test_q12() {
         &SqliteSelect::new()
             .with_distinct(true)
             .with_source_as("products", "p")
-            .with_expression(ident("id").dot_of("p"), None)
-            .with_expression(ident("name").dot_of("p"), None)
-            .with_expression(ident("price").dot_of("p"), None)
+            .with_expression(ident("id").dot_of("p"))
+            .with_expression(ident("name").dot_of("p"))
+            .with_expression(ident("price").dot_of("p"))
             .with_join(SqliteSelectJoin::inner(
                 "product_tags",
                 "pt",
@@ -1023,17 +1007,13 @@ async fn test_q13() {
             .with_source("products")
             .with_field("id")
             .with_field("name")
+            .with_expression(JsonExtract::new(metadata.clone(), "color").as_alias("color"))
             .with_expression(
-                JsonExtract::new(metadata.clone(), "color").with_alias("color"),
-                None,
+                sqlite_expr!("{} ->> {}", (metadata.clone()), "$.weight_kg").as_alias("weight"),
             )
             .with_expression(
-                sqlite_expr!("{} ->> {}", (metadata.clone()), "$.weight_kg"),
-                Some("weight".into()),
-            )
-            .with_expression(
-                sqlite_expr!("CAST({} ->> {} AS REAL)", (metadata.clone()), "$.rating"),
-                Some("rating".into()),
+                sqlite_expr!("CAST({} ->> {} AS REAL)", (metadata.clone()), "$.rating")
+                    .as_alias("rating"),
             )
             .with_expression(
                 Fx::new(
@@ -1042,8 +1022,8 @@ async fn test_q13() {
                         ident("category").expr(),
                         sqlite_expr!("{}", "uncategorized"),
                     ],
-                ),
-                Some("clean_category".into()),
+                )
+                .as_alias("clean_category"),
             )
             .with_condition(sqlite_expr!(
                 "CAST({} ->> {} AS REAL) BETWEEN {} AND {}",
@@ -1117,20 +1097,16 @@ async fn test_q14() {
     let rows: Vec<MonthlyRevenue> = check_and_run(
         &SqliteSelect::new()
             .with_source_as("orders", "o")
-            .with_expression(month_expr.clone(), Some("month".into()))
-            .with_expression(ident("name").dot_of("d"), Some("department".into()))
+            .with_expression(month_expr.clone().as_alias("month"))
+            .with_expression(ident("name").dot_of("d").as_alias("department"))
             .with_expression(
-                Fx::new("count", [ident("id").dot_of("o").expr()]),
-                Some("order_count".into()),
+                Fx::new("count", [ident("id").dot_of("o").expr()]).as_alias("order_count"),
             )
             .with_expression(
-                Fx::new("round", [sum_total.expr(), sqlite_expr!("{}", 2i64)]),
-                Some("monthly_revenue".into()),
+                Fx::new("round", [sum_total.expr(), sqlite_expr!("{}", 2i64)])
+                    .as_alias("monthly_revenue"),
             )
-            .with_expression(
-                Fx::new("typeof", [sum_total.expr()]),
-                Some("sum_type".into()),
-            )
+            .with_expression(Fx::new("typeof", [sum_total.expr()]).as_alias("sum_type"))
             .with_join(SqliteSelectJoin::inner(
                 "users",
                 "u",
@@ -1243,39 +1219,39 @@ async fn test_q15() {
     let rows: Vec<UserWindowStats> = check_and_run(
         &SqliteSelect::new()
             .with_source_as("users", "u")
-            .with_expression(ident("id").dot_of("u"), None)
-            .with_expression(u_name.clone(), None)
-            .with_expression(salary.clone(), None)
-            .with_expression(dept.clone(), None)
+            .with_expression(ident("id").dot_of("u"))
+            .with_expression(u_name.clone())
+            .with_expression(salary.clone())
+            .with_expression(dept.clone())
             .with_expression(
                 sqlite_expr!(
                     "COUNT(*) FILTER (WHERE {} = {}) OVER (PARTITION BY {})",
                     (ident("status").dot_of("o")), "completed",
                     (ident("id").dot_of("u"))
-                ),
-                Some("completed_count".into()),
+                )
+                .as_alias("completed_count"),
             )
             .with_expression(
                 Window::new().order_by(salary.clone(), Order::Asc)
-                    .apply(sqlite_expr!("LAG({}, 1)", (salary.clone()))),
-                Some("prev_salary".into()),
+                    .apply(sqlite_expr!("LAG({}, 1)", (salary.clone())))
+                .as_alias("prev_salary"),
             )
             .with_expression(
                 Window::new().order_by(salary.clone(), Order::Asc)
-                    .apply(sqlite_expr!("LEAD({}, 1)", (salary.clone()))),
-                Some("next_salary".into()),
+                    .apply(sqlite_expr!("LEAD({}, 1)", (salary.clone())))
+                .as_alias("next_salary"),
             )
             .with_expression(
                 dept_salary_win.clone()
                     .range("UNBOUNDED PRECEDING", "UNBOUNDED FOLLOWING")
-                    .apply(Fx::new("first_value", [u_name.expr()])),
-                Some("top_earner".into()),
+                    .apply(Fx::new("first_value", [u_name.expr()]))
+                .as_alias("top_earner"),
             )
             .with_expression(
                 dept_salary_win.clone()
                     .rows("UNBOUNDED PRECEDING", "UNBOUNDED FOLLOWING")
-                    .apply(Fx::new("nth_value", [u_name.expr(), sqlite_expr!("2")])),
-                Some("second_earner".into()),
+                    .apply(Fx::new("nth_value", [u_name.expr(), sqlite_expr!("2")]))
+                .as_alias("second_earner"),
             )
             .with_join(SqliteSelectJoin::left("orders", "o",
                 sqlite_expr!("{} = {}",
