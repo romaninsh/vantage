@@ -1,8 +1,6 @@
 use std::fmt::{Debug, Display};
 
-use vantage_expressions::{Expression, Expressive, ExpressiveEnum, expr_any};
-
-use super::identifier::Identifier;
+use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
 /// Vendor-aware conditional expression.
 ///
@@ -25,7 +23,6 @@ pub struct Iif<T: Debug + Display + Clone> {
     condition: Expression<T>,
     true_val: Expression<T>,
     false_val: Expression<T>,
-    alias: Option<String>,
 }
 
 impl<T: Debug + Display + Clone> Iif<T> {
@@ -38,27 +35,7 @@ impl<T: Debug + Display + Clone> Iif<T> {
             condition: condition.expr(),
             true_val: true_val.expr(),
             false_val: false_val.expr(),
-            alias: None,
         }
-    }
-
-    pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
-        self.alias = Some(alias.into());
-        self
-    }
-}
-
-/// Helper: apply optional alias to an expression.
-fn apply_alias<T: Debug + Display + Clone>(
-    base: Expression<T>,
-    alias: &Option<String>,
-) -> Expression<T>
-where
-    Identifier: Expressive<T>,
-{
-    match alias {
-        Some(a) => expr_any!("{} AS {}", (base), (Identifier::new(a))),
-        None => base,
     }
 }
 
@@ -75,7 +52,7 @@ impl Expressive<crate::sqlite::types::AnySqliteType> for Iif<crate::sqlite::type
                 ExpressiveEnum::Nested(self.false_val.clone()),
             ],
         );
-        apply_alias(base, &self.alias)
+        base
     }
 }
 
@@ -92,7 +69,7 @@ impl Expressive<crate::mysql::types::AnyMysqlType> for Iif<crate::mysql::types::
                 ExpressiveEnum::Nested(self.false_val.clone()),
             ],
         );
-        apply_alias(base, &self.alias)
+        base
     }
 }
 
@@ -111,6 +88,6 @@ impl Expressive<crate::postgres::types::AnyPostgresType>
                 ExpressiveEnum::Nested(self.false_val.clone()),
             ],
         );
-        apply_alias(base, &self.alias)
+        base
     }
 }

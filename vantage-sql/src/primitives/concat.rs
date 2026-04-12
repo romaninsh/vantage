@@ -1,9 +1,7 @@
 use std::fmt::{Debug, Display};
 
 use vantage_core::util::IntoVec;
-use vantage_expressions::{Expression, Expressive, expr_any};
-
-use super::identifier::Identifier;
+use vantage_expressions::{Expression, Expressive};
 
 /// Vendor-aware string concatenation.
 ///
@@ -26,7 +24,6 @@ use super::identifier::Identifier;
 pub struct Concat<T: Debug + Display + Clone> {
     parts: Vec<Expression<T>>,
     separator: Option<Expression<T>>,
-    alias: Option<String>,
 }
 
 impl<T: Debug + Display + Clone> Concat<T> {
@@ -34,18 +31,12 @@ impl<T: Debug + Display + Clone> Concat<T> {
         Self {
             parts: parts.into_vec(),
             separator: None,
-            alias: None,
         }
     }
 
     /// Use CONCAT_WS with a separator instead of plain CONCAT.
     pub fn ws(mut self, separator: impl Expressive<T>) -> Self {
         self.separator = Some(separator.expr());
-        self
-    }
-
-    pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
-        self.alias = Some(alias.into());
         self
     }
 }
@@ -82,7 +73,7 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
     for Concat<crate::sqlite::types::AnySqliteType>
 {
     fn expr(&self) -> Expression<crate::sqlite::types::AnySqliteType> {
-        let base = if let Some(sep) = &self.separator {
+        if let Some(sep) = &self.separator {
             // Interleave parts with separator: a || sep || b || sep || c
             let mut interleaved = Vec::with_capacity(self.parts.len() * 2 - 1);
             for (i, part) in self.parts.iter().enumerate() {
@@ -94,10 +85,6 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
             Expression::from_vec(interleaved, " || ")
         } else {
             Expression::from_vec(self.parts.clone(), " || ")
-        };
-        match &self.alias {
-            Some(alias) => expr_any!("{} AS {}", (base), (Identifier::new(alias))),
-            None => base,
         }
     }
 }
@@ -109,7 +96,7 @@ impl Expressive<crate::mysql::types::AnyMysqlType> for Concat<crate::mysql::type
     fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
         use vantage_expressions::ExpressiveEnum;
 
-        let base = if let Some(sep) = &self.separator {
+        if let Some(sep) = &self.separator {
             let mut all = vec![sep.clone()];
             all.extend(self.parts.clone());
             let args = Expression::from_vec(all, ", ");
@@ -117,10 +104,6 @@ impl Expressive<crate::mysql::types::AnyMysqlType> for Concat<crate::mysql::type
         } else {
             let args = Expression::from_vec(self.parts.clone(), ", ");
             Expression::new("CONCAT({})", vec![ExpressiveEnum::Nested(args)])
-        };
-        match &self.alias {
-            Some(alias) => expr_any!("{} AS {}", (base), (Identifier::new(alias))),
-            None => base,
         }
     }
 }
@@ -134,17 +117,13 @@ impl Expressive<crate::postgres::types::AnyPostgresType>
     fn expr(&self) -> Expression<crate::postgres::types::AnyPostgresType> {
         use vantage_expressions::ExpressiveEnum;
 
-        let base = if let Some(sep) = &self.separator {
+        if let Some(sep) = &self.separator {
             let mut all = vec![sep.clone()];
             all.extend(self.parts.clone());
             let args = Expression::from_vec(all, ", ");
             Expression::new("CONCAT_WS({})", vec![ExpressiveEnum::Nested(args)])
         } else {
             Expression::from_vec(self.parts.clone(), " || ")
-        };
-        match &self.alias {
-            Some(alias) => expr_any!("{} AS {}", (base), (Identifier::new(alias))),
-            None => base,
         }
     }
 }

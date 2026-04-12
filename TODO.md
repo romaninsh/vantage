@@ -33,9 +33,9 @@
 
 # Query Builder Improvements (from MySQL work, 2026-04)
 
-- [ ] `expr.as_alias()` — add alias method on `Expression<T>`, then remove `Option<String>` from
-      `with_expression` and all `with_alias()` from primitives (Fx, Iif, Concat, GroupConcat,
-      JsonExtract, DateFormat, Case). Also fixes Fx alias hardcoding `"` instead of backticks.
+- [x] `expr.as_alias()` — `AliasExt` blanket impl in vantage-sql, removed `Option<String>` from
+      `Selectable::with_expression`, stripped alias from all primitives (Fx, Iif, Concat,
+      GroupConcat, JsonExtract, DateFormat, Case, Ternary). Fixes Fx/Case hardcoded `"` quoting.
 - [ ] `sql_fx!()` macro — mixed-type args for function calls:
       `sql_fx!("find_in_set", "write", (ident("permissions")))` instead of wrapping every arg in
       `mysql_expr!`

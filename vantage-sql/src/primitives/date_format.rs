@@ -1,8 +1,6 @@
 use std::fmt::{Debug, Display};
 
-use vantage_expressions::{Expression, Expressive, ExpressiveEnum, expr_any};
-
-use super::identifier::Identifier;
+use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
 /// Vendor-aware date formatting expression.
 ///
@@ -28,7 +26,6 @@ use super::identifier::Identifier;
 pub struct DateFormat<T: Debug + Display + Clone> {
     expr: Expression<T>,
     format: String,
-    alias: Option<String>,
     /// When true, pass the format string as-is without token translation.
     raw: bool,
 }
@@ -39,7 +36,6 @@ impl<T: Debug + Display + Clone> DateFormat<T> {
         Self {
             expr: expr.expr(),
             format: format.into(),
-            alias: None,
             raw: false,
         }
     }
@@ -49,14 +45,8 @@ impl<T: Debug + Display + Clone> DateFormat<T> {
         Self {
             expr: expr.expr(),
             format: format.into(),
-            alias: None,
             raw: true,
         }
-    }
-
-    pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
-        self.alias = Some(alias.into());
-        self
     }
 }
 
@@ -137,10 +127,7 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
                 ExpressiveEnum::Nested(self.expr.clone()),
             ],
         );
-        match &self.alias {
-            Some(alias) => expr_any!("{} AS {}", (base), (Identifier::new(alias))),
-            None => base,
-        }
+        base
     }
 }
 
@@ -163,10 +150,7 @@ impl Expressive<crate::mysql::types::AnyMysqlType>
                 ExpressiveEnum::Scalar(fmt.into()),
             ],
         );
-        match &self.alias {
-            Some(alias) => expr_any!("{} AS {}", (base), (Identifier::new(alias))),
-            None => base,
-        }
+        base
     }
 }
 
@@ -189,9 +173,6 @@ impl Expressive<crate::postgres::types::AnyPostgresType>
                 ExpressiveEnum::Scalar(fmt.into()),
             ],
         );
-        match &self.alias {
-            Some(alias) => expr_any!("{} AS {}", (base), (Identifier::new(alias))),
-            None => base,
-        }
+        base
     }
 }

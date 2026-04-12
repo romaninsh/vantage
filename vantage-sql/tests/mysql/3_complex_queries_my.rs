@@ -8,6 +8,7 @@ use serde::Deserialize;
 use vantage_expressions::{ExprDataSource, Expression, Expressive, Order, Selectable};
 use vantage_sql::mysql::MysqlDB;
 use vantage_sql::mysql::operation::MysqlOperation;
+use vantage_sql::primitives::alias::AliasExt;
 use vantage_sql::mysql::statements::MysqlSelect;
 use vantage_sql::mysql::statements::primitives::GroupConcat;
 use vantage_sql::mysql::statements::select::join::MysqlSelectJoin;
@@ -74,23 +75,23 @@ async fn test_my_q1_group_concat() {
     let rows: Vec<CategoryAgg> = check_and_run(
         &MysqlSelect::new()
             .with_source_as("products", "p")
-            .with_expression(ident("category").dot_of("p"), None)
+            .with_expression(ident("category").dot_of("p"))
             .with_expression(
-                Fx::new("count", [mysql_expr!("*")]),
-                Some("total".into()),
+                Fx::new("count", [mysql_expr!("*")])
+                .as_alias("total"),
             )
             .with_expression(
                 GroupConcat::new(ident("name").dot_of("p"))
                     .distinct()
                     .order_by(ident("name").dot_of("p"), Order::Asc)
-                    .separator(", "),
-                Some("product_names".into()),
+                    .separator(", ")
+                .as_alias("product_names"),
             )
             .with_expression(
                 GroupConcat::new(ident("price").dot_of("p"))
                     .order_by(ident("price").dot_of("p"), Order::Desc)
-                    .separator("; "),
-                Some("prices_desc".into()),
+                    .separator("; ")
+                .as_alias("prices_desc"),
             )
             .with_group_by(ident("category").dot_of("p"))
             .with_order(ident("total"), Order::Desc),
@@ -159,12 +160,12 @@ async fn test_my_q2_find_in_set() {
     let rows: Vec<UserPermissions> = check_and_run(
         &MysqlSelect::new()
             .with_source_as("users", "u")
-            .with_expression(ident("id").dot_of("u"), None)
-            .with_expression(ident("name").dot_of("u"), None)
-            .with_expression(ident("role").dot_of("u"), None)
-            .with_expression(ident("permissions").dot_of("u"), None)
-            .with_expression(find_write.clone(), Some("has_write_at_pos".into()))
-            .with_expression(find_admin.clone(), Some("has_admin_at_pos".into()))
+            .with_expression(ident("id").dot_of("u"))
+            .with_expression(ident("name").dot_of("u"))
+            .with_expression(ident("role").dot_of("u"))
+            .with_expression(ident("permissions").dot_of("u"))
+            .with_expression(find_write.clone().as_alias("has_write_at_pos"))
+            .with_expression(find_admin.clone().as_alias("has_admin_at_pos"))
             .with_condition(find_write.gt(mysql_expr!("{}", 0i64)))
             .with_order(
                 Fx::new(
@@ -240,11 +241,11 @@ async fn test_my_q3_json_operators() {
     let rows: Vec<ProductJson> = check_and_run(
         &MysqlSelect::new()
             .with_source_as("products", "p")
-            .with_expression(ident("id").dot_of("p"), None)
-            .with_expression(ident("name").dot_of("p"), None)
-            .with_expression(color, Some("color".into()))
-            .with_expression(rating.clone(), Some("rating".into()))
-            .with_expression(specs, Some("specs_json".into()))
+            .with_expression(ident("id").dot_of("p"))
+            .with_expression(ident("name").dot_of("p"))
+            .with_expression(color.as_alias("color"))
+            .with_expression(rating.clone().as_alias("rating"))
+            .with_expression(specs.as_alias("specs_json"))
             .with_expression(
                 Fx::new(
                     "json_unquote",
@@ -253,8 +254,8 @@ async fn test_my_q3_json_operators() {
                         [metadata.expr(), mysql_expr!("'$.specs.voltage'")],
                     )
                     .expr()],
-                ),
-                Some("voltage".into()),
+                )
+                .as_alias("voltage"),
             )
             .with_condition(Fx::new(
                 "json_contains",
@@ -339,10 +340,10 @@ async fn test_my_q4_json_table() {
                     .expr(),
                 "specs",
             )
-            .with_expression(ident("id").dot_of("p"), None)
-            .with_expression(ident("name").dot_of("p"), None)
-            .with_expression(ident("voltage").dot_of("specs"), None)
-            .with_expression(ident("watts").dot_of("specs"), None)
+            .with_expression(ident("id").dot_of("p"))
+            .with_expression(ident("name").dot_of("p"))
+            .with_expression(ident("voltage").dot_of("specs"))
+            .with_expression(ident("watts").dot_of("specs"))
             .with_condition(ident("voltage").dot_of("specs").gt(mysql_expr!("{}", 0i64)))
             .with_order(ident("watts").dot_of("specs"), Order::Desc),
         concat!(
@@ -403,14 +404,14 @@ async fn test_my_q5_json_agg() {
                     .dot_of("u")
                     .eq(ident("id").dot_of("d")),
             ))
-            .with_expression(ident("name").dot_of("d"), Some("department".into()))
+            .with_expression(ident("name").dot_of("d").as_alias("department"))
             .with_expression(
-                Fx::new("json_arrayagg", [u_name.expr()]),
-                Some("user_names".into()),
+                Fx::new("json_arrayagg", [u_name.expr()])
+                .as_alias("user_names"),
             )
             .with_expression(
-                Fx::new("json_objectagg", [u_name.expr(), u_salary.expr()]),
-                Some("salary_map".into()),
+                Fx::new("json_objectagg", [u_name.expr(), u_salary.expr()])
+                .as_alias("salary_map"),
             )
             .with_condition(mysql_expr!("{} = b'1'", (ident("is_active").dot_of("u"))))
             .with_group_by(ident("id").dot_of("d"))
@@ -471,10 +472,10 @@ async fn test_my_q6_fulltext_search() {
     let rows: Vec<FulltextResult> = check_and_run(
         &MysqlSelect::new()
             .with_source_as("products", "p")
-            .with_expression(ident("id").dot_of("p"), None)
-            .with_expression(ident("name").dot_of("p"), None)
-            .with_expression(ident("description").dot_of("p"), None)
-            .with_expression(match_expr.clone(), Some("relevance".into()))
+            .with_expression(ident("id").dot_of("p"))
+            .with_expression(ident("name").dot_of("p"))
+            .with_expression(ident("description").dot_of("p"))
+            .with_expression(match_expr.clone().as_alias("relevance"))
             .with_condition(match_expr)
             .with_order(ident("relevance"), Order::Desc),
         concat!(
@@ -526,16 +527,16 @@ async fn test_my_q7_regexp() {
     let rows: Vec<UserRegexp> = check_and_run(
         &MysqlSelect::new()
             .with_source_as("users", "u")
-            .with_expression(ident("id").dot_of("u"), None)
-            .with_expression(u_name.clone(), None)
-            .with_expression(u_email.clone(), None)
+            .with_expression(ident("id").dot_of("u"))
+            .with_expression(u_name.clone())
+            .with_expression(u_email.clone())
             .with_expression(
-                Fx::new("regexp_substr", [u_email.expr(), mysql_expr!("'@(.+)$'")]),
-                Some("domain_part".into()),
+                Fx::new("regexp_substr", [u_email.expr(), mysql_expr!("'@(.+)$'")])
+                .as_alias("domain_part"),
             )
             .with_expression(
-                Fx::new("regexp_like", [u_name.expr(), mysql_expr!("'^[A-E]'")]),
-                Some("name_starts_a_to_e".into()),
+                Fx::new("regexp_like", [u_name.expr(), mysql_expr!("'^[A-E]'")])
+                .as_alias("name_starts_a_to_e"),
             )
             .with_condition(u_email.regexp(mysql_expr!("{}", "^[a-z]+@example\\.com$")))
             .with_order(ident("name").dot_of("u"), Order::Asc),
@@ -597,9 +598,9 @@ async fn test_my_q8_if_ifnull() {
     let rows: Vec<OrderConditional> = check_and_run(
         &MysqlSelect::new()
             .with_source_as("orders", "o")
-            .with_expression(ident("id").dot_of("o"), None)
-            .with_expression(ident("total").dot_of("o"), None)
-            .with_expression(o_status.clone(), None)
+            .with_expression(ident("id").dot_of("o"))
+            .with_expression(ident("total").dot_of("o"))
+            .with_expression(o_status.clone())
             .with_expression(
                 Iif::new(
                     o_status.eq(mysql_expr!("{}", "completed")),
@@ -609,21 +610,21 @@ async fn test_my_q8_if_ifnull() {
                         mysql_expr!("'Void'"),
                         mysql_expr!("'Active'"),
                     ),
-                ),
-                Some("status_label".into()),
+                )
+                .as_alias("status_label"),
             )
             .with_expression(
-                Fx::new("ifnull", [o_notes.expr(), mysql_expr!("'(no notes)'")]),
-                Some("safe_notes".into()),
+                Fx::new("ifnull", [o_notes.expr(), mysql_expr!("'(no notes)'")])
+                .as_alias("safe_notes"),
             )
             .with_expression(
-                Fx::new("nullif", [o_status.expr(), mysql_expr!("{}", "pending")]),
-                Some("non_pending_status".into()),
+                Fx::new("nullif", [o_status.expr(), mysql_expr!("{}", "pending")])
+                .as_alias("non_pending_status"),
             )
             .with_expression(
                 Concat::new([o_status.expr(), o_notes.expr()])
-                    .ws(mysql_expr!("' | '")),
-                Some("combined".into()),
+                    .ws(mysql_expr!("' | '"))
+                .as_alias("combined"),
             )
             .with_order(ident("created_at").dot_of("o"), Order::Desc),
         concat!(
@@ -695,18 +696,18 @@ async fn test_my_q9_rollup() {
     let rows: Vec<RollupRow> = check_and_run(
         &MysqlSelect::new()
             .with_source_as("orders", "o")
-            .with_expression(o_status.clone(), None)
-            .with_expression(date_fmt.clone(), Some("month".into()))
+            .with_expression(o_status.clone())
+            .with_expression(date_fmt.clone().as_alias("month"))
             .with_expression(
-                Fx::new("count", [mysql_expr!("*")]),
-                Some("order_count".into()),
+                Fx::new("count", [mysql_expr!("*")])
+                .as_alias("order_count"),
             )
             .with_expression(
-                Fx::new("sum", [ident("total").dot_of("o").expr()]),
-                Some("revenue".into()),
+                Fx::new("sum", [ident("total").dot_of("o").expr()])
+                .as_alias("revenue"),
             )
-            .with_expression(grouping_status.clone(), Some("is_status_total".into()))
-            .with_expression(grouping_month.clone(), Some("is_month_total".into()))
+            .with_expression(grouping_status.clone().as_alias("is_status_total"))
+            .with_expression(grouping_month.clone().as_alias("is_month_total"))
             .with_condition(o_status.ne(mysql_expr!("{}", "cancelled")))
             .with_group_by(o_status.clone())
             .with_group_by(ident("month"))
@@ -790,38 +791,38 @@ async fn test_my_q10_bit_operations() {
                 "u",
                 ident("id").dot_of("u").eq(ident("user_id").dot_of("s")),
             ))
-            .with_expression(ident("name").dot_of("u"), None)
-            .with_expression(ident("day_of_week").dot_of("s"), None)
-            .with_expression(ident("start_time").dot_of("s"), None)
-            .with_expression(ident("end_time").dot_of("s"), None)
-            .with_expression(Fx::new("bin", [flags.expr()]), Some("flags_binary".into()))
+            .with_expression(ident("name").dot_of("u"))
+            .with_expression(ident("day_of_week").dot_of("s"))
+            .with_expression(ident("start_time").dot_of("s"))
+            .with_expression(ident("end_time").dot_of("s"))
+            .with_expression(Fx::new("bin", [flags.expr()]).as_alias("flags_binary"))
             .with_expression(
                 Iif::new(
                     flags.bitand(mysql_expr!("b'00000001'")),
                     mysql_expr!("'Yes'"),
                     mysql_expr!("'No'"),
-                ),
-                Some("is_remote".into()),
+                )
+                .as_alias("is_remote"),
             )
             .with_expression(
                 Iif::new(
                     flags.bitand(mysql_expr!("b'00000010'")),
                     mysql_expr!("'Yes'"),
                     mysql_expr!("'No'"),
-                ),
-                Some("is_flexible".into()),
+                )
+                .as_alias("is_flexible"),
             )
             .with_expression(
                 Iif::new(
                     flags.bitand(mysql_expr!("b'00000100'")),
                     mysql_expr!("'Yes'"),
                     mysql_expr!("'No'"),
-                ),
-                Some("is_oncall".into()),
+                )
+                .as_alias("is_oncall"),
             )
             .with_expression(
-                Fx::new("bit_count", [flags.expr()]),
-                Some("active_flag_count".into()),
+                Fx::new("bit_count", [flags.expr()])
+                .as_alias("active_flag_count"),
             )
             .with_expression(
                 Fx::new(
@@ -830,8 +831,8 @@ async fn test_my_q10_bit_operations() {
                         ident("end_time").dot_of("s").expr(),
                         ident("start_time").dot_of("s").expr(),
                     ],
-                ),
-                Some("duration".into()),
+                )
+                .as_alias("duration"),
             )
             .with_order(ident("name").dot_of("u"), Order::Asc)
             .with_order(ident("day_of_week").dot_of("s"), Order::Asc),
@@ -902,27 +903,27 @@ async fn test_my_q11_year_date_functions() {
     let rows: Vec<UserDateInfo> = check_and_run(
         &MysqlSelect::new()
             .with_source_as("users", "u")
-            .with_expression(ident("name").dot_of("u"), None)
-            .with_expression(ident("hire_year").dot_of("u"), None)
-            .with_expression(created_at.clone(), None)
+            .with_expression(ident("name").dot_of("u"))
+            .with_expression(ident("hire_year").dot_of("u"))
+            .with_expression(created_at.clone())
             .with_expression(
-                DateFormat::raw_format(created_at.clone(), "%W, %M %D %Y"),
-                Some("formatted_date".into()),
+                DateFormat::raw_format(created_at.clone(), "%W, %M %D %Y")
+                .as_alias("formatted_date"),
             )
             .with_expression(
-                Fx::new("last_day", [created_at.expr()]),
-                Some("month_end".into()),
+                Fx::new("last_day", [created_at.expr()])
+                .as_alias("month_end"),
             )
             .with_expression(
-                Fx::new("datediff", [now.expr(), created_at.expr()]),
-                Some("days_since_creation".into()),
+                Fx::new("datediff", [now.expr(), created_at.expr()])
+                .as_alias("days_since_creation"),
             )
             .with_expression(
                 Fx::new(
                     "timestampdiff",
                     [mysql_expr!("MONTH"), created_at.expr(), now.expr()],
-                ),
-                Some("months_active".into()),
+                )
+                .as_alias("months_active"),
             )
             .with_condition(
                 ident("hire_year")
@@ -994,19 +995,19 @@ async fn test_my_q12_spatial() {
     let rows: Vec<ProductSpatial> = check_and_run(
         &MysqlSelect::new()
             .with_source_as("products", "p")
-            .with_expression(ident("id").dot_of("p"), None)
-            .with_expression(ident("name").dot_of("p"), None)
+            .with_expression(ident("id").dot_of("p"))
+            .with_expression(ident("name").dot_of("p"))
             .with_expression(
-                Fx::new("st_x", [location.expr()]),
-                Some("lon".into()),
+                Fx::new("st_x", [location.expr()])
+                .as_alias("lon"),
             )
             .with_expression(
-                Fx::new("st_y", [location.expr()]),
-                Some("lat".into()),
+                Fx::new("st_y", [location.expr()])
+                .as_alias("lat"),
             )
             .with_expression(
-                Fx::new("round", [distance, mysql_expr!("1")]),
-                Some("distance_km".into()),
+                Fx::new("round", [distance, mysql_expr!("1")])
+                .as_alias("distance_km"),
             )
             .with_condition(
                 Fx::new("st_x", [location.expr()]).ne(mysql_expr!("{}", 0i64)),
@@ -1064,11 +1065,11 @@ async fn test_my_q13_generated_columns() {
     let rows: Vec<UserGenerated> = check_and_run(
         &MysqlSelect::new()
             .with_source_as("users", "u")
-            .with_expression(ident("id").dot_of("u"), None)
-            .with_expression(ident("display_name").dot_of("u"), None)
-            .with_expression(ident("salary_band").dot_of("u"), None)
-            .with_expression(ident("salary").dot_of("u"), None)
-            .with_expression(ident("role").dot_of("u"), None)
+            .with_expression(ident("id").dot_of("u"))
+            .with_expression(ident("display_name").dot_of("u"))
+            .with_expression(ident("salary_band").dot_of("u"))
+            .with_expression(ident("salary").dot_of("u"))
+            .with_expression(ident("role").dot_of("u"))
             .with_condition(ident("salary_band").dot_of("u").in_list(&["senior", "mid"]))
             .with_order(ident("salary").dot_of("u"), Order::Desc),
         concat!(
@@ -1157,19 +1158,19 @@ async fn test_my_q14_hex_uuid() {
     let rows: Vec<AuditEntry> = check_and_run(
         &MysqlSelect::new()
             .with_source_as("audit_log", "a")
-            .with_expression(ident("id").dot_of("a"), None)
-            .with_expression(ident("table_name").dot_of("a"), None)
-            .with_expression(ident("action").dot_of("a"), None)
-            .with_expression(ident("details").dot_of("a"), None)
-            .with_expression(hex_session, Some("session_hex".into()))
+            .with_expression(ident("id").dot_of("a"))
+            .with_expression(ident("table_name").dot_of("a"))
+            .with_expression(ident("action").dot_of("a"))
+            .with_expression(ident("details").dot_of("a"))
+            .with_expression(hex_session.as_alias("session_hex"))
             .with_expression(
                 Case::new().when(
                     mysql_expr!("{} IS NOT NULL", (session_id)),
                     uuid_formatted,
-                ),
-                Some("session_uuid".into()),
+                )
+                .as_alias("session_uuid"),
             )
-            .with_expression(ident("changed_at").dot_of("a"), None)
+            .with_expression(ident("changed_at").dot_of("a"))
             .with_order(ident("changed_at").dot_of("a"), Order::Desc),
         concat!(
             "SELECT `a`.`id`, `a`.`table_name`, `a`.`action`, `a`.`details`, ",
@@ -1251,36 +1252,36 @@ async fn test_my_q15_window_functions() {
                 "d",
                 ident("id").dot_of("d").eq(dept_id.clone()),
             ))
-            .with_expression(ident("name").dot_of("u"), None)
-            .with_expression(ident("name").dot_of("d"), Some("department".into()))
-            .with_expression(salary.clone(), None)
+            .with_expression(ident("name").dot_of("u"))
+            .with_expression(ident("name").dot_of("d").as_alias("department"))
+            .with_expression(salary.clone())
             .with_expression(
-                named.apply(Fx::new("row_number", Vec::<Expression<_>>::new())),
-                Some("row_num".into()),
+                named.apply(Fx::new("row_number", Vec::<Expression<_>>::new()))
+                .as_alias("row_num"),
             )
             .with_expression(
-                named.apply(Fx::new("dense_rank", Vec::<Expression<_>>::new())),
-                Some("salary_rank".into()),
+                named.apply(Fx::new("dense_rank", Vec::<Expression<_>>::new()))
+                .as_alias("salary_rank"),
             )
             .with_expression(
-                named.apply(Fx::new("ntile", [mysql_expr!("{}", 3i64)])),
-                Some("salary_tercile".into()),
+                named.apply(Fx::new("ntile", [mysql_expr!("{}", 3i64)]))
+                .as_alias("salary_tercile"),
             )
             .with_expression(
-                named.apply(Fx::new("percent_rank", Vec::<Expression<_>>::new())),
-                Some("pct_rank".into()),
+                named.apply(Fx::new("percent_rank", Vec::<Expression<_>>::new()))
+                .as_alias("pct_rank"),
             )
             .with_expression(
                 Window::new()
                     .partition_by(dept_id.clone())
                     .order_by(salary.clone(), Order::Desc)
                     .rows("UNBOUNDED PRECEDING", "CURRENT ROW")
-                    .apply(Fx::new("sum", [salary.expr()])),
-                Some("running_total".into()),
+                    .apply(Fx::new("sum", [salary.expr()]))
+                .as_alias("running_total"),
             )
             .with_expression(
-                named.apply(Fx::new("first_value", [ident("name").dot_of("u").expr()])),
-                Some("top_earner".into()),
+                named.apply(Fx::new("first_value", [ident("name").dot_of("u").expr()]))
+                .as_alias("top_earner"),
             )
             .with_condition(mysql_expr!("{} = b'1'", (ident("is_active").dot_of("u"))))
             .with_window(

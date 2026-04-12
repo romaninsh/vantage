@@ -17,7 +17,6 @@ use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 pub struct Case<T: Debug + Display + Clone> {
     branches: Vec<(Expression<T>, Expression<T>)>,
     else_branch: Option<Expression<T>>,
-    alias: Option<String>,
 }
 
 impl<T: Debug + Display + Clone> Default for Case<T> {
@@ -31,7 +30,6 @@ impl<T: Debug + Display + Clone> Case<T> {
         Self {
             branches: Vec::new(),
             else_branch: None,
-            alias: None,
         }
     }
 
@@ -45,10 +43,6 @@ impl<T: Debug + Display + Clone> Case<T> {
         self
     }
 
-    pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
-        self.alias = Some(alias.into());
-        self
-    }
 }
 
 impl<T: Debug + Display + Clone> Expressive<T> for Case<T> {
@@ -77,12 +71,6 @@ impl<T: Debug + Display + Clone> Expressive<T> for Case<T> {
             None => Expression::new("CASE{} END", vec![ExpressiveEnum::Nested(branches_expr)]),
         };
 
-        match &self.alias {
-            Some(alias) => Expression::new(
-                format!("{{}} AS \"{}\"", alias),
-                vec![ExpressiveEnum::Nested(base)],
-            ),
-            None => base,
-        }
+        base
     }
 }

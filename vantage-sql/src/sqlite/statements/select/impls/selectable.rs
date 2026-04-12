@@ -12,7 +12,7 @@ impl SqliteSelect {
     pub fn as_aggregate(&self, func: &str, column: impl Expressive<AnySqliteType>) -> Expr {
         let mut s = self.clone();
         s.clear_fields();
-        s.add_expression(Fx::new(func, [column.expr()]), None);
+        s.add_expression(Fx::new(func, [column.expr()]));
         s.clear_order_by();
         s.render()
     }
@@ -47,17 +47,8 @@ impl Selectable<AnySqliteType> for SqliteSelect {
         self.fields.push(ident(field).expr());
     }
 
-    fn add_expression(
-        &mut self,
-        expression: impl Expressive<AnySqliteType>,
-        alias: Option<String>,
-    ) {
-        let expr = expression.expr();
-        let field = match alias {
-            Some(a) => expr_any!("{} AS {}", (expr), (ident(a))),
-            None => expr,
-        };
-        self.fields.push(field);
+    fn add_expression(&mut self, expression: impl Expressive<AnySqliteType>) {
+        self.fields.push(expression.expr());
     }
 
     fn add_where_condition(&mut self, condition: impl Into<Expression<AnySqliteType>>) {

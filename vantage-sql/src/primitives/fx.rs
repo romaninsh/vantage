@@ -26,7 +26,6 @@ use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 pub struct Fx<T: Debug + Display + Clone> {
     name: String,
     args: Vec<Expression<T>>,
-    alias: Option<String>,
 }
 
 impl<T: Debug + Display + Clone> Fx<T> {
@@ -34,30 +33,18 @@ impl<T: Debug + Display + Clone> Fx<T> {
         Self {
             name: name.into().to_uppercase(),
             args: args.into_vec(),
-            alias: None,
         }
     }
 
-    pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
-        self.alias = Some(alias.into());
-        self
-    }
 }
 
 impl<T: Debug + Display + Clone> Expressive<T> for Fx<T> {
     fn expr(&self) -> Expression<T> {
         let args_expr = Expression::from_vec(self.args.clone(), ", ");
-        let base = Expression::new(
+        Expression::new(
             format!("{}({{}})", self.name),
             vec![ExpressiveEnum::Nested(args_expr)],
-        );
-        match &self.alias {
-            Some(alias) => Expression::new(
-                format!("{{}} AS \"{}\"", alias),
-                vec![ExpressiveEnum::Nested(base)],
-            ),
-            None => base,
-        }
+        )
     }
 }
 

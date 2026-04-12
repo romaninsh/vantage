@@ -1,7 +1,6 @@
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum, Order};
 
 use crate::mysql::types::AnyMysqlType;
-use crate::primitives::identifier::Identifier;
 
 /// Helper: create an inline SQL string literal (single-quoted, with escaping).
 fn sql_lit(s: &str) -> Expr {
@@ -30,7 +29,6 @@ pub struct GroupConcat {
     distinct: bool,
     order_by: Vec<(Expr, Order)>,
     separator: Option<String>,
-    alias: Option<String>,
 }
 
 impl GroupConcat {
@@ -40,7 +38,6 @@ impl GroupConcat {
             distinct: false,
             order_by: Vec::new(),
             separator: None,
-            alias: None,
         }
     }
 
@@ -59,10 +56,6 @@ impl GroupConcat {
         self
     }
 
-    pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
-        self.alias = Some(alias.into());
-        self
-    }
 }
 
 impl Expressive<AnyMysqlType> for GroupConcat {
@@ -109,15 +102,6 @@ impl Expressive<AnyMysqlType> for GroupConcat {
         let inner = Expression::from_vec(parts, " ");
         let base = Expression::new("GROUP_CONCAT({})", vec![ExpressiveEnum::Nested(inner)]);
 
-        match &self.alias {
-            Some(alias) => Expression::new(
-                "{} AS {}",
-                vec![
-                    ExpressiveEnum::Nested(base),
-                    ExpressiveEnum::Nested(Identifier::new(alias).expr()),
-                ],
-            ),
-            None => base,
-        }
+        base
     }
 }

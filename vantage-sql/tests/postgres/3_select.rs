@@ -1,6 +1,7 @@
 //! Test 3a: PostgresSelect via Selectable trait + SelectableDataSource execution.
 
 use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
+use vantage_sql::primitives::alias::AliasExt;
 #[allow(unused_imports)]
 use vantage_sql::postgres::PostgresType;
 use vantage_sql::postgres::statements::PostgresSelect;
@@ -104,7 +105,7 @@ fn test_select_group_by_with_expression() {
     let s = PostgresSelect::new()
         .with_source("product")
         .with_field("is_deleted")
-        .with_expression(postgres_expr!("COUNT(*)"), Some("cnt".to_string()));
+        .with_expression(postgres_expr!("COUNT(*)").as_alias("cnt"));
     let mut s = s;
     s.add_group_by(postgres_expr!("\"is_deleted\""));
     assert_eq!(

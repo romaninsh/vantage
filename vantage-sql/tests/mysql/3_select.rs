@@ -1,6 +1,7 @@
 //! Test 3a: MysqlSelect via Selectable trait + SelectableDataSource execution.
 
 use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
+use vantage_sql::primitives::alias::AliasExt;
 #[allow(unused_imports)]
 use vantage_sql::mysql::MysqlType;
 use vantage_sql::mysql::statements::MysqlSelect;
@@ -99,7 +100,7 @@ fn test_select_group_by_with_expression() {
     let s = MysqlSelect::new()
         .with_source("product")
         .with_field("is_deleted")
-        .with_expression(mysql_expr!("COUNT(*)"), Some("cnt".to_string()));
+        .with_expression(mysql_expr!("COUNT(*)").as_alias("cnt"));
     let mut s = s;
     s.add_group_by(mysql_expr!("`is_deleted`"));
     assert_eq!(

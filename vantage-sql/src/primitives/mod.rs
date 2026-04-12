@@ -1,3 +1,4 @@
+pub mod alias;
 pub mod case;
 pub mod concat;
 pub mod date_format;

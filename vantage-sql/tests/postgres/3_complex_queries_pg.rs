@@ -8,6 +8,7 @@ use serde::Deserialize;
 use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
 use vantage_sql::postgres::PostgresDB;
 use vantage_sql::postgres::statements::PostgresSelect;
+use vantage_sql::primitives::alias::AliasExt;
 use vantage_sql::postgres::statements::select::join::PostgresSelectJoin;
 use vantage_sql::postgres_expr;
 use vantage_sql::primitives::identifier::ident;
@@ -63,11 +64,11 @@ async fn test_pg_q1_distinct_on() {
         &PostgresSelect::new()
             .with_distinct_on(ident("user_id").dot_of("o"))
             .with_source_as("orders", "o")
-            .with_expression(ident("user_id").dot_of("o"), None)
-            .with_expression(ident("name").dot_of("u"), None)
-            .with_expression(ident("id").dot_of("o").with_alias("order_id"), None)
-            .with_expression(ident("total").dot_of("o"), None)
-            .with_expression(ident("status").dot_of("o"), None)
+            .with_expression(ident("user_id").dot_of("o"))
+            .with_expression(ident("name").dot_of("u"))
+            .with_expression(ident("id").dot_of("o").with_alias("order_id"))
+            .with_expression(ident("total").dot_of("o"))
+            .with_expression(ident("status").dot_of("o"))
             .with_join(PostgresSelectJoin::inner(
                 "users",
                 "u",
@@ -123,12 +124,12 @@ async fn test_pg_q2_array_ops() {
     let rows: Vec<UserSkills> = check_and_run(
         &PostgresSelect::new()
             .with_source_as("users", "u")
-            .with_expression(ident("id").dot_of("u"), None)
-            .with_expression(ident("name").dot_of("u"), None)
-            .with_expression(skills.clone(), None)
+            .with_expression(ident("id").dot_of("u"))
+            .with_expression(ident("name").dot_of("u"))
+            .with_expression(skills.clone())
             .with_expression(
-                Fx::new("array_length", [skills.expr(), postgres_expr!("{}", 1i32)]),
-                Some("skill_count".into()),
+                Fx::new("array_length", [skills.expr(), postgres_expr!("{}", 1i32)])
+                .as_alias("skill_count"),
             )
             .with_condition(postgres_expr!(
                 "{} @> ARRAY[{}] OR {} = ANY({})",
@@ -191,20 +192,18 @@ async fn test_pg_q3_jsonb_ops() {
     let rows: Vec<ProductJsonb> = check_and_run(
         &PostgresSelect::new()
             .with_source_as("products", "p")
-            .with_expression(ident("id").dot_of("p"), None)
-            .with_expression(ident("name").dot_of("p"), None)
+            .with_expression(ident("id").dot_of("p"))
+            .with_expression(ident("name").dot_of("p"))
             .with_expression(
-                JsonExtract::new(metadata.clone(), "color").with_alias("color"),
-                None,
+                JsonExtract::new(metadata.clone(), "color").as_alias("color"),
             )
-            .with_expression(rating.clone(), Some("rating".into()))
+            .with_expression(rating.clone().as_alias("rating"))
             .with_expression(
-                JsonExtract::new(metadata.clone(), ["specs", "voltage"]).with_alias("voltage"),
-                None,
+                JsonExtract::new(metadata.clone(), ["specs", "voltage"]).as_alias("voltage"),
             )
             .with_expression(
-                postgres_expr!("{} #> {}", (metadata.clone()), (lit("{specs,watts}"))),
-                Some("watts_json".into()),
+                postgres_expr!("{} #> {}", (metadata.clone()), (lit("{specs,watts}")))
+                .as_alias("watts_json"),
             )
             .with_condition(postgres_expr!(
                 "{} @> {}",
@@ -236,7 +235,7 @@ async fn test_pg_q3_jsonb_ops() {
     assert_eq!(rows.len(), 3);
     assert_eq!(rows[0].name, "Widget Pro");
     assert_eq!(rows[0].color, "black");
-    assert_eq!(rows[0].voltage, Some("5".to_string()));
+    assert_eq!(rows[0].voltage, Some("5".into()));
 
     // USB-C Cable has no specs
     assert_eq!(rows[2].name, "USB-C Cable");
@@ -262,10 +261,10 @@ struct UserRecentOrder {
 async fn test_pg_q4_lateral_join() {
     let lateral_subquery = PostgresSelect::new()
         .with_source_as("orders", "o")
-        .with_expression(ident("id").dot_of("o").with_alias("order_id"), None)
-        .with_expression(ident("total").dot_of("o"), None)
-        .with_expression(ident("status").dot_of("o"), None)
-        .with_expression(ident("created_at").dot_of("o"), None)
+        .with_expression(ident("id").dot_of("o").with_alias("order_id"))
+        .with_expression(ident("total").dot_of("o"))
+        .with_expression(ident("status").dot_of("o"))
+        .with_expression(ident("created_at").dot_of("o"))
         .with_condition(ident("user_id").dot_of("o").eq(ident("id").dot_of("u")))
         .with_order(ident("created_at").dot_of("o"), Order::Desc)
         .with_limit(Some(2), None);
@@ -273,10 +272,10 @@ async fn test_pg_q4_lateral_join() {
     let rows: Vec<UserRecentOrder> = check_and_run(
         &PostgresSelect::new()
             .with_source_as("users", "u")
-            .with_expression(ident("name").dot_of("u"), None)
-            .with_expression(ident("order_id").dot_of("recent"), None)
-            .with_expression(ident("total").dot_of("recent"), None)
-            .with_expression(ident("status").dot_of("recent"), None)
+            .with_expression(ident("name").dot_of("u"))
+            .with_expression(ident("order_id").dot_of("recent"))
+            .with_expression(ident("total").dot_of("recent"))
+            .with_expression(ident("status").dot_of("recent"))
             .with_join(PostgresSelectJoin::left_lateral(lateral_subquery, "recent"))
             .with_order(ident("name").dot_of("u"), Order::Asc)
             .with_order(ident("created_at").dot_of("recent"), Order::Desc.nulls_last()),
@@ -301,7 +300,7 @@ async fn test_pg_q4_lateral_join() {
         rows.iter().filter(|r| r.name == "Alice Chen").collect();
     assert_eq!(alice_rows.len(), 2);
     assert_eq!(alice_rows[0].order_id, Some(15));
-    assert_eq!(alice_rows[0].status, Some("pending".to_string()));
+    assert_eq!(alice_rows[0].status, Some("pending".into()));
 
     // Dan Brown has no orders → null fields
     let dan = rows.iter().find(|r| r.name == "Dan Brown").unwrap();
@@ -337,7 +336,7 @@ async fn test_pg_q5_generate_series() {
     let rows: Vec<DailyRevenue> = check_and_run(
         &PostgresSelect::new()
             .with_source(postgres_expr!("{} AS d(day)", (series)))
-            .with_expression(ident("day").dot_of("d"), None)
+            .with_expression(ident("day").dot_of("d"))
             .with_expression(
                 Fx::new(
                     "coalesce",
@@ -345,8 +344,8 @@ async fn test_pg_q5_generate_series() {
                         Fx::new("count", [ident("id").dot_of("o").expr()]).expr(),
                         postgres_expr!("{}", 0i64),
                     ],
-                ),
-                Some("order_count".into()),
+                )
+                .as_alias("order_count"),
             )
             .with_expression(
                 Fx::new(
@@ -355,8 +354,8 @@ async fn test_pg_q5_generate_series() {
                         Fx::new("sum", [ident("total").dot_of("o").expr()]).expr(),
                         postgres_expr!("{}", 0i64),
                     ],
-                ),
-                Some("daily_revenue".into()),
+                )
+                .as_alias("daily_revenue"),
             )
             .with_join(PostgresSelectJoin::left(
                 "orders",
@@ -419,18 +418,18 @@ async fn test_pg_q6_array_aggregation() {
     let rows: Vec<CategoryAgg> = check_and_run(
         &PostgresSelect::new()
             .with_source_as("products", "p")
-            .with_expression(ident("category").dot_of("p"), None)
+            .with_expression(ident("category").dot_of("p"))
             .with_expression(
-                Fx::new("count", [postgres_expr!("*")]),
-                Some("total".into()),
+                Fx::new("count", [postgres_expr!("*")])
+                .as_alias("total"),
             )
             .with_expression(
                 postgres_expr!(
                     "array_agg(DISTINCT {} ORDER BY {})",
                     (name.clone()),
                     (name.clone())
-                ),
-                Some("product_names".into()),
+                )
+                .as_alias("product_names"),
             )
             .with_expression(
                 postgres_expr!(
@@ -438,20 +437,20 @@ async fn test_pg_q6_array_aggregation() {
                     (name),
                     ", ",
                     (ident("price").dot_of("p"))
-                ),
-                Some("names_by_price_desc".into()),
+                )
+                .as_alias("names_by_price_desc"),
             )
             .with_expression(
                 postgres_expr!(
                     "COUNT(*) FILTER (WHERE {} @> ARRAY[{}])",
                     (tags.clone()),
                     "featured"
-                ),
-                Some("featured_count".into()),
+                )
+                .as_alias("featured_count"),
             )
             .with_expression(
-                postgres_expr!("COUNT(*) FILTER (WHERE {} @> ARRAY[{}])", (tags), "sale"),
-                Some("sale_count".into()),
+                postgres_expr!("COUNT(*) FILTER (WHERE {} @> ARRAY[{}])", (tags), "sale")
+                .as_alias("sale_count"),
             )
             .with_group_by(ident("category").dot_of("p"))
             .with_order(ident("total"), Order::Desc),
@@ -513,22 +512,22 @@ async fn test_pg_q7_rollup() {
             .with_expression(
                 Case::new()
                     .when(grouping_status.clone().eq(1i64), "** ALL **")
-                    .else_(status.clone()),
-                Some("status".into()),
+                    .else_(status.clone())
+                .as_alias("status"),
             )
             .with_expression(
                 Case::new()
                     .when(grouping_month.eq(1i64), postgres_expr!("NULL"))
-                    .else_(date_trunc.clone()),
-                Some("month".into()),
+                    .else_(date_trunc.clone())
+                .as_alias("month"),
             )
             .with_expression(
-                Fx::new("count", [postgres_expr!("*")]),
-                Some("order_count".into()),
+                Fx::new("count", [postgres_expr!("*")])
+                .as_alias("order_count"),
             )
             .with_expression(
-                Fx::new("sum", [ident("total").dot_of("o").expr()]),
-                Some("revenue".into()),
+                Fx::new("sum", [ident("total").dot_of("o").expr()])
+                .as_alias("revenue"),
             )
             .with_condition(status.ne("cancelled"))
             .with_group_by(postgres_expr!("ROLLUP ({}, {})", (status.clone()), (date_trunc)))
@@ -590,17 +589,17 @@ async fn test_pg_q8_date_time() {
     let rows: Vec<UserTenure> = check_and_run(
         &PostgresSelect::new()
             .with_source_as("users", "u")
-            .with_expression(ident("name").dot_of("u"), None)
+            .with_expression(ident("name").dot_of("u"))
             .with_expression(
-                postgres_expr!("EXTRACT(DOW FROM {})", (created.clone())),
-                Some("signup_day_of_week".into()),
+                postgres_expr!("EXTRACT(DOW FROM {})", (created.clone()))
+                .as_alias("signup_day_of_week"),
             )
             .with_expression(
                 Case::new()
                     .when(age.clone().gte(Interval::new(1, "year")), "veteran")
                     .when(age.clone().gte(Interval::new(6, "month")), "established")
-                    .else_(postgres_expr!("{}", "new")),
-                Some("cohort".into()),
+                    .else_(postgres_expr!("{}", "new"))
+                .as_alias("cohort"),
             )
             .with_condition(ident("is_active").dot_of("u").eq(true))
             .with_order(created, Order::Asc)
@@ -654,12 +653,12 @@ async fn test_pg_q9_enum() {
     let rows: Vec<TicketPriority> = check_and_run(
         &PostgresSelect::new()
             .with_source_as("tickets", "t")
-            .with_expression(ident("id").dot_of("t"), None)
-            .with_expression(ident("title").dot_of("t"), None)
-            .with_expression(priority.cast("TEXT"), Some("priority_text".into()))
+            .with_expression(ident("id").dot_of("t"))
+            .with_expression(ident("title").dot_of("t"))
+            .with_expression(priority.cast("TEXT").as_alias("priority_text"))
             .with_expression(
-                ident("status").dot_of("t").cast("TEXT"),
-                Some("status_text".into()),
+                ident("status").dot_of("t").cast("TEXT")
+                .as_alias("status_text"),
             )
             .with_expression(
                 {
@@ -669,8 +668,8 @@ async fn test_pg_q9_enum() {
                         .when(p.clone().eq("high"), postgres_expr!("{}", 2i64))
                         .when(p.clone().eq("medium"), postgres_expr!("{}", 3i64))
                         .when(p.eq("low"), postgres_expr!("{}", 4i64))
-                },
-                Some("priority_rank".into()),
+                }
+                .as_alias("priority_rank"),
             )
             .with_condition(postgres_expr!("{} >= 'high'", (priority)))
             .with_order(priority, Order::Desc)
@@ -729,14 +728,14 @@ async fn test_pg_q10_daterange() {
     let rows: Vec<Booking> = check_and_run(
         &PostgresSelect::new()
             .with_source_as("bookings", "b")
-            .with_expression(ident("id").dot_of("b"), None)
-            .with_expression(ident("room").dot_of("b"), None)
-            .with_expression(ident("name").dot_of("u"), Some("booked_by".into()))
-            .with_expression(Fx::new("lower", [during.expr()]), Some("check_in".into()))
-            .with_expression(Fx::new("upper", [during.expr()]), Some("check_out".into()))
+            .with_expression(ident("id").dot_of("b"))
+            .with_expression(ident("room").dot_of("b"))
+            .with_expression(ident("name").dot_of("u").as_alias("booked_by"))
+            .with_expression(Fx::new("lower", [during.expr()]).as_alias("check_in"))
+            .with_expression(Fx::new("upper", [during.expr()]).as_alias("check_out"))
             .with_expression(
-                Fx::new("upper", [during.expr()]).expr() - Fx::new("lower", [during.expr()]).expr(),
-                Some("duration_days".into()),
+                Fx::new("upper", [during.expr()]).expr() - Fx::new("lower", [during.expr()]).expr()
+                .as_alias("duration_days"),
             )
             .with_join(PostgresSelectJoin::inner(
                 "users",
@@ -801,9 +800,9 @@ async fn test_pg_q11_unnest_ordinality() {
     let rows: Vec<UserSkillRow> = check_and_run(
         &PostgresSelect::new()
             .with_source_as("users", "u")
-            .with_expression(ident("name").dot_of("u"), None)
-            .with_expression(ident("value").dot_of("skill"), Some("skill".into()))
-            .with_expression(ident("pos").dot_of("skill"), Some("skill_position".into()))
+            .with_expression(ident("name").dot_of("u"))
+            .with_expression(ident("value").dot_of("skill").as_alias("skill"))
+            .with_expression(ident("pos").dot_of("skill").as_alias("skill_position"))
             .with_join(PostgresSelectJoin::cross_lateral_raw(postgres_expr!(
                 "UNNEST({}) WITH ORDINALITY AS skill(value, pos)",
                 (skills.clone())
@@ -860,23 +859,21 @@ async fn test_pg_q12_recursive_cte() {
         .with_source("departments")
         .with_field("id")
         .with_field("name")
-        .with_expression(ident("parent_id"), None)
-        .with_expression(postgres_expr!("0"), None)
-        .with_expression(ident("name").cast("TEXT"), None)
+        .with_expression(ident("parent_id"))
+        .with_expression(postgres_expr!("0"))
+        .with_expression(ident("name").cast("TEXT"))
         .with_condition(postgres_expr!("{} IS NULL", (ident("parent_id"))));
 
     let recursive = PostgresSelect::new()
         .with_source_as("departments", "d")
-        .with_expression(ident("id").dot_of("d"), None)
-        .with_expression(ident("name").dot_of("d"), None)
-        .with_expression(ident("parent_id").dot_of("d"), None)
+        .with_expression(ident("id").dot_of("d"))
+        .with_expression(ident("name").dot_of("d"))
+        .with_expression(ident("parent_id").dot_of("d"))
         .with_expression(
             ident("depth").dot_of("dt").expr() + postgres_expr!("1"),
-            None,
         )
         .with_expression(
             concat_sql!(ident("path").dot_of("dt"), " > ", ident("name").dot_of("d")),
-            None,
         )
         .with_join(PostgresSelectJoin::inner(
             "dept_tree",
@@ -950,24 +947,24 @@ async fn test_pg_q13_window_functions() {
     let rows: Vec<SalaryStats> = check_and_run(
         &PostgresSelect::new()
             .with_source_as("users", "u")
-            .with_expression(ident("name").dot_of("u"), None)
-            .with_expression(ident("name").dot_of("d"), Some("department".into()))
-            .with_expression(salary.clone(), None)
+            .with_expression(ident("name").dot_of("u"))
+            .with_expression(ident("name").dot_of("d").as_alias("department"))
+            .with_expression(salary.clone())
             .with_expression(
-                Window::named("dept_sal").apply(Fx::new("dense_rank", vec![])),
-                Some("salary_dense_rank".into()),
+                Window::named("dept_sal").apply(Fx::new("dense_rank", vec![]))
+                .as_alias("salary_dense_rank"),
             )
             .with_expression(
                 Window::new()
                     .partition_by(dept_id.clone())
                     .order_by(salary.clone(), Order::Desc)
                     .rows("UNBOUNDED PRECEDING", "CURRENT ROW")
-                    .apply(Fx::new("sum", [salary.expr()])),
-                Some("running_total".into()),
+                    .apply(Fx::new("sum", [salary.expr()]))
+                .as_alias("running_total"),
             )
             .with_expression(
-                Window::named("dept_sal").apply(Fx::new("avg", [salary.expr()])),
-                Some("dept_avg_salary".into()),
+                Window::named("dept_sal").apply(Fx::new("avg", [salary.expr()]))
+                .as_alias("dept_avg_salary"),
             )
             .with_join(PostgresSelectJoin::inner(
                 "departments",
@@ -1049,14 +1046,13 @@ async fn test_pg_q14_jsonb_aggregation() {
                     postgres_expr!("jsonb_agg(DISTINCT {})", (o_status)),
                 ],
             ),
-            None,
         )
         .with_condition(ident("user_id").dot_of("o").eq(ident("id").dot_of("u")));
 
     let rows: Vec<UserProfile> = check_and_run(
         &PostgresSelect::new()
             .with_source_as("users", "u")
-            .with_expression(ident("name").dot_of("u"), None)
+            .with_expression(ident("name").dot_of("u"))
             .with_expression(
                 Fx::new(
                     "jsonb_build_object",
@@ -1072,8 +1068,8 @@ async fn test_pg_q14_jsonb_aggregation() {
                         postgres_expr!("{}", "order_summary"),
                         postgres_expr!("({})", (order_summary_subquery)),
                     ],
-                ),
-                Some("user_profile".into()),
+                )
+                .as_alias("user_profile"),
             )
             .with_condition(ident("is_active").dot_of("u").eq(true))
             .with_order(ident("name").dot_of("u"), Order::Asc)
@@ -1138,8 +1134,8 @@ async fn test_pg_q15_inet_ilike_full_join() {
                         ident("name").dot_of("u").expr(),
                         postgres_expr!("{}", "(no user)"),
                     ],
-                ),
-                Some("name".into()),
+                )
+                .as_alias("name"),
             )
             .with_expression(
                 Fx::new(
@@ -1148,8 +1144,8 @@ async fn test_pg_q15_inet_ilike_full_join() {
                         ident("name").dot_of("d").expr(),
                         postgres_expr!("{}", "(no department)"),
                     ],
-                ),
-                Some("department".into()),
+                )
+                .as_alias("department"),
             )
             .with_expression(
                 Case::new()
@@ -1166,8 +1162,8 @@ async fn test_pg_q15_inet_ilike_full_join() {
                         "private-class-b",
                     )
                     .when(postgres_expr!("{} IS NULL", (ip)), "unknown")
-                    .else_(postgres_expr!("{}", "public")),
-                Some("network_class".into()),
+                    .else_(postgres_expr!("{}", "public"))
+                .as_alias("network_class"),
             )
             .with_expression(
                 Fx::new(
@@ -1176,8 +1172,8 @@ async fn test_pg_q15_inet_ilike_full_join() {
                         ident("role").dot_of("u").expr(),
                         postgres_expr!("{}", "viewer"),
                     ],
-                ),
-                Some("notable_role".into()),
+                )
+                .as_alias("notable_role"),
             )
             .with_join(PostgresSelectJoin::full_outer(
                 "departments",
@@ -1216,7 +1212,7 @@ async fn test_pg_q15_inet_ilike_full_join() {
     // Alice: private-class-c, admin
     let alice = rows.iter().find(|r| r.name == "Alice Chen").unwrap();
     assert_eq!(alice.network_class, "private-class-c");
-    assert_eq!(alice.notable_role, Some("admin".to_string()));
+    assert_eq!(alice.notable_role, Some("admin".into()));
 
     // Frank: no IP → unknown, viewer → notable_role is None
     let frank = rows.iter().find(|r| r.name == "Frank Lee").unwrap();

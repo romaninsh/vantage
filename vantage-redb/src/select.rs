@@ -106,7 +106,7 @@ impl<E: Entity> Selectable<RedbExpression> for RedbSelect<E> {
         // ReDB is key-value, fields don't apply
     }
 
-    fn add_expression(&mut self, _expression: RedbExpression, _alias: Option<String>) {
+    fn add_expression(&mut self, _expression: RedbExpression) {
         // ReDB doesn't support complex expressions
     }
 

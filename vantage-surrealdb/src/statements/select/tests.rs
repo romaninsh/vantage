@@ -137,7 +137,7 @@ fn test_selectable_trait_methods() {
     select.add_source("users", None);
     select.add_field("name".to_string());
     select.add_field("email".to_string());
-    select.add_expression(surreal_expr!("age * 2"), Some("double_age".to_string()));
+    select.add_expression(surreal_expr!("age * 2"));
     select.add_where_condition(surreal_expr!("age > 18"));
     select.add_order_by(surreal_expr!("name"), Order::Asc);
     select.add_group_by(surreal_expr!("department"));
