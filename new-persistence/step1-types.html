@@ -1,0 +1,471 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Step 1: Type System - Vantage 0.4 Framework</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-2459343d.css">
+        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href=".././mdbook-admonish.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../searchindex-38733afc.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc-07f8a23e.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Vantage 0.4 Framework</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="step-1-define-your-type-system"><a class="header" href="#step-1-define-your-type-system">Step 1: Define Your Type System</a></h1>
+<p>Every database has its own idea of what types exist. SQLite has 5 storage classes (NULL, INTEGER,
+REAL, TEXT, BLOB). Postgres has dozens. SurrealDB has its own set with Things and Geometry types.</p>
+<p>The vantage type system gives you two things:</p>
+<ol>
+<li><strong>Type markers</strong> — so you can tell the difference between “this is an integer” and “this is text”
+even when both are stored as <code>serde_json::Value</code> under the hood.</li>
+<li><strong>Safe extraction</strong> — <code>try_get::&lt;i64&gt;()</code> on a text value returns <code>None</code> instead of silently
+coercing. This prevents the kind of bugs where a string “42” gets treated as a number somewhere
+downstream.</li>
+</ol>
+<h3 id="why-not-just-use-serde_jsonvalue-directly"><a class="header" href="#why-not-just-use-serde_jsonvalue-directly">Why not just use serde_json::Value directly?</a></h3>
+<p>You can! And for simple cases it works fine. The problem shows up when values move between contexts.
+A JSON number <code>42</code> could be an integer, a float, or even a boolean (SQLite stores bools as 0/1).
+Without type markers, you lose that distinction and get silent data corruption.</p>
+<h3 id="setting-it-up"><a class="header" href="#setting-it-up">Setting it up</a></h3>
+<p>Use the <code>vantage_type_system!</code> macro. It generates a trait, an enum of variants, and a type-erased
+<code>AnyType</code> wrapper:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>vantage_type_system! {
+    type_trait: SqliteType,
+    method_name: json,
+    value_type: serde_json::Value,
+    type_variants: [Null, Integer, Text, Real, Numeric, Blob]
+}
+<span class="boring">}</span></code></pre>
+<p>This gives you <code>SqliteType</code> (trait), <code>SqliteTypeVariants</code> (enum), and <code>AnySqliteType</code> (the
+type-erased wrapper that remembers which variant a value belongs to).</p>
+<p>The <code>value_type</code> is whatever your database driver naturally speaks. For SQL databases that’s usually
+<code>serde_json::Value</code>. SurrealDB uses <code>ciborium::Value</code> (CBOR). You could use any type — even <code>String</code>
+if your storage is that simple.</p>
+<p>Then implement the trait for each Rust type. Here’s bool — SQLite stores it as 0/1:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl SqliteType for bool {
+    type Target = SqliteTypeIntegerMarker;  // bool lives in the Integer family
+
+    fn to_json(&amp;self) -&gt; serde_json::Value {
+        Value::Number(if *self { 1.into() } else { 0.into() })
+    }
+
+    fn from_json(value: serde_json::Value) -&gt; Option&lt;Self&gt; {
+        match value {
+            Value::Number(n) =&gt; n.as_i64().map(|i| i != 0),
+            Value::Bool(b) =&gt; Some(b),  // accept native bools too
+            _ =&gt; None,
+        }
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>And here’s how the type safety works in practice:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let val = AnySqliteType::new(42i64);
+assert_eq!(val.try_get::&lt;i64&gt;(), Some(42));    // same variant → works
+assert_eq!(val.try_get::&lt;String&gt;(), None);      // Integer ≠ Text → rejected
+
+let val = AnySqliteType::new("hello".to_string());
+assert_eq!(val.try_get::&lt;String&gt;(), Some("hello".to_string()));
+assert_eq!(val.try_get::&lt;i64&gt;(), None);          // Text ≠ Integer → rejected
+<span class="boring">}</span></code></pre>
+<p>You also need <code>From</code> conversions so values can be created conveniently:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let val: AnySqliteType = 42i64.into();
+let val: AnySqliteType = "hello".into();
+let val: AnySqliteType = true.into();
+<span class="boring">}</span></code></pre>
+<h3 id="records-and-struct-conversion"><a class="header" href="#records-and-struct-conversion">Records and struct conversion</a></h3>
+<p>A <code>Record&lt;V&gt;</code> is an ordered key-value map (field name → value). It’s how vantage represents a single
+row of data regardless of the backend. The question is: how do your structs become Records and vice
+versa?</p>
+<p>There are two paths depending on your <code>value_type</code>.</p>
+<h4 id="path-a-serde_jsonvalue-the-easy-path"><a class="header" href="#path-a-serde_jsonvalue-the-easy-path">Path A: serde_json::Value (the easy path)</a></h4>
+<p>If your type system uses <code>serde_json::Value</code> as the value type (like SQLite does), you get struct
+conversion for free. Vantage has blanket implementations of <code>IntoRecord</code> and <code>TryFromRecord</code> for any
+type that implements serde’s <code>Serialize</code>/<code>Deserialize</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[derive(Serialize, Deserialize)]
+struct Product {
+    name: String,
+    price: i64,
+    is_deleted: bool,
+}
+
+let product = Product { name: "Cupcake".into(), price: 120, is_deleted: false };
+
+// Struct → Record&lt;serde_json::Value&gt; — automatic via serde
+let record: Record&lt;serde_json::Value&gt; = product.into_record();
+
+// Record&lt;serde_json::Value&gt; → Struct — automatic via serde
+let restored: Product = Product::from_record(record).unwrap();
+<span class="boring">}</span></code></pre>
+<p>This works because serde already knows how to turn structs into JSON objects and back. No extra code
+needed on your part.</p>
+<h4 id="path-b-custom-value-type-the-entity-path"><a class="header" href="#path-b-custom-value-type-the-entity-path">Path B: Custom value type (the #[entity] path)</a></h4>
+<p>If your type system uses something other than <code>serde_json::Value</code> — like SurrealDB’s
+<code>ciborium::Value</code> — then serde’s blanket impls don’t apply. You need the <code>#[entity]</code> proc macro to
+generate the conversion code:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[entity(SurrealType)]
+#[derive(Debug, Clone)]
+struct Product {
+    name: String,
+    price: i64,
+    is_deleted: bool,
+}
+<span class="boring">}</span></code></pre>
+<p>The <code>#[entity(SurrealType)]</code> macro looks at each field, and generates:</p>
+<ul>
+<li><code>IntoRecord&lt;AnySurrealType&gt;</code> — calls <code>AnySurrealType::new(self.name)</code> for each field</li>
+<li><code>TryFromRecord&lt;AnySurrealType&gt;</code> — calls <code>record["name"].try_get::&lt;String&gt;()</code> for each field</li>
+</ul>
+<p>This is where the type markers from Step 1 become critical. When you read a record back from the
+database, each value is an <code>AnySurrealType</code> with a variant tag. The <code>try_get::&lt;String&gt;()</code> call
+checks that the variant is <code>Text</code> before extracting. If someone stored an integer in a field that
+should be a string, you get an error instead of garbage.</p>
+<p>You can even target multiple type systems at once:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[entity(SurrealType, CsvType)]
+struct Product {
+    name: String,
+    price: i64,
+}
+<span class="boring">}</span></code></pre>
+<p>This generates conversions for both <code>Record&lt;AnySurrealType&gt;</code> and <code>Record&lt;AnyCsvType&gt;</code>, so the same
+struct works across different backends.</p>
+<h4 id="testing-record-conversions"><a class="header" href="#testing-record-conversions">Testing Record conversions</a></h4>
+<p>Test <code>Record&lt;AnySqliteType&gt;</code> in both modes — typed (write path) and untyped (read path).</p>
+<p><strong>Typed records</strong> simulate what you’d build when inserting data. Values have variant tags, and
+<code>try_get</code> enforces them:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[test]
+fn test_typed_record() {
+    let mut record: Record&lt;AnySqliteType&gt; = Record::new();
+    record.insert("name".into(), AnySqliteType::new("Cupcake".to_string()));
+    record.insert("price".into(), AnySqliteType::new(120i64));
+
+    assert_eq!(record["name"].try_get::&lt;String&gt;(), Some("Cupcake".to_string()));
+    assert_eq!(record["name"].try_get::&lt;i64&gt;(), None);  // Text ≠ Integer → blocked
+    assert_eq!(record["price"].try_get::&lt;i64&gt;(), Some(120));
+    assert_eq!(record["price"].try_get::&lt;String&gt;(), None);  // Integer ≠ Text → blocked
+}
+<span class="boring">}</span></code></pre>
+<p><strong>Untyped records</strong> simulate what comes back from the database. Values have <code>type_variant: None</code>, so
+<code>try_get</code> is permissive — it just attempts the conversion:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[test]
+fn test_untyped_record() {
+    let mut record: Record&lt;AnySqliteType&gt; = Record::new();
+    record.insert("name".into(), AnySqliteType::untyped(json!("Cupcake")));
+    record.insert("price".into(), AnySqliteType::untyped(json!(120)));
+
+    assert_eq!(record["name"].try_get::&lt;String&gt;(), Some("Cupcake".to_string()));
+    assert_eq!(record["name"].try_get::&lt;i64&gt;(), None);  // fails because "Cupcake" isn't a number
+    assert_eq!(record["price"].try_get::&lt;i64&gt;(), Some(120));
+    assert_eq!(record["price"].try_get::&lt;f64&gt;(), Some(120.0));  // permissive — json 120 can be f64
+}
+<span class="boring">}</span></code></pre>
+<p>The key difference: a typed <code>AnySqliteType::new(42i64)</code> blocks <code>try_get::&lt;f64&gt;()</code> because Integer ≠
+Real. An untyped <code>AnySqliteType::untyped(json!(42))</code> allows it because there’s no variant to check —
+it just asks “can JSON number 42 be read as f64?”</p>
+<p>Also test <code>Option&lt;T&gt;</code> fields, null handling, and missing fields.</p>
+<h3 id="tryfromanytype-for-common-types"><a class="header" href="#tryfromanytype-for-common-types">TryFrom&lt;AnyType&gt; for common types</a></h3>
+<p>You also need <code>TryFrom&amp;lt;AnyType&amp;gt;</code> implementations for scalar types and Records. These are used later
+by <code>AssociatedExpression::get()</code> in Step 2, but they belong here because they’re part of the type
+system:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Scalars — extract single value from single-row results
+impl TryFrom&lt;AnySqliteType&gt; for i64 { ... }
+impl TryFrom&lt;AnySqliteType&gt; for String { ... }
+// etc.
+
+// Records — extract first row from result array
+impl TryFrom&lt;AnySqliteType&gt; for Record&lt;AnySqliteType&gt; { ... }
+impl TryFrom&lt;AnySqliteType&gt; for Record&lt;serde_json::Value&gt; { ... }
+<span class="boring">}</span></code></pre>
+<p>For scalars, if the result is a single-row, single-column array like <code>[{"COUNT(*)": 3}]</code>, extract
+the value automatically. For Records, extract the first row and wrap each field as an untyped
+<code>AnyType</code>.</p>
+<h3 id="step-1-conclusion"><a class="header" href="#step-1-conclusion">Step 1 conclusion</a></h3>
+<p>At this point you should have:</p>
+<ol>
+<li>
+<p><strong>Type impls</strong> in <code>src/&lt;backend&gt;/types/</code> — the <code>vantage_type_system!</code> macro call, trait
+implementations for each Rust type, <code>From</code> conversions on <code>AnyType</code>, variant detection in
+<code>TypeVariants::from_*()</code>, and <code>TryFrom&amp;lt;AnyType&amp;gt;</code> for scalars and Records.</p>
+</li>
+<li>
+<p><strong>Tests</strong> in <code>tests/&lt;backend&gt;/1_types_round_trip.rs</code> covering:</p>
+<ul>
+<li>In-memory <code>AnyType</code> round-trips for each supported type</li>
+<li>Type mismatch rejections (wrong variant → <code>None</code>)</li>
+<li>Struct ↔ Record conversions (including Option fields and error cases)</li>
+<li>Values read from the actual database converting correctly</li>
+</ul>
+</li>
+</ol>
+<h3 id="how-type-markers-flow-through-the-system"><a class="header" href="#how-type-markers-flow-through-the-system">How type markers flow through the system</a></h3>
+<p>The <code>AnyType</code> wrapper has an <code>Option&lt;Variant&gt;</code> field — <code>Some(Integer)</code> means “I know this is an
+integer”, <code>None</code> means “I don’t know, just try whatever conversion you need.”</p>
+<p><strong>Writing (you → database):</strong> Values created with <code>AnySqliteType::new(42i64)</code> get
+<code>type_variant: Some(Integer)</code>. The bind layer uses the variant to pick the right sqlx bind call —
+Integer binds as <code>i64</code>, Text as <code>&amp;str</code>, Real as <code>f64</code>. No guessing.</p>
+<p><strong>Reading (database → you):</strong> Values coming back from the database are created with
+<code>AnySqliteType::untyped(json_value)</code> which sets <code>type_variant: None</code>. This means <code>try_get::&lt;i64&gt;()</code>
+won’t be blocked by a variant mismatch — it just attempts the conversion. The type checking happens
+later when you deserialize into a struct.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Writing — typed, variant enforced
+let val = AnySqliteType::new(true);            // type_variant: Some(Bool)
+val.try_get::&lt;bool&gt;();   // Some(true) — variant matches
+val.try_get::&lt;i64&gt;();    // None — Bool ≠ Integer, blocked by type boundary
+val.try_get::&lt;String&gt;(); // None — Bool ≠ Text, blocked
+
+// Reading — untyped, permissive
+let val = AnySqliteType::untyped(json!(1));    // type_variant: None
+val.try_get::&lt;i64&gt;();    // Some(1) — no variant check, json 1 parses as i64
+val.try_get::&lt;bool&gt;();   // Some(true) — no variant check, json 1 parses as bool (≠0)
+val.try_get::&lt;f64&gt;();    // Some(1.0) — no variant check, json 1 parses as f64
+val.try_get::&lt;String&gt;(); // None — json 1 can't parse as String
+<span class="boring">}</span></code></pre>
+<p>Both directions use <code>Record&lt;AnySqliteType&gt;</code>, but the values behave differently:</p>
+<pre><code>Writing:  Struct → Record&lt;AnySqliteType&gt; (typed) → bind_sqlite_value() → sqlx
+Reading:  sqlx → Record&lt;AnySqliteType&gt; (untyped) → try_get / serde → Struct
+</code></pre>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../new-persistence.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../new-persistence/step2-expressions.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../new-persistence.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../new-persistence/step2-expressions.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
+
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../mermaid-eefea253.min.js"></script>
+        <script src="../mermaid-init-ccf746f1.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

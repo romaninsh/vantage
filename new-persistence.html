@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Introduction - Vantage 0.4 Framework</title>
+        <title>Adding a New Persistence - Vantage 0.4 Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,20 +175,92 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="vantage-framework"><a class="header" href="#vantage-framework">Vantage Framework</a></h1>
-<p>Vantage is a data entity persistence and abstraction framework for Rust.</p>
-<p>Rather than being a traditional ORM, Vantage introduces the concept of a <strong>DataSet</strong> — an abstract,
-composable handle to records living in a remote data store. You define structure, conditions,
-relations, and operations without loading data eagerly, and Vantage translates your intent into
-efficient queries for whichever backend you’re using.</p>
-<p>This documentation covers Vantage <strong>0.4</strong>.</p>
+                        <h1 id="adding-a-new-persistence"><a class="header" href="#adding-a-new-persistence">Adding a New Persistence</a></h1>
+<p>So you want to connect Vantage to a new database? This guide walks through the process in six
+incremental steps — each one unlocks more framework features. You don’t have to implement all six;
+stop whenever your persistence has enough capability for your use case.</p>
+<ul>
+<li><a href="#overview">Overview</a></li>
+<li><a href="#step-1-type-system">Step 1: Type System</a></li>
+<li><a href="#step-2-expressions">Step 2: Expressions</a></li>
+<li><a href="#step-3-query-builder">Step 3: Query Builder</a></li>
+<li><a href="#step-4-table--crud">Step 4: Table &amp; CRUD</a></li>
+<li><a href="#step-5-relationships">Step 5: Relationships</a></li>
+<li><a href="#step-6-multi-backend-applications">Step 6: Multi-Backend Applications</a></li>
+</ul>
+<hr>
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Step</th><th>What you build</th><th>What it unlocks</th><th>Can skip?</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="./new-persistence/step1-types.html">1. Type System</a></td><td><code>vantage_type_system!</code> macro, <code>AnyType</code>, <code>Record</code> conversions</td><td>Type-safe values, struct ↔ record mapping</td><td><strong>Required</strong></td></tr>
+<tr><td><a href="./new-persistence/step2-expressions.html">2. Expressions</a></td><td>Vendor macro, <code>ExprDataSource</code></td><td>Execute raw queries, cross-database <code>defer()</code></td><td>Skip for simple read-only sources (CSV)</td></tr>
+<tr><td><a href="./new-persistence/step3-query-builder.html">3. Query Builder</a></td><td><code>Selectable</code>, <code>SelectableDataSource</code></td><td>Composable SELECT with conditions, ordering, limits</td><td>Skip if your persistence has no query language</td></tr>
+<tr><td><a href="./new-persistence/step4-table-crud.html">4. Table &amp; CRUD</a></td><td><code>TableSource</code>, entity tables, aggregates, writes</td><td><code>Table&lt;DB, Entity&gt;</code>, full CRUD, <code>ReadableDataSet</code>, <code>WritableDataSet</code></td><td><strong>Required</strong> for table support</td></tr>
+<tr><td><a href="./new-persistence/step5-relationships.html">5. Relationships</a></td><td><code>with_one</code>, <code>with_many</code>, correlated subqueries</td><td>Reference traversal, expression fields</td><td>Skip if you don’t need cross-table queries</td></tr>
+<tr><td><a href="./new-persistence/step6-multi-backend.html">6. Multi-Backend</a></td><td><code>AnyTable::from_table()</code>, CLI example</td><td>Type-erased tables, generic UI/API code</td><td>Skip if you only use one persistence</td></tr>
+</tbody>
+</table>
+</div>
+<hr>
+<h2 id="step-1-type-system"><a class="header" href="#step-1-type-system">Step 1: Type System</a></h2>
+<p>Every database has its own idea of what types exist. The <code>vantage_type_system!</code> macro generates a
+type trait, variant enum, and type-erased <code>AnyType</code> wrapper that prevents silent casting between
+incompatible types.</p>
+<p>You’ll implement the type trait for each Rust type your database supports, set up <code>Record</code>
+conversions (free via serde for JSON-based backends, or via <code>#[entity]</code> macro for custom value
+types), and add <code>TryFrom&lt;AnyType&gt;</code> for scalar extraction.</p>
+<p><strong><a href="./new-persistence/step1-types.html">Read Step 1 →</a></strong></p>
+<hr>
+<h2 id="step-2-expressions"><a class="header" href="#step-2-expressions">Step 2: Expressions</a></h2>
+<p>With types in place, build a vendor macro (<code>sqlite_expr!</code>, <code>surreal_expr!</code>) that produces
+<code>Expression&lt;AnyType&gt;</code> with typed parameters. Implement <code>ExprDataSource</code> to execute expressions
+against your database — handling parameter binding, deferred cross-database resolution, and result
+parsing.</p>
+<p>Skip this step if your persistence evaluates conditions in-memory (like CSV) — you can implement
+<code>TableSource</code> directly without an expression engine.</p>
+<p><strong><a href="./new-persistence/step2-expressions.html">Read Step 2 →</a></strong></p>
+<hr>
+<h2 id="step-3-query-builder"><a class="header" href="#step-3-query-builder">Step 3: Query Builder</a></h2>
+<p>Build a SELECT struct implementing the <code>Selectable</code> trait — fields, conditions, ordering, limits,
+aggregates. Wire it up through <code>SelectableDataSource</code> so the rest of Vantage can create and execute
+queries through a standard interface.</p>
+<p>Skip this step if your persistence doesn’t have a query language. MongoDB, for instance, skips
+<code>Selectable</code> and uses native BSON pipelines instead.</p>
+<p><strong><a href="./new-persistence/step3-query-builder.html">Read Step 3 →</a></strong></p>
+<hr>
+<h2 id="step-4-table--crud"><a class="header" href="#step-4-table--crud">Step 4: Table &amp; CRUD</a></h2>
+<p>Implement <code>TableSource</code> to give Vantage full table abstraction — columns, conditions, ordering,
+pagination, entity CRUD, and aggregates. This is where <code>Table&lt;DB, Entity&gt;</code> comes alive and
+auto-implements <code>ReadableDataSet</code>, <code>WritableDataSet</code>, and <code>ActiveEntitySet</code>.</p>
+<p>Start with <code>todo!()</code> for every method and implement them incrementally, driven by tests.</p>
+<p><strong><a href="./new-persistence/step4-table-crud.html">Read Step 4 →</a></strong></p>
+<hr>
+<h2 id="step-5-relationships"><a class="header" href="#step-5-relationships">Step 5: Relationships</a></h2>
+<p>Declare <code>with_one</code> and <code>with_many</code> relationships on tables and traverse them with <code>get_ref_as</code>.
+Implement <code>column_table_values_expr</code> for subquery-based traversal and optionally
+<code>related_correlated_condition</code> for correlated subqueries (expression fields like computed counts).</p>
+<p>Skip this step if your persistence is flat (no foreign keys or cross-collection references).</p>
+<p><strong><a href="./new-persistence/step5-relationships.html">Read Step 5 →</a></strong></p>
+<hr>
+<h2 id="step-6-multi-backend-applications"><a class="header" href="#step-6-multi-backend-applications">Step 6: Multi-Backend Applications</a></h2>
+<p>Wrap your tables with <code>AnyTable::from_table()</code> to erase the backend type. This enables generic UI,
+CLI, and API code that works identically across SurrealDB, SQLite, CSV, MongoDB, or your new
+persistence — all through a uniform <code>serde_json::Value</code>-based interface.</p>
+<p><strong><a href="./new-persistence/step6-multi-backend.html">Read Step 6 →</a></strong></p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="three-paths.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
 
-                            <a rel="next prefetch" href="history.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="new-persistence/step1-types.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -198,8 +270,11 @@ efficient queries for whichever backend you’re using.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="three-paths.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
 
-                    <a rel="next prefetch" href="history.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="new-persistence/step1-types.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

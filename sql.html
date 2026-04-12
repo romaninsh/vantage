@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Introduction - Vantage 0.4 Framework</title>
+        <title>SQL: PostgreSQL, MySQL &amp; SQLite - Vantage 0.4 Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,20 +175,65 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="vantage-framework"><a class="header" href="#vantage-framework">Vantage Framework</a></h1>
-<p>Vantage is a data entity persistence and abstraction framework for Rust.</p>
-<p>Rather than being a traditional ORM, Vantage introduces the concept of a <strong>DataSet</strong> — an abstract,
-composable handle to records living in a remote data store. You define structure, conditions,
-relations, and operations without loading data eagerly, and Vantage translates your intent into
-efficient queries for whichever backend you’re using.</p>
-<p>This documentation covers Vantage <strong>0.4</strong>.</p>
+                        <h1 id="sql-postgresql-mysql--sqlite"><a class="header" href="#sql-postgresql-mysql--sqlite">SQL: PostgreSQL, MySQL &amp; SQLite</a></h1>
+<p>The <code>vantage-sql</code> crate provides persistence implementations for three SQL databases via
+<a href="https://github.com/launchbadge/sqlx">sqlx</a>. All three share the same architecture — CBOR-based type
+systems, expression engine, query builder, and full <code>TableSource</code> implementation — but each has
+vendor-specific behaviour around type affinity, quoting, and parameter binding.</p>
+<h2 id="backends"><a class="header" href="#backends">Backends</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Backend</th><th>Struct</th><th>Type System</th><th>Param style</th><th>ID quoting</th></tr>
+</thead>
+<tbody>
+<tr><td>PostgreSQL</td><td><code>PostgresDB</code></td><td><code>AnyPostgresType</code></td><td><code>$1, $2</code></td><td><code>"double_quote"</code></td></tr>
+<tr><td>MySQL</td><td><code>MysqlDB</code></td><td><code>AnyMysqlType</code></td><td><code>?, ?</code></td><td><code>`backtick`</code></td></tr>
+<tr><td>SQLite</td><td><code>SqliteDB</code></td><td><code>AnySqliteType</code></td><td><code>?1, ?2</code></td><td><code>"double_quote"</code></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="what-they-implement"><a class="header" href="#what-they-implement">What they implement</a></h2>
+<p>All three implement the full trait stack:</p>
+<ul>
+<li><code>DataSource</code> — marker</li>
+<li><code>ExprDataSource</code> — parametric SQL execution with CBOR values</li>
+<li><code>SelectableDataSource</code> — query builder with JOINs, CTEs, window functions</li>
+<li><code>TableSource</code> — full CRUD, columns, conditions, aggregates</li>
+<li><code>TableQuerySource</code> — table definition → full query</li>
+</ul>
+<h2 id="cbor-value-representation"><a class="header" href="#cbor-value-representation">CBOR value representation</a></h2>
+<p>All SQL backends use <strong>CBOR</strong> (<code>ciborium::Value</code>) as their internal value type — not JSON. This
+preserves type fidelity that JSON loses:</p>
+<ul>
+<li><strong>Integer vs Float</strong> — JSON’s <code>42</code> is ambiguous; CBOR distinguishes <code>Integer(42)</code> from
+<code>Float(42.0)</code></li>
+<li><strong>Binary data</strong> — CBOR has native byte arrays; JSON would need base64 encoding</li>
+<li><strong>Precise decimals</strong> — stored as tagged CBOR values, not lossy floats</li>
+</ul>
+<p>Values are converted to CBOR on write (via the type system’s <code>to_cbor()</code>) and read back as untyped
+CBOR (via <code>from_cbor()</code>). The type markers from <code>vantage_type_system!</code> ensure correct binding —
+integers bind as <code>i64</code>, text as <code>&amp;str</code>, booleans as <code>bool</code>.</p>
+<h2 id="type-conversion-reference"><a class="header" href="#type-conversion-reference">Type conversion reference</a></h2>
+<p>Each database handles Rust types differently depending on the column type. See the
+<a href="./sql/type-conversions.html">Type Conversions</a> reference for detailed round-trip tables covering:</p>
+<ul>
+<li><strong>Chrono types</strong> — <code>NaiveDate</code>, <code>NaiveTime</code>, <code>NaiveDateTime</code>, <code>DateTime&lt;Utc&gt;</code>,
+<code>DateTime&lt;FixedOffset&gt;</code></li>
+<li><strong>Numeric types</strong> — <code>Decimal</code>, <code>i64</code>, <code>f64</code></li>
+<li>Exact vs lossy vs truncated behaviour per column type</li>
+<li>Cross-type coercion rules and error cases</li>
+</ul>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="new-persistence/step6-multi-backend.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
 
-                            <a rel="next prefetch" href="history.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="sql/type-conversions.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -198,8 +243,11 @@ efficient queries for whichever backend you’re using.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="new-persistence/step6-multi-backend.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
 
-                    <a rel="next prefetch" href="history.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="sql/type-conversions.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

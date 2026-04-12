@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Introduction - Vantage 0.4 Framework</title>
+        <title>Three Paths for Developers - Vantage 0.4 Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,20 +175,254 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="vantage-framework"><a class="header" href="#vantage-framework">Vantage Framework</a></h1>
-<p>Vantage is a data entity persistence and abstraction framework for Rust.</p>
-<p>Rather than being a traditional ORM, Vantage introduces the concept of a <strong>DataSet</strong> — an abstract,
-composable handle to records living in a remote data store. You define structure, conditions,
-relations, and operations without loading data eagerly, and Vantage translates your intent into
-efficient queries for whichever backend you’re using.</p>
-<p>This documentation covers Vantage <strong>0.4</strong>.</p>
+                        <h1 id="three-paths-for-developers"><a class="header" href="#three-paths-for-developers">Three Paths for Developers</a></h1>
+<p>Vantage gives you three ways to work with data. Each path builds on the previous one, and all three
+converge into a unified data abstraction layer.</p>
+<ul>
+<li><a href="#①-entity-framework">① Entity Framework</a></li>
+<li><a href="#②-query-building">② Query Building</a>
+<ul>
+<li><a href="#sqlite--case-union-window-functions">SQLite — CASE, UNION, window functions</a></li>
+<li><a href="#postgresql--distinct-on-lateral-join-array-ops">PostgreSQL — DISTINCT ON, LATERAL JOIN, array ops</a></li>
+</ul>
+</li>
+<li><a href="#③-custom-persistences">③ Custom Persistences</a></li>
+<li><a href="#convergence">Convergence</a></li>
+</ul>
+<hr>
+<pre class="mermaid">graph TD
+    EF["① Entity Framework&lt;br/&gt;CRUD over business objects"]
+    QB["② Query Building&lt;br/&gt;Vendor-specific SQL power"]
+    CP["③ Custom Persistences&lt;br/&gt;APIs, caches, reactive data"]
+    EF --&gt; DAL["Universal Data Abstraction Layer"]
+    QB --&gt; DAL
+    CP --&gt; DAL
+    DAL --&gt; E["Export: FFI · API · UI · SDK"]
+    style EF fill:#4a7c59,color:#fff
+    style QB fill:#2d6a8f,color:#fff
+    style CP fill:#8f5a2d,color:#fff
+    style DAL fill:#7c2d8f,color:#fff
+    style E fill:#555,color:#fff
+</pre>
+
+<hr>
+<h2 id="①-entity-framework"><a class="header" href="#①-entity-framework">① Entity Framework</a></h2>
+<p>The most common path. Define entities, build tables, use <code>DataSet</code> and <code>ActiveEntity</code> for CRUD —
+your code never touches SQL or any query language.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Define once
+#[entity(SurrealType, SqliteType, PostgresType)]
+struct Product {
+    name: String,
+    price: i64,
+    is_deleted: bool,
+}
+
+// Use everywhere
+let table = Product::surreal_table(db);
+let expensive = table.with_condition(table["price"].gt(200));
+let count = expensive.get_count().await?;
+
+let mut item = table.get_entity(&amp;id).await?.unwrap();
+item.price = 350;
+item.save().await?;
+<span class="boring">}</span></code></pre>
+<p>This is the bread and butter of enterprise development — hundreds of entities, each with
+relationships, computed fields, and business rules, all persistence-agnostic and testable with
+mocks.</p>
+<div id="admonition-when-to-use-this-path" class="admonition admonish-tip" role="note" aria-labelledby="admonition-when-to-use-this-path-title">
+<div class="admonition-title">
+<div id="admonition-when-to-use-this-path-title">
+<p>When to use this path</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-when-to-use-this-path"></a>
+</div>
+
+<div>
+<p>You’re building business software with well-defined entities (Client, Order, Invoice). You want
+clean separation between persistence and logic. You don’t need vendor-specific SQL features.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="②-query-building"><a class="header" href="#②-query-building">② Query Building</a></h2>
+<p>When you need the full power of your database — JOINs, CTEs, window functions, JSONB operators,
+array aggregation, recursive queries — drop into the vendor-specific query builder.</p>
+<h3 id="sqlite--case-union-window-functions"><a class="header" href="#sqlite--case-union-window-functions">SQLite — CASE, UNION, window functions</a></h3>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_sql::primitives::case::Case;
+
+let select = SqliteSelect::new()
+    .with_source("users")
+    .with_field("name")
+    .with_field("salary")
+    .with_expression(
+        Case::new()
+            .when(sqlite_expr!("{} &gt;= {}", (ident("salary")), 100000.0f64),
+                  sqlite_expr!("{}", "senior"))
+            .when(sqlite_expr!("{} &gt;= {}", (ident("salary")), 60000.0f64),
+                  sqlite_expr!("{}", "mid"))
+            .else_(sqlite_expr!("{}", "junior"))
+            .as_alias("band"),
+    )
+    .with_order(ident("salary"), Order::Desc);
+<span class="boring">}</span></code></pre>
+<h3 id="postgresql--distinct-on-lateral-join-array-ops"><a class="header" href="#postgresql--distinct-on-lateral-join-array-ops">PostgreSQL — DISTINCT ON, LATERAL JOIN, array ops</a></h3>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let select = PostgresSelect::new()
+    .with_distinct_on(ident("user_id").dot_of("o"))
+    .with_source_as("orders", "o")
+    .with_expression(ident("name").dot_of("u"))
+    .with_expression(ident("id").dot_of("o").with_alias("order_id"))
+    .with_expression(ident("total").dot_of("o"))
+    .with_join(PostgresSelectJoin::inner(
+        "users", "u",
+        ident("id").dot_of("u").eq(ident("user_id").dot_of("o")),
+    ))
+    .with_order(ident("user_id").dot_of("o"), Order::Asc)
+    .with_order(ident("created_at").dot_of("o"), Order::Desc);
+<span class="boring">}</span></code></pre>
+<p>Both examples are type-safe — parameters are bound with the correct CBOR type markers, identifiers
+are quoted for the target dialect, and results deserialize into typed structs. See the full test
+suites:
+<a href="https://github.com/romaninsh/vantage/blob/main/vantage-sql/tests/sqlite/3_complex_queries.rs">SQLite complex queries</a>,
+<a href="https://github.com/romaninsh/vantage/blob/main/vantage-sql/tests/postgres/3_complex_queries_pg.rs">PostgreSQL complex queries</a>.</p>
+<div id="admonition-bridge-back-into-the-entity-framework" class="admonition admonish-info" role="note" aria-labelledby="admonition-bridge-back-into-the-entity-framework-title">
+<div class="admonition-title">
+<div id="admonition-bridge-back-into-the-entity-framework-title">
+<p>Bridge back into the entity framework</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-bridge-back-into-the-entity-framework"></a>
+</div>
+
+<div>
+<p>Complex queries don’t have to live in isolation. Wrap them as expression fields
+(<code>with_expression</code>) or as custom methods on your <code>Table</code> — they become part of the entity
+framework, available to every consumer of your model crate.</p>
+</div>
+
+</div>
+
+<div id="admonition-when-to-use-this-path-1" class="admonition admonish-tip" role="note" aria-labelledby="admonition-when-to-use-this-path-1-title">
+<div class="admonition-title">
+<div id="admonition-when-to-use-this-path-1-title">
+<p>When to use this path</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-when-to-use-this-path-1"></a>
+</div>
+
+<div>
+<p>You need vendor-specific features — recursive CTEs, window functions, <code>DISTINCT ON</code>,
+JSONB operators, <code>generate_series</code>, array aggregation. You want full control over the query
+while keeping type safety and parameterised binding.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="③-custom-persistences"><a class="header" href="#③-custom-persistences">③ Custom Persistences</a></h2>
+<p>Vantage isn’t limited to databases. Implement the persistence traits for anything that stores or
+produces data:</p>
+<ul>
+<li><strong>REST APIs</strong> — <code>vantage-api-client</code> wraps any paginated JSON API as a read-only <code>TableSource</code></li>
+<li><strong>API pools</strong> — <code>vantage-api-pool</code> adds connection pooling, prefetching, and rate limiting</li>
+<li><strong>CSV files</strong> — <code>vantage-csv</code> reads structured files with in-memory conditions</li>
+<li><strong>Local caches</strong> — <code>vantage-live</code> syncs fast cache (ImTable, ReDB) with slow backend (Postgres,
+SurrealDB) for responsive UIs</li>
+<li><strong>Message queues</strong> — implement <code>InsertableDataSet</code> for append-only sources like Kafka topics</li>
+<li><strong>Mixed sources</strong> — read from SQL, write through a queue, cache in memory — same <code>Table</code> interface</li>
+</ul>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Read from a REST API
+let api_products = Product::api_table(RestApi::new("https://api.example.com/products"));
+
+// Cache locally for fast UI
+let live = LiveTable::new(
+    Product::surreal_table(db),   // permanent backend
+    ImTable::new(&amp;cache, "products"),  // fast cache
+);
+
+// Both implement the same traits — your UI code doesn't care
+let products: Vec&lt;Product&gt; = live.list().await?.into_values().collect();
+<span class="boring">}</span></code></pre>
+<div id="admonition-when-to-use-this-path-2" class="admonition admonish-tip" role="note" aria-labelledby="admonition-when-to-use-this-path-2-title">
+<div class="admonition-title">
+<div id="admonition-when-to-use-this-path-2-title">
+<p>When to use this path</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-when-to-use-this-path-2"></a>
+</div>
+
+<div>
+<p>You’re integrating with external APIs, building offline-first applications, implementing
+reactive data layers, or combining multiple data sources behind a single interface. Your custom
+persistence becomes a first-class citizen in the entity framework.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="convergence"><a class="header" href="#convergence">Convergence</a></h2>
+<p>All three paths converge into the same <strong>data abstraction layer</strong>. Entity framework tables, raw
+query results, and custom persistence data all flow through <code>Table</code>, <code>DataSet</code>, and <code>AnyTable</code> —
+giving you one interface for the entire organisation’s data.</p>
+<pre><code class="language-text">┌──────────────────────────────────────────────────────────────┐
+│                  Data Abstraction Layer                       │
+│                                                              │
+│   Table&lt;SurrealDB, Client&gt;    ← entity framework             │
+│   Table&lt;PostgresDB, Report&gt;   ← complex queries              │
+│   Table&lt;RestApi, ExternalData&gt; ← custom persistence          │
+│   Table&lt;LiveTable, Product&gt;   ← cached + reactive            │
+│                                                              │
+│   All implement: DataSet · ValueSet · ActiveEntitySet         │
+│   All wrap into: AnyTable (type-erased, generic code)        │
+└──────────────────────────────────────────────────────────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+          Axum API        egui/Tauri       FFI / SDK
+</code></pre>
+<p>This is where Rust’s type system pays off at scale. Every <code>Table</code> is checked at compile time. Every
+persistence has strict type boundaries. Every consumer works against abstract traits. Add a new
+database, API, or cache — nothing else changes. Add a new UI framework or language binding — the
+model stays the same.</p>
+<div id="admonition-the-architecture-that-scales" class="admonition admonish-success" role="note" aria-labelledby="admonition-the-architecture-that-scales-title">
+<div class="admonition-title">
+<div id="admonition-the-architecture-that-scales-title">
+<p>The architecture that scales</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-the-architecture-that-scales"></a>
+</div>
+
+<div>
+<p>Vantage turns your data layer into a universal abstraction. Start with one database and a
+handful of entities. Over time, add more persistences, more entities, more consumers. The
+architecture doesn’t bend — Rust’s ownership model and trait system ensure each layer stays
+clean, each boundary stays enforced, and each team works independently.</p>
+</div>
+
+</div>
+
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="mda.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
 
-                            <a rel="next prefetch" href="history.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="new-persistence.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -198,8 +432,11 @@ efficient queries for whichever backend you’re using.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="mda.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
 
-                    <a rel="next prefetch" href="history.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="new-persistence.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

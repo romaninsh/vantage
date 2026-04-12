@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Introduction - Vantage 0.4 Framework</title>
+        <title>Historical Timeline - Vantage 0.4 Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,20 +175,311 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="vantage-framework"><a class="header" href="#vantage-framework">Vantage Framework</a></h1>
-<p>Vantage is a data entity persistence and abstraction framework for Rust.</p>
-<p>Rather than being a traditional ORM, Vantage introduces the concept of a <strong>DataSet</strong> — an abstract,
-composable handle to records living in a remote data store. You define structure, conditions,
-relations, and operations without loading data eagerly, and Vantage translates your intent into
-efficient queries for whichever backend you’re using.</p>
-<p>This documentation covers Vantage <strong>0.4</strong>.</p>
+                        <h1 id="the-vantage-journey"><a class="header" href="#the-vantage-journey">The Vantage Journey</a></h1>
+<p>Vantage didn’t start as a multi-backend entity framework. It started as a weekend experiment to see
+if Rust could build SQL queries without feeling like Rust.</p>
+<p>This page walks you through each release — what changed, why it mattered, and how the API evolved
+from raw Postgres queries to a universal persistence layer.</p>
+<ul>
+<li><a href="#00--dorm-aprilnovember-2024">0.0 — “DORM” (April–November 2024)</a>
+<ul>
+<li><a href="#milestones">Milestones</a></li>
+</ul>
+</li>
+<li><a href="#01--vantage-is-born-december-2024">0.1 — Vantage is born (December 2024)</a></li>
+<li><a href="#02--entity-framework--mda-february-2025">0.2 — Entity Framework &amp; MDA (February 2025)</a></li>
+<li><a href="#03--the-great-separation-julyoctober-2025">0.3 — The Great Separation (July–October 2025)</a></li>
+<li><a href="#04--the-type-system-rewrite-november-2025present">0.4 — The Type System Rewrite (November 2025–present)</a></li>
+<li><a href="#the-bigger-picture">The bigger picture</a></li>
+</ul>
+<pre class="mermaid">graph LR
+    D[0.0 DORM] --&gt;|rename| V1[0.1 Vantage]
+    V1 --&gt;|entity framework| V2[0.2 MDA]
+    V2 --&gt;|crate split| V3[0.3 UI Adapters]
+    V3 --&gt;|type rewrite| V4[0.4 Type System]
+    style D fill:#555,color:#fff
+    style V1 fill:#4a7c59,color:#fff
+    style V2 fill:#2d6a8f,color:#fff
+    style V3 fill:#8f5a2d,color:#fff
+    style V4 fill:#7c2d8f,color:#fff
+</pre>
+
+<hr>
+<h2 id="00--dorm-aprilnovember-2024"><a class="header" href="#00--dorm-aprilnovember-2024">0.0 — “DORM” (April–November 2024)</a></h2>
+<p>The project was originally called <strong>DORM</strong> — the Dry ORM. It was Postgres-only, monolithic, and
+proudly opinionated. Everything lived in one crate.</p>
+<p>The core idea was already there: <strong>Data Sets</strong>. Instead of loading records eagerly, you describe
+<em>what</em> you want and let the framework figure out the query.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let clients = Client::table();           // Table&lt;Postgres, Client&gt;
+let paying = clients.with_condition(
+    clients.is_paying_client().eq(&amp;true)
+);
+let orders = paying.ref_orders();         // Table&lt;Postgres, Order&gt;
+
+for order in orders.get().await? {
+    println!("#{} total: ${:.2}", order.id, order.total as f64 / 100.0);
+}
+<span class="boring">}</span></code></pre>
+<p>Behind this innocent-looking code, DORM generated a single SQL query with subqueries, joins, and
+soft-delete filters — all derived from model definitions:</p>
+<pre><code class="language-sql">SELECT id,
+    (SELECT name FROM client WHERE client.id = ord.client_id) AS client_name,
+    (SELECT SUM((SELECT price FROM product WHERE id = product_id) * quantity)
+     FROM order_line WHERE order_line.order_id = ord.id) AS total
+FROM ord
+WHERE client_id IN (SELECT id FROM client WHERE is_paying_client = true)
+  AND is_deleted = false
+</code></pre>
+<p>No hand-written SQL. No query strings. The framework composed everything from relationship
+definitions and table extensions like <code>SoftDelete</code>.</p>
+<div id="admonition-the-arc-breakthrough" class="admonition admonish-tip" role="note" aria-labelledby="admonition-the-arc-breakthrough-title">
+<div class="admonition-title">
+<div id="admonition-the-arc-breakthrough-title">
+<p>The Arc breakthrough</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-the-arc-breakthrough"></a>
+</div>
+
+<div>
+<p>Early commits show a battle with Rust’s borrow checker — the infamous “lifetime hell.”
+The solution came on April 28: switching to <code>Arc</code> for shared ownership. This unlocked
+clonable data sources and composable table references that define the framework to this day.</p>
+</div>
+
+</div>
+
+<h3 id="milestones"><a class="header" href="#milestones">Milestones</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Date</th><th>What happened</th></tr>
+</thead>
+<tbody>
+<tr><td>Apr 11</td><td>First commit — queries, expressions, SQLite binding</td></tr>
+<tr><td>Apr 18</td><td>Insert/delete support, first Postgres tests</td></tr>
+<tr><td>Apr 28</td><td><code>Arc</code> adoption — escaped lifetime hell</td></tr>
+<tr><td>May 14</td><td><code>Query::Join</code> implemented</td></tr>
+<tr><td>May 25</td><td><code>has_one</code>, <code>has_many</code>, relationship traversal</td></tr>
+<tr><td>May 26</td><td>Bakery model example — all entities defined</td></tr>
+</tbody>
+</table>
+</div>
+<hr>
+<h2 id="01--vantage-is-born-december-2024"><a class="header" href="#01--vantage-is-born-december-2024">0.1 — Vantage is born (December 2024)</a></h2>
+<p>On December 12, the framework was renamed from DORM to <strong>Vantage</strong> and published to crates.io for
+the first time. The API stayed the same — this was a branding milestone, not an architectural one.</p>
+<div id="admonition-why-vantage" class="admonition admonish-note" role="note" aria-labelledby="admonition-why-vantage-title">
+<div class="admonition-title">
+<div id="admonition-why-vantage-title">
+<p>Why ‘Vantage’?</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-why-vantage"></a>
+</div>
+
+<div>
+<p>A vantage point gives you a clear view of the landscape below. The framework gives you
+a clear view of your data — no matter where it lives or how complex the relationships are.</p>
+</div>
+
+</div>
+
+<p>The same month brought the first Axum integration (<code>bakery_api</code>), proving that data sets could drive
+REST endpoints naturally:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>async fn list_orders(
+    client: axum::extract::Query&lt;OrderRequest&gt;,
+    pager: axum::extract::Query&lt;Pagination&gt;,
+) -&gt; impl IntoResponse {
+    let orders = Client::table()
+        .with_id(client.client_id.into())
+        .ref_orders();
+
+    let mut query = orders.query();
+    query.add_limit(Some(pager.per_page));
+    Json(query.get().await.unwrap())
+}
+<span class="boring">}</span></code></pre>
+<p>Tags <code>v0.1.0</code> and <code>v0.1.1</code> were published the same day. SQLx data source landed 11 days later.</p>
+<hr>
+<h2 id="02--entity-framework--mda-february-2025"><a class="header" href="#02--entity-framework--mda-february-2025">0.2 — Entity Framework &amp; MDA (February 2025)</a></h2>
+<p>Version 0.2 repositioned Vantage as a full <strong>Entity Framework</strong> with Model-Driven Architecture. The
+README doubled in size. The vision expanded from “clever query builder” to “how enterprises should
+structure business logic.”</p>
+<p>The key insight: entities aren’t just database rows. They’re <strong>business objects</strong> that might live in
+SQL, NoSQL, a REST API, or a message queue — and your code shouldn’t care which.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl Client {
+    fn table() -&gt; Table&lt;Client, Oracle&gt; { /* ... */ }
+    fn registration_queue() -&gt; impl Insertable&lt;Client&gt; { /* Kafka */ }
+    fn admin_api() -&gt; impl DataSet&lt;Client&gt; { /* REST */ }
+    fn read_csv(file: String) -&gt; impl ReadableDataSet&lt;Client&gt; { /* CSV */ }
+}
+<span class="boring">}</span></code></pre>
+<div id="admonition-same-interface-any-backend" class="admonition admonish-example" role="note" aria-labelledby="admonition-same-interface-any-backend-title">
+<div class="admonition-title">
+<div id="admonition-same-interface-any-backend-title">
+<p>Same interface, any backend</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-same-interface-any-backend"></a>
+</div>
+
+<div>
+<p>A developer calling <code>Client::registration_queue().insert(id, client).await</code> doesn’t
+need to know it’s Kafka underneath. The SDK hides the transport — only the entity
+contract matters.</p>
+</div>
+
+</div>
+
+<p>This release also introduced the idea of <strong>struct projection</strong> — using different Rust types against
+the same data set to control which fields get queried:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>struct MiniClient { name: String }
+struct FullClient { name: String, email: String, balance: Decimal }
+
+// Only fetches `name` from the database
+let name = clients.get_id_as::&lt;MiniClient&gt;(42).await?.name;
+<span class="boring">}</span></code></pre>
+<p>The monolith was getting heavy, though. Everything still lived in one crate, and adding a new
+database meant touching core code.</p>
+<hr>
+<h2 id="03--the-great-separation-julyoctober-2025"><a class="header" href="#03--the-great-separation-julyoctober-2025">0.3 — The Great Separation (July–October 2025)</a></h2>
+<p>Version 0.3 broke the monolith into <strong>dedicated crates</strong> and bet heavily on SurrealDB as the primary
+backend. The trait-based architecture that defines Vantage today was born here.</p>
+<div id="admonition-crate-explosion" class="admonition admonish-info" role="note" aria-labelledby="admonition-crate-explosion-title">
+<div class="admonition-title">
+<div id="admonition-crate-explosion-title">
+<p>Crate explosion</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-crate-explosion"></a>
+</div>
+
+<div>
+<p>One crate became many: <code>vantage-expressions</code>, <code>vantage-table</code>, <code>vantage-dataset</code>,
+<code>vantage-surrealdb</code>, <code>surreal-client</code>, <code>vantage-config</code>, <code>vantage-ui-adapters</code> — each
+with a focused responsibility.</p>
+</div>
+
+</div>
+
+<p>Table definitions moved from static initialization to a <strong>builder pattern</strong>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// 0.2 — static, Postgres-only
+Table::new_with_entity("bakery", postgres())
+    .with_id_column("id")
+    .with_column("name")
+    .with_many("clients", "bakery_id", || Box::new(Client::table()))
+
+// 0.3 — builder, any datasource
+Table::&lt;SurrealDB, Client&gt;::new("client", ds.clone())
+    .with_id_column("id")
+    .with_column("name")
+    .with_column("email")
+    .with_many("orders", "client_id", || Client::order_table())
+<span class="boring">}</span></code></pre>
+<p>Field accessors now return <code>Expression</code> instead of column objects — making them composable across
+query builders:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Build conditions from expressions
+let active = clients.is_paying_client().eq(true);
+let big_spenders = clients.balance().gt(1000);
+let query = clients.with_condition(active).with_condition(big_spenders);
+<span class="boring">}</span></code></pre>
+<p>The <strong><code>AnyTable</code></strong> type-erasure system arrived, enabling generic code that works with any
+datasource:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let tables: Vec&lt;AnyTable&gt; = vec![
+    AnyTable::new(Client::table()),   // SurrealDB
+    AnyTable::new(Product::table()),  // SQLite
+];
+
+for table in &amp;tables {
+    println!("{}: {} records", table.name(), table.count().await?);
+}
+<span class="boring">}</span></code></pre>
+<p>This release culminated with <strong>UI adapters for six frameworks</strong> — egui, GPUI, Slint, Tauri, Ratatui,
+and Cursive — all driven by the same <code>AnyTable</code> interface.</p>
+<div id="admonition-one-data-layer-six-uis" class="admonition admonish-success" role="note" aria-labelledby="admonition-one-data-layer-six-uis-title">
+<div class="admonition-title">
+<div id="admonition-one-data-layer-six-uis-title">
+<p>One data layer, six UIs</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-one-data-layer-six-uis"></a>
+</div>
+
+<div>
+<p>The same bakery model powered a native desktop app (GPUI), a web app (Tauri), a terminal
+dashboard (Ratatui), and three more — without changing a single line of business logic.</p>
+</div>
+
+</div>
+
+<p><img src="images/ui-slideshow.gif" alt="egui, GPUI, Slint, Tauri, Cursive, Ratatui — same data, six frameworks"></p>
+<hr>
+<h2 id="04--the-type-system-rewrite-november-2025present"><a class="header" href="#04--the-type-system-rewrite-november-2025present">0.4 — The Type System Rewrite (November 2025–present)</a></h2>
+<div id="admonition-vantage-04--the-current-release" class="admonition admonish-info" role="note" aria-labelledby="admonition-vantage-04--the-current-release-title">
+<div class="admonition-title">
+<div id="admonition-vantage-04--the-current-release-title">
+<p>Vantage 0.4 — the current release</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-vantage-04--the-current-release"></a>
+</div>
+
+<div>
+<p>Version 0.4 rewrites the type system from the ground up. Custom types per datasource, CBOR
+protocol, 7 persistence backends (SurrealDB, Postgres, MySQL, SQLite, MongoDB, CSV, REST API),
+<code>ActiveEntity</code> / <code>ActiveRecord</code> patterns, typed columns, unified error handling, and a progressive
+trait model where each persistence only implements what its engine supports.</p>
+<p><strong><a href="./whats-new-04.html">Read the full 0.4 feature guide →</a></strong></p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="the-bigger-picture"><a class="header" href="#the-bigger-picture">The bigger picture</a></h2>
+<p>Looking at the trajectory:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Version</th><th>Core idea</th><th>Backends</th><th>Crates</th></tr>
+</thead>
+<tbody>
+<tr><td>0.0</td><td>Can Rust build SQL smartly?</td><td>Postgres</td><td>1</td></tr>
+<tr><td>0.1</td><td>Let’s publish this</td><td>Postgres</td><td>1</td></tr>
+<tr><td>0.2</td><td>Entity Framework for Rust</td><td>Postgres</td><td>1</td></tr>
+<tr><td>0.3</td><td>Traits, not inheritance</td><td>SurrealDB, SQLite</td><td>10+</td></tr>
+<tr><td>0.4</td><td>Strict types, any persistence</td><td>SurrealDB, SQLite, Postgres, MySQL, MongoDB, CSV, REST API</td><td>20+</td></tr>
+</tbody>
+</table>
+</div>
+<p>What started as 16 commits in April 2024 is now <strong>470+ commits</strong>, <strong>189+ pull requests</strong>, and a
+framework that can drive the same business logic across five backends and six UI frameworks.</p>
+<p>The destination hasn’t changed since day one: <strong>describe your data once, use it everywhere.</strong> Each
+version just made “everywhere” a little bigger.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="introduction.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
 
-                            <a rel="next prefetch" href="history.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="whats-new-04.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -198,8 +489,11 @@ efficient queries for whichever backend you’re using.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="introduction.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
 
-                    <a rel="next prefetch" href="history.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="whats-new-04.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

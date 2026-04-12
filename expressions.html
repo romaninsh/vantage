@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Introduction - Vantage 0.4 Framework</title>
+        <title>Expressions &amp; Queries - Vantage 0.4 Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,20 +175,187 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="vantage-framework"><a class="header" href="#vantage-framework">Vantage Framework</a></h1>
-<p>Vantage is a data entity persistence and abstraction framework for Rust.</p>
-<p>Rather than being a traditional ORM, Vantage introduces the concept of a <strong>DataSet</strong> — an abstract,
-composable handle to records living in a remote data store. You define structure, conditions,
-relations, and operations without loading data eagerly, and Vantage translates your intent into
-efficient queries for whichever backend you’re using.</p>
-<p>This documentation covers Vantage <strong>0.4</strong>.</p>
+                        <h1 id="expressions--queries"><a class="header" href="#expressions--queries">Expressions &amp; Queries</a></h1>
+<p>Vantage builds queries without string concatenation. The <code>vantage-expressions</code> crate provides a
+type-safe, composable expression system that works across all persistence backends — SQL, SurrealDB,
+MongoDB, CSV, and anything you add yourself.</p>
+<ul>
+<li><a href="#the-core-idea">The core idea</a></li>
+<li><a href="#vendor-macros">Vendor macros</a></li>
+<li><a href="#composing-expressions">Composing expressions</a></li>
+<li><a href="#identifier-quoting">Identifier quoting</a></li>
+<li><a href="#exprdatasource--executing-expressions">ExprDataSource — executing expressions</a></li>
+<li><a href="#deferred-expressions--cross-database-values">Deferred expressions — cross-database values</a></li>
+<li><a href="#selectable--the-query-builder-interface">Selectable — the query builder interface</a></li>
+<li><a href="#selectabledatasource--wiring-it-up">SelectableDataSource — wiring it up</a></li>
+<li><a href="#expressive-trait">Expressive trait</a></li>
+</ul>
+<hr>
+<h2 id="the-core-idea"><a class="header" href="#the-core-idea">The core idea</a></h2>
+<p>An <code>Expression&lt;T&gt;</code> is a template string with typed parameters:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let expr = sqlite_expr!("SELECT {} FROM {} WHERE {} &gt; {}",
+    (ident("name")), (ident("product")), (ident("price")), 100i64);
+// → SELECT "name" FROM "product" WHERE "price" &gt; ?1  (with 100 bound as i64)
+<span class="boring">}</span></code></pre>
+<p>Parameters are never interpolated into the string. They’re carried separately, each tagged with a
+type marker from your persistence’s type system. The bind layer uses these markers to call the right
+driver method — <code>bind_i64</code>, <code>bind_str</code>, <code>bind_bool</code> — no guessing, no silent coercion.</p>
+<p>Three kinds of parameters:</p>
+<ul>
+<li><strong>Scalar</strong> — a typed value: <code>42i64</code>, <code>"hello"</code>, <code>true</code></li>
+<li><strong>Nested</strong> — another expression, composed into the template</li>
+<li><strong>Deferred</strong> — a closure that executes later (cross-database resolution)</li>
+</ul>
+<hr>
+<h2 id="vendor-macros"><a class="header" href="#vendor-macros">Vendor macros</a></h2>
+<p>Each persistence provides a convenience macro that produces <code>Expression&lt;AnyType&gt;</code> with the correct
+type wrapping:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let e = sqlite_expr!("SELECT * FROM product WHERE price &gt; {}", 100i64);
+let e = surreal_expr!("SELECT * FROM product WHERE price &gt; {}", 100i64);
+let e = postgres_expr!("SELECT * FROM product WHERE price &gt; {}", 100i64);
+let e = mysql_expr!("SELECT * FROM product WHERE price &gt; {}", 100i64);
+<span class="boring">}</span></code></pre>
+<p>Same syntax, different type universes. The compiler ensures you can’t accidentally mix a
+<code>Expression&lt;AnySqliteType&gt;</code> into a SurrealDB query.</p>
+<hr>
+<h2 id="composing-expressions"><a class="header" href="#composing-expressions">Composing expressions</a></h2>
+<p>Expressions nest naturally. Parenthesised arguments call <code>.expr()</code> automatically:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let condition = sqlite_expr!("{} &gt; {}", (ident("price")), 100i64);
+let query = sqlite_expr!("SELECT {} FROM {} WHERE {}",
+    (ident("name")), (ident("product")), (condition));
+<span class="boring">}</span></code></pre>
+<p>The <code>ExpressionFlattener</code> collapses all nesting into a single flat template with positional
+parameters — each one still carrying its type marker.</p>
+<p>For building lists (e.g. multi-row INSERT), use <code>Expression::from_vec</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let row1 = sqlite_expr!("({}, {})", "tart", 220i64);
+let row2 = sqlite_expr!("({}, {})", "pie", 299i64);
+let rows = Expression::from_vec(vec![row1, row2], ", ");
+<span class="boring">}</span></code></pre>
+<hr>
+<h2 id="identifier-quoting"><a class="header" href="#identifier-quoting">Identifier quoting</a></h2>
+<p>SQL identifiers need quoting — and each database uses different quote characters. The <code>Identifier</code>
+struct handles this by implementing <code>Expressive&lt;T&gt;</code> for each backend type:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Quoting adapts to the expression's type context
+sqlite_expr!("SELECT {}", (ident("name")));      // → SELECT "name"
+mysql_expr!("SELECT {}", (ident("name")));        // → SELECT `name`
+
+// Qualified identifiers
+sqlite_expr!("SELECT {}", (ident("name").dot_of("u")));  // → SELECT "u"."name"
+
+// Aliases
+mysql_expr!("SELECT {}", (ident("name").with_alias("n"))); // → SELECT `name` AS `n`
+<span class="boring">}</span></code></pre>
+<hr>
+<h2 id="exprdatasource--executing-expressions"><a class="header" href="#exprdatasource--executing-expressions">ExprDataSource — executing expressions</a></h2>
+<p>The <code>ExprDataSource&lt;T&gt;</code> trait connects expressions to a live database:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Execute directly
+let result: AnySqliteType = db.execute(&amp;expr).await?;
+
+// Associate with an expected return type
+let count: i64 = db.associate::&lt;i64&gt;(sqlite_expr!("SELECT COUNT(*) FROM product"))
+    .get().await?;
+<span class="boring">}</span></code></pre>
+<p><code>AssociatedExpression&lt;'a, DS, T, R&gt;</code> carries both the expression and a reference to the datasource.
+Call <code>.get()</code> to execute and convert in one step. The return type <code>R</code> is checked at compile time.</p>
+<hr>
+<h2 id="deferred-expressions--cross-database-values"><a class="header" href="#deferred-expressions--cross-database-values">Deferred expressions — cross-database values</a></h2>
+<p>Sometimes a query on one database needs a value from another. <code>defer()</code> wraps a query as a closure
+that resolves at execution time:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Query config_db for a threshold — but don't execute yet
+let threshold = config_db.defer(
+    sqlite_expr!("SELECT value FROM config WHERE key = {}", "min_price")
+);
+
+// Use the deferred value in a query against shop_db
+let expensive = Expression::&lt;AnySqliteType&gt;::new(
+    "SELECT name FROM product WHERE price &gt;= {}",
+    vec![ExpressiveEnum::Deferred(threshold)],
+);
+let result = shop_db.execute(&amp;expensive).await?;
+// 1. Resolves deferred → calls config_db, gets 150
+// 2. Binds 150 as a scalar parameter
+// 3. Executes against shop_db
+<span class="boring">}</span></code></pre>
+<p>This is not a subquery — the deferred query runs first, produces a concrete value, and that value
+gets bound as a regular parameter.</p>
+<hr>
+<h2 id="selectable--the-query-builder-interface"><a class="header" href="#selectable--the-query-builder-interface">Selectable — the query builder interface</a></h2>
+<p>The <code>Selectable&lt;T&gt;</code> trait is the standard interface for building SELECT queries. Each persistence
+provides its own SELECT struct (<code>SqliteSelect</code>, <code>SurrealSelect</code>, <code>PostgresSelect</code>) implementing this
+trait:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let select = SqliteSelect::new()
+    .with_source("product")
+    .with_field("name")
+    .with_field("price")
+    .with_condition(sqlite_expr!("{} = {}", (ident("is_deleted")), false))
+    .with_order(sqlite_expr!("{}", (ident("price"))), false)
+    .with_limit(Some(10), None);
+<span class="boring">}</span></code></pre>
+<p><strong>Builder methods</strong> come free from the trait — <code>with_source</code>, <code>with_field</code>, <code>with_condition</code>,
+<code>with_order</code>, <code>with_limit</code>. You only implement the mutating methods (<code>add_field</code>,
+<code>add_where_condition</code>, etc.).</p>
+<p>Aggregate shortcuts clone the query and replace fields:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let count = select.as_count();                              // SELECT COUNT(*) FROM ...
+let total = select.as_sum(sqlite_expr!("{}", (ident("price")))); // SELECT SUM("price") FROM ...
+<span class="boring">}</span></code></pre>
+<hr>
+<h2 id="selectabledatasource--wiring-it-up"><a class="header" href="#selectabledatasource--wiring-it-up">SelectableDataSource — wiring it up</a></h2>
+<p><code>SelectableDataSource&lt;T&gt;</code> connects the query builder to execution:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl SelectableDataSource&lt;AnySqliteType&gt; for SqliteDB {
+    type Select = SqliteSelect;
+
+    fn select(&amp;self) -&gt; Self::Select { SqliteSelect::new() }
+    async fn execute_select(&amp;self, select: &amp;Self::Select) -&gt; Result&lt;Vec&lt;AnySqliteType&gt;&gt; {
+        self.execute(&amp;select.expr()).await
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Once implemented, <code>table.select()</code> returns your vendor-specific builder pre-populated with the
+table’s columns, conditions, and ordering — ready for execution or further customisation.</p>
+<hr>
+<h2 id="expressive-trait"><a class="header" href="#expressive-trait">Expressive trait</a></h2>
+<p>Anything that implements <code>Expressive&lt;T&gt;</code> can be used inside an expression. This includes:</p>
+<ul>
+<li><strong>Columns</strong> — <code>table["price"]</code></li>
+<li><strong>Operations</strong> — <code>table["price"].gt(100)</code></li>
+<li><strong>Identifiers</strong> — <code>ident("name")</code></li>
+<li><strong>Query builders</strong> — <code>select.expr()</code></li>
+<li><strong>Sort orders</strong> — <code>table["name"].desc()</code></li>
+<li><strong>Scalar values</strong> — <code>42i64</code>, <code>"hello"</code>, <code>true</code></li>
+<li><strong>Closures</strong> — that’s what <code>defer()</code> returns</li>
+</ul>
+<p>You can implement <code>Expressive&lt;T&gt;</code> for your own types to make them composable into the expression
+system.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="whats-new-04.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
 
-                            <a rel="next prefetch" href="history.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="mda.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -198,8 +365,11 @@ efficient queries for whichever backend you’re using.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="whats-new-04.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
 
-                    <a rel="next prefetch" href="history.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="mda.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

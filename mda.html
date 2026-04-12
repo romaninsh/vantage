@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Introduction - Vantage 0.4 Framework</title>
+        <title>Model-Driven Architecture - Vantage 0.4 Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,20 +175,292 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="vantage-framework"><a class="header" href="#vantage-framework">Vantage Framework</a></h1>
-<p>Vantage is a data entity persistence and abstraction framework for Rust.</p>
-<p>Rather than being a traditional ORM, Vantage introduces the concept of a <strong>DataSet</strong> — an abstract,
-composable handle to records living in a remote data store. You define structure, conditions,
-relations, and operations without loading data eagerly, and Vantage translates your intent into
-efficient queries for whichever backend you’re using.</p>
-<p>This documentation covers Vantage <strong>0.4</strong>.</p>
+                        <h1 id="model-driven-architecture"><a class="header" href="#model-driven-architecture">Model-Driven Architecture</a></h1>
+<p>Vantage is opinionated about how you structure business software. The framework prescribes a
+<strong>Model-Driven Architecture</strong> (MDA) where entities, relationships, and business rules live in a
+shared model crate — decoupled from any specific persistence, UI, or API layer.</p>
+<ul>
+<li><a href="#the-idea">The idea</a></li>
+<li><a href="#anatomy-of-a-model-crate">Anatomy of a model crate</a></li>
+<li><a href="#defining-entities">Defining entities</a></li>
+<li><a href="#table-constructors">Table constructors</a></li>
+<li><a href="#relationships">Relationships</a></li>
+<li><a href="#computed-fields">Computed fields</a></li>
+<li><a href="#connection-management">Connection management</a></li>
+<li><a href="#using-the-model">Using the model</a></li>
+<li><a href="#type-erased-access">Type-erased access</a></li>
+<li><a href="#the-layered-architecture">The layered architecture</a></li>
+</ul>
+<hr>
+<h2 id="the-idea"><a class="header" href="#the-idea">The idea</a></h2>
+<p>Most Rust projects scatter database queries across handlers, services, and utilities. When the
+schema changes or a new backend is needed, you’re hunting through dozens of files.</p>
+<p>Vantage inverts this. You define your entities <strong>once</strong> in a model crate, then every consumer — REST
+API, CLI, desktop UI, background worker — uses the same <code>Table</code> and <code>DataSet</code> interfaces. The model
+is the source of truth.</p>
+<pre class="mermaid">graph TD
+    M[Model Crate] --&gt; API[Axum API]
+    M --&gt; CLI[CLI Tool]
+    M --&gt; UI[Desktop UI]
+    M --&gt; Worker[Background Worker]
+    M --&gt; Test[Mock Tests]
+    style M fill:#4a7c59,color:#fff
+</pre>
+
+<hr>
+<h2 id="anatomy-of-a-model-crate"><a class="header" href="#anatomy-of-a-model-crate">Anatomy of a model crate</a></h2>
+<p>The <code>bakery_model3</code> crate in the Vantage repo demonstrates the pattern. Here’s how it’s structured:</p>
+<pre><code class="language-text">bakery_model3/
+ ├── src/
+ │    ├── lib.rs          ← re-exports, DB connection helpers
+ │    ├── bakery.rs       ← Bakery entity + table constructors
+ │    ├── client.rs       ← Client entity + table constructors
+ │    ├── order.rs        ← Order entity + table constructors
+ │    └── product.rs      ← Product entity + table constructors
+ └── examples/
+      ├── cli.rs          ← multi-source CLI using AnyTable
+      └── 0-intro.rs      ← direct SurrealDB queries
+</code></pre>
+<p>Each entity file follows the same pattern: <strong>struct → trait impls → table constructors</strong>.</p>
+<hr>
+<h2 id="defining-entities"><a class="header" href="#defining-entities">Defining entities</a></h2>
+<p>An entity is a plain Rust struct. The <code>#[entity(...)]</code> macro generates <code>Record</code> conversions for each
+persistence’s type system:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[entity(CsvType, SurrealType, SqliteType, PostgresType, MongoType)]
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Client {
+    pub name: String,
+    pub email: String,
+    pub contact_details: String,
+    pub is_paying_client: bool,
+    pub bakery_id: Option&lt;String&gt;,
+}
+<span class="boring">}</span></code></pre>
+<p>One struct, five type systems. The same <code>Client</code> works with CSV files, SurrealDB, SQLite, Postgres,
+and MongoDB — each using its own native <code>Record&lt;AnyType&gt;</code> representation.</p>
+<div id="admonition-no-id-field-in-the-struct" class="admonition admonish-tip" role="note" aria-labelledby="admonition-no-id-field-in-the-struct-title">
+<div class="admonition-title">
+<div id="admonition-no-id-field-in-the-struct-title">
+<p>No id field in the struct</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-no-id-field-in-the-struct"></a>
+</div>
+
+<div>
+<p>The entity struct does <strong>not</strong> include an <code>id</code> field. IDs are managed by the table via
+<code>with_id_column()</code> — keeping the entity focused on business data.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="table-constructors"><a class="header" href="#table-constructors">Table constructors</a></h2>
+<p>Each entity provides table constructors per persistence. These are plain functions that return
+<code>Table&lt;DB, Entity&gt;</code> with columns, relationships, and computed fields pre-configured:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl Client {
+    pub fn csv_table(csv: Csv) -&gt; Table&lt;Csv, Client&gt; {
+        Table::new("client", csv)
+            .with_column_of::&lt;String&gt;("name")
+            .with_column_of::&lt;String&gt;("email")
+            .with_column_of::&lt;bool&gt;("is_paying_client")
+            .with_column_of::&lt;String&gt;("bakery_id")
+            .with_one("bakery", "bakery_id", Bakery::csv_table)
+            .with_many("orders", "client_id", Order::csv_table)
+    }
+
+    pub fn surreal_table(db: SurrealDB) -&gt; Table&lt;SurrealDB, Client&gt; {
+        Table::new("client", db)
+            .with_id_column("id")
+            .with_column_of::&lt;String&gt;("name")
+            .with_column_of::&lt;String&gt;("email")
+            .with_column_of::&lt;bool&gt;("is_paying_client")
+            .with_one("bakery", "bakery", Bakery::surreal_table)
+            .with_many("orders", "client", Order::surreal_table)
+            .with_expression("order_count", |t| {
+                let orders = t.get_subquery_as::&lt;Order&gt;("orders").unwrap();
+                orders.get_count_query()
+            })
+    }
+
+    pub fn sqlite_table(db: SqliteDB) -&gt; Table&lt;SqliteDB, Client&gt; {
+        Table::new("client", db)
+            .with_id_column("id")
+            .with_column_of::&lt;String&gt;("name")
+            .with_column_of::&lt;String&gt;("email")
+            .with_column_of::&lt;bool&gt;("is_paying_client")
+            .with_column_of::&lt;String&gt;("bakery_id")
+            .with_one("bakery", "bakery_id", Bakery::sqlite_table)
+            .with_many("orders", "client_id", Order::sqlite_table)
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Notice how the shape is consistent but details differ — SurrealDB uses embedded document references
+(<code>"bakery"</code> not <code>"bakery_id"</code>), and only SurrealDB gets the computed <code>order_count</code> expression field
+(which requires correlated subquery support).</p>
+<hr>
+<h2 id="relationships"><a class="header" href="#relationships">Relationships</a></h2>
+<p>Relationships are declared on the table, not the entity. Two methods:</p>
+<ul>
+<li><strong><code>with_one("name", "fk_field", constructor)</code></strong> — foreign key to parent (many-to-one)</li>
+<li><strong><code>with_many("name", "fk_field", constructor)</code></strong> — parent to children (one-to-many)</li>
+</ul>
+<p>Traversal is synchronous and returns a new <code>Table</code> with conditions applied:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let paying = Client::surreal_table(db)
+    .with_condition(clients["is_paying_client"].eq(true));
+
+// Traverse — returns Table&lt;SurrealDB, Order&gt; with subquery condition
+let orders = paying.get_ref_as::&lt;SurrealDB, Order&gt;("orders").unwrap();
+
+// The generated query filters orders by paying clients automatically
+for (id, order) in orders.list().await? {
+    println!("{}: {}", id, order.total);
+}
+<span class="boring">}</span></code></pre>
+<hr>
+<h2 id="computed-fields"><a class="header" href="#computed-fields">Computed fields</a></h2>
+<p><code>with_expression</code> adds fields that don’t exist in the database — they’re computed via correlated
+subqueries:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>.with_expression("order_count", |t| {
+    let orders = t.get_subquery_as::&lt;Order&gt;("orders").unwrap();
+    orders.get_count_query()
+})
+// SELECT *, (SELECT COUNT(*) FROM order WHERE order.client = client.id)
+//   AS order_count FROM client
+<span class="boring">}</span></code></pre>
+<p>These fields appear in <code>ReadableValueSet</code> results alongside physical columns.</p>
+<hr>
+<h2 id="connection-management"><a class="header" href="#connection-management">Connection management</a></h2>
+<p>The model crate owns database connections. <code>bakery_model3</code> uses a <code>OnceLock&lt;SurrealDB&gt;</code> pattern for
+global access, with a DSN-based connection function:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub async fn connect_surrealdb() -&gt; Result&lt;()&gt; {
+    let dsn = std::env::var("SURREALDB_URL")
+        .unwrap_or_else(|_| "cbor://root:root@localhost:8000/bakery/v2".into());
+
+    let client = SurrealConnection::dsn(&amp;dsn)?
+        .connect().await?;
+
+    set_surrealdb(SurrealDB::new(client))
+}
+<span class="boring">}</span></code></pre>
+<p>Consumers call <code>connect_surrealdb()</code> once at startup, then use <code>Client::surreal_table(surrealdb())</code>
+anywhere.</p>
+<hr>
+<h2 id="using-the-model"><a class="header" href="#using-the-model">Using the model</a></h2>
+<p>Once the model crate exists, consumers are simple. They don’t know or care about SQL, SurrealQL, or
+BSON — they work with entities and tables:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// In an Axum handler
+async fn list_clients() -&gt; Json&lt;Vec&lt;Client&gt;&gt; {
+    let clients = Client::surreal_table(surrealdb())
+        .with_condition(clients["is_paying_client"].eq(true));
+    Json(clients.list().await.unwrap().into_values().collect())
+}
+
+// In a CLI tool
+let table = Client::sqlite_table(db);
+println!("{} clients", table.get_count().await?);
+
+// In a test — no database needed
+let mock = MockTableSource::new()
+    .with_data("client", test_data).await;
+let table = Table::&lt;MockTableSource, Client&gt;::new("client", mock);
+assert_eq!(table.get_count().await?, 3);
+<span class="boring">}</span></code></pre>
+<div id="admonition-multi-persistence-models" class="admonition admonish-info" role="note" aria-labelledby="admonition-multi-persistence-models-title">
+<div class="admonition-title">
+<div id="admonition-multi-persistence-models-title">
+<p>Multi-persistence models</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-multi-persistence-models"></a>
+</div>
+
+<div>
+<p>The same model crate can expose table constructors for multiple persistences. Your production
+code uses Postgres, your CLI reads CSV exports, your tests use mocks — all sharing the same
+entity definitions and business rules.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="type-erased-access"><a class="header" href="#type-erased-access">Type-erased access</a></h2>
+<p>For truly generic code (UI grids, admin panels, config-driven tools), wrap tables with <code>AnyTable</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let tables: Vec&lt;AnyTable&gt; = vec![
+    AnyTable::from_table(Client::surreal_table(db.clone())),
+    AnyTable::from_table(Product::sqlite_table(sqlite.clone())),
+    AnyTable::from_table(Order::csv_table(csv.clone())),
+];
+
+// Same code handles all three — different databases, same interface
+for table in &amp;tables {
+    println!("{}: {} records", table.table_name(), table.get_count().await?);
+}
+<span class="boring">}</span></code></pre>
+<p>See also: <code>bakery_model3/examples/cli.rs</code> for a complete multi-source CLI built on this pattern.</p>
+<hr>
+<h2 id="the-layered-architecture"><a class="header" href="#the-layered-architecture">The layered architecture</a></h2>
+<p>Putting it all together, Vantage prescribes four layers:</p>
+<pre><code class="language-text">┌─────────────────────────────────────────────────┐
+│  4. Consumers                                   │
+│     Axum API · CLI · egui · Tauri · gRPC        │
+├─────────────────────────────────────────────────┤
+│  3. Business Logic                              │
+│     Traits on Table · custom methods · rules    │
+├─────────────────────────────────────────────────┤
+│  2. Model Crate                                 │
+│     Entities · Table constructors · Relations   │
+├─────────────────────────────────────────────────┤
+│  1. Persistence                                 │
+│     SurrealDB · Postgres · SQLite · CSV · API   │
+└─────────────────────────────────────────────────┘
+</code></pre>
+<p>Layer 1 is implemented once per database (or use an existing Vantage crate). Layer 2 is your model
+crate — entity definitions, relationships, computed fields. Layer 3 adds business-specific traits
+and methods on top of <code>Table</code>. Layer 4 is any number of consumers that import the model and don’t
+think about persistence.</p>
+<div id="admonition-why-this-works" class="admonition admonish-success" role="note" aria-labelledby="admonition-why-this-works-title">
+<div class="admonition-title">
+<div id="admonition-why-this-works-title">
+<p>Why this works</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-why-this-works"></a>
+</div>
+
+<div>
+<p>The model is the only place that knows about database structure. Business logic works against
+abstract <code>Table</code> and <code>DataSet</code> interfaces. Consumers work against business logic traits. Change
+the database — only layer 1 and 2 change. Add a new UI — only layer 4 changes. The architecture
+scales to hundreds of entities and dozens of developers without coupling.</p>
+</div>
+
+</div>
+
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="expressions.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
 
-                            <a rel="next prefetch" href="history.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="three-paths.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -198,8 +470,11 @@ efficient queries for whichever backend you’re using.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="expressions.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
 
-                    <a rel="next prefetch" href="history.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="three-paths.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

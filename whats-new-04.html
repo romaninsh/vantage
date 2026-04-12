@@ -1,0 +1,594 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>What&#x27;s New in 0.4 - Vantage 0.4 Framework</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-2459343d.css">
+        <link rel="stylesheet" href="css/chrome-ae938929.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="./mdbook-admonish.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "searchindex-38733afc.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-07f8a23e.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Vantage 0.4 Framework</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="whats-new-in-vantage-04"><a class="header" href="#whats-new-in-vantage-04">What’s New in Vantage 0.4</a></h1>
+<p>Version 0.4 is a <strong>ground-up rewrite of the type system</strong> and a massive expansion of persistence
+support. If 0.3 proved the architecture, 0.4 makes it production-ready.</p>
+<ul>
+<li><a href="#progressive-model--implement-only-what-you-need">Progressive model — implement only what you need</a></li>
+<li><a href="#persistence-specific-type-systems">Persistence-specific Type Systems</a></li>
+<li><a href="#table--the-interface-you-get-for-free">Table — the interface you get for free</a></li>
+<li><a href="#activeentity-and-activerecord">ActiveEntity and ActiveRecord</a></li>
+<li><a href="#recordv--persistence-native-value-bags">Record&lt;V&gt; — persistence-native value bags</a></li>
+<li><a href="#cbor-everywhere">CBOR everywhere</a></li>
+<li><a href="#new-persistences">New persistences</a></li>
+<li><a href="#unified-error-handling">Unified error handling</a></li>
+<li><a href="#anytable-goes-universal">AnyTable goes universal</a></li>
+<li><a href="#whats-still-coming">What’s still coming</a></li>
+</ul>
+<hr>
+<h2 id="progressive-model--implement-only-what-you-need"><a class="header" href="#progressive-model--implement-only-what-you-need">Progressive model — implement only what you need</a></h2>
+<p>In earlier versions, adding a new backend meant implementing <em>everything</em>. Version 0.4 flips this:
+capabilities unlock <strong>progressively</strong> based on which traits your persistence (backend) implements.
+There are two parallel trait hierarchies — one for typed entities, one for schema-less records.</p>
+<p><strong>DataSet</strong> works with your Rust structs:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// A CSV file is read-only — and that's fine
+impl ReadableDataSet&lt;Product&gt; for CsvFile { /* ... */ }
+
+// A message queue can only append
+impl InsertableDataSet&lt;Event&gt; for KafkaTopic { /* ... */ }
+
+// A full database gets the complete toolkit
+impl ReadableDataSet&lt;Client&gt; for SurrealDB { /* ... */ }
+impl WritableDataSet&lt;Client&gt; for SurrealDB { /* ... */ }
+// ReadableDataSet + WritableDataSet automatically unlocks ActiveEntitySet!
+<span class="boring">}</span></code></pre>
+<p><strong>ValueSet</strong> is the schema-less counterpart — same hierarchy, but operates on <code>Record&lt;Value&gt;</code>
+instead of entities. Useful for dynamic tables, config-driven schemas, or when you don’t have (or
+want) a struct:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Read raw records — no struct needed
+impl ReadableValueSet for CsvFile { /* returns Record&lt;CsvType&gt; */ }
+
+// Full CRUD on raw values
+impl WritableValueSet for SurrealDB { /* accepts Record&lt;AnySurrealType&gt; */ }
+// ReadableValueSet + WritableValueSet automatically unlocks ActiveRecordSet!
+<span class="boring">}</span></code></pre>
+<p>Each layer is opt-in. A CSV persistence never pretends it can build select queries.</p>
+<p>The <strong>DataSource</strong> layer is progressive too. These traits aren’t a strict hierarchy — they combine
+independently, and each persistence implements only what its engine supports:</p>
+<pre><code class="language-text">DataSource                        ← marker, all backends
+ ├── TableSource                  ← CRUD, columns, conditions
+ ├── ExprDataSource               ← execute expressions, defer()
+ └── SelectableDataSource         ← query builder (Selectable)
+
+TableExprSource                   ← count/sum/max/min as composable expressions
+ requires: TableSource + ExprDataSource
+
+TableQuerySource                  ← table definition → full query
+ requires: TableSource + SelectableDataSource
+</code></pre>
+<p>Here’s what each persistence implements:</p>
+<pre><code class="language-text">CSV
+ └── TableSource (read-only, in-memory conditions)
+
+REST API  (vantage-api-client)
+ ├── TableSource (read-only, HTTP GET)
+ └── ExprDataSource (basic resolve)
+
+MongoDB
+ ├── TableSource (full CRUD, native bson::Document conditions)
+ └── SelectableDataSource (field projection, $match pipeline)
+     └── aggregates via native $sum/$max/$min pipeline
+
+Postgres / MySQL / SQLite  (via sqlx)
+ ├── TableSource (full CRUD)
+ ├── ExprDataSource (parametric SQL execution)
+ ├── SelectableDataSource (JOINs, CTEs, window functions)
+ └── TableQuerySource
+
+SurrealDB
+ ├── TableSource (full CRUD)
+ ├── ExprDataSource (CBOR execution)
+ ├── SelectableDataSource (SurrealQL builder)
+ ├── TableExprSource (composable aggregates)
+ ├── TableQuerySource
+ └── vendor extensions (graph queries, RELATE, live queries)
+</code></pre>
+<p>There’s also <strong>MockTableSource</strong> in <code>vantage-table</code> and <strong>ImDataSource</strong> in <code>vantage-dataset</code> — a
+fully in-memory persistence backed by <code>HashMap&lt;String, IndexMap&lt;String, Record&lt;Value&gt;&gt;&gt;</code>. Great for
+tests and prototyping without any database.</p>
+<div id="admonition-build-your-own-persistence" class="admonition admonish-tip" role="note" aria-labelledby="admonition-build-your-own-persistence-title">
+<div class="admonition-title">
+<div id="admonition-build-your-own-persistence-title">
+<p>Build your own persistence</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-build-your-own-persistence"></a>
+</div>
+
+<div>
+<p>Want to add your own? The <a href="./new-persistence.html">Adding a New Persistence</a> guide walks through
+each trait step by step — from type system to full CRUD to multi-backend CLI.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="persistence-specific-type-systems"><a class="header" href="#persistence-specific-type-systems">Persistence-specific Type Systems</a></h2>
+<p>The <code>vantage-types</code> crate is the foundation of 0.4. Each persistence defines its own type universe
+via the <code>vantage_type_system!</code> macro — no more funnelling everything through JSON:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>vantage_type_system!(AnySurrealType, SurrealDB);   // CBOR-native types
+vantage_type_system!(AnyMongoType, MongoDB);        // BSON-native types
+vantage_type_system!(AnySqliteType, SqliteDB);      // CBOR with integer/real/text markers
+vantage_type_system!(AnyPostgresType, PostgresDB);  // CBOR with full PG type coverage
+vantage_type_system!(AnyMysqlType, MysqlDB);        // CBOR with MySQL type coverage
+<span class="boring">}</span></code></pre>
+<p>All SQL backends (SQLite, Postgres, MySQL) now use <strong>CBOR</strong> as their internal value representation —
+not JSON. This preserves type fidelity that JSON loses (integer vs float, binary blobs, precise
+decimals) while keeping the same <code>vantage_type_system!</code> ergonomics.</p>
+<div id="admonition-sql-type-conversions" class="admonition admonish-note" role="note" aria-labelledby="admonition-sql-type-conversions-title">
+<div class="admonition-title">
+<div id="admonition-sql-type-conversions-title">
+<p>SQL type conversions</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-sql-type-conversions"></a>
+</div>
+
+<div>
+<p>Each SQL backend has detailed type conversion tables covering chrono types (DATE, TIME, TIMESTAMP),
+numeric types (DECIMAL, BIGINT, FLOAT), and cross-type coercion rules. See the
+<a href="./sql/type-conversions.html">Type Conversions</a> reference for exact round-trip behaviour per column
+type and Rust type.</p>
+</div>
+
+</div>
+
+<p>Strict conversions replace silent casting — <code>try_into()</code> is explicit and fallible:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let val: i64 = surreal_value.try_into()?;   // fails if it's actually a string
+let val: String = mongo_value.try_into()?;   // fails if it's actually a number
+<span class="boring">}</span></code></pre>
+<p>These types flow through the entire framework, not just storage. <strong>Columns</strong> carry their type as a
+generic parameter (<code>Column&lt;i64&gt;</code>, <code>Column&lt;String&gt;</code>) — surviving type-erasure via <code>original_type</code> so
+UI adapters can inspect what a column actually holds. <strong><code>AssociatedExpression&lt;'a, DS, T, R&gt;</code></strong> is
+parameterised by the value type <code>T</code>, so a count query on SurrealDB returns <code>AnySurrealType</code> while
+the same query on Postgres returns <code>AnyPostgresType</code>. <strong><code>AssociatedQueryable&lt;R&gt;</code></strong> then converts
+that into your expected Rust type — all type-checked at compile time.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Column preserves type through erasure
+let price = Column::&lt;i64&gt;::new("price").with_flag(ColumnFlag::Sortable);
+let erased = Column::&lt;AnyType&gt;::from_column(price);
+assert_eq!(erased.get_type(), "i64");  // original type survives
+
+// AssociatedExpression carries the persistence's value type
+let count: AssociatedExpression&lt;'_, SurrealDB, AnySurrealType, usize&gt; =
+    table.get_expr_count();
+let n: usize = count.get().await?;  // executes, converts AnySurrealType → usize
+<span class="boring">}</span></code></pre>
+<p>This means the full range of your persistence’s native types is preserved end-to-end — from column
+definition through query building to result extraction — without narrowing down to JSON variants.</p>
+<hr>
+<h2 id="table--the-interface-you-get-for-free"><a class="header" href="#table--the-interface-you-get-for-free">Table — the interface you get for free</a></h2>
+<p>Once a persistence implements <code>TableSource</code>, the framework hands you <code>Table&lt;DB, Entity&gt;</code> — a
+fully-featured abstraction over your data with columns, conditions, ordering, pagination,
+relationships, and aggregates. You don’t build any of this yourself; it comes from <code>vantage-table</code>.</p>
+<p><code>Table&lt;DB, E&gt;</code> auto-implements a wide range of traits from the DataSet and ValueSet hierarchies:
+<code>ReadableDataSet&lt;E&gt;</code>, <code>WritableDataSet&lt;E&gt;</code>, <code>InsertableDataSet&lt;E&gt;</code>, <code>ActiveEntitySet&lt;E&gt;</code>,
+<code>ReadableValueSet</code>, <code>WritableValueSet</code>, <code>InsertableValueSet</code>, and <code>ActiveRecordSet</code>. All of these
+come for free once your persistence implements <code>TableSource</code>.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let products = Product::table(db)
+    .with_condition(products["is_deleted"].eq(false))
+    .with_order(products["price"].desc())
+    .with_pagination(Pagination::ipp(25));
+
+// ReadableDataSet, WritableDataSet, ActiveEntitySet — all auto-implemented
+for (id, product) in products.list().await? { /* ... */ }
+let count = products.get_count().await?;
+<span class="boring">}</span></code></pre>
+<p>Additionally, <code>table.select()</code> yields a <strong>vendor-specific query builder</strong> — <code>SurrealSelect</code>,
+<code>SqliteSelect</code>, <code>PostgresSelect</code> — giving you full access to the persistence’s native query
+capabilities when you need to go beyond what the generic <code>Table</code> API offers.</p>
+<p>This dramatically simplifies implementing new persistences. You implement <code>TableSource</code> methods
+(read, write, aggregate) and get the entire <code>Table</code> API for free — conditions compose automatically,
+columns carry types, references traverse between tables, and <code>AnyTable</code> type-erasure just works.</p>
+<pre class="mermaid">graph LR
+    P[Select Persistence]
+    M[Create Model Layer]
+    B[Build Business Logic]
+    E[Export via FFI or API]
+    P ==&gt; M ==&gt; B ==&gt; E
+    style P fill:#4a7c59,color:#fff
+    style M fill:#2d6a8f,color:#fff
+    style B fill:#8f5a2d,color:#fff
+    style E fill:#7c2d8f,color:#fff
+</pre>
+
+<p>Pick your persistence (SurrealDB, Postgres, CSV — or several). Define entities and tables in a
+shared model crate. Build business logic against <code>Table</code> and <code>DataSet</code> traits — persistence-agnostic
+and testable with mocks. Finally, expose your model to other languages via FFI (C ABI, PyO3, UniFFI,
+WASM) or through API layers (Axum, gRPC). The model stays in Rust; consumers don’t need to know.
+Read more in <a href="./mda.html">Model-Driven Architecture</a> and
+<a href="./three-paths.html">Three Paths for Developers</a>.</p>
+<hr>
+<h2 id="activeentity-and-activerecord"><a class="header" href="#activeentity-and-activerecord">ActiveEntity and ActiveRecord</a></h2>
+<p>The <code>vantage-dataset</code> crate introduces two flavours of the active record pattern:</p>
+<p><strong><code>ActiveEntity&lt;D, E&gt;</code></strong> — wraps a typed entity. Derefs straight to your struct, tracks the ID, and
+saves back to any <code>WritableDataSet</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut user = users.get_entity(&amp;id).await?.unwrap();
+user.email = "new@example.com".to_string();  // modify via DerefMut
+user.save().await?;                           // persists the change
+<span class="boring">}</span></code></pre>
+<p><strong><code>ActiveRecord&lt;D&gt;</code></strong> — same idea, but schema-less. Works with <code>Record&lt;Value&gt;</code> instead of a concrete
+struct, perfect for dynamic tables or config-driven entities:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut rec = table.get_value_record(&amp;id).await?;
+rec["status"] = json!("active");
+rec.save().await?;
+<span class="boring">}</span></code></pre>
+<p>Both auto-unlock via blanket impls — if your datasource implements <code>ReadableDataSet</code> +
+<code>WritableDataSet</code>, you get <code>ActiveEntitySet</code> for free. No extra code.</p>
+<div id="admonition-get-or-create-pattern" class="admonition admonish-example" role="note" aria-labelledby="admonition-get-or-create-pattern-title">
+<div class="admonition-title">
+<div id="admonition-get-or-create-pattern-title">
+<p>Get-or-create pattern</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-get-or-create-pattern"></a>
+</div>
+
+<div>
+<p>The API is designed for real-world patterns like get-or-create:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut user = users.get_entity(&amp;id).await?
+    .unwrap_or_else(|| users.new_entity(id, User::default()));
+user.name = "Alice".into();
+user.save().await?;
+<span class="boring">}</span></code></pre>
+</div>
+
+</div>
+
+<hr>
+<h2 id="recordv--persistence-native-value-bags"><a class="header" href="#recordv--persistence-native-value-bags">Record&lt;V&gt; — persistence-native value bags</a></h2>
+<p><code>Record&lt;V&gt;</code> is an <code>IndexMap&lt;String, V&gt;</code> wrapper — but <code>V</code> is <strong>not</strong> <code>serde_json::Value</code>. It’s your
+persistence’s own type. A SurrealDB table returns <code>Record&lt;AnySurrealType&gt;</code>, Postgres returns
+<code>Record&lt;AnyPostgresType&gt;</code>, MongoDB returns <code>Record&lt;AnyMongoType&gt;</code>. This ensures the full range of
+your persistence’s native types is preserved — not narrowed down to what JSON can represent.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Each persistence speaks its native types
+let record: Record&lt;AnySurrealType&gt; = surreal_table.get_value(&amp;id).await?;
+let record: Record&lt;AnyPostgresType&gt; = pg_table.get_value(&amp;id).await?;
+let record: Record&lt;AnyMongoType&gt; = mongo_table.get_value(&amp;id).await?;
+
+// Type-safe extraction — respects the persistence's type boundaries
+let name: String = record["name"].try_get::&lt;String&gt;().unwrap();
+<span class="boring">}</span></code></pre>
+<p><code>Record</code> is the common currency across the framework — <code>ReadableValueSet</code>, <code>WritableValueSet</code>,
+<code>ActiveRecord</code>, and entity conversion all work through it. JSON conversion only happens at the
+boundary when you need <code>AnyTable</code> type-erasure (via <code>from_table()</code>).</p>
+<hr>
+<h2 id="cbor-everywhere"><a class="header" href="#cbor-everywhere">CBOR everywhere</a></h2>
+<p>The SurrealDB client switched from JSON to <strong>binary CBOR</strong>, improving serialization performance and
+type fidelity. All backends followed — Postgres, MySQL, SQLite.</p>
+<hr>
+<h2 id="new-persistences"><a class="header" href="#new-persistences">New persistences</a></h2>
+<p>MongoDB, CSV, and REST API persistences joined SurrealDB and SQLite. CSV evaluates conditions
+in-memory. MongoDB uses native BSON filters — no expression translation needed:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Same handle_commands function — different persistences
+handle_commands(SurrealDB::table("product")).await?;
+handle_commands(CsvFile::table("products.csv")).await?;
+handle_commands(MongoDB::table("product")).await?;
+<span class="boring">}</span></code></pre>
+<hr>
+<h2 id="unified-error-handling"><a class="header" href="#unified-error-handling">Unified error handling</a></h2>
+<p><code>vantage-core</code> introduced <code>VantageError</code> with structured context — replacing the patchwork of
+<code>Box&lt;dyn Error&gt;</code> and <code>.unwrap()</code> calls:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_core::{error, util::error::Context, Result};
+
+connection.connect()
+    .with_context(|| error!("Failed to connect", dsn = &amp;dsn, timeout = 30))?;
+<span class="boring">}</span></code></pre>
+<hr>
+<h2 id="anytable-goes-universal"><a class="header" href="#anytable-goes-universal">AnyTable goes universal</a></h2>
+<p><code>AnyTable::from_table()</code> now wraps <strong>any</strong> datasource whose types convert to/from JSON, using an
+internal <code>JsonAdapter</code> for on-the-fly conversion. This means your generic code works with
+persistences that don’t even share a value type:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Wrap a MongoDB table for use in generic code
+let any: AnyTable = AnyTable::from_table(mongo_products);
+let any: AnyTable = AnyTable::from_table(csv_products);
+// Both work through the same interface
+<span class="boring">}</span></code></pre>
+<hr>
+<h2 id="whats-still-coming"><a class="header" href="#whats-still-coming">What’s still coming</a></h2>
+<div id="admonition-work-in-progress" class="admonition admonish-warning" role="note" aria-labelledby="admonition-work-in-progress-title">
+<div class="admonition-title">
+<div id="admonition-work-in-progress-title">
+<p>Work in progress</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-work-in-progress"></a>
+</div>
+
+<div>
+<p><strong>Trait boundary refinements</strong> — Aggregates (<code>get_count</code>, <code>get_sum</code>) currently require
+<code>SelectableDataSource</code> but should only need <code>TableSource</code>, so non-query backends like MongoDB
+can use them directly. <code>column_table_values_expr</code> forces an <code>ExprDataSource</code> dependency that
+document-oriented backends don’t need.</p>
+<p><strong>SurrealDB reference traversal</strong> — <code>IN</code> subqueries return record objects instead of scalar
+values. Needs <code>SELECT VALUE id</code> — a SurrealDB-specific construct not yet in the generic
+<code>Selectable</code> trait.</p>
+<p><strong>Type system gaps</strong> — <code>Vec&lt;u8&gt;</code> (binary data) and <code>Uuid</code> need type trait implementations
+across backends. Bind/read paths exist — just missing the <code>impl XxxType</code> wiring.</p>
+<p><strong>Query builder</strong> — <code>sql_fx!()</code> macro for mixed-type function calls, <code>Expression::empty()</code>
+sweep, PostgreSQL ingress scripts.</p>
+<p><strong>Architecture</strong> — Transaction support, Table JOIN preserving conditions and resolving alias
+clashes, <code>Condition::or()</code> beyond two arguments, expression refactor (split Owned/Lazy).</p>
+<p><strong>Someday</strong> — Table aggregations (GROUP BY), disjoint subtypes pattern, replayable idempotent
+operations, “Realworld” example application.</p>
+</div>
+
+</div>
+
+<div id="admonition-the-04-philosophy" class="admonition admonish-success" role="note" aria-labelledby="admonition-the-04-philosophy-title">
+<div class="admonition-title">
+<div id="admonition-the-04-philosophy-title">
+<p>The 0.4 philosophy</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-the-04-philosophy"></a>
+</div>
+
+<div>
+<p>Don’t force every persistence into the same mould. Let each one implement what it can,
+carry its own types, and unlock API surface progressively. The framework adapts to the
+datasource — not the other way around.</p>
+</div>
+
+</div>
+
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="history.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="expressions.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="history.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="expressions.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-c2a407aa.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="mermaid-eefea253.min.js"></script>
+        <script src="mermaid-init-ccf746f1.js"></script>
+
+
+
+    </div>
+    </body>
+</html>
