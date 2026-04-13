@@ -31,11 +31,11 @@ pub struct MysqlSelectJoin {
 }
 
 impl MysqlSelectJoin {
-    fn new(join_type: MysqlJoinType, table: Expr, on_condition: Expr) -> Self {
+    fn new(join_type: MysqlJoinType, table: Expr, on_condition: impl Into<Expr>) -> Self {
         Self {
             join_type,
             table,
-            on_condition,
+            on_condition: on_condition.into(),
         }
     }
 
@@ -47,7 +47,7 @@ impl MysqlSelectJoin {
         expr_any!("({}) AS {}", (subquery), (ident(alias)))
     }
 
-    pub fn inner(table: impl Into<String>, alias: impl Into<String>, on_condition: Expr) -> Self {
+    pub fn inner(table: impl Into<String>, alias: impl Into<String>, on_condition: impl Into<Expr>) -> Self {
         Self::new(
             MysqlJoinType::Inner,
             Self::table_expr(table, alias),
@@ -55,7 +55,7 @@ impl MysqlSelectJoin {
         )
     }
 
-    pub fn left(table: impl Into<String>, alias: impl Into<String>, on_condition: Expr) -> Self {
+    pub fn left(table: impl Into<String>, alias: impl Into<String>, on_condition: impl Into<Expr>) -> Self {
         Self::new(
             MysqlJoinType::Left,
             Self::table_expr(table, alias),
@@ -66,7 +66,7 @@ impl MysqlSelectJoin {
     pub fn inner_expr(
         subquery: impl Expressive<AnyMysqlType>,
         alias: impl Into<String>,
-        on_condition: Expr,
+        on_condition: impl Into<Expr>,
     ) -> Self {
         Self::new(
             MysqlJoinType::Inner,
@@ -78,7 +78,7 @@ impl MysqlSelectJoin {
     pub fn left_expr(
         subquery: impl Expressive<AnyMysqlType>,
         alias: impl Into<String>,
-        on_condition: Expr,
+        on_condition: impl Into<Expr>,
     ) -> Self {
         Self::new(
             MysqlJoinType::Left,

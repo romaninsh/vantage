@@ -14,13 +14,16 @@ async fn run() -> VantageResult<()> {
         .context("Failed to connect to products.db")?;
 
     // Build a condition to exclude soft-deleted records
+    let price = Column::<i64>::new("price");
+    let is_deleted = Column::<bool>::new("is_deleted");
+
     // Build a SELECT query with conditions
     let select = SqliteSelect::new()
         .with_source("product")
         .with_field("name")
         .with_field("price")
-        .with_condition(ident("is_deleted").eq(false))
-        .with_condition(ident("price").gt(150));
+        .with_typed_condition(is_deleted.eq(false))
+        .with_typed_condition(price.gt(150));
 
     println!("Query: {}\n", select.preview());
 

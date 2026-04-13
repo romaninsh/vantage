@@ -1,6 +1,7 @@
 use vantage_expressions::traits::selectable::{Selectable, SourceRef};
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum, expr_any};
 
+use crate::condition::SqliteCondition;
 use crate::primitives::fx::Fx;
 use crate::primitives::identifier::ident;
 use crate::sqlite::statements::SqliteSelect;
@@ -18,7 +19,7 @@ impl SqliteSelect {
     }
 }
 
-impl Selectable<AnySqliteType> for SqliteSelect {
+impl Selectable<AnySqliteType, SqliteCondition> for SqliteSelect {
     fn add_source(&mut self, source: impl Into<SourceRef<AnySqliteType>>, alias: Option<String>) {
         let source_ref = source.into().into_expressive_enum();
         let expr = match (source_ref, alias) {
@@ -51,8 +52,8 @@ impl Selectable<AnySqliteType> for SqliteSelect {
         self.fields.push(expression.expr());
     }
 
-    fn add_where_condition(&mut self, condition: impl Into<Expression<AnySqliteType>>) {
-        self.where_conditions.push(condition.into());
+    fn add_where_condition(&mut self, condition: impl Into<SqliteCondition>) {
+        self.where_conditions.push(condition.into().into_expr());
     }
 
     fn set_distinct(&mut self, distinct: bool) {
@@ -61,10 +62,10 @@ impl Selectable<AnySqliteType> for SqliteSelect {
 
     fn add_order_by(
         &mut self,
-        order: impl Into<Expression<AnySqliteType>>,
+        order: impl Into<SqliteCondition>,
         direction: vantage_expressions::Order,
     ) {
-        self.order_by.push((order.into(), direction));
+        self.order_by.push((order.into().into_expr(), direction));
     }
 
     fn add_group_by(&mut self, expression: impl Expressive<AnySqliteType>) {

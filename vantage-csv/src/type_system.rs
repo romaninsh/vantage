@@ -206,7 +206,6 @@ impl Expressive<AnyCsvType> for AnyCsvType {
         Expression::new("{}", vec![ExpressiveEnum::Scalar(self.clone())])
     }
 }
-
 impl From<serde_json::Value> for AnyCsvType {
     fn from(v: serde_json::Value) -> Self {
         match v {

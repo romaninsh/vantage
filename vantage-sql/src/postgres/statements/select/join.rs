@@ -54,55 +54,55 @@ impl PostgresSelectJoin {
         expr_any!("({}) AS {}", (subquery), (ident(alias)))
     }
 
-    pub fn inner(table: impl Into<String>, alias: impl Into<String>, on_condition: Expr) -> Self {
+    pub fn inner(table: impl Into<String>, alias: impl Into<String>, on_condition: impl Into<Expr>) -> Self {
         Self::new(
             PostgresJoinType::Inner,
             Self::table_expr(table, alias),
-            on_condition,
+            on_condition.into(),
         )
     }
 
-    pub fn left(table: impl Into<String>, alias: impl Into<String>, on_condition: Expr) -> Self {
+    pub fn left(table: impl Into<String>, alias: impl Into<String>, on_condition: impl Into<Expr>) -> Self {
         Self::new(
             PostgresJoinType::Left,
             Self::table_expr(table, alias),
-            on_condition,
+            on_condition.into(),
         )
     }
 
     pub fn full_outer(
         table: impl Into<String>,
         alias: impl Into<String>,
-        on_condition: Expr,
+        on_condition: impl Into<Expr>,
     ) -> Self {
         Self::new(
             PostgresJoinType::FullOuter,
             Self::table_expr(table, alias),
-            on_condition,
+            on_condition.into(),
         )
     }
 
     pub fn inner_expr(
         subquery: impl Expressive<AnyPostgresType>,
         alias: impl Into<String>,
-        on_condition: Expr,
+        on_condition: impl Into<Expr>,
     ) -> Self {
         Self::new(
             PostgresJoinType::Inner,
             Self::subquery_expr(subquery, alias),
-            on_condition,
+            on_condition.into(),
         )
     }
 
     pub fn left_expr(
         subquery: impl Expressive<AnyPostgresType>,
         alias: impl Into<String>,
-        on_condition: Expr,
+        on_condition: impl Into<Expr>,
     ) -> Self {
         Self::new(
             PostgresJoinType::Left,
             Self::subquery_expr(subquery, alias),
-            on_condition,
+            on_condition.into(),
         )
     }
 

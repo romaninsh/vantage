@@ -391,5 +391,23 @@ impl From<serde_json::Value> for ExpressiveEnum<serde_json::Value> {
     }
 }
 
+// -- Self-referential Expressive impls for type-safe Column<T> operations ------
+// These allow scalars to satisfy `Expressive<T>` where T is the scalar's own type.
+// For example, `150i64: Expressive<i64>` enables `Column::<i64>::new("price").gt(150)`.
+
+macro_rules! impl_expressive_self {
+    ($($ty:ty),*) => {
+        $(
+            impl Expressive<$ty> for $ty {
+                fn expr(&self) -> Expression<$ty> {
+                    Expression::new("{}", vec![ExpressiveEnum::Scalar(self.clone())])
+                }
+            }
+        )*
+    };
+}
+
+impl_expressive_self!(i8, i16, i32, i64, u8, u16, u32, f32, f64, bool);
+
 #[cfg(test)]
 mod tests {}

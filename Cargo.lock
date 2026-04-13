@@ -1580,7 +1580,6 @@ name = "learn-1"
 version = "0.1.0"
 dependencies = [
  "tokio",
- "vantage-expressions",
  "vantage-sql",
 ]
 

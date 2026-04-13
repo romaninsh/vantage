@@ -6,7 +6,7 @@ use crate::mysql::statements::MysqlSelect;
 use crate::mysql::types::AnyMysqlType;
 use crate::primitives::alias::AliasExt;
 
-impl SelectableDataSource<AnyMysqlType> for MysqlDB {
+impl SelectableDataSource<AnyMysqlType, crate::condition::MysqlCondition> for MysqlDB {
     type Select = MysqlSelect;
 
     fn select(&self) -> Self::Select {

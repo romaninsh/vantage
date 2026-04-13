@@ -73,7 +73,7 @@ impl TableSource for SqliteDB {
     type AnyType = AnySqliteType;
     type Value = AnySqliteType;
     type Id = String;
-    type Condition = vantage_expressions::Expression<Self::Value>;
+    type Condition = crate::condition::SqliteCondition;
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
         Column::new(name)
@@ -105,7 +105,7 @@ impl TableSource for SqliteDB {
         &self,
         table: &Table<Self, E>,
         search_value: &str,
-    ) -> Expression<Self::Value>
+    ) -> Self::Condition
     where
         E: Entity<Self::Value>,
     {
@@ -124,9 +124,9 @@ impl TableSource for SqliteDB {
             .collect();
 
         if conditions.is_empty() {
-            return sqlite_expr!("0");
+            return sqlite_expr!("0").into();
         }
-        Expression::from_vec(conditions, " OR ")
+        Expression::from_vec(conditions, " OR ").into()
     }
 
     async fn list_table_values<E>(
@@ -377,7 +377,7 @@ impl TableSource for SqliteDB {
         let src_col = self.create_column::<Self::AnyType>(source_column);
         let fk_values = self.column_table_values_expr(source_table, &src_col);
         let tgt_col = self.create_column::<Self::AnyType>(target_field);
-        tgt_col.in_(fk_values.expr())
+        tgt_col.in_(fk_values.expr()).into()
     }
 
     fn related_correlated_condition(
@@ -392,6 +392,7 @@ impl TableSource for SqliteDB {
             (ident(target_field).dot_of(target_table)),
             (ident(source_column).dot_of(source_table))
         )
+        .into()
     }
 
     fn column_table_values_expr<'a, E, Type: ColumnType>(

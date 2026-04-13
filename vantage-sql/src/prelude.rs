@@ -6,7 +6,7 @@
 
 pub use std::process::Termination;
 pub use vantage_core::{Context, Result as VantageResult, VantageError};
-pub use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
+pub use vantage_expressions::{ExprDataSource, Expression, Expressive, Order, Selectable};
 pub use vantage_table::column::core::Column;
 pub use vantage_table::operation::Operation;
 
