@@ -1,0 +1,1 @@
+# Reading Typed Data

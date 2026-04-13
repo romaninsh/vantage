@@ -1,6 +1,8 @@
 # Summary
 
 - [Introduction](./introduction.md)
+  - [SQLite and the Query Builder](./intro/step1-first-query.md)
+  - [TBC](./intro/step2-conditions.md)
 - [Historical Timeline](./history.md)
   - [What's New in 0.4](./whats-new-04.md)
 - [Expressions & Queries](./expressions.md)
@@ -13,5 +15,7 @@
   - [Step 4: Table & CRUD](./new-persistence/step4-table-crud.md)
   - [Step 5: Relationships](./new-persistence/step5-relationships.md)
   - [Step 6: Multi-Backend](./new-persistence/step6-multi-backend.md)
+- [Persistence-aligned Type System](./type-system.md)
+  - [Adding Custom Types](./type-system/custom-types.md)
 - [SQL: PostgreSQL, MySQL & SQLite](./sql.md)
   - [Type Conversions](./sql/type-conversions.md)
