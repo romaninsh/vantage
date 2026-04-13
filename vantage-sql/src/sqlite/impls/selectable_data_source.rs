@@ -6,7 +6,7 @@ use crate::sqlite::SqliteDB;
 use crate::sqlite::statements::SqliteSelect;
 use crate::sqlite::types::AnySqliteType;
 
-impl SelectableDataSource<AnySqliteType> for SqliteDB {
+impl SelectableDataSource<AnySqliteType, crate::condition::SqliteCondition> for SqliteDB {
     type Select = SqliteSelect;
 
     fn select(&self) -> Self::Select {

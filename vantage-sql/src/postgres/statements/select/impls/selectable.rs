@@ -1,6 +1,7 @@
 use vantage_expressions::traits::selectable::{Selectable, SourceRef};
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum, expr_any};
 
+use crate::condition::PostgresCondition;
 use crate::postgres::statements::PostgresSelect;
 use crate::postgres::types::AnyPostgresType;
 use crate::primitives::fx::Fx;
@@ -27,7 +28,7 @@ impl PostgresSelect {
     }
 }
 
-impl Selectable<AnyPostgresType> for PostgresSelect {
+impl Selectable<AnyPostgresType, PostgresCondition> for PostgresSelect {
     fn add_source(&mut self, source: impl Into<SourceRef<AnyPostgresType>>, alias: Option<String>) {
         let source_ref = source.into().into_expressive_enum();
         let expr = match (source_ref, alias) {
@@ -60,8 +61,8 @@ impl Selectable<AnyPostgresType> for PostgresSelect {
         self.fields.push(expression.expr());
     }
 
-    fn add_where_condition(&mut self, condition: impl Into<Expression<AnyPostgresType>>) {
-        self.where_conditions.push(condition.into());
+    fn add_where_condition(&mut self, condition: impl Into<PostgresCondition>) {
+        self.where_conditions.push(condition.into().into_expr());
     }
 
     fn set_distinct(&mut self, distinct: bool) {
@@ -70,10 +71,10 @@ impl Selectable<AnyPostgresType> for PostgresSelect {
 
     fn add_order_by(
         &mut self,
-        order: impl Into<Expression<AnyPostgresType>>,
+        order: impl Into<PostgresCondition>,
         direction: vantage_expressions::Order,
     ) {
-        self.order_by.push((order.into(), direction));
+        self.order_by.push((order.into().into_expr(), direction));
     }
 
     fn add_group_by(&mut self, expression: impl Expressive<AnyPostgresType>) {

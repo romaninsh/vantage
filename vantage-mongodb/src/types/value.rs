@@ -116,7 +116,6 @@ impl Expressive<AnyMongoType> for AnyMongoType {
         Expression::new("{}", vec![ExpressiveEnum::Scalar(self.clone())])
     }
 }
-
 // Into<serde_json::Value> for AnyTable::from_table() bridge.
 // Uses serde round-trip: Bson -> serde_json::Value via Bson's Serialize impl,
 // and serde_json::Value -> Bson via Bson's Deserialize impl.

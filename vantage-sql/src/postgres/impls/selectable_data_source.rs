@@ -6,7 +6,7 @@ use crate::postgres::statements::PostgresSelect;
 use crate::postgres::types::AnyPostgresType;
 use crate::primitives::alias::AliasExt;
 
-impl SelectableDataSource<AnyPostgresType> for PostgresDB {
+impl SelectableDataSource<AnyPostgresType, crate::condition::PostgresCondition> for PostgresDB {
     type Select = PostgresSelect;
 
     fn select(&self) -> Self::Select {
