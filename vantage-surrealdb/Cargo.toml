@@ -17,12 +17,12 @@ decimal = ["surreal-client/decimal", "rust_decimal"]
 
 [dependencies]
 async-trait = "0.1"
-vantage-core = { path = "../vantage-core" }
-vantage-expressions = { path = "../vantage-expressions", features = ["chrono"] }
-vantage-table = { path = "../vantage-table" }
-vantage-dataset = { path = "../vantage-dataset" }
-vantage-types = { path = "../vantage-types", features = ["serde"] }
-surreal-client = { path = "../surreal-client" }
+vantage-core = { version = "0.4", path = "../vantage-core" }
+vantage-expressions = { version = "0.4", path = "../vantage-expressions", features = ["chrono"] }
+vantage-table = { version = "0.4", path = "../vantage-table" }
+vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
+vantage-types = { version = "0.4", path = "../vantage-types", features = ["serde"] }
+surreal-client = { version = "0.4", path = "../surreal-client" }
 
 ciborium = "0.2"
 hex = "0.4"

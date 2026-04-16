@@ -16,10 +16,10 @@ doctest = false
 
 
 [dependencies]
-vantage-core = { path = "../vantage-core" }
-vantage-types = { path = "../vantage-types" }
-vantage-expressions = { path = "../vantage-expressions" }
-vantage-dataset = { path = "../vantage-dataset" }
+vantage-core = { version = "0.4", path = "../vantage-core" }
+vantage-types = { version = "0.4", path = "../vantage-types" }
+vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
+vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
 async-stream = "0.3"
 async-trait = "0.1"
 futures-core = "0.3"
@@ -34,9 +34,9 @@ rust_decimal = { version = "1.39.0", features = ["macros", "serde"] }
 [dev-dependencies]
 tokio = { version = "1.48", features = ["macros", "rt-multi-thread", "sync"] }
 serde_json = "1.0"
-vantage-expressions = { path = "../vantage-expressions" }
+vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
 # vantage-surrealdb = { path = "../vantage-surrealdb" }
-surreal-client = { path = "../surreal-client" }
+surreal-client = { version = "0.4", path = "../surreal-client" }
 async-trait = "0.1"
 ciborium = { version = "0.2", features = ["std"] }
 url = { version = "2.5", features = ["serde"] }

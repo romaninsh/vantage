@@ -11,7 +11,7 @@ repository = "https://github.com/romaninsh/vantage"
 async-trait = "0.1"
 comfy-table = "7"
 indexmap = "2"
-vantage-core = { path = "../vantage-core" }
-vantage-dataset = { path = "../vantage-dataset" }
-vantage-table = { path = "../vantage-table" }
-vantage-types = { path = "../vantage-types" }
+vantage-core = { version = "0.4", path = "../vantage-core" }
+vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
+vantage-table = { version = "0.4", path = "../vantage-table" }
+vantage-types = { version = "0.4", path = "../vantage-types" }
