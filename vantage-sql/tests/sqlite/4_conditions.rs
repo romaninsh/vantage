@@ -3,9 +3,9 @@
 
 #[allow(unused_imports)]
 use vantage_sql::sqlite::SqliteType;
+use vantage_sql::sqlite::operation::SqliteOperation;
 use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 use vantage_sql::sqlite_expr;
-use vantage_table::operation::Operation;
 use vantage_table::table::Table;
 use vantage_types::entity;
 

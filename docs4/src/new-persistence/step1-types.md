@@ -112,7 +112,7 @@ let restored: Product = Product::from_record(record).unwrap();
 This works because serde already knows how to turn structs into JSON objects and back. No extra code
 needed on your part.
 
-#### Path B: Custom value type (the #[entity] path)
+#### Path B: Custom value type (the `#[entity]` path)
 
 If your type system uses something other than `serde_json::Value` — like SurrealDB's
 `ciborium::Value` — then serde's blanket impls don't apply. You need the `#[entity]` proc macro to

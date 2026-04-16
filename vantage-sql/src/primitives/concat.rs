@@ -54,7 +54,7 @@ impl<T: Debug + Display + Clone> Concat<T> {
 /// )
 /// ```
 #[macro_export]
-macro_rules! concat_sql {
+macro_rules! concat_ {
     ($($part:expr),+ $(,)?) => {
         $crate::primitives::concat::Concat::new(vec![
             $({

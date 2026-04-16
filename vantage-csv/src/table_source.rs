@@ -1,3 +1,4 @@
+use crate::operation::CsvOperation;
 use async_trait::async_trait;
 use indexmap::IndexMap;
 use vantage_core::error;
@@ -8,7 +9,6 @@ use vantage_expressions::traits::associated_expressions::AssociatedExpression;
 use vantage_expressions::traits::datasource::DataSource;
 use vantage_expressions::traits::expressive::{DeferredFn, ExpressiveEnum};
 use vantage_table::column::core::{Column, ColumnType};
-use vantage_table::operation::Operation;
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};

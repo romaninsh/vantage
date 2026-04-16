@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use indexmap::IndexMap;
 
+use crate::operation::SurrealOperation;
 use vantage_core::error;
 use vantage_dataset::traits::Result;
 use vantage_expressions::traits::associated_expressions::AssociatedExpression;
@@ -8,7 +9,6 @@ use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_expressions::{Expression, Expressive};
 use vantage_table::column::core::{Column, ColumnType};
-use vantage_table::operation::Operation;
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};

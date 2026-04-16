@@ -7,6 +7,8 @@
 use serde::Deserialize;
 use vantage_expressions::{ExprDataSource, Expression, Expressive, Order, Selectable};
 use vantage_sql::mysql::MysqlDB;
+use vantage_sql::mysql::mysql_ident as ident;
+use vantage_sql::mysql::operation::MysqlExt;
 use vantage_sql::mysql::operation::MysqlOperation;
 use vantage_sql::mysql::statements::MysqlSelect;
 use vantage_sql::mysql::statements::primitives::GroupConcat;
@@ -15,9 +17,7 @@ use vantage_sql::mysql_expr;
 use vantage_sql::primitives::alias::AliasExt;
 use vantage_sql::primitives::concat::Concat;
 use vantage_sql::primitives::fx::Fx;
-use vantage_sql::primitives::identifier::ident;
 use vantage_sql::primitives::iif::Iif;
-use vantage_table::operation::Operation;
 use vantage_types::{Record, TryFromRecord};
 
 const MYSQL_URL: &str = "mysql://vantage:vantage@localhost:3306/vantage_v4_my";

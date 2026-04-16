@@ -5,8 +5,8 @@ use vantage_sql::postgres::AnyPostgresType;
 use vantage_sql::postgres::PostgresDB;
 #[allow(unused_imports)]
 use vantage_sql::postgres::PostgresType;
+use vantage_sql::postgres::operation::PostgresOperation;
 use vantage_sql::postgres_expr;
-use vantage_table::operation::Operation;
 use vantage_table::table::Table;
 use vantage_types::entity;
 

@@ -48,7 +48,11 @@ impl SqliteSelectJoin {
     }
 
     /// INNER JOIN on a named table.
-    pub fn inner(table: impl Into<String>, alias: impl Into<String>, on_condition: impl Into<Expr>) -> Self {
+    pub fn inner(
+        table: impl Into<String>,
+        alias: impl Into<String>,
+        on_condition: impl Into<Expr>,
+    ) -> Self {
         Self::new(
             SqliteJoinType::Inner,
             Self::table_expr(table, alias),
@@ -57,7 +61,11 @@ impl SqliteSelectJoin {
     }
 
     /// LEFT JOIN on a named table.
-    pub fn left(table: impl Into<String>, alias: impl Into<String>, on_condition: impl Into<Expr>) -> Self {
+    pub fn left(
+        table: impl Into<String>,
+        alias: impl Into<String>,
+        on_condition: impl Into<Expr>,
+    ) -> Self {
         Self::new(
             SqliteJoinType::Left,
             Self::table_expr(table, alias),

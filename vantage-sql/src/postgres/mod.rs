@@ -1,7 +1,7 @@
 #[macro_use]
 mod macros;
 pub mod impls;
-mod operation;
+pub mod operation;
 pub(crate) mod row;
 pub mod statements;
 pub mod types;
@@ -10,6 +10,13 @@ use ciborium::Value as CborValue;
 use sqlx::postgres::PgPool;
 
 pub use types::{AnyPostgresType, PostgresType};
+
+crate::define_typed_ident!(
+    PgIdent,
+    pg_ident,
+    AnyPostgresType,
+    crate::condition::PostgresCondition
+);
 
 /// PostgreSQL provider. Wraps a connection pool.
 #[derive(Clone)]

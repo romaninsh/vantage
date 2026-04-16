@@ -5,8 +5,8 @@ use vantage_sql::mysql::AnyMysqlType;
 use vantage_sql::mysql::MysqlDB;
 #[allow(unused_imports)]
 use vantage_sql::mysql::MysqlType;
+use vantage_sql::mysql::operation::MysqlOperation;
 use vantage_sql::mysql_expr;
-use vantage_table::operation::Operation;
 use vantage_table::table::Table;
 use vantage_types::entity;
 

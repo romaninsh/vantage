@@ -1,0 +1,21 @@
+use vantage_sql::prelude::*;
+use vantage_types::prelude::*;
+
+#[entity(SqliteType)]
+#[derive(Debug, Clone, Default)]
+pub struct Product {
+    pub name: String,
+    pub price: i64,
+}
+
+impl Product {
+    pub fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+        let is_deleted = Column::<bool>::new("is_deleted");
+        Table::new("product", db)
+            .with_id_column("id")
+            .with_column_of::<String>("name")
+            .with_column_of::<i64>("price")
+            .with_column_of::<bool>("is_deleted")
+            .with_condition(is_deleted.eq(false))
+    }
+}

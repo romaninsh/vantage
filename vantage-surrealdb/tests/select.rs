@@ -1,6 +1,7 @@
 use ciborium::Value as CborValue;
 use serde_json::Value;
 use vantage_expressions::{Expressive, Order, Selectable};
+use vantage_surrealdb::operation::SurrealOperation;
 use vantage_surrealdb::{
     field::Field,
     identifier::{Identifier, Parent},
@@ -12,7 +13,6 @@ use vantage_surrealdb::{
     surrealdb::SurrealDB,
     thing::Thing,
 };
-use vantage_table::operation::Operation;
 
 fn snip(str: &str) -> String {
     str.split_whitespace()

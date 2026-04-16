@@ -1,7 +1,7 @@
 #[macro_use]
 mod macros;
 pub mod impls;
-mod operation;
+pub mod operation;
 pub(crate) mod row;
 pub mod statements;
 pub mod types;
@@ -9,6 +9,13 @@ pub mod types;
 use sqlx::sqlite::SqlitePool;
 
 pub use types::{AnySqliteType, SqliteType};
+
+crate::define_typed_ident!(
+    SqliteIdent,
+    sqlite_ident,
+    AnySqliteType,
+    crate::condition::SqliteCondition
+);
 
 /// SQLite provider. Wraps a connection pool.
 #[derive(Clone)]

@@ -38,7 +38,7 @@ required.
 - [ ] Table definition (Table::new, with_column_of, with_id_column, builder pattern)
 - [ ] Table → select query (table.select() returns vendor-specific builder)
 - [ ] DataSource concept (what it is, how you pass it to Table::new)
-- [ ] Entity struct (plain Rust struct, no id field, #[entity] macro)
+- [ ] Entity struct (plain Rust struct, no id field, `#[entity]` macro)
 - [ ] Record\<V\> (persistence-native value bags)
 - [ ] Type system (vantage_type_system! macro, AnySqliteType, typed vs untyped values)
 - [ ] ReadableDataSet (list, get, get_some, get_count)

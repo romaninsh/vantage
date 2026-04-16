@@ -216,9 +216,10 @@ messages and the source chain is available via `std::error::Error::source()`.
 
 ### Operation trait — condition building
 
-The `Operation` trait (from `vantage-table`) provides `.eq()`, `.ne()`, `.gt()`, `.gte()`, `.lt()`,
-`.lte()`, and `.in_()` methods for building conditions. It has a **blanket implementation** for all
-`Expressive<T>` types, so your columns get these methods automatically — no explicit impl needed.
+Each backend provides an operation trait (e.g. `SqliteOperation`) with `.eq()`, `.ne()`, `.gt()`,
+`.gte()`, `.lt()`, `.lte()`, and `.in_()` methods for building conditions. It has a **blanket
+implementation** for all `Expressive<T>` types, so your columns get these methods automatically — no
+explicit impl needed.
 
 All methods accept `impl Expressive<YourAnyType>`, so you can pass native Rust values (`false`,
 `42`, `"hello"`), other columns (`table["other_field"]`), or full expressions. This requires your
@@ -245,10 +246,10 @@ table.add_condition(sqlite_expr!("{} > {}", (table["price"]), 130));
 table.add_condition(sqlite_expr!("{} > {}", (table["price"]), (table["calories"])));
 ```
 
-- **Operation::eq()** — the idiomatic way:
+- **SqliteOperation::eq()** — the idiomatic way:
 
 ```rust
-use vantage_table::operation::Operation;
+use vantage_sql::sqlite::operation::SqliteOperation;
 
 let mut table = Product::sqlite_table(db);
 table.add_condition(table["is_deleted"].eq(false));

@@ -7,10 +7,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
 use vantage_surrealdb::field::Field;
+use vantage_surrealdb::operation::SurrealOperation;
 use vantage_surrealdb::statements::delete::SurrealDelete;
 use vantage_surrealdb::statements::insert::SurrealInsert;
 use vantage_surrealdb::statements::select::SurrealSelect;
-use vantage_table::operation::Operation;
 
 use vantage_surrealdb::statements::update::SurrealUpdate;
 use vantage_surrealdb::surreal_expr;

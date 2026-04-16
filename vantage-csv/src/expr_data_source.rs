@@ -79,7 +79,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_column_values_with_condition() {
-        use vantage_table::operation::Operation;
+        use crate::operation::CsvOperation;
 
         let csv = test_csv();
         let mut table = Table::<Csv, EmptyEntity>::new("client", csv.clone())

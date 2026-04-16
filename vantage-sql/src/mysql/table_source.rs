@@ -1,3 +1,4 @@
+use crate::mysql::operation::MysqlOperation;
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
@@ -7,7 +8,6 @@ use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_expressions::{Expression, Expressive, Selectable};
 use vantage_table::column::core::{Column, ColumnType};
-use vantage_table::operation::Operation;
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
@@ -452,7 +452,7 @@ impl TableSource for MysqlDB {
         let src_col = self.create_column::<Self::AnyType>(source_column);
         let fk_values = self.column_table_values_expr(source_table, &src_col);
         let tgt_col = self.create_column::<Self::AnyType>(target_field);
-        tgt_col.in_(fk_values.expr()).into()
+        tgt_col.in_(fk_values.expr())
     }
 
     fn related_correlated_condition(
