@@ -82,7 +82,7 @@ additions:
 - **vantage-core** - Unified error handling with `VantageError`
 - **Cross-database integration** - `AnyTable::from_table()` wraps any datasource for generic code
 - **References** - Traverse between `Table<Client>` into `Table<Order>`, even across databases
-- **Generic Operation trait** - Blanket `eq`/`ne`/`gt`/`lt`/`in_` for all `Expressive` types
+- **Backend-specific Operation traits** - Each backend provides `eq`/`ne`/`gt`/`lt`/`in_` for all `Expressive` types
 - **Multi-source CLI** - Same `handle_commands` function works with CSV, SQLite, and SurrealDB
 
 Features planned for next release:
@@ -663,12 +663,24 @@ features are still missing:
 
 ## Installation
 
-For 0.4, clone this repository and specify path to a crate in your `Cargo.toml`:
+Vantage 0.4 crates are published on [crates.io](https://crates.io). Add the crates you need:
 
 ```toml
-vantage-table = { path = "../vantage/vantage-table" }
-vantage-surrealdb = { path = "../vantage/vantage-surrealdb" }
+# Core crates
+vantage-core = "0.4"
+vantage-types = "0.4"
+vantage-expressions = "0.4"
+vantage-dataset = "0.4"
+vantage-table = "0.4"
+
+# Backend crates — pick the ones you need
+vantage-sql = { version = "0.4", features = ["sqlite"] }  # also: "postgres", "mysql"
+vantage-surrealdb = "0.4"
+vantage-mongodb = "0.4"
+vantage-csv = "0.4"
 ```
+
+For the tutorial, see the [Vantage Book](https://romaninsh.github.io/vantage/).
 
 If you like what you see so far - reach out to me on BlueSky:
 [nearly.guru](https://bsky.app/profile/nearly.guru)

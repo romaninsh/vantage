@@ -5,7 +5,6 @@ version = "0.4.0"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
 description = "Vantage extension for SurrealDB"
-documentation = "https://docs.rs/vantage"
 homepage = "https://romaninsh.github.io/vantage"
 repository = "https://github.com/romaninsh/vantage"
 readme = "../README.md"
