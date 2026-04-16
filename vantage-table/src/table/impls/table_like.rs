@@ -24,6 +24,10 @@ where
         self.table_name()
     }
 
+    fn column_names(&self) -> Vec<String> {
+        self.columns.keys().cloned().collect()
+    }
+
     fn add_condition(&mut self, condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()> {
         // Downcast the boxed Any to T::Condition
         let cond = condition

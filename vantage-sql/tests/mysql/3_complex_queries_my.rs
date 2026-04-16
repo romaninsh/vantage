@@ -7,7 +7,7 @@
 use serde::Deserialize;
 use vantage_expressions::{ExprDataSource, Expression, Expressive, Order, Selectable};
 use vantage_sql::mysql::MysqlDB;
-use vantage_sql::mysql::operation::MysqlOperation;
+use vantage_sql::mysql::operation::MysqlExt;
 use vantage_sql::mysql::statements::MysqlSelect;
 use vantage_sql::mysql::statements::primitives::GroupConcat;
 use vantage_sql::mysql::statements::select::join::MysqlSelectJoin;

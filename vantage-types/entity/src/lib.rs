@@ -65,7 +65,7 @@ fn generate_impls(
         let field_name = field.ident.as_ref().unwrap();
         let field_name_str = field_name.to_string();
         quote! {
-            map.insert(#field_name_str.to_string(), #any_type::new(self.#field_name.clone()));
+            record.insert(#field_name_str.to_string(), #any_type::new(self.#field_name.clone()));
         }
     });
 
@@ -96,9 +96,9 @@ fn generate_impls(
     quote! {
         impl vantage_types::IntoRecord<#any_type> for #name {
             fn into_record(self) -> vantage_types::Record<#any_type> {
-                let mut map = indexmap::IndexMap::new();
+                let mut record = vantage_types::Record::new();
                 #(#field_insertions)*
-                map.into()
+                record
             }
         }
 

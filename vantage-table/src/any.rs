@@ -223,6 +223,10 @@ impl TableLike for AnyTable {
         self.inner.table_alias()
     }
 
+    fn column_names(&self) -> Vec<String> {
+        self.inner.column_names()
+    }
+
     fn add_condition(&mut self, condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()> {
         self.inner.add_condition(condition)
     }
@@ -437,6 +441,10 @@ where
 
     fn table_alias(&self) -> &str {
         self.inner.table_name()
+    }
+
+    fn column_names(&self) -> Vec<String> {
+        self.inner.columns().keys().cloned().collect()
     }
 
     fn add_condition(&mut self, _condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()> {

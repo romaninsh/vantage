@@ -70,6 +70,9 @@
 - [ ] Implement RestAPI support
 - [ ] Implement Queue support
 - [ ] Add expression as a field value (e.g. when inserting)
+- [ ] All persistences should implement idempotent CRUD — `insert()` with duplicate ID should
+      succeed silently (INSERT OR IGNORE / ON CONFLICT DO NOTHING). Currently only `replace()`
+      and `delete()` are idempotent.
 - [ ] Explore replayability for idempotent operations and workflow retries
 - [ ] Implement and Document Disjoint Subtypes pattern
 - [ ] Implement "Realworld" example application in a separate repository

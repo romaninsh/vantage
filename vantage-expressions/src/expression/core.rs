@@ -134,6 +134,30 @@ impl<T> Expression<T> {
     }
 }
 
+impl<T> Expression<T> {
+    /// Explicitly convert this expression to a different type.
+    ///
+    /// Maps all scalar parameters via `Into<U>`. Useful for crossing type
+    /// boundaries — e.g. converting `Expression<i64>` from a typed column
+    /// operation into `Expression<AnySqliteType>` so it can be chained
+    /// with operations on other types.
+    ///
+    /// ```ignore
+    /// let price = Column::<i64>::new("price");
+    /// price.gt(10)                          // Expression<i64>
+    ///     .as_type::<AnySqliteType>()       // Expression<AnySqliteType>
+    ///     .eq(false)                        // now bool is accepted
+    /// ```
+    pub fn as_type<U>(self) -> Expression<U>
+    where
+        T: Into<U> + Send + Clone + 'static,
+        U: Send + 'static,
+    {
+        use crate::expression::mapping::ExpressionMap;
+        self.map()
+    }
+}
+
 impl<T: Clone> Expressive<T> for Expression<T> {
     fn expr(&self) -> Expression<T> {
         self.clone()

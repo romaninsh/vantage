@@ -1,7 +1,7 @@
 #[macro_use]
 mod macros;
 pub mod impls;
-mod operation;
+pub mod operation;
 pub(crate) mod row;
 pub mod statements;
 pub mod types;

@@ -816,7 +816,7 @@ struct DeptTree {
 
 #[tokio::test]
 async fn test_q11() {
-    use vantage_sql::concat_sql;
+    use vantage_sql::concat_;
     use vantage_sql::primitives::union::Union;
 
     let base = PostgresSelect::new()
@@ -832,7 +832,7 @@ async fn test_q11() {
         .with_expression(ident("id").dot_of("d"))
         .with_expression(ident("name").dot_of("d"))
         .with_expression(postgres_expr!("{} + 1", (ident("depth").dot_of("dt"))))
-        .with_expression(concat_sql!(
+        .with_expression(concat_!(
             ident("path").dot_of("dt"),
             " > ",
             ident("name").dot_of("d")

@@ -27,10 +27,11 @@ disk.
 By the end of this page you'll be able to:
 
 1. Connect to an SQLite database from Rust
-2. Build SELECT queries with fields, conditions, sorting, and limits
+2. Build SELECT queries with fields and conditions
 3. Execute queries and read results
-4. Run aggregates (COUNT, SUM) with one method call
-5. Understand how Vantage keeps parameters separate from SQL (no injection risk)
+4. Convert results into `Vec<Record>` with typed field access
+5. Run aggregates (COUNT, SUM) with one method call
+6. Understand how Vantage keeps parameters separate from SQL (no injection risk)
 ```
 
 ---
@@ -55,7 +56,7 @@ cargo add tokio --features full
 Two dependencies — `vantage-sql` gives us the SQLite query builder and connection pool, `tokio`
 provides the async runtime because all database operations are async.
 
-### Create and populate a database
+## Create and populate a database
 
 We'll make a small product catalog from scratch. Create `seed.sql` in your project root:
 
@@ -168,7 +169,8 @@ any `Result` with a standard error type.
 
 ## Build a SELECT
 
-[`SqliteSelect`](vantage_sql::sqlite::statements::SqliteSelect) is the query builder for SQLite. Other persistences have their own —
+[`SqliteSelect`](vantage_sql::sqlite::statements::SqliteSelect) is the query builder for SQLite.
+Other persistences have their own —
 [`PostgresSelect`](vantage_sql::postgres::statements::PostgresSelect),
 [`MongoSelect`](vantage_mongodb::select::MongoSelect) — and they all implement the
 [`Selectable`](vantage_expressions::Selectable) trait, so the interface is identical apart from
@@ -218,8 +220,8 @@ let result = db.execute(&select.expr()).await?;
 println!("{:?}", result);
 ```
 
-Two steps here: `.expr()` turns the builder into an [`Expression`](vantage_expressions::Expression) —
-Vantage's internal representation that keeps parameters separate from the SQL template. Then
+Two steps here: `.expr()` turns the builder into an [`Expression`](vantage_expressions::Expression)
+— Vantage's internal representation that keeps parameters separate from the SQL template. Then
 [`db.execute()`](vantage_expressions::ExprDataSource::execute) sends it to the database.
 
 The result is `AnySqliteType` — a type-tagged wrapper around whatever came back. The `Debug` output
@@ -272,102 +274,228 @@ The `{}` parameter accepts any type that implements `SqliteType`: `bool`, `i64`,
 See [Persistence-aligned Type System](../type-system.md) for details.
 ```
 
-### Identifiers and operators
+## Typed columns and operators
 
 Writing `\"is_deleted\"` in a raw expression works, but there's a cleaner way.
-[`ident()`](vantage_sql::primitives::identifier::ident) creates a quoted
-[`Identifier`](vantage_sql::primitives::identifier::Identifier), then chain an
-[`Operation`](vantage_table::operation::Operation) like `.eq()` to build the condition:
+[`Column<T>`](vantage_table::column::core::Column) creates a typed column reference, then chain an
+[`SqliteOperation`](vantage_sql::sqlite::operation::SqliteOperation) like `.eq()` to build the
+condition:
 
 ```rust
-let condition = ident("is_deleted").eq(false);
+let is_deleted = Column::<bool>::new("is_deleted");
+let condition = is_deleted.eq(false);
 ```
 
-Same result, but the quoting is handled for you and the code reads more naturally. Other operators
-— `.gt()`, `.lt()`, `.ne()`, `.in_()` — work the same way.
+Same result, but the type parameter `<bool>` ensures you can only compare against matching types.
+Try `is_deleted.eq(42)` — it won't compile. Other operators — `.gt()`, `.lt()`, `.ne()`, `.in_()` —
+enforce the same type safety.
 
-```admonish info title="Identifiers and operators are persistence-aware"
-`ident()` quotes differently per backend — `"is_deleted"` for SQLite/Postgres,
-`` `is_deleted` `` for MySQL. Operations can also differ between persistences; for example
-[`in_list()`](vantage_table::operation::Operation::in_list) expands to `IN (?, ?, ?)` for SQL
-but would map to native operators in other backends.
+The result is a `SqliteCondition` — the backend's native condition type — ready to be passed
+directly to `.with_condition()`.
+
+```admonish info title="Type safety and backend-specific operations"
+Each SQL backend has its own operation trait — `SqliteOperation`, `PostgresOperation`,
+`MysqlOperation` — imported automatically via the prelude. These traits are
+blanket-implemented for any `Expressive<T>` where `T: Into<AnySqliteType>`, so typed columns
+(`Column<i64>`, `Column<bool>`, etc.) all get `.eq()`, `.gt()`, and friends for free.
+
+The operation produces a `SqliteCondition` that wraps `Expression<AnySqliteType>`. Since the
+condition type itself implements `Expressive<AnySqliteType>`, you can **chain** operations
+across type boundaries:
+
+~~~rust
+let price = Column::<i64>::new("price");
+price.gt(10).eq(false)  // => (price > 10) = 0
+~~~
+
+Here `.gt(10)` returns a `SqliteCondition`, and `.eq(false)` works on it because `bool` is
+`Expressive<AnySqliteType>`. Try `price.gt(10).eq("foobar")` — surprisingly, this compiles
+too. That's by design: type safety is enforced on the **first** operation (the column level),
+but once you have a `SqliteCondition`, any `AnySqliteType`-compatible value is accepted.
+
+You can also compare columns of the same type: `price.eq(price.clone())` compiles. But
+`price.eq(is_deleted)` won't — `Column<bool>` isn't `Expressive<i64>`.
+
+The `.clone()` is needed because operations take ownership of their arguments — values are
+stored inside the `Expression` tree until the query is executed. If you plan to reuse a
+column in multiple conditions, clone it or create a fresh `Column::new()`.
 ```
 
 Multiple conditions combine with AND:
 
 ```rust
+let is_deleted = Column::<bool>::new("is_deleted");
+let price = Column::<i64>::new("price");
+
 let select = SqliteSelect::new()
     .with_source("product")
     .with_field("name")
-    .with_condition(ident("is_deleted").eq(false))
-    .with_condition(ident("price").gt(150));
+    .with_condition(is_deleted.eq(false))
+    .with_condition(price.gt(150));
 // ... WHERE "is_deleted" = 0 AND "price" > 150
 ```
 
+```admonish info title="Primitives for untyped access"
+`ident()` is one of several **primitives** — reusable building blocks for SQL expressions.
+They handle quoting, escaping, and vendor-specific syntax. To use them:
+
+~~~rust
+use vantage_sql::primitives::*;
+
+let condition = ident("is_deleted").eq(false);
+~~~
+
+Primitives are not part of the prelude — import them when needed. Besides `ident()`, you get
+`Fx` (function calls), `Case`, `Concat`, `Interval`, and more. See the
+[Primitives reference](../sql/primitives.md) for the full list.
+
+In Vantage, primitives, query builders, Column, Conditions and even native types
+like i64 and bool - all implement Expressive<T>, where T= your databases AnyType
+(for Sqlite its AnySqliteType - for MongoDB - AnyMongoType) - making them
+eligible to be parameters of expressions.
+```
+
 ---
 
-## Sorting and limits
+## Working with Any-types
 
-```rust
-let select = SqliteSelect::new()
-    .with_source("product")
-    .with_field("name")
-    .with_field("price")
-    .with_order(sqlite_expr!("\"price\""), Order::Desc)
-    .with_limit(Some(3), None);
+[`Record<V>`](vantage_types::Record) is an ordered map (`IndexMap<String, V>`) — one record per row,
+with column names as keys. It lives in the `vantage-types` crate, so add that dependency and import
+its prelude:
 
-println!("{}", select.preview());
-// SELECT "name", "price" FROM "product" ORDER BY "price" DESC LIMIT 3
+```sh
+cargo add vantage-types --path ../vantage-types --features serde
 ```
 
-The second argument to `with_limit` is the offset — `None` means start from the beginning.
+```rust
+use vantage_types::prelude::*;
+```
+
+So far we've been printing raw `AnySqliteType` with `Debug`. That works for verifying queries, but
+it's useless for real work. When `db.execute()` returns a multi-row result, the
+[`AnySqliteType`](vantage_sql::sqlite::AnySqliteType) holds an array of maps internally. Convert it
+to `Vec<Record<AnySqliteType>>` to work with individual rows:
+
+```rust
+let raw = db.execute(&select.expr()).await?;
+
+let records = Vec::<Record<AnySqliteType>>::try_from(raw)
+    .context("Failed to convert to records")?;
+
+for rec in &records {
+    let name: String = rec["name"].try_get::<String>().unwrap();
+    let price: i64 = rec["price"].try_get::<i64>().unwrap();
+    println!("{} — {} cents", name, price);
+}
+// Cupcake — 120 cents
+// Doughnut — 135 cents
+// ...
+```
+
+Access fields by column name with `rec["name"]`. Each value is still an `AnySqliteType`, so you call
+`.try_get::<T>()` to extract a typed Rust value. If the type doesn't match (say you call
+`.try_get::<i64>()` on a text column), you get `None` — no panics, no garbage.
+
+```admonish warning title="serde_json::Value conversion"
+If you need JSON-friendly records, call `.into_record()` on each `Record<AnySqliteType>`:
+
+~~~rust
+let json_rec: Record<serde_json::Value> = rec.into_record();
+~~~
+
+This is convenient for serialization, but `serde_json::Value` supports a narrower set of
+types — you'll lose precision on `Decimal` and `chrono` types (dates become strings,
+decimals become floats). Stick with `Record<AnySqliteType>` when you need full type fidelity.
+```
+
+Under the hood, each persistence has its own type system for storing values. SQLite uses
+[CBOR](https://cbor.io/) — a compact binary format that preserves types like `Decimal`, `NaiveDate`,
+and `NaiveDateTime` through tagged values. MongoDB uses [BSON](https://bsonspec.org/) natively. The
+`AnySqliteType` / `AnyMongoType` wrappers hide these details — you interact with `.try_get::<T>()`
+regardless of which persistence you're using. If you ever need to inspect the raw representation,
+`.value()` gives you the underlying CBOR value:
+
+```rust
+let price_cbor = rec["price"].value();
+println!("{:?}", price_cbor);
+// Integer(Integer(120))
+```
+
+See [Persistence-aligned Type System](../type-system.md) for the full picture.
 
 ---
 
-## Aggregates
+## Mapping rows to structs
 
-Counting rows and summing values are so common that `Selectable` provides shortcuts. These methods
-clone the query, strip the field list, and replace it with an aggregate:
-
-```rust
-let base = SqliteSelect::new()
-    .with_source("product")
-    .with_condition(sqlite_expr!("\"is_deleted\" = {}", false));
-
-println!("{}", base.as_count().preview());
-// SELECT COUNT(*) FROM "product" WHERE "is_deleted" = 0
-
-println!("{}", base.as_sum(sqlite_expr!("\"price\"")).preview());
-// SELECT SUM("price") FROM "product" WHERE "is_deleted" = 0
-```
-
-Notice that `base` isn't consumed — `as_count()` and `as_sum()` clone internally. You can keep using
-`base` for other things.
-
-To execute an aggregate and get a Rust value back, use `db.associate::<T>()`. It wraps the
-expression with an expected return type so execution and conversion happen in one step:
+Calling `.try_get::<T>()` on every field gets tedious. The `#[entity]` macro generates
+[`TryFromRecord<AnySqliteType>`](vantage_types::TryFromRecord) for your struct, so conversion
+happens in one call with no type information lost:
 
 ```rust
-let count: i64 = db.associate::<i64>(base.as_count()).get().await?;
-println!("Active products: {count}");
+#[entity(SqliteType)]
+struct Product {
+    name: String,
+    price: i64,
+}
 
-let total: i64 = db.associate::<i64>(
-    base.as_sum(sqlite_expr!("\"price\""))
-).get().await?;
-println!("Total price of active products: {total}");
+let raw = db.execute(&select.expr()).await?;
+let records = Vec::<Record<AnySqliteType>>::try_from(raw)?;
+
+for rec in records {
+    let product = Product::from_record(rec)?;
+    println!("{} — {} cents", product.name, product.price);
+}
 ```
 
-If the database returns something that can't be converted to `i64`, you get an error — not garbage.
+The macro needs `vantage-core` as a direct dependency (it's already a transitive dep through
+`vantage-sql`, but the generated code references it in your crate):
+
+```sh
+cargo add vantage-core --path ../vantage-core
+```
+
+The macro also supports multiple type systems in one attribute —
+`#[entity(SqliteType, PostgresType, MongoType)]` generates a separate `TryFromRecord` impl for each
+persistence. One struct, all backends.
+
+```admonish info title="Serde alternative"
+`#[entity]` converts each field directly through the persistence's type system — your struct
+fields just need to implement `SqliteType`. Alternatively, you can convert a
+`Record<AnySqliteType>` into `Record<serde_json::Value>` and use serde, but this may lose
+type information (e.g. `Decimal` precision, date types):
+
+~~~rust
+#[derive(serde::Deserialize)]
+struct Product {
+    name: String,
+    price: i64,
+}
+
+for rec in records {
+    let json_rec: Record<serde_json::Value> = rec.into_record();
+    let product = Product::from_record(json_rec)?;
+}
+~~~
+
+For simple types like `String` and `i64` it's fine, but `Decimal` values lose precision and
+dates become strings. Prefer `#[entity]` when your schema includes those types.
+```
 
 ---
 
 ## Putting it together
 
-Here's a small program that lists products from our database. It accepts an optional `--min-price`
-argument to filter by price:
+Here's the complete `src/main.rs` — connect, query, convert to entities, print:
 
 ```rust
 use vantage_sql::prelude::*;
+use vantage_types::prelude::*;
+
+#[entity(SqliteType)]
+struct Product {
+    name: String,
+    price: i64,
+}
 
 #[tokio::main]
 async fn main() {
@@ -381,65 +509,43 @@ async fn run() -> VantageResult<()> {
         .await
         .context("Failed to connect to products.db")?;
 
-    let mut select = SqliteSelect::new()
+    let select = SqliteSelect::new()
         .with_source("product")
         .with_field("name")
         .with_field("price")
-        .with_condition(sqlite_expr!("\"is_deleted\" = {}", false))
-        .with_order(sqlite_expr!("\"price\""), Order::Asc);
+        .with_condition(Column::<bool>::new("is_deleted").eq(false));
 
-    // Optional filter
-    let args: Vec<String> = std::env::args().collect();
-    if let Some(pos) = args.iter().position(|a| a == "--min-price") {
-        if let Some(val) = args.get(pos + 1) {
-            let min: i64 = val.parse().context("--min-price must be a number")?;
-            select = select.with_condition(sqlite_expr!("\"price\" >= {}", min));
-        }
+    let raw = db.execute(&select.expr()).await?;
+    let records = Vec::<Record<AnySqliteType>>::try_from(raw)?;
+
+    for rec in records {
+        let p = Product::from_record(rec)?;
+        println!("{:<12} {:>3} cents", p.name, p.price);
     }
-
-    // Show count
-    let count: i64 = db.associate::<i64>(select.as_count()).get().await?;
-    println!("{count} products found\n");
-
-    // List them
-    let result = db.execute(&select.expr()).await?;
-    println!("{:?}", result);
 
     Ok(())
 }
 ```
 
-Try it:
-
 ```sh
 cargo run
-# 5 products found
-# AnySqliteType { value: Array([...Cupcake...Doughnut...Cookies...Tart...Pie...]), ... }
-
-cargo run -- --min-price 200
-# 2 products found
-# AnySqliteType { value: Array([...Tart...Pie...]), ... }
+# Cupcake      120 cents
+# Doughnut     135 cents
+# Tart         220 cents
+# Pie          299 cents
+# Cookies      199 cents
 ```
-
-The output is raw `Debug` — not pretty, but it proves the query builder and conditions are working.
-We'll improve the output in later chapters when we introduce typed entities.
 
 ---
 
 ## What we covered
 
-| Concept                       | What it does                                              |
-| ----------------------------- | --------------------------------------------------------- |
-| `use vantage_sql::prelude::*` | Brings in all essentials — types, traits, macros          |
-| `SqliteSelect`                | Builds SELECT queries via builder pattern                 |
-| `sqlite_expr!`                | Creates expressions with typed, bound parameters          |
-| `db.execute()`                | Runs an expression, returns raw results                   |
-| `db.associate::<T>()`         | Executes and converts to a Rust type in one step          |
-| `.as_count()` / `.as_sum()`   | Aggregate shortcuts — clone the query, replace the fields |
-| `.preview()`                  | Shows the rendered SQL for debugging                      |
-
-Everything so far is manual query building. You pick the table, the fields, the conditions. That's
-flexible, but it's also a lot of repetition if you're always querying the same tables with the same
-columns.
-
-In the next chapter we'll start removing that repetition.
+| Concept                                                              | What it does                                                                      | More info                                               |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| [`SqliteSelect`](vantage_sql::sqlite::statements::SqliteSelect)      | Builds SELECT queries via builder pattern                                         | [`Selectable`](vantage_expressions::Selectable)         |
+| [`Column::<T>`](vantage_table::column::core::Column)                 | Typed column reference — enforces matching operand types                          |                                                         |
+| [`SqliteOperation`](vantage_sql::sqlite::operation::SqliteOperation) | Ext trait giving `.eq()`, `.gt()`, etc. → `SqliteCondition`                       |                                                         |
+| `sqlite_expr!`                                                       | Creates expressions with typed, bound parameters                                  | [`Expression`](vantage_expressions::Expression)         |
+| `db.execute()`                                                       | Runs an expression, returns [`AnySqliteType`](vantage_sql::sqlite::AnySqliteType) | [`ExprDataSource`](vantage_expressions::ExprDataSource) |
+| [`Record<V>`](vantage_types::Record)                                 | Ordered map of column names to values — row-level access                          | `.try_get::<T>()`                                       |
+| `#[entity(SqliteType)]`                                              | Generates lossless record-to-struct conversion                                    | [`TryFromRecord`](vantage_types::TryFromRecord)         |

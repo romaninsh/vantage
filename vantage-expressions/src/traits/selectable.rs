@@ -176,28 +176,6 @@ pub trait Selectable<T, C = Expression<T>>: Send + Sync + Debug + Clone {
         self
     }
 
-    /// Adds a type-safe condition from a typed `Column<T>` operation.
-    ///
-    /// Maps `Expression<F>` to the backend's expression type, then wraps
-    /// it as a condition. Use this with typed columns:
-    ///
-    /// ```ignore
-    /// let price = Column::<i64>::new("price");
-    /// select.with_typed_condition(price.gt(150))  // Expression<i64> → backend condition
-    /// ```
-    fn with_typed_condition<F>(mut self, condition: Expression<F>) -> Self
-    where
-        Self: Sized,
-        F: Into<T> + Send + Clone + 'static,
-        T: Send + 'static,
-        C: From<Expression<T>>,
-    {
-        use crate::expression::mapping::ExpressionMap;
-        let mapped: Expression<T> = condition.map();
-        Self::add_where_condition(&mut self, C::from(mapped));
-        self
-    }
-
     /// Builder pattern method identical to [`Self::add_order_by`].
     fn with_order(mut self, order: impl Into<C>, direction: Order) -> Self
     where

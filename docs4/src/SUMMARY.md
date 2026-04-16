@@ -2,7 +2,7 @@
 
 - [Introduction](./introduction.md)
   - [SQLite and the Query Builder](./intro/step1-first-query.md)
-  - [TBC](./intro/step2-conditions.md)
+  - [Tables and Typed Data Access](./intro/step2-tables.md)
 - [Historical Timeline](./history.md)
   - [What's New in 0.4](./whats-new-04.md)
 - [Expressions & Queries](./expressions.md)
@@ -11,6 +11,7 @@
 - [Adding a New Persistence](./new-persistence.md)
   - [Step 1: Type System](./new-persistence/step1-types.md)
   - [Step 2: Expressions](./new-persistence/step2-expressions.md)
+  - [Step 2b: Operators](./new-persistence/step2b-operators.md)
   - [Step 3: Query Builder](./new-persistence/step3-query-builder.md)
   - [Step 4: Table & CRUD](./new-persistence/step4-table-crud.md)
   - [Step 5: Relationships](./new-persistence/step5-relationships.md)
@@ -18,4 +19,5 @@
 - [Persistence-aligned Type System](./type-system.md)
   - [Adding Custom Types](./type-system/custom-types.md)
 - [SQL: PostgreSQL, MySQL & SQLite](./sql.md)
+  - [Primitives](./sql/primitives.md)
   - [Type Conversions](./sql/type-conversions.md)

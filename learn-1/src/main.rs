@@ -1,4 +1,36 @@
+mod product;
+
+use product::Product;
 use vantage_sql::prelude::*;
+
+async fn list_products(table: &Table<SqliteDB, Product>) -> VantageResult<()> {
+    for (id, p) in table.list().await? {
+        println!("  {:<10} {:<12} {:>3} cents", id, p.name, p.price);
+    }
+    Ok(())
+}
+
+async fn list_table(table: &AnyTable) -> VantageResult<()> {
+    let columns = table.column_names();
+
+    // Header
+    print!("  {:<12}", "id");
+    for col in &columns {
+        print!("{:<16}", col);
+    }
+    println!();
+
+    // Rows
+    for (id, record) in table.list_values().await? {
+        print!("  {:<12}", id);
+        for col in &columns {
+            let val = record.get(col).map(|v| format!("{}", v)).unwrap_or_default();
+            print!("{:<16}", val);
+        }
+        println!();
+    }
+    Ok(())
+}
 
 #[tokio::main]
 async fn main() {
@@ -8,28 +40,18 @@ async fn main() {
 }
 
 async fn run() -> VantageResult<()> {
-    // Connect to our SQLite database
-    let db = SqliteDB::connect("sqlite:products.db?mode=ro")
+    let db = SqliteDB::connect("sqlite:products.db")
         .await
         .context("Failed to connect to products.db")?;
 
-    // Build a condition to exclude soft-deleted records
-    let price = Column::<i64>::new("price");
-    let is_deleted = Column::<bool>::new("is_deleted");
+    let table = Product::table(db);
 
-    // Build a SELECT query with conditions
-    let select = SqliteSelect::new()
-        .with_source("product")
-        .with_field("name")
-        .with_field("price")
-        .with_typed_condition(is_deleted.eq(false))
-        .with_typed_condition(price.gt(150));
+    println!("=== Products (typed) ===");
+    list_products(&table).await?;
 
-    println!("Query: {}\n", select.preview());
-
-    // Execute and print raw result
-    let result = db.execute(&select.expr()).await?;
-    println!("{:?}", result);
+    let any = AnyTable::from_table(table);
+    println!("\n=== {} (type-erased) ===", any.table_name());
+    list_table(&any).await?;
 
     Ok(())
 }

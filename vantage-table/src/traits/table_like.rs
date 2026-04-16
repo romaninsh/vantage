@@ -10,6 +10,7 @@ use crate::{conditions::ConditionHandle, pagination::Pagination};
 pub trait TableLike: ReadableValueSet + WritableValueSet + Send + Sync {
     fn table_name(&self) -> &str;
     fn table_alias(&self) -> &str;
+    fn column_names(&self) -> Vec<String>;
 
     /// Add a condition to this table using a type-erased expression
     /// The expression must be of type T::Expr for the underlying table's TableSource
