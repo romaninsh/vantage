@@ -11,6 +11,13 @@ use sqlx::postgres::PgPool;
 
 pub use types::{AnyPostgresType, PostgresType};
 
+crate::define_typed_ident!(
+    PgIdent,
+    pg_ident,
+    AnyPostgresType,
+    crate::condition::PostgresCondition
+);
+
 /// PostgreSQL provider. Wraps a connection pool.
 #[derive(Clone)]
 pub struct PostgresDB {

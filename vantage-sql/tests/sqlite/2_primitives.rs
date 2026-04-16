@@ -6,6 +6,7 @@ use vantage_sql::condition::SqliteCondition;
 use vantage_sql::fx;
 use vantage_sql::primitives::*;
 use vantage_sql::sqlite::operation::SqliteOperation;
+use vantage_sql::sqlite::sqlite_ident as ident;
 use vantage_sql::sqlite::types::AnySqliteType;
 use vantage_sql::sqlite_expr;
 use vantage_table::column::core::Column;

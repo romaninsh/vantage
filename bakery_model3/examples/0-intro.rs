@@ -1,8 +1,8 @@
 use bakery_model3::*;
 use vantage_core::{Result, error, util::error::Context};
+use vantage_csv::operation::CsvOperation;
 use vantage_csv::{AnyCsvType, Csv};
 use vantage_dataset::prelude::ReadableDataSet;
-use vantage_table::operation::Operation;
 
 #[tokio::main]
 async fn main() -> Result<()> {

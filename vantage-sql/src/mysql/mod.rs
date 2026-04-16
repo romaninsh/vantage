@@ -11,6 +11,13 @@ use sqlx::mysql::MySqlPool;
 
 pub use types::{AnyMysqlType, MysqlType};
 
+crate::define_typed_ident!(
+    MysqlIdent,
+    mysql_ident,
+    AnyMysqlType,
+    crate::condition::MysqlCondition
+);
+
 /// MySQL provider. Wraps a connection pool.
 #[derive(Clone)]
 pub struct MysqlDB {

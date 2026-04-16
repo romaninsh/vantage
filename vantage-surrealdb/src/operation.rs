@@ -1,21 +1,124 @@
 //! SurrealDB-specific operations for expressions.
 //!
-//! Common comparison methods (eq, ne, gt, gte, lt, lte, in_) are provided by the
-//! generic `Operation<T>` trait from vantage-table, which has a blanket impl for
-//! all `Expressive<T>` types. This module adds SurrealDB-specific operations:
-//! graph traversal (rref/lref), subtraction, CONTAINS, and a SurrealDB-flavored
-//! IN (without parentheses).
+//! - `SurrealOperation` — common comparison methods (eq, ne, gt, gte, lt, lte,
+//!   in_) producing `Expression<AnySurrealType>`.
+//! - `RefOperation` — SurrealDB-specific graph traversal (rref/lref),
+//!   subtraction, CONTAINS, and parenthesis-free IN.
 
-use vantage_expressions::Expressive;
+use vantage_expressions::traits::expressive::ExpressiveEnum;
+use vantage_expressions::{Expression, Expressive};
 
 use crate::{AnySurrealType, Expr, identifier::Identifier, surreal_expr};
+
+/// Standard comparison operations for SurrealDB expressions.
+///
+/// Blanket-implemented for all `Expressive<AnySurrealType>`.
+pub trait SurrealOperation: Expressive<AnySurrealType> {
+    /// `field = value`
+    fn eq(&self, value: impl Expressive<AnySurrealType>) -> Expr
+    where
+        Self: Sized,
+    {
+        Expression::new(
+            "{} = {}",
+            vec![
+                ExpressiveEnum::Nested(self.expr()),
+                ExpressiveEnum::Nested(value.expr()),
+            ],
+        )
+    }
+
+    /// `field != value`
+    fn ne(&self, value: impl Expressive<AnySurrealType>) -> Expr
+    where
+        Self: Sized,
+    {
+        Expression::new(
+            "{} != {}",
+            vec![
+                ExpressiveEnum::Nested(self.expr()),
+                ExpressiveEnum::Nested(value.expr()),
+            ],
+        )
+    }
+
+    /// `field > value`
+    fn gt(&self, value: impl Expressive<AnySurrealType>) -> Expr
+    where
+        Self: Sized,
+    {
+        Expression::new(
+            "{} > {}",
+            vec![
+                ExpressiveEnum::Nested(self.expr()),
+                ExpressiveEnum::Nested(value.expr()),
+            ],
+        )
+    }
+
+    /// `field >= value`
+    fn gte(&self, value: impl Expressive<AnySurrealType>) -> Expr
+    where
+        Self: Sized,
+    {
+        Expression::new(
+            "{} >= {}",
+            vec![
+                ExpressiveEnum::Nested(self.expr()),
+                ExpressiveEnum::Nested(value.expr()),
+            ],
+        )
+    }
+
+    /// `field < value`
+    fn lt(&self, value: impl Expressive<AnySurrealType>) -> Expr
+    where
+        Self: Sized,
+    {
+        Expression::new(
+            "{} < {}",
+            vec![
+                ExpressiveEnum::Nested(self.expr()),
+                ExpressiveEnum::Nested(value.expr()),
+            ],
+        )
+    }
+
+    /// `field <= value`
+    fn lte(&self, value: impl Expressive<AnySurrealType>) -> Expr
+    where
+        Self: Sized,
+    {
+        Expression::new(
+            "{} <= {}",
+            vec![
+                ExpressiveEnum::Nested(self.expr()),
+                ExpressiveEnum::Nested(value.expr()),
+            ],
+        )
+    }
+
+    /// `field IN (values_expression)`
+    fn in_(&self, values: impl Expressive<AnySurrealType>) -> Expr
+    where
+        Self: Sized,
+    {
+        Expression::new(
+            "{} IN ({})",
+            vec![
+                ExpressiveEnum::Nested(self.expr()),
+                ExpressiveEnum::Nested(values.expr()),
+            ],
+        )
+    }
+}
+
+impl<S: Expressive<AnySurrealType>> SurrealOperation for S {}
 
 /// SurrealDB-specific operations: graph traversal, CONTAINS, subtraction,
 /// and parenthesis-free IN.
 ///
-/// For standard comparisons (eq, ne, gt, gte, lt, lte), use `Operation<T>`
-/// from `vantage_table::operation` — it's blanket-implemented for all
-/// `Expressive<T>` types.
+/// For standard comparisons (eq, ne, gt, gte, lt, lte, in_), use `SurrealOperation`.
 pub trait RefOperation: Expressive<AnySurrealType> {
     /// Right-side graph traversal: `self->reference->table`
     fn rref(&self, reference: impl Into<String>, table: impl Into<String>) -> Expr;
@@ -146,11 +249,9 @@ mod tests {
 
     #[test]
     fn test_comparison_operations() {
-        use vantage_table::operation::Operation;
-
         let field = surreal_expr!("age");
 
-        // eq comes from generic Operation<T>
+        // eq comes from SurrealOperation
         let eq_scalar = field.eq(25i64);
         assert_eq!(eq_scalar.preview(), "age = 25");
 

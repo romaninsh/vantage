@@ -10,6 +10,13 @@ use sqlx::sqlite::SqlitePool;
 
 pub use types::{AnySqliteType, SqliteType};
 
+crate::define_typed_ident!(
+    SqliteIdent,
+    sqlite_ident,
+    AnySqliteType,
+    crate::condition::SqliteCondition
+);
+
 /// SQLite provider. Wraps a connection pool.
 #[derive(Clone)]
 pub struct SqliteDB {

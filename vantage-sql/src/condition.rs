@@ -63,6 +63,13 @@ macro_rules! define_sql_condition {
             }
         }
 
+        // Into Expression<BackendType> — unwrap the newtype
+        impl From<$name> for Expression<$any_type> {
+            fn from(cond: $name) -> Self {
+                cond.0
+            }
+        }
+
         // From Fx<BackendType>
         impl From<Fx<$any_type>> for $name {
             fn from(fx: Fx<$any_type>) -> Self {
@@ -89,8 +96,65 @@ impl From<crate::mysql::statements::primitives::FulltextMatch> for MysqlConditio
     }
 }
 
+// ── Backend-typed identifier wrapper ────────────────────────────────
+
+/// Defines a backend-specific identifier wrapper that only implements
+/// `Expressive<$any_type>`, avoiding ambiguity when multiple backend
+/// features are enabled.
+///
+/// Usage: `define_typed_ident!(PgIdent, pg_ident, AnyPostgresType, PostgresCondition);`
+#[macro_export]
+macro_rules! define_typed_ident {
+    ($struct_name:ident, $fn_name:ident, $any_type:ty, $condition:ty) => {
+        #[derive(Debug, Clone)]
+        pub struct $struct_name($crate::primitives::identifier::Identifier);
+
+        impl $struct_name {
+            pub fn new(name: impl Into<String>) -> Self {
+                Self($crate::primitives::identifier::ident(name))
+            }
+
+            pub fn dot_of(mut self, prefix: impl Into<String>) -> Self {
+                self.0 = self.0.dot_of(prefix);
+                self
+            }
+
+            pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
+                self.0 = self.0.with_alias(alias);
+                self
+            }
+        }
+
+        impl $crate::vantage_expressions::Expressive<$any_type> for $struct_name {
+            fn expr(&self) -> $crate::vantage_expressions::Expression<$any_type> {
+                $crate::vantage_expressions::Expressive::<$any_type>::expr(&self.0)
+            }
+        }
+
+        impl From<$struct_name> for $crate::vantage_expressions::Expression<$any_type> {
+            fn from(id: $struct_name) -> Self {
+                $crate::vantage_expressions::Expressive::<$any_type>::expr(&id.0)
+            }
+        }
+
+        impl From<$struct_name> for $condition {
+            fn from(id: $struct_name) -> Self {
+                Self::from_typed($crate::vantage_expressions::Expressive::<$any_type>::expr(
+                    &id.0,
+                ))
+            }
+        }
+
+        /// Shorthand constructor.
+        pub fn $fn_name(name: impl Into<String>) -> $struct_name {
+            $struct_name::new(name)
+        }
+    };
+}
+
 // ── Vendor-specific operation traits ─────────────────────────────────
 
+#[macro_export]
 macro_rules! define_sql_operation {
     ($trait_name:ident, $condition:ident, $any_type:ty) => {
         /// Vendor-specific operations producing the backend's condition type.
@@ -251,80 +315,4 @@ where
         ],
     );
     Cond::from(expr)
-}
-
-#[cfg(feature = "sqlite")]
-define_sql_operation!(
-    SqliteOperation,
-    SqliteCondition,
-    crate::sqlite::types::AnySqliteType
-);
-
-#[cfg(feature = "postgres")]
-define_sql_operation!(
-    PostgresOperation,
-    PostgresCondition,
-    crate::postgres::types::AnyPostgresType
-);
-
-#[cfg(feature = "mysql")]
-define_sql_operation!(
-    MysqlOperation,
-    MysqlCondition,
-    crate::mysql::types::AnyMysqlType
-);
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use vantage_table::column::core::Column;
-
-    #[cfg(feature = "sqlite")]
-    mod sqlite_tests {
-        use super::*;
-        use crate::sqlite::types::AnySqliteType;
-
-        #[test]
-        fn test_column_eq() {
-            let name = Column::<AnySqliteType>::new("name");
-            let cond = name.eq(AnySqliteType::from("Alice".to_string()));
-            assert_eq!(cond.into_expr().preview(), "name = 'Alice'");
-        }
-
-        #[test]
-        fn test_typed_column_gt() {
-            let price = Column::<i64>::new("price");
-            let cond = price.gt(150i64);
-            assert_eq!(cond.into_expr().preview(), "price > 150");
-        }
-
-        #[test]
-        fn test_chaining_gt_eq_false() {
-            let price = Column::<i64>::new("price");
-            let cond = price.gt(10i64).eq(false);
-            assert_eq!(cond.into_expr().preview(), "price > 10 = 0");
-        }
-
-        #[test]
-        fn test_chaining_gt_eq_true() {
-            let price = Column::<i64>::new("price");
-            let cond = price.gt(10i64).eq(true);
-            assert_eq!(cond.into_expr().preview(), "price > 10 = 1");
-        }
-
-        #[test]
-        fn test_typed_bool_column() {
-            let is_deleted = Column::<bool>::new("is_deleted");
-            let cond = is_deleted.eq(false);
-            assert_eq!(cond.into_expr().preview(), "is_deleted = 0");
-        }
-
-        #[test]
-        fn test_cross_type_rejected() {
-            // price.gt(false) should NOT compile — bool isn't Expressive<i64>
-            // This is a compile-time guarantee, not a runtime test.
-            let price = Column::<i64>::new("price");
-            let _: SqliteCondition = price.gt(150i64);
-        }
-    }
 }

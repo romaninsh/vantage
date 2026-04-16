@@ -6,12 +6,12 @@
 use serde::Deserialize;
 use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
 use vantage_sql::primitives::alias::AliasExt;
-use vantage_sql::primitives::identifier::ident;
 use vantage_sql::sqlite::SqliteDB;
+use vantage_sql::sqlite::operation::SqliteOperation;
+use vantage_sql::sqlite::sqlite_ident as ident;
 use vantage_sql::sqlite::statements::SqliteSelect;
 use vantage_sql::sqlite::statements::select::join::SqliteSelectJoin;
 use vantage_sql::sqlite_expr;
-use vantage_table::operation::Operation;
 use vantage_types::{Record, TryFromRecord};
 
 const DB_PATH: &str = "sqlite:../target/bakery.sqlite?mode=ro";

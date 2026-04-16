@@ -6,13 +6,13 @@
 use serde::Deserialize;
 use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
 use vantage_sql::mysql::MysqlDB;
+use vantage_sql::mysql::mysql_ident as ident;
+use vantage_sql::mysql::operation::MysqlOperation;
 use vantage_sql::mysql::statements::MysqlSelect;
 use vantage_sql::mysql::statements::select::join::MysqlSelectJoin;
 use vantage_sql::mysql_expr;
 use vantage_sql::primitives::alias::AliasExt;
 use vantage_sql::primitives::fx::Fx;
-use vantage_sql::primitives::identifier::ident;
-use vantage_table::operation::Operation;
 use vantage_types::{Record, TryFromRecord};
 
 const MYSQL_URL: &str = "mysql://vantage:vantage@localhost:3306/vantage";
@@ -817,7 +817,7 @@ struct DeptTree {
 
 #[tokio::test]
 async fn test_q11() {
-    use vantage_sql::concat_sql;
+    use vantage_sql::concat_;
     use vantage_sql::primitives::union::Union;
 
     let base = MysqlSelect::new()
@@ -833,7 +833,7 @@ async fn test_q11() {
         .with_expression(ident("id").dot_of("d"))
         .with_expression(ident("name").dot_of("d"))
         .with_expression(mysql_expr!("{} + 1", (ident("depth").dot_of("dt"))))
-        .with_expression(concat_sql!(
+        .with_expression(concat_!(
             ident("path").dot_of("dt"),
             " > ",
             ident("name").dot_of("d")

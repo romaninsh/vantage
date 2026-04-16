@@ -7,12 +7,12 @@
 use serde::Deserialize;
 use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
 use vantage_sql::postgres::PostgresDB;
+use vantage_sql::postgres::operation::PostgresOperation;
+use vantage_sql::postgres::pg_ident as ident;
 use vantage_sql::postgres::statements::PostgresSelect;
 use vantage_sql::postgres::statements::select::join::PostgresSelectJoin;
 use vantage_sql::postgres_expr;
 use vantage_sql::primitives::alias::AliasExt;
-use vantage_sql::primitives::identifier::ident;
-use vantage_table::operation::Operation;
 use vantage_types::{Record, TryFromRecord};
 
 const PG_URL: &str = "postgres://vantage:vantage@localhost:5433/vantage_v4_pg";

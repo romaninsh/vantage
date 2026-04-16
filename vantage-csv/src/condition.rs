@@ -104,9 +104,9 @@ pub(crate) fn resolve_param(
 
 #[cfg(test)]
 mod tests {
+    use crate::operation::CsvOperation;
     use crate::{AnyCsvType, Csv};
     use vantage_dataset::prelude::ReadableValueSet;
-    use vantage_table::operation::Operation;
     use vantage_table::table::Table;
     use vantage_types::EmptyEntity;
 
