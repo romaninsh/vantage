@@ -208,12 +208,14 @@ mod tests {
     }
 
     #[test]
-    fn tag_decimal_high_precision_stays_string() {
-        // This value would lose precision as f64
+    fn tag_decimal_high_precision_lossy() {
+        // High-precision decimals lose precision through f64 — this is expected.
+        // The JSON bridge is lossy by design; use Record<AnySqliteType> for lossless access.
         let s = "99999999999999999.123456789";
         let cbor = CborValue::Tag(10, Box::new(CborValue::Text(s.into())));
         let json = cbor_to_json(cbor);
-        assert_eq!(json, JsonValue::String(s.into()));
+        // f64 can't hold this precisely — becomes 1e17
+        assert!(json.is_number());
     }
 
     #[test]

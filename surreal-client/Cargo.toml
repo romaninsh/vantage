@@ -1,8 +1,11 @@
 
 [package]
 name = "surreal-client"
-version = "0.1.0"
+version = "0.4.0"
 edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "CBOR-based SurrealDB client for the Vantage data framework"
+repository = "https://github.com/romaninsh/vantage"
 
 [features]
 pool = ["mobc"]
@@ -26,7 +29,7 @@ tokio-tungstenite = "0.27.0"
 futures = "0.3.31"
 url = "2.5.7"
 uuid = { version = "1.0", features = ["v4"] }
-vantage-types = { path = "../vantage-types" }
-vantage-core = { path = "../vantage-core" }
+vantage-types = { version = "0.4", path = "../vantage-types" }
+vantage-core = { version = "0.4", path = "../vantage-core" }
 paste = "1.0"
 indexmap = "2.0"
