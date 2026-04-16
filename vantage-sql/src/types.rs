@@ -88,13 +88,9 @@ pub(crate) fn cbor_to_json(val: CborValue) -> JsonValue {
                 if let Ok(i) = s.parse::<i64>() {
                     JsonValue::Number(i.into())
                 } else if let Ok(f) = s.parse::<f64>() {
-                    if f.is_finite() && f.to_string() == s {
-                        serde_json::Number::from_f64(f)
-                            .map(JsonValue::Number)
-                            .unwrap_or(JsonValue::String(s))
-                    } else {
-                        JsonValue::String(s)
-                    }
+                    serde_json::Number::from_f64(f)
+                        .map(JsonValue::Number)
+                        .unwrap_or(JsonValue::String(s))
                 } else {
                     JsonValue::String(s)
                 }
@@ -212,20 +208,22 @@ mod tests {
     }
 
     #[test]
-    fn tag_decimal_high_precision_stays_string() {
-        // This value would lose precision as f64
+    fn tag_decimal_high_precision_lossy() {
+        // High-precision decimals lose precision through f64 — this is expected.
+        // The JSON bridge is lossy by design; use Record<AnySqliteType> for lossless access.
         let s = "99999999999999999.123456789";
         let cbor = CborValue::Tag(10, Box::new(CborValue::Text(s.into())));
         let json = cbor_to_json(cbor);
-        assert_eq!(json, JsonValue::String(s.into()));
+        // f64 can't hold this precisely — becomes 1e17
+        assert!(json.is_number());
     }
 
     #[test]
-    fn tag_decimal_trailing_zeros_stays_string() {
-        // "1.10" can't round-trip through f64 (becomes "1.1"), so stays as string
+    fn tag_decimal_trailing_zeros_become_number() {
+        // "1.10" → f64 1.1 — trailing zeros lost but value preserved
         let cbor = CborValue::Tag(10, Box::new(CborValue::Text("1.10".into())));
         let json = cbor_to_json(cbor);
-        assert_eq!(json, JsonValue::String("1.10".into()));
+        assert_eq!(json, serde_json::json!(1.1));
     }
 
     // ── Nested structures ────────────────────────────────────────────────
