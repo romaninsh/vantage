@@ -1,39 +1,4 @@
-mod product;
-
-use product::Product;
 use vantage_sql::prelude::*;
-
-async fn list_products(table: &Table<SqliteDB, Product>) -> VantageResult<()> {
-    for (id, p) in table.list().await? {
-        println!("  {:<10} {:<12} {:>3} cents", id, p.name, p.price);
-    }
-    Ok(())
-}
-
-async fn list_table(table: &AnyTable) -> VantageResult<()> {
-    let columns = table.column_names();
-
-    // Header
-    print!("  {:<12}", "id");
-    for col in &columns {
-        print!("{:<16}", col);
-    }
-    println!();
-
-    // Rows
-    for (id, record) in table.list_values().await? {
-        print!("  {:<12}", id);
-        for col in &columns {
-            let val = record
-                .get(col)
-                .map(|v| format!("{}", v))
-                .unwrap_or_default();
-            print!("{:<16}", val);
-        }
-        println!();
-    }
-    Ok(())
-}
 
 #[tokio::main]
 async fn main() {
@@ -43,18 +8,69 @@ async fn main() {
 }
 
 async fn run() -> VantageResult<()> {
-    let db = SqliteDB::connect("sqlite:products.db")
+    // Connect to SQLite
+    let db = SqliteDB::connect("sqlite:products.db?mode=ro")
         .await
         .context("Failed to connect to products.db")?;
 
-    let table = Product::table(db);
+    // 1. Basic SELECT
+    let select = SqliteSelect::new()
+        .with_source("product")
+        .with_field("name")
+        .with_field("price");
 
-    println!("=== Products (typed) ===");
-    list_products(&table).await?;
+    println!("=== Query preview ===");
+    println!("{}", select.preview());
 
-    let any = AnyTable::from_table(table);
-    println!("\n=== {} (type-erased) ===", any.table_name());
-    list_table(&any).await?;
+    // 2. Execute and print raw result
+    let result = db.execute(&select.expr()).await?;
+    let json: serde_json::Value = result.into();
+    println!("\n=== Raw result ===");
+    println!("{:#}", json);
+
+    // 3. Add a condition with sqlite_expr!
+    let select = SqliteSelect::new()
+        .with_source("product")
+        .with_field("name")
+        .with_field("price")
+        .with_condition(sqlite_expr!("\"is_deleted\" = {}", false));
+
+    println!("\n=== With condition ===");
+    println!("{}", select.preview());
+
+    // 4. Typed columns and operators
+    let is_deleted = Column::<bool>::new("is_deleted");
+    let price = Column::<i64>::new("price");
+
+    let select = SqliteSelect::new()
+        .with_source("product")
+        .with_field("name")
+        .with_field("price")
+        .with_condition(is_deleted.eq(false))
+        .with_condition(price.gt(150));
+
+    println!("\n=== Typed columns ===");
+    println!("{}", select.preview());
+
+    let result = db.execute(&select.expr()).await?;
+    let json: serde_json::Value = result.into();
+    println!("{:#}", json);
+
+    // 5. Aggregates
+    let all_products = SqliteSelect::new()
+        .with_source("product")
+        .with_condition(Column::<bool>::new("is_deleted").eq(false));
+
+    let count = db
+        .aggregate(&all_products, "count", Column::<AnySqliteType>::new("id"))
+        .await?;
+    println!("\n=== Aggregates ===");
+    println!("Active products: {}", count);
+
+    let sum = db
+        .aggregate(&all_products, "sum", Column::<AnySqliteType>::new("price"))
+        .await?;
+    println!("Total price: {} cents", sum);
 
     Ok(())
 }

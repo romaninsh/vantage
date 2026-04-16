@@ -336,16 +336,24 @@ let select = SqliteSelect::new()
 ```
 
 ```admonish info title="Primitives for untyped access"
-`ident()` is one of several **primitives** — reusable building blocks for SQL expressions.
+`sqlite_ident()` is one of several **primitives** — reusable building blocks for SQL expressions.
 They handle quoting, escaping, and vendor-specific syntax. To use them:
 
 ~~~rust
-use vantage_sql::primitives::*;
+use vantage_sql::sqlite::sqlite_ident as ident;
 
 let condition = ident("is_deleted").eq(false);
 ~~~
 
-Primitives are not part of the prelude — import them when needed. Besides `ident()`, you get
+Each backend has its own typed identifier: `sqlite_ident()`, `pg_ident()`, `mysql_ident()`.
+These return a backend-pinned wrapper so `.eq()`, `.gt()`, etc. work without ambiguity.
+
+There is also a generic `ident()` that works when the backend type can be inferred from
+context — for example, inside `sqlite_expr!()` or when passed to a method that expects
+a specific `Expressive<AnySqliteType>`. Use the typed variant when calling operations
+directly.
+
+Primitives are not part of the prelude — import them when needed. Besides identifiers, you get
 `Fx` (function calls), `Case`, `Concat`, `Interval`, and more. See the
 [Primitives reference](../sql/primitives.md) for the full list.
 

@@ -7,26 +7,7 @@ native condition type.
 
 This step covers how to implement a vendor-specific operation trait for your persistence.
 
-### Background: the generic `Operation<T>`
-
-The `vantage-table` crate provides a generic [`Operation<T>`](vantage_table::operation::Operation)
-trait with a blanket impl for all `Expressive<T>` types. It gives every column and expression
-`.eq()`, `.gt()`, `.lt()`, etc. — but the return type is `Expression<T>`, which is backend-agnostic.
-
-This works for simple cases:
-
-```rust
-use vantage_table::operation::Operation;
-
-let price = Column::<i64>::new("price");
-let expr: Expression<i64> = price.gt(150);  // Expression<i64>
-```
-
-The problem: `Expression<i64>` isn't your backend's condition type. SQL backends use
-`SqliteCondition`, MongoDB uses `MongoCondition`. And chaining like `price.gt(10).eq(false)` fails
-because `.eq(false)` needs `bool: Expressive<i64>`, which doesn't hold.
-
-### The solution: vendor-specific operation traits
+### Vendor-specific operation traits
 
 Each persistence defines its own operation trait that returns the backend's condition type directly.
 The trait is blanket-implemented for all `Expressive<T>` where `T: Into<AnyBackendType>`, so typed
@@ -35,7 +16,7 @@ columns get the methods for free.
 For SQL backends, a macro generates the trait:
 
 ```rust
-// In vantage-sql/src/condition.rs
+// In vantage-sql/src/sqlite/operation.rs
 define_sql_operation!(
     SqliteOperation,
     SqliteCondition,
@@ -120,18 +101,15 @@ Key differences from SQL:
 
 ### Avoiding method name conflicts
 
-Your vendor operation trait has the same method names as `Operation<T>` from `vantage-table`. If
-both traits are imported, Rust reports ambiguity. The fix:
+When multiple backend features are enabled, types like `Identifier` and `&str` implement
+`Expressive<T>` for multiple backends. This causes ambiguity if the operation trait is generic.
 
-- **Remove `Operation<T>` from your prelude.** Your vendor trait supersedes it.
-- Users working with your backend import your trait (e.g. `SqliteOperation`) via the prelude.
-- The generic `Operation<T>` stays available for backend-agnostic code that doesn't need
-  vendor-specific condition types.
+Each backend's operation trait lives in its own module (e.g. `sqlite::operation::SqliteOperation`).
+Users import only the trait they need:
 
 ```rust
 // In your prelude:
 pub use crate::sqlite::operation::SqliteOperation;
-// Do NOT re-export vantage_table::operation::Operation
 ```
 
 ### Condition type requirements
@@ -155,7 +133,7 @@ For SQL backends, the `define_sql_condition!` macro generates all of these.
 
 3. **Implement `Expressive<AnyType>` for your condition type** — enables chaining.
 
-4. **Export from your prelude** — replace `Operation<T>` to avoid ambiguity.
+4. **Export from your prelude** — so users get the operation trait automatically.
 
 5. **Tests** covering:
    - Typed column operations: `Column::<i64>::new("price").gt(150)` → condition

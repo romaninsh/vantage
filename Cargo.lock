@@ -1582,6 +1582,18 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "vantage-expressions",
+ "vantage-sql",
+ "vantage-types",
+]
+
+[[package]]
+name = "learn-2"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tokio",
  "vantage-core",
  "vantage-dataset",
  "vantage-expressions",

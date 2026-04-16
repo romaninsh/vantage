@@ -70,7 +70,7 @@ Set `SURREALDB_URL` or defaults to `cbor://root:root@localhost:8000/bakery/v2`.
 ```rust
 use bakery_model3::*;
 use vantage_csv::{AnyCsvType, Csv};
-use vantage_table::operation::Operation;
+use vantage_csv::operation::CsvOperation;
 use vantage_dataset::prelude::ReadableDataSet;
 
 let csv = Csv::new("bakery_model3/data");

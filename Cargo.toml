@@ -18,7 +18,7 @@ members = [
     "vantage-cli-util",
     # "vantage-config",
     "cbor-test",
-    "vantage-types", "learn-1",
+    "vantage-types", "learn-1", "learn-2",
     "docs4",
 ]
 exclude = [
