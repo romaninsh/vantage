@@ -1,0 +1,844 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>SQLite and the Query Builder - Vantage 0.4 Framework</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-2459343d.css">
+        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href=".././mdbook-admonish.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../searchindex-85213667.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc-10b285ad.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Vantage 0.4 Framework</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="sqlite-and-the-query-builder"><a class="header" href="#sqlite-and-the-query-builder">SQLite and the Query Builder</a></h1>
+<p>Vantage is a big framework. It covers SQL databases, SurrealDB, MongoDB, CSV files, REST APIs — and
+ties them all together with a shared type system, expression engine, and data abstraction layer.</p>
+<p>We’ll get to all of that. But right now, let’s start with something familiar: <strong>building SQL
+queries</strong>.</p>
+<div id="admonition-what-is-a-query-builder" class="admonition admonish-info" role="note" aria-labelledby="admonition-what-is-a-query-builder-title">
+<div class="admonition-title">
+<div id="admonition-what-is-a-query-builder-title">
+<p>What is a Query Builder?</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-what-is-a-query-builder"></a>
+</div>
+
+<div>
+<p>A query builder is a tool that assembles SQL from composable parts instead of string concatenation.
+You’ve probably seen this pattern before:</p>
+<ul>
+<li><strong>Knex.js</strong> (JavaScript) — <code>knex('users').where('age', '&gt;', 18).select('name')</code></li>
+<li><strong>SQLAlchemy Core</strong> (Python) — <code>select(users.c.name).where(users.c.age &gt; 18)</code></li>
+<li><strong>JOOQ</strong> (Java) — <code>dsl.select(USERS.NAME).from(USERS).where(USERS.AGE.gt(18))</code></li>
+<li><strong>Diesel</strong> (Rust) — <code>users.filter(age.gt(18)).select(name)</code></li>
+</ul>
+<p>Vantage has its own query builder too. Each supported database gets a dedicated builder —
+<code>SqliteSelect</code>, <code>PostgresSelect</code>, <code>SurrealSelect</code> — so you get the right quoting, parameter
+binding, and dialect features for your target.</p>
+</div>
+
+</div>
+
+<p>For this chapter we’ll use SQLite. It’s lightweight, needs no server, and works with a plain file on
+disk.</p>
+<div id="admonition-goals-for-this-chapter" class="admonition admonish-example" role="note" aria-labelledby="admonition-goals-for-this-chapter-title">
+<div class="admonition-title">
+<div id="admonition-goals-for-this-chapter-title">
+<p>Goals for this chapter</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-goals-for-this-chapter"></a>
+</div>
+
+<div>
+<p>By the end of this page you’ll be able to:</p>
+<ol>
+<li>Connect to an SQLite database from Rust</li>
+<li>Build SELECT queries with fields and conditions</li>
+<li>Execute queries and read results</li>
+<li>Convert results into <code>Vec&lt;Record&gt;</code> with typed field access</li>
+<li>Run aggregates (COUNT, SUM) with one method call</li>
+<li>Understand how Vantage keeps parameters separate from SQL (no injection risk)</li>
+</ol>
+</div>
+
+</div>
+
+<hr>
+<h2 id="set-up"><a class="header" href="#set-up">Set up</a></h2>
+<div id="admonition-pre-release" class="admonition admonish-note" role="note" aria-labelledby="admonition-pre-release-title">
+<div class="admonition-title">
+<div id="admonition-pre-release-title">
+<p>Pre-release</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-pre-release"></a>
+</div>
+
+<div>
+<p>Vantage 0.4 crates aren’t on crates.io yet. For now, clone the repo
+(<code>git clone https://github.com/romaninsh/vantage.git</code>) and work inside it as shown below.</p>
+</div>
+
+</div>
+
+<p>Create a new project inside the Vantage workspace:</p>
+<pre><code class="language-sh">cd vantage
+mkdir learn-1 &amp;&amp; cd learn-1
+cargo init
+cargo add vantage-sql --path ../vantage-sql --features sqlite
+cargo add tokio --features full
+</code></pre>
+<p>Two dependencies — <code>vantage-sql</code> gives us the SQLite query builder and connection pool, <code>tokio</code>
+provides the async runtime because all database operations are async.</p>
+<h2 id="create-and-populate-a-database"><a class="header" href="#create-and-populate-a-database">Create and populate a database</a></h2>
+<p>We’ll make a small product catalog from scratch. Create <code>seed.sql</code> in your project root:</p>
+<pre><code class="language-sql">CREATE TABLE product (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    price INTEGER NOT NULL,
+    is_deleted BOOLEAN NOT NULL DEFAULT 0
+);
+
+INSERT INTO product VALUES ('cupcake',  'Cupcake',           120, 0);
+INSERT INTO product VALUES ('donut',    'Doughnut',          135, 0);
+INSERT INTO product VALUES ('tart',     'Tart',              220, 0);
+INSERT INTO product VALUES ('pie',      'Pie',               299, 0);
+INSERT INTO product VALUES ('cookies',  'Cookies',           199, 0);
+INSERT INTO product VALUES ('old_cake', 'Discontinued Cake',  80, 1);
+</code></pre>
+<p>Run it:</p>
+<pre><code class="language-sh">sqlite3 products.db &lt; seed.sql
+</code></pre>
+<p>You now have <code>products.db</code> — 6 rows, 5 active and 1 deleted. Quick check:</p>
+<pre><code class="language-sh">sqlite3 products.db "SELECT name, price FROM product WHERE is_deleted = 0"
+</code></pre>
+<hr>
+<h2 id="start-with-an-async-main"><a class="header" href="#start-with-an-async-main">Start with an async main</a></h2>
+<p>All database operations in Vantage are async, so we need a Tokio runtime. Replace <code>src/main.rs</code>
+with:</p>
+<pre class="playground"><code class="language-rust">use vantage_sql::prelude::*;
+
+#[tokio::main]
+async fn main() {
+    if let Err(e) = run().await {
+        e.report();
+    }
+}
+
+async fn run() -&gt; VantageResult&lt;()&gt; {
+    println!("Ready!");
+    Ok(())
+}</code></pre>
+<p>A few things going on here:</p>
+<ul>
+<li><strong><code>use vantage_sql::prelude::*</code></strong> brings in everything we need for this chapter — <code>SqliteDB</code>,
+<code>SqliteSelect</code>, the <code>sqlite_expr!</code> macro, error types, and the traits that make builder and
+execution methods work.</li>
+<li><strong><code>VantageResult&lt;()&gt;</code></strong> is Vantage’s own Result type. It uses <code>VantageError</code>, which tracks context
+and error chains for readable diagnostics.</li>
+<li><strong><code>e.report()</code></strong> prints the error in a structured format. We call it from <code>main()</code> because Rust’s
+default <code>Result</code>-returning main uses <code>Debug</code> formatting, which is ugly. This pattern gives us
+clean error output instead.</li>
+</ul>
+<p>Run <code>cargo run</code> to make sure it compiles.</p>
+<hr>
+<h2 id="connect-to-sqlite"><a class="header" href="#connect-to-sqlite">Connect to SQLite</a></h2>
+<p>Add this inside <code>run()</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let db = SqliteDB::connect("sqlite:products.db?mode=ro")
+    .await
+    .context("Failed to connect to products.db")?;
+<span class="boring">}</span></code></pre>
+<p><code>SqliteDB</code> wraps an sqlx connection pool. The connection string is an
+<a href="https://docs.rs/sqlx/latest/sqlx/sqlite/struct.SqliteConnectOptions.html">sqlx URL</a> — <code>?mode=ro</code>
+opens read-only, which is all we need for now.</p>
+<div id="admonition-already-have-an-sqlx-pool" class="admonition admonish-tip" role="note" aria-labelledby="admonition-already-have-an-sqlx-pool-title">
+<div class="admonition-title">
+<div id="admonition-already-have-an-sqlx-pool-title">
+<p>Already have an sqlx pool?</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-already-have-an-sqlx-pool"></a>
+</div>
+
+<div>
+<p>If you’re adding Vantage to an existing project that already has a <code>SqlitePool</code>, wrap it directly:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let db = SqliteDB::new(existing_pool);
+<span class="boring">}</span></code></pre>
+<p>The reverse works too — <code>db.pool()</code> gives you the underlying <code>SqlitePool</code>, although Vantage
+expressions will eliminate any need to execute queries directly.</p>
+</div>
+
+</div>
+
+<div id="admonition-context--readable-errors" class="admonition admonish-info" role="note" aria-labelledby="admonition-context--readable-errors-title">
+<div class="admonition-title">
+<div id="admonition-context--readable-errors-title">
+<p>.context() — readable errors</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-context--readable-errors"></a>
+</div>
+
+<div>
+<p><code>.context()</code> wraps any error with a human-readable message. If the database file doesn’t exist,
+instead of a raw sqlx error you get:</p>
+<pre><code class="language-text">Error: Failed to connect to products.db
+│
+╰─▶ error returned from database: (code: 14) unable to open database file
+</code></pre>
+<p>You’ll see <code>.context()</code> used throughout Vantage code. It comes from <code>VantageError</code> and works on
+any <code>Result</code> with a standard error type.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="build-a-select"><a class="header" href="#build-a-select">Build a SELECT</a></h2>
+<p><a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a> is the query builder for SQLite.
+Other persistences have their own —
+<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/postgres/statements/select/struct.PostgresSelect.html"><code>PostgresSelect</code></a>,
+<a href="https://docs.rs/vantage_mongodb/0.3.0/vantage_mongodb/select/struct.MongoSelect.html"><code>MongoSelect</code></a> — and they all implement the
+<a href="https://docs.rs/vantage_expressions/0.3.0/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a> trait, so the interface is identical apart from
+vendor-specific extensions. None of them need a database connection — they’re just structs that
+accumulate query parts. You build them with a chain of <code>.with_*()</code> calls:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let select = SqliteSelect::new()
+    .with_source("product")
+    .with_field("name")
+    .with_field("price");
+
+println!("{}", select.preview());
+// SELECT "name", "price" FROM "product"
+<span class="boring">}</span></code></pre>
+<p><code>.preview()</code> renders the final SQL as a string — handy for debugging, but never used for execution.</p>
+<div id="admonition-builder-pattern" class="admonition admonish-info" role="note" aria-labelledby="admonition-builder-pattern-title">
+<div class="admonition-title">
+<div id="admonition-builder-pattern-title">
+<p>Builder pattern</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-builder-pattern"></a>
+</div>
+
+<div>
+<p><code>.with_*()</code> consumes the builder and returns a new one. Call <code>.with_field()</code> as many times as you
+need; skip it entirely for <code>SELECT *</code>.
+Every <code>.with_*()</code> method has a corresponding <code>.add_*()</code> that mutates in place instead of
+consuming. Use whichever fits your code:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Builder style
+let select = SqliteSelect::new()
+    .with_source("product")
+    .with_field("name");
+
+// Mutable style
+let mut select = SqliteSelect::new();
+select.add_source("product", None);
+select.add_field("name");
+<span class="boring">}</span></code></pre>
+<p>Same result. The <code>.with_*()</code> style is nicer for one-shot construction, <code>.add_*()</code> is useful when
+you’re building a query conditionally in a loop.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="execute-it"><a class="header" href="#execute-it">Execute it</a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let result = db.execute(&amp;select.expr()).await?;
+println!("{:?}", result);
+<span class="boring">}</span></code></pre>
+<p>Two steps here: <code>.expr()</code> turns the builder into an <a href="https://docs.rs/vantage_expressions/0.3.0/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a>
+— Vantage’s internal representation that keeps parameters separate from the SQL template. Then
+<a href="https://docs.rs/vantage_expressions/0.3.0/vantage_expressions/traits/datasource/trait.ExprDataSource.html#tymethod.execute"><code>db.execute()</code></a> sends it to the database.</p>
+<p>The result is <code>AnySqliteType</code> — a type-tagged wrapper around whatever came back. The <code>Debug</code> output
+isn’t pretty, but you should see all 6 product rows in there.</p>
+<div id="admonition-when-does-vantage-hit-the-database" class="admonition admonish-tip" role="note" aria-labelledby="admonition-when-does-vantage-hit-the-database-title">
+<div class="admonition-title">
+<div id="admonition-when-does-vantage-hit-the-database-title">
+<p>When does Vantage hit the database?</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-when-does-vantage-hit-the-database"></a>
+</div>
+
+<div>
+<p>Only on <code>.await</code>. Everything before that — <code>with_source</code>, <code>with_field</code>, <code>with_condition</code> — is
+synchronous struct manipulation. You always know when a database call happens because you typed
+<code>.await</code>.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="adding-conditions"><a class="header" href="#adding-conditions">Adding conditions</a></h2>
+<p>Our database has a soft-delete flag — <code>old_cake</code> has <code>is_deleted = 1</code>. Let’s filter it out:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let condition = sqlite_expr!("\"is_deleted\" = {}", false);
+
+let select = SqliteSelect::new()
+    .with_source("product")
+    .with_field("name")
+    .with_field("price")
+    .with_condition(condition);
+
+println!("{}", select.preview());
+// SELECT "name", "price" FROM "product" WHERE "is_deleted" = 0
+<span class="boring">}</span></code></pre>
+<p><code>sqlite_expr!</code> creates an <a href="https://docs.rs/vantage_expressions/0.3.0/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a> — a SQL template with
+typed, bound parameters. That <code>{}</code> is <strong>not</strong> Rust’s <code>format!</code>: the value <code>false</code> is stored
+separately and bound through sqlx’s parameterized query interface at execution time — no injection
+risk, ever. The preview shows it inline for readability.</p>
+<p>In SQL persistences, a condition is just an expression. When you pass it to <code>.with_condition()</code>,
+it’s nested inside the select’s own expression tree. At execution time the whole tree is
+<a href="https://docs.rs/vantage_expressions/0.3.0/vantage_expressions/expression/flatten/struct.ExpressionFlattener.html">flattened</a> into a single template + parameter list that
+the database driver can bind safely.</p>
+<p>Run it — you should see 5 rows, with “Discontinued Cake” filtered out.</p>
+<div id="admonition-types-and-persistence-rendering" class="admonition admonish-info" role="note" aria-labelledby="admonition-types-and-persistence-rendering-title">
+<div class="admonition-title">
+<div id="admonition-types-and-persistence-rendering-title">
+<p>Types and persistence rendering</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-types-and-persistence-rendering"></a>
+</div>
+
+<div>
+<p>Notice that you passed <code>false</code> but the preview shows <code>0</code>. SQLite has no native boolean — Vantage’s
+<code>SqliteType</code> implementation for <code>bool</code> converts it to an integer automatically. PostgreSQL would
+render <code>FALSE</code> instead. Each persistence maps Rust types to the <a href="../sql/type-conversions.html">correct native representation</a>.</p>
+<p>The <code>{}</code> parameter accepts any type that implements <code>SqliteType</code>: <code>bool</code>, <code>i64</code>, <code>f64</code>, <code>String</code>,
+<code>chrono::NaiveDate</code>, <code>Option&lt;T&gt;</code>, and more. You can implement <code>SqliteType</code> for your own types too.
+See <a href="../type-system.html">Persistence-aligned Type System</a> for details.</p>
+</div>
+
+</div>
+
+<h2 id="typed-columns-and-operators"><a class="header" href="#typed-columns-and-operators">Typed columns and operators</a></h2>
+<p>Writing <code>\"is_deleted\"</code> in a raw expression works, but there’s a cleaner way.
+<a href="https://docs.rs/vantage_table/0.1.0/vantage_table/column/core/struct.Column.html"><code>Column&lt;T&gt;</code></a> creates a typed column reference, then chain an
+<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a> like <code>.eq()</code> to build the
+condition:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let is_deleted = Column::&lt;bool&gt;::new("is_deleted");
+let condition = is_deleted.eq(false);
+<span class="boring">}</span></code></pre>
+<p>Same result, but the type parameter <code>&lt;bool&gt;</code> ensures you can only compare against matching types.
+Try <code>is_deleted.eq(42)</code> — it won’t compile. Other operators — <code>.gt()</code>, <code>.lt()</code>, <code>.ne()</code>, <code>.in_()</code> —
+enforce the same type safety.</p>
+<p>The result is a <code>SqliteCondition</code> — the backend’s native condition type — ready to be passed
+directly to <code>.with_condition()</code>.</p>
+<div id="admonition-type-safety-and-backend-specific-operations" class="admonition admonish-info" role="note" aria-labelledby="admonition-type-safety-and-backend-specific-operations-title">
+<div class="admonition-title">
+<div id="admonition-type-safety-and-backend-specific-operations-title">
+<p>Type safety and backend-specific operations</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-type-safety-and-backend-specific-operations"></a>
+</div>
+
+<div>
+<p>Each SQL backend has its own operation trait — <code>SqliteOperation</code>, <code>PostgresOperation</code>,
+<code>MysqlOperation</code> — imported automatically via the prelude. These traits are
+blanket-implemented for any <code>Expressive&lt;T&gt;</code> where <code>T: Into&lt;AnySqliteType&gt;</code>, so typed columns
+(<code>Column&lt;i64&gt;</code>, <code>Column&lt;bool&gt;</code>, etc.) all get <code>.eq()</code>, <code>.gt()</code>, and friends for free.</p>
+<p>The operation produces a <code>SqliteCondition</code> that wraps <code>Expression&lt;AnySqliteType&gt;</code>. Since the
+condition type itself implements <code>Expressive&lt;AnySqliteType&gt;</code>, you can <strong>chain</strong> operations
+across type boundaries:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let price = Column::&lt;i64&gt;::new("price");
+price.gt(10).eq(false)  // =&gt; (price &gt; 10) = 0
+<span class="boring">}</span></code></pre>
+<p>Here <code>.gt(10)</code> returns a <code>SqliteCondition</code>, and <code>.eq(false)</code> works on it because <code>bool</code> is
+<code>Expressive&lt;AnySqliteType&gt;</code>. Try <code>price.gt(10).eq("foobar")</code> — surprisingly, this compiles
+too. That’s by design: type safety is enforced on the <strong>first</strong> operation (the column level),
+but once you have a <code>SqliteCondition</code>, any <code>AnySqliteType</code>-compatible value is accepted.</p>
+<p>You can also compare columns of the same type: <code>price.eq(price.clone())</code> compiles. But
+<code>price.eq(is_deleted)</code> won’t — <code>Column&lt;bool&gt;</code> isn’t <code>Expressive&lt;i64&gt;</code>.</p>
+<p>The <code>.clone()</code> is needed because operations take ownership of their arguments — values are
+stored inside the <code>Expression</code> tree until the query is executed. If you plan to reuse a
+column in multiple conditions, clone it or create a fresh <code>Column::new()</code>.</p>
+</div>
+
+</div>
+
+<p>Multiple conditions combine with AND:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let is_deleted = Column::&lt;bool&gt;::new("is_deleted");
+let price = Column::&lt;i64&gt;::new("price");
+
+let select = SqliteSelect::new()
+    .with_source("product")
+    .with_field("name")
+    .with_condition(is_deleted.eq(false))
+    .with_condition(price.gt(150));
+// ... WHERE "is_deleted" = 0 AND "price" &gt; 150
+<span class="boring">}</span></code></pre>
+<div id="admonition-primitives-for-untyped-access" class="admonition admonish-info" role="note" aria-labelledby="admonition-primitives-for-untyped-access-title">
+<div class="admonition-title">
+<div id="admonition-primitives-for-untyped-access-title">
+<p>Primitives for untyped access</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-primitives-for-untyped-access"></a>
+</div>
+
+<div>
+<p><code>sqlite_ident()</code> is one of several <strong>primitives</strong> — reusable building blocks for SQL expressions.
+They handle quoting, escaping, and vendor-specific syntax. To use them:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_sql::sqlite::sqlite_ident as ident;
+
+let condition = ident("is_deleted").eq(false);
+<span class="boring">}</span></code></pre>
+<p>Each backend has its own typed identifier: <code>sqlite_ident()</code>, <code>pg_ident()</code>, <code>mysql_ident()</code>.
+These return a backend-pinned wrapper so <code>.eq()</code>, <code>.gt()</code>, etc. work without ambiguity.</p>
+<p>There is also a generic <code>ident()</code> that works when the backend type can be inferred from
+context — for example, inside <code>sqlite_expr!()</code> or when passed to a method that expects
+a specific <code>Expressive&lt;AnySqliteType&gt;</code>. Use the typed variant when calling operations
+directly.</p>
+<p>Primitives are not part of the prelude — import them when needed. Besides identifiers, you get
+<code>Fx</code> (function calls), <code>Case</code>, <code>Concat</code>, <code>Interval</code>, and more. See the
+<a href="../sql/primitives.html">Primitives reference</a> for the full list.</p>
+<p>In Vantage, primitives, query builders, Column, Conditions and even native types
+like i64 and bool - all implement Expressive<t>, where T= your databases AnyType
+(for Sqlite its AnySqliteType - for MongoDB - AnyMongoType) - making them
+eligible to be parameters of expressions.</t></p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="working-with-any-types"><a class="header" href="#working-with-any-types">Working with Any-types</a></h2>
+<p><a href="https://docs.rs/vantage_types/0.1.0/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a> is an ordered map (<code>IndexMap&lt;String, V&gt;</code>) — one record per row,
+with column names as keys. It lives in the <code>vantage-types</code> crate, so add that dependency and import
+its prelude:</p>
+<pre><code class="language-sh">cargo add vantage-types --path ../vantage-types --features serde
+</code></pre>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_types::prelude::*;
+<span class="boring">}</span></code></pre>
+<p>So far we’ve been printing raw <code>AnySqliteType</code> with <code>Debug</code>. That works for verifying queries, but
+it’s useless for real work. When <code>db.execute()</code> returns a multi-row result, the
+<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> holds an array of maps internally. Convert it
+to <code>Vec&lt;Record&lt;AnySqliteType&gt;&gt;</code> to work with individual rows:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let raw = db.execute(&amp;select.expr()).await?;
+
+let records = Vec::&lt;Record&lt;AnySqliteType&gt;&gt;::try_from(raw)
+    .context("Failed to convert to records")?;
+
+for rec in &amp;records {
+    let name: String = rec["name"].try_get::&lt;String&gt;().unwrap();
+    let price: i64 = rec["price"].try_get::&lt;i64&gt;().unwrap();
+    println!("{} — {} cents", name, price);
+}
+// Cupcake — 120 cents
+// Doughnut — 135 cents
+// ...
+<span class="boring">}</span></code></pre>
+<p>Access fields by column name with <code>rec["name"]</code>. Each value is still an <code>AnySqliteType</code>, so you call
+<code>.try_get::&lt;T&gt;()</code> to extract a typed Rust value. If the type doesn’t match (say you call
+<code>.try_get::&lt;i64&gt;()</code> on a text column), you get <code>None</code> — no panics, no garbage.</p>
+<div id="admonition-serde_jsonvalue-conversion" class="admonition admonish-warning" role="note" aria-labelledby="admonition-serde_jsonvalue-conversion-title">
+<div class="admonition-title">
+<div id="admonition-serde_jsonvalue-conversion-title">
+<p>serde_json::Value conversion</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-serde_jsonvalue-conversion"></a>
+</div>
+
+<div>
+<p>If you need JSON-friendly records, call <code>.into_record()</code> on each <code>Record&lt;AnySqliteType&gt;</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let json_rec: Record&lt;serde_json::Value&gt; = rec.into_record();
+<span class="boring">}</span></code></pre>
+<p>This is convenient for serialization, but <code>serde_json::Value</code> supports a narrower set of
+types — you’ll lose precision on <code>Decimal</code> and <code>chrono</code> types (dates become strings,
+decimals become floats). Stick with <code>Record&lt;AnySqliteType&gt;</code> when you need full type fidelity.</p>
+</div>
+
+</div>
+
+<p>Under the hood, each persistence has its own type system for storing values. SQLite uses
+<a href="https://cbor.io/">CBOR</a> — a compact binary format that preserves types like <code>Decimal</code>, <code>NaiveDate</code>,
+and <code>NaiveDateTime</code> through tagged values. MongoDB uses <a href="https://bsonspec.org/">BSON</a> natively. The
+<code>AnySqliteType</code> / <code>AnyMongoType</code> wrappers hide these details — you interact with <code>.try_get::&lt;T&gt;()</code>
+regardless of which persistence you’re using. If you ever need to inspect the raw representation,
+<code>.value()</code> gives you the underlying CBOR value:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let price_cbor = rec["price"].value();
+println!("{:?}", price_cbor);
+// Integer(Integer(120))
+<span class="boring">}</span></code></pre>
+<p>See <a href="../type-system.html">Persistence-aligned Type System</a> for the full picture.</p>
+<hr>
+<h2 id="mapping-rows-to-structs"><a class="header" href="#mapping-rows-to-structs">Mapping rows to structs</a></h2>
+<p>Calling <code>.try_get::&lt;T&gt;()</code> on every field gets tedious. The <code>#[entity]</code> macro generates
+<a href="https://docs.rs/vantage_types/0.1.0/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord&lt;AnySqliteType&gt;</code></a> for your struct, so conversion
+happens in one call with no type information lost:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[entity(SqliteType)]
+struct Product {
+    name: String,
+    price: i64,
+}
+
+let raw = db.execute(&amp;select.expr()).await?;
+let records = Vec::&lt;Record&lt;AnySqliteType&gt;&gt;::try_from(raw)?;
+
+for rec in records {
+    let product = Product::from_record(rec)?;
+    println!("{} — {} cents", product.name, product.price);
+}
+<span class="boring">}</span></code></pre>
+<p>The macro needs <code>vantage-core</code> as a direct dependency (it’s already a transitive dep through
+<code>vantage-sql</code>, but the generated code references it in your crate):</p>
+<pre><code class="language-sh">cargo add vantage-core --path ../vantage-core
+</code></pre>
+<p>The macro also supports multiple type systems in one attribute —
+<code>#[entity(SqliteType, PostgresType, MongoType)]</code> generates a separate <code>TryFromRecord</code> impl for each
+persistence. One struct, all backends.</p>
+<div id="admonition-serde-alternative" class="admonition admonish-info" role="note" aria-labelledby="admonition-serde-alternative-title">
+<div class="admonition-title">
+<div id="admonition-serde-alternative-title">
+<p>Serde alternative</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-serde-alternative"></a>
+</div>
+
+<div>
+<p><code>#[entity]</code> converts each field directly through the persistence’s type system — your struct
+fields just need to implement <code>SqliteType</code>. Alternatively, you can convert a
+<code>Record&lt;AnySqliteType&gt;</code> into <code>Record&lt;serde_json::Value&gt;</code> and use serde, but this may lose
+type information (e.g. <code>Decimal</code> precision, date types):</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[derive(serde::Deserialize)]
+struct Product {
+    name: String,
+    price: i64,
+}
+
+for rec in records {
+    let json_rec: Record&lt;serde_json::Value&gt; = rec.into_record();
+    let product = Product::from_record(json_rec)?;
+}
+<span class="boring">}</span></code></pre>
+<p>For simple types like <code>String</code> and <code>i64</code> it’s fine, but <code>Decimal</code> values lose precision and
+dates become strings. Prefer <code>#[entity]</code> when your schema includes those types.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="putting-it-together"><a class="header" href="#putting-it-together">Putting it together</a></h2>
+<p>Here’s the complete <code>src/main.rs</code> — connect, query, convert to entities, print:</p>
+<pre class="playground"><code class="language-rust">use vantage_sql::prelude::*;
+use vantage_types::prelude::*;
+
+#[entity(SqliteType)]
+struct Product {
+    name: String,
+    price: i64,
+}
+
+#[tokio::main]
+async fn main() {
+    if let Err(e) = run().await {
+        e.report();
+    }
+}
+
+async fn run() -&gt; VantageResult&lt;()&gt; {
+    let db = SqliteDB::connect("sqlite:products.db?mode=ro")
+        .await
+        .context("Failed to connect to products.db")?;
+
+    let select = SqliteSelect::new()
+        .with_source("product")
+        .with_field("name")
+        .with_field("price")
+        .with_condition(Column::&lt;bool&gt;::new("is_deleted").eq(false));
+
+    let raw = db.execute(&amp;select.expr()).await?;
+    let records = Vec::&lt;Record&lt;AnySqliteType&gt;&gt;::try_from(raw)?;
+
+    for rec in records {
+        let p = Product::from_record(rec)?;
+        println!("{:&lt;12} {:&gt;3} cents", p.name, p.price);
+    }
+
+    Ok(())
+}</code></pre>
+<pre><code class="language-sh">cargo run
+# Cupcake      120 cents
+# Doughnut     135 cents
+# Tart         220 cents
+# Pie          299 cents
+# Cookies      199 cents
+</code></pre>
+<hr>
+<h2 id="what-we-covered"><a class="header" href="#what-we-covered">What we covered</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Concept</th><th>What it does</th><th>More info</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a></td><td>Builds SELECT queries via builder pattern</td><td><a href="https://docs.rs/vantage_expressions/0.3.0/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a></td></tr>
+<tr><td><a href="https://docs.rs/vantage_table/0.1.0/vantage_table/column/core/struct.Column.html"><code>Column::&lt;T&gt;</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
+<tr><td><a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a></td><td>Ext trait giving <code>.eq()</code>, <code>.gt()</code>, etc. → <code>SqliteCondition</code></td><td></td></tr>
+<tr><td><code>sqlite_expr!</code></td><td>Creates expressions with typed, bound parameters</td><td><a href="https://docs.rs/vantage_expressions/0.3.0/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a></td></tr>
+<tr><td><code>db.execute()</code></td><td>Runs an expression, returns <a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a></td><td><a href="https://docs.rs/vantage_expressions/0.3.0/vantage_expressions/traits/datasource/trait.ExprDataSource.html"><code>ExprDataSource</code></a></td></tr>
+<tr><td><a href="https://docs.rs/vantage_types/0.1.0/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a></td><td>Ordered map of column names to values — row-level access</td><td><code>.try_get::&lt;T&gt;()</code></td></tr>
+<tr><td><code>#[entity(SqliteType)]</code></td><td>Generates lossless record-to-struct conversion</td><td><a href="https://docs.rs/vantage_types/0.1.0/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord</code></a></td></tr>
+</tbody>
+</table>
+</div>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../introduction.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../intro/step2-tables.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../introduction.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../intro/step2-tables.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
+
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../mermaid-eefea253.min.js"></script>
+        <script src="../mermaid-init-ccf746f1.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

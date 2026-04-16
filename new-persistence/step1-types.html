@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-38733afc.js";
+            window.path_to_searchindex_js = "../searchindex-85213667.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-07f8a23e.js"></script>
+        <script src="../toc-10b285ad.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -272,7 +272,7 @@ let restored: Product = Product::from_record(record).unwrap();
 <span class="boring">}</span></code></pre>
 <p>This works because serde already knows how to turn structs into JSON objects and back. No extra code
 needed on your part.</p>
-<h4 id="path-b-custom-value-type-the-entity-path"><a class="header" href="#path-b-custom-value-type-the-entity-path">Path B: Custom value type (the #[entity] path)</a></h4>
+<h4 id="path-b-custom-value-type-the-entity-path"><a class="header" href="#path-b-custom-value-type-the-entity-path">Path B: Custom value type (the <code>#[entity]</code> path)</a></h4>
 <p>If your type system uses something other than <code>serde_json::Value</code> — like SurrealDB’s
 <code>ciborium::Value</code> — then serde’s blanket impls don’t apply. You need the <code>#[entity]</code> proc macro to
 generate the conversion code:</p>

@@ -37,10 +37,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-38733afc.js";
+            window.path_to_searchindex_js = "searchindex-85213667.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-07f8a23e.js"></script>
+        <script src="toc-10b285ad.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -183,6 +183,933 @@ composable handle to records living in a remote data store. You define structure
 relations, and operations without loading data eagerly, and Vantage translates your intent into
 efficient queries for whichever backend you’re using.</p>
 <p>This documentation covers Vantage <strong>0.4</strong>.</p>
+<h2 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h2>
+<p>Vantage covers a lot of ground — multiple databases, type systems, entity frameworks, UI adapters —
+but none of that matters until you’ve seen it do something useful.</p>
+<p>This guide introduces Vantage concepts one at a time, each building on the last. We’ll start with
+something you already know — SQL — and work our way up to the bigger abstractions. Along the way
+we’ll build a small CLI tool that grows with each chapter.</p>
+<p>You’ll need basic Rust experience (structs, traits, async/await, cargo). No prior Vantage knowledge
+required.</p>
+<p><strong>Start here:</strong> <a href="#sqlite-and-the-query-builder">SQLite and the Query Builder</a></p>
+<hr><!-- internal use: concept coverage tracker — once covered in introduction, cross out here -->
+<h2 id="todo-concept-coverage"><a class="header" href="#todo-concept-coverage">TODO: Concept Coverage</a></h2>
+<ul>
+<li><input disabled="" type="checkbox"> Expression basics (<code>sqlite_expr!</code>, parameter binding, injection safety)</li>
+<li><input disabled="" type="checkbox"> Identifier quoting (<code>ident()</code>, dialect-aware)</li>
+<li><input disabled="" type="checkbox"> SqliteSelect via Selectable trait (with_source, with_field, with_condition, with_order,
+with_limit)</li>
+<li><input disabled="" type="checkbox"> Executing queries (ExprDataSource, <code>db.execute()</code>, <code>db.associate()</code>)</li>
+<li><input disabled="" type="checkbox"> Aggregates on select (as_count, as_sum)</li>
+<li><input disabled="" type="checkbox"> Table definition (Table::new, with_column_of, with_id_column, builder pattern)</li>
+<li><input disabled="" type="checkbox"> Table → select query (table.select() returns vendor-specific builder)</li>
+<li><input disabled="" type="checkbox"> DataSource concept (what it is, how you pass it to Table::new)</li>
+<li><input disabled="" type="checkbox"> Entity struct (plain Rust struct, no id field, <code>#[entity]</code> macro)</li>
+<li><input disabled="" type="checkbox"> Record&lt;V&gt; (persistence-native value bags)</li>
+<li><input disabled="" type="checkbox"> Type system (vantage_type_system! macro, AnySqliteType, typed vs untyped values)</li>
+<li><input disabled="" type="checkbox"> ReadableDataSet (list, get, get_some, get_count)</li>
+<li><input disabled="" type="checkbox"> WritableDataSet (insert, delete)</li>
+<li><input disabled="" type="checkbox"> ActiveEntity (get_entity, modify via DerefMut, save)</li>
+<li><input disabled="" type="checkbox"> Conditions (table[“field”], .eq/.gt/.lt, with_condition returns new table)</li>
+<li><input disabled="" type="checkbox"> Sync vs async — defining table is sync, hitting DB is async</li>
+<li><input disabled="" type="checkbox"> Relationships (with_one, with_many, declared on table not entity)</li>
+<li><input disabled="" type="checkbox"> Reference traversal (get_ref_as, subquery-based conditions)</li>
+<li><input disabled="" type="checkbox"> Computed fields (with_expression, correlated subqueries)</li>
+<li><input disabled="" type="checkbox"> AnyTable (from_table, JSON boundary, type-erased generic code)</li>
+<li><input disabled="" type="checkbox"> Model crate pattern (entities + table constructors + relationships in one crate)</li>
+<li><input disabled="" type="checkbox"> Multiple backends per entity (surreal_table, sqlite_table, csv_table)</li>
+<li><input disabled="" type="checkbox"> DataSet trait hierarchy (ReadableDataSet, InsertableDataSet, WritableDataSet)</li>
+<li><input disabled="" type="checkbox"> ValueSet traits (schema-less Record-based access)</li>
+<li><input disabled="" type="checkbox"> Vendor-specific query builders (SqliteSelect, PostgresSelect, SurrealSelect)</li>
+<li><input disabled="" type="checkbox"> Deferred expressions (cross-database defer/map)</li>
+<li><input disabled="" type="checkbox"> Progressive persistence model (implement only what your backend supports)</li>
+<li><input disabled="" type="checkbox"> Error handling (VantageError, context, with_context)</li>
+<li><input disabled="" type="checkbox"> Connection management (DSN pattern, OnceLock)</li>
+<li><input disabled="" type="checkbox"> Pagination (with_pagination)</li>
+<li><input disabled="" type="checkbox"> Search expressions (search_expression, vendor-specific LIKE/CONTAINS)</li>
+<li><input disabled="" type="checkbox"> models! macro (all_tables() generation)</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="sqlite-and-the-query-builder"><a class="header" href="#sqlite-and-the-query-builder">SQLite and the Query Builder</a></h1>
+<p>Vantage is a big framework. It covers SQL databases, SurrealDB, MongoDB, CSV files, REST APIs — and
+ties them all together with a shared type system, expression engine, and data abstraction layer.</p>
+<p>We’ll get to all of that. But right now, let’s start with something familiar: <strong>building SQL
+queries</strong>.</p>
+<div id="admonition-what-is-a-query-builder" class="admonition admonish-info" role="note" aria-labelledby="admonition-what-is-a-query-builder-title">
+<div class="admonition-title">
+<div id="admonition-what-is-a-query-builder-title">
+<p>What is a Query Builder?</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-what-is-a-query-builder"></a>
+</div>
+
+<div>
+<p>A query builder is a tool that assembles SQL from composable parts instead of string concatenation.
+You’ve probably seen this pattern before:</p>
+<ul>
+<li><strong>Knex.js</strong> (JavaScript) — <code>knex('users').where('age', '&gt;', 18).select('name')</code></li>
+<li><strong>SQLAlchemy Core</strong> (Python) — <code>select(users.c.name).where(users.c.age &gt; 18)</code></li>
+<li><strong>JOOQ</strong> (Java) — <code>dsl.select(USERS.NAME).from(USERS).where(USERS.AGE.gt(18))</code></li>
+<li><strong>Diesel</strong> (Rust) — <code>users.filter(age.gt(18)).select(name)</code></li>
+</ul>
+<p>Vantage has its own query builder too. Each supported database gets a dedicated builder —
+<code>SqliteSelect</code>, <code>PostgresSelect</code>, <code>SurrealSelect</code> — so you get the right quoting, parameter
+binding, and dialect features for your target.</p>
+</div>
+
+</div>
+
+<p>For this chapter we’ll use SQLite. It’s lightweight, needs no server, and works with a plain file on
+disk.</p>
+<div id="admonition-goals-for-this-chapter" class="admonition admonish-example" role="note" aria-labelledby="admonition-goals-for-this-chapter-title">
+<div class="admonition-title">
+<div id="admonition-goals-for-this-chapter-title">
+<p>Goals for this chapter</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-goals-for-this-chapter"></a>
+</div>
+
+<div>
+<p>By the end of this page you’ll be able to:</p>
+<ol>
+<li>Connect to an SQLite database from Rust</li>
+<li>Build SELECT queries with fields and conditions</li>
+<li>Execute queries and read results</li>
+<li>Convert results into <code>Vec&lt;Record&gt;</code> with typed field access</li>
+<li>Run aggregates (COUNT, SUM) with one method call</li>
+<li>Understand how Vantage keeps parameters separate from SQL (no injection risk)</li>
+</ol>
+</div>
+
+</div>
+
+<hr>
+<h2 id="set-up"><a class="header" href="#set-up">Set up</a></h2>
+<div id="admonition-pre-release" class="admonition admonish-note" role="note" aria-labelledby="admonition-pre-release-title">
+<div class="admonition-title">
+<div id="admonition-pre-release-title">
+<p>Pre-release</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-pre-release"></a>
+</div>
+
+<div>
+<p>Vantage 0.4 crates aren’t on crates.io yet. For now, clone the repo
+(<code>git clone https://github.com/romaninsh/vantage.git</code>) and work inside it as shown below.</p>
+</div>
+
+</div>
+
+<p>Create a new project inside the Vantage workspace:</p>
+<pre><code class="language-sh">cd vantage
+mkdir learn-1 &amp;&amp; cd learn-1
+cargo init
+cargo add vantage-sql --path ../vantage-sql --features sqlite
+cargo add tokio --features full
+</code></pre>
+<p>Two dependencies — <code>vantage-sql</code> gives us the SQLite query builder and connection pool, <code>tokio</code>
+provides the async runtime because all database operations are async.</p>
+<h2 id="create-and-populate-a-database"><a class="header" href="#create-and-populate-a-database">Create and populate a database</a></h2>
+<p>We’ll make a small product catalog from scratch. Create <code>seed.sql</code> in your project root:</p>
+<pre><code class="language-sql">CREATE TABLE product (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    price INTEGER NOT NULL,
+    is_deleted BOOLEAN NOT NULL DEFAULT 0
+);
+
+INSERT INTO product VALUES ('cupcake',  'Cupcake',           120, 0);
+INSERT INTO product VALUES ('donut',    'Doughnut',          135, 0);
+INSERT INTO product VALUES ('tart',     'Tart',              220, 0);
+INSERT INTO product VALUES ('pie',      'Pie',               299, 0);
+INSERT INTO product VALUES ('cookies',  'Cookies',           199, 0);
+INSERT INTO product VALUES ('old_cake', 'Discontinued Cake',  80, 1);
+</code></pre>
+<p>Run it:</p>
+<pre><code class="language-sh">sqlite3 products.db &lt; seed.sql
+</code></pre>
+<p>You now have <code>products.db</code> — 6 rows, 5 active and 1 deleted. Quick check:</p>
+<pre><code class="language-sh">sqlite3 products.db "SELECT name, price FROM product WHERE is_deleted = 0"
+</code></pre>
+<hr>
+<h2 id="start-with-an-async-main"><a class="header" href="#start-with-an-async-main">Start with an async main</a></h2>
+<p>All database operations in Vantage are async, so we need a Tokio runtime. Replace <code>src/main.rs</code>
+with:</p>
+<pre class="playground"><code class="language-rust">use vantage_sql::prelude::*;
+
+#[tokio::main]
+async fn main() {
+    if let Err(e) = run().await {
+        e.report();
+    }
+}
+
+async fn run() -&gt; VantageResult&lt;()&gt; {
+    println!("Ready!");
+    Ok(())
+}</code></pre>
+<p>A few things going on here:</p>
+<ul>
+<li><strong><code>use vantage_sql::prelude::*</code></strong> brings in everything we need for this chapter — <code>SqliteDB</code>,
+<code>SqliteSelect</code>, the <code>sqlite_expr!</code> macro, error types, and the traits that make builder and
+execution methods work.</li>
+<li><strong><code>VantageResult&lt;()&gt;</code></strong> is Vantage’s own Result type. It uses <code>VantageError</code>, which tracks context
+and error chains for readable diagnostics.</li>
+<li><strong><code>e.report()</code></strong> prints the error in a structured format. We call it from <code>main()</code> because Rust’s
+default <code>Result</code>-returning main uses <code>Debug</code> formatting, which is ugly. This pattern gives us
+clean error output instead.</li>
+</ul>
+<p>Run <code>cargo run</code> to make sure it compiles.</p>
+<hr>
+<h2 id="connect-to-sqlite"><a class="header" href="#connect-to-sqlite">Connect to SQLite</a></h2>
+<p>Add this inside <code>run()</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let db = SqliteDB::connect("sqlite:products.db?mode=ro")
+    .await
+    .context("Failed to connect to products.db")?;
+<span class="boring">}</span></code></pre>
+<p><code>SqliteDB</code> wraps an sqlx connection pool. The connection string is an
+<a href="https://docs.rs/sqlx/latest/sqlx/sqlite/struct.SqliteConnectOptions.html">sqlx URL</a> — <code>?mode=ro</code>
+opens read-only, which is all we need for now.</p>
+<div id="admonition-already-have-an-sqlx-pool" class="admonition admonish-tip" role="note" aria-labelledby="admonition-already-have-an-sqlx-pool-title">
+<div class="admonition-title">
+<div id="admonition-already-have-an-sqlx-pool-title">
+<p>Already have an sqlx pool?</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-already-have-an-sqlx-pool"></a>
+</div>
+
+<div>
+<p>If you’re adding Vantage to an existing project that already has a <code>SqlitePool</code>, wrap it directly:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let db = SqliteDB::new(existing_pool);
+<span class="boring">}</span></code></pre>
+<p>The reverse works too — <code>db.pool()</code> gives you the underlying <code>SqlitePool</code>, although Vantage
+expressions will eliminate any need to execute queries directly.</p>
+</div>
+
+</div>
+
+<div id="admonition-context--readable-errors" class="admonition admonish-info" role="note" aria-labelledby="admonition-context--readable-errors-title">
+<div class="admonition-title">
+<div id="admonition-context--readable-errors-title">
+<p>.context() — readable errors</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-context--readable-errors"></a>
+</div>
+
+<div>
+<p><code>.context()</code> wraps any error with a human-readable message. If the database file doesn’t exist,
+instead of a raw sqlx error you get:</p>
+<pre><code class="language-text">Error: Failed to connect to products.db
+│
+╰─▶ error returned from database: (code: 14) unable to open database file
+</code></pre>
+<p>You’ll see <code>.context()</code> used throughout Vantage code. It comes from <code>VantageError</code> and works on
+any <code>Result</code> with a standard error type.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="build-a-select"><a class="header" href="#build-a-select">Build a SELECT</a></h2>
+<p><a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a> is the query builder for SQLite.
+Other persistences have their own —
+<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/postgres/statements/select/struct.PostgresSelect.html"><code>PostgresSelect</code></a>,
+<a href="https://docs.rs/vantage_mongodb/0.3.0/vantage_mongodb/select/struct.MongoSelect.html"><code>MongoSelect</code></a> — and they all implement the
+<a href="https://docs.rs/vantage_expressions/0.3.0/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a> trait, so the interface is identical apart from
+vendor-specific extensions. None of them need a database connection — they’re just structs that
+accumulate query parts. You build them with a chain of <code>.with_*()</code> calls:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let select = SqliteSelect::new()
+    .with_source("product")
+    .with_field("name")
+    .with_field("price");
+
+println!("{}", select.preview());
+// SELECT "name", "price" FROM "product"
+<span class="boring">}</span></code></pre>
+<p><code>.preview()</code> renders the final SQL as a string — handy for debugging, but never used for execution.</p>
+<div id="admonition-builder-pattern" class="admonition admonish-info" role="note" aria-labelledby="admonition-builder-pattern-title">
+<div class="admonition-title">
+<div id="admonition-builder-pattern-title">
+<p>Builder pattern</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-builder-pattern"></a>
+</div>
+
+<div>
+<p><code>.with_*()</code> consumes the builder and returns a new one. Call <code>.with_field()</code> as many times as you
+need; skip it entirely for <code>SELECT *</code>.
+Every <code>.with_*()</code> method has a corresponding <code>.add_*()</code> that mutates in place instead of
+consuming. Use whichever fits your code:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Builder style
+let select = SqliteSelect::new()
+    .with_source("product")
+    .with_field("name");
+
+// Mutable style
+let mut select = SqliteSelect::new();
+select.add_source("product", None);
+select.add_field("name");
+<span class="boring">}</span></code></pre>
+<p>Same result. The <code>.with_*()</code> style is nicer for one-shot construction, <code>.add_*()</code> is useful when
+you’re building a query conditionally in a loop.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="execute-it"><a class="header" href="#execute-it">Execute it</a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let result = db.execute(&amp;select.expr()).await?;
+println!("{:?}", result);
+<span class="boring">}</span></code></pre>
+<p>Two steps here: <code>.expr()</code> turns the builder into an <a href="https://docs.rs/vantage_expressions/0.3.0/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a>
+— Vantage’s internal representation that keeps parameters separate from the SQL template. Then
+<a href="https://docs.rs/vantage_expressions/0.3.0/vantage_expressions/traits/datasource/trait.ExprDataSource.html#tymethod.execute"><code>db.execute()</code></a> sends it to the database.</p>
+<p>The result is <code>AnySqliteType</code> — a type-tagged wrapper around whatever came back. The <code>Debug</code> output
+isn’t pretty, but you should see all 6 product rows in there.</p>
+<div id="admonition-when-does-vantage-hit-the-database" class="admonition admonish-tip" role="note" aria-labelledby="admonition-when-does-vantage-hit-the-database-title">
+<div class="admonition-title">
+<div id="admonition-when-does-vantage-hit-the-database-title">
+<p>When does Vantage hit the database?</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-when-does-vantage-hit-the-database"></a>
+</div>
+
+<div>
+<p>Only on <code>.await</code>. Everything before that — <code>with_source</code>, <code>with_field</code>, <code>with_condition</code> — is
+synchronous struct manipulation. You always know when a database call happens because you typed
+<code>.await</code>.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="adding-conditions"><a class="header" href="#adding-conditions">Adding conditions</a></h2>
+<p>Our database has a soft-delete flag — <code>old_cake</code> has <code>is_deleted = 1</code>. Let’s filter it out:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let condition = sqlite_expr!("\"is_deleted\" = {}", false);
+
+let select = SqliteSelect::new()
+    .with_source("product")
+    .with_field("name")
+    .with_field("price")
+    .with_condition(condition);
+
+println!("{}", select.preview());
+// SELECT "name", "price" FROM "product" WHERE "is_deleted" = 0
+<span class="boring">}</span></code></pre>
+<p><code>sqlite_expr!</code> creates an <a href="https://docs.rs/vantage_expressions/0.3.0/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a> — a SQL template with
+typed, bound parameters. That <code>{}</code> is <strong>not</strong> Rust’s <code>format!</code>: the value <code>false</code> is stored
+separately and bound through sqlx’s parameterized query interface at execution time — no injection
+risk, ever. The preview shows it inline for readability.</p>
+<p>In SQL persistences, a condition is just an expression. When you pass it to <code>.with_condition()</code>,
+it’s nested inside the select’s own expression tree. At execution time the whole tree is
+<a href="https://docs.rs/vantage_expressions/0.3.0/vantage_expressions/expression/flatten/struct.ExpressionFlattener.html">flattened</a> into a single template + parameter list that
+the database driver can bind safely.</p>
+<p>Run it — you should see 5 rows, with “Discontinued Cake” filtered out.</p>
+<div id="admonition-types-and-persistence-rendering" class="admonition admonish-info" role="note" aria-labelledby="admonition-types-and-persistence-rendering-title">
+<div class="admonition-title">
+<div id="admonition-types-and-persistence-rendering-title">
+<p>Types and persistence rendering</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-types-and-persistence-rendering"></a>
+</div>
+
+<div>
+<p>Notice that you passed <code>false</code> but the preview shows <code>0</code>. SQLite has no native boolean — Vantage’s
+<code>SqliteType</code> implementation for <code>bool</code> converts it to an integer automatically. PostgreSQL would
+render <code>FALSE</code> instead. Each persistence maps Rust types to the <a href="#type-conversions">correct native representation</a>.</p>
+<p>The <code>{}</code> parameter accepts any type that implements <code>SqliteType</code>: <code>bool</code>, <code>i64</code>, <code>f64</code>, <code>String</code>,
+<code>chrono::NaiveDate</code>, <code>Option&lt;T&gt;</code>, and more. You can implement <code>SqliteType</code> for your own types too.
+See <a href="#persistence-aligned-type-system">Persistence-aligned Type System</a> for details.</p>
+</div>
+
+</div>
+
+<h2 id="typed-columns-and-operators"><a class="header" href="#typed-columns-and-operators">Typed columns and operators</a></h2>
+<p>Writing <code>\"is_deleted\"</code> in a raw expression works, but there’s a cleaner way.
+<a href="https://docs.rs/vantage_table/0.1.0/vantage_table/column/core/struct.Column.html"><code>Column&lt;T&gt;</code></a> creates a typed column reference, then chain an
+<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a> like <code>.eq()</code> to build the
+condition:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let is_deleted = Column::&lt;bool&gt;::new("is_deleted");
+let condition = is_deleted.eq(false);
+<span class="boring">}</span></code></pre>
+<p>Same result, but the type parameter <code>&lt;bool&gt;</code> ensures you can only compare against matching types.
+Try <code>is_deleted.eq(42)</code> — it won’t compile. Other operators — <code>.gt()</code>, <code>.lt()</code>, <code>.ne()</code>, <code>.in_()</code> —
+enforce the same type safety.</p>
+<p>The result is a <code>SqliteCondition</code> — the backend’s native condition type — ready to be passed
+directly to <code>.with_condition()</code>.</p>
+<div id="admonition-type-safety-and-backend-specific-operations" class="admonition admonish-info" role="note" aria-labelledby="admonition-type-safety-and-backend-specific-operations-title">
+<div class="admonition-title">
+<div id="admonition-type-safety-and-backend-specific-operations-title">
+<p>Type safety and backend-specific operations</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-type-safety-and-backend-specific-operations"></a>
+</div>
+
+<div>
+<p>Each SQL backend has its own operation trait — <code>SqliteOperation</code>, <code>PostgresOperation</code>,
+<code>MysqlOperation</code> — imported automatically via the prelude. These traits are
+blanket-implemented for any <code>Expressive&lt;T&gt;</code> where <code>T: Into&lt;AnySqliteType&gt;</code>, so typed columns
+(<code>Column&lt;i64&gt;</code>, <code>Column&lt;bool&gt;</code>, etc.) all get <code>.eq()</code>, <code>.gt()</code>, and friends for free.</p>
+<p>The operation produces a <code>SqliteCondition</code> that wraps <code>Expression&lt;AnySqliteType&gt;</code>. Since the
+condition type itself implements <code>Expressive&lt;AnySqliteType&gt;</code>, you can <strong>chain</strong> operations
+across type boundaries:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let price = Column::&lt;i64&gt;::new("price");
+price.gt(10).eq(false)  // =&gt; (price &gt; 10) = 0
+<span class="boring">}</span></code></pre>
+<p>Here <code>.gt(10)</code> returns a <code>SqliteCondition</code>, and <code>.eq(false)</code> works on it because <code>bool</code> is
+<code>Expressive&lt;AnySqliteType&gt;</code>. Try <code>price.gt(10).eq("foobar")</code> — surprisingly, this compiles
+too. That’s by design: type safety is enforced on the <strong>first</strong> operation (the column level),
+but once you have a <code>SqliteCondition</code>, any <code>AnySqliteType</code>-compatible value is accepted.</p>
+<p>You can also compare columns of the same type: <code>price.eq(price.clone())</code> compiles. But
+<code>price.eq(is_deleted)</code> won’t — <code>Column&lt;bool&gt;</code> isn’t <code>Expressive&lt;i64&gt;</code>.</p>
+<p>The <code>.clone()</code> is needed because operations take ownership of their arguments — values are
+stored inside the <code>Expression</code> tree until the query is executed. If you plan to reuse a
+column in multiple conditions, clone it or create a fresh <code>Column::new()</code>.</p>
+</div>
+
+</div>
+
+<p>Multiple conditions combine with AND:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let is_deleted = Column::&lt;bool&gt;::new("is_deleted");
+let price = Column::&lt;i64&gt;::new("price");
+
+let select = SqliteSelect::new()
+    .with_source("product")
+    .with_field("name")
+    .with_condition(is_deleted.eq(false))
+    .with_condition(price.gt(150));
+// ... WHERE "is_deleted" = 0 AND "price" &gt; 150
+<span class="boring">}</span></code></pre>
+<div id="admonition-primitives-for-untyped-access" class="admonition admonish-info" role="note" aria-labelledby="admonition-primitives-for-untyped-access-title">
+<div class="admonition-title">
+<div id="admonition-primitives-for-untyped-access-title">
+<p>Primitives for untyped access</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-primitives-for-untyped-access"></a>
+</div>
+
+<div>
+<p><code>sqlite_ident()</code> is one of several <strong>primitives</strong> — reusable building blocks for SQL expressions.
+They handle quoting, escaping, and vendor-specific syntax. To use them:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_sql::sqlite::sqlite_ident as ident;
+
+let condition = ident("is_deleted").eq(false);
+<span class="boring">}</span></code></pre>
+<p>Each backend has its own typed identifier: <code>sqlite_ident()</code>, <code>pg_ident()</code>, <code>mysql_ident()</code>.
+These return a backend-pinned wrapper so <code>.eq()</code>, <code>.gt()</code>, etc. work without ambiguity.</p>
+<p>There is also a generic <code>ident()</code> that works when the backend type can be inferred from
+context — for example, inside <code>sqlite_expr!()</code> or when passed to a method that expects
+a specific <code>Expressive&lt;AnySqliteType&gt;</code>. Use the typed variant when calling operations
+directly.</p>
+<p>Primitives are not part of the prelude — import them when needed. Besides identifiers, you get
+<code>Fx</code> (function calls), <code>Case</code>, <code>Concat</code>, <code>Interval</code>, and more. See the
+<a href="#sql-primitives">Primitives reference</a> for the full list.</p>
+<p>In Vantage, primitives, query builders, Column, Conditions and even native types
+like i64 and bool - all implement Expressive<t>, where T= your databases AnyType
+(for Sqlite its AnySqliteType - for MongoDB - AnyMongoType) - making them
+eligible to be parameters of expressions.</t></p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="working-with-any-types"><a class="header" href="#working-with-any-types">Working with Any-types</a></h2>
+<p><a href="https://docs.rs/vantage_types/0.1.0/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a> is an ordered map (<code>IndexMap&lt;String, V&gt;</code>) — one record per row,
+with column names as keys. It lives in the <code>vantage-types</code> crate, so add that dependency and import
+its prelude:</p>
+<pre><code class="language-sh">cargo add vantage-types --path ../vantage-types --features serde
+</code></pre>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_types::prelude::*;
+<span class="boring">}</span></code></pre>
+<p>So far we’ve been printing raw <code>AnySqliteType</code> with <code>Debug</code>. That works for verifying queries, but
+it’s useless for real work. When <code>db.execute()</code> returns a multi-row result, the
+<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> holds an array of maps internally. Convert it
+to <code>Vec&lt;Record&lt;AnySqliteType&gt;&gt;</code> to work with individual rows:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let raw = db.execute(&amp;select.expr()).await?;
+
+let records = Vec::&lt;Record&lt;AnySqliteType&gt;&gt;::try_from(raw)
+    .context("Failed to convert to records")?;
+
+for rec in &amp;records {
+    let name: String = rec["name"].try_get::&lt;String&gt;().unwrap();
+    let price: i64 = rec["price"].try_get::&lt;i64&gt;().unwrap();
+    println!("{} — {} cents", name, price);
+}
+// Cupcake — 120 cents
+// Doughnut — 135 cents
+// ...
+<span class="boring">}</span></code></pre>
+<p>Access fields by column name with <code>rec["name"]</code>. Each value is still an <code>AnySqliteType</code>, so you call
+<code>.try_get::&lt;T&gt;()</code> to extract a typed Rust value. If the type doesn’t match (say you call
+<code>.try_get::&lt;i64&gt;()</code> on a text column), you get <code>None</code> — no panics, no garbage.</p>
+<div id="admonition-serde_jsonvalue-conversion" class="admonition admonish-warning" role="note" aria-labelledby="admonition-serde_jsonvalue-conversion-title">
+<div class="admonition-title">
+<div id="admonition-serde_jsonvalue-conversion-title">
+<p>serde_json::Value conversion</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-serde_jsonvalue-conversion"></a>
+</div>
+
+<div>
+<p>If you need JSON-friendly records, call <code>.into_record()</code> on each <code>Record&lt;AnySqliteType&gt;</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let json_rec: Record&lt;serde_json::Value&gt; = rec.into_record();
+<span class="boring">}</span></code></pre>
+<p>This is convenient for serialization, but <code>serde_json::Value</code> supports a narrower set of
+types — you’ll lose precision on <code>Decimal</code> and <code>chrono</code> types (dates become strings,
+decimals become floats). Stick with <code>Record&lt;AnySqliteType&gt;</code> when you need full type fidelity.</p>
+</div>
+
+</div>
+
+<p>Under the hood, each persistence has its own type system for storing values. SQLite uses
+<a href="https://cbor.io/">CBOR</a> — a compact binary format that preserves types like <code>Decimal</code>, <code>NaiveDate</code>,
+and <code>NaiveDateTime</code> through tagged values. MongoDB uses <a href="https://bsonspec.org/">BSON</a> natively. The
+<code>AnySqliteType</code> / <code>AnyMongoType</code> wrappers hide these details — you interact with <code>.try_get::&lt;T&gt;()</code>
+regardless of which persistence you’re using. If you ever need to inspect the raw representation,
+<code>.value()</code> gives you the underlying CBOR value:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let price_cbor = rec["price"].value();
+println!("{:?}", price_cbor);
+// Integer(Integer(120))
+<span class="boring">}</span></code></pre>
+<p>See <a href="#persistence-aligned-type-system">Persistence-aligned Type System</a> for the full picture.</p>
+<hr>
+<h2 id="mapping-rows-to-structs"><a class="header" href="#mapping-rows-to-structs">Mapping rows to structs</a></h2>
+<p>Calling <code>.try_get::&lt;T&gt;()</code> on every field gets tedious. The <code>#[entity]</code> macro generates
+<a href="https://docs.rs/vantage_types/0.1.0/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord&lt;AnySqliteType&gt;</code></a> for your struct, so conversion
+happens in one call with no type information lost:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[entity(SqliteType)]
+struct Product {
+    name: String,
+    price: i64,
+}
+
+let raw = db.execute(&amp;select.expr()).await?;
+let records = Vec::&lt;Record&lt;AnySqliteType&gt;&gt;::try_from(raw)?;
+
+for rec in records {
+    let product = Product::from_record(rec)?;
+    println!("{} — {} cents", product.name, product.price);
+}
+<span class="boring">}</span></code></pre>
+<p>The macro needs <code>vantage-core</code> as a direct dependency (it’s already a transitive dep through
+<code>vantage-sql</code>, but the generated code references it in your crate):</p>
+<pre><code class="language-sh">cargo add vantage-core --path ../vantage-core
+</code></pre>
+<p>The macro also supports multiple type systems in one attribute —
+<code>#[entity(SqliteType, PostgresType, MongoType)]</code> generates a separate <code>TryFromRecord</code> impl for each
+persistence. One struct, all backends.</p>
+<div id="admonition-serde-alternative" class="admonition admonish-info" role="note" aria-labelledby="admonition-serde-alternative-title">
+<div class="admonition-title">
+<div id="admonition-serde-alternative-title">
+<p>Serde alternative</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-serde-alternative"></a>
+</div>
+
+<div>
+<p><code>#[entity]</code> converts each field directly through the persistence’s type system — your struct
+fields just need to implement <code>SqliteType</code>. Alternatively, you can convert a
+<code>Record&lt;AnySqliteType&gt;</code> into <code>Record&lt;serde_json::Value&gt;</code> and use serde, but this may lose
+type information (e.g. <code>Decimal</code> precision, date types):</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[derive(serde::Deserialize)]
+struct Product {
+    name: String,
+    price: i64,
+}
+
+for rec in records {
+    let json_rec: Record&lt;serde_json::Value&gt; = rec.into_record();
+    let product = Product::from_record(json_rec)?;
+}
+<span class="boring">}</span></code></pre>
+<p>For simple types like <code>String</code> and <code>i64</code> it’s fine, but <code>Decimal</code> values lose precision and
+dates become strings. Prefer <code>#[entity]</code> when your schema includes those types.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="putting-it-together"><a class="header" href="#putting-it-together">Putting it together</a></h2>
+<p>Here’s the complete <code>src/main.rs</code> — connect, query, convert to entities, print:</p>
+<pre class="playground"><code class="language-rust">use vantage_sql::prelude::*;
+use vantage_types::prelude::*;
+
+#[entity(SqliteType)]
+struct Product {
+    name: String,
+    price: i64,
+}
+
+#[tokio::main]
+async fn main() {
+    if let Err(e) = run().await {
+        e.report();
+    }
+}
+
+async fn run() -&gt; VantageResult&lt;()&gt; {
+    let db = SqliteDB::connect("sqlite:products.db?mode=ro")
+        .await
+        .context("Failed to connect to products.db")?;
+
+    let select = SqliteSelect::new()
+        .with_source("product")
+        .with_field("name")
+        .with_field("price")
+        .with_condition(Column::&lt;bool&gt;::new("is_deleted").eq(false));
+
+    let raw = db.execute(&amp;select.expr()).await?;
+    let records = Vec::&lt;Record&lt;AnySqliteType&gt;&gt;::try_from(raw)?;
+
+    for rec in records {
+        let p = Product::from_record(rec)?;
+        println!("{:&lt;12} {:&gt;3} cents", p.name, p.price);
+    }
+
+    Ok(())
+}</code></pre>
+<pre><code class="language-sh">cargo run
+# Cupcake      120 cents
+# Doughnut     135 cents
+# Tart         220 cents
+# Pie          299 cents
+# Cookies      199 cents
+</code></pre>
+<hr>
+<h2 id="what-we-covered"><a class="header" href="#what-we-covered">What we covered</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Concept</th><th>What it does</th><th>More info</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a></td><td>Builds SELECT queries via builder pattern</td><td><a href="https://docs.rs/vantage_expressions/0.3.0/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a></td></tr>
+<tr><td><a href="https://docs.rs/vantage_table/0.1.0/vantage_table/column/core/struct.Column.html"><code>Column::&lt;T&gt;</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
+<tr><td><a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a></td><td>Ext trait giving <code>.eq()</code>, <code>.gt()</code>, etc. → <code>SqliteCondition</code></td><td></td></tr>
+<tr><td><code>sqlite_expr!</code></td><td>Creates expressions with typed, bound parameters</td><td><a href="https://docs.rs/vantage_expressions/0.3.0/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a></td></tr>
+<tr><td><code>db.execute()</code></td><td>Runs an expression, returns <a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a></td><td><a href="https://docs.rs/vantage_expressions/0.3.0/vantage_expressions/traits/datasource/trait.ExprDataSource.html"><code>ExprDataSource</code></a></td></tr>
+<tr><td><a href="https://docs.rs/vantage_types/0.1.0/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a></td><td>Ordered map of column names to values — row-level access</td><td><code>.try_get::&lt;T&gt;()</code></td></tr>
+<tr><td><code>#[entity(SqliteType)]</code></td><td>Generates lossless record-to-struct conversion</td><td><a href="https://docs.rs/vantage_types/0.1.0/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord</code></a></td></tr>
+</tbody>
+</table>
+</div>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="tables-and-typed-data-access"><a class="header" href="#tables-and-typed-data-access">Tables and Typed Data Access</a></h1>
+<p>A table is a structure representing a collection of records in a database:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let products = Product::table(db);
+
+for (id, product) in products.list().await? {
+    println!("{} — {} cents", product.name, product.price);
+}
+<span class="boring">}</span></code></pre>
+<p>Think of <code>Table&lt;SqliteDB, Product&gt;</code> as a <code>Vec&lt;Product&gt;</code> — except the records aren’t in memory. They
+live somewhere else (a database, a file, an API), and you don’t know how many there are or what they
+contain until you list them.</p>
+<p>If you’ve used an ORM before, you might expect Vantage to work with individual records — load one,
+change it, save it back. Vantage works differently: you always operate on a <strong>set</strong> of records. A
+set might contain one record, no records, or millions — you don’t pull them into memory to find out.</p>
+<p>Operations like counting, filtering, and updating happen on the database side — Vantage builds the
+right query and sends it over. Even traversal operations and sub-queries are done by building
+queries and executing remotely — if the database supports it, of course.</p>
+<p>When you <code>.clone()</code> a table, you don’t clone the data — you clone the <em>definition</em>. From there you
+can narrow it down by adding conditions, turning it into a subset. Some examples of data sets you
+might work with:</p>
+<ul>
+<li>all user records except those with a soft-delete flag</li>
+<li>orders placed today</li>
+<li>paid customers</li>
+<li>orders of paid customers</li>
+<li>products that sold at least 5 items today</li>
+</ul>
+<p>Each of these is a set — defined by conditions, not a list of IDs. Another typical operation is
+expressing one set as a condition of another then perform an action:</p>
+<ul>
+<li>notify customers who have an unpaid invoice older than 30 days</li>
+<li>archive orders whose products have been discontinued</li>
+<li>apply a discount to customers who spent more than $500 this month</li>
+<li>list warehouses that stock at least one out-of-stock product</li>
+<li>flag reviews written by users who have been banned</li>
+</ul>
+<p>Put these together and even complex operations are easy to express in code:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// "notify customers who have an unpaid invoice older than 30 days"
+let mut overdue = Invoice::table(db);
+overdue.add_condition(overdue["status"].eq("unpaid"));
+overdue.add_condition(overdue["issued_at"].lt(days_ago(30)));
+
+overdue.ref_customer().send_reminder().await;
+<span class="boring">}</span></code></pre>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// "apply a discount to customers who spent more than $500 this month"
+let mut customers = Customer::table(db);
+customers.add_expression("spent_this_month", |c| {
+    c.subquery_orders().only_this_month().field_sum("total")
+});
+customers.add_expression("discount", |c| {
+    primitives::ternary(c["spent_this_month"].gt(500), 10, 0)
+});
+<span class="boring">}</span></code></pre>
+<p>Don’t worry about the exact syntax — we’ll get to all of it. The point is that sets compose
+naturally: define one, use it to narrow another, then act on the result.</p>
+<h2 id="defining-a-table"><a class="header" href="#defining-a-table">Defining a Table</a></h2>
+<p>The syntax for defining a table looks similar to query building from chapter 1, but there are
+important differences:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th>Query</th><th>Table</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>Lifetime</strong></td><td>Built, executed, dropped</td><td>Sticks around, spawns many queries</td></tr>
+<tr><td><strong>Operations</strong></td><td>One SQL statement (SELECT, INSERT, …)</td><td>Higher-level CRUD: list, get, add, patch, delete</td></tr>
+<tr><td><strong>Columns</strong></td><td>String field names via <code>.with_field()</code></td><td>Typed <code>Column&lt;T&gt;</code> definitions</td></tr>
+<tr><td><strong>Database</strong></td><td>Not bound — just a struct</td><td>Holds a database reference (<code>Arc</code>)</td></tr>
+<tr><td><strong>Idempotency</strong></td><td>INSERT fails on duplicate key</td><td><code>replace()</code> and <code>delete()</code> are idempotent</td></tr>
+<tr><td><strong>Data sources</strong></td><td>Only databases with a query language</td><td>Any data source: SQL, CSV, APIs, queues, etc.</td></tr>
+</tbody>
+</table>
+</div>
+<p>A <a href="https://docs.rs/vantage_table/0.1.0/vantage_table/table/base/struct.Table.html"><code>Table</code></a> is typically defined in its own file alongside the entity.
+Create <code>src/product.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// src/product.rs
+use vantage_sql::prelude::*;
+use vantage_types::prelude::*;
+
+#[entity(SqliteType)]
+#[derive(Clone, Default)]
+pub struct Product {
+    pub name: String,
+    pub price: i64,
+}
+
+impl Product {
+    pub fn table(db: SqliteDB) -&gt; Table&lt;SqliteDB, Product&gt; {
+        Table::new("product", db)
+            .with_id_column("id")
+            .with_column_of::&lt;String&gt;("name")
+            .with_column_of::&lt;i64&gt;("price")
+    }
+}
+<span class="boring">}</span></code></pre>
+<div id="admonition-hiding-the-db-argument" class="admonition admonish-tip" role="note" aria-labelledby="admonition-hiding-the-db-argument-title">
+<div class="admonition-title">
+<div id="admonition-hiding-the-db-argument-title">
+<p>Hiding the db argument</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-hiding-the-db-argument"></a>
+</div>
+
+<div>
+<p>In most cases you already know which database a table lives in — passing <code>db</code> every time
+is noise. A common pattern is to wrap the connection in a global accessor:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl Product {
+    fn table() -&gt; Table&lt;SqliteDB, Product&gt; {
+        Table::new("product", get_sqlite_db())
+            // ...columns...
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>We’ll keep passing <code>db</code> explicitly in this tutorial for clarity, but real applications
+typically use this pattern.</p>
+</div>
+
+</div>
+
+<p>This defines the <code>product</code> table once. You can now generate queries from it:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let table = Product::table(db);
+
+// Full SELECT with all columns and conditions applied
+let select = table.select();
+println!("{}", select.preview());
+// SELECT "id", "name", "price", "is_deleted" FROM "product"
+
+// Count query (does not execute — just builds the expression)
+let count_query = table.get_count_query();
+// SELECT COUNT(*) FROM "product"
+
+// Sum query for a specific column
+let sum_query = table.get_sum_query(&amp;table["price"]);
+// SELECT SUM("price") FROM "product"
+<span class="boring">}</span></code></pre>
+<p>These return the same <code>SqliteSelect</code> and <code>Expression</code> types from chapter 1 — the table just
+assembles them for you. But most of the time you won’t need the raw query at all.</p>
+<hr>
+<h2 id="crud-operations"><a class="header" href="#crud-operations">CRUD operations</a></h2>
+<p>With the table defined, all four operations — create, read, update, delete — are one-liners.
+Each comes from a trait in the prelude:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let table = Product::table(db);
+
+// Read — list all, get one by ID
+let all = table.list().await?;             // IndexMap&lt;String, Product&gt;
+let pie = table.get("pie").await?;         // Product
+
+// Create — insert with a known ID
+let muffin = Product { name: "Muffin".into(), price: 175 };
+table.insert(&amp;"muffin".to_string(), &amp;muffin).await?;
+
+// Update — replace the entire record
+let updated = Product { name: "Blueberry Muffin".into(), price: 195 };
+table.replace(&amp;"muffin".to_string(), &amp;updated).await?;
+
+// Delete
+table.delete(&amp;"muffin".to_string()).await?;
+<span class="boring">}</span></code></pre>
+<p>That’s it. <code>list()</code> returns an <code>IndexMap&lt;Id, Product&gt;</code> — ordered and keyed by ID. <code>get()</code>
+returns the entity or an error if the ID doesn’t exist. There’s also <code>get_some()</code> which
+returns <code>Option</code> for when you’re not sure there are any records, and <code>insert_return_id()</code>
+for when you want the database to generate the ID.</p>
+<div id="admonition-idempotent-operations" class="admonition admonish-tip" role="note" aria-labelledby="admonition-idempotent-operations-title">
+<div class="admonition-title">
+<div id="admonition-idempotent-operations-title">
+<p>Idempotent operations</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-idempotent-operations"></a>
+</div>
+
+<div>
+<p>Try duplicating the <code>replace()</code> and <code>delete()</code> calls — the result is the same. Replacing
+a record that already has the new values is a no-op. Deleting a record that’s already gone
+succeeds silently. This makes table operations safe to retry without worrying about
+side effects.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="type-erased-tables"><a class="header" href="#type-erased-tables">Type-erased tables</a></h2>
+<p><code>Table&lt;SqliteDB, Product&gt;</code> is great when you know the types at compile time. But what if you
+want to write a function that lists <em>any</em> table — products, orders, customers — without
+knowing the entity type?</p>
+<p><code>AnyTable</code> wraps a concrete table and erases its type parameters. Values come back as
+<code>Record&lt;serde_json::Value&gt;</code> instead of typed entities. You can iterate columns by name and
+build a generic display:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>async fn list_table(table: &amp;AnyTable) -&gt; VantageResult&lt;()&gt; {
+    let columns = table.column_names();
+
+    // Header
+    print!("  {:&lt;12}", "id");
+    for col in &amp;columns {
+        print!("{:&lt;16}", col);
+    }
+    println!();
+
+    // Rows
+    for (id, record) in table.list_values().await? {
+        print!("  {:&lt;12}", id);
+        for col in &amp;columns {
+            let val = record.get(col).map(|v| format!("{}", v)).unwrap_or_default();
+            print!("{:&lt;16}", val);
+        }
+        println!();
+    }
+    Ok(())
+}
+<span class="boring">}</span></code></pre>
+<p>Convert any typed table into an <code>AnyTable</code> with <code>from_table()</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let table = Product::table(db);
+let any = AnyTable::from_table(table);
+
+list_table(&amp;any).await?;
+// id          name            price
+// cupcake     "Cupcake"       120
+// donut       "Doughnut"      135
+// ...
+<span class="boring">}</span></code></pre>
+<p>Under the hood, <code>AnyTable</code> converts values to and from <code>serde_json::Value</code> on the fly.
+Conditions, pagination, and all CRUD operations still work — you just lose compile-time
+type safety on the entity fields. This is the trade-off: <code>AnyTable</code> lets you build generic
+UI components, CLI tools, and admin panels that work with any table definition.</p>
+<div id="admonition-generics-vs-type-erasure" class="admonition admonish-info" role="note" aria-labelledby="admonition-generics-vs-type-erasure-title">
+<div class="admonition-title">
+<div id="admonition-generics-vs-type-erasure-title">
+<p>Generics vs type erasure</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-generics-vs-type-erasure"></a>
+</div>
+
+<div>
+<p>You can also write <code>list_table</code> using generics — that keeps type safety but limits you
+to Rust callers:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>async fn list_table&lt;E: Entity + std::fmt::Debug&gt;(
+    table: &amp;impl ReadableDataSet&lt;E&gt;,
+) -&gt; VantageResult&lt;()&gt; {
+    for (id, entity) in table.list().await? {
+        println!("  {}: {:?}", id, entity);
+    }
+    Ok(())
+}
+<span class="boring">}</span></code></pre>
+<p>If you plan to expose tables outside of Rust (Python bindings, FFI, a web admin UI),
+type erasure via <code>AnyTable</code> is the way to go.</p>
+</div>
+
+</div>
+
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="the-vantage-journey"><a class="header" href="#the-vantage-journey">The Vantage Journey</a></h1>
 <p>Vantage didn’t start as a multi-backend entity framework. It started as a weekend experiment to see
@@ -1700,7 +2627,7 @@ let restored: Product = Product::from_record(record).unwrap();
 <span class="boring">}</span></code></pre>
 <p>This works because serde already knows how to turn structs into JSON objects and back. No extra code
 needed on your part.</p>
-<h4 id="path-b-custom-value-type-the-entity-path"><a class="header" href="#path-b-custom-value-type-the-entity-path">Path B: Custom value type (the #[entity] path)</a></h4>
+<h4 id="path-b-custom-value-type-the-entity-path"><a class="header" href="#path-b-custom-value-type-the-entity-path">Path B: Custom value type (the <code>#[entity]</code> path)</a></h4>
 <p>If your type system uses something other than <code>serde_json::Value</code> — like SurrealDB’s
 <code>ciborium::Value</code> — then serde’s blanket impls don’t apply. You need the <code>#[entity]</code> proc macro to
 generate the conversion code:</p>
@@ -2051,6 +2978,141 @@ with <code>execute()</code> and <code>defer()</code>.</p>
 <li>Cross-database deferred value resolution</li>
 <li>AssociatedExpression with scalar, Record, and entity results</li>
 <li>Identifier quoting: basic names, reserved words, spaces, hyphens, unicode</li>
+</ul>
+</li>
+</ol>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="step-2b-implement-operators"><a class="header" href="#step-2b-implement-operators">Step 2b: Implement Operators</a></h1>
+<p>Expressions let you build raw queries, but users shouldn’t have to write
+<code>sqlite_expr!("{} &gt; {}", (ident("price")), 100i64)</code> every time they want a condition. <strong>Operators</strong>
+give typed columns ergonomic methods like <code>.eq()</code>, <code>.gt()</code>, <code>.in_()</code> that produce your backend’s
+native condition type.</p>
+<p>This step covers how to implement a vendor-specific operation trait for your persistence.</p>
+<h3 id="vendor-specific-operation-traits"><a class="header" href="#vendor-specific-operation-traits">Vendor-specific operation traits</a></h3>
+<p>Each persistence defines its own operation trait that returns the backend’s condition type directly.
+The trait is blanket-implemented for all <code>Expressive&lt;T&gt;</code> where <code>T: Into&lt;AnyBackendType&gt;</code>, so typed
+columns get the methods for free.</p>
+<p>For SQL backends, a macro generates the trait:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// In vantage-sql/src/sqlite/operation.rs
+define_sql_operation!(
+    SqliteOperation,
+    SqliteCondition,
+    crate::sqlite::types::AnySqliteType
+);
+<span class="boring">}</span></code></pre>
+<p>This produces:</p>
+<ul>
+<li>A trait <code>SqliteOperation&lt;T&gt;</code> with <code>.eq()</code>, <code>.gt()</code>, <code>.lt()</code>, <code>.ne()</code>, <code>.gte()</code>, <code>.lte()</code>,
+<code>.in_()</code>, <code>.in_list()</code>, <code>.cast()</code> — all returning <code>SqliteCondition</code></li>
+<li>A blanket impl for all <code>Expressive&lt;T&gt;</code> where <code>T: Into&lt;AnySqliteType&gt;</code></li>
+<li>An <code>Expressive&lt;AnySqliteType&gt;</code> impl for <code>SqliteCondition</code>, enabling chaining</li>
+</ul>
+<h3 id="how-it-works-internally"><a class="header" href="#how-it-works-internally">How it works internally</a></h3>
+<p>Each method builds an <code>Expression&lt;T&gt;</code> from the two operands, then converts it to the backend’s
+condition type via <code>From&lt;Expression&lt;T&gt;&gt;</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn gt(&amp;self, value: impl Expressive&lt;T&gt;) -&gt; SqliteCondition {
+    let expr: Expression&lt;T&gt; = Expression::new("{} &gt; {}", vec![
+        ExpressiveEnum::Nested(self.expr()),
+        ExpressiveEnum::Nested(value.expr()),
+    ]);
+    SqliteCondition::from(expr)  // maps T → AnySqliteType via Into
+}
+<span class="boring">}</span></code></pre>
+<p>The <code>From&lt;Expression&lt;F&gt;&gt; for SqliteCondition</code> impl (from Step 1’s <code>define_sql_condition!</code> macro)
+handles the type mapping — it calls <code>ExpressionMap::map()</code> to convert all <code>F</code> scalars into
+<code>AnySqliteType</code>.</p>
+<h3 id="chaining-across-type-boundaries"><a class="header" href="#chaining-across-type-boundaries">Chaining across type boundaries</a></h3>
+<p>Because <code>SqliteCondition</code> implements <code>Expressive&lt;AnySqliteType&gt;</code>, the blanket gives it
+<code>SqliteOperation&lt;AnySqliteType&gt;</code>. This enables:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let price = Column::&lt;i64&gt;::new("price");
+price.gt(10).eq(false)
+// =&gt; SqliteCondition wrapping: (price &gt; 10) = 0
+<span class="boring">}</span></code></pre>
+<p>The first operation (<code>.gt(10)</code>) enforces type safety — <code>10</code> must be <code>Expressive&lt;i64&gt;</code>. The second
+operation (<code>.eq(false)</code>) operates on <code>SqliteCondition</code> where <code>bool: Expressive&lt;AnySqliteType&gt;</code>, so
+any backend-compatible type is accepted.</p>
+<h3 id="implementing-for-a-non-sql-backend"><a class="header" href="#implementing-for-a-non-sql-backend">Implementing for a non-SQL backend</a></h3>
+<p>For backends that don’t use expression trees for conditions (like MongoDB), you implement the
+operation trait manually instead of using the macro. MongoDB produces BSON documents:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub trait MongoOperation&lt;T&gt;: Expressive&lt;T&gt; {
+    fn eq(&amp;self, value: impl Into&lt;AnyMongoType&gt;) -&gt; MongoCondition {
+        let field = self.expr().template.clone();
+        let bson_val = AnyMongoType::from(value).to_bson();
+        MongoCondition::Doc(doc! { field: { "$eq": bson_val } })
+    }
+
+    fn gt(&amp;self, value: impl Into&lt;AnyMongoType&gt;) -&gt; MongoCondition {
+        let field = self.expr().template.clone();
+        let bson_val = AnyMongoType::from(value).to_bson();
+        MongoCondition::Doc(doc! { field: { "$gt": bson_val } })
+    }
+    // ...
+}
+
+impl&lt;T, S: Expressive&lt;T&gt;&gt; MongoOperation&lt;T&gt; for S {}
+<span class="boring">}</span></code></pre>
+<p>Key differences from SQL:</p>
+<ul>
+<li><strong>Values use <code>Into&lt;AnyMongoType&gt;</code></strong> not <code>Expressive&lt;T&gt;</code> — MongoDB doesn’t compose expression
+trees, it builds BSON documents from scalar values.</li>
+<li><strong>Field name extraction</strong> — <code>self.expr().template</code> gives the column name for simple columns.
+Complex expressions produce the template string as the field path.</li>
+<li><strong>Chaining</strong> — <code>MongoCondition</code> implements <code>Expressive&lt;AnyMongoType&gt;</code> for the blanket, but boolean
+chaining (<code>.eq(false)</code> = negate) is handled via dedicated methods like <code>.eq_bool(false)</code> since
+MongoDB negation uses <code>$not</code> wrappers.</li>
+</ul>
+<h3 id="avoiding-method-name-conflicts"><a class="header" href="#avoiding-method-name-conflicts">Avoiding method name conflicts</a></h3>
+<p>When multiple backend features are enabled, types like <code>Identifier</code> and <code>&amp;str</code> implement
+<code>Expressive&lt;T&gt;</code> for multiple backends. This causes ambiguity if the operation trait is generic.</p>
+<p>Each backend’s operation trait lives in its own module (e.g. <code>sqlite::operation::SqliteOperation</code>).
+Users import only the trait they need:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// In your prelude:
+pub use crate::sqlite::operation::SqliteOperation;
+<span class="boring">}</span></code></pre>
+<h3 id="condition-type-requirements"><a class="header" href="#condition-type-requirements">Condition type requirements</a></h3>
+<p>Your condition type must satisfy <code>TableSource::Condition</code> bounds — <code>Clone + Send + Sync + 'static</code>.
+It also needs:</p>
+<ul>
+<li><code>From&lt;Expression&lt;F&gt;&gt;</code> for any <code>F: Into&lt;AnyType&gt;</code> — so typed column operations convert cleanly</li>
+<li><code>From&lt;Identifier&gt;</code> — so <code>ident("field")</code> works with <code>with_condition()</code></li>
+<li><code>Expressive&lt;AnyType&gt;</code> — so the condition can be chained with further operations</li>
+<li>Any backend-specific conversions (e.g. <code>From&lt;Document&gt;</code> for MongoDB)</li>
+</ul>
+<p>For SQL backends, the <code>define_sql_condition!</code> macro generates all of these.</p>
+<h3 id="step-2b-checklist"><a class="header" href="#step-2b-checklist">Step 2b checklist</a></h3>
+<ol>
+<li>
+<p><strong>Define your operation trait</strong> — either via <code>define_sql_operation!</code> (SQL) or manually
+(document-oriented backends).</p>
+</li>
+<li>
+<p><strong>Blanket-implement it</strong> for all <code>Expressive&lt;T&gt;</code> where <code>T</code> converts into your <code>AnyType</code>.</p>
+</li>
+<li>
+<p><strong>Implement <code>Expressive&lt;AnyType&gt;</code> for your condition type</strong> — enables chaining.</p>
+</li>
+<li>
+<p><strong>Export from your prelude</strong> — so users get the operation trait automatically.</p>
+</li>
+<li>
+<p><strong>Tests</strong> covering:</p>
+<ul>
+<li>Typed column operations: <code>Column::&lt;i64&gt;::new("price").gt(150)</code> → condition</li>
+<li>Boolean column: <code>Column::&lt;bool&gt;::new("active").eq(false)</code> → condition</li>
+<li>Chaining: <code>price.gt(10).eq(false)</code> compiles and produces correct output</li>
+<li>Cross-type rejection: <code>price.gt(false)</code> does NOT compile</li>
+<li>Same-type column comparison: <code>price.eq(price.clone())</code> works</li>
+<li>Condition usable with <code>table.add_condition()</code> and <code>select.with_condition()</code></li>
 </ul>
 </li>
 </ol>
@@ -2407,9 +3469,10 @@ let data = std::fs::read("config.json")
 <p>This chains errors — the original <code>io::Error</code> is preserved as the source, so <code>Display</code> renders both
 messages and the source chain is available via <code>std::error::Error::source()</code>.</p>
 <h3 id="operation-trait--condition-building"><a class="header" href="#operation-trait--condition-building">Operation trait — condition building</a></h3>
-<p>The <code>Operation</code> trait (from <code>vantage-table</code>) provides <code>.eq()</code>, <code>.ne()</code>, <code>.gt()</code>, <code>.gte()</code>, <code>.lt()</code>,
-<code>.lte()</code>, and <code>.in_()</code> methods for building conditions. It has a <strong>blanket implementation</strong> for all
-<code>Expressive&lt;T&gt;</code> types, so your columns get these methods automatically — no explicit impl needed.</p>
+<p>Each backend provides an operation trait (e.g. <code>SqliteOperation</code>) with <code>.eq()</code>, <code>.ne()</code>, <code>.gt()</code>,
+<code>.gte()</code>, <code>.lt()</code>, <code>.lte()</code>, and <code>.in_()</code> methods for building conditions. It has a <strong>blanket
+implementation</strong> for all <code>Expressive&lt;T&gt;</code> types, so your columns get these methods automatically — no
+explicit impl needed.</p>
 <p>All methods accept <code>impl Expressive&lt;YourAnyType&gt;</code>, so you can pass native Rust values (<code>false</code>,
 <code>42</code>, <code>"hello"</code>), other columns (<code>table["other_field"]</code>), or full expressions. This requires your
 scalar types to implement <code>Expressive&lt;YourAnyType&gt;</code> — the same impls you added in Step 1 for the
@@ -2435,11 +3498,11 @@ table.add_condition(sqlite_expr!("{} &gt; {}", (table["price"]), 130));
 table.add_condition(sqlite_expr!("{} &gt; {}", (table["price"]), (table["calories"])));
 <span class="boring">}</span></code></pre>
 <ul>
-<li><strong>Operation::eq()</strong> — the idiomatic way:</li>
+<li><strong>SqliteOperation::eq()</strong> — the idiomatic way:</li>
 </ul>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>use vantage_table::operation::Operation;
+</span>use vantage_sql::sqlite::operation::SqliteOperation;
 
 let mut table = Product::sqlite_table(db);
 table.add_condition(table["is_deleted"].eq(false));
@@ -2585,6 +3648,31 @@ cargo run --example cli -- surreal bakery delete myid
 <code>AnyTable::from_table()</code> bridges the gap between your backend’s native types and a uniform
 JSON-based interface.</p>
 <div style="break-before: page; page-break-before: always;"></div>
+<h1 id="persistence-aligned-type-system"><a class="header" href="#persistence-aligned-type-system">Persistence-aligned Type System</a></h1>
+<p>Every Vantage persistence defines its own type trait — <code>SqliteType</code>, <code>PostgresType</code>, <code>SurrealType</code>,
+<code>MongoType</code>, <code>CsvType</code> — that maps Rust values to and from the storage format. This is how
+expressions like <code>sqlite_expr!("price &gt; {}", 150i64)</code> know how to bind <code>150i64</code> as a parameter.</p>
+<p>Built-in implementations cover the common ground: <code>bool</code>, <code>i64</code>, <code>f64</code>, <code>String</code>,
+<code>Option&lt;T&gt;</code>, <code>chrono</code> date/time types, and more. Each persistence supports exactly the types its
+backend can handle natively.</p>
+<p>Because the trait is open, you can implement it for your own types — enums, newtypes, domain
+objects — and they’ll work everywhere expressions are used: conditions, inserts, updates.</p>
+<p>See <a href="#adding-custom-types">Adding Custom Types</a> for a walkthrough.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="adding-custom-types"><a class="header" href="#adding-custom-types">Adding Custom Types</a></h1>
+<p>You can teach Vantage to store any Rust type by implementing the persistence type trait. Here’s the
+pattern, using an <code>Animal</code> enum that maps to a text column across every backend:</p>
+<ol>
+<li><strong>Define your type</strong> — a plain Rust enum (or struct).</li>
+<li><strong>Implement the persistence trait</strong> — <code>SqliteType</code>, <code>PostgresType</code>, etc. Each impl says how to
+convert to/from the storage format (CBOR for SQL backends, BSON for MongoDB).</li>
+<li><strong>Use it in expressions</strong> — once the trait is implemented, <code>sqlite_expr!("species = {}", animal)</code>
+just works.</li>
+</ol>
+<p>A single type can implement traits for multiple backends, so the same <code>Animal</code> enum works with
+SQLite, Postgres, SurrealDB, MongoDB, and CSV — each with its own serialization logic.</p>
+<!-- TODO: full walkthrough with code, inspired by bakery_model3/src/animal.rs -->
+<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="sql-postgresql-mysql--sqlite"><a class="header" href="#sql-postgresql-mysql--sqlite">SQL: PostgreSQL, MySQL &amp; SQLite</a></h1>
 <p>The <code>vantage-sql</code> crate provides persistence implementations for three SQL databases via
 <a href="https://github.com/launchbadge/sqlx">sqlx</a>. All three share the same architecture — CBOR-based type
@@ -2634,6 +3722,157 @@ integers bind as <code>i64</code>, text as <code>&amp;str</code>, booleans as <c
 <li>Exact vs lossy vs truncated behaviour per column type</li>
 <li>Cross-type coercion rules and error cases</li>
 </ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="sql-primitives"><a class="header" href="#sql-primitives">SQL Primitives</a></h1>
+<p>Primitives are reusable building blocks for constructing SQL expressions. They handle quoting,
+escaping, vendor-specific syntax, and logical composition so you don’t have to.</p>
+<p>Conditions built with typed columns and <code>SqliteOperation</code> cover simple comparisons, but real queries
+need more — <code>OR</code> groups, function calls, string concatenation, date formatting. That’s what
+primitives are for.</p>
+<p>Import them with:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_sql::primitives::*;
+<span class="boring">}</span></code></pre>
+<p>Primitives are <strong>not</strong> part of the prelude — import them explicitly when needed.</p>
+<div id="admonition-macros-and-structs" class="admonition admonish-note" role="note" aria-labelledby="admonition-macros-and-structs-title">
+<div class="admonition-title">
+<div id="admonition-macros-and-structs-title">
+<p>Macros and structs</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-macros-and-structs"></a>
+</div>
+
+<div>
+<p>Some primitives have convenience macros that accept a variable number of arguments and call
+<code>.expr()</code> on each one automatically: <code>fx!</code> → <code>Fx</code>, <code>concat_!</code> → <code>Concat</code>. The macros are
+syntactic sugar — if you need to build arguments programmatically (e.g. from a <code>Vec</code>), use
+the underlying struct directly.</p>
+</div>
+
+</div>
+
+<h2 id="or_--and_--logical-combinators"><a class="header" href="#or_--and_--logical-combinators"><code>or_()</code> / <code>and_()</code> — Logical Combinators</a></h2>
+<p>By default, multiple calls to <code>.with_condition()</code> combine with <code>AND</code>. When you need <code>OR</code>, use
+<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/logical/fn.or_.html"><code>or_()</code></a>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_sql::primitives::*;
+
+// role = 'admin' OR role = 'superuser'
+let cond = or_(ident("role").eq("admin"), ident("role").eq("superuser"));
+<span class="boring">}</span></code></pre>
+<p>For nested logic, combine with <a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/logical/fn.and_.html"><code>and_()</code></a>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// (price &gt; 100 AND in_stock = 1) OR (featured = 1)
+let cond = or_(
+    and_(ident("price").gt(100), ident("in_stock").eq(true)),
+    ident("featured").eq(true),
+);
+<span class="boring">}</span></code></pre>
+<p>Both return <code>Expression&lt;T&gt;</code>, so they plug directly into <code>.with_condition()</code>.</p>
+<h2 id="ident--identifiers"><a class="header" href="#ident--identifiers"><code>ident()</code> — Identifiers</a></h2>
+<p>Creates a quoted column or table name. Quoting adapts per backend (<code>"</code> for SQLite/Postgres, <code>`</code>
+for MySQL).</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let col = ident("price");                     // "price"
+let qualified = ident("name").dot_of("u");    // "u"."name"
+let aliased = ident("total").with_alias("t"); // "total" AS "t"
+<span class="boring">}</span></code></pre>
+<p><a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/identifier/fn.ident.html"><code>ident()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/identifier/struct.Identifier.html#method.new"><code>Identifier::new()</code></a>. Reserved words and
+names with spaces are quoted automatically.</p>
+<h2 id="fx--function-calls"><a class="header" href="#fx--function-calls"><code>fx!</code> — Function Calls</a></h2>
+<p>The <a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/macro.fx.html"><code>fx!</code></a> macro builds a SQL function call. Arguments are passed directly —
+<code>.expr()</code> is called on each one automatically:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fx!("count", sqlite_expr!("*"))
+// =&gt; COUNT(*)
+
+fx!("avg", ident("price"))
+// =&gt; AVG("price")
+
+// Multiple arguments
+fx!("coalesce", ident("nickname"), "anonymous")
+// =&gt; COALESCE("nickname", 'anonymous')
+
+// Nested
+fx!("round", fx!("avg", ident("price")), 2i64)
+// =&gt; ROUND(AVG("price"), 2)
+<span class="boring">}</span></code></pre>
+<p>If you need to build arguments programmatically (e.g. from a <code>Vec</code>), use
+<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/fx/struct.Fx.html#method.new"><code>Fx::new()</code></a> directly:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let args: Vec&lt;Expression&lt;AnySqliteType&gt;&gt; = columns.iter().map(|c| c.expr()).collect();
+let f = Fx::new("coalesce", args);
+<span class="boring">}</span></code></pre>
+<h2 id="ternary--conditional-expression"><a class="header" href="#ternary--conditional-expression"><code>ternary()</code> — Conditional Expression</a></h2>
+<p>Three-valued conditional. Renders as <code>IIF()</code> on SQLite, <code>IF()</code> on MySQL, and
+<code>CASE WHEN ... THEN ... ELSE ... END</code> on PostgreSQL:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let expr = ternary(
+    ident("stock").gt(0),
+    "in stock",
+    "sold out",
+);
+<span class="boring">}</span></code></pre>
+<p><a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/ternary/fn.ternary.html"><code>ternary()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/ternary/struct.Ternary.html#method.new"><code>Ternary::new()</code></a>.</p>
+<h2 id="case--case-expressions"><a class="header" href="#case--case-expressions"><code>Case</code> — CASE Expressions</a></h2>
+<p>For more than two branches, use <a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/case/struct.Case.html"><code>Case</code></a> to build a full
+<code>CASE WHEN ... END</code> block:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let expr = Case::new()
+    .when(ident("status").eq("active"), "yes")
+    .when(ident("status").eq("banned"), "no")
+    .else_("unknown");
+<span class="boring">}</span></code></pre>
+<h2 id="concat_--string-concatenation"><a class="header" href="#concat_--string-concatenation"><code>concat_!</code> — String Concatenation</a></h2>
+<p>Concatenates expressions. Renders as <code>||</code> on SQLite/Postgres, <code>CONCAT()</code> on MySQL. The
+<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/macro.concat_.html"><code>concat_!</code></a> macro calls <code>.expr()</code> on each argument automatically:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>concat_!(ident("first_name"), " ", ident("last_name"))
+<span class="boring">}</span></code></pre>
+<p>Use <a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/concat/struct.Concat.html#method.ws"><code>.ws()</code></a> for a separator — it accepts any
+<code>Expressive&lt;T&gt;</code>, including string literals:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>concat_!(ident("first_name"), ident("last_name")).ws(", ")
+// SQLite:   "first_name" || ', ' || "last_name"
+// MySQL:    CONCAT_WS(', ', `first_name`, `last_name`)
+<span class="boring">}</span></code></pre>
+<h2 id="interval--date-intervals"><a class="header" href="#interval--date-intervals"><code>Interval</code> — Date Intervals</a></h2>
+<p>Portable date interval that adapts per backend:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let i = Interval::days(30);
+// SQLite:   30  (used with date functions)
+// MySQL:    INTERVAL 30 DAY
+// Postgres: INTERVAL '30 days'
+<span class="boring">}</span></code></pre>
+<p>See <a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/interval/struct.Interval.html"><code>Interval</code></a> for available constructors (<code>days</code>,
+<code>hours</code>, <code>months</code>, etc.).</p>
+<h2 id="date_format--date-formatting"><a class="header" href="#date_format--date-formatting"><code>date_format()</code> — Date Formatting</a></h2>
+<p>Portable strftime-style formatting. Translates format tokens per backend:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let formatted = date_format(ident("created_at"), "%Y-%m-%d");
+// SQLite:   STRFTIME('%Y-%m-%d', "created_at")
+// MySQL:    DATE_FORMAT("created_at", '%Y-%m-%d')
+// Postgres: TO_CHAR("created_at", 'YYYY-MM-DD')
+<span class="boring">}</span></code></pre>
+<p><a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/date_format/fn.date_format.html"><code>date_format()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/date_format/struct.DateFormat.html#method.new"><code>DateFormat::new()</code></a>. Use
+<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/date_format/struct.DateFormat.html#method.raw_format"><code>.raw_format()</code></a> to skip token
+translation and pass a native format string.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="type-conversions"><a class="header" href="#type-conversions">Type Conversions</a></h1>
 <p>How Rust native types round-trip through different SQL column types.

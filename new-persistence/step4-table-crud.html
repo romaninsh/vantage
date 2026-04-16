@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-38733afc.js";
+            window.path_to_searchindex_js = "../searchindex-85213667.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-07f8a23e.js"></script>
+        <script src="../toc-10b285ad.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -377,9 +377,10 @@ let data = std::fs::read("config.json")
 <p>This chains errors — the original <code>io::Error</code> is preserved as the source, so <code>Display</code> renders both
 messages and the source chain is available via <code>std::error::Error::source()</code>.</p>
 <h3 id="operation-trait--condition-building"><a class="header" href="#operation-trait--condition-building">Operation trait — condition building</a></h3>
-<p>The <code>Operation</code> trait (from <code>vantage-table</code>) provides <code>.eq()</code>, <code>.ne()</code>, <code>.gt()</code>, <code>.gte()</code>, <code>.lt()</code>,
-<code>.lte()</code>, and <code>.in_()</code> methods for building conditions. It has a <strong>blanket implementation</strong> for all
-<code>Expressive&lt;T&gt;</code> types, so your columns get these methods automatically — no explicit impl needed.</p>
+<p>Each backend provides an operation trait (e.g. <code>SqliteOperation</code>) with <code>.eq()</code>, <code>.ne()</code>, <code>.gt()</code>,
+<code>.gte()</code>, <code>.lt()</code>, <code>.lte()</code>, and <code>.in_()</code> methods for building conditions. It has a <strong>blanket
+implementation</strong> for all <code>Expressive&lt;T&gt;</code> types, so your columns get these methods automatically — no
+explicit impl needed.</p>
 <p>All methods accept <code>impl Expressive&lt;YourAnyType&gt;</code>, so you can pass native Rust values (<code>false</code>,
 <code>42</code>, <code>"hello"</code>), other columns (<code>table["other_field"]</code>), or full expressions. This requires your
 scalar types to implement <code>Expressive&lt;YourAnyType&gt;</code> — the same impls you added in Step 1 for the
@@ -405,11 +406,11 @@ table.add_condition(sqlite_expr!("{} &gt; {}", (table["price"]), 130));
 table.add_condition(sqlite_expr!("{} &gt; {}", (table["price"]), (table["calories"])));
 <span class="boring">}</span></code></pre>
 <ul>
-<li><strong>Operation::eq()</strong> — the idiomatic way:</li>
+<li><strong>SqliteOperation::eq()</strong> — the idiomatic way:</li>
 </ul>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>use vantage_table::operation::Operation;
+</span>use vantage_sql::sqlite::operation::SqliteOperation;
 
 let mut table = Product::sqlite_table(db);
 table.add_condition(table["is_deleted"].eq(false));

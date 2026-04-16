@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-38733afc.js";
+            window.path_to_searchindex_js = "searchindex-85213667.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-07f8a23e.js"></script>
+        <script src="toc-10b285ad.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -182,13 +182,59 @@ composable handle to records living in a remote data store. You define structure
 relations, and operations without loading data eagerly, and Vantage translates your intent into
 efficient queries for whichever backend you’re using.</p>
 <p>This documentation covers Vantage <strong>0.4</strong>.</p>
+<h2 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h2>
+<p>Vantage covers a lot of ground — multiple databases, type systems, entity frameworks, UI adapters —
+but none of that matters until you’ve seen it do something useful.</p>
+<p>This guide introduces Vantage concepts one at a time, each building on the last. We’ll start with
+something you already know — SQL — and work our way up to the bigger abstractions. Along the way
+we’ll build a small CLI tool that grows with each chapter.</p>
+<p>You’ll need basic Rust experience (structs, traits, async/await, cargo). No prior Vantage knowledge
+required.</p>
+<p><strong>Start here:</strong> <a href="./intro/step1-first-query.html">SQLite and the Query Builder</a></p>
+<hr><!-- internal use: concept coverage tracker — once covered in introduction, cross out here -->
+<h2 id="todo-concept-coverage"><a class="header" href="#todo-concept-coverage">TODO: Concept Coverage</a></h2>
+<ul>
+<li><input disabled="" type="checkbox"> Expression basics (<code>sqlite_expr!</code>, parameter binding, injection safety)</li>
+<li><input disabled="" type="checkbox"> Identifier quoting (<code>ident()</code>, dialect-aware)</li>
+<li><input disabled="" type="checkbox"> SqliteSelect via Selectable trait (with_source, with_field, with_condition, with_order,
+with_limit)</li>
+<li><input disabled="" type="checkbox"> Executing queries (ExprDataSource, <code>db.execute()</code>, <code>db.associate()</code>)</li>
+<li><input disabled="" type="checkbox"> Aggregates on select (as_count, as_sum)</li>
+<li><input disabled="" type="checkbox"> Table definition (Table::new, with_column_of, with_id_column, builder pattern)</li>
+<li><input disabled="" type="checkbox"> Table → select query (table.select() returns vendor-specific builder)</li>
+<li><input disabled="" type="checkbox"> DataSource concept (what it is, how you pass it to Table::new)</li>
+<li><input disabled="" type="checkbox"> Entity struct (plain Rust struct, no id field, <code>#[entity]</code> macro)</li>
+<li><input disabled="" type="checkbox"> Record&lt;V&gt; (persistence-native value bags)</li>
+<li><input disabled="" type="checkbox"> Type system (vantage_type_system! macro, AnySqliteType, typed vs untyped values)</li>
+<li><input disabled="" type="checkbox"> ReadableDataSet (list, get, get_some, get_count)</li>
+<li><input disabled="" type="checkbox"> WritableDataSet (insert, delete)</li>
+<li><input disabled="" type="checkbox"> ActiveEntity (get_entity, modify via DerefMut, save)</li>
+<li><input disabled="" type="checkbox"> Conditions (table[“field”], .eq/.gt/.lt, with_condition returns new table)</li>
+<li><input disabled="" type="checkbox"> Sync vs async — defining table is sync, hitting DB is async</li>
+<li><input disabled="" type="checkbox"> Relationships (with_one, with_many, declared on table not entity)</li>
+<li><input disabled="" type="checkbox"> Reference traversal (get_ref_as, subquery-based conditions)</li>
+<li><input disabled="" type="checkbox"> Computed fields (with_expression, correlated subqueries)</li>
+<li><input disabled="" type="checkbox"> AnyTable (from_table, JSON boundary, type-erased generic code)</li>
+<li><input disabled="" type="checkbox"> Model crate pattern (entities + table constructors + relationships in one crate)</li>
+<li><input disabled="" type="checkbox"> Multiple backends per entity (surreal_table, sqlite_table, csv_table)</li>
+<li><input disabled="" type="checkbox"> DataSet trait hierarchy (ReadableDataSet, InsertableDataSet, WritableDataSet)</li>
+<li><input disabled="" type="checkbox"> ValueSet traits (schema-less Record-based access)</li>
+<li><input disabled="" type="checkbox"> Vendor-specific query builders (SqliteSelect, PostgresSelect, SurrealSelect)</li>
+<li><input disabled="" type="checkbox"> Deferred expressions (cross-database defer/map)</li>
+<li><input disabled="" type="checkbox"> Progressive persistence model (implement only what your backend supports)</li>
+<li><input disabled="" type="checkbox"> Error handling (VantageError, context, with_context)</li>
+<li><input disabled="" type="checkbox"> Connection management (DSN pattern, OnceLock)</li>
+<li><input disabled="" type="checkbox"> Pagination (with_pagination)</li>
+<li><input disabled="" type="checkbox"> Search expressions (search_expression, vendor-specific LIKE/CONTAINS)</li>
+<li><input disabled="" type="checkbox"> models! macro (all_tables() generation)</li>
+</ul>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
 
-                            <a rel="next prefetch" href="history.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="intro/step1-first-query.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -199,7 +245,7 @@ efficient queries for whichever backend you’re using.</p>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
 
-                    <a rel="next prefetch" href="history.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="intro/step1-first-query.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

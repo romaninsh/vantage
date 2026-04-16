@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Adding a New Persistence - Vantage 0.4 Framework</title>
+        <title>Step 2b: Operators - Vantage 0.4 Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -12,34 +12,34 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
-        <link rel="icon" href="favicon-de23e50b.svg">
-        <link rel="shortcut icon" href="favicon-8114d1fc.png">
-        <link rel="stylesheet" href="css/variables-8adf115d.css">
-        <link rel="stylesheet" href="css/general-2459343d.css">
-        <link rel="stylesheet" href="css/chrome-ae938929.css">
-        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-2459343d.css">
+        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
 
         <!-- Highlight.js Stylesheets -->
-        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
-        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
-        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
 
         <!-- Custom theme stylesheets -->
-        <link rel="stylesheet" href="./mdbook-admonish.css">
+        <link rel="stylesheet" href=".././mdbook-admonish.css">
 
 
         <!-- Provide site root and default themes to javascript -->
         <script>
-            const path_to_root = "";
+            const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-85213667.js";
+            window.path_to_searchindex_js = "../searchindex-85213667.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-10b285ad.js"></script>
+        <script src="../toc-10b285ad.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -106,7 +106,7 @@
             <!-- populated by js -->
             <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
             <noscript>
-                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
             </noscript>
             <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -141,7 +141,7 @@
                     <h1 class="menu-title">Vantage 0.4 Framework</h1>
 
                     <div class="right-buttons">
-                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
                         </a>
 
@@ -175,92 +175,150 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="adding-a-new-persistence"><a class="header" href="#adding-a-new-persistence">Adding a New Persistence</a></h1>
-<p>So you want to connect Vantage to a new database? This guide walks through the process in six
-incremental steps — each one unlocks more framework features. You don’t have to implement all six;
-stop whenever your persistence has enough capability for your use case.</p>
+                        <h1 id="step-2b-implement-operators"><a class="header" href="#step-2b-implement-operators">Step 2b: Implement Operators</a></h1>
+<p>Expressions let you build raw queries, but users shouldn’t have to write
+<code>sqlite_expr!("{} &gt; {}", (ident("price")), 100i64)</code> every time they want a condition. <strong>Operators</strong>
+give typed columns ergonomic methods like <code>.eq()</code>, <code>.gt()</code>, <code>.in_()</code> that produce your backend’s
+native condition type.</p>
+<p>This step covers how to implement a vendor-specific operation trait for your persistence.</p>
+<h3 id="vendor-specific-operation-traits"><a class="header" href="#vendor-specific-operation-traits">Vendor-specific operation traits</a></h3>
+<p>Each persistence defines its own operation trait that returns the backend’s condition type directly.
+The trait is blanket-implemented for all <code>Expressive&lt;T&gt;</code> where <code>T: Into&lt;AnyBackendType&gt;</code>, so typed
+columns get the methods for free.</p>
+<p>For SQL backends, a macro generates the trait:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// In vantage-sql/src/sqlite/operation.rs
+define_sql_operation!(
+    SqliteOperation,
+    SqliteCondition,
+    crate::sqlite::types::AnySqliteType
+);
+<span class="boring">}</span></code></pre>
+<p>This produces:</p>
 <ul>
-<li><a href="#overview">Overview</a></li>
-<li><a href="#step-1-type-system">Step 1: Type System</a></li>
-<li><a href="#step-2-expressions">Step 2: Expressions</a></li>
-<li><a href="#step-3-query-builder">Step 3: Query Builder</a></li>
-<li><a href="#step-4-table--crud">Step 4: Table &amp; CRUD</a></li>
-<li><a href="#step-5-relationships">Step 5: Relationships</a></li>
-<li><a href="#step-6-multi-backend-applications">Step 6: Multi-Backend Applications</a></li>
+<li>A trait <code>SqliteOperation&lt;T&gt;</code> with <code>.eq()</code>, <code>.gt()</code>, <code>.lt()</code>, <code>.ne()</code>, <code>.gte()</code>, <code>.lte()</code>,
+<code>.in_()</code>, <code>.in_list()</code>, <code>.cast()</code> — all returning <code>SqliteCondition</code></li>
+<li>A blanket impl for all <code>Expressive&lt;T&gt;</code> where <code>T: Into&lt;AnySqliteType&gt;</code></li>
+<li>An <code>Expressive&lt;AnySqliteType&gt;</code> impl for <code>SqliteCondition</code>, enabling chaining</li>
 </ul>
-<hr>
-<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Step</th><th>What you build</th><th>What it unlocks</th><th>Can skip?</th></tr>
-</thead>
-<tbody>
-<tr><td><a href="./new-persistence/step1-types.html">1. Type System</a></td><td><code>vantage_type_system!</code> macro, <code>AnyType</code>, <code>Record</code> conversions</td><td>Type-safe values, struct ↔ record mapping</td><td><strong>Required</strong></td></tr>
-<tr><td><a href="./new-persistence/step2-expressions.html">2. Expressions</a></td><td>Vendor macro, <code>ExprDataSource</code></td><td>Execute raw queries, cross-database <code>defer()</code></td><td>Skip for simple read-only sources (CSV)</td></tr>
-<tr><td><a href="./new-persistence/step3-query-builder.html">3. Query Builder</a></td><td><code>Selectable</code>, <code>SelectableDataSource</code></td><td>Composable SELECT with conditions, ordering, limits</td><td>Skip if your persistence has no query language</td></tr>
-<tr><td><a href="./new-persistence/step4-table-crud.html">4. Table &amp; CRUD</a></td><td><code>TableSource</code>, entity tables, aggregates, writes</td><td><code>Table&lt;DB, Entity&gt;</code>, full CRUD, <code>ReadableDataSet</code>, <code>WritableDataSet</code></td><td><strong>Required</strong> for table support</td></tr>
-<tr><td><a href="./new-persistence/step5-relationships.html">5. Relationships</a></td><td><code>with_one</code>, <code>with_many</code>, correlated subqueries</td><td>Reference traversal, expression fields</td><td>Skip if you don’t need cross-table queries</td></tr>
-<tr><td><a href="./new-persistence/step6-multi-backend.html">6. Multi-Backend</a></td><td><code>AnyTable::from_table()</code>, CLI example</td><td>Type-erased tables, generic UI/API code</td><td>Skip if you only use one persistence</td></tr>
-</tbody>
-</table>
-</div>
-<hr>
-<h2 id="step-1-type-system"><a class="header" href="#step-1-type-system">Step 1: Type System</a></h2>
-<p>Every database has its own idea of what types exist. The <code>vantage_type_system!</code> macro generates a
-type trait, variant enum, and type-erased <code>AnyType</code> wrapper that prevents silent casting between
-incompatible types.</p>
-<p>You’ll implement the type trait for each Rust type your database supports, set up <code>Record</code>
-conversions (free via serde for JSON-based backends, or via <code>#[entity]</code> macro for custom value
-types), and add <code>TryFrom&lt;AnyType&gt;</code> for scalar extraction.</p>
-<p><strong><a href="./new-persistence/step1-types.html">Read Step 1 →</a></strong></p>
-<hr>
-<h2 id="step-2-expressions"><a class="header" href="#step-2-expressions">Step 2: Expressions</a></h2>
-<p>With types in place, build a vendor macro (<code>sqlite_expr!</code>, <code>surreal_expr!</code>) that produces
-<code>Expression&lt;AnyType&gt;</code> with typed parameters. Implement <code>ExprDataSource</code> to execute expressions
-against your database — handling parameter binding, deferred cross-database resolution, and result
-parsing.</p>
-<p>Skip this step if your persistence evaluates conditions in-memory (like CSV) — you can implement
-<code>TableSource</code> directly without an expression engine.</p>
-<p><strong><a href="./new-persistence/step2-expressions.html">Read Step 2 →</a></strong></p>
-<hr>
-<h2 id="step-3-query-builder"><a class="header" href="#step-3-query-builder">Step 3: Query Builder</a></h2>
-<p>Build a SELECT struct implementing the <code>Selectable</code> trait — fields, conditions, ordering, limits,
-aggregates. Wire it up through <code>SelectableDataSource</code> so the rest of Vantage can create and execute
-queries through a standard interface.</p>
-<p>Skip this step if your persistence doesn’t have a query language. MongoDB, for instance, skips
-<code>Selectable</code> and uses native BSON pipelines instead.</p>
-<p><strong><a href="./new-persistence/step3-query-builder.html">Read Step 3 →</a></strong></p>
-<hr>
-<h2 id="step-4-table--crud"><a class="header" href="#step-4-table--crud">Step 4: Table &amp; CRUD</a></h2>
-<p>Implement <code>TableSource</code> to give Vantage full table abstraction — columns, conditions, ordering,
-pagination, entity CRUD, and aggregates. This is where <code>Table&lt;DB, Entity&gt;</code> comes alive and
-auto-implements <code>ReadableDataSet</code>, <code>WritableDataSet</code>, and <code>ActiveEntitySet</code>.</p>
-<p>Start with <code>todo!()</code> for every method and implement them incrementally, driven by tests.</p>
-<p><strong><a href="./new-persistence/step4-table-crud.html">Read Step 4 →</a></strong></p>
-<hr>
-<h2 id="step-5-relationships"><a class="header" href="#step-5-relationships">Step 5: Relationships</a></h2>
-<p>Declare <code>with_one</code> and <code>with_many</code> relationships on tables and traverse them with <code>get_ref_as</code>.
-Implement <code>column_table_values_expr</code> for subquery-based traversal and optionally
-<code>related_correlated_condition</code> for correlated subqueries (expression fields like computed counts).</p>
-<p>Skip this step if your persistence is flat (no foreign keys or cross-collection references).</p>
-<p><strong><a href="./new-persistence/step5-relationships.html">Read Step 5 →</a></strong></p>
-<hr>
-<h2 id="step-6-multi-backend-applications"><a class="header" href="#step-6-multi-backend-applications">Step 6: Multi-Backend Applications</a></h2>
-<p>Wrap your tables with <code>AnyTable::from_table()</code> to erase the backend type. This enables generic UI,
-CLI, and API code that works identically across SurrealDB, SQLite, CSV, MongoDB, or your new
-persistence — all through a uniform <code>serde_json::Value</code>-based interface.</p>
-<p><strong><a href="./new-persistence/step6-multi-backend.html">Read Step 6 →</a></strong></p>
+<h3 id="how-it-works-internally"><a class="header" href="#how-it-works-internally">How it works internally</a></h3>
+<p>Each method builds an <code>Expression&lt;T&gt;</code> from the two operands, then converts it to the backend’s
+condition type via <code>From&lt;Expression&lt;T&gt;&gt;</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn gt(&amp;self, value: impl Expressive&lt;T&gt;) -&gt; SqliteCondition {
+    let expr: Expression&lt;T&gt; = Expression::new("{} &gt; {}", vec![
+        ExpressiveEnum::Nested(self.expr()),
+        ExpressiveEnum::Nested(value.expr()),
+    ]);
+    SqliteCondition::from(expr)  // maps T → AnySqliteType via Into
+}
+<span class="boring">}</span></code></pre>
+<p>The <code>From&lt;Expression&lt;F&gt;&gt; for SqliteCondition</code> impl (from Step 1’s <code>define_sql_condition!</code> macro)
+handles the type mapping — it calls <code>ExpressionMap::map()</code> to convert all <code>F</code> scalars into
+<code>AnySqliteType</code>.</p>
+<h3 id="chaining-across-type-boundaries"><a class="header" href="#chaining-across-type-boundaries">Chaining across type boundaries</a></h3>
+<p>Because <code>SqliteCondition</code> implements <code>Expressive&lt;AnySqliteType&gt;</code>, the blanket gives it
+<code>SqliteOperation&lt;AnySqliteType&gt;</code>. This enables:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let price = Column::&lt;i64&gt;::new("price");
+price.gt(10).eq(false)
+// =&gt; SqliteCondition wrapping: (price &gt; 10) = 0
+<span class="boring">}</span></code></pre>
+<p>The first operation (<code>.gt(10)</code>) enforces type safety — <code>10</code> must be <code>Expressive&lt;i64&gt;</code>. The second
+operation (<code>.eq(false)</code>) operates on <code>SqliteCondition</code> where <code>bool: Expressive&lt;AnySqliteType&gt;</code>, so
+any backend-compatible type is accepted.</p>
+<h3 id="implementing-for-a-non-sql-backend"><a class="header" href="#implementing-for-a-non-sql-backend">Implementing for a non-SQL backend</a></h3>
+<p>For backends that don’t use expression trees for conditions (like MongoDB), you implement the
+operation trait manually instead of using the macro. MongoDB produces BSON documents:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub trait MongoOperation&lt;T&gt;: Expressive&lt;T&gt; {
+    fn eq(&amp;self, value: impl Into&lt;AnyMongoType&gt;) -&gt; MongoCondition {
+        let field = self.expr().template.clone();
+        let bson_val = AnyMongoType::from(value).to_bson();
+        MongoCondition::Doc(doc! { field: { "$eq": bson_val } })
+    }
+
+    fn gt(&amp;self, value: impl Into&lt;AnyMongoType&gt;) -&gt; MongoCondition {
+        let field = self.expr().template.clone();
+        let bson_val = AnyMongoType::from(value).to_bson();
+        MongoCondition::Doc(doc! { field: { "$gt": bson_val } })
+    }
+    // ...
+}
+
+impl&lt;T, S: Expressive&lt;T&gt;&gt; MongoOperation&lt;T&gt; for S {}
+<span class="boring">}</span></code></pre>
+<p>Key differences from SQL:</p>
+<ul>
+<li><strong>Values use <code>Into&lt;AnyMongoType&gt;</code></strong> not <code>Expressive&lt;T&gt;</code> — MongoDB doesn’t compose expression
+trees, it builds BSON documents from scalar values.</li>
+<li><strong>Field name extraction</strong> — <code>self.expr().template</code> gives the column name for simple columns.
+Complex expressions produce the template string as the field path.</li>
+<li><strong>Chaining</strong> — <code>MongoCondition</code> implements <code>Expressive&lt;AnyMongoType&gt;</code> for the blanket, but boolean
+chaining (<code>.eq(false)</code> = negate) is handled via dedicated methods like <code>.eq_bool(false)</code> since
+MongoDB negation uses <code>$not</code> wrappers.</li>
+</ul>
+<h3 id="avoiding-method-name-conflicts"><a class="header" href="#avoiding-method-name-conflicts">Avoiding method name conflicts</a></h3>
+<p>When multiple backend features are enabled, types like <code>Identifier</code> and <code>&amp;str</code> implement
+<code>Expressive&lt;T&gt;</code> for multiple backends. This causes ambiguity if the operation trait is generic.</p>
+<p>Each backend’s operation trait lives in its own module (e.g. <code>sqlite::operation::SqliteOperation</code>).
+Users import only the trait they need:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// In your prelude:
+pub use crate::sqlite::operation::SqliteOperation;
+<span class="boring">}</span></code></pre>
+<h3 id="condition-type-requirements"><a class="header" href="#condition-type-requirements">Condition type requirements</a></h3>
+<p>Your condition type must satisfy <code>TableSource::Condition</code> bounds — <code>Clone + Send + Sync + 'static</code>.
+It also needs:</p>
+<ul>
+<li><code>From&lt;Expression&lt;F&gt;&gt;</code> for any <code>F: Into&lt;AnyType&gt;</code> — so typed column operations convert cleanly</li>
+<li><code>From&lt;Identifier&gt;</code> — so <code>ident("field")</code> works with <code>with_condition()</code></li>
+<li><code>Expressive&lt;AnyType&gt;</code> — so the condition can be chained with further operations</li>
+<li>Any backend-specific conversions (e.g. <code>From&lt;Document&gt;</code> for MongoDB)</li>
+</ul>
+<p>For SQL backends, the <code>define_sql_condition!</code> macro generates all of these.</p>
+<h3 id="step-2b-checklist"><a class="header" href="#step-2b-checklist">Step 2b checklist</a></h3>
+<ol>
+<li>
+<p><strong>Define your operation trait</strong> — either via <code>define_sql_operation!</code> (SQL) or manually
+(document-oriented backends).</p>
+</li>
+<li>
+<p><strong>Blanket-implement it</strong> for all <code>Expressive&lt;T&gt;</code> where <code>T</code> converts into your <code>AnyType</code>.</p>
+</li>
+<li>
+<p><strong>Implement <code>Expressive&lt;AnyType&gt;</code> for your condition type</strong> — enables chaining.</p>
+</li>
+<li>
+<p><strong>Export from your prelude</strong> — so users get the operation trait automatically.</p>
+</li>
+<li>
+<p><strong>Tests</strong> covering:</p>
+<ul>
+<li>Typed column operations: <code>Column::&lt;i64&gt;::new("price").gt(150)</code> → condition</li>
+<li>Boolean column: <code>Column::&lt;bool&gt;::new("active").eq(false)</code> → condition</li>
+<li>Chaining: <code>price.gt(10).eq(false)</code> compiles and produces correct output</li>
+<li>Cross-type rejection: <code>price.gt(false)</code> does NOT compile</li>
+<li>Same-type column comparison: <code>price.eq(price.clone())</code> works</li>
+<li>Condition usable with <code>table.add_condition()</code> and <code>select.with_condition()</code></li>
+</ul>
+</li>
+</ol>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="three-paths.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../new-persistence/step2-expressions.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="new-persistence/step1-types.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../new-persistence/step3-query-builder.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -270,11 +328,11 @@ persistence — all through a uniform <code>serde_json::Value</code>-based inter
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="three-paths.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../new-persistence/step2-expressions.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="new-persistence/step1-types.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../new-persistence/step3-query-builder.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
@@ -294,17 +352,17 @@ persistence — all through a uniform <code>serde_json::Value</code>-based inter
         </script>
 
 
-        <script src="elasticlunr-ef4e11c1.min.js"></script>
-        <script src="mark-09e88c2c.min.js"></script>
-        <script src="searcher-c2a407aa.js"></script>
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
 
-        <script src="clipboard-1626706a.min.js"></script>
-        <script src="highlight-abc7f01d.js"></script>
-        <script src="book-a0b12cfe.js"></script>
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-a0b12cfe.js"></script>
 
         <!-- Custom JS scripts -->
-        <script src="mermaid-eefea253.min.js"></script>
-        <script src="mermaid-init-ccf746f1.js"></script>
+        <script src="../mermaid-eefea253.min.js"></script>
+        <script src="../mermaid-init-ccf746f1.js"></script>
 
 
 
