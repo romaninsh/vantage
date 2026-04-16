@@ -1,8 +1,11 @@
 
 [package]
 name = "surreal-client"
-version = "0.1.0"
+version = "0.4.0"
 edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "CBOR-based SurrealDB client for the Vantage data framework"
+repository = "https://github.com/romaninsh/vantage"
 
 [features]
 pool = ["mobc"]

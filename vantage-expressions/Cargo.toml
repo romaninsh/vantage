@@ -1,7 +1,7 @@
 [package]
 edition = "2024"
 name = "vantage-expressions"
-version = "0.3.0"
+version = "0.4.0"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
 description = "Database agnostic expressions"

@@ -88,9 +88,13 @@ pub(crate) fn cbor_to_json(val: CborValue) -> JsonValue {
                 if let Ok(i) = s.parse::<i64>() {
                     JsonValue::Number(i.into())
                 } else if let Ok(f) = s.parse::<f64>() {
-                    serde_json::Number::from_f64(f)
-                        .map(JsonValue::Number)
-                        .unwrap_or(JsonValue::String(s))
+                    if f.is_finite() && f.to_string() == s {
+                        serde_json::Number::from_f64(f)
+                            .map(JsonValue::Number)
+                            .unwrap_or(JsonValue::String(s))
+                    } else {
+                        JsonValue::String(s)
+                    }
                 } else {
                     JsonValue::String(s)
                 }
@@ -217,11 +221,11 @@ mod tests {
     }
 
     #[test]
-    fn tag_decimal_trailing_zeros_become_number() {
-        // "1.10" → f64 1.1 — trailing zeros lost but value preserved
+    fn tag_decimal_trailing_zeros_stays_string() {
+        // "1.10" can't round-trip through f64 (becomes "1.1"), so stays as string
         let cbor = CborValue::Tag(10, Box::new(CborValue::Text("1.10".into())));
         let json = cbor_to_json(cbor);
-        assert_eq!(json, serde_json::json!(1.1));
+        assert_eq!(json, JsonValue::String("1.10".into()));
     }
 
     // ── Nested structures ────────────────────────────────────────────────
