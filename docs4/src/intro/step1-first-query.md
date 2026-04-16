@@ -38,23 +38,18 @@ By the end of this page you'll be able to:
 
 ## Set up
 
-```admonish note title="Pre-release"
-Vantage 0.4 crates aren't on crates.io yet. For now, clone the repo
-(`git clone https://github.com/romaninsh/vantage.git`) and work inside it as shown below.
-```
-
-Create a new project inside the Vantage workspace:
+Create a new project:
 
 ```sh
-cd vantage
-mkdir learn-1 && cd learn-1
-cargo init
-cargo add vantage-sql --path ../vantage-sql --features sqlite
+cargo init learn-1 && cd learn-1
+cargo add vantage-sql --features sqlite
+cargo add vantage-expressions
 cargo add tokio --features full
 ```
 
-Two dependencies — `vantage-sql` gives us the SQLite query builder and connection pool, `tokio`
-provides the async runtime because all database operations are async.
+Three dependencies — `vantage-sql` gives us the SQLite query builder and connection pool,
+`vantage-expressions` is needed by the `sqlite_expr!` macro, and `tokio` provides the async
+runtime because all database operations are async.
 
 ## Create and populate a database
 
@@ -372,7 +367,7 @@ with column names as keys. It lives in the `vantage-types` crate, so add that de
 its prelude:
 
 ```sh
-cargo add vantage-types --path ../vantage-types --features serde
+cargo add vantage-types --features serde
 ```
 
 ```rust
@@ -459,7 +454,7 @@ The macro needs `vantage-core` as a direct dependency (it's already a transitive
 `vantage-sql`, but the generated code references it in your crate):
 
 ```sh
-cargo add vantage-core --path ../vantage-core
+cargo add vantage-core
 ```
 
 The macro also supports multiple type systems in one attribute —
