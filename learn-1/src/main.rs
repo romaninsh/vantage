@@ -24,7 +24,10 @@ async fn list_table(table: &AnyTable) -> VantageResult<()> {
     for (id, record) in table.list_values().await? {
         print!("  {:<12}", id);
         for col in &columns {
-            let val = record.get(col).map(|v| format!("{}", v)).unwrap_or_default();
+            let val = record
+                .get(col)
+                .map(|v| format!("{}", v))
+                .unwrap_or_default();
             print!("{:<16}", val);
         }
         println!();

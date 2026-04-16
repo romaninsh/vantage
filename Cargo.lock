@@ -3814,6 +3814,7 @@ dependencies = [
  "vantage-mongodb",
  "vantage-sql",
  "vantage-table",
+ "vantage-types",
 ]
 
 [[package]]

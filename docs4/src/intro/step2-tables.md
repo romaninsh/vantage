@@ -80,7 +80,7 @@ important differences:
 | **Idempotency**  | INSERT fails on duplicate key            | `replace()` and `delete()` are idempotent        |
 | **Data sources** | Only databases with a query language    | Any data source: SQL, CSV, APIs, queues, etc.    |
 
-A [`Table`](vantage_table::Table) is typically defined in its own file alongside the entity.
+A [`Table`](vantage_table::table::Table) is typically defined in its own file alongside the entity.
 Create `src/product.rs`:
 
 ```rust
