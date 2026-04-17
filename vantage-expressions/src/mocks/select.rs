@@ -210,6 +210,14 @@ impl Selectable<serde_json::Value> for MockSelect {
         self.skip
     }
 
+    fn as_field(&self, field: impl Into<String>) -> Expression<serde_json::Value> {
+        let mut s = self.clone();
+        s.fields.clear();
+        s.fields.push(field.into());
+        s.order_by.clear();
+        s.render()
+    }
+
     fn as_count(&self) -> Expression<serde_json::Value> {
         let source = self.source.as_ref().unwrap().as_str();
         expr!("SELECT COUNT(*) FROM {}", source)

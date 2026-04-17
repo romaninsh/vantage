@@ -7,7 +7,6 @@ authors = ["Romans Malinovskis <me@nearly.guru>"]
 description = "Database agnostic expressions"
 homepage = "https://romaninsh.github.io/vantage"
 repository = "https://github.com/romaninsh/vantage"
-readme = "../README.md"
 
 [dependencies]
 async-trait = "0.1"

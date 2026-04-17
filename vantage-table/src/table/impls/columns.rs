@@ -79,6 +79,23 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self.data_source
             .convert_any_column::<Type>(any_column.clone())
     }
+
+    /// Get an expression for a column or computed expression by name.
+    ///
+    /// If `name` matches a registered expression (from `with_expression`), evaluates
+    /// and returns it. Otherwise returns the column as an expression. Returns `None`
+    /// if the name doesn't match either.
+    pub fn get_column_expr(&self, name: &str) -> Option<vantage_expressions::Expression<T::Value>>
+    where
+        T::Column<T::AnyType>: vantage_expressions::Expressive<T::Value>,
+    {
+        if let Some(expr_fn) = self.expressions.get(name) {
+            Some(expr_fn(self))
+        } else {
+            use vantage_expressions::Expressive;
+            self.columns.get(name).map(|c| c.expr())
+        }
+    }
 }
 
 #[cfg(test)]

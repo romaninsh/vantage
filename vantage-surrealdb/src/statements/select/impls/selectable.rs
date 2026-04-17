@@ -86,6 +86,14 @@ impl<T: QueryResult> Selectable<AnySurrealType> for SurrealSelect<T> {
         self.skip
     }
 
+    fn as_field(&self, field: impl Into<String>) -> Expr {
+        let mut s = self.clone();
+        s.fields.clear();
+        s.fields.push(SelectField::new(Identifier::new(field)));
+        s.order_by.clear();
+        s.render()
+    }
+
     fn as_count(&self) -> Expr {
         let mut count_select = self.clone();
         count_select.fields.clear();

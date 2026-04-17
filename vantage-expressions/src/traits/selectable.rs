@@ -135,6 +135,11 @@ pub trait Selectable<T, C = Expression<T>>: Send + Sync + Debug + Clone {
     /// Returns the current OFFSET/SKIP value, if set.
     fn get_skip(&self) -> Option<i64>;
 
+    /// Creates a single-field subquery expression from this query configuration.
+    ///
+    /// Builds `SELECT field FROM ... WHERE ...` — useful for correlated subqueries.
+    fn as_field(&self, field: impl Into<String>) -> Expression<T>;
+
     /// Creates a COUNT(*) expression from this query configuration.
     fn as_count(&self) -> Expression<T>;
 

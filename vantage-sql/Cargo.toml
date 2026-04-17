@@ -7,7 +7,6 @@ authors = ["Romans Malinovskis <me@nearly.guru>"]
 description = "Vantage extension for SQL databases (Postgres, MySQL, SQLite)"
 homepage = "https://romaninsh.github.io/vantage"
 repository = "https://github.com/romaninsh/vantage"
-readme = "../README.md"
 autoexamples = false
 
 [features]
