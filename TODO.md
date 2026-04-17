@@ -6,9 +6,15 @@
       `table/impls/selectable.rs` behind `T: SelectableDataSource`. They just delegate to
       `TableSource` methods. Move to a separate impl block requiring only `T: TableSource` so
       MongoDB and other non-query backends can use them directly.
-- [ ] **Remove `delete`/`delete_all` from `WritableDataSet`** — `WritableValueSet` is the canonical
+- [x] **Remove `delete`/`delete_all` from `WritableDataSet`** — `WritableValueSet` is the canonical
       place for deletion (doesn't require entity type). Having both causes ambiguity when calling
       `table.delete()`. Keep only in `WritableValueSet`.
+- [ ] **Change `ReadableDataSet::get(id)` to return `Result<Option<E>>`** — current contract
+      returns `Err` when the row is missing, which forces consumers (e.g. the axum tutorial's
+      `From<VantageError> for ApiError` impl) to string-match `"no row found"` to produce 404s.
+      Options: (a) additive — add `get_opt(id) -> Result<Option<E>>`, leave `get` as-is; (b) full
+      contract change — `get` itself returns `Result<Option<E>>`. Preference: (a) first, migrate
+      callers over time; `Option` is the Rust-native way to express "lookup missed".
 - [ ] **Decouple `column_table_values_expr` from `ExprDataSource`** — the method returns
       `AssociatedExpression` which forces `ExprDataSource` dependency. Consider moving to a
       sub-trait so non-SQL backends don't carry dead code. SQL backends use it internally in
@@ -51,6 +57,15 @@
   - SurrealDB returns `{id: "bakery:hill_valley"}` from subquery, not `"bakery:hill_valley"`
   - Need `SELECT VALUE id` but that's SurrealDB-specific, not in generic Selectable trait
   - Affects: Reference traversal in bakery_model4 (e.g., `bakery ref products list`)
+
+# CI/CD
+
+- [ ] **Automate crate publishing in CI** — add a workflow that publishes crates to crates.io
+      on tag/release, in dependency order. Require version bump (reject if version matches
+      what's already on crates.io).
+- [ ] **Rebuild book on Cargo.toml changes** — the book workflow currently only triggers on
+      `docs4/**` changes. Version bumps update rustdoc links, so the book should also rebuild
+      when any `Cargo.toml` in the workspace changes.
 
 # Architecture
 

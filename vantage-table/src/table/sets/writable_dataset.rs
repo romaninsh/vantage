@@ -49,13 +49,6 @@ where
             .map_err(|_| vantage_core::error!("Failed to convert record to entity"))
     }
 
-    async fn delete(&self, id: &Self::Id) -> Result<()> {
-        self.data_source().delete_table_value(self, id).await
-    }
-
-    async fn delete_all(&self) -> Result<()> {
-        self.data_source().delete_table_all_values(self).await
-    }
 }
 
 #[cfg(test)]

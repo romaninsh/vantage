@@ -77,7 +77,7 @@ important differences:
 | **Operations**   | One SQL statement (SELECT, INSERT, ...) | Higher-level CRUD: list, get, add, patch, delete |
 | **Columns**      | String field names via `.with_field()`  | Typed `Column<T>` definitions                    |
 | **Database**     | Not bound — just a struct               | Holds a database reference (`Arc`)               |
-| **Idempotency**  | INSERT fails on duplicate key            | `replace()` and `delete()` are idempotent        |
+| **Idempotency**  | INSERT fails on duplicate key           | `replace()` and `delete()` are idempotent        |
 | **Data sources** | Only databases with a query language    | Any data source: SQL, CSV, APIs, queues, etc.    |
 
 A [`Table`](vantage_table::table::Table) is typically defined in its own file alongside the entity.
@@ -151,8 +151,8 @@ assembles them for you. But most of the time you won't need the raw query at all
 
 ## CRUD operations
 
-With the table defined, all four operations — create, read, update, delete — are one-liners.
-Each comes from a trait in the prelude:
+With the table defined, all four operations — create, read, update, delete — are one-liners. Each
+comes from a trait in the prelude:
 
 ```rust
 let table = Product::table(db);
@@ -173,10 +173,10 @@ table.replace(&"muffin".to_string(), &updated).await?;
 table.delete(&"muffin".to_string()).await?;
 ```
 
-That's it. `list()` returns an `IndexMap<Id, Product>` — ordered and keyed by ID. `get()`
-returns the entity or an error if the ID doesn't exist. There's also `get_some()` which
-returns `Option` for when you're not sure there are any records, and `insert_return_id()`
-for when you want the database to generate the ID.
+That's it. `list()` returns an `IndexMap<Id, Product>` — ordered and keyed by ID. `get()` returns
+the entity or an error if the ID doesn't exist. There's also `get_some()` which returns `Option` for
+when you're not sure there are any records, and `insert_return_id()` for when you want the database
+to generate the ID.
 
 ```admonish tip title="Idempotent operations"
 Try duplicating the `replace()` and `delete()` calls — the result is the same. Replacing
@@ -189,13 +189,13 @@ side effects.
 
 ## Type-erased tables
 
-`Table<SqliteDB, Product>` is great when you know the types at compile time. But what if you
-want to write a function that lists *any* table — products, orders, customers — without
-knowing the entity type?
+`Table<SqliteDB, Product>` is great when you know the types at compile time. But what if you want to
+write a function that lists _any_ table — products, orders, customers — without knowing the entity
+type?
 
-[`AnyTable`](vantage_table::any::AnyTable) wraps a concrete table and erases its type parameters. Values come back as
-`Record<serde_json::Value>` instead of typed entities. You can iterate columns by name and
-build a generic display:
+[`AnyTable`](vantage_table::any::AnyTable) wraps a concrete table and erases its type parameters.
+Values come back as `Record<serde_json::Value>` instead of typed entities. You can iterate columns
+by name and build a generic display:
 
 ```rust
 async fn list_table(table: &AnyTable) -> VantageResult<()> {
@@ -234,10 +234,10 @@ list_table(&any).await?;
 // ...
 ```
 
-Under the hood, `AnyTable` converts values to and from `serde_json::Value` on the fly.
-Conditions, pagination, and all CRUD operations still work — you just lose compile-time
-type safety on the entity fields. This is the trade-off: `AnyTable` lets you build generic
-UI components, CLI tools, and admin panels that work with any table definition.
+Under the hood, `AnyTable` converts values to and from `serde_json::Value` on the fly. Conditions,
+pagination, and all CRUD operations still work — you just lose compile-time type safety on the
+entity fields. This is the trade-off: `AnyTable` lets you build generic UI components, CLI tools,
+and admin panels that work with any table definition.
 
 ```admonish info title="Generics vs type erasure"
 You can also write `list_table` using generics — that keeps type safety but limits you
@@ -262,8 +262,8 @@ type erasure via `AnyTable` is the way to go.
 
 ## Relationships
 
-Our database has a `category` table that we haven't used yet. Let's define it and connect it
-to products.
+Our database has a `category` table that we haven't used yet. Let's define it and connect it to
+products.
 
 Create `src/category.rs`:
 
@@ -305,9 +305,9 @@ let products = categories.get_ref_as::<Product>("products")?;
 ```
 
 The result is a `Table<SqliteDB, Product>` with an extra condition — only products whose
-`category_id` matches one of the category IDs. Narrow the categories first and the subquery
-narrows too. Let's use this in a CLI that accepts an optional search filter. The `.with_search()`
-method adds a LIKE condition across all columns of the table — handy for quick filtering.
+`category_id` matches one of the category IDs. Narrow the categories first and the subquery narrows
+too. Let's use this in a CLI that accepts an optional search filter. The `.with_search()` method
+adds a LIKE condition across all columns of the table — handy for quick filtering.
 
 Update `src/main.rs`:
 
@@ -362,8 +362,8 @@ cargo run "Pastries"     # Tart, Pie
 cargo run "t"            # matches "Sweet Treats" AND "Pastries" — 5 products
 ```
 
-The search `"t"` matches two categories ("Sweet Treats" and "Pastries"), so products from
-both are returned.
+The search `"t"` matches two categories ("Sweet Treats" and "Pastries"), so products from both are
+returned.
 
 ```admonish info title="Sets, not joins"
 Notice what happened with `cargo run "t"`: the search matched **two** categories, and we got
@@ -387,12 +387,11 @@ need to rewrite the traversal logic.
 
 ## Computed fields with expressions
 
-So far, `list_products` only shows name and price. It would be nice to show the category
-name too — but `Product` doesn't have a `category` field, and the category name lives in
-a different table.
+So far, `list_products` only shows name and price. It would be nice to show the category name too —
+but `Product` doesn't have a `category` field, and the category name lives in a different table.
 
-Vantage solves this with **expressions** — computed fields that are evaluated as part of the
-SELECT query. You define them on the table, and they appear alongside regular columns.
+Vantage solves this with **expressions** — computed fields that are evaluated as part of the SELECT
+query. You define them on the table, and they appear alongside regular columns.
 
 First, add a `with_one` relationship on Product (the reverse of `with_many` on Category):
 
@@ -411,7 +410,9 @@ This says: each product has one category, linked through `category_id`. Now you 
 })
 ```
 
-`select_column("name")` builds a subquery like `SELECT "name" FROM "category" WHERE "id" = "product"."category_id"` — a correlated subquery that fetches the category name for each product row.
+`select_column("name")` builds a subquery like
+`SELECT "name" FROM "category" WHERE "id" = "product"."category_id"` — a correlated subquery that
+fetches the category name for each product row.
 
 Here's the updated `src/product.rs`:
 
@@ -450,11 +451,10 @@ impl Product {
 
 A few things to note:
 
-- **`category: Option<String>`** — the field is `Option` because a product might not have a
-  category (NULL in the database). The expression result is deserialized into this field
-  automatically.
-- **No `with_column_of` for "category"** — the expression replaces what would normally be a
-  column. Vantage adds it to the SELECT as a computed field.
+- **`category: Option<String>`** — the field is `Option` because a product might not have a category
+  (NULL in the database). The expression result is deserialized into this field automatically.
+- **No `with_column_of` for "category"** — the expression replaces what would normally be a column.
+  Vantage adds it to the SELECT as a computed field.
 - **`with_one` + `with_expression`** — the relationship defines how to traverse; the expression
   defines what to fetch. They work together but serve different purposes.
 
@@ -485,8 +485,8 @@ cargo run
   7    Sourdough Loaf       350 cents  [Breads]
 ```
 
-The category name comes from a subquery — no JOIN, no extra round trip. And the category
-filter still works:
+The category name comes from a subquery — no JOIN, no extra round trip. And the category filter
+still works:
 
 ```sh
 cargo run "t"
@@ -554,12 +554,12 @@ extra round trip to the database.
 
 ## Extension traits
 
-Throughout this chapter you've seen calls like `categories.get_ref_as::<Product>("products")`.
-The turbofish `::<Product>` and the string `"products"` are repetitive and error-prone —
-get the string wrong and you get a runtime error.
+Throughout this chapter you've seen calls like `categories.get_ref_as::<Product>("products")`. The
+turbofish `::<Product>` and the string `"products"` are repetitive and error-prone — get the string
+wrong and you get a runtime error.
 
-Rust's extension traits solve this. Define a trait on `Table<SqliteDB, Category>` that
-wraps the traversal:
+Rust's extension traits solve this. Define a trait on `Table<SqliteDB, Category>` that wraps the
+traversal:
 
 ```rust
 pub trait CategoryTable: ReadableDataSet<Category> {
@@ -570,12 +570,12 @@ pub trait CategoryTable: ReadableDataSet<Category> {
 impl CategoryTable for Table<SqliteDB, Category> {}
 ```
 
-The default method lives in the trait — `impl` is just `{}`. The `unwrap()` is safe because
-we know "products" is defined on every `CategoryTable`. If the string were wrong, it would
-panic immediately during development, not silently fail at runtime.
+The default method lives in the trait — `impl` is just `{}`. The `unwrap()` is safe because we know
+"products" is defined on every `CategoryTable`. If the string were wrong, it would panic immediately
+during development, not silently fail at runtime.
 
-Now callers write `categories.ref_products()` — no turbofish, no string, no `?`, and the
-compiler catches typos.
+Now callers write `categories.ref_products()` — no turbofish, no string, no `?`, and the compiler
+catches typos.
 
 The same pattern works for typed column access:
 
@@ -641,4 +641,70 @@ Now `products.print().await?` gives you a formatted table in the terminal:
 Other methods you might add: `only_expensive()` that returns a filtered clone,
 `total_revenue()` that computes a sum, or `export_csv()` that writes to a file.
 The table is yours to extend.
+```
+
+---
+
+## Persistence Abstraction
+
+It is time for a pause and reflection. The files you have written so far — `Cargo.toml`,
+`product.rs`, `category.rs`, `main.rs` — are the makings of an extensible business software
+architecture. Scalable, maintainable, testable, and portable across databases without rewriting a
+single line of business logic.
+
+What you have is four distinct components, each with a clear job:
+
+```mermaid
+flowchart TD
+    A["<b>Business code</b><br/><code>main.rs</code><br/>minimal, domain-focused"]
+    B["<b>Model definitions</b><br/><code>product.rs</code>, <code>category.rs</code><br/>entities, tables, relationships, domain methods"]
+    C["<b>Persistence crate</b><br/><code>vantage-sql</code> (or surrealdb, mongodb, csv…)<br/>query builder, CRUD, type system"]
+    D["<b>Vantage framework</b><br/><code>vantage-table</code>, <code>vantage-expressions</code>, <code>vantage-types</code><br/>the extensible mechanism that ties it together"]
+    A --> B
+    B --> C
+    C --> D
+```
+
+The majority of your business code can work with data without any knowledge of where it's stored or
+how. It operates on typed entities, relationships, and domain methods — nothing else.
+
+The model definitions focus on describing _where_ and _how_ data is stored, but they don't
+micro-manage the process. If storage requirements change — a new backend, a schema migration, a
+cached layer in front — the model is where you make the tweaks. Business code remains untouched.
+
+This separation gives you:
+
+- [x] **Separation of concerns** - framework to establish great design for your software from day
+      one, then scale.
+- [x] **No ripple effect** — in Rust code refactoring cascade through entire codebase. Vantage model
+      layer contains that pain, and enterprise codebases don't unravel when requirements shift.
+- [x] **Concise syntax** — the ergonomics Python, JavaScript, and PHP developers enjoy, now in Rust.
+      Cuting boilerplate, making code readablle.
+- [x] **Strong types, zero cost** — everything TypeScript has and more, without sacrificing
+      performance. The abstraction compiles down to direct calls.
+- [x] **A usable alternative to OOP** — Java and C# developers get entities, methods, and
+      composition without inheritance hierarchies or dependency injection containers.
+- [x] **Safe concurrency, async, ownership, no memory leaks** — the performance of C with ergonomics
+      that make concurrent code readable.
+- [x] **Portability** — take Vantage with you anywhere: server, desktop, web, mobile, embedded. One
+      static binary per target.
+
+```admonish tip title="A sneak peek at what's next"
+This introduction gets you productive quickly, but it barely scratches the surface.
+Later chapters explore more complex challenges that make Vantage is equipped to deal with:
+
+- **Zero-cost cross-persistence traversal** — follow a relationship from a Postgres table
+  into a MongoDB collection, all expressed in Rust, executed efficiently on each side.
+- **In-memory entity caching with indexing** — Using `vantage-redb` for powerful and
+  transparent client-side caching.
+- **Facades and middleware APIs, almost for free** — wrap your model to expose a filtered
+  or transformed view to another team an API.
+- **Super-efficient API clients and SDKs** — your model becomes the client. Typed endpoints,
+  retries, pagination, and rate limits — all in one abstraction.
+- **UI framework integration** — the same model drives desktop, terminal, web, and mobile
+  UIs through `vantage-ui-adapters`. Define once, render anywhere.
+- **Reactive in-memory data** — make your local data reactive, receiving live updates
+  from your database or websocket APIs.
+
+The patterns you've learned scale all the way up.
 ```

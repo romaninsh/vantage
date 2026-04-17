@@ -210,20 +210,6 @@ where
     /// # Use Case
     /// Update only the modified fields of a entity.
     async fn patch(&self, id: &Self::Id, partial: &E) -> Result<E>;
-
-    /// Delete a entity by ID (HTTP DELETE)
-    ///
-    /// **Idempotent**: Always succeeds, even if the entity doesn't exist.
-    /// This allows safe cleanup operations without checking existence first.
-    async fn delete(&self, id: &Self::Id) -> Result<()>;
-
-    /// Delete all entities in the set (HTTP DELETE without ID)
-    ///
-    /// **Idempotent**: All entities in the set will be deleted.
-    /// Executing several times is OK.
-    ///
-    /// Execute on a subset of your entire database.
-    async fn delete_all(&self) -> Result<()>;
 }
 
 /// Append-only operations with automatic ID generation.

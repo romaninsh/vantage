@@ -3,6 +3,7 @@
 - [Introduction](./introduction.md)
   - [SQLite and the Query Builder](./intro/step1-first-query.md)
   - [Tables and Typed Data Access](./intro/step2-tables.md)
+  - [A Standalone Axum Server](./intro/step3-axum-server.md)
 - [Historical Timeline](./history.md)
   - [What's New in 0.4](./whats-new-04.md)
 - [Expressions & Queries](./expressions.md)
