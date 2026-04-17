@@ -8,7 +8,7 @@ use vantage_sql::postgres::PostgresType;
 use vantage_table::table::Table;
 use vantage_types::entity;
 
-use vantage_dataset::{InsertableDataSet, ReadableDataSet, WritableDataSet};
+use vantage_dataset::{InsertableDataSet, ReadableDataSet, WritableDataSet, WritableValueSet};
 
 const PG_URL: &str = "postgres://vantage:vantage@localhost:5433/vantage";
 

@@ -8,7 +8,7 @@ use vantage_sql::mysql::MysqlType;
 use vantage_table::table::Table;
 use vantage_types::entity;
 
-use vantage_dataset::{InsertableDataSet, ReadableDataSet, WritableDataSet};
+use vantage_dataset::{InsertableDataSet, ReadableDataSet, WritableDataSet, WritableValueSet};
 
 const MYSQL_URL: &str = "mysql://vantage:vantage@localhost:3306/vantage";
 
