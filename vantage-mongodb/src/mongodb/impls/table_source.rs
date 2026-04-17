@@ -498,7 +498,21 @@ impl TableSource for MongoDB {
                         error!("MongoDB deserialize error", details = e.to_string())
                     })?;
                     if let Some(v) = doc.get(&col) {
+                        // Push the value itself, plus the alternate representation
+                        // so `$in` matches regardless of whether the target stores
+                        // this id as ObjectId or as the hex string equivalent.
                         values.push(v.clone());
+                        match v {
+                            Bson::ObjectId(oid) => {
+                                values.push(Bson::String(oid.to_hex()));
+                            }
+                            Bson::String(s) => {
+                                if let Ok(oid) = bson::oid::ObjectId::parse_str(s) {
+                                    values.push(Bson::ObjectId(oid));
+                                }
+                            }
+                            _ => {}
+                        }
                     }
                 }
 

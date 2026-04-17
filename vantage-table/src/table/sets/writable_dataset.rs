@@ -48,14 +48,6 @@ where
         E::try_from_record(&result_record)
             .map_err(|_| vantage_core::error!("Failed to convert record to entity"))
     }
-
-    async fn delete(&self, id: &Self::Id) -> Result<()> {
-        self.data_source().delete_table_value(self, id).await
-    }
-
-    async fn delete_all(&self) -> Result<()> {
-        self.data_source().delete_table_all_values(self).await
-    }
 }
 
 #[cfg(test)]
@@ -64,7 +56,7 @@ mod tests {
     use crate::mocks::mock_table_source::MockTableSource;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
-    use vantage_dataset::prelude::ReadableDataSet;
+    use vantage_dataset::prelude::{ReadableDataSet, WritableValueSet};
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     struct TestUser {

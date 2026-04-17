@@ -88,23 +88,6 @@ where
         })?;
         Ok(merged_entity)
     }
-
-    async fn delete(&self, id: &Self::Id) -> Result<()> {
-        let mut table = self.data_source.get_or_create_table(&self.table_name);
-
-        // Delete is idempotent - success even if record doesn't exist
-        table.shift_remove(id);
-
-        self.data_source.update_table(&self.table_name, table);
-        Ok(())
-    }
-
-    async fn delete_all(&self) -> Result<()> {
-        let mut table = self.data_source.get_or_create_table(&self.table_name);
-        table.clear();
-        self.data_source.update_table(&self.table_name, table);
-        Ok(())
-    }
 }
 
 // Tests are in tests/im_dataset.rs integration tests

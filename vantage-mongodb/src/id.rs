@@ -9,12 +9,23 @@ use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
 use bson::{Bson, oid::ObjectId};
+use serde::{Serialize, Serializer};
 
 /// A MongoDB document identifier — either an `ObjectId` or a `String`.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum MongoId {
     ObjectId(ObjectId),
     String(String),
+}
+
+impl Serialize for MongoId {
+    /// Serializes as a plain string — the hex form for `ObjectId`, or the raw
+    /// string value for `MongoId::String`. This matches how HTTP APIs typically
+    /// want ids to appear in JSON: a single string rather than the tagged
+    /// `{ "$oid": "..." }` form.
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
+    }
 }
 
 impl MongoId {
@@ -83,13 +94,28 @@ impl From<ObjectId> for MongoId {
 }
 
 impl From<String> for MongoId {
+    /// 24-character hex strings parse as `ObjectId`, anything else stays a plain
+    /// `String`. Mirrors [`MongoId::from_str`] so `.get(id_string)` and similar
+    /// call sites work without an explicit parse.
     fn from(s: String) -> Self {
+        if s.len() == 24
+            && let Ok(oid) = ObjectId::parse_str(&s)
+        {
+            return MongoId::ObjectId(oid);
+        }
         MongoId::String(s)
     }
 }
 
 impl From<&str> for MongoId {
+    /// 24-character hex strings parse as `ObjectId`, anything else stays a plain
+    /// `String`. Mirrors [`MongoId::from_str`].
     fn from(s: &str) -> Self {
+        if s.len() == 24
+            && let Ok(oid) = ObjectId::parse_str(s)
+        {
+            return MongoId::ObjectId(oid);
+        }
         MongoId::String(s.to_string())
     }
 }

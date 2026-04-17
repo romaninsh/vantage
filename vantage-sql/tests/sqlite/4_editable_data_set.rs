@@ -8,7 +8,7 @@ use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 use vantage_table::table::Table;
 use vantage_types::entity;
 
-use vantage_dataset::{InsertableDataSet, ReadableDataSet, WritableDataSet};
+use vantage_dataset::{InsertableDataSet, ReadableDataSet, WritableDataSet, WritableValueSet};
 
 #[entity(SqliteType)]
 #[derive(Debug, Clone, PartialEq, Default)]
