@@ -14,12 +14,35 @@ where
     T::Value: From<String>, // that's because table is specified as a string
     E: Entity<T::Value>,
 {
+    /// Create a bare select with source, conditions, ordering, and pagination —
+    /// but no fields. Used by `select_column` and aggregates to avoid evaluating
+    /// all expressions.
+    pub fn select_empty(&self) -> T::Select {
+        let mut select = self.data_source.select();
+        select.add_source(self.table_name(), None);
+
+        for condition in self.conditions.values() {
+            select.add_where_condition(condition.clone());
+        }
+
+        for (expr, direction) in self.order_by.values() {
+            let order = match direction {
+                crate::sorting::SortDirection::Ascending => vantage_expressions::Order::Asc,
+                crate::sorting::SortDirection::Descending => vantage_expressions::Order::Desc,
+            };
+            select.add_order_by(expr.clone(), order);
+        }
+
+        if let Some(pagination) = &self.pagination {
+            select.set_limit(Some(pagination.limit()), Some(pagination.skip()));
+        }
+
+        select
+    }
+
     /// Create a select query with table configuration applied
     pub fn select(&self) -> T::Select {
-        let mut select = self.data_source.select();
-
-        // Set the table as source
-        select.add_source(self.table_name(), None);
+        let mut select = self.select_empty();
 
         // Add all columns as fields (or expressions if defined)
         for column in self.columns.values() {
@@ -51,25 +74,6 @@ where
             }
         }
 
-        // Add all conditions
-        for condition in self.conditions.values() {
-            select.add_where_condition(condition.clone());
-        }
-
-        // Add all order clauses
-        for (expr, direction) in self.order_by.values() {
-            let order = match direction {
-                crate::sorting::SortDirection::Ascending => vantage_expressions::Order::Asc,
-                crate::sorting::SortDirection::Descending => vantage_expressions::Order::Desc,
-            };
-            select.add_order_by(expr.clone(), order);
-        }
-
-        // Apply pagination
-        if let Some(pagination) = &self.pagination {
-            select.set_limit(Some(pagination.limit()), Some(pagination.skip()));
-        }
-
         select
     }
     /// Get count of records in the table
@@ -92,18 +96,44 @@ where
         self.data_source.get_table_min(self, column).await
     }
 
-    /// Create a count query expression (does not execute)
+    /// Create a count query expression (does not execute).
+    /// The result is wrapped in parentheses so it's safe to nest as a subquery.
     pub fn get_count_query(&self) -> Expression<T::Value> {
-        self.select().as_count()
+        expr_any!("({})", (self.select_empty().as_count()))
     }
 
-    /// Create a sum query expression for a column (does not execute)
+    /// Create a sum query expression for a column (does not execute).
+    /// The result is wrapped in parentheses so it's safe to nest as a subquery.
     pub fn get_sum_query<Type>(&self, column: &T::Column<Type>) -> Expression<T::Value>
     where
         Type: ColumnType,
         T::Column<Type>: Expressive<T::Value>,
     {
-        self.select().as_sum(column.expr())
+        expr_any!("({})", (self.select_empty().as_sum(column.expr())))
+    }
+
+    /// Create a subquery expression that selects a single column from this table.
+    ///
+    /// Builds `SELECT field FROM table WHERE conditions` — useful as a correlated
+    /// subquery inside `with_expression`:
+    ///
+    /// ```rust,ignore
+    /// .with_expression("category", |t| {
+    ///     t.get_subquery_as::<Category>("category").unwrap()
+    ///         .select_column("name")
+    /// })
+    /// ```
+    pub fn select_column(&self, field: &str) -> Expression<T::Value>
+    where
+        T::Column<T::AnyType>: Expressive<T::Value>,
+        T::Select: Expressive<T::Value>,
+    {
+        let expr = self.get_column_expr(field).unwrap();
+        let mut select = self.select_empty();
+        select.clear_fields();
+        select.clear_order_by();
+        select.add_expression(expr);
+        select.expr()
     }
 }
 
@@ -148,7 +178,7 @@ mod tests {
         ]));
 
         let mock_query_source = vantage_expressions::mocks::mock_builder::new()
-            .on_exact_select("SELECT COUNT(*) FROM \"users\"", json!(42));
+            .on_exact_select("(SELECT COUNT(*) FROM \"users\")", json!(42));
 
         let table = MockTableSource::new()
             .with_data(
@@ -173,7 +203,7 @@ mod tests {
 
         // Test count query generation
         let count_query = table.get_count_query();
-        assert_eq!(count_query.preview(), "SELECT COUNT(*) FROM \"users\"");
+        assert_eq!(count_query.preview(), "(SELECT COUNT(*) FROM \"users\")");
 
         // TODO: This does not work with MockColumn - because it does not implement Expressive
         // // Test sum query generation

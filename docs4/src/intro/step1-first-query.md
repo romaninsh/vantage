@@ -57,18 +57,29 @@ We'll make a small product catalog from scratch. Create `seed.sql` in your proje
 
 ```sql
 CREATE TABLE product (
-    id TEXT PRIMARY KEY,
+    id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
     price INTEGER NOT NULL,
+    category_id INTEGER,
     is_deleted BOOLEAN NOT NULL DEFAULT 0
 );
 
-INSERT INTO product VALUES ('cupcake',  'Cupcake',           120, 0);
-INSERT INTO product VALUES ('donut',    'Doughnut',          135, 0);
-INSERT INTO product VALUES ('tart',     'Tart',              220, 0);
-INSERT INTO product VALUES ('pie',      'Pie',               299, 0);
-INSERT INTO product VALUES ('cookies',  'Cookies',           199, 0);
-INSERT INTO product VALUES ('old_cake', 'Discontinued Cake',  80, 1);
+INSERT INTO product VALUES (1, 'Cupcake',           120, 1, 0);
+INSERT INTO product VALUES (2, 'Doughnut',          135, 1, 0);
+INSERT INTO product VALUES (3, 'Tart',              220, 2, 0);
+INSERT INTO product VALUES (4, 'Pie',               299, 2, 0);
+INSERT INTO product VALUES (5, 'Cookies',           199, 1, 0);
+INSERT INTO product VALUES (6, 'Discontinued Cake',  80, 1, 1);
+INSERT INTO product VALUES (7, 'Sourdough Loaf',    350, 3, 0);
+
+CREATE TABLE category (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL
+);
+
+INSERT INTO category VALUES (1, 'Sweet Treats');
+INSERT INTO category VALUES (2, 'Pastries');
+INSERT INTO category VALUES (3, 'Breads');
 ```
 
 Run it:
@@ -77,7 +88,7 @@ Run it:
 sqlite3 products.db < seed.sql
 ```
 
-You now have `products.db` — 6 rows, 5 active and 1 deleted. Quick check:
+You now have `products.db` — 7 products (6 active, 1 deleted) across 3 categories. Quick check:
 
 ```sh
 sqlite3 products.db "SELECT name, price FROM product WHERE is_deleted = 0"
@@ -108,8 +119,8 @@ async fn run() -> VantageResult<()> {
 
 A few things going on here:
 
-- **`use vantage_sql::prelude::*`** brings in everything we need for this chapter — `SqliteDB`,
-  `SqliteSelect`, the `sqlite_expr!` macro, error types, and the traits that make builder and
+- **`use vantage_sql::prelude::*`** brings in everything we need for this chapter — [`SqliteDB`](vantage_sql::sqlite::SqliteDB),
+  [`SqliteSelect`](vantage_sql::sqlite::statements::SqliteSelect), the `sqlite_expr!` macro, error types, and the traits that make builder and
   execution methods work.
 - **`VantageResult<()>`** is Vantage's own Result type. It uses `VantageError`, which tracks context
   and error chains for readable diagnostics.
@@ -219,7 +230,7 @@ Two steps here: `.expr()` turns the builder into an [`Expression`](vantage_expre
 — Vantage's internal representation that keeps parameters separate from the SQL template. Then
 [`db.execute()`](vantage_expressions::ExprDataSource::execute) sends it to the database.
 
-The result is `AnySqliteType` — a type-tagged wrapper around whatever came back. The `Debug` output
+The result is [`AnySqliteType`](vantage_sql::sqlite::AnySqliteType) — a type-tagged wrapper around whatever came back. The `Debug` output
 isn't pretty, but you should see all 6 product rows in there.
 
 ```admonish tip title="When does Vantage hit the database?"
@@ -285,7 +296,7 @@ Same result, but the type parameter `<bool>` ensures you can only compare agains
 Try `is_deleted.eq(42)` — it won't compile. Other operators — `.gt()`, `.lt()`, `.ne()`, `.in_()` —
 enforce the same type safety.
 
-The result is a `SqliteCondition` — the backend's native condition type — ready to be passed
+The result is a [`SqliteCondition`](vantage_sql::condition::SqliteCondition) — the backend's native condition type — ready to be passed
 directly to `.with_condition()`.
 
 ```admonish info title="Type safety and backend-specific operations"
@@ -353,8 +364,8 @@ Primitives are not part of the prelude — import them when needed. Besides iden
 [Primitives reference](../sql/primitives.md) for the full list.
 
 In Vantage, primitives, query builders, Column, Conditions and even native types
-like i64 and bool - all implement Expressive<T>, where T= your databases AnyType
-(for Sqlite its AnySqliteType - for MongoDB - AnyMongoType) - making them
+like i64 and bool — all implement `Expressive<T>`, where T is your database's AnyType
+(for SQLite it's `AnySqliteType`, for MongoDB — `AnyMongoType`) — making them
 eligible to be parameters of expressions.
 ```
 
@@ -546,7 +557,7 @@ cargo run
 | Concept                                                              | What it does                                                                      | More info                                               |
 | -------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------- |
 | [`SqliteSelect`](vantage_sql::sqlite::statements::SqliteSelect)      | Builds SELECT queries via builder pattern                                         | [`Selectable`](vantage_expressions::Selectable)         |
-| [`Column::<T>`](vantage_table::column::core::Column)                 | Typed column reference — enforces matching operand types                          |                                                         |
+| [`Column`](vantage_table::column::core::Column)                      | Typed column reference — enforces matching operand types                          |                                                         |
 | [`SqliteOperation`](vantage_sql::sqlite::operation::SqliteOperation) | Ext trait giving `.eq()`, `.gt()`, etc. → `SqliteCondition`                       |                                                         |
 | `sqlite_expr!`                                                       | Creates expressions with typed, bound parameters                                  | [`Expression`](vantage_expressions::Expression)         |
 | `db.execute()`                                                       | Runs an expression, returns [`AnySqliteType`](vantage_sql::sqlite::AnySqliteType) | [`ExprDataSource`](vantage_expressions::ExprDataSource) |

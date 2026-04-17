@@ -38,6 +38,24 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self.add_condition(condition);
         self
     }
+
+    /// Add a search condition that matches `value` across all columns.
+    pub fn add_search(&mut self, value: &str)
+    where
+        T: Sized,
+    {
+        let condition = self.data_source().search_table_condition(self, value);
+        self.add_condition(condition);
+    }
+
+    /// Add a search condition using the builder pattern.
+    pub fn with_search(mut self, value: &str) -> Self
+    where
+        T: Sized,
+    {
+        self.add_search(value);
+        self
+    }
 }
 
 #[cfg(test)]

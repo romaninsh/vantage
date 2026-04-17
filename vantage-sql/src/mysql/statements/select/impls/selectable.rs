@@ -130,6 +130,14 @@ impl Selectable<AnyMysqlType, MysqlCondition> for MysqlSelect {
         self.skip
     }
 
+    fn as_field(&self, field: impl Into<String>) -> Expr {
+        let mut s = self.clone();
+        s.fields.clear();
+        s.fields.push(ident(field).expr());
+        s.order_by.clear();
+        s.render()
+    }
+
     fn as_count(&self) -> Expr {
         let mut count_select = self.clone();
         count_select.fields.clear();

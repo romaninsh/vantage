@@ -175,6 +175,10 @@ impl<Q: SurrealQueriable + Selectable + Clone, R: Send + Sync> Selectable
         self.query.get_skip()
     }
 
+    fn as_field(&self, field: impl Into<String>) -> vantage_expressions::Expression {
+        self.query.as_field(field)
+    }
+
     fn as_count(&self) -> vantage_expressions::Expression {
         self.query.as_count()
     }

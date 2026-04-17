@@ -99,6 +99,10 @@ impl Selectable<AnyMongoType, MongoCondition> for MongoSelect {
         self.skip
     }
 
+    fn as_field(&self, _field: impl Into<String>) -> Expression<AnyMongoType> {
+        todo!("as_field not yet implemented for MongoDB")
+    }
+
     fn as_count(&self) -> Expression<AnyMongoType> {
         let coll = self.collection.as_deref().unwrap_or("?");
         Expression::new(format!("db.{}.countDocuments()", coll), vec![])
