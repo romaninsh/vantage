@@ -36,7 +36,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-cfc99efd.js";
+            window.path_to_searchindex_js = "../searchindex-8f068220.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-10b285ad.js"></script>
@@ -244,23 +244,34 @@ runtime because all database operations are async.</p>
 <h2 id="create-and-populate-a-database"><a class="header" href="#create-and-populate-a-database">Create and populate a database</a></h2>
 <p>We’ll make a small product catalog from scratch. Create <code>seed.sql</code> in your project root:</p>
 <pre><code class="language-sql">CREATE TABLE product (
-    id TEXT PRIMARY KEY,
+    id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
     price INTEGER NOT NULL,
+    category_id INTEGER,
     is_deleted BOOLEAN NOT NULL DEFAULT 0
 );
 
-INSERT INTO product VALUES ('cupcake',  'Cupcake',           120, 0);
-INSERT INTO product VALUES ('donut',    'Doughnut',          135, 0);
-INSERT INTO product VALUES ('tart',     'Tart',              220, 0);
-INSERT INTO product VALUES ('pie',      'Pie',               299, 0);
-INSERT INTO product VALUES ('cookies',  'Cookies',           199, 0);
-INSERT INTO product VALUES ('old_cake', 'Discontinued Cake',  80, 1);
+INSERT INTO product VALUES (1, 'Cupcake',           120, 1, 0);
+INSERT INTO product VALUES (2, 'Doughnut',          135, 1, 0);
+INSERT INTO product VALUES (3, 'Tart',              220, 2, 0);
+INSERT INTO product VALUES (4, 'Pie',               299, 2, 0);
+INSERT INTO product VALUES (5, 'Cookies',           199, 1, 0);
+INSERT INTO product VALUES (6, 'Discontinued Cake',  80, 1, 1);
+INSERT INTO product VALUES (7, 'Sourdough Loaf',    350, 3, 0);
+
+CREATE TABLE category (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL
+);
+
+INSERT INTO category VALUES (1, 'Sweet Treats');
+INSERT INTO category VALUES (2, 'Pastries');
+INSERT INTO category VALUES (3, 'Breads');
 </code></pre>
 <p>Run it:</p>
 <pre><code class="language-sh">sqlite3 products.db &lt; seed.sql
 </code></pre>
-<p>You now have <code>products.db</code> — 6 rows, 5 active and 1 deleted. Quick check:</p>
+<p>You now have <code>products.db</code> — 7 products (6 active, 1 deleted) across 3 categories. Quick check:</p>
 <pre><code class="language-sh">sqlite3 products.db "SELECT name, price FROM product WHERE is_deleted = 0"
 </code></pre>
 <hr>
@@ -282,8 +293,8 @@ async fn run() -&gt; VantageResult&lt;()&gt; {
 }</code></pre>
 <p>A few things going on here:</p>
 <ul>
-<li><strong><code>use vantage_sql::prelude::*</code></strong> brings in everything we need for this chapter — <code>SqliteDB</code>,
-<code>SqliteSelect</code>, the <code>sqlite_expr!</code> macro, error types, and the traits that make builder and
+<li><strong><code>use vantage_sql::prelude::*</code></strong> brings in everything we need for this chapter — <a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>,
+<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a>, the <code>sqlite_expr!</code> macro, error types, and the traits that make builder and
 execution methods work.</li>
 <li><strong><code>VantageResult&lt;()&gt;</code></strong> is Vantage’s own Result type. It uses <code>VantageError</code>, which tracks context
 and error chains for readable diagnostics.</li>
@@ -409,7 +420,7 @@ println!("{:?}", result);
 <p>Two steps here: <code>.expr()</code> turns the builder into an <a href="https://docs.rs/vantage_expressions/0.4.1/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a>
 — Vantage’s internal representation that keeps parameters separate from the SQL template. Then
 <a href="https://docs.rs/vantage_expressions/0.4.1/vantage_expressions/traits/datasource/trait.ExprDataSource.html#tymethod.execute"><code>db.execute()</code></a> sends it to the database.</p>
-<p>The result is <code>AnySqliteType</code> — a type-tagged wrapper around whatever came back. The <code>Debug</code> output
+<p>The result is <a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> — a type-tagged wrapper around whatever came back. The <code>Debug</code> output
 isn’t pretty, but you should see all 6 product rows in there.</p>
 <div id="admonition-when-does-vantage-hit-the-database" class="admonition admonish-tip" role="note" aria-labelledby="admonition-when-does-vantage-hit-the-database-title">
 <div class="admonition-title">
@@ -486,7 +497,7 @@ let condition = is_deleted.eq(false);
 <p>Same result, but the type parameter <code>&lt;bool&gt;</code> ensures you can only compare against matching types.
 Try <code>is_deleted.eq(42)</code> — it won’t compile. Other operators — <code>.gt()</code>, <code>.lt()</code>, <code>.ne()</code>, <code>.in_()</code> —
 enforce the same type safety.</p>
-<p>The result is a <code>SqliteCondition</code> — the backend’s native condition type — ready to be passed
+<p>The result is a <a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/condition/struct.SqliteCondition.html"><code>SqliteCondition</code></a> — the backend’s native condition type — ready to be passed
 directly to <code>.with_condition()</code>.</p>
 <div id="admonition-type-safety-and-backend-specific-operations" class="admonition admonish-info" role="note" aria-labelledby="admonition-type-safety-and-backend-specific-operations-title">
 <div class="admonition-title">
@@ -564,9 +575,9 @@ directly.</p>
 <code>Fx</code> (function calls), <code>Case</code>, <code>Concat</code>, <code>Interval</code>, and more. See the
 <a href="../sql/primitives.html">Primitives reference</a> for the full list.</p>
 <p>In Vantage, primitives, query builders, Column, Conditions and even native types
-like i64 and bool - all implement Expressive<t>, where T= your databases AnyType
-(for Sqlite its AnySqliteType - for MongoDB - AnyMongoType) - making them
-eligible to be parameters of expressions.</t></p>
+like i64 and bool — all implement <code>Expressive&lt;T&gt;</code>, where T is your database’s AnyType
+(for SQLite it’s <code>AnySqliteType</code>, for MongoDB — <code>AnyMongoType</code>) — making them
+eligible to be parameters of expressions.</p>
 </div>
 
 </div>
@@ -757,7 +768,7 @@ async fn run() -&gt; VantageResult&lt;()&gt; {
 </thead>
 <tbody>
 <tr><td><a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a></td><td>Builds SELECT queries via builder pattern</td><td><a href="https://docs.rs/vantage_expressions/0.4.1/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a></td></tr>
-<tr><td><a href="https://docs.rs/vantage_table/0.4.0/vantage_table/column/core/struct.Column.html"><code>Column::&lt;T&gt;</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
+<tr><td><a href="https://docs.rs/vantage_table/0.4.0/vantage_table/column/core/struct.Column.html"><code>Column</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
 <tr><td><a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a></td><td>Ext trait giving <code>.eq()</code>, <code>.gt()</code>, etc. → <code>SqliteCondition</code></td><td></td></tr>
 <tr><td><code>sqlite_expr!</code></td><td>Creates expressions with typed, bound parameters</td><td><a href="https://docs.rs/vantage_expressions/0.4.1/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a></td></tr>
 <tr><td><code>db.execute()</code></td><td>Runs an expression, returns <a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a></td><td><a href="https://docs.rs/vantage_expressions/0.4.1/vantage_expressions/traits/datasource/trait.ExprDataSource.html"><code>ExprDataSource</code></a></td></tr>

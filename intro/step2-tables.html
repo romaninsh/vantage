@@ -36,7 +36,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-cfc99efd.js";
+            window.path_to_searchindex_js = "../searchindex-8f068220.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-10b285ad.js"></script>
@@ -271,10 +271,13 @@ pub struct Product {
 
 impl Product {
     pub fn table(db: SqliteDB) -&gt; Table&lt;SqliteDB, Product&gt; {
+        let is_deleted = Column::&lt;bool&gt;::new("is_deleted");
         Table::new("product", db)
             .with_id_column("id")
             .with_column_of::&lt;String&gt;("name")
             .with_column_of::&lt;i64&gt;("price")
+            .with_column_of::&lt;bool&gt;("is_deleted")
+            .with_condition(is_deleted.eq(false))
     }
 }
 <span class="boring">}</span></code></pre>
@@ -375,7 +378,7 @@ side effects.</p>
 <p><code>Table&lt;SqliteDB, Product&gt;</code> is great when you know the types at compile time. But what if you
 want to write a function that lists <em>any</em> table — products, orders, customers — without
 knowing the entity type?</p>
-<p><code>AnyTable</code> wraps a concrete table and erases its type parameters. Values come back as
+<p><a href="https://docs.rs/vantage_table/0.4.0/vantage_table/any/struct.AnyTable.html"><code>AnyTable</code></a> wraps a concrete table and erases its type parameters. Values come back as
 <code>Record&lt;serde_json::Value&gt;</code> instead of typed entities. You can iterate columns by name and
 build a generic display:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -443,6 +446,378 @@ to Rust callers:</p>
 <span class="boring">}</span></code></pre>
 <p>If you plan to expose tables outside of Rust (Python bindings, FFI, a web admin UI),
 type erasure via <code>AnyTable</code> is the way to go.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="relationships"><a class="header" href="#relationships">Relationships</a></h2>
+<p>Our database has a <code>category</code> table that we haven’t used yet. Let’s define it and connect it
+to products.</p>
+<p>Create <code>src/category.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// src/category.rs
+use vantage_sql::prelude::*;
+use vantage_types::prelude::*;
+
+#[entity(SqliteType)]
+#[derive(Debug, Clone, Default)]
+pub struct Category {
+    pub name: String,
+}
+
+impl Category {
+    pub fn table(db: SqliteDB) -&gt; Table&lt;SqliteDB, Category&gt; {
+        Table::new("category", db)
+            .with_id_column("id")
+            .with_column_of::&lt;String&gt;("name")
+            .with_many("products", "category_id", Product::table)
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>The important line is <code>.with_many("products", "category_id", Product::table)</code>. This declares:</p>
+<ul>
+<li><strong>“products”</strong> — the name of the relationship (you’ll use this to traverse it)</li>
+<li><strong>“category_id”</strong> — the foreign key column on the <code>product</code> table</li>
+<li><strong><code>Product::table</code></strong> — a function that builds the target table (same one we defined earlier)</li>
+</ul>
+<p>No changes to <code>Product</code> are needed — the relationship is declared on the side that “owns” it.
+Category has many products; the foreign key lives on product.</p>
+<p>Given a set of categories, <code>get_ref_as</code> traverses the relationship and returns matching products:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let categories = Category::table(db.clone());
+let products = categories.get_ref_as::&lt;Product&gt;("products")?;
+<span class="boring">}</span></code></pre>
+<p>The result is a <code>Table&lt;SqliteDB, Product&gt;</code> with an extra condition — only products whose
+<code>category_id</code> matches one of the category IDs. Narrow the categories first and the subquery
+narrows too. Let’s use this in a CLI that accepts an optional search filter. The <code>.with_search()</code>
+method adds a LIKE condition across all columns of the table — handy for quick filtering.</p>
+<p>Update <code>src/main.rs</code>:</p>
+<pre class="playground"><code class="language-rust">mod category;
+mod product;
+
+use category::Category;
+use product::Product;
+use vantage_sql::prelude::*;
+
+async fn list_products(table: &amp;Table&lt;SqliteDB, Product&gt;) -&gt; VantageResult&lt;()&gt; {
+    for (id, p) in table.list().await? {
+        println!("  {:&lt;4} {:&lt;20} {:&gt;3} cents", id, p.name, p.price);
+    }
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() {
+    if let Err(e) = run().await {
+        e.report();
+    }
+}
+
+async fn run() -&gt; VantageResult&lt;()&gt; {
+    let db = SqliteDB::connect("sqlite:products.db")
+        .await
+        .context("Failed to connect to products.db")?;
+
+    let filter = std::env::args().nth(1);
+
+    let products = match &amp;filter {
+        Some(search) =&gt; Category::table(db.clone())
+            .with_search(search)
+            .get_ref_as::&lt;Product&gt;("products")?,
+        None =&gt; Product::table(db),
+    };
+
+    list_products(&amp;products).await?;
+
+    Ok(())
+}</code></pre>
+<p>Try it:</p>
+<pre><code class="language-sh">cargo run                # all active products
+cargo run "Sweet"        # Cupcake, Doughnut, Cookies
+cargo run "Pastries"     # Tart, Pie
+cargo run "t"            # matches "Sweet Treats" AND "Pastries" — 5 products
+</code></pre>
+<p>The search <code>"t"</code> matches two categories (“Sweet Treats” and “Pastries”), so products from
+both are returned.</p>
+<div id="admonition-sets-not-joins" class="admonition admonish-info" role="note" aria-labelledby="admonition-sets-not-joins-title">
+<div class="admonition-title">
+<div id="admonition-sets-not-joins-title">
+<p>Sets, not joins</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-sets-not-joins"></a>
+</div>
+
+<div>
+<p>Notice what happened with <code>cargo run "t"</code>: the search matched <strong>two</strong> categories, and we got
+products from <strong>both</strong> — without writing a JOIN or collecting IDs manually.</p>
+<p>This is because Vantage relationships work through <strong>sets</strong>. <code>with_search("t")</code> narrowed
+the category table to two rows. <code>get_ref_as</code> then generated a subquery:</p>
+<pre><code class="language-sql">SELECT ... FROM "product"
+WHERE "category_id" IN (SELECT "id" FROM "category" WHERE "name" LIKE '%t%')
+AND "is_deleted" = 0
+</code></pre>
+<p>The subquery comes from whatever conditions are on the source table. Add more conditions
+and the subquery narrows further. The relationship definition stays the same — you never
+need to rewrite the traversal logic.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="computed-fields-with-expressions"><a class="header" href="#computed-fields-with-expressions">Computed fields with expressions</a></h2>
+<p>So far, <code>list_products</code> only shows name and price. It would be nice to show the category
+name too — but <code>Product</code> doesn’t have a <code>category</code> field, and the category name lives in
+a different table.</p>
+<p>Vantage solves this with <strong>expressions</strong> — computed fields that are evaluated as part of the
+SELECT query. You define them on the table, and they appear alongside regular columns.</p>
+<p>First, add a <code>with_one</code> relationship on Product (the reverse of <code>with_many</code> on Category):</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>.with_one("category", "category_id", Category::table)
+<span class="boring">}</span></code></pre>
+<p>This says: each product has one category, linked through <code>category_id</code>. Now you can use
+<code>get_subquery_as</code> inside <code>with_expression</code> to build a correlated subquery:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>.with_expression("category", |t| {
+    t.get_subquery_as::&lt;Category&gt;("category")
+        .unwrap()
+        .select_column("name")
+})
+<span class="boring">}</span></code></pre>
+<p><code>select_column("name")</code> builds a subquery like <code>SELECT "name" FROM "category" WHERE "id" = "product"."category_id"</code> — a correlated subquery that fetches the category name for each product row.</p>
+<p>Here’s the updated <code>src/product.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_sql::prelude::*;
+use vantage_types::prelude::*;
+
+use crate::category::Category;
+
+#[entity(SqliteType)]
+#[derive(Debug, Clone, Default)]
+pub struct Product {
+    pub name: String,
+    pub price: i64,
+    pub category: Option&lt;String&gt;,
+}
+
+impl Product {
+    pub fn table(db: SqliteDB) -&gt; Table&lt;SqliteDB, Product&gt; {
+        let is_deleted = Column::&lt;bool&gt;::new("is_deleted");
+        Table::new("product", db)
+            .with_id_column("id")
+            .with_column_of::&lt;String&gt;("name")
+            .with_column_of::&lt;i64&gt;("price")
+            .with_column_of::&lt;bool&gt;("is_deleted")
+            .with_condition(is_deleted.eq(false))
+            .with_one("category", "category_id", Category::table)
+            .with_expression("category", |t| {
+                t.get_subquery_as::&lt;Category&gt;("category")
+                    .unwrap()
+                    .select_column("name")
+            })
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>A few things to note:</p>
+<ul>
+<li><strong><code>category: Option&lt;String&gt;</code></strong> — the field is <code>Option</code> because a product might not have a
+category (NULL in the database). The expression result is deserialized into this field
+automatically.</li>
+<li><strong>No <code>with_column_of</code> for “category”</strong> — the expression replaces what would normally be a
+column. Vantage adds it to the SELECT as a computed field.</li>
+<li><strong><code>with_one</code> + <code>with_expression</code></strong> — the relationship defines how to traverse; the expression
+defines what to fetch. They work together but serve different purposes.</li>
+</ul>
+<p>Update <code>list_products</code> to show the category:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>async fn list_products(table: &amp;Table&lt;SqliteDB, Product&gt;) -&gt; VantageResult&lt;()&gt; {
+    for (id, p) in table.list().await? {
+        let cat = p.category.as_deref().unwrap_or("-");
+        println!("  {:&lt;4} {:&lt;20} {:&gt;3} cents  [{}]", id, p.name, p.price, cat);
+    }
+    Ok(())
+}
+<span class="boring">}</span></code></pre>
+<p>Run it:</p>
+<pre><code class="language-sh">cargo run
+</code></pre>
+<pre><code class="language-text">  1    Cupcake              120 cents  [Sweet Treats]
+  2    Doughnut             135 cents  [Sweet Treats]
+  3    Tart                 220 cents  [Pastries]
+  4    Pie                  299 cents  [Pastries]
+  5    Cookies              199 cents  [Sweet Treats]
+  7    Sourdough Loaf       350 cents  [Breads]
+</code></pre>
+<p>The category name comes from a subquery — no JOIN, no extra round trip. And the category
+filter still works:</p>
+<pre><code class="language-sh">cargo run "t"
+</code></pre>
+<pre><code class="language-text">  1    Cupcake              120 cents  [Sweet Treats]
+  2    Doughnut             135 cents  [Sweet Treats]
+  3    Tart                 220 cents  [Pastries]
+  4    Pie                  299 cents  [Pastries]
+  5    Cookies              199 cents  [Sweet Treats]
+</code></pre>
+<div id="admonition-expressions-compose" class="admonition admonish-info" role="note" aria-labelledby="admonition-expressions-compose-title">
+<div class="admonition-title">
+<div id="admonition-expressions-compose-title">
+<p>Expressions compose</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-expressions-compose"></a>
+</div>
+
+<div>
+<p>Expressions can reference other expressions. For example, we could add a <code>product_count</code>
+expression to Category that counts products via a subquery, then build a <code>title</code> expression
+that combines the name and count:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// In Category::table()
+.with_expression("product_count", |t| {
+    t.get_subquery_as::&lt;Product&gt;("products")
+        .unwrap()
+        .get_count_query()
+})
+.with_expression("title", |t| {
+    let name = t.get_column_expr("name").unwrap();
+    let count = t.get_column_expr("product_count").unwrap();
+    concat_!(name, " (", count, ")").expr()
+})
+<span class="boring">}</span></code></pre>
+<p><code>get_column_expr</code> returns the expression for either a real column or a computed expression
+by name. Here it resolves <code>"product_count"</code> to the count subquery, so <code>title</code> becomes
+something like <code>name || ' (' || (SELECT COUNT(*) FROM product WHERE ...) || ')'</code>.</p>
+<p>Now change Product’s <code>category</code> expression to fetch <code>title</code> instead of <code>name</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>.with_expression("category", |t| {
+    t.get_subquery_as::&lt;Category&gt;("category")
+        .unwrap()
+        .select_column("title")
+})
+<span class="boring">}</span></code></pre>
+<p><code>select_column("title")</code> resolves the <code>title</code> expression on Category and builds it into
+the subquery. The result:</p>
+<pre><code class="language-text">  1    Cupcake              120 cents  [Sweet Treats (3)]
+  2    Doughnut             135 cents  [Sweet Treats (3)]
+  3    Tart                 220 cents  [Pastries (2)]
+  4    Pie                  299 cents  [Pastries (2)]
+  5    Cookies              199 cents  [Sweet Treats (3)]
+  7    Sourdough Loaf       350 cents  [Breads (1)]
+</code></pre>
+<p>Vantage renders everything into a single SQL query. The nested subqueries might look
+redundant, but modern SQL databases optimise and execute them efficiently — there’s no
+extra round trip to the database.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="extension-traits"><a class="header" href="#extension-traits">Extension traits</a></h2>
+<p>Throughout this chapter you’ve seen calls like <code>categories.get_ref_as::&lt;Product&gt;("products")</code>.
+The turbofish <code>::&lt;Product&gt;</code> and the string <code>"products"</code> are repetitive and error-prone —
+get the string wrong and you get a runtime error.</p>
+<p>Rust’s extension traits solve this. Define a trait on <code>Table&lt;SqliteDB, Category&gt;</code> that
+wraps the traversal:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub trait CategoryTable: ReadableDataSet&lt;Category&gt; {
+    fn ref_products(&amp;self) -&gt; Table&lt;SqliteDB, Product&gt; {
+        self.get_ref_as("products").unwrap()
+    }
+}
+impl CategoryTable for Table&lt;SqliteDB, Category&gt; {}
+<span class="boring">}</span></code></pre>
+<p>The default method lives in the trait — <code>impl</code> is just <code>{}</code>. The <code>unwrap()</code> is safe because
+we know “products” is defined on every <code>CategoryTable</code>. If the string were wrong, it would
+panic immediately during development, not silently fail at runtime.</p>
+<p>Now callers write <code>categories.ref_products()</code> — no turbofish, no string, no <code>?</code>, and the
+compiler catches typos.</p>
+<p>The same pattern works for typed column access:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub trait ProductTable {
+    fn price(&amp;self) -&gt; Column&lt;i64&gt; {
+        self.get_column("price").unwrap()
+    }
+}
+impl ProductTable for Table&lt;SqliteDB, Product&gt; {}
+<span class="boring">}</span></code></pre>
+<p>With both traits in place, code reads naturally:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let expensive = categories
+    .ref_products()
+    .with_condition(products.price().gt(200));
+<span class="boring">}</span></code></pre>
+<div id="admonition-where-to-put-extension-traits" class="admonition admonish-tip" role="note" aria-labelledby="admonition-where-to-put-extension-traits-title">
+<div class="admonition-title">
+<div id="admonition-where-to-put-extension-traits-title">
+<p>Where to put extension traits</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-where-to-put-extension-traits"></a>
+</div>
+
+<div>
+<p>Define extension traits in the same file as the entity — <code>product.rs</code> gets <code>ProductTable</code>,
+<code>category.rs</code> gets <code>CategoryTable</code>. They’re part of your model’s public API: anyone who
+imports the entity gets the typed accessors for free.</p>
+<p>This is how Vantage scales to large codebases. The table definition (columns, conditions,
+relationships, expressions) is declared once. Extension traits give it a clean, typed API.
+Business logic code never sees raw strings or turbofish — just method calls.</p>
+</div>
+
+</div>
+
+<div id="admonition-custom-methods-on-extension-traits" class="admonition admonish-info" role="note" aria-labelledby="admonition-custom-methods-on-extension-traits-title">
+<div class="admonition-title">
+<div id="admonition-custom-methods-on-extension-traits-title">
+<p>Custom methods on extension traits</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-custom-methods-on-extension-traits"></a>
+</div>
+
+<div>
+<p>Extension traits aren’t limited to column and relationship accessors — you can add any
+business logic. For example, the <code>vantage-cli-util</code> crate provides <code>print_table()</code> for
+terminal output. Add it as a method on your trait:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_cli_util::table_display;
+
+pub trait ProductTable {
+    fn price(&amp;self) -&gt; Column&lt;i64&gt; {
+        self.get_column("price").unwrap()
+    }
+
+    async fn print(&amp;self) -&gt; VantageResult&lt;()&gt; {
+        table_display::print_table(self).await
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Now <code>products.print().await?</code> gives you a formatted table in the terminal:</p>
+<pre><code class="language-text">+----+----------------+-------+-------------------+
+| id | name           | price | category          |
++----+----------------+-------+-------------------+
+| 1  | Cupcake        | 120   | Sweet Treats (3)  |
+| 2  | Doughnut       | 135   | Sweet Treats (3)  |
+| 3  | Tart           | 220   | Pastries (2)      |
+| ...                                              |
++----+----------------+-------+-------------------+
+</code></pre>
+<p>Other methods you might add: <code>only_expensive()</code> that returns a filtered clone,
+<code>total_revenue()</code> that computes a sum, or <code>export_csv()</code> that writes to a file.
+The table is yours to extend.</p>
 </div>
 
 </div>
