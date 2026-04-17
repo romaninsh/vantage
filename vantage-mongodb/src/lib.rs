@@ -8,6 +8,7 @@ pub mod condition;
 pub mod id;
 pub mod mongodb;
 pub mod operation;
+pub mod prelude;
 pub mod select;
 pub mod types;
 

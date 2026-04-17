@@ -15,9 +15,6 @@ curl "http://localhost:3001/categories"
 # Products in a specific category
 curl "http://localhost:3001/categories/1/products"
 
-# Reference data, served from memory
-curl "http://localhost:3001/countries/FR"
-
 # Writes
 curl -X POST "http://localhost:3001/categories" \
   -H 'content-type: application/json' -d '{"name":"Gluten-Free"}'
@@ -26,10 +23,8 @@ curl -X POST "http://localhost:3001/categories" \
 A few things about the shape of this API:
 
 - `/categories/{id}/products` is a **nested** route — products narrowed by the relationship we
-  defined in chapter 2. The handler for it is the same generic `list` as `/products`, just applied
+  defined in chapter 2. The handler for it is the same generic `list` as `/categories`, just applied
   to a scoped table.
-- `/countries` is backed by **`vantage-redb`**, an in-memory backend seeded from a CSV at startup.
-  Reference data that rarely changes doesn't need a round-trip to disk on every request.
 - `/products` and `/categories` start out on SQLite, same as chapter 2. Toward the end of the
   chapter we **migrate** them to MongoDB. That migration is a change to the model file; the handlers
   and routes don't know the difference.
@@ -42,8 +37,8 @@ over the backend and entity types. Adding another entity is a route registration
 
 ## The minimum Axum skeleton
 
-We keep `product.rs` and `category.rs` from chapter 2 and replace `main.rs` with an Axum server. One
-new dependency:
+Two pieces: a small adaptation to chapter 2's entities so they round-trip through HTTP, then the
+server itself. One new dependency:
 
 ```sh
 cargo add axum
@@ -52,34 +47,73 @@ cargo add axum
 Tokio and serde are already pulled in from earlier chapters. `axum` is the HTTP framework; it uses
 the existing `serde` to encode response bodies as JSON.
 
-Axum needs `Category` to be serialisable, so add `Serialize` and `Deserialize` to its derive list —
-the first for GET responses, the second for POST bodies we'll introduce shortly. Also drop the
-computed `title` field and its expressions from chapter 2: computed fields don't round-trip through
-a POST cleanly (the JSON body would try to write a column that doesn't exist), and we'll bring them
-back in a later chapter that handles writable computed fields properly.
+**Entities.** Chapter 2's `Category` carried a computed `title` field; Chapter 2's `Product` carried
+a computed `category` field. Both were assembled from subqueries — great for display, but they don't
+round-trip cleanly through a `POST` body because the JSON would try to write columns that don't
+exist. For a writable API we replace the computed fields with the plain FK column that sits under
+them.
 
-In `src/category.rs`:
+`src/category.rs`:
 
 ```rust
 use serde::{Deserialize, Serialize};
 
 #[entity(SqliteType)]
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Category {
     pub name: String,
 }
+
+impl Category {
+    pub fn table(db: SqliteDB) -> Table<SqliteDB, Category> {
+        Table::new("category", db)
+            .with_id_column("id")
+            .with_column_of::<String>("name")
+            .with_many("products", "category_id", Product::table)
+    }
+}
 ```
 
-Comment out the two `with_expression` calls in `Category::table` too. `Product::table`'s `category`
-expression was pulling `title` from the category table; switch it to pull `name` instead:
+`src/product.rs`:
 
 ```rust
-.with_expression("category", |t| {
-    t.get_subquery_as::<Category>("category")
-        .unwrap()
-        .select_column("name")
-})
+use serde::{Deserialize, Serialize};
+
+#[entity(SqliteType)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Product {
+    pub name: String,
+    pub price: i64,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub category_id: Option<String>,
+    #[serde(default)]
+    pub is_deleted: bool,
+}
+
+impl Product {
+    pub fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+        let is_deleted = Column::<bool>::new("is_deleted");
+        Table::new("product", db)
+            .with_id_column("id")
+            .with_column_of::<String>("name")
+            .with_column_of::<i64>("price")
+            .with_column_of::<String>("category_id")
+            .with_column_of::<bool>("is_deleted")
+            .with_condition(is_deleted.eq(false))
+            .with_one("category", "category_id", Category::table)
+    }
+}
 ```
+
+Two things to notice:
+
+- `category_id` is now a real column in both the struct and the table, not a computed expression.
+  Same information as before, but clients can read it from `GET` and supply it on `POST`.
+- `is_deleted` picks up `#[serde(default)]` so `POST /products` bodies don't have to carry it; new
+  products default to live.
+
+The soft-delete condition from chapter 2 stays — `GET /products` will still hide rows with
+`is_deleted = true`.
 
 Now the server. Replace `src/main.rs` with:
 
@@ -125,10 +159,10 @@ A few notes on what this is doing:
 - **`static DB: OnceLock<SqliteDB>`.** The handler needs a database handle but we don't want to open
   a new connection per request. A program-wide `OnceLock` is the simplest possible holder — set once
   in `main`, read from anywhere.
-- **Each request calls `Category::table(db())`** — building the table (columns, relationships,
-  expressions from chapter 2) — and then lists it.
-- **The handler returns `Json<Vec<Category>>` directly.** No DTO layer. Whatever the entity
-  contains, including the computed `title` expression from chapter 2, comes out in the JSON.
+- **Each request calls `Category::table(db())`** — building the table (columns, relationships) and
+  then lists it.
+- **The handler returns `Json<Vec<Category>>` directly.** No DTO layer — the entity's fields become
+  the JSON fields.
 
 Run it:
 
@@ -144,9 +178,9 @@ curl http://localhost:3001/categories
 
 ```json
 [
-  { "name": "Sweet Treats", "title": "Sweet Treats (3)" },
-  { "name": "Pastries", "title": "Pastries (2)" },
-  { "name": "Breads", "title": "Breads (1)" }
+  { "name": "Sweet Treats" },
+  { "name": "Pastries" },
+  { "name": "Breads" }
 ]
 ```
 
@@ -164,9 +198,8 @@ impl Category {
         static CACHE: OnceLock<Table<SqliteDB, Category>> = OnceLock::new();
         CACHE.get_or_init(|| {
             Table::new("category", db)
-                // ...columns and expressions unchanged...
+                // ...columns unchanged...
                 .with_many("products", "category_id", |db| Product::table(db).clone())
-                // ...
         })
     }
 }
@@ -256,7 +289,7 @@ async fn list_category_products(Path(id): Path<i64>) -> Json<Vec<Product>> {
 Three things going on:
 
 - **`Category::table(db()).clone()`** — we need an owned `Table` to chain `with_condition` onto, so
-  we clone the cached definition. The clone copies the shape (columns, relationships, expressions),
+  we clone the cached definition. The clone copies the shape (columns, conditions, relationships),
   not any rows.
 - **`with_condition(id_col.eq(id))`** — narrows the category table to one row: the one we're asking
   for. Nothing hits the database yet.
@@ -281,9 +314,9 @@ curl http://localhost:3001/categories/1/products
 
 ```json
 [
-  { "name": "Cupcake", "price": 120, "category": "Sweet Treats" },
-  { "name": "Doughnut", "price": 135, "category": "Sweet Treats" },
-  { "name": "Cookies", "price": 199, "category": "Sweet Treats" }
+  { "name": "Cupcake", "price": 120, "category_id": "1", "is_deleted": false },
+  { "name": "Doughnut", "price": 135, "category_id": "1", "is_deleted": false },
+  { "name": "Cookies", "price": 199, "category_id": "1", "is_deleted": false }
 ]
 ```
 
@@ -293,8 +326,8 @@ curl http://localhost:3001/categories/2/products
 
 ```json
 [
-  { "name": "Tart", "price": 220, "category": "Pastries" },
-  { "name": "Pie", "price": 299, "category": "Pastries" }
+  { "name": "Tart", "price": 220, "category_id": "2", "is_deleted": false },
+  { "name": "Pie", "price": 299, "category_id": "2", "is_deleted": false }
 ]
 ```
 
@@ -454,7 +487,7 @@ curl -X POST http://localhost:3001/categories \
 # {"id":"4"}
 
 curl http://localhost:3001/categories/1/products/1
-# {"name":"Cupcake","price":120}
+# {"name":"Cupcake","price":120,"category_id":"1","is_deleted":false}
 
 curl -X PATCH http://localhost:3001/categories/1 \
   -H 'content-type: application/json' -d '{"name":"Sweet Things"}'
@@ -466,10 +499,6 @@ curl -X DELETE http://localhost:3001/categories/4
 
 The inline `list_categories` and `list_category_products` functions can be deleted — `crud` covers
 them both.
-
-Product needs the same treatment as Category did earlier: add `Deserialize` to its derives and drop
-the computed `category` field (and its `with_expression`) so POST bodies round-trip cleanly. After
-this, a product is simply `{ name, price }`.
 
 ```admonish info title="Why a HashMap for path params?"
 Axum only lets a handler run the `Path` extractor **once** per request — after that, the URL
@@ -696,7 +725,10 @@ The nested route gets these for free — `crud` is the same function. `per_page`
 
 ```sh
 curl "http://localhost:3001/categories/1/products?per_page=2"
-# [{"name":"Cupcake","price":120},{"name":"Doughnut","price":135}]
+# [
+#   {"name":"Cupcake","price":120,"category_id":"1","is_deleted":false},
+#   {"name":"Doughnut","price":135,"category_id":"1","is_deleted":false}
+# ]
 ```
 
 Because the closure for the nested mount narrows the table with `with_condition` *before*
@@ -724,3 +756,306 @@ extend `ListQuery` with a `fn validate(&self) -> Result<(), ApiError>` that caps
 at something like 200 and returns 400 otherwise. The plumbing is already there — `ApiError`
 already knows how to render a 400.
 ```
+
+---
+
+## Migrating to MongoDB
+
+Chapter 2 closed on a claim: the model layer isolates business code from storage, so swapping
+databases is a change to the model, not to the routes, handlers, or business logic. Now we
+cash the check. `/categories`, `/categories/{id}`, and `/categories/{cat_id}/products` keep
+their exact URL shape, response bodies, and behaviour — but the data lives in MongoDB instead
+of SQLite.
+
+Start Mongo — Docker is the easiest way:
+
+```sh
+docker run -d --name mongo-learn -p 27017:27017 mongo:7
+```
+
+### Cargo.toml
+
+Drop `vantage-sql`, add `vantage-mongodb`:
+
+```toml
+[dependencies]
+axum = "0.8.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+vantage-core = { path = "../vantage-core" }
+vantage-dataset = { path = "../vantage-dataset" }
+vantage-expressions = { path = "../vantage-expressions" }
+vantage-mongodb = { path = "../vantage-mongodb" }
+vantage-table = { path = "../vantage-table" }
+vantage-types = { path = "../vantage-types", features = ["serde"] }
+```
+
+### Entities
+
+Swap the `#[entity]` type tag from `SqliteType` to `MongoType` and the id column name from
+`id` to the MongoDB-idiomatic `_id`. Imports collapse to a single prelude use-line.
+
+`src/category.rs`:
+
+```rust
+use std::sync::OnceLock;
+
+use vantage_mongodb::prelude::*;
+
+use crate::product::Product;
+
+#[entity(MongoType)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Category {
+    pub name: String,
+}
+
+impl Category {
+    pub fn table(db: MongoDB) -> &'static Table<MongoDB, Category> {
+        static CACHE: OnceLock<Table<MongoDB, Category>> = OnceLock::new();
+        CACHE.get_or_init(|| {
+            Table::new("category", db)
+                .with_id_column("_id")
+                .with_column_of::<String>("name")
+                .with_many("products", "category_id", |db| Product::table(db).clone())
+        })
+    }
+}
+```
+
+`src/product.rs` gets the symmetric changes:
+
+```rust
+use std::sync::OnceLock;
+
+use vantage_mongodb::prelude::*;
+
+use crate::category::Category;
+
+#[entity(MongoType)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Product {
+    pub name: String,
+    pub price: i64,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub category_id: Option<String>,
+    #[serde(default)]
+    pub is_deleted: bool,
+}
+
+impl Product {
+    pub fn table(db: MongoDB) -> &'static Table<MongoDB, Product> {
+        static CACHE: OnceLock<Table<MongoDB, Product>> = OnceLock::new();
+        CACHE.get_or_init(|| {
+            let is_deleted = Column::<bool>::new("is_deleted");
+            Table::new("product", db)
+                .with_id_column("_id")
+                .with_column_of::<String>("name")
+                .with_column_of::<i64>("price")
+                .with_column_of::<String>("category_id")
+                .with_column_of::<bool>("is_deleted")
+                .with_condition(is_deleted.eq(false))
+                .with_one("category", "category_id", |db| Category::table(db).clone())
+        })
+    }
+}
+```
+
+Nothing about the struct shape changed — `category_id` and `is_deleted` have been real columns
+since § 2. The `with_*` calls line up one-for-one with the SQLite version; only the id column
+name and the entity's type tag shift.
+
+The `CategoryTable` trait from § 3 also updates — MongoDB's `_id` is a string, not an integer:
+
+```rust
+impl CategoryTable for Table<MongoDB, Category> {
+    fn id(&self) -> Column<String> {
+        self.get_column("_id").unwrap()
+    }
+    fn ref_products(&self) -> Table<MongoDB, Product> {
+        self.get_ref_as("products").unwrap()
+    }
+}
+```
+
+The nested route's closure gets a little simpler as a result — no parse step, just narrow by the
+URL's `cat_id` string directly:
+
+```rust
+crud(|db, p| {
+    let mut c = Category::table(db).clone();
+    c.add_condition(c.id().eq(p["cat_id"].as_str()));
+    c.ref_products()
+})
+```
+
+`.eq(&str)` works here because `vantage-mongodb`'s `From<&str> for AnyMongoType` auto-promotes
+24-character hex strings to `ObjectId` and leaves everything else as `String`. The comparison fires
+with the right BSON type whichever `_id` convention the collection uses.
+
+### main.rs
+
+The `crud` function's generic bounds shift from `Entity<AnySqliteType>` to `Entity<AnyMongoType>`
+and its `Fn(SqliteDB, ...)` becomes `Fn(MongoDB, ...)`. Body unchanged.
+
+```rust
+fn crud<E, F>(make_table: F) -> Router
+where
+    F: Fn(MongoDB, &Params) -> Table<MongoDB, E> + Send + Sync + 'static,
+    E: Entity<AnyMongoType> + Serialize + DeserializeOwned + Send + Sync + 'static,
+```
+
+Connection, id handling, and error mapping are the only handler-level changes:
+
+```rust
+// db() returns MongoDB; connect with URL + database name.
+let conn = MongoDB::connect("mongodb://localhost:27017", "learn3")
+    .await
+    .context("Failed to connect to MongoDB")?;
+
+// item-level ids are MongoId. String → MongoId dispatches to ObjectId when the
+// string is a 24-char hex, otherwise stays a plain String, via a `From<String>`
+// smart-parse in vantage-mongodb.
+let id: MongoId = params["id"].clone().into();
+
+// MongoDB's missing-doc error joins the 404 path.
+let status = if message.contains("no row found") || message.contains("Document not found") {
+    StatusCode::NOT_FOUND
+} else {
+    StatusCode::INTERNAL_SERVER_ERROR
+};
+```
+
+### Running it
+
+```sh
+cargo run
+```
+
+The collection is empty, so the first request returns an empty array:
+
+```sh
+curl http://localhost:3001/categories
+# []
+```
+
+POST a few categories — responses carry the auto-generated MongoDB ObjectId as the new id:
+
+```sh
+SWEETS=$(curl -s -X POST http://localhost:3001/categories \
+  -H 'content-type: application/json' -d '{"name":"Sweet Treats"}' \
+  | jq -r .id)
+echo "$SWEETS"
+# 69e2b9101a552c206f5f8468
+```
+
+Create a product in that category by POSTing to the nested route, including the parent id as
+`category_id` in the body:
+
+```sh
+curl -X POST "http://localhost:3001/categories/$SWEETS/products" \
+  -H 'content-type: application/json' \
+  -d "{\"name\":\"Cupcake\",\"price\":120,\"category_id\":\"$SWEETS\"}"
+# {"id":"69e2b9101a552c206f5f846a"}
+
+curl "http://localhost:3001/categories/$SWEETS/products"
+# [{"name":"Cupcake","price":120,"category_id":"69e2b9101a552c206f5f8468","is_deleted":false}]
+```
+
+Same URL shape as the SQLite version. Same JSON. Same error codes. Handlers, routing,
+pagination, filtering — nothing in the request path learned that storage moved from a local
+file to a document database.
+
+```admonish info title="Cross-type $in in relationship traversal"
+`CategoryTable::ref_products()` still works. MongoDB's `_id` defaults to `ObjectId`, but
+application fields like `product.category_id` arrive as plain JSON strings and get stored as
+BSON `String`. A naive `$in: [ObjectId(...)]` wouldn't match. `vantage-mongodb` sidesteps that
+by pushing both representations into the `$in` inside `related_in_condition` — an `ObjectId`
+value also emits its 24-char hex string, and a hex-shaped `String` value also emits the
+parsed `ObjectId`. Traversal works regardless of which form the target stores.
+```
+
+```admonish info title="String _ids are also an option"
+Nothing in MongoDB requires `_id` to be an `ObjectId` — it can be any BSON value, including a
+plain string. If the app supplies `_id` explicitly on insert (or the framework generates a
+UUID and writes it into `_id`), both `category._id` and `product.category_id` are strings and
+everything lines up without the $in dual-push. Useful when you want stable, human-legible ids
+or ids that came from an upstream system.
+```
+
+---
+
+## Scaling up: CRUD as a one-liner
+
+The `crud` function, `ApiError`, `Params`, and `ListQuery` aren't really tied to this app —
+they're generic over any `Table<MongoDB, E>`. Move them into their own module and `main.rs`
+collapses to exactly what it's about: connecting the database and registering routes. Three
+files do the work:
+
+**`src/vantage_axum.rs`** (one file, ~120 lines) — everything HTTP: `ApiError`, `ListQuery`,
+and the `crud<E, F>` helper. Accepts any entity `E` that implements `Entity<AnyMongoType>`
+plus the usual serde bounds.
+
+**`src/db.rs`** (17 lines) — the `static DB: OnceLock<MongoDB>`, an `init(url, db)` helper
+that connects and stores the handle, and a `pub fn db() -> MongoDB` accessor that hands out
+cheap `MongoDB` clones.
+
+**`src/main.rs`** — now down to ~30 lines:
+
+```rust
+mod category;
+mod db;
+mod product;
+mod vantage_axum;
+
+use axum::Router;
+use category::{Category, CategoryTable};
+use vantage_axum::crud;
+use vantage_mongodb::prelude::*;
+
+#[tokio::main]
+async fn main() -> VantageResult<()> {
+    db::init("mongodb://localhost:27017", "learn3").await?;
+
+    let app = Router::new()
+        .nest("/categories", crud(|db, _| Category::table(db).clone()))
+        .nest(
+            "/categories/{cat_id}/products",
+            crud(|db, p| {
+                let mut c = Category::table(db).clone();
+                c.add_condition(c.id().eq(p["cat_id"].as_str()));
+                c.ref_products()
+            }),
+        );
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3001").await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+
+    Ok(())
+}
+```
+
+Adding a new entity to this server is now *two* things:
+
+1. Write a `Table::new(...)` constructor for it — declarative, one function, same shape we
+   learned in chapter 2.
+2. Mount it.
+
+```rust
+.nest("/widgets", crud(|db, _| Widget::table(db).clone()))
+```
+
+That's the whole surface. `GET` list, `POST` create, `GET /{id}`, `PATCH /{id}`, `DELETE
+/{id}`, pagination via `?page=&per_page=`, full-text search via `?q=`, 404s for missing ids,
+400s for malformed bodies, structured JSON errors. No new handler code. No per-entity error
+mapping. No per-entity query-param struct. One line per entity.
+
+Every route plays by the same rules because every route is served by the same `crud` — the
+single description of "what this route does" lives in the entity's `Table` definition, and
+the HTTP boundary just routes to it. That is the "one description, many operations"
+principle from chapter 2's `Table` carried all the way to the wire, unbroken.
+
+The `vantage_axum` module is generic enough to lift directly into a larger codebase — it has
+no knowledge of `Category`, `Product`, or your particular routes. Drop it into your own
+binary, give it a `db()` accessor, write entity files, mount routes.

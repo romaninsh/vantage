@@ -1,5 +1,21 @@
 # MongoDB PoC & Trait Boundary Improvements (from MongoDB work, 2026-04)
 
+## MongoDB reference traversal
+
+- [x] **Make `with_one` / `with_many` usable across `ObjectId` / `String` id-field boundaries**
+      — `related_in_condition` now pushes both the raw value and its alternate representation
+      (ObjectId's hex string, or the parsed ObjectId of a hex-string value) into the `$in`
+      filter, so traversal works whether the target's FK is stored as `ObjectId` or as a
+      plain string. Also added `impl From<MongoId> for AnyMongoType` so user-land narrowing
+      by id (`c.id().eq(MongoId::parse(...))`) dispatches to the right BSON type.
+- [ ] **Drop the `String` variant from `MongoId`** — commit the framework to `ObjectId`-only
+      ids and lean on Mongo's native convention. Simplifies `id.rs`, removes the dual-push
+      hack in `related_in_condition`, and drops the smart-parse paths added to
+      `AnyMongoType`/`MongoId`. Blast radius: `scripts/db/v2.js` seeds string `_id`s
+      (`"hill_valley"`, `"order1"`, etc.) and `tests/5_references.rs` asserts them directly —
+      both need rewriting to real ObjectIds. Users who genuinely want string-keyed documents
+      can model them in a non-`_id` field. ~0.5–1 day including test fixture rewrite.
+
 ## Trait boundary fixes needed
 
 - [ ] **Move `get_count`/`get_sum`/`get_max`/`get_min` off `SelectableDataSource`** — currently in

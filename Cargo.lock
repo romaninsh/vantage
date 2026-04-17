@@ -1670,11 +1670,10 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "vantage-cli-util",
  "vantage-core",
  "vantage-dataset",
  "vantage-expressions",
- "vantage-sql",
+ "vantage-mongodb",
  "vantage-table",
  "vantage-types",
 ]
