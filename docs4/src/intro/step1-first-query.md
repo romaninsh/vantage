@@ -119,8 +119,8 @@ async fn run() -> VantageResult<()> {
 
 A few things going on here:
 
-- **`use vantage_sql::prelude::*`** brings in everything we need for this chapter — `SqliteDB`,
-  `SqliteSelect`, the `sqlite_expr!` macro, error types, and the traits that make builder and
+- **`use vantage_sql::prelude::*`** brings in everything we need for this chapter — [`SqliteDB`](vantage_sql::sqlite::SqliteDB),
+  [`SqliteSelect`](vantage_sql::sqlite::statements::SqliteSelect), the `sqlite_expr!` macro, error types, and the traits that make builder and
   execution methods work.
 - **`VantageResult<()>`** is Vantage's own Result type. It uses `VantageError`, which tracks context
   and error chains for readable diagnostics.
@@ -230,7 +230,7 @@ Two steps here: `.expr()` turns the builder into an [`Expression`](vantage_expre
 — Vantage's internal representation that keeps parameters separate from the SQL template. Then
 [`db.execute()`](vantage_expressions::ExprDataSource::execute) sends it to the database.
 
-The result is `AnySqliteType` — a type-tagged wrapper around whatever came back. The `Debug` output
+The result is [`AnySqliteType`](vantage_sql::sqlite::AnySqliteType) — a type-tagged wrapper around whatever came back. The `Debug` output
 isn't pretty, but you should see all 6 product rows in there.
 
 ```admonish tip title="When does Vantage hit the database?"
@@ -296,7 +296,7 @@ Same result, but the type parameter `<bool>` ensures you can only compare agains
 Try `is_deleted.eq(42)` — it won't compile. Other operators — `.gt()`, `.lt()`, `.ne()`, `.in_()` —
 enforce the same type safety.
 
-The result is a `SqliteCondition` — the backend's native condition type — ready to be passed
+The result is a [`SqliteCondition`](vantage_sql::condition::SqliteCondition) — the backend's native condition type — ready to be passed
 directly to `.with_condition()`.
 
 ```admonish info title="Type safety and backend-specific operations"
@@ -364,8 +364,8 @@ Primitives are not part of the prelude — import them when needed. Besides iden
 [Primitives reference](../sql/primitives.md) for the full list.
 
 In Vantage, primitives, query builders, Column, Conditions and even native types
-like i64 and bool - all implement Expressive<T>, where T= your databases AnyType
-(for Sqlite its AnySqliteType - for MongoDB - AnyMongoType) - making them
+like i64 and bool — all implement `Expressive<T>`, where T is your database's AnyType
+(for SQLite it's `AnySqliteType`, for MongoDB — `AnyMongoType`) — making them
 eligible to be parameters of expressions.
 ```
 
@@ -557,7 +557,7 @@ cargo run
 | Concept                                                              | What it does                                                                      | More info                                               |
 | -------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------- |
 | [`SqliteSelect`](vantage_sql::sqlite::statements::SqliteSelect)      | Builds SELECT queries via builder pattern                                         | [`Selectable`](vantage_expressions::Selectable)         |
-| [`Column::<T>`](vantage_table::column::core::Column)                 | Typed column reference — enforces matching operand types                          |                                                         |
+| [`Column`](vantage_table::column::core::Column)                      | Typed column reference — enforces matching operand types                          |                                                         |
 | [`SqliteOperation`](vantage_sql::sqlite::operation::SqliteOperation) | Ext trait giving `.eq()`, `.gt()`, etc. → `SqliteCondition`                       |                                                         |
 | `sqlite_expr!`                                                       | Creates expressions with typed, bound parameters                                  | [`Expression`](vantage_expressions::Expression)         |
 | `db.execute()`                                                       | Runs an expression, returns [`AnySqliteType`](vantage_sql::sqlite::AnySqliteType) | [`ExprDataSource`](vantage_expressions::ExprDataSource) |

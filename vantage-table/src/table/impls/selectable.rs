@@ -178,7 +178,7 @@ mod tests {
         ]));
 
         let mock_query_source = vantage_expressions::mocks::mock_builder::new()
-            .on_exact_select("SELECT COUNT(*) FROM \"users\"", json!(42));
+            .on_exact_select("(SELECT COUNT(*) FROM \"users\")", json!(42));
 
         let table = MockTableSource::new()
             .with_data(
@@ -203,7 +203,7 @@ mod tests {
 
         // Test count query generation
         let count_query = table.get_count_query();
-        assert_eq!(count_query.preview(), "SELECT COUNT(*) FROM \"users\"");
+        assert_eq!(count_query.preview(), "(SELECT COUNT(*) FROM \"users\")");
 
         // TODO: This does not work with MockColumn - because it does not implement Expressive
         // // Test sum query generation
