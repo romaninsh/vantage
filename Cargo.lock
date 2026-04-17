@@ -3783,7 +3783,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-csv"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "async-trait",
  "csv",
@@ -3832,7 +3832,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-expressions"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3847,7 +3847,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-mongodb"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "async-trait",
  "bson",
@@ -3868,7 +3868,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3891,7 +3891,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "async-trait",
  "bakery_model3",
@@ -3919,7 +3919,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "async-stream",
  "async-trait",
