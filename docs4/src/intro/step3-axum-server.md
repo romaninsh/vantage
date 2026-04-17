@@ -29,9 +29,10 @@ A few things about the shape of this API:
   chapter we **migrate** them to MongoDB. That migration is a change to the model file; the handlers
   and routes don't know the difference.
 
-The handler functions are each written **once** and mounted against any `Table<Backend, Entity>` the
-router has on hand — one `list`, one `get`, one `post`, one `patch`, one `delete`, parameterised
-over the backend and entity types. Adding another entity is a route registration, not a new handler.
+The handler functions are each written **once** and mounted against any
+[`Table<Backend, Entity>`](vantage_table::table::Table) the router has on hand — one `list`, one
+`get`, one `post`, one `patch`, one `delete`, parameterised over the backend and entity types.
+Adding another entity is a route registration, not a new handler.
 
 ---
 
@@ -51,7 +52,8 @@ the existing `serde` to encode response bodies as JSON.
 a computed `category` field. Both were assembled from subqueries — great for display, but they don't
 round-trip cleanly through a `POST` body because the JSON would try to write columns that don't
 exist. For a writable API we replace the computed fields with the plain FK column that sits under
-them.
+them. (See [`with_expression`](vantage_table::table::Table::with_expression) for the chapter-2
+computed-field setup we're walking away from here.)
 
 `src/category.rs`:
 
@@ -156,9 +158,9 @@ async fn main() -> VantageResult<()> {
 
 A few notes on what this is doing:
 
-- **`static DB: OnceLock<SqliteDB>`.** The handler needs a database handle but we don't want to open
-  a new connection per request. A program-wide `OnceLock` is the simplest possible holder — set once
-  in `main`, read from anywhere.
+- **`static DB: OnceLock<`[`SqliteDB`](vantage_sql::sqlite::SqliteDB)`>`.** The handler needs a
+  database handle but we don't want to open a new connection per request. A program-wide `OnceLock`
+  is the simplest possible holder — set once in `main`, read from anywhere.
 - **Each request calls `Category::table(db())`** — building the table (columns, relationships) and
   then lists it.
 - **The handler returns `Json<Vec<Category>>` directly.** No DTO layer — the entity's fields become
@@ -208,15 +210,22 @@ impl Category {
 Three changes from chapter 2's version:
 
 - **Return type is `&'static Table<...>` instead of `Table<...>`.** The cache owns the definition;
-  callers get a shared reference. Most table operations (`list`, `get`, `get_count`, `insert`,
-  `replace`, `delete`, `get_ref_as`) take `&self`, so they work on the reference without any clone.
+  callers get a shared reference. Most table operations
+  ([`list`](vantage_dataset::traits::ReadableDataSet::list),
+  [`get`](vantage_dataset::traits::ReadableDataSet::get),
+  [`insert`](vantage_dataset::traits::WritableDataSet::insert),
+  [`replace`](vantage_dataset::traits::WritableDataSet::replace),
+  [`delete`](vantage_dataset::traits::WritableValueSet::delete),
+  [`get_ref_as`](vantage_table::table::Table::get_ref_as)) take `&self`, so they work on the
+  reference without any clone.
 - **`static CACHE: OnceLock<...>` lives inside the function.** A function-local static is still a
   program-wide single instance — Rust allows this and it keeps the cache private to the table that
   owns it.
-- **The `with_many` callback is a closure: `|db| Product::table(db).clone()`.** The framework still
-  hands us a db and expects an owned `Table<SqliteDB, Product>` back, so we call the cached accessor
-  and clone the reference. On the first call this triggers Product's cache to build; every
-  subsequent call just clones a pre-built definition.
+- **The [`with_many`](vantage_table::table::Table::with_many) callback is a closure: `|db|
+  Product::table(db).clone()`.** The framework still hands us a db and expects an owned
+  `Table<SqliteDB, Product>` back, so we call the cached accessor and clone the reference. On the
+  first call this triggers Product's cache to build; every subsequent call just clones a pre-built
+  definition.
 
 `src/product.rs` follows the same pattern — wrap the body in `OnceLock::get_or_init`, change the
 return type to `&'static Table<SqliteDB, Product>`, and rewrite `with_one` as
@@ -246,9 +255,10 @@ it's a copy of the shape (columns, conditions, relationships), and it's cheap.
 
 ## Products of a category
 
-The `with_many` relationship we kept from chapter 2 lets us serve a nested route —
-`/categories/{id}/products`. Before writing the handler, give the relationship a proper name with an
-extension trait on `Table<SqliteDB, Category>`. Add this to `src/category.rs`:
+The [`with_many`](vantage_table::table::Table::with_many) relationship we kept from chapter 2 lets
+us serve a nested route — `/categories/{id}/products`. Before writing the handler, give the
+relationship a proper name with an extension trait on `Table<SqliteDB, Category>`. Add this to
+`src/category.rs`:
 
 ```rust
 pub trait CategoryTable {
@@ -288,15 +298,15 @@ async fn list_category_products(Path(id): Path<i64>) -> Json<Vec<Product>> {
 
 Three things going on:
 
-- **`Category::table(db()).clone()`** — we need an owned `Table` to chain `with_condition` onto, so
-  we clone the cached definition. The clone copies the shape (columns, conditions, relationships),
-  not any rows.
+- **`Category::table(db()).clone()`** — we need an owned [`Table`](vantage_table::table::Table) to
+  chain [`with_condition`](vantage_table::table::Table::with_condition) onto, so we clone the cached
+  definition. The clone copies the shape (columns, conditions, relationships), not any rows.
 - **`with_condition(id_col.eq(id))`** — narrows the category table to one row: the one we're asking
   for. Nothing hits the database yet.
 - **`ref_products()`** — traverses the `with_many` relationship we registered on Category in
-  chapter 2. The returned table is `Table<SqliteDB, Product>`, already scoped to products whose
-  `category_id` matches the narrowed category set. Chapter 2 walked through what the emitted SQL
-  looks like; it's the same here.
+  chapter 2, via [`get_ref_as`](vantage_table::table::Table::get_ref_as). The returned table is
+  `Table<SqliteDB, Product>`, already scoped to products whose `category_id` matches the narrowed
+  category set. Chapter 2 walked through what the emitted SQL looks like; it's the same here.
 
 Register the route in `main.rs`:
 
@@ -536,8 +546,8 @@ A proper REST API needs three things:
 - Everything else returns **500** but with a structured JSON body, not silence.
 
 Axum already gives us the middle one for free — it rejects malformed `Json<E>` bodies with 400.
-The other two come down to converting `VantageError` into an HTTP response. Add an `ApiError`
-type to `main.rs`:
+The other two come down to converting [`VantageError`](vantage_core::VantageError) into an HTTP
+response. Add an `ApiError` type to `main.rs`:
 
 ```rust
 use axum::response::{IntoResponse, Response};
@@ -696,13 +706,13 @@ get({
 
 Two things happen:
 
-- **`set_pagination(Some(Pagination::new(page, per_page)))`** takes a page number and a page
-  size. Vantage applies these as `LIMIT … OFFSET …` on the SELECT. Missing params fall back
-  to the defaults (page 1, 50 per page) — and if neither is supplied we don't touch pagination
-  at all, so the unfiltered list still hits the whole set.
-- **`add_search(term)`** is the `.with_search` we used in chapter 2 to add a LIKE filter across
-  all columns. Both end up as extra `WHERE` clauses on the query that vantage already compiles
-  for us.
+- **[`set_pagination`](vantage_table::table::Table::set_pagination)`(Some(`[`Pagination::new`](vantage_table::pagination::Pagination::new)`(page, per_page)))`**
+  takes a page number and a page size. Vantage applies these as `LIMIT … OFFSET …` on the SELECT.
+  Missing params fall back to the defaults (page 1, 50 per page) — and if neither is supplied we
+  don't touch pagination at all, so the unfiltered list still hits the whole set.
+- **[`add_search`](vantage_table::table::Table::add_search)`(term)`** is the `.with_search` we used
+  in chapter 2 to add a LIKE filter across all columns. Both end up as extra `WHERE` clauses on the
+  query that vantage already compiles for us.
 
 Try it:
 
@@ -764,8 +774,8 @@ already knows how to render a 400.
 Chapter 2 closed on a claim: the model layer isolates business code from storage, so swapping
 databases is a change to the model, not to the routes, handlers, or business logic. Now we
 cash the check. `/categories`, `/categories/{id}`, and `/categories/{cat_id}/products` keep
-their exact URL shape, response bodies, and behaviour — but the data lives in MongoDB instead
-of SQLite.
+their exact URL shape, response bodies, and behaviour — but the data lives in
+[`MongoDB`](vantage_mongodb::MongoDB) instead of [`SqliteDB`](vantage_sql::sqlite::SqliteDB).
 
 Start Mongo — Docker is the easiest way:
 
@@ -890,9 +900,10 @@ crud(|db, p| {
 })
 ```
 
-`.eq(&str)` works here because `vantage-mongodb`'s `From<&str> for AnyMongoType` auto-promotes
-24-character hex strings to `ObjectId` and leaves everything else as `String`. The comparison fires
-with the right BSON type whichever `_id` convention the collection uses.
+`.eq(&str)` works here because `vantage-mongodb`'s `From<&str>` for
+[`AnyMongoType`](vantage_mongodb::AnyMongoType) auto-promotes 24-character hex strings to
+`ObjectId` and leaves everything else as `String`. The comparison fires with the right BSON type
+whichever `_id` convention the collection uses.
 
 ### main.rs
 
