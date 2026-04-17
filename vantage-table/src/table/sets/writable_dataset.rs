@@ -56,7 +56,7 @@ mod tests {
     use crate::mocks::mock_table_source::MockTableSource;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
-    use vantage_dataset::prelude::ReadableDataSet;
+    use vantage_dataset::prelude::{ReadableDataSet, WritableValueSet};
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     struct TestUser {

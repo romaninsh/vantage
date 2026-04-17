@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use vantage_dataset::{
     im::{ImDataSource, ImTable},
-    traits::{InsertableDataSet, ReadableDataSet, WritableDataSet},
+    traits::{InsertableDataSet, ReadableDataSet, WritableDataSet, WritableValueSet},
 };
 
 // Simple test entities with serde Record conversion
