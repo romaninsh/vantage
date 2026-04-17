@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-8f068220.js";
+            window.path_to_searchindex_js = "searchindex-d9838aed.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-10b285ad.js"></script>
+        <script src="toc-f0872746.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -194,39 +194,40 @@ required.</p>
 <hr><!-- internal use: concept coverage tracker — once covered in introduction, cross out here -->
 <h2 id="todo-concept-coverage"><a class="header" href="#todo-concept-coverage">TODO: Concept Coverage</a></h2>
 <ul>
-<li><input disabled="" type="checkbox"> Expression basics (<code>sqlite_expr!</code>, parameter binding, injection safety)</li>
-<li><input disabled="" type="checkbox"> Identifier quoting (<code>ident()</code>, dialect-aware)</li>
+<li><input disabled="" type="checkbox" checked=""> Expression basics (<code>sqlite_expr!</code>, parameter binding, injection safety)</li>
+<li><input disabled="" type="checkbox" checked=""> Identifier quoting (<code>ident()</code>, dialect-aware)</li>
 <li><input disabled="" type="checkbox"> SqliteSelect via Selectable trait (with_source, with_field, with_condition, with_order,
-with_limit)</li>
-<li><input disabled="" type="checkbox"> Executing queries (ExprDataSource, <code>db.execute()</code>, <code>db.associate()</code>)</li>
-<li><input disabled="" type="checkbox"> Aggregates on select (as_count, as_sum)</li>
-<li><input disabled="" type="checkbox"> Table definition (Table::new, with_column_of, with_id_column, builder pattern)</li>
-<li><input disabled="" type="checkbox"> Table → select query (table.select() returns vendor-specific builder)</li>
-<li><input disabled="" type="checkbox"> DataSource concept (what it is, how you pass it to Table::new)</li>
-<li><input disabled="" type="checkbox"> Entity struct (plain Rust struct, no id field, <code>#[entity]</code> macro)</li>
-<li><input disabled="" type="checkbox"> Record&lt;V&gt; (persistence-native value bags)</li>
-<li><input disabled="" type="checkbox"> Type system (vantage_type_system! macro, AnySqliteType, typed vs untyped values)</li>
-<li><input disabled="" type="checkbox"> ReadableDataSet (list, get, get_some, get_count)</li>
-<li><input disabled="" type="checkbox"> WritableDataSet (insert, delete)</li>
+with_limit) — partial, missing with_order, with_limit</li>
+<li><input disabled="" type="checkbox" checked=""> Executing queries (ExprDataSource, <code>db.execute()</code>) — <code>db.associate()</code> not covered</li>
+<li><input disabled="" type="checkbox"> Aggregates on select (as_count, as_sum) — covered via <code>db.aggregate()</code> not <code>.as_count()</code> directly</li>
+<li><input disabled="" type="checkbox" checked=""> Table definition (Table::new, with_column_of, with_id_column, builder pattern)</li>
+<li><input disabled="" type="checkbox" checked=""> Table → select query (table.select() returns vendor-specific builder)</li>
+<li><input disabled="" type="checkbox" checked=""> DataSource concept (what it is, how you pass it to Table::new)</li>
+<li><input disabled="" type="checkbox" checked=""> Entity struct (plain Rust struct, no id field, <code>#[entity]</code> macro)</li>
+<li><input disabled="" type="checkbox" checked=""> Record&lt;V&gt; (persistence-native value bags)</li>
+<li><input disabled="" type="checkbox"> Type system (vantage_type_system! macro, AnySqliteType, typed vs untyped values) — AnySqliteType mentioned, macro not shown</li>
+<li><input disabled="" type="checkbox" checked=""> ReadableDataSet (list, get, get_some, get_count)</li>
+<li><input disabled="" type="checkbox" checked=""> WritableDataSet (insert, delete)</li>
 <li><input disabled="" type="checkbox"> ActiveEntity (get_entity, modify via DerefMut, save)</li>
-<li><input disabled="" type="checkbox"> Conditions (table[“field”], .eq/.gt/.lt, with_condition returns new table)</li>
+<li><input disabled="" type="checkbox" checked=""> Conditions (table[“field”], .eq/.gt/.lt, with_condition returns new table)</li>
 <li><input disabled="" type="checkbox"> Sync vs async — defining table is sync, hitting DB is async</li>
-<li><input disabled="" type="checkbox"> Relationships (with_one, with_many, declared on table not entity)</li>
-<li><input disabled="" type="checkbox"> Reference traversal (get_ref_as, subquery-based conditions)</li>
-<li><input disabled="" type="checkbox"> Computed fields (with_expression, correlated subqueries)</li>
-<li><input disabled="" type="checkbox"> AnyTable (from_table, JSON boundary, type-erased generic code)</li>
+<li><input disabled="" type="checkbox" checked=""> Relationships (with_one, with_many, declared on table not entity)</li>
+<li><input disabled="" type="checkbox" checked=""> Reference traversal (get_ref_as, subquery-based conditions)</li>
+<li><input disabled="" type="checkbox" checked=""> Computed fields (with_expression, correlated subqueries)</li>
+<li><input disabled="" type="checkbox" checked=""> AnyTable (from_table, JSON boundary, type-erased generic code)</li>
 <li><input disabled="" type="checkbox"> Model crate pattern (entities + table constructors + relationships in one crate)</li>
 <li><input disabled="" type="checkbox"> Multiple backends per entity (surreal_table, sqlite_table, csv_table)</li>
-<li><input disabled="" type="checkbox"> DataSet trait hierarchy (ReadableDataSet, InsertableDataSet, WritableDataSet)</li>
+<li><input disabled="" type="checkbox"> DataSet trait hierarchy (ReadableDataSet, InsertableDataSet, WritableDataSet) — partial, ReadableDataSet only</li>
 <li><input disabled="" type="checkbox"> ValueSet traits (schema-less Record-based access)</li>
-<li><input disabled="" type="checkbox"> Vendor-specific query builders (SqliteSelect, PostgresSelect, SurrealSelect)</li>
+<li><input disabled="" type="checkbox" checked=""> Vendor-specific query builders (SqliteSelect, PostgresSelect, SurrealSelect)</li>
 <li><input disabled="" type="checkbox"> Deferred expressions (cross-database defer/map)</li>
 <li><input disabled="" type="checkbox"> Progressive persistence model (implement only what your backend supports)</li>
-<li><input disabled="" type="checkbox"> Error handling (VantageError, context, with_context)</li>
+<li><input disabled="" type="checkbox" checked=""> Error handling (VantageError, context, with_context) — partial (VantageError + context shown)</li>
 <li><input disabled="" type="checkbox"> Connection management (DSN pattern, OnceLock)</li>
 <li><input disabled="" type="checkbox"> Pagination (with_pagination)</li>
-<li><input disabled="" type="checkbox"> Search expressions (search_expression, vendor-specific LIKE/CONTAINS)</li>
+<li><input disabled="" type="checkbox" checked=""> Search expressions (search_expression, vendor-specific LIKE/CONTAINS) — via <code>with_search</code></li>
 <li><input disabled="" type="checkbox"> models! macro (all_tables() generation)</li>
+<li><input disabled="" type="checkbox" checked=""> Extension traits (trait CategoryTable, ref_products, adding custom methods like print)</li>
 </ul>
 
                     </main>

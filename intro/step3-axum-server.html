@@ -1,0 +1,1279 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>A Standalone Axum Server - Vantage 0.4 Framework</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-2459343d.css">
+        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href=".././mdbook-admonish.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../searchindex-d9838aed.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc-f0872746.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Vantage 0.4 Framework</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="a-standalone-axum-server"><a class="header" href="#a-standalone-axum-server">A Standalone Axum Server</a></h1>
+<p>Chapter 2 ended with a CLI that prints products to stdout. In this chapter we put the same model
+behind an HTTP API:</p>
+<pre><code class="language-sh">curl "http://localhost:3001/categories"
+</code></pre>
+<pre><code class="language-json">[{ "name": "Sweet Treats" }, { "name": "Pastries" }, { "name": "Breads" }]
+</code></pre>
+<pre><code class="language-sh"># Products in a specific category
+curl "http://localhost:3001/categories/1/products"
+
+# Writes
+curl -X POST "http://localhost:3001/categories" \
+  -H 'content-type: application/json' -d '{"name":"Gluten-Free"}'
+</code></pre>
+<p>A few things about the shape of this API:</p>
+<ul>
+<li><code>/categories/{id}/products</code> is a <strong>nested</strong> route — products narrowed by the relationship we
+defined in chapter 2. The handler for it is the same generic <code>list</code> as <code>/categories</code>, just applied
+to a scoped table.</li>
+<li><code>/products</code> and <code>/categories</code> start out on SQLite, same as chapter 2. Toward the end of the
+chapter we <strong>migrate</strong> them to MongoDB. That migration is a change to the model file; the handlers
+and routes don’t know the difference.</li>
+</ul>
+<p>The handler functions are each written <strong>once</strong> and mounted against any
+<a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html"><code>Table&lt;Backend, Entity&gt;</code></a> the router has on hand — one <code>list</code>, one
+<code>get</code>, one <code>post</code>, one <code>patch</code>, one <code>delete</code>, parameterised over the backend and entity types.
+Adding another entity is a route registration, not a new handler.</p>
+<hr>
+<h2 id="the-minimum-axum-skeleton"><a class="header" href="#the-minimum-axum-skeleton">The minimum Axum skeleton</a></h2>
+<p>Two pieces: a small adaptation to chapter 2’s entities so they round-trip through HTTP, then the
+server itself. One new dependency:</p>
+<pre><code class="language-sh">cargo add axum
+</code></pre>
+<p>Tokio and serde are already pulled in from earlier chapters. <code>axum</code> is the HTTP framework; it uses
+the existing <code>serde</code> to encode response bodies as JSON.</p>
+<p><strong>Entities.</strong> Chapter 2’s <code>Category</code> carried a computed <code>title</code> field; Chapter 2’s <code>Product</code> carried
+a computed <code>category</code> field. Both were assembled from subqueries — great for display, but they don’t
+round-trip cleanly through a <code>POST</code> body because the JSON would try to write columns that don’t
+exist. For a writable API we replace the computed fields with the plain FK column that sits under
+them. (See <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.with_expression"><code>with_expression</code></a> for the chapter-2
+computed-field setup we’re walking away from here.)</p>
+<p><code>src/category.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use serde::{Deserialize, Serialize};
+
+#[entity(SqliteType)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Category {
+    pub name: String,
+}
+
+impl Category {
+    pub fn table(db: SqliteDB) -&gt; Table&lt;SqliteDB, Category&gt; {
+        Table::new("category", db)
+            .with_id_column("id")
+            .with_column_of::&lt;String&gt;("name")
+            .with_many("products", "category_id", Product::table)
+    }
+}
+<span class="boring">}</span></code></pre>
+<p><code>src/product.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use serde::{Deserialize, Serialize};
+
+#[entity(SqliteType)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Product {
+    pub name: String,
+    pub price: i64,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub category_id: Option&lt;String&gt;,
+    #[serde(default)]
+    pub is_deleted: bool,
+}
+
+impl Product {
+    pub fn table(db: SqliteDB) -&gt; Table&lt;SqliteDB, Product&gt; {
+        let is_deleted = Column::&lt;bool&gt;::new("is_deleted");
+        Table::new("product", db)
+            .with_id_column("id")
+            .with_column_of::&lt;String&gt;("name")
+            .with_column_of::&lt;i64&gt;("price")
+            .with_column_of::&lt;String&gt;("category_id")
+            .with_column_of::&lt;bool&gt;("is_deleted")
+            .with_condition(is_deleted.eq(false))
+            .with_one("category", "category_id", Category::table)
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Two things to notice:</p>
+<ul>
+<li><code>category_id</code> is now a real column in both the struct and the table, not a computed expression.
+Same information as before, but clients can read it from <code>GET</code> and supply it on <code>POST</code>.</li>
+<li><code>is_deleted</code> picks up <code>#[serde(default)]</code> so <code>POST /products</code> bodies don’t have to carry it; new
+products default to live.</li>
+</ul>
+<p>The soft-delete condition from chapter 2 stays — <code>GET /products</code> will still hide rows with
+<code>is_deleted = true</code>.</p>
+<p>Now the server. Replace <code>src/main.rs</code> with:</p>
+<pre class="playground"><code class="language-rust">mod category;
+mod product;
+
+use std::sync::OnceLock;
+
+use axum::{routing::get, Json, Router};
+use category::Category;
+use vantage_sql::prelude::*;
+
+static DB: OnceLock&lt;SqliteDB&gt; = OnceLock::new();
+
+fn db() -&gt; SqliteDB {
+    DB.get().expect("database not initialised").clone()
+}
+
+async fn list_categories() -&gt; Json&lt;Vec&lt;Category&gt;&gt; {
+    let rows = Category::table(db()).list().await.unwrap();
+    Json(rows.into_values().collect())
+}
+
+#[tokio::main]
+async fn main() -&gt; VantageResult&lt;()&gt; {
+    let conn = SqliteDB::connect("sqlite:products.db")
+        .await
+        .context("Failed to connect to products.db")?;
+    DB.set(conn).ok();
+
+    let app = Router::new().route("/categories", get(list_categories));
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3001").await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+
+    Ok(())
+}</code></pre>
+<p>A few notes on what this is doing:</p>
+<ul>
+<li><strong><code>static DB: OnceLock&lt;</code><a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a><code>&gt;</code>.</strong> The handler needs a
+database handle but we don’t want to open a new connection per request. A program-wide <code>OnceLock</code>
+is the simplest possible holder — set once in <code>main</code>, read from anywhere.</li>
+<li><strong>Each request calls <code>Category::table(db())</code></strong> — building the table (columns, relationships) and
+then lists it.</li>
+<li><strong>The handler returns <code>Json&lt;Vec&lt;Category&gt;&gt;</code> directly.</strong> No DTO layer — the entity’s fields become
+the JSON fields.</li>
+</ul>
+<p>Run it:</p>
+<pre><code class="language-sh">cargo run
+</code></pre>
+<p>In another terminal:</p>
+<pre><code class="language-sh">curl http://localhost:3001/categories
+</code></pre>
+<pre><code class="language-json">[
+  { "name": "Sweet Treats" },
+  { "name": "Pastries" },
+  { "name": "Breads" }
+]
+</code></pre>
+<hr>
+<h2 id="caching-table-definitions"><a class="header" href="#caching-table-definitions">Caching table definitions</a></h2>
+<p>We can cache each table definition so it’s built once and handed out by reference on every
+subsequent call. In <code>src/category.rs</code>, add <code>use std::sync::OnceLock;</code> at the top and wrap the body
+of <code>Category::table</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl Category {
+    pub fn table(db: SqliteDB) -&gt; &amp;'static Table&lt;SqliteDB, Category&gt; {
+        static CACHE: OnceLock&lt;Table&lt;SqliteDB, Category&gt;&gt; = OnceLock::new();
+        CACHE.get_or_init(|| {
+            Table::new("category", db)
+                // ...columns unchanged...
+                .with_many("products", "category_id", |db| Product::table(db).clone())
+        })
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Three changes from chapter 2’s version:</p>
+<ul>
+<li><strong>Return type is <code>&amp;'static Table&lt;...&gt;</code> instead of <code>Table&lt;...&gt;</code>.</strong> The cache owns the definition;
+callers get a shared reference. Most table operations
+(<a href="https://docs.rs/vantage_dataset/0.4.0/vantage_dataset/traits/dataset/trait.ReadableDataSet.html#tymethod.list"><code>list</code></a>,
+<a href="https://docs.rs/vantage_dataset/0.4.0/vantage_dataset/traits/dataset/trait.ReadableDataSet.html#tymethod.get"><code>get</code></a>,
+<a href="https://docs.rs/vantage_dataset/0.4.0/vantage_dataset/traits/dataset/trait.WritableDataSet.html#tymethod.insert"><code>insert</code></a>,
+<a href="https://docs.rs/vantage_dataset/0.4.0/vantage_dataset/traits/dataset/trait.WritableDataSet.html#tymethod.replace"><code>replace</code></a>,
+<a href="https://docs.rs/vantage_dataset/0.4.0/vantage_dataset/traits/valueset/trait.WritableValueSet.html#tymethod.delete"><code>delete</code></a>,
+<a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>) take <code>&amp;self</code>, so they work on the
+reference without any clone.</li>
+<li><strong><code>static CACHE: OnceLock&lt;...&gt;</code> lives inside the function.</strong> A function-local static is still a
+program-wide single instance — Rust allows this and it keeps the cache private to the table that
+owns it.</li>
+<li><strong>The <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> callback is a closure: <code>|db| Product::table(db).clone()</code>.</strong> The framework still hands us a db and expects an owned
+<code>Table&lt;SqliteDB, Product&gt;</code> back, so we call the cached accessor and clone the reference. On the
+first call this triggers Product’s cache to build; every subsequent call just clones a pre-built
+definition.</li>
+</ul>
+<p><code>src/product.rs</code> follows the same pattern — wrap the body in <code>OnceLock::get_or_init</code>, change the
+return type to <code>&amp;'static Table&lt;SqliteDB, Product&gt;</code>, and rewrite <code>with_one</code> as
+<code>|db| Category::table(db).clone()</code>.</p>
+<p>The handler in <code>main.rs</code> doesn’t change at all — <code>Category::table(db())</code> used to return an owned
+<code>Table</code>, and now it returns a <code>&amp;'static Table</code> that auto-derefs through the same <code>.list()</code> call.
+Restart the server and hit <code>/categories</code> — the response is identical, but now the table definitions
+are built on the first request and reused forever after.</p>
+<div id="admonition-when-the-cached-table-needs-narrowing" class="admonition admonish-info" role="note" aria-labelledby="admonition-when-the-cached-table-needs-narrowing-title">
+<div class="admonition-title">
+<div id="admonition-when-the-cached-table-needs-narrowing-title">
+<p>When the cached table needs narrowing</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-when-the-cached-table-needs-narrowing"></a>
+</div>
+
+<div>
+<p>Most operations work on <code>&amp;Table&lt;...&gt;</code>, but the builder methods that add conditions — like
+<code>with_condition</code>, <code>with_search</code>, <code>with_pagination</code>, and <code>with_order</code> — consume <code>self</code> and
+return a new <code>Table</code>. If a handler needs to narrow the cached definition, it clones first:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let narrowed = Category::table(db())
+    .clone()                      // owned copy of the cached definition
+    .with_condition(...)           // now we can narrow it
+<span class="boring">}</span></code></pre>
+<p>That clone is what chapter 2 meant by “cloning a table clones the definition, not the data”:
+it’s a copy of the shape (columns, conditions, relationships), and it’s cheap.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="products-of-a-category"><a class="header" href="#products-of-a-category">Products of a category</a></h2>
+<p>The <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> relationship we kept from chapter 2 lets
+us serve a nested route — <code>/categories/{id}/products</code>. Before writing the handler, give the
+relationship a proper name with an extension trait on <code>Table&lt;SqliteDB, Category&gt;</code>. Add this to
+<code>src/category.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub trait CategoryTable {
+    fn ref_products(&amp;self) -&gt; Table&lt;SqliteDB, Product&gt;;
+}
+
+impl CategoryTable for Table&lt;SqliteDB, Category&gt; {
+    fn ref_products(&amp;self) -&gt; Table&lt;SqliteDB, Product&gt; {
+        self.get_ref_as("products").unwrap()
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Chapter 2 introduced this pattern. The trait gives the relationship a typed, discoverable name —
+<code>ref_products()</code> — so call sites stop carrying the <code>"products"</code> string and the <code>::&lt;Product&gt;</code>
+turbofish around. The <code>.unwrap()</code> is safe here because we’re the ones who registered <code>"products"</code>; a
+typo surfaces immediately at startup.</p>
+<p>Now the handler. Take the cached category table, narrow it to a single id, and traverse the
+relationship:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use axum::extract::Path;
+use category::CategoryTable;
+use product::Product;
+
+async fn list_category_products(Path(id): Path&lt;i64&gt;) -&gt; Json&lt;Vec&lt;Product&gt;&gt; {
+    let id_col = Column::&lt;i64&gt;::new("id");
+    let products = Category::table(db())
+        .clone()
+        .with_condition(id_col.eq(id))
+        .ref_products();
+    let rows = products.list().await.unwrap();
+    Json(rows.into_values().collect())
+}
+<span class="boring">}</span></code></pre>
+<p>Three things going on:</p>
+<ul>
+<li><strong><code>Category::table(db()).clone()</code></strong> — we need an owned <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html"><code>Table</code></a> to
+chain <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.with_condition"><code>with_condition</code></a> onto, so we clone the cached
+definition. The clone copies the shape (columns, conditions, relationships), not any rows.</li>
+<li><strong><code>with_condition(id_col.eq(id))</code></strong> — narrows the category table to one row: the one we’re asking
+for. Nothing hits the database yet.</li>
+<li><strong><code>ref_products()</code></strong> — traverses the <code>with_many</code> relationship we registered on Category in
+chapter 2, via <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>. The returned table is
+<code>Table&lt;SqliteDB, Product&gt;</code>, already scoped to products whose <code>category_id</code> matches the narrowed
+category set. Chapter 2 walked through what the emitted SQL looks like; it’s the same here.</li>
+</ul>
+<p>Register the route in <code>main.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let app = Router::new()
+    .route("/categories", get(list_categories))
+    .route("/categories/{id}/products", get(list_category_products));
+<span class="boring">}</span></code></pre>
+<p>Hit it:</p>
+<pre><code class="language-sh">curl http://localhost:3001/categories/1/products
+</code></pre>
+<pre><code class="language-json">[
+  { "name": "Cupcake", "price": 120, "category_id": "1", "is_deleted": false },
+  { "name": "Doughnut", "price": 135, "category_id": "1", "is_deleted": false },
+  { "name": "Cookies", "price": 199, "category_id": "1", "is_deleted": false }
+]
+</code></pre>
+<pre><code class="language-sh">curl http://localhost:3001/categories/2/products
+</code></pre>
+<pre><code class="language-json">[
+  { "name": "Tart", "price": 220, "category_id": "2", "is_deleted": false },
+  { "name": "Pie", "price": 299, "category_id": "2", "is_deleted": false }
+]
+</code></pre>
+<p>Swap the id in the URL and the products narrow accordingly. The relationship was declared once, back
+in chapter 2, and we haven’t touched it since — every new nested route reuses the same declaration.</p>
+<hr>
+<h2 id="a-generic-crud-helper"><a class="header" href="#a-generic-crud-helper">A generic <code>crud</code> helper</a></h2>
+<p>Two handlers so far — <code>list_categories</code> and <code>list_category_products</code> — and they’re already doing the
+same thing: take a narrowed table, call <code>.list()</code>, return JSON. Adding <code>POST /categories</code>,
+<code>PATCH /categories/{id}</code>, and <code>DELETE /categories/{id}</code> would mean four more near-identical handlers
+per entity. That’s not how you scale a codebase.</p>
+<p>The five HTTP methods of CRUD all map onto one of two operation shapes:</p>
+<ul>
+<li><strong>List-level</strong> at <code>/collection</code>: <code>GET</code> (list all) and <code>POST</code> (create one).</li>
+<li><strong>Item-level</strong> at <code>/collection/{id}</code>: <code>GET</code> (read one), <code>PATCH</code> (update), <code>DELETE</code> (remove).</li>
+</ul>
+<p>If we can describe the <em>set of rows this endpoint operates on</em> with one closure, the same handler
+bodies serve every entity. That closure is <code>Fn(SqliteDB, &amp;Params) -&gt; Table&lt;SqliteDB, E&gt;</code> — given the
+database and whatever path params axum extracted, return the <code>Table</code> to act on. Put it in <code>main.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use std::collections::HashMap;
+use std::sync::Arc;
+
+type Params = HashMap&lt;String, String&gt;;
+
+fn crud&lt;E, F&gt;(make_table: F) -&gt; Router
+where
+    F: Fn(SqliteDB, &amp;Params) -&gt; Table&lt;SqliteDB, E&gt; + Send + Sync + 'static,
+    E: Entity&lt;AnySqliteType&gt; + Serialize + DeserializeOwned + Send + Sync + 'static,
+{
+    let f = Arc::new(make_table);
+    Router::new()
+        .route(
+            "/",
+            get({
+                let f = f.clone();
+                move |p: Option&lt;Path&lt;Params&gt;&gt;| async move {
+                    let params = p.map(|Path(p)| p).unwrap_or_default();
+                    let rows = f(db(), &amp;params).list().await.unwrap();
+                    Json::&lt;Vec&lt;E&gt;&gt;(rows.into_values().collect())
+                }
+            })
+            .post({
+                let f = f.clone();
+                move |p: Option&lt;Path&lt;Params&gt;&gt;, Json(entity): Json&lt;E&gt;| async move {
+                    let params = p.map(|Path(p)| p).unwrap_or_default();
+                    let id = f(db(), &amp;params).insert_return_id(&amp;entity).await.unwrap();
+                    Json(serde_json::json!({ "id": id }))
+                }
+            }),
+        )
+        .route(
+            "/{id}",
+            get({
+                let f = f.clone();
+                move |Path(params): Path&lt;Params&gt;| async move {
+                    let id = params["id"].clone();
+                    let entity = f(db(), &amp;params).get(&amp;id).await.unwrap();
+                    Json(entity)
+                }
+            })
+            .patch({
+                let f = f.clone();
+                move |Path(params): Path&lt;Params&gt;, Json(partial): Json&lt;E&gt;| async move {
+                    let id = params["id"].clone();
+                    let updated = f(db(), &amp;params).patch(&amp;id, &amp;partial).await.unwrap();
+                    Json(updated)
+                }
+            })
+            .delete({
+                let f = f;
+                move |Path(params): Path&lt;Params&gt;| async move {
+                    let id = params["id"].clone();
+                    WritableDataSet::&lt;E&gt;::delete(&amp;f(db(), &amp;params), &amp;id).await.unwrap();
+                    StatusCode::NO_CONTENT
+                }
+            }),
+        )
+}
+<span class="boring">}</span></code></pre>
+<p>That’s the whole thing. Five handler bodies, each tiny, all generic over the entity type. Mount
+<code>crud(...)</code> under a prefix with <code>.nest(...)</code> and every route below it gets the full CRUD verb set
+for free.</p>
+<p><code>/categories</code> becomes a one-liner:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>.nest("/categories", crud(|db, _| Category::table(db).clone()))
+<span class="boring">}</span></code></pre>
+<p>That gives us:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>Path</th><th>Does</th></tr>
+</thead>
+<tbody>
+<tr><td>GET</td><td>/categories</td><td>list all</td></tr>
+<tr><td>POST</td><td>/categories</td><td>insert, return new id</td></tr>
+<tr><td>GET</td><td>/categories/{id}</td><td>fetch one</td></tr>
+<tr><td>PATCH</td><td>/categories/{id}</td><td>partial update</td></tr>
+<tr><td>DELETE</td><td>/categories/{id}</td><td>remove</td></tr>
+</tbody>
+</table>
+</div>
+<p>The nested <code>/categories/{cat_id}/products</code> route uses the same helper. The closure reads <code>cat_id</code>
+out of the params map to narrow the set:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>.nest(
+    "/categories/{cat_id}/products",
+    crud(|db, p| {
+        let cat_id: i64 = p["cat_id"].parse().unwrap();
+        let mut c = Category::table(db).clone();
+        c.add_condition(c.id().eq(cat_id));
+        c.ref_products()
+    }),
+)
+<span class="boring">}</span></code></pre>
+<p><code>c.id()</code> comes from extending the <code>CategoryTable</code> trait we already set up — add it next to
+<code>ref_products</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub trait CategoryTable {
+    fn id(&amp;self) -&gt; Column&lt;i64&gt;;
+    fn ref_products(&amp;self) -&gt; Table&lt;SqliteDB, Product&gt;;
+}
+
+impl CategoryTable for Table&lt;SqliteDB, Category&gt; {
+    fn id(&amp;self) -&gt; Column&lt;i64&gt; {
+        self.get_column("id").unwrap()
+    }
+    fn ref_products(&amp;self) -&gt; Table&lt;SqliteDB, Product&gt; {
+        self.get_ref_as("products").unwrap()
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Nesting <code>crud</code> under <code>/categories/{cat_id}/products</code> gives a full CRUD surface for <em>products
+belonging to that category</em>:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>Path</th><th>Does</th></tr>
+</thead>
+<tbody>
+<tr><td>GET</td><td>/categories/{cat_id}/products</td><td>list</td></tr>
+<tr><td>POST</td><td>/categories/{cat_id}/products</td><td>create</td></tr>
+<tr><td>GET</td><td>/categories/{cat_id}/products/{id}</td><td>fetch one</td></tr>
+<tr><td>PATCH</td><td>/categories/{cat_id}/products/{id}</td><td>partial update</td></tr>
+<tr><td>DELETE</td><td>/categories/{cat_id}/products/{id}</td><td>remove</td></tr>
+</tbody>
+</table>
+</div>
+<p>Try it:</p>
+<pre><code class="language-sh">curl -X POST http://localhost:3001/categories \
+  -H 'content-type: application/json' -d '{"name":"Gluten-Free"}'
+# {"id":"4"}
+
+curl http://localhost:3001/categories/1/products/1
+# {"name":"Cupcake","price":120,"category_id":"1","is_deleted":false}
+
+curl -X PATCH http://localhost:3001/categories/1 \
+  -H 'content-type: application/json' -d '{"name":"Sweet Things"}'
+# {"name":"Sweet Things"}
+
+curl -X DELETE http://localhost:3001/categories/4
+# HTTP/1.1 204 No Content
+</code></pre>
+<p>The inline <code>list_categories</code> and <code>list_category_products</code> functions can be deleted — <code>crud</code> covers
+them both.</p>
+<div id="admonition-why-a-hashmap-for-path-params" class="admonition admonish-info" role="note" aria-labelledby="admonition-why-a-hashmap-for-path-params-title">
+<div class="admonition-title">
+<div id="admonition-why-a-hashmap-for-path-params-title">
+<p>Why a HashMap for path params?</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-why-a-hashmap-for-path-params"></a>
+</div>
+
+<div>
+<p>Axum only lets a handler run the <code>Path</code> extractor <strong>once</strong> per request — after that, the URL
+params are considered consumed. We need the outer <code>{cat_id}</code> inside the closure <em>and</em> the inner
+<code>{id}</code> to identify which record to fetch, which rules out calling <code>Path&lt;i64&gt;</code> plus a second
+<code>Path&lt;String&gt;</code>. Grabbing all params in one shot as <code>HashMap&lt;String, String&gt;</code> sidesteps the
+limit — the closure picks out what it needs by name, and the item-level handlers pull <code>id</code>
+from the same map.</p>
+<p>The cost is a small amount of stringly-typed parsing (<code>p["cat_id"].parse::&lt;i64&gt;()</code>), which
+is a fair trade for letting one <code>crud</code> function cover every route shape in the server.</p>
+</div>
+
+</div>
+
+<div id="admonition-whats-inside-crud-briefly" class="admonition admonish-info" role="note" aria-labelledby="admonition-whats-inside-crud-briefly-title">
+<div class="admonition-title">
+<div id="admonition-whats-inside-crud-briefly-title">
+<p>What’s inside crud(), briefly</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-whats-inside-crud-briefly"></a>
+</div>
+
+<div>
+<p>Each HTTP method gets its own closure in the <code>Router</code>. They all need to share the same
+<code>make_table</code> function, but Rust closures that capture by move can’t be cloned by default, and
+each axum handler is an independent <code>Fn</code> — so we wrap <code>make_table</code> in an <code>Arc</code> once and let
+each handler clone the <code>Arc</code> (cheap — just a refcount bump). Inside the async block, the
+closure can then invoke <code>f(db(), &amp;params)</code> to build the narrowed table for that request.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="error-handling"><a class="header" href="#error-handling">Error handling</a></h2>
+<p>Every handler in <code>crud</code> still ends in <code>.unwrap()</code>. The happy path has been fine to demo, but
+an API that panics on the slightest database hiccup isn’t usable. The worst part isn’t the
+500 — it’s what happens on the wire when axum’s request task panics: the connection is
+dropped and the client sees an empty reply, with no status code and no body to explain.</p>
+<p>A proper REST API needs three things:</p>
+<ul>
+<li>Missing resources return <strong>404</strong>, not 500.</li>
+<li>Bad JSON bodies return <strong>400</strong> with a useful message.</li>
+<li>Everything else returns <strong>500</strong> but with a structured JSON body, not silence.</li>
+</ul>
+<p>Axum already gives us the middle one for free — it rejects malformed <code>Json&lt;E&gt;</code> bodies with 400.
+The other two come down to converting <a href="https://docs.rs/vantage_core/0.4.0/vantage_core/util/error/struct.VantageError.html"><code>VantageError</code></a> into an HTTP
+response. Add an <code>ApiError</code> type to <code>main.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use axum::response::{IntoResponse, Response};
+
+struct ApiError {
+    status: StatusCode,
+    message: String,
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -&gt; Response {
+        (
+            self.status,
+            Json(serde_json::json!({ "error": self.message })),
+        )
+            .into_response()
+    }
+}
+
+impl From&lt;VantageError&gt; for ApiError {
+    fn from(e: VantageError) -&gt; Self {
+        let message = e.to_string();
+        let status = if message.contains("no row found") {
+            StatusCode::NOT_FOUND
+        } else {
+            StatusCode::INTERNAL_SERVER_ERROR
+        };
+        eprintln!("API error: {:?}", e);
+        Self { status, message }
+    }
+}
+
+type ApiResult&lt;T&gt; = Result&lt;T, ApiError&gt;;
+<span class="boring">}</span></code></pre>
+<p>Two things earn their keep:</p>
+<ul>
+<li><strong><code>IntoResponse</code></strong> makes <code>ApiError</code> returnable from a handler; axum calls <code>into_response()</code>
+to assemble status, headers, and body.</li>
+<li><strong><code>From&lt;VantageError&gt;</code></strong> lets us use <code>?</code> inside a handler. Every <code>.await?</code> now short-circuits
+to an <code>ApiError</code> that axum will render for us.</li>
+</ul>
+<p>With that in place, the <code>unwrap</code>s inside <code>crud</code> turn into <code>?</code>, and each handler returns
+<code>ApiResult&lt;T&gt;</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>get({
+    let f = f.clone();
+    move |p: Option&lt;Path&lt;Params&gt;&gt;| async move {
+        let params = p.map(|Path(p)| p).unwrap_or_default();
+        let rows = f(db(), &amp;params).list().await?;
+        ApiResult::Ok(Json::&lt;Vec&lt;E&gt;&gt;(rows.into_values().collect()))
+    }
+})
+<span class="boring">}</span></code></pre>
+<p>Do the same for the other four (<code>post</code>, <code>get /{id}</code>, <code>patch</code>, <code>delete</code>) — drop the
+<code>.unwrap()</code>, add <code>?</code>, wrap the happy path in <code>ApiResult::Ok(...)</code>. Handler bodies stay three
+lines long.</p>
+<p>Try a few error cases:</p>
+<pre><code class="language-sh">curl -w "\nstatus=%{http_code}\n" http://localhost:3001/categories/999
+# {"error":"get_table_value: no row found (id: \"999\")"}
+# status=404
+
+curl -w "\nstatus=%{http_code}\n" -X PATCH http://localhost:3001/categories/999 \
+  -H 'content-type: application/json' -d '{"name":"Ghost"}'
+# {"error":"get_table_value: no row found (id: \"999\")"}
+# status=404
+
+curl -w "\nstatus=%{http_code}\n" -X POST http://localhost:3001/categories \
+  -H 'content-type: application/json' -d '{not-json}'
+# Failed to parse the request body as JSON: ...
+# status=400
+
+curl -w "\nstatus=%{http_code}\n" -X DELETE http://localhost:3001/categories/999
+# status=204
+</code></pre>
+<p>Missing ids produce 404s with a JSON body the client can show to a user. The malformed body
+gets axum’s built-in 400 for free. <code>DELETE</code> on a missing id still returns 204 — vantage’s
+<code>delete</code> is idempotent, and “the resource is gone” is true whether or not it was ever there.</p>
+<div id="admonition-why-match-on-the-error-message" class="admonition admonish-info" role="note" aria-labelledby="admonition-why-match-on-the-error-message-title">
+<div class="admonition-title">
+<div id="admonition-why-match-on-the-error-message-title">
+<p>Why match on the error message?</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-why-match-on-the-error-message"></a>
+</div>
+
+<div>
+<p><code>VantageError</code> is a flat struct — it has a message, a location, and a context map, but no
+typed discriminant you could match against. “Not-found” errors happen to carry the string
+<code>"no row found"</code> in their message, so that’s what we key on.</p>
+<p>It’s slightly brittle: if vantage ever rewrites that message, every API using this pattern
+silently downgrades 404s to 500s. A stronger guarantee would require vantage exposing an
+<code>ErrorKind</code> enum, or for the handler to detect missing rows explicitly — narrow the table by
+id and call <code>get_some()</code>, where <code>None</code> means absent. For this tutorial the string match is
+good enough; production code with strict SLAs should prefer the explicit <code>get_some</code> path.</p>
+</div>
+
+</div>
+
+<div id="admonition-logging-with--on-the-server-side" class="admonition admonish-info" role="note" aria-labelledby="admonition-logging-with--on-the-server-side-title">
+<div class="admonition-title">
+<div id="admonition-logging-with--on-the-server-side-title">
+<p>Logging with {:?} on the server side</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-logging-with--on-the-server-side"></a>
+</div>
+
+<div>
+<p><code>eprintln!("API error: {:?}", e);</code> prints the full error structure — location, context,
+nested sources — which is exactly what a human debugging a 500 needs. The client meanwhile
+only sees <code>e.to_string()</code>, the short one-liner message. That’s the whole point of
+<code>.context("…")</code> from chapter 1: context accumulates on the server, a single sentence reaches
+the client.</p>
+<p>Swap <code>eprintln!</code> for <code>tracing::error!</code> if you’re wired up for structured logging. The
+mechanics are identical.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="pagination-and-search"><a class="header" href="#pagination-and-search">Pagination and search</a></h2>
+<p>Three categories is fine for dev; three thousand would crush any client that naively calls
+<code>GET /categories</code> and tries to render everything. Real APIs page through long lists and let
+callers filter by a search term — two query-string features that belong inside <code>crud</code> so
+every entity gets them.</p>
+<p>Axum parses query strings for us via the <code>Query&lt;T&gt;</code> extractor. Add a small struct for the
+parameters, and a second extractor on the list handler:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use axum::extract::Query;
+use vantage_table::pagination::Pagination;
+
+#[derive(Deserialize, Default)]
+struct ListQuery {
+    page: Option&lt;i64&gt;,
+    per_page: Option&lt;i64&gt;,
+    q: Option&lt;String&gt;,
+}
+<span class="boring">}</span></code></pre>
+<p>Inside <code>crud</code>, only the <code>GET /</code> handler changes. It takes both extractors, mutates the narrowed
+table with whatever the caller asked for, and lists:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>get({
+    let f = f.clone();
+    move |p: Option&lt;Path&lt;Params&gt;&gt;, Query(q): Query&lt;ListQuery&gt;| async move {
+        let params = p.map(|Path(p)| p).unwrap_or_default();
+        let mut t = f(db(), &amp;params);
+        if q.page.is_some() || q.per_page.is_some() {
+            t.set_pagination(Some(Pagination::new(
+                q.page.unwrap_or(1),
+                q.per_page.unwrap_or(50),
+            )));
+        }
+        if let Some(term) = q.q.as_deref() {
+            t.add_search(term);
+        }
+        let rows = t.list().await?;
+        ApiResult::Ok(Json::&lt;Vec&lt;E&gt;&gt;(rows.into_values().collect()))
+    }
+})
+<span class="boring">}</span></code></pre>
+<p>Two things happen:</p>
+<ul>
+<li><strong><a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.set_pagination"><code>set_pagination</code></a><code>(Some(</code><a href="https://docs.rs/vantage_table/0.4.1/vantage_table/pagination/struct.Pagination.html#method.new"><code>Pagination::new</code></a><code>(page, per_page)))</code></strong>
+takes a page number and a page size. Vantage applies these as <code>LIMIT … OFFSET …</code> on the SELECT.
+Missing params fall back to the defaults (page 1, 50 per page) — and if neither is supplied we
+don’t touch pagination at all, so the unfiltered list still hits the whole set.</li>
+<li><strong><a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.add_search"><code>add_search</code></a><code>(term)</code></strong> is the <code>.with_search</code> we used
+in chapter 2 to add a LIKE filter across all columns. Both end up as extra <code>WHERE</code> clauses on the
+query that vantage already compiles for us.</li>
+</ul>
+<p>Try it:</p>
+<pre><code class="language-sh">curl "http://localhost:3001/categories?page=1&amp;per_page=2"
+# [{"name":"Sweet Treats"},{"name":"Pastries"}]
+
+curl "http://localhost:3001/categories?page=2&amp;per_page=2"
+# [{"name":"Breads"}]
+
+curl "http://localhost:3001/categories?q=Pastries"
+# [{"name":"Pastries"}]
+
+curl "http://localhost:3001/categories?q=e"
+# [{"name":"Sweet Treats"},{"name":"Pastries"},{"name":"Breads"}]
+</code></pre>
+<p>The nested route gets these for free — <code>crud</code> is the same function. <code>per_page</code> works on
+<code>/categories/{cat_id}/products</code> out of the box:</p>
+<pre><code class="language-sh">curl "http://localhost:3001/categories/1/products?per_page=2"
+# [
+#   {"name":"Cupcake","price":120,"category_id":"1","is_deleted":false},
+#   {"name":"Doughnut","price":135,"category_id":"1","is_deleted":false}
+# ]
+</code></pre>
+<p>Because the closure for the nested mount narrows the table with <code>with_condition</code> <em>before</em>
+<code>crud</code> applies its own pagination/search, the filters compose cleanly: the category scope stays
+in effect, and pagination just counts rows within it.</p>
+<div id="admonition-what-about-ordering" class="admonition admonish-info" role="note" aria-labelledby="admonition-what-about-ordering-title">
+<div class="admonition-title">
+<div id="admonition-what-about-ordering-title">
+<p>What about ordering?</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-what-about-ordering"></a>
+</div>
+
+<div>
+<p>A full <code>?order_by=price&amp;dir=desc</code> pairing is the obvious next thing — and the Table API
+supports it via <code>add_order(column.ascending())</code> — but the <code>OrderBy</code> type is generic over the
+backend’s condition type (<code>T::Condition</code>), not the easier-to-hand-you <code>Expression&lt;T::Value&gt;</code>
+that <code>get_column_expr</code> returns. Wiring it up at the generic <code>crud</code> level takes a small extra
+layer of <code>From</code> conversions that would balloon this section.</p>
+<p>For a single-entity handler, you can simply narrow with <code>let mut t = Category::table(db()) .clone(); t.add_order(sqlite_expr!("{}", ident("name")).ascending());</code>. Adding ordering to
+<code>crud</code> is a fine exercise once the rest of the server is in place — and a natural thing to
+push back into the framework so every backend picks it up uniformly.</p>
+</div>
+
+</div>
+
+<div id="admonition-validating-pagination-params" class="admonition admonish-info" role="note" aria-labelledby="admonition-validating-pagination-params-title">
+<div class="admonition-title">
+<div id="admonition-validating-pagination-params-title">
+<p>Validating pagination params</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-validating-pagination-params"></a>
+</div>
+
+<div>
+<p>Our <code>ListQuery</code> silently accepts <code>page=0</code>, <code>per_page=-5</code>, or <code>per_page=1000000</code>. <code>Pagination::new</code>
+clamps page and items-per-page to at least 1, so the first two can’t crash us — but an API
+that hands out 1M rows because someone asked for it is a DoS target. For production,
+extend <code>ListQuery</code> with a <code>fn validate(&amp;self) -&gt; Result&lt;(), ApiError&gt;</code> that caps <code>per_page</code>
+at something like 200 and returns 400 otherwise. The plumbing is already there — <code>ApiError</code>
+already knows how to render a 400.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="migrating-to-mongodb"><a class="header" href="#migrating-to-mongodb">Migrating to MongoDB</a></h2>
+<p>Chapter 2 closed on a claim: the model layer isolates business code from storage, so swapping
+databases is a change to the model, not to the routes, handlers, or business logic. Now we
+cash the check. <code>/categories</code>, <code>/categories/{id}</code>, and <code>/categories/{cat_id}/products</code> keep
+their exact URL shape, response bodies, and behaviour — but the data lives in
+<a href="https://docs.rs/vantage_mongodb/0.4.1/vantage_mongodb/mongodb/struct.MongoDB.html"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>.</p>
+<p>Start Mongo — Docker is the easiest way:</p>
+<pre><code class="language-sh">docker run -d --name mongo-learn -p 27017:27017 mongo:7
+</code></pre>
+<h3 id="cargotoml"><a class="header" href="#cargotoml">Cargo.toml</a></h3>
+<p>Drop <code>vantage-sql</code>, add <code>vantage-mongodb</code>:</p>
+<pre><code class="language-toml">[dependencies]
+axum = "0.8.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+vantage-core = { path = "../vantage-core" }
+vantage-dataset = { path = "../vantage-dataset" }
+vantage-expressions = { path = "../vantage-expressions" }
+vantage-mongodb = { path = "../vantage-mongodb" }
+vantage-table = { path = "../vantage-table" }
+vantage-types = { path = "../vantage-types", features = ["serde"] }
+</code></pre>
+<h3 id="entities"><a class="header" href="#entities">Entities</a></h3>
+<p>Swap the <code>#[entity]</code> type tag from <code>SqliteType</code> to <code>MongoType</code> and the id column name from
+<code>id</code> to the MongoDB-idiomatic <code>_id</code>. Imports collapse to a single prelude use-line.</p>
+<p><code>src/category.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use std::sync::OnceLock;
+
+use vantage_mongodb::prelude::*;
+
+use crate::product::Product;
+
+#[entity(MongoType)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Category {
+    pub name: String,
+}
+
+impl Category {
+    pub fn table(db: MongoDB) -&gt; &amp;'static Table&lt;MongoDB, Category&gt; {
+        static CACHE: OnceLock&lt;Table&lt;MongoDB, Category&gt;&gt; = OnceLock::new();
+        CACHE.get_or_init(|| {
+            Table::new("category", db)
+                .with_id_column("_id")
+                .with_column_of::&lt;String&gt;("name")
+                .with_many("products", "category_id", |db| Product::table(db).clone())
+        })
+    }
+}
+<span class="boring">}</span></code></pre>
+<p><code>src/product.rs</code> gets the symmetric changes:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use std::sync::OnceLock;
+
+use vantage_mongodb::prelude::*;
+
+use crate::category::Category;
+
+#[entity(MongoType)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Product {
+    pub name: String,
+    pub price: i64,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub category_id: Option&lt;String&gt;,
+    #[serde(default)]
+    pub is_deleted: bool,
+}
+
+impl Product {
+    pub fn table(db: MongoDB) -&gt; &amp;'static Table&lt;MongoDB, Product&gt; {
+        static CACHE: OnceLock&lt;Table&lt;MongoDB, Product&gt;&gt; = OnceLock::new();
+        CACHE.get_or_init(|| {
+            let is_deleted = Column::&lt;bool&gt;::new("is_deleted");
+            Table::new("product", db)
+                .with_id_column("_id")
+                .with_column_of::&lt;String&gt;("name")
+                .with_column_of::&lt;i64&gt;("price")
+                .with_column_of::&lt;String&gt;("category_id")
+                .with_column_of::&lt;bool&gt;("is_deleted")
+                .with_condition(is_deleted.eq(false))
+                .with_one("category", "category_id", |db| Category::table(db).clone())
+        })
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Nothing about the struct shape changed — <code>category_id</code> and <code>is_deleted</code> have been real columns
+since § 2. The <code>with_*</code> calls line up one-for-one with the SQLite version; only the id column
+name and the entity’s type tag shift.</p>
+<p>The <code>CategoryTable</code> trait from § 3 also updates — MongoDB’s <code>_id</code> is a string, not an integer:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl CategoryTable for Table&lt;MongoDB, Category&gt; {
+    fn id(&amp;self) -&gt; Column&lt;String&gt; {
+        self.get_column("_id").unwrap()
+    }
+    fn ref_products(&amp;self) -&gt; Table&lt;MongoDB, Product&gt; {
+        self.get_ref_as("products").unwrap()
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>The nested route’s closure gets a little simpler as a result — no parse step, just narrow by the
+URL’s <code>cat_id</code> string directly:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>crud(|db, p| {
+    let mut c = Category::table(db).clone();
+    c.add_condition(c.id().eq(p["cat_id"].as_str()));
+    c.ref_products()
+})
+<span class="boring">}</span></code></pre>
+<p><code>.eq(&amp;str)</code> works here because <code>vantage-mongodb</code>’s <code>From&lt;&amp;str&gt;</code> for
+<a href="https://docs.rs/vantage_mongodb/0.4.1/vantage_mongodb/types/struct.AnyMongoType.html"><code>AnyMongoType</code></a> auto-promotes 24-character hex strings to
+<code>ObjectId</code> and leaves everything else as <code>String</code>. The comparison fires with the right BSON type
+whichever <code>_id</code> convention the collection uses.</p>
+<h3 id="mainrs"><a class="header" href="#mainrs">main.rs</a></h3>
+<p>The <code>crud</code> function’s generic bounds shift from <code>Entity&lt;AnySqliteType&gt;</code> to <code>Entity&lt;AnyMongoType&gt;</code>
+and its <code>Fn(SqliteDB, ...)</code> becomes <code>Fn(MongoDB, ...)</code>. Body unchanged.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn crud&lt;E, F&gt;(make_table: F) -&gt; Router
+where
+    F: Fn(MongoDB, &amp;Params) -&gt; Table&lt;MongoDB, E&gt; + Send + Sync + 'static,
+    E: Entity&lt;AnyMongoType&gt; + Serialize + DeserializeOwned + Send + Sync + 'static,
+<span class="boring">}</span></code></pre>
+<p>Connection, id handling, and error mapping are the only handler-level changes:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// db() returns MongoDB; connect with URL + database name.
+let conn = MongoDB::connect("mongodb://localhost:27017", "learn3")
+    .await
+    .context("Failed to connect to MongoDB")?;
+
+// item-level ids are MongoId. String → MongoId dispatches to ObjectId when the
+// string is a 24-char hex, otherwise stays a plain String, via a `From&lt;String&gt;`
+// smart-parse in vantage-mongodb.
+let id: MongoId = params["id"].clone().into();
+
+// MongoDB's missing-doc error joins the 404 path.
+let status = if message.contains("no row found") || message.contains("Document not found") {
+    StatusCode::NOT_FOUND
+} else {
+    StatusCode::INTERNAL_SERVER_ERROR
+};
+<span class="boring">}</span></code></pre>
+<h3 id="running-it"><a class="header" href="#running-it">Running it</a></h3>
+<pre><code class="language-sh">cargo run
+</code></pre>
+<p>The collection is empty, so the first request returns an empty array:</p>
+<pre><code class="language-sh">curl http://localhost:3001/categories
+# []
+</code></pre>
+<p>POST a few categories — responses carry the auto-generated MongoDB ObjectId as the new id:</p>
+<pre><code class="language-sh">SWEETS=$(curl -s -X POST http://localhost:3001/categories \
+  -H 'content-type: application/json' -d '{"name":"Sweet Treats"}' \
+  | jq -r .id)
+echo "$SWEETS"
+# 69e2b9101a552c206f5f8468
+</code></pre>
+<p>Create a product in that category by POSTing to the nested route, including the parent id as
+<code>category_id</code> in the body:</p>
+<pre><code class="language-sh">curl -X POST "http://localhost:3001/categories/$SWEETS/products" \
+  -H 'content-type: application/json' \
+  -d "{\"name\":\"Cupcake\",\"price\":120,\"category_id\":\"$SWEETS\"}"
+# {"id":"69e2b9101a552c206f5f846a"}
+
+curl "http://localhost:3001/categories/$SWEETS/products"
+# [{"name":"Cupcake","price":120,"category_id":"69e2b9101a552c206f5f8468","is_deleted":false}]
+</code></pre>
+<p>Same URL shape as the SQLite version. Same JSON. Same error codes. Handlers, routing,
+pagination, filtering — nothing in the request path learned that storage moved from a local
+file to a document database.</p>
+<div id="admonition-cross-type-in-in-relationship-traversal" class="admonition admonish-info" role="note" aria-labelledby="admonition-cross-type-in-in-relationship-traversal-title">
+<div class="admonition-title">
+<div id="admonition-cross-type-in-in-relationship-traversal-title">
+<p>Cross-type $in in relationship traversal</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-cross-type-in-in-relationship-traversal"></a>
+</div>
+
+<div>
+<p><code>CategoryTable::ref_products()</code> still works. MongoDB’s <code>_id</code> defaults to <code>ObjectId</code>, but
+application fields like <code>product.category_id</code> arrive as plain JSON strings and get stored as
+BSON <code>String</code>. A naive <code>$in: [ObjectId(...)]</code> wouldn’t match. <code>vantage-mongodb</code> sidesteps that
+by pushing both representations into the <code>$in</code> inside <code>related_in_condition</code> — an <code>ObjectId</code>
+value also emits its 24-char hex string, and a hex-shaped <code>String</code> value also emits the
+parsed <code>ObjectId</code>. Traversal works regardless of which form the target stores.</p>
+</div>
+
+</div>
+
+<div id="admonition-string-_ids-are-also-an-option" class="admonition admonish-info" role="note" aria-labelledby="admonition-string-_ids-are-also-an-option-title">
+<div class="admonition-title">
+<div id="admonition-string-_ids-are-also-an-option-title">
+<p>String _ids are also an option</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-string-_ids-are-also-an-option"></a>
+</div>
+
+<div>
+<p>Nothing in MongoDB requires <code>_id</code> to be an <code>ObjectId</code> — it can be any BSON value, including a
+plain string. If the app supplies <code>_id</code> explicitly on insert (or the framework generates a
+UUID and writes it into <code>_id</code>), both <code>category._id</code> and <code>product.category_id</code> are strings and
+everything lines up without the $in dual-push. Useful when you want stable, human-legible ids
+or ids that came from an upstream system.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="scaling-up-crud-as-a-one-liner"><a class="header" href="#scaling-up-crud-as-a-one-liner">Scaling up: CRUD as a one-liner</a></h2>
+<p>The <code>crud</code> function, <code>ApiError</code>, <code>Params</code>, and <code>ListQuery</code> aren’t really tied to this app —
+they’re generic over any <code>Table&lt;MongoDB, E&gt;</code>. Move them into their own module and <code>main.rs</code>
+collapses to exactly what it’s about: connecting the database and registering routes. Three
+files do the work:</p>
+<p><strong><code>src/vantage_axum.rs</code></strong> (one file, ~120 lines) — everything HTTP: <code>ApiError</code>, <code>ListQuery</code>,
+and the <code>crud&lt;E, F&gt;</code> helper. Accepts any entity <code>E</code> that implements <code>Entity&lt;AnyMongoType&gt;</code>
+plus the usual serde bounds.</p>
+<p><strong><code>src/db.rs</code></strong> (17 lines) — the <code>static DB: OnceLock&lt;MongoDB&gt;</code>, an <code>init(url, db)</code> helper
+that connects and stores the handle, and a <code>pub fn db() -&gt; MongoDB</code> accessor that hands out
+cheap <code>MongoDB</code> clones.</p>
+<p><strong><code>src/main.rs</code></strong> — now down to ~30 lines:</p>
+<pre class="playground"><code class="language-rust">mod category;
+mod db;
+mod product;
+mod vantage_axum;
+
+use axum::Router;
+use category::{Category, CategoryTable};
+use vantage_axum::crud;
+use vantage_mongodb::prelude::*;
+
+#[tokio::main]
+async fn main() -&gt; VantageResult&lt;()&gt; {
+    db::init("mongodb://localhost:27017", "learn3").await?;
+
+    let app = Router::new()
+        .nest("/categories", crud(|db, _| Category::table(db).clone()))
+        .nest(
+            "/categories/{cat_id}/products",
+            crud(|db, p| {
+                let mut c = Category::table(db).clone();
+                c.add_condition(c.id().eq(p["cat_id"].as_str()));
+                c.ref_products()
+            }),
+        );
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3001").await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+
+    Ok(())
+}</code></pre>
+<p>Adding a new entity to this server is now <em>two</em> things:</p>
+<ol>
+<li>Write a <code>Table::new(...)</code> constructor for it — declarative, one function, same shape we
+learned in chapter 2.</li>
+<li>Mount it.</li>
+</ol>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>.nest("/widgets", crud(|db, _| Widget::table(db).clone()))
+<span class="boring">}</span></code></pre>
+<p>That’s the whole surface. <code>GET</code> list, <code>POST</code> create, <code>GET /{id}</code>, <code>PATCH /{id}</code>, <code>DELETE /{id}</code>, pagination via <code>?page=&amp;per_page=</code>, full-text search via <code>?q=</code>, 404s for missing ids,
+400s for malformed bodies, structured JSON errors. No new handler code. No per-entity error
+mapping. No per-entity query-param struct. One line per entity.</p>
+<p>Every route plays by the same rules because every route is served by the same <code>crud</code> — the
+single description of “what this route does” lives in the entity’s <code>Table</code> definition, and
+the HTTP boundary just routes to it. That is the “one description, many operations”
+principle from chapter 2’s <code>Table</code> carried all the way to the wire, unbroken.</p>
+<p>The <code>vantage_axum</code> module is generic enough to lift directly into a larger codebase — it has
+no knowledge of <code>Category</code>, <code>Product</code>, or your particular routes. Drop it into your own
+binary, give it a <code>db()</code> accessor, write entity files, mount routes.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../intro/step2-tables.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../history.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../intro/step2-tables.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../history.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
+
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../mermaid-eefea253.min.js"></script>
+        <script src="../mermaid-init-ccf746f1.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

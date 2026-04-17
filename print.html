@@ -37,10 +37,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-8f068220.js";
+            window.path_to_searchindex_js = "searchindex-d9838aed.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-10b285ad.js"></script>
+        <script src="toc-f0872746.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -195,39 +195,40 @@ required.</p>
 <hr><!-- internal use: concept coverage tracker — once covered in introduction, cross out here -->
 <h2 id="todo-concept-coverage"><a class="header" href="#todo-concept-coverage">TODO: Concept Coverage</a></h2>
 <ul>
-<li><input disabled="" type="checkbox"> Expression basics (<code>sqlite_expr!</code>, parameter binding, injection safety)</li>
-<li><input disabled="" type="checkbox"> Identifier quoting (<code>ident()</code>, dialect-aware)</li>
+<li><input disabled="" type="checkbox" checked=""> Expression basics (<code>sqlite_expr!</code>, parameter binding, injection safety)</li>
+<li><input disabled="" type="checkbox" checked=""> Identifier quoting (<code>ident()</code>, dialect-aware)</li>
 <li><input disabled="" type="checkbox"> SqliteSelect via Selectable trait (with_source, with_field, with_condition, with_order,
-with_limit)</li>
-<li><input disabled="" type="checkbox"> Executing queries (ExprDataSource, <code>db.execute()</code>, <code>db.associate()</code>)</li>
-<li><input disabled="" type="checkbox"> Aggregates on select (as_count, as_sum)</li>
-<li><input disabled="" type="checkbox"> Table definition (Table::new, with_column_of, with_id_column, builder pattern)</li>
-<li><input disabled="" type="checkbox"> Table → select query (table.select() returns vendor-specific builder)</li>
-<li><input disabled="" type="checkbox"> DataSource concept (what it is, how you pass it to Table::new)</li>
-<li><input disabled="" type="checkbox"> Entity struct (plain Rust struct, no id field, <code>#[entity]</code> macro)</li>
-<li><input disabled="" type="checkbox"> Record&lt;V&gt; (persistence-native value bags)</li>
-<li><input disabled="" type="checkbox"> Type system (vantage_type_system! macro, AnySqliteType, typed vs untyped values)</li>
-<li><input disabled="" type="checkbox"> ReadableDataSet (list, get, get_some, get_count)</li>
-<li><input disabled="" type="checkbox"> WritableDataSet (insert, delete)</li>
+with_limit) — partial, missing with_order, with_limit</li>
+<li><input disabled="" type="checkbox" checked=""> Executing queries (ExprDataSource, <code>db.execute()</code>) — <code>db.associate()</code> not covered</li>
+<li><input disabled="" type="checkbox"> Aggregates on select (as_count, as_sum) — covered via <code>db.aggregate()</code> not <code>.as_count()</code> directly</li>
+<li><input disabled="" type="checkbox" checked=""> Table definition (Table::new, with_column_of, with_id_column, builder pattern)</li>
+<li><input disabled="" type="checkbox" checked=""> Table → select query (table.select() returns vendor-specific builder)</li>
+<li><input disabled="" type="checkbox" checked=""> DataSource concept (what it is, how you pass it to Table::new)</li>
+<li><input disabled="" type="checkbox" checked=""> Entity struct (plain Rust struct, no id field, <code>#[entity]</code> macro)</li>
+<li><input disabled="" type="checkbox" checked=""> Record&lt;V&gt; (persistence-native value bags)</li>
+<li><input disabled="" type="checkbox"> Type system (vantage_type_system! macro, AnySqliteType, typed vs untyped values) — AnySqliteType mentioned, macro not shown</li>
+<li><input disabled="" type="checkbox" checked=""> ReadableDataSet (list, get, get_some, get_count)</li>
+<li><input disabled="" type="checkbox" checked=""> WritableDataSet (insert, delete)</li>
 <li><input disabled="" type="checkbox"> ActiveEntity (get_entity, modify via DerefMut, save)</li>
-<li><input disabled="" type="checkbox"> Conditions (table[“field”], .eq/.gt/.lt, with_condition returns new table)</li>
+<li><input disabled="" type="checkbox" checked=""> Conditions (table[“field”], .eq/.gt/.lt, with_condition returns new table)</li>
 <li><input disabled="" type="checkbox"> Sync vs async — defining table is sync, hitting DB is async</li>
-<li><input disabled="" type="checkbox"> Relationships (with_one, with_many, declared on table not entity)</li>
-<li><input disabled="" type="checkbox"> Reference traversal (get_ref_as, subquery-based conditions)</li>
-<li><input disabled="" type="checkbox"> Computed fields (with_expression, correlated subqueries)</li>
-<li><input disabled="" type="checkbox"> AnyTable (from_table, JSON boundary, type-erased generic code)</li>
+<li><input disabled="" type="checkbox" checked=""> Relationships (with_one, with_many, declared on table not entity)</li>
+<li><input disabled="" type="checkbox" checked=""> Reference traversal (get_ref_as, subquery-based conditions)</li>
+<li><input disabled="" type="checkbox" checked=""> Computed fields (with_expression, correlated subqueries)</li>
+<li><input disabled="" type="checkbox" checked=""> AnyTable (from_table, JSON boundary, type-erased generic code)</li>
 <li><input disabled="" type="checkbox"> Model crate pattern (entities + table constructors + relationships in one crate)</li>
 <li><input disabled="" type="checkbox"> Multiple backends per entity (surreal_table, sqlite_table, csv_table)</li>
-<li><input disabled="" type="checkbox"> DataSet trait hierarchy (ReadableDataSet, InsertableDataSet, WritableDataSet)</li>
+<li><input disabled="" type="checkbox"> DataSet trait hierarchy (ReadableDataSet, InsertableDataSet, WritableDataSet) — partial, ReadableDataSet only</li>
 <li><input disabled="" type="checkbox"> ValueSet traits (schema-less Record-based access)</li>
-<li><input disabled="" type="checkbox"> Vendor-specific query builders (SqliteSelect, PostgresSelect, SurrealSelect)</li>
+<li><input disabled="" type="checkbox" checked=""> Vendor-specific query builders (SqliteSelect, PostgresSelect, SurrealSelect)</li>
 <li><input disabled="" type="checkbox"> Deferred expressions (cross-database defer/map)</li>
 <li><input disabled="" type="checkbox"> Progressive persistence model (implement only what your backend supports)</li>
-<li><input disabled="" type="checkbox"> Error handling (VantageError, context, with_context)</li>
+<li><input disabled="" type="checkbox" checked=""> Error handling (VantageError, context, with_context) — partial (VantageError + context shown)</li>
 <li><input disabled="" type="checkbox"> Connection management (DSN pattern, OnceLock)</li>
 <li><input disabled="" type="checkbox"> Pagination (with_pagination)</li>
-<li><input disabled="" type="checkbox"> Search expressions (search_expression, vendor-specific LIKE/CONTAINS)</li>
+<li><input disabled="" type="checkbox" checked=""> Search expressions (search_expression, vendor-specific LIKE/CONTAINS) — via <code>with_search</code></li>
 <li><input disabled="" type="checkbox"> models! macro (all_tables() generation)</li>
+<li><input disabled="" type="checkbox" checked=""> Extension traits (trait CategoryTable, ref_products, adding custom methods like print)</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="sqlite-and-the-query-builder"><a class="header" href="#sqlite-and-the-query-builder">SQLite and the Query Builder</a></h1>
@@ -348,8 +349,8 @@ async fn run() -&gt; VantageResult&lt;()&gt; {
 }</code></pre>
 <p>A few things going on here:</p>
 <ul>
-<li><strong><code>use vantage_sql::prelude::*</code></strong> brings in everything we need for this chapter — <a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>,
-<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a>, the <code>sqlite_expr!</code> macro, error types, and the traits that make builder and
+<li><strong><code>use vantage_sql::prelude::*</code></strong> brings in everything we need for this chapter — <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>,
+<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a>, the <code>sqlite_expr!</code> macro, error types, and the traits that make builder and
 execution methods work.</li>
 <li><strong><code>VantageResult&lt;()&gt;</code></strong> is Vantage’s own Result type. It uses <code>VantageError</code>, which tracks context
 and error chains for readable diagnostics.</li>
@@ -415,11 +416,11 @@ any <code>Result</code> with a standard error type.</p>
 
 <hr>
 <h2 id="build-a-select"><a class="header" href="#build-a-select">Build a SELECT</a></h2>
-<p><a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a> is the query builder for SQLite.
+<p><a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a> is the query builder for SQLite.
 Other persistences have their own —
-<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/postgres/statements/select/struct.PostgresSelect.html"><code>PostgresSelect</code></a>,
-<a href="https://docs.rs/vantage_mongodb/0.4.0/vantage_mongodb/select/struct.MongoSelect.html"><code>MongoSelect</code></a> — and they all implement the
-<a href="https://docs.rs/vantage_expressions/0.4.1/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a> trait, so the interface is identical apart from
+<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/postgres/statements/select/struct.PostgresSelect.html"><code>PostgresSelect</code></a>,
+<a href="https://docs.rs/vantage_mongodb/0.4.1/vantage_mongodb/select/struct.MongoSelect.html"><code>MongoSelect</code></a> — and they all implement the
+<a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a> trait, so the interface is identical apart from
 vendor-specific extensions. None of them need a database connection — they’re just structs that
 accumulate query parts. You build them with a chain of <code>.with_*()</code> calls:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -472,10 +473,10 @@ you’re building a query conditionally in a loop.</p>
 </span>let result = db.execute(&amp;select.expr()).await?;
 println!("{:?}", result);
 <span class="boring">}</span></code></pre>
-<p>Two steps here: <code>.expr()</code> turns the builder into an <a href="https://docs.rs/vantage_expressions/0.4.1/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a>
+<p>Two steps here: <code>.expr()</code> turns the builder into an <a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a>
 — Vantage’s internal representation that keeps parameters separate from the SQL template. Then
-<a href="https://docs.rs/vantage_expressions/0.4.1/vantage_expressions/traits/datasource/trait.ExprDataSource.html#tymethod.execute"><code>db.execute()</code></a> sends it to the database.</p>
-<p>The result is <a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> — a type-tagged wrapper around whatever came back. The <code>Debug</code> output
+<a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/traits/datasource/trait.ExprDataSource.html#tymethod.execute"><code>db.execute()</code></a> sends it to the database.</p>
+<p>The result is <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> — a type-tagged wrapper around whatever came back. The <code>Debug</code> output
 isn’t pretty, but you should see all 6 product rows in there.</p>
 <div id="admonition-when-does-vantage-hit-the-database" class="admonition admonish-tip" role="note" aria-labelledby="admonition-when-does-vantage-hit-the-database-title">
 <div class="admonition-title">
@@ -510,13 +511,13 @@ let select = SqliteSelect::new()
 println!("{}", select.preview());
 // SELECT "name", "price" FROM "product" WHERE "is_deleted" = 0
 <span class="boring">}</span></code></pre>
-<p><code>sqlite_expr!</code> creates an <a href="https://docs.rs/vantage_expressions/0.4.1/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a> — a SQL template with
+<p><code>sqlite_expr!</code> creates an <a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a> — a SQL template with
 typed, bound parameters. That <code>{}</code> is <strong>not</strong> Rust’s <code>format!</code>: the value <code>false</code> is stored
 separately and bound through sqlx’s parameterized query interface at execution time — no injection
 risk, ever. The preview shows it inline for readability.</p>
 <p>In SQL persistences, a condition is just an expression. When you pass it to <code>.with_condition()</code>,
 it’s nested inside the select’s own expression tree. At execution time the whole tree is
-<a href="https://docs.rs/vantage_expressions/0.4.1/vantage_expressions/expression/flatten/struct.ExpressionFlattener.html">flattened</a> into a single template + parameter list that
+<a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/expression/flatten/struct.ExpressionFlattener.html">flattened</a> into a single template + parameter list that
 the database driver can bind safely.</p>
 <p>Run it — you should see 5 rows, with “Discontinued Cake” filtered out.</p>
 <div id="admonition-types-and-persistence-rendering" class="admonition admonish-info" role="note" aria-labelledby="admonition-types-and-persistence-rendering-title">
@@ -541,8 +542,8 @@ See <a href="#persistence-aligned-type-system">Persistence-aligned Type System</
 
 <h2 id="typed-columns-and-operators"><a class="header" href="#typed-columns-and-operators">Typed columns and operators</a></h2>
 <p>Writing <code>\"is_deleted\"</code> in a raw expression works, but there’s a cleaner way.
-<a href="https://docs.rs/vantage_table/0.4.0/vantage_table/column/core/struct.Column.html"><code>Column&lt;T&gt;</code></a> creates a typed column reference, then chain an
-<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a> like <code>.eq()</code> to build the
+<a href="https://docs.rs/vantage_table/0.4.1/vantage_table/column/core/struct.Column.html"><code>Column&lt;T&gt;</code></a> creates a typed column reference, then chain an
+<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a> like <code>.eq()</code> to build the
 condition:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -552,7 +553,7 @@ let condition = is_deleted.eq(false);
 <p>Same result, but the type parameter <code>&lt;bool&gt;</code> ensures you can only compare against matching types.
 Try <code>is_deleted.eq(42)</code> — it won’t compile. Other operators — <code>.gt()</code>, <code>.lt()</code>, <code>.ne()</code>, <code>.in_()</code> —
 enforce the same type safety.</p>
-<p>The result is a <a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/condition/struct.SqliteCondition.html"><code>SqliteCondition</code></a> — the backend’s native condition type — ready to be passed
+<p>The result is a <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/condition/struct.SqliteCondition.html"><code>SqliteCondition</code></a> — the backend’s native condition type — ready to be passed
 directly to <code>.with_condition()</code>.</p>
 <div id="admonition-type-safety-and-backend-specific-operations" class="admonition admonish-info" role="note" aria-labelledby="admonition-type-safety-and-backend-specific-operations-title">
 <div class="admonition-title">
@@ -650,7 +651,7 @@ its prelude:</p>
 <span class="boring">}</span></code></pre>
 <p>So far we’ve been printing raw <code>AnySqliteType</code> with <code>Debug</code>. That works for verifying queries, but
 it’s useless for real work. When <code>db.execute()</code> returns a multi-row result, the
-<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> holds an array of maps internally. Convert it
+<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> holds an array of maps internally. Convert it
 to <code>Vec&lt;Record&lt;AnySqliteType&gt;&gt;</code> to work with individual rows:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -822,11 +823,11 @@ async fn run() -&gt; VantageResult&lt;()&gt; {
 <tr><th>Concept</th><th>What it does</th><th>More info</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a></td><td>Builds SELECT queries via builder pattern</td><td><a href="https://docs.rs/vantage_expressions/0.4.1/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a></td></tr>
-<tr><td><a href="https://docs.rs/vantage_table/0.4.0/vantage_table/column/core/struct.Column.html"><code>Column</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
-<tr><td><a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a></td><td>Ext trait giving <code>.eq()</code>, <code>.gt()</code>, etc. → <code>SqliteCondition</code></td><td></td></tr>
-<tr><td><code>sqlite_expr!</code></td><td>Creates expressions with typed, bound parameters</td><td><a href="https://docs.rs/vantage_expressions/0.4.1/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a></td></tr>
-<tr><td><code>db.execute()</code></td><td>Runs an expression, returns <a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a></td><td><a href="https://docs.rs/vantage_expressions/0.4.1/vantage_expressions/traits/datasource/trait.ExprDataSource.html"><code>ExprDataSource</code></a></td></tr>
+<tr><td><a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a></td><td>Builds SELECT queries via builder pattern</td><td><a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a></td></tr>
+<tr><td><a href="https://docs.rs/vantage_table/0.4.1/vantage_table/column/core/struct.Column.html"><code>Column</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
+<tr><td><a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a></td><td>Ext trait giving <code>.eq()</code>, <code>.gt()</code>, etc. → <code>SqliteCondition</code></td><td></td></tr>
+<tr><td><code>sqlite_expr!</code></td><td>Creates expressions with typed, bound parameters</td><td><a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a></td></tr>
+<tr><td><code>db.execute()</code></td><td>Runs an expression, returns <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a></td><td><a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/traits/datasource/trait.ExprDataSource.html"><code>ExprDataSource</code></a></td></tr>
 <tr><td><a href="https://docs.rs/vantage_types/0.4.0/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a></td><td>Ordered map of column names to values — row-level access</td><td><code>.try_get::&lt;T&gt;()</code></td></tr>
 <tr><td><code>#[entity(SqliteType)]</code></td><td>Generates lossless record-to-struct conversion</td><td><a href="https://docs.rs/vantage_types/0.4.0/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord</code></a></td></tr>
 </tbody>
@@ -912,7 +913,7 @@ important differences:</p>
 </tbody>
 </table>
 </div>
-<p>A <a href="https://docs.rs/vantage_table/0.4.0/vantage_table/table/base/struct.Table.html"><code>Table</code></a> is typically defined in its own file alongside the entity.
+<p>A <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html"><code>Table</code></a> is typically defined in its own file alongside the entity.
 Create <code>src/product.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -988,8 +989,8 @@ let sum_query = table.get_sum_query(&amp;table["price"]);
 assembles them for you. But most of the time you won’t need the raw query at all.</p>
 <hr>
 <h2 id="crud-operations"><a class="header" href="#crud-operations">CRUD operations</a></h2>
-<p>With the table defined, all four operations — create, read, update, delete — are one-liners.
-Each comes from a trait in the prelude:</p>
+<p>With the table defined, all four operations — create, read, update, delete — are one-liners. Each
+comes from a trait in the prelude:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>let table = Product::table(db);
@@ -1009,10 +1010,10 @@ table.replace(&amp;"muffin".to_string(), &amp;updated).await?;
 // Delete
 table.delete(&amp;"muffin".to_string()).await?;
 <span class="boring">}</span></code></pre>
-<p>That’s it. <code>list()</code> returns an <code>IndexMap&lt;Id, Product&gt;</code> — ordered and keyed by ID. <code>get()</code>
-returns the entity or an error if the ID doesn’t exist. There’s also <code>get_some()</code> which
-returns <code>Option</code> for when you’re not sure there are any records, and <code>insert_return_id()</code>
-for when you want the database to generate the ID.</p>
+<p>That’s it. <code>list()</code> returns an <code>IndexMap&lt;Id, Product&gt;</code> — ordered and keyed by ID. <code>get()</code> returns
+the entity or an error if the ID doesn’t exist. There’s also <code>get_some()</code> which returns <code>Option</code> for
+when you’re not sure there are any records, and <code>insert_return_id()</code> for when you want the database
+to generate the ID.</p>
 <div id="admonition-idempotent-operations" class="admonition admonish-tip" role="note" aria-labelledby="admonition-idempotent-operations-title">
 <div class="admonition-title">
 <div id="admonition-idempotent-operations-title">
@@ -1033,12 +1034,12 @@ side effects.</p>
 
 <hr>
 <h2 id="type-erased-tables"><a class="header" href="#type-erased-tables">Type-erased tables</a></h2>
-<p><code>Table&lt;SqliteDB, Product&gt;</code> is great when you know the types at compile time. But what if you
-want to write a function that lists <em>any</em> table — products, orders, customers — without
-knowing the entity type?</p>
-<p><a href="https://docs.rs/vantage_table/0.4.0/vantage_table/any/struct.AnyTable.html"><code>AnyTable</code></a> wraps a concrete table and erases its type parameters. Values come back as
-<code>Record&lt;serde_json::Value&gt;</code> instead of typed entities. You can iterate columns by name and
-build a generic display:</p>
+<p><code>Table&lt;SqliteDB, Product&gt;</code> is great when you know the types at compile time. But what if you want to
+write a function that lists <em>any</em> table — products, orders, customers — without knowing the entity
+type?</p>
+<p><a href="https://docs.rs/vantage_table/0.4.1/vantage_table/any/struct.AnyTable.html"><code>AnyTable</code></a> wraps a concrete table and erases its type parameters.
+Values come back as <code>Record&lt;serde_json::Value&gt;</code> instead of typed entities. You can iterate columns
+by name and build a generic display:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>async fn list_table(table: &amp;AnyTable) -&gt; VantageResult&lt;()&gt; {
@@ -1075,10 +1076,10 @@ list_table(&amp;any).await?;
 // donut       "Doughnut"      135
 // ...
 <span class="boring">}</span></code></pre>
-<p>Under the hood, <code>AnyTable</code> converts values to and from <code>serde_json::Value</code> on the fly.
-Conditions, pagination, and all CRUD operations still work — you just lose compile-time
-type safety on the entity fields. This is the trade-off: <code>AnyTable</code> lets you build generic
-UI components, CLI tools, and admin panels that work with any table definition.</p>
+<p>Under the hood, <code>AnyTable</code> converts values to and from <code>serde_json::Value</code> on the fly. Conditions,
+pagination, and all CRUD operations still work — you just lose compile-time type safety on the
+entity fields. This is the trade-off: <code>AnyTable</code> lets you build generic UI components, CLI tools,
+and admin panels that work with any table definition.</p>
 <div id="admonition-generics-vs-type-erasure" class="admonition admonish-info" role="note" aria-labelledby="admonition-generics-vs-type-erasure-title">
 <div class="admonition-title">
 <div id="admonition-generics-vs-type-erasure-title">
@@ -1110,8 +1111,8 @@ type erasure via <code>AnyTable</code> is the way to go.</p>
 
 <hr>
 <h2 id="relationships"><a class="header" href="#relationships">Relationships</a></h2>
-<p>Our database has a <code>category</code> table that we haven’t used yet. Let’s define it and connect it
-to products.</p>
+<p>Our database has a <code>category</code> table that we haven’t used yet. Let’s define it and connect it to
+products.</p>
 <p>Create <code>src/category.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -1149,9 +1150,9 @@ Category has many products; the foreign key lives on product.</p>
 let products = categories.get_ref_as::&lt;Product&gt;("products")?;
 <span class="boring">}</span></code></pre>
 <p>The result is a <code>Table&lt;SqliteDB, Product&gt;</code> with an extra condition — only products whose
-<code>category_id</code> matches one of the category IDs. Narrow the categories first and the subquery
-narrows too. Let’s use this in a CLI that accepts an optional search filter. The <code>.with_search()</code>
-method adds a LIKE condition across all columns of the table — handy for quick filtering.</p>
+<code>category_id</code> matches one of the category IDs. Narrow the categories first and the subquery narrows
+too. Let’s use this in a CLI that accepts an optional search filter. The <code>.with_search()</code> method
+adds a LIKE condition across all columns of the table — handy for quick filtering.</p>
 <p>Update <code>src/main.rs</code>:</p>
 <pre class="playground"><code class="language-rust">mod category;
 mod product;
@@ -1198,8 +1199,8 @@ cargo run "Sweet"        # Cupcake, Doughnut, Cookies
 cargo run "Pastries"     # Tart, Pie
 cargo run "t"            # matches "Sweet Treats" AND "Pastries" — 5 products
 </code></pre>
-<p>The search <code>"t"</code> matches two categories (“Sweet Treats” and “Pastries”), so products from
-both are returned.</p>
+<p>The search <code>"t"</code> matches two categories (“Sweet Treats” and “Pastries”), so products from both are
+returned.</p>
 <div id="admonition-sets-not-joins" class="admonition admonish-info" role="note" aria-labelledby="admonition-sets-not-joins-title">
 <div class="admonition-title">
 <div id="admonition-sets-not-joins-title">
@@ -1227,11 +1228,10 @@ need to rewrite the traversal logic.</p>
 
 <hr>
 <h2 id="computed-fields-with-expressions"><a class="header" href="#computed-fields-with-expressions">Computed fields with expressions</a></h2>
-<p>So far, <code>list_products</code> only shows name and price. It would be nice to show the category
-name too — but <code>Product</code> doesn’t have a <code>category</code> field, and the category name lives in
-a different table.</p>
-<p>Vantage solves this with <strong>expressions</strong> — computed fields that are evaluated as part of the
-SELECT query. You define them on the table, and they appear alongside regular columns.</p>
+<p>So far, <code>list_products</code> only shows name and price. It would be nice to show the category name too —
+but <code>Product</code> doesn’t have a <code>category</code> field, and the category name lives in a different table.</p>
+<p>Vantage solves this with <strong>expressions</strong> — computed fields that are evaluated as part of the SELECT
+query. You define them on the table, and they appear alongside regular columns.</p>
 <p>First, add a <code>with_one</code> relationship on Product (the reverse of <code>with_many</code> on Category):</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -1247,7 +1247,9 @@ SELECT query. You define them on the table, and they appear alongside regular co
         .select_column("name")
 })
 <span class="boring">}</span></code></pre>
-<p><code>select_column("name")</code> builds a subquery like <code>SELECT "name" FROM "category" WHERE "id" = "product"."category_id"</code> — a correlated subquery that fetches the category name for each product row.</p>
+<p><code>select_column("name")</code> builds a subquery like
+<code>SELECT "name" FROM "category" WHERE "id" = "product"."category_id"</code> — a correlated subquery that
+fetches the category name for each product row.</p>
 <p>Here’s the updated <code>src/product.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -1284,11 +1286,10 @@ impl Product {
 <span class="boring">}</span></code></pre>
 <p>A few things to note:</p>
 <ul>
-<li><strong><code>category: Option&lt;String&gt;</code></strong> — the field is <code>Option</code> because a product might not have a
-category (NULL in the database). The expression result is deserialized into this field
-automatically.</li>
-<li><strong>No <code>with_column_of</code> for “category”</strong> — the expression replaces what would normally be a
-column. Vantage adds it to the SELECT as a computed field.</li>
+<li><strong><code>category: Option&lt;String&gt;</code></strong> — the field is <code>Option</code> because a product might not have a category
+(NULL in the database). The expression result is deserialized into this field automatically.</li>
+<li><strong>No <code>with_column_of</code> for “category”</strong> — the expression replaces what would normally be a column.
+Vantage adds it to the SELECT as a computed field.</li>
 <li><strong><code>with_one</code> + <code>with_expression</code></strong> — the relationship defines how to traverse; the expression
 defines what to fetch. They work together but serve different purposes.</li>
 </ul>
@@ -1313,8 +1314,8 @@ defines what to fetch. They work together but serve different purposes.</li>
   5    Cookies              199 cents  [Sweet Treats]
   7    Sourdough Loaf       350 cents  [Breads]
 </code></pre>
-<p>The category name comes from a subquery — no JOIN, no extra round trip. And the category
-filter still works:</p>
+<p>The category name comes from a subquery — no JOIN, no extra round trip. And the category filter
+still works:</p>
 <pre><code class="language-sh">cargo run "t"
 </code></pre>
 <pre><code class="language-text">  1    Cupcake              120 cents  [Sweet Treats]
@@ -1380,11 +1381,11 @@ extra round trip to the database.</p>
 
 <hr>
 <h2 id="extension-traits"><a class="header" href="#extension-traits">Extension traits</a></h2>
-<p>Throughout this chapter you’ve seen calls like <code>categories.get_ref_as::&lt;Product&gt;("products")</code>.
-The turbofish <code>::&lt;Product&gt;</code> and the string <code>"products"</code> are repetitive and error-prone —
-get the string wrong and you get a runtime error.</p>
-<p>Rust’s extension traits solve this. Define a trait on <code>Table&lt;SqliteDB, Category&gt;</code> that
-wraps the traversal:</p>
+<p>Throughout this chapter you’ve seen calls like <code>categories.get_ref_as::&lt;Product&gt;("products")</code>. The
+turbofish <code>::&lt;Product&gt;</code> and the string <code>"products"</code> are repetitive and error-prone — get the string
+wrong and you get a runtime error.</p>
+<p>Rust’s extension traits solve this. Define a trait on <code>Table&lt;SqliteDB, Category&gt;</code> that wraps the
+traversal:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>pub trait CategoryTable: ReadableDataSet&lt;Category&gt; {
@@ -1394,11 +1395,11 @@ wraps the traversal:</p>
 }
 impl CategoryTable for Table&lt;SqliteDB, Category&gt; {}
 <span class="boring">}</span></code></pre>
-<p>The default method lives in the trait — <code>impl</code> is just <code>{}</code>. The <code>unwrap()</code> is safe because
-we know “products” is defined on every <code>CategoryTable</code>. If the string were wrong, it would
-panic immediately during development, not silently fail at runtime.</p>
-<p>Now callers write <code>categories.ref_products()</code> — no turbofish, no string, no <code>?</code>, and the
-compiler catches typos.</p>
+<p>The default method lives in the trait — <code>impl</code> is just <code>{}</code>. The <code>unwrap()</code> is safe because we know
+“products” is defined on every <code>CategoryTable</code>. If the string were wrong, it would panic immediately
+during development, not silently fail at runtime.</p>
+<p>Now callers write <code>categories.ref_products()</code> — no turbofish, no string, no <code>?</code>, and the compiler
+catches typos.</p>
 <p>The same pattern works for typed column access:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -1480,6 +1481,1119 @@ The table is yours to extend.</p>
 
 </div>
 
+<hr>
+<h2 id="persistence-abstraction"><a class="header" href="#persistence-abstraction">Persistence Abstraction</a></h2>
+<p>It is time for a pause and reflection. The files you have written so far — <code>Cargo.toml</code>,
+<code>product.rs</code>, <code>category.rs</code>, <code>main.rs</code> — are the makings of an extensible business software
+architecture. Scalable, maintainable, testable, and portable across databases without rewriting a
+single line of business logic.</p>
+<p>What you have is four distinct components, each with a clear job:</p>
+<pre class="mermaid">flowchart TD
+    A["&lt;b&gt;Business code&lt;/b&gt;&lt;br/&gt;&lt;code&gt;main.rs&lt;/code&gt;&lt;br/&gt;minimal, domain-focused"]
+    B["&lt;b&gt;Model definitions&lt;/b&gt;&lt;br/&gt;&lt;code&gt;product.rs&lt;/code&gt;, &lt;code&gt;category.rs&lt;/code&gt;&lt;br/&gt;entities, tables, relationships, domain methods"]
+    C["&lt;b&gt;Persistence crate&lt;/b&gt;&lt;br/&gt;&lt;code&gt;vantage-sql&lt;/code&gt; (or surrealdb, mongodb, csv…)&lt;br/&gt;query builder, CRUD, type system"]
+    D["&lt;b&gt;Vantage framework&lt;/b&gt;&lt;br/&gt;&lt;code&gt;vantage-table&lt;/code&gt;, &lt;code&gt;vantage-expressions&lt;/code&gt;, &lt;code&gt;vantage-types&lt;/code&gt;&lt;br/&gt;the extensible mechanism that ties it together"]
+    A --&gt; B
+    B --&gt; C
+    C --&gt; D
+</pre>
+
+<p>The majority of your business code can work with data without any knowledge of where it’s stored or
+how. It operates on typed entities, relationships, and domain methods — nothing else.</p>
+<p>The model definitions focus on describing <em>where</em> and <em>how</em> data is stored, but they don’t
+micro-manage the process. If storage requirements change — a new backend, a schema migration, a
+cached layer in front — the model is where you make the tweaks. Business code remains untouched.</p>
+<p>This separation gives you:</p>
+<ul>
+<li><input disabled="" type="checkbox" checked=""> <strong>Separation of concerns</strong> - framework to establish great design for your software from day
+one, then scale.</li>
+<li><input disabled="" type="checkbox" checked=""> <strong>No ripple effect</strong> — in Rust code refactoring cascade through entire codebase. Vantage model
+layer contains that pain, and enterprise codebases don’t unravel when requirements shift.</li>
+<li><input disabled="" type="checkbox" checked=""> <strong>Concise syntax</strong> — the ergonomics Python, JavaScript, and PHP developers enjoy, now in Rust.
+Cuting boilerplate, making code readablle.</li>
+<li><input disabled="" type="checkbox" checked=""> <strong>Strong types, zero cost</strong> — everything TypeScript has and more, without sacrificing
+performance. The abstraction compiles down to direct calls.</li>
+<li><input disabled="" type="checkbox" checked=""> <strong>A usable alternative to OOP</strong> — Java and C# developers get entities, methods, and
+composition without inheritance hierarchies or dependency injection containers.</li>
+<li><input disabled="" type="checkbox" checked=""> <strong>Safe concurrency, async, ownership, no memory leaks</strong> — the performance of C with ergonomics
+that make concurrent code readable.</li>
+<li><input disabled="" type="checkbox" checked=""> <strong>Portability</strong> — take Vantage with you anywhere: server, desktop, web, mobile, embedded. One
+static binary per target.</li>
+</ul>
+<div id="admonition-a-sneak-peek-at-whats-next" class="admonition admonish-tip" role="note" aria-labelledby="admonition-a-sneak-peek-at-whats-next-title">
+<div class="admonition-title">
+<div id="admonition-a-sneak-peek-at-whats-next-title">
+<p>A sneak peek at what’s next</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-a-sneak-peek-at-whats-next"></a>
+</div>
+
+<div>
+<p>This introduction gets you productive quickly, but it barely scratches the surface.
+Later chapters explore more complex challenges that make Vantage is equipped to deal with:</p>
+<ul>
+<li><strong>Zero-cost cross-persistence traversal</strong> — follow a relationship from a Postgres table
+into a MongoDB collection, all expressed in Rust, executed efficiently on each side.</li>
+<li><strong>In-memory entity caching with indexing</strong> — Using <code>vantage-redb</code> for powerful and
+transparent client-side caching.</li>
+<li><strong>Facades and middleware APIs, almost for free</strong> — wrap your model to expose a filtered
+or transformed view to another team an API.</li>
+<li><strong>Super-efficient API clients and SDKs</strong> — your model becomes the client. Typed endpoints,
+retries, pagination, and rate limits — all in one abstraction.</li>
+<li><strong>UI framework integration</strong> — the same model drives desktop, terminal, web, and mobile
+UIs through <code>vantage-ui-adapters</code>. Define once, render anywhere.</li>
+<li><strong>Reactive in-memory data</strong> — make your local data reactive, receiving live updates
+from your database or websocket APIs.</li>
+</ul>
+<p>The patterns you’ve learned scale all the way up.</p>
+</div>
+
+</div>
+
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="a-standalone-axum-server"><a class="header" href="#a-standalone-axum-server">A Standalone Axum Server</a></h1>
+<p>Chapter 2 ended with a CLI that prints products to stdout. In this chapter we put the same model
+behind an HTTP API:</p>
+<pre><code class="language-sh">curl "http://localhost:3001/categories"
+</code></pre>
+<pre><code class="language-json">[{ "name": "Sweet Treats" }, { "name": "Pastries" }, { "name": "Breads" }]
+</code></pre>
+<pre><code class="language-sh"># Products in a specific category
+curl "http://localhost:3001/categories/1/products"
+
+# Writes
+curl -X POST "http://localhost:3001/categories" \
+  -H 'content-type: application/json' -d '{"name":"Gluten-Free"}'
+</code></pre>
+<p>A few things about the shape of this API:</p>
+<ul>
+<li><code>/categories/{id}/products</code> is a <strong>nested</strong> route — products narrowed by the relationship we
+defined in chapter 2. The handler for it is the same generic <code>list</code> as <code>/categories</code>, just applied
+to a scoped table.</li>
+<li><code>/products</code> and <code>/categories</code> start out on SQLite, same as chapter 2. Toward the end of the
+chapter we <strong>migrate</strong> them to MongoDB. That migration is a change to the model file; the handlers
+and routes don’t know the difference.</li>
+</ul>
+<p>The handler functions are each written <strong>once</strong> and mounted against any
+<a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html"><code>Table&lt;Backend, Entity&gt;</code></a> the router has on hand — one <code>list</code>, one
+<code>get</code>, one <code>post</code>, one <code>patch</code>, one <code>delete</code>, parameterised over the backend and entity types.
+Adding another entity is a route registration, not a new handler.</p>
+<hr>
+<h2 id="the-minimum-axum-skeleton"><a class="header" href="#the-minimum-axum-skeleton">The minimum Axum skeleton</a></h2>
+<p>Two pieces: a small adaptation to chapter 2’s entities so they round-trip through HTTP, then the
+server itself. One new dependency:</p>
+<pre><code class="language-sh">cargo add axum
+</code></pre>
+<p>Tokio and serde are already pulled in from earlier chapters. <code>axum</code> is the HTTP framework; it uses
+the existing <code>serde</code> to encode response bodies as JSON.</p>
+<p><strong>Entities.</strong> Chapter 2’s <code>Category</code> carried a computed <code>title</code> field; Chapter 2’s <code>Product</code> carried
+a computed <code>category</code> field. Both were assembled from subqueries — great for display, but they don’t
+round-trip cleanly through a <code>POST</code> body because the JSON would try to write columns that don’t
+exist. For a writable API we replace the computed fields with the plain FK column that sits under
+them. (See <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.with_expression"><code>with_expression</code></a> for the chapter-2
+computed-field setup we’re walking away from here.)</p>
+<p><code>src/category.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use serde::{Deserialize, Serialize};
+
+#[entity(SqliteType)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Category {
+    pub name: String,
+}
+
+impl Category {
+    pub fn table(db: SqliteDB) -&gt; Table&lt;SqliteDB, Category&gt; {
+        Table::new("category", db)
+            .with_id_column("id")
+            .with_column_of::&lt;String&gt;("name")
+            .with_many("products", "category_id", Product::table)
+    }
+}
+<span class="boring">}</span></code></pre>
+<p><code>src/product.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use serde::{Deserialize, Serialize};
+
+#[entity(SqliteType)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Product {
+    pub name: String,
+    pub price: i64,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub category_id: Option&lt;String&gt;,
+    #[serde(default)]
+    pub is_deleted: bool,
+}
+
+impl Product {
+    pub fn table(db: SqliteDB) -&gt; Table&lt;SqliteDB, Product&gt; {
+        let is_deleted = Column::&lt;bool&gt;::new("is_deleted");
+        Table::new("product", db)
+            .with_id_column("id")
+            .with_column_of::&lt;String&gt;("name")
+            .with_column_of::&lt;i64&gt;("price")
+            .with_column_of::&lt;String&gt;("category_id")
+            .with_column_of::&lt;bool&gt;("is_deleted")
+            .with_condition(is_deleted.eq(false))
+            .with_one("category", "category_id", Category::table)
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Two things to notice:</p>
+<ul>
+<li><code>category_id</code> is now a real column in both the struct and the table, not a computed expression.
+Same information as before, but clients can read it from <code>GET</code> and supply it on <code>POST</code>.</li>
+<li><code>is_deleted</code> picks up <code>#[serde(default)]</code> so <code>POST /products</code> bodies don’t have to carry it; new
+products default to live.</li>
+</ul>
+<p>The soft-delete condition from chapter 2 stays — <code>GET /products</code> will still hide rows with
+<code>is_deleted = true</code>.</p>
+<p>Now the server. Replace <code>src/main.rs</code> with:</p>
+<pre class="playground"><code class="language-rust">mod category;
+mod product;
+
+use std::sync::OnceLock;
+
+use axum::{routing::get, Json, Router};
+use category::Category;
+use vantage_sql::prelude::*;
+
+static DB: OnceLock&lt;SqliteDB&gt; = OnceLock::new();
+
+fn db() -&gt; SqliteDB {
+    DB.get().expect("database not initialised").clone()
+}
+
+async fn list_categories() -&gt; Json&lt;Vec&lt;Category&gt;&gt; {
+    let rows = Category::table(db()).list().await.unwrap();
+    Json(rows.into_values().collect())
+}
+
+#[tokio::main]
+async fn main() -&gt; VantageResult&lt;()&gt; {
+    let conn = SqliteDB::connect("sqlite:products.db")
+        .await
+        .context("Failed to connect to products.db")?;
+    DB.set(conn).ok();
+
+    let app = Router::new().route("/categories", get(list_categories));
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3001").await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+
+    Ok(())
+}</code></pre>
+<p>A few notes on what this is doing:</p>
+<ul>
+<li><strong><code>static DB: OnceLock&lt;</code><a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a><code>&gt;</code>.</strong> The handler needs a
+database handle but we don’t want to open a new connection per request. A program-wide <code>OnceLock</code>
+is the simplest possible holder — set once in <code>main</code>, read from anywhere.</li>
+<li><strong>Each request calls <code>Category::table(db())</code></strong> — building the table (columns, relationships) and
+then lists it.</li>
+<li><strong>The handler returns <code>Json&lt;Vec&lt;Category&gt;&gt;</code> directly.</strong> No DTO layer — the entity’s fields become
+the JSON fields.</li>
+</ul>
+<p>Run it:</p>
+<pre><code class="language-sh">cargo run
+</code></pre>
+<p>In another terminal:</p>
+<pre><code class="language-sh">curl http://localhost:3001/categories
+</code></pre>
+<pre><code class="language-json">[
+  { "name": "Sweet Treats" },
+  { "name": "Pastries" },
+  { "name": "Breads" }
+]
+</code></pre>
+<hr>
+<h2 id="caching-table-definitions"><a class="header" href="#caching-table-definitions">Caching table definitions</a></h2>
+<p>We can cache each table definition so it’s built once and handed out by reference on every
+subsequent call. In <code>src/category.rs</code>, add <code>use std::sync::OnceLock;</code> at the top and wrap the body
+of <code>Category::table</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl Category {
+    pub fn table(db: SqliteDB) -&gt; &amp;'static Table&lt;SqliteDB, Category&gt; {
+        static CACHE: OnceLock&lt;Table&lt;SqliteDB, Category&gt;&gt; = OnceLock::new();
+        CACHE.get_or_init(|| {
+            Table::new("category", db)
+                // ...columns unchanged...
+                .with_many("products", "category_id", |db| Product::table(db).clone())
+        })
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Three changes from chapter 2’s version:</p>
+<ul>
+<li><strong>Return type is <code>&amp;'static Table&lt;...&gt;</code> instead of <code>Table&lt;...&gt;</code>.</strong> The cache owns the definition;
+callers get a shared reference. Most table operations
+(<a href="https://docs.rs/vantage_dataset/0.4.0/vantage_dataset/traits/dataset/trait.ReadableDataSet.html#tymethod.list"><code>list</code></a>,
+<a href="https://docs.rs/vantage_dataset/0.4.0/vantage_dataset/traits/dataset/trait.ReadableDataSet.html#tymethod.get"><code>get</code></a>,
+<a href="https://docs.rs/vantage_dataset/0.4.0/vantage_dataset/traits/dataset/trait.WritableDataSet.html#tymethod.insert"><code>insert</code></a>,
+<a href="https://docs.rs/vantage_dataset/0.4.0/vantage_dataset/traits/dataset/trait.WritableDataSet.html#tymethod.replace"><code>replace</code></a>,
+<a href="https://docs.rs/vantage_dataset/0.4.0/vantage_dataset/traits/valueset/trait.WritableValueSet.html#tymethod.delete"><code>delete</code></a>,
+<a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>) take <code>&amp;self</code>, so they work on the
+reference without any clone.</li>
+<li><strong><code>static CACHE: OnceLock&lt;...&gt;</code> lives inside the function.</strong> A function-local static is still a
+program-wide single instance — Rust allows this and it keeps the cache private to the table that
+owns it.</li>
+<li><strong>The <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> callback is a closure: <code>|db| Product::table(db).clone()</code>.</strong> The framework still hands us a db and expects an owned
+<code>Table&lt;SqliteDB, Product&gt;</code> back, so we call the cached accessor and clone the reference. On the
+first call this triggers Product’s cache to build; every subsequent call just clones a pre-built
+definition.</li>
+</ul>
+<p><code>src/product.rs</code> follows the same pattern — wrap the body in <code>OnceLock::get_or_init</code>, change the
+return type to <code>&amp;'static Table&lt;SqliteDB, Product&gt;</code>, and rewrite <code>with_one</code> as
+<code>|db| Category::table(db).clone()</code>.</p>
+<p>The handler in <code>main.rs</code> doesn’t change at all — <code>Category::table(db())</code> used to return an owned
+<code>Table</code>, and now it returns a <code>&amp;'static Table</code> that auto-derefs through the same <code>.list()</code> call.
+Restart the server and hit <code>/categories</code> — the response is identical, but now the table definitions
+are built on the first request and reused forever after.</p>
+<div id="admonition-when-the-cached-table-needs-narrowing" class="admonition admonish-info" role="note" aria-labelledby="admonition-when-the-cached-table-needs-narrowing-title">
+<div class="admonition-title">
+<div id="admonition-when-the-cached-table-needs-narrowing-title">
+<p>When the cached table needs narrowing</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-when-the-cached-table-needs-narrowing"></a>
+</div>
+
+<div>
+<p>Most operations work on <code>&amp;Table&lt;...&gt;</code>, but the builder methods that add conditions — like
+<code>with_condition</code>, <code>with_search</code>, <code>with_pagination</code>, and <code>with_order</code> — consume <code>self</code> and
+return a new <code>Table</code>. If a handler needs to narrow the cached definition, it clones first:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let narrowed = Category::table(db())
+    .clone()                      // owned copy of the cached definition
+    .with_condition(...)           // now we can narrow it
+<span class="boring">}</span></code></pre>
+<p>That clone is what chapter 2 meant by “cloning a table clones the definition, not the data”:
+it’s a copy of the shape (columns, conditions, relationships), and it’s cheap.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="products-of-a-category"><a class="header" href="#products-of-a-category">Products of a category</a></h2>
+<p>The <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> relationship we kept from chapter 2 lets
+us serve a nested route — <code>/categories/{id}/products</code>. Before writing the handler, give the
+relationship a proper name with an extension trait on <code>Table&lt;SqliteDB, Category&gt;</code>. Add this to
+<code>src/category.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub trait CategoryTable {
+    fn ref_products(&amp;self) -&gt; Table&lt;SqliteDB, Product&gt;;
+}
+
+impl CategoryTable for Table&lt;SqliteDB, Category&gt; {
+    fn ref_products(&amp;self) -&gt; Table&lt;SqliteDB, Product&gt; {
+        self.get_ref_as("products").unwrap()
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Chapter 2 introduced this pattern. The trait gives the relationship a typed, discoverable name —
+<code>ref_products()</code> — so call sites stop carrying the <code>"products"</code> string and the <code>::&lt;Product&gt;</code>
+turbofish around. The <code>.unwrap()</code> is safe here because we’re the ones who registered <code>"products"</code>; a
+typo surfaces immediately at startup.</p>
+<p>Now the handler. Take the cached category table, narrow it to a single id, and traverse the
+relationship:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use axum::extract::Path;
+use category::CategoryTable;
+use product::Product;
+
+async fn list_category_products(Path(id): Path&lt;i64&gt;) -&gt; Json&lt;Vec&lt;Product&gt;&gt; {
+    let id_col = Column::&lt;i64&gt;::new("id");
+    let products = Category::table(db())
+        .clone()
+        .with_condition(id_col.eq(id))
+        .ref_products();
+    let rows = products.list().await.unwrap();
+    Json(rows.into_values().collect())
+}
+<span class="boring">}</span></code></pre>
+<p>Three things going on:</p>
+<ul>
+<li><strong><code>Category::table(db()).clone()</code></strong> — we need an owned <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html"><code>Table</code></a> to
+chain <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.with_condition"><code>with_condition</code></a> onto, so we clone the cached
+definition. The clone copies the shape (columns, conditions, relationships), not any rows.</li>
+<li><strong><code>with_condition(id_col.eq(id))</code></strong> — narrows the category table to one row: the one we’re asking
+for. Nothing hits the database yet.</li>
+<li><strong><code>ref_products()</code></strong> — traverses the <code>with_many</code> relationship we registered on Category in
+chapter 2, via <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>. The returned table is
+<code>Table&lt;SqliteDB, Product&gt;</code>, already scoped to products whose <code>category_id</code> matches the narrowed
+category set. Chapter 2 walked through what the emitted SQL looks like; it’s the same here.</li>
+</ul>
+<p>Register the route in <code>main.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let app = Router::new()
+    .route("/categories", get(list_categories))
+    .route("/categories/{id}/products", get(list_category_products));
+<span class="boring">}</span></code></pre>
+<p>Hit it:</p>
+<pre><code class="language-sh">curl http://localhost:3001/categories/1/products
+</code></pre>
+<pre><code class="language-json">[
+  { "name": "Cupcake", "price": 120, "category_id": "1", "is_deleted": false },
+  { "name": "Doughnut", "price": 135, "category_id": "1", "is_deleted": false },
+  { "name": "Cookies", "price": 199, "category_id": "1", "is_deleted": false }
+]
+</code></pre>
+<pre><code class="language-sh">curl http://localhost:3001/categories/2/products
+</code></pre>
+<pre><code class="language-json">[
+  { "name": "Tart", "price": 220, "category_id": "2", "is_deleted": false },
+  { "name": "Pie", "price": 299, "category_id": "2", "is_deleted": false }
+]
+</code></pre>
+<p>Swap the id in the URL and the products narrow accordingly. The relationship was declared once, back
+in chapter 2, and we haven’t touched it since — every new nested route reuses the same declaration.</p>
+<hr>
+<h2 id="a-generic-crud-helper"><a class="header" href="#a-generic-crud-helper">A generic <code>crud</code> helper</a></h2>
+<p>Two handlers so far — <code>list_categories</code> and <code>list_category_products</code> — and they’re already doing the
+same thing: take a narrowed table, call <code>.list()</code>, return JSON. Adding <code>POST /categories</code>,
+<code>PATCH /categories/{id}</code>, and <code>DELETE /categories/{id}</code> would mean four more near-identical handlers
+per entity. That’s not how you scale a codebase.</p>
+<p>The five HTTP methods of CRUD all map onto one of two operation shapes:</p>
+<ul>
+<li><strong>List-level</strong> at <code>/collection</code>: <code>GET</code> (list all) and <code>POST</code> (create one).</li>
+<li><strong>Item-level</strong> at <code>/collection/{id}</code>: <code>GET</code> (read one), <code>PATCH</code> (update), <code>DELETE</code> (remove).</li>
+</ul>
+<p>If we can describe the <em>set of rows this endpoint operates on</em> with one closure, the same handler
+bodies serve every entity. That closure is <code>Fn(SqliteDB, &amp;Params) -&gt; Table&lt;SqliteDB, E&gt;</code> — given the
+database and whatever path params axum extracted, return the <code>Table</code> to act on. Put it in <code>main.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use std::collections::HashMap;
+use std::sync::Arc;
+
+type Params = HashMap&lt;String, String&gt;;
+
+fn crud&lt;E, F&gt;(make_table: F) -&gt; Router
+where
+    F: Fn(SqliteDB, &amp;Params) -&gt; Table&lt;SqliteDB, E&gt; + Send + Sync + 'static,
+    E: Entity&lt;AnySqliteType&gt; + Serialize + DeserializeOwned + Send + Sync + 'static,
+{
+    let f = Arc::new(make_table);
+    Router::new()
+        .route(
+            "/",
+            get({
+                let f = f.clone();
+                move |p: Option&lt;Path&lt;Params&gt;&gt;| async move {
+                    let params = p.map(|Path(p)| p).unwrap_or_default();
+                    let rows = f(db(), &amp;params).list().await.unwrap();
+                    Json::&lt;Vec&lt;E&gt;&gt;(rows.into_values().collect())
+                }
+            })
+            .post({
+                let f = f.clone();
+                move |p: Option&lt;Path&lt;Params&gt;&gt;, Json(entity): Json&lt;E&gt;| async move {
+                    let params = p.map(|Path(p)| p).unwrap_or_default();
+                    let id = f(db(), &amp;params).insert_return_id(&amp;entity).await.unwrap();
+                    Json(serde_json::json!({ "id": id }))
+                }
+            }),
+        )
+        .route(
+            "/{id}",
+            get({
+                let f = f.clone();
+                move |Path(params): Path&lt;Params&gt;| async move {
+                    let id = params["id"].clone();
+                    let entity = f(db(), &amp;params).get(&amp;id).await.unwrap();
+                    Json(entity)
+                }
+            })
+            .patch({
+                let f = f.clone();
+                move |Path(params): Path&lt;Params&gt;, Json(partial): Json&lt;E&gt;| async move {
+                    let id = params["id"].clone();
+                    let updated = f(db(), &amp;params).patch(&amp;id, &amp;partial).await.unwrap();
+                    Json(updated)
+                }
+            })
+            .delete({
+                let f = f;
+                move |Path(params): Path&lt;Params&gt;| async move {
+                    let id = params["id"].clone();
+                    WritableDataSet::&lt;E&gt;::delete(&amp;f(db(), &amp;params), &amp;id).await.unwrap();
+                    StatusCode::NO_CONTENT
+                }
+            }),
+        )
+}
+<span class="boring">}</span></code></pre>
+<p>That’s the whole thing. Five handler bodies, each tiny, all generic over the entity type. Mount
+<code>crud(...)</code> under a prefix with <code>.nest(...)</code> and every route below it gets the full CRUD verb set
+for free.</p>
+<p><code>/categories</code> becomes a one-liner:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>.nest("/categories", crud(|db, _| Category::table(db).clone()))
+<span class="boring">}</span></code></pre>
+<p>That gives us:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>Path</th><th>Does</th></tr>
+</thead>
+<tbody>
+<tr><td>GET</td><td>/categories</td><td>list all</td></tr>
+<tr><td>POST</td><td>/categories</td><td>insert, return new id</td></tr>
+<tr><td>GET</td><td>/categories/{id}</td><td>fetch one</td></tr>
+<tr><td>PATCH</td><td>/categories/{id}</td><td>partial update</td></tr>
+<tr><td>DELETE</td><td>/categories/{id}</td><td>remove</td></tr>
+</tbody>
+</table>
+</div>
+<p>The nested <code>/categories/{cat_id}/products</code> route uses the same helper. The closure reads <code>cat_id</code>
+out of the params map to narrow the set:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>.nest(
+    "/categories/{cat_id}/products",
+    crud(|db, p| {
+        let cat_id: i64 = p["cat_id"].parse().unwrap();
+        let mut c = Category::table(db).clone();
+        c.add_condition(c.id().eq(cat_id));
+        c.ref_products()
+    }),
+)
+<span class="boring">}</span></code></pre>
+<p><code>c.id()</code> comes from extending the <code>CategoryTable</code> trait we already set up — add it next to
+<code>ref_products</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub trait CategoryTable {
+    fn id(&amp;self) -&gt; Column&lt;i64&gt;;
+    fn ref_products(&amp;self) -&gt; Table&lt;SqliteDB, Product&gt;;
+}
+
+impl CategoryTable for Table&lt;SqliteDB, Category&gt; {
+    fn id(&amp;self) -&gt; Column&lt;i64&gt; {
+        self.get_column("id").unwrap()
+    }
+    fn ref_products(&amp;self) -&gt; Table&lt;SqliteDB, Product&gt; {
+        self.get_ref_as("products").unwrap()
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Nesting <code>crud</code> under <code>/categories/{cat_id}/products</code> gives a full CRUD surface for <em>products
+belonging to that category</em>:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>Path</th><th>Does</th></tr>
+</thead>
+<tbody>
+<tr><td>GET</td><td>/categories/{cat_id}/products</td><td>list</td></tr>
+<tr><td>POST</td><td>/categories/{cat_id}/products</td><td>create</td></tr>
+<tr><td>GET</td><td>/categories/{cat_id}/products/{id}</td><td>fetch one</td></tr>
+<tr><td>PATCH</td><td>/categories/{cat_id}/products/{id}</td><td>partial update</td></tr>
+<tr><td>DELETE</td><td>/categories/{cat_id}/products/{id}</td><td>remove</td></tr>
+</tbody>
+</table>
+</div>
+<p>Try it:</p>
+<pre><code class="language-sh">curl -X POST http://localhost:3001/categories \
+  -H 'content-type: application/json' -d '{"name":"Gluten-Free"}'
+# {"id":"4"}
+
+curl http://localhost:3001/categories/1/products/1
+# {"name":"Cupcake","price":120,"category_id":"1","is_deleted":false}
+
+curl -X PATCH http://localhost:3001/categories/1 \
+  -H 'content-type: application/json' -d '{"name":"Sweet Things"}'
+# {"name":"Sweet Things"}
+
+curl -X DELETE http://localhost:3001/categories/4
+# HTTP/1.1 204 No Content
+</code></pre>
+<p>The inline <code>list_categories</code> and <code>list_category_products</code> functions can be deleted — <code>crud</code> covers
+them both.</p>
+<div id="admonition-why-a-hashmap-for-path-params" class="admonition admonish-info" role="note" aria-labelledby="admonition-why-a-hashmap-for-path-params-title">
+<div class="admonition-title">
+<div id="admonition-why-a-hashmap-for-path-params-title">
+<p>Why a HashMap for path params?</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-why-a-hashmap-for-path-params"></a>
+</div>
+
+<div>
+<p>Axum only lets a handler run the <code>Path</code> extractor <strong>once</strong> per request — after that, the URL
+params are considered consumed. We need the outer <code>{cat_id}</code> inside the closure <em>and</em> the inner
+<code>{id}</code> to identify which record to fetch, which rules out calling <code>Path&lt;i64&gt;</code> plus a second
+<code>Path&lt;String&gt;</code>. Grabbing all params in one shot as <code>HashMap&lt;String, String&gt;</code> sidesteps the
+limit — the closure picks out what it needs by name, and the item-level handlers pull <code>id</code>
+from the same map.</p>
+<p>The cost is a small amount of stringly-typed parsing (<code>p["cat_id"].parse::&lt;i64&gt;()</code>), which
+is a fair trade for letting one <code>crud</code> function cover every route shape in the server.</p>
+</div>
+
+</div>
+
+<div id="admonition-whats-inside-crud-briefly" class="admonition admonish-info" role="note" aria-labelledby="admonition-whats-inside-crud-briefly-title">
+<div class="admonition-title">
+<div id="admonition-whats-inside-crud-briefly-title">
+<p>What’s inside crud(), briefly</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-whats-inside-crud-briefly"></a>
+</div>
+
+<div>
+<p>Each HTTP method gets its own closure in the <code>Router</code>. They all need to share the same
+<code>make_table</code> function, but Rust closures that capture by move can’t be cloned by default, and
+each axum handler is an independent <code>Fn</code> — so we wrap <code>make_table</code> in an <code>Arc</code> once and let
+each handler clone the <code>Arc</code> (cheap — just a refcount bump). Inside the async block, the
+closure can then invoke <code>f(db(), &amp;params)</code> to build the narrowed table for that request.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="error-handling"><a class="header" href="#error-handling">Error handling</a></h2>
+<p>Every handler in <code>crud</code> still ends in <code>.unwrap()</code>. The happy path has been fine to demo, but
+an API that panics on the slightest database hiccup isn’t usable. The worst part isn’t the
+500 — it’s what happens on the wire when axum’s request task panics: the connection is
+dropped and the client sees an empty reply, with no status code and no body to explain.</p>
+<p>A proper REST API needs three things:</p>
+<ul>
+<li>Missing resources return <strong>404</strong>, not 500.</li>
+<li>Bad JSON bodies return <strong>400</strong> with a useful message.</li>
+<li>Everything else returns <strong>500</strong> but with a structured JSON body, not silence.</li>
+</ul>
+<p>Axum already gives us the middle one for free — it rejects malformed <code>Json&lt;E&gt;</code> bodies with 400.
+The other two come down to converting <a href="https://docs.rs/vantage_core/0.4.0/vantage_core/util/error/struct.VantageError.html"><code>VantageError</code></a> into an HTTP
+response. Add an <code>ApiError</code> type to <code>main.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use axum::response::{IntoResponse, Response};
+
+struct ApiError {
+    status: StatusCode,
+    message: String,
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -&gt; Response {
+        (
+            self.status,
+            Json(serde_json::json!({ "error": self.message })),
+        )
+            .into_response()
+    }
+}
+
+impl From&lt;VantageError&gt; for ApiError {
+    fn from(e: VantageError) -&gt; Self {
+        let message = e.to_string();
+        let status = if message.contains("no row found") {
+            StatusCode::NOT_FOUND
+        } else {
+            StatusCode::INTERNAL_SERVER_ERROR
+        };
+        eprintln!("API error: {:?}", e);
+        Self { status, message }
+    }
+}
+
+type ApiResult&lt;T&gt; = Result&lt;T, ApiError&gt;;
+<span class="boring">}</span></code></pre>
+<p>Two things earn their keep:</p>
+<ul>
+<li><strong><code>IntoResponse</code></strong> makes <code>ApiError</code> returnable from a handler; axum calls <code>into_response()</code>
+to assemble status, headers, and body.</li>
+<li><strong><code>From&lt;VantageError&gt;</code></strong> lets us use <code>?</code> inside a handler. Every <code>.await?</code> now short-circuits
+to an <code>ApiError</code> that axum will render for us.</li>
+</ul>
+<p>With that in place, the <code>unwrap</code>s inside <code>crud</code> turn into <code>?</code>, and each handler returns
+<code>ApiResult&lt;T&gt;</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>get({
+    let f = f.clone();
+    move |p: Option&lt;Path&lt;Params&gt;&gt;| async move {
+        let params = p.map(|Path(p)| p).unwrap_or_default();
+        let rows = f(db(), &amp;params).list().await?;
+        ApiResult::Ok(Json::&lt;Vec&lt;E&gt;&gt;(rows.into_values().collect()))
+    }
+})
+<span class="boring">}</span></code></pre>
+<p>Do the same for the other four (<code>post</code>, <code>get /{id}</code>, <code>patch</code>, <code>delete</code>) — drop the
+<code>.unwrap()</code>, add <code>?</code>, wrap the happy path in <code>ApiResult::Ok(...)</code>. Handler bodies stay three
+lines long.</p>
+<p>Try a few error cases:</p>
+<pre><code class="language-sh">curl -w "\nstatus=%{http_code}\n" http://localhost:3001/categories/999
+# {"error":"get_table_value: no row found (id: \"999\")"}
+# status=404
+
+curl -w "\nstatus=%{http_code}\n" -X PATCH http://localhost:3001/categories/999 \
+  -H 'content-type: application/json' -d '{"name":"Ghost"}'
+# {"error":"get_table_value: no row found (id: \"999\")"}
+# status=404
+
+curl -w "\nstatus=%{http_code}\n" -X POST http://localhost:3001/categories \
+  -H 'content-type: application/json' -d '{not-json}'
+# Failed to parse the request body as JSON: ...
+# status=400
+
+curl -w "\nstatus=%{http_code}\n" -X DELETE http://localhost:3001/categories/999
+# status=204
+</code></pre>
+<p>Missing ids produce 404s with a JSON body the client can show to a user. The malformed body
+gets axum’s built-in 400 for free. <code>DELETE</code> on a missing id still returns 204 — vantage’s
+<code>delete</code> is idempotent, and “the resource is gone” is true whether or not it was ever there.</p>
+<div id="admonition-why-match-on-the-error-message" class="admonition admonish-info" role="note" aria-labelledby="admonition-why-match-on-the-error-message-title">
+<div class="admonition-title">
+<div id="admonition-why-match-on-the-error-message-title">
+<p>Why match on the error message?</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-why-match-on-the-error-message"></a>
+</div>
+
+<div>
+<p><code>VantageError</code> is a flat struct — it has a message, a location, and a context map, but no
+typed discriminant you could match against. “Not-found” errors happen to carry the string
+<code>"no row found"</code> in their message, so that’s what we key on.</p>
+<p>It’s slightly brittle: if vantage ever rewrites that message, every API using this pattern
+silently downgrades 404s to 500s. A stronger guarantee would require vantage exposing an
+<code>ErrorKind</code> enum, or for the handler to detect missing rows explicitly — narrow the table by
+id and call <code>get_some()</code>, where <code>None</code> means absent. For this tutorial the string match is
+good enough; production code with strict SLAs should prefer the explicit <code>get_some</code> path.</p>
+</div>
+
+</div>
+
+<div id="admonition-logging-with--on-the-server-side" class="admonition admonish-info" role="note" aria-labelledby="admonition-logging-with--on-the-server-side-title">
+<div class="admonition-title">
+<div id="admonition-logging-with--on-the-server-side-title">
+<p>Logging with {:?} on the server side</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-logging-with--on-the-server-side"></a>
+</div>
+
+<div>
+<p><code>eprintln!("API error: {:?}", e);</code> prints the full error structure — location, context,
+nested sources — which is exactly what a human debugging a 500 needs. The client meanwhile
+only sees <code>e.to_string()</code>, the short one-liner message. That’s the whole point of
+<code>.context("…")</code> from chapter 1: context accumulates on the server, a single sentence reaches
+the client.</p>
+<p>Swap <code>eprintln!</code> for <code>tracing::error!</code> if you’re wired up for structured logging. The
+mechanics are identical.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="pagination-and-search"><a class="header" href="#pagination-and-search">Pagination and search</a></h2>
+<p>Three categories is fine for dev; three thousand would crush any client that naively calls
+<code>GET /categories</code> and tries to render everything. Real APIs page through long lists and let
+callers filter by a search term — two query-string features that belong inside <code>crud</code> so
+every entity gets them.</p>
+<p>Axum parses query strings for us via the <code>Query&lt;T&gt;</code> extractor. Add a small struct for the
+parameters, and a second extractor on the list handler:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use axum::extract::Query;
+use vantage_table::pagination::Pagination;
+
+#[derive(Deserialize, Default)]
+struct ListQuery {
+    page: Option&lt;i64&gt;,
+    per_page: Option&lt;i64&gt;,
+    q: Option&lt;String&gt;,
+}
+<span class="boring">}</span></code></pre>
+<p>Inside <code>crud</code>, only the <code>GET /</code> handler changes. It takes both extractors, mutates the narrowed
+table with whatever the caller asked for, and lists:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>get({
+    let f = f.clone();
+    move |p: Option&lt;Path&lt;Params&gt;&gt;, Query(q): Query&lt;ListQuery&gt;| async move {
+        let params = p.map(|Path(p)| p).unwrap_or_default();
+        let mut t = f(db(), &amp;params);
+        if q.page.is_some() || q.per_page.is_some() {
+            t.set_pagination(Some(Pagination::new(
+                q.page.unwrap_or(1),
+                q.per_page.unwrap_or(50),
+            )));
+        }
+        if let Some(term) = q.q.as_deref() {
+            t.add_search(term);
+        }
+        let rows = t.list().await?;
+        ApiResult::Ok(Json::&lt;Vec&lt;E&gt;&gt;(rows.into_values().collect()))
+    }
+})
+<span class="boring">}</span></code></pre>
+<p>Two things happen:</p>
+<ul>
+<li><strong><a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.set_pagination"><code>set_pagination</code></a><code>(Some(</code><a href="https://docs.rs/vantage_table/0.4.1/vantage_table/pagination/struct.Pagination.html#method.new"><code>Pagination::new</code></a><code>(page, per_page)))</code></strong>
+takes a page number and a page size. Vantage applies these as <code>LIMIT … OFFSET …</code> on the SELECT.
+Missing params fall back to the defaults (page 1, 50 per page) — and if neither is supplied we
+don’t touch pagination at all, so the unfiltered list still hits the whole set.</li>
+<li><strong><a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.add_search"><code>add_search</code></a><code>(term)</code></strong> is the <code>.with_search</code> we used
+in chapter 2 to add a LIKE filter across all columns. Both end up as extra <code>WHERE</code> clauses on the
+query that vantage already compiles for us.</li>
+</ul>
+<p>Try it:</p>
+<pre><code class="language-sh">curl "http://localhost:3001/categories?page=1&amp;per_page=2"
+# [{"name":"Sweet Treats"},{"name":"Pastries"}]
+
+curl "http://localhost:3001/categories?page=2&amp;per_page=2"
+# [{"name":"Breads"}]
+
+curl "http://localhost:3001/categories?q=Pastries"
+# [{"name":"Pastries"}]
+
+curl "http://localhost:3001/categories?q=e"
+# [{"name":"Sweet Treats"},{"name":"Pastries"},{"name":"Breads"}]
+</code></pre>
+<p>The nested route gets these for free — <code>crud</code> is the same function. <code>per_page</code> works on
+<code>/categories/{cat_id}/products</code> out of the box:</p>
+<pre><code class="language-sh">curl "http://localhost:3001/categories/1/products?per_page=2"
+# [
+#   {"name":"Cupcake","price":120,"category_id":"1","is_deleted":false},
+#   {"name":"Doughnut","price":135,"category_id":"1","is_deleted":false}
+# ]
+</code></pre>
+<p>Because the closure for the nested mount narrows the table with <code>with_condition</code> <em>before</em>
+<code>crud</code> applies its own pagination/search, the filters compose cleanly: the category scope stays
+in effect, and pagination just counts rows within it.</p>
+<div id="admonition-what-about-ordering" class="admonition admonish-info" role="note" aria-labelledby="admonition-what-about-ordering-title">
+<div class="admonition-title">
+<div id="admonition-what-about-ordering-title">
+<p>What about ordering?</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-what-about-ordering"></a>
+</div>
+
+<div>
+<p>A full <code>?order_by=price&amp;dir=desc</code> pairing is the obvious next thing — and the Table API
+supports it via <code>add_order(column.ascending())</code> — but the <code>OrderBy</code> type is generic over the
+backend’s condition type (<code>T::Condition</code>), not the easier-to-hand-you <code>Expression&lt;T::Value&gt;</code>
+that <code>get_column_expr</code> returns. Wiring it up at the generic <code>crud</code> level takes a small extra
+layer of <code>From</code> conversions that would balloon this section.</p>
+<p>For a single-entity handler, you can simply narrow with <code>let mut t = Category::table(db()) .clone(); t.add_order(sqlite_expr!("{}", ident("name")).ascending());</code>. Adding ordering to
+<code>crud</code> is a fine exercise once the rest of the server is in place — and a natural thing to
+push back into the framework so every backend picks it up uniformly.</p>
+</div>
+
+</div>
+
+<div id="admonition-validating-pagination-params" class="admonition admonish-info" role="note" aria-labelledby="admonition-validating-pagination-params-title">
+<div class="admonition-title">
+<div id="admonition-validating-pagination-params-title">
+<p>Validating pagination params</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-validating-pagination-params"></a>
+</div>
+
+<div>
+<p>Our <code>ListQuery</code> silently accepts <code>page=0</code>, <code>per_page=-5</code>, or <code>per_page=1000000</code>. <code>Pagination::new</code>
+clamps page and items-per-page to at least 1, so the first two can’t crash us — but an API
+that hands out 1M rows because someone asked for it is a DoS target. For production,
+extend <code>ListQuery</code> with a <code>fn validate(&amp;self) -&gt; Result&lt;(), ApiError&gt;</code> that caps <code>per_page</code>
+at something like 200 and returns 400 otherwise. The plumbing is already there — <code>ApiError</code>
+already knows how to render a 400.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="migrating-to-mongodb"><a class="header" href="#migrating-to-mongodb">Migrating to MongoDB</a></h2>
+<p>Chapter 2 closed on a claim: the model layer isolates business code from storage, so swapping
+databases is a change to the model, not to the routes, handlers, or business logic. Now we
+cash the check. <code>/categories</code>, <code>/categories/{id}</code>, and <code>/categories/{cat_id}/products</code> keep
+their exact URL shape, response bodies, and behaviour — but the data lives in
+<a href="https://docs.rs/vantage_mongodb/0.4.1/vantage_mongodb/mongodb/struct.MongoDB.html"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>.</p>
+<p>Start Mongo — Docker is the easiest way:</p>
+<pre><code class="language-sh">docker run -d --name mongo-learn -p 27017:27017 mongo:7
+</code></pre>
+<h3 id="cargotoml"><a class="header" href="#cargotoml">Cargo.toml</a></h3>
+<p>Drop <code>vantage-sql</code>, add <code>vantage-mongodb</code>:</p>
+<pre><code class="language-toml">[dependencies]
+axum = "0.8.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+vantage-core = { path = "../vantage-core" }
+vantage-dataset = { path = "../vantage-dataset" }
+vantage-expressions = { path = "../vantage-expressions" }
+vantage-mongodb = { path = "../vantage-mongodb" }
+vantage-table = { path = "../vantage-table" }
+vantage-types = { path = "../vantage-types", features = ["serde"] }
+</code></pre>
+<h3 id="entities"><a class="header" href="#entities">Entities</a></h3>
+<p>Swap the <code>#[entity]</code> type tag from <code>SqliteType</code> to <code>MongoType</code> and the id column name from
+<code>id</code> to the MongoDB-idiomatic <code>_id</code>. Imports collapse to a single prelude use-line.</p>
+<p><code>src/category.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use std::sync::OnceLock;
+
+use vantage_mongodb::prelude::*;
+
+use crate::product::Product;
+
+#[entity(MongoType)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Category {
+    pub name: String,
+}
+
+impl Category {
+    pub fn table(db: MongoDB) -&gt; &amp;'static Table&lt;MongoDB, Category&gt; {
+        static CACHE: OnceLock&lt;Table&lt;MongoDB, Category&gt;&gt; = OnceLock::new();
+        CACHE.get_or_init(|| {
+            Table::new("category", db)
+                .with_id_column("_id")
+                .with_column_of::&lt;String&gt;("name")
+                .with_many("products", "category_id", |db| Product::table(db).clone())
+        })
+    }
+}
+<span class="boring">}</span></code></pre>
+<p><code>src/product.rs</code> gets the symmetric changes:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use std::sync::OnceLock;
+
+use vantage_mongodb::prelude::*;
+
+use crate::category::Category;
+
+#[entity(MongoType)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Product {
+    pub name: String,
+    pub price: i64,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub category_id: Option&lt;String&gt;,
+    #[serde(default)]
+    pub is_deleted: bool,
+}
+
+impl Product {
+    pub fn table(db: MongoDB) -&gt; &amp;'static Table&lt;MongoDB, Product&gt; {
+        static CACHE: OnceLock&lt;Table&lt;MongoDB, Product&gt;&gt; = OnceLock::new();
+        CACHE.get_or_init(|| {
+            let is_deleted = Column::&lt;bool&gt;::new("is_deleted");
+            Table::new("product", db)
+                .with_id_column("_id")
+                .with_column_of::&lt;String&gt;("name")
+                .with_column_of::&lt;i64&gt;("price")
+                .with_column_of::&lt;String&gt;("category_id")
+                .with_column_of::&lt;bool&gt;("is_deleted")
+                .with_condition(is_deleted.eq(false))
+                .with_one("category", "category_id", |db| Category::table(db).clone())
+        })
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Nothing about the struct shape changed — <code>category_id</code> and <code>is_deleted</code> have been real columns
+since § 2. The <code>with_*</code> calls line up one-for-one with the SQLite version; only the id column
+name and the entity’s type tag shift.</p>
+<p>The <code>CategoryTable</code> trait from § 3 also updates — MongoDB’s <code>_id</code> is a string, not an integer:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl CategoryTable for Table&lt;MongoDB, Category&gt; {
+    fn id(&amp;self) -&gt; Column&lt;String&gt; {
+        self.get_column("_id").unwrap()
+    }
+    fn ref_products(&amp;self) -&gt; Table&lt;MongoDB, Product&gt; {
+        self.get_ref_as("products").unwrap()
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>The nested route’s closure gets a little simpler as a result — no parse step, just narrow by the
+URL’s <code>cat_id</code> string directly:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>crud(|db, p| {
+    let mut c = Category::table(db).clone();
+    c.add_condition(c.id().eq(p["cat_id"].as_str()));
+    c.ref_products()
+})
+<span class="boring">}</span></code></pre>
+<p><code>.eq(&amp;str)</code> works here because <code>vantage-mongodb</code>’s <code>From&lt;&amp;str&gt;</code> for
+<a href="https://docs.rs/vantage_mongodb/0.4.1/vantage_mongodb/types/struct.AnyMongoType.html"><code>AnyMongoType</code></a> auto-promotes 24-character hex strings to
+<code>ObjectId</code> and leaves everything else as <code>String</code>. The comparison fires with the right BSON type
+whichever <code>_id</code> convention the collection uses.</p>
+<h3 id="mainrs"><a class="header" href="#mainrs">main.rs</a></h3>
+<p>The <code>crud</code> function’s generic bounds shift from <code>Entity&lt;AnySqliteType&gt;</code> to <code>Entity&lt;AnyMongoType&gt;</code>
+and its <code>Fn(SqliteDB, ...)</code> becomes <code>Fn(MongoDB, ...)</code>. Body unchanged.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn crud&lt;E, F&gt;(make_table: F) -&gt; Router
+where
+    F: Fn(MongoDB, &amp;Params) -&gt; Table&lt;MongoDB, E&gt; + Send + Sync + 'static,
+    E: Entity&lt;AnyMongoType&gt; + Serialize + DeserializeOwned + Send + Sync + 'static,
+<span class="boring">}</span></code></pre>
+<p>Connection, id handling, and error mapping are the only handler-level changes:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// db() returns MongoDB; connect with URL + database name.
+let conn = MongoDB::connect("mongodb://localhost:27017", "learn3")
+    .await
+    .context("Failed to connect to MongoDB")?;
+
+// item-level ids are MongoId. String → MongoId dispatches to ObjectId when the
+// string is a 24-char hex, otherwise stays a plain String, via a `From&lt;String&gt;`
+// smart-parse in vantage-mongodb.
+let id: MongoId = params["id"].clone().into();
+
+// MongoDB's missing-doc error joins the 404 path.
+let status = if message.contains("no row found") || message.contains("Document not found") {
+    StatusCode::NOT_FOUND
+} else {
+    StatusCode::INTERNAL_SERVER_ERROR
+};
+<span class="boring">}</span></code></pre>
+<h3 id="running-it"><a class="header" href="#running-it">Running it</a></h3>
+<pre><code class="language-sh">cargo run
+</code></pre>
+<p>The collection is empty, so the first request returns an empty array:</p>
+<pre><code class="language-sh">curl http://localhost:3001/categories
+# []
+</code></pre>
+<p>POST a few categories — responses carry the auto-generated MongoDB ObjectId as the new id:</p>
+<pre><code class="language-sh">SWEETS=$(curl -s -X POST http://localhost:3001/categories \
+  -H 'content-type: application/json' -d '{"name":"Sweet Treats"}' \
+  | jq -r .id)
+echo "$SWEETS"
+# 69e2b9101a552c206f5f8468
+</code></pre>
+<p>Create a product in that category by POSTing to the nested route, including the parent id as
+<code>category_id</code> in the body:</p>
+<pre><code class="language-sh">curl -X POST "http://localhost:3001/categories/$SWEETS/products" \
+  -H 'content-type: application/json' \
+  -d "{\"name\":\"Cupcake\",\"price\":120,\"category_id\":\"$SWEETS\"}"
+# {"id":"69e2b9101a552c206f5f846a"}
+
+curl "http://localhost:3001/categories/$SWEETS/products"
+# [{"name":"Cupcake","price":120,"category_id":"69e2b9101a552c206f5f8468","is_deleted":false}]
+</code></pre>
+<p>Same URL shape as the SQLite version. Same JSON. Same error codes. Handlers, routing,
+pagination, filtering — nothing in the request path learned that storage moved from a local
+file to a document database.</p>
+<div id="admonition-cross-type-in-in-relationship-traversal" class="admonition admonish-info" role="note" aria-labelledby="admonition-cross-type-in-in-relationship-traversal-title">
+<div class="admonition-title">
+<div id="admonition-cross-type-in-in-relationship-traversal-title">
+<p>Cross-type $in in relationship traversal</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-cross-type-in-in-relationship-traversal"></a>
+</div>
+
+<div>
+<p><code>CategoryTable::ref_products()</code> still works. MongoDB’s <code>_id</code> defaults to <code>ObjectId</code>, but
+application fields like <code>product.category_id</code> arrive as plain JSON strings and get stored as
+BSON <code>String</code>. A naive <code>$in: [ObjectId(...)]</code> wouldn’t match. <code>vantage-mongodb</code> sidesteps that
+by pushing both representations into the <code>$in</code> inside <code>related_in_condition</code> — an <code>ObjectId</code>
+value also emits its 24-char hex string, and a hex-shaped <code>String</code> value also emits the
+parsed <code>ObjectId</code>. Traversal works regardless of which form the target stores.</p>
+</div>
+
+</div>
+
+<div id="admonition-string-_ids-are-also-an-option" class="admonition admonish-info" role="note" aria-labelledby="admonition-string-_ids-are-also-an-option-title">
+<div class="admonition-title">
+<div id="admonition-string-_ids-are-also-an-option-title">
+<p>String _ids are also an option</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-string-_ids-are-also-an-option"></a>
+</div>
+
+<div>
+<p>Nothing in MongoDB requires <code>_id</code> to be an <code>ObjectId</code> — it can be any BSON value, including a
+plain string. If the app supplies <code>_id</code> explicitly on insert (or the framework generates a
+UUID and writes it into <code>_id</code>), both <code>category._id</code> and <code>product.category_id</code> are strings and
+everything lines up without the $in dual-push. Useful when you want stable, human-legible ids
+or ids that came from an upstream system.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="scaling-up-crud-as-a-one-liner"><a class="header" href="#scaling-up-crud-as-a-one-liner">Scaling up: CRUD as a one-liner</a></h2>
+<p>The <code>crud</code> function, <code>ApiError</code>, <code>Params</code>, and <code>ListQuery</code> aren’t really tied to this app —
+they’re generic over any <code>Table&lt;MongoDB, E&gt;</code>. Move them into their own module and <code>main.rs</code>
+collapses to exactly what it’s about: connecting the database and registering routes. Three
+files do the work:</p>
+<p><strong><code>src/vantage_axum.rs</code></strong> (one file, ~120 lines) — everything HTTP: <code>ApiError</code>, <code>ListQuery</code>,
+and the <code>crud&lt;E, F&gt;</code> helper. Accepts any entity <code>E</code> that implements <code>Entity&lt;AnyMongoType&gt;</code>
+plus the usual serde bounds.</p>
+<p><strong><code>src/db.rs</code></strong> (17 lines) — the <code>static DB: OnceLock&lt;MongoDB&gt;</code>, an <code>init(url, db)</code> helper
+that connects and stores the handle, and a <code>pub fn db() -&gt; MongoDB</code> accessor that hands out
+cheap <code>MongoDB</code> clones.</p>
+<p><strong><code>src/main.rs</code></strong> — now down to ~30 lines:</p>
+<pre class="playground"><code class="language-rust">mod category;
+mod db;
+mod product;
+mod vantage_axum;
+
+use axum::Router;
+use category::{Category, CategoryTable};
+use vantage_axum::crud;
+use vantage_mongodb::prelude::*;
+
+#[tokio::main]
+async fn main() -&gt; VantageResult&lt;()&gt; {
+    db::init("mongodb://localhost:27017", "learn3").await?;
+
+    let app = Router::new()
+        .nest("/categories", crud(|db, _| Category::table(db).clone()))
+        .nest(
+            "/categories/{cat_id}/products",
+            crud(|db, p| {
+                let mut c = Category::table(db).clone();
+                c.add_condition(c.id().eq(p["cat_id"].as_str()));
+                c.ref_products()
+            }),
+        );
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3001").await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+
+    Ok(())
+}</code></pre>
+<p>Adding a new entity to this server is now <em>two</em> things:</p>
+<ol>
+<li>Write a <code>Table::new(...)</code> constructor for it — declarative, one function, same shape we
+learned in chapter 2.</li>
+<li>Mount it.</li>
+</ol>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>.nest("/widgets", crud(|db, _| Widget::table(db).clone()))
+<span class="boring">}</span></code></pre>
+<p>That’s the whole surface. <code>GET</code> list, <code>POST</code> create, <code>GET /{id}</code>, <code>PATCH /{id}</code>, <code>DELETE /{id}</code>, pagination via <code>?page=&amp;per_page=</code>, full-text search via <code>?q=</code>, 404s for missing ids,
+400s for malformed bodies, structured JSON errors. No new handler code. No per-entity error
+mapping. No per-entity query-param struct. One line per entity.</p>
+<p>Every route plays by the same rules because every route is served by the same <code>crud</code> — the
+single description of “what this route does” lives in the entity’s <code>Table</code> definition, and
+the HTTP boundary just routes to it. That is the “one description, many operations”
+principle from chapter 2’s <code>Table</code> carried all the way to the wire, unbroken.</p>
+<p>The <code>vantage_axum</code> module is generic enough to lift directly into a larger codebase — it has
+no knowledge of <code>Category</code>, <code>Product</code>, or your particular routes. Drop it into your own
+binary, give it a <code>db()</code> accessor, write entity files, mount routes.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="the-vantage-journey"><a class="header" href="#the-vantage-journey">The Vantage Journey</a></h1>
 <p>Vantage didn’t start as a multi-backend entity framework. It started as a weekend experiment to see
@@ -3808,7 +4922,7 @@ hit — only the column and expression infrastructure you already implemented.</
 from <code>vantage_dataset</code> and call <code>list_values()</code>, <code>get_value()</code>, <code>get_some_value()</code>, <code>list()</code>,
 <code>get()</code>, <code>get_some()</code> against your pre-populated test database. Keep these tests condition-free —
 conditions get their own test file next.</p>
-<h3 id="error-handling"><a class="header" href="#error-handling">Error handling</a></h3>
+<h3 id="error-handling-1"><a class="header" href="#error-handling-1">Error handling</a></h3>
 <p>All <code>TableSource</code> methods return <code>vantage_core::Result&lt;T&gt;</code> (an alias for <code>Result&lt;T, VantageError&gt;</code>).
 Use the <code>error!</code> macro from <code>vantage_core</code> to create errors with structured context:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -4125,7 +5239,7 @@ the underlying struct directly.</p>
 
 <h2 id="or_--and_--logical-combinators"><a class="header" href="#or_--and_--logical-combinators"><code>or_()</code> / <code>and_()</code> — Logical Combinators</a></h2>
 <p>By default, multiple calls to <code>.with_condition()</code> combine with <code>AND</code>. When you need <code>OR</code>, use
-<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/logical/fn.or_.html"><code>or_()</code></a>:</p>
+<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/logical/fn.or_.html"><code>or_()</code></a>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use vantage_sql::primitives::*;
@@ -4133,7 +5247,7 @@ the underlying struct directly.</p>
 // role = 'admin' OR role = 'superuser'
 let cond = or_(ident("role").eq("admin"), ident("role").eq("superuser"));
 <span class="boring">}</span></code></pre>
-<p>For nested logic, combine with <a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/logical/fn.and_.html"><code>and_()</code></a>:</p>
+<p>For nested logic, combine with <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/logical/fn.and_.html"><code>and_()</code></a>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>// (price &gt; 100 AND in_stock = 1) OR (featured = 1)
@@ -4152,11 +5266,11 @@ for MySQL).</p>
 let qualified = ident("name").dot_of("u");    // "u"."name"
 let aliased = ident("total").with_alias("t"); // "total" AS "t"
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/identifier/fn.ident.html"><code>ident()</code></a> is a shorthand for
-<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/identifier/struct.Identifier.html#method.new"><code>Identifier::new()</code></a>. Reserved words and
+<p><a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/identifier/fn.ident.html"><code>ident()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/identifier/struct.Identifier.html#method.new"><code>Identifier::new()</code></a>. Reserved words and
 names with spaces are quoted automatically.</p>
 <h2 id="fx--function-calls"><a class="header" href="#fx--function-calls"><code>fx!</code> — Function Calls</a></h2>
-<p>The <a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/macro.fx.html"><code>fx!</code></a> macro builds a SQL function call. Arguments are passed directly —
+<p>The <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/macro.fx.html"><code>fx!</code></a> macro builds a SQL function call. Arguments are passed directly —
 <code>.expr()</code> is called on each one automatically:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -4175,7 +5289,7 @@ fx!("round", fx!("avg", ident("price")), 2i64)
 // =&gt; ROUND(AVG("price"), 2)
 <span class="boring">}</span></code></pre>
 <p>If you need to build arguments programmatically (e.g. from a <code>Vec</code>), use
-<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/fx/struct.Fx.html#method.new"><code>Fx::new()</code></a> directly:</p>
+<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/fx/struct.Fx.html#method.new"><code>Fx::new()</code></a> directly:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>let args: Vec&lt;Expression&lt;AnySqliteType&gt;&gt; = columns.iter().map(|c| c.expr()).collect();
@@ -4192,10 +5306,10 @@ let f = Fx::new("coalesce", args);
     "sold out",
 );
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/ternary/fn.ternary.html"><code>ternary()</code></a> is a shorthand for
-<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/ternary/struct.Ternary.html#method.new"><code>Ternary::new()</code></a>.</p>
+<p><a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/ternary/fn.ternary.html"><code>ternary()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/ternary/struct.Ternary.html#method.new"><code>Ternary::new()</code></a>.</p>
 <h2 id="case--case-expressions"><a class="header" href="#case--case-expressions"><code>Case</code> — CASE Expressions</a></h2>
-<p>For more than two branches, use <a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/case/struct.Case.html"><code>Case</code></a> to build a full
+<p>For more than two branches, use <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/case/struct.Case.html"><code>Case</code></a> to build a full
 <code>CASE WHEN ... END</code> block:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -4206,12 +5320,12 @@ let f = Fx::new("coalesce", args);
 <span class="boring">}</span></code></pre>
 <h2 id="concat_--string-concatenation"><a class="header" href="#concat_--string-concatenation"><code>concat_!</code> — String Concatenation</a></h2>
 <p>Concatenates expressions. Renders as <code>||</code> on SQLite/Postgres, <code>CONCAT()</code> on MySQL. The
-<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/macro.concat_.html"><code>concat_!</code></a> macro calls <code>.expr()</code> on each argument automatically:</p>
+<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/macro.concat_.html"><code>concat_!</code></a> macro calls <code>.expr()</code> on each argument automatically:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>concat_!(ident("first_name"), " ", ident("last_name"))
 <span class="boring">}</span></code></pre>
-<p>Use <a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/concat/struct.Concat.html#method.ws"><code>.ws()</code></a> for a separator — it accepts any
+<p>Use <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/concat/struct.Concat.html#method.ws"><code>.ws()</code></a> for a separator — it accepts any
 <code>Expressive&lt;T&gt;</code>, including string literals:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -4228,7 +5342,7 @@ let f = Fx::new("coalesce", args);
 // MySQL:    INTERVAL 30 DAY
 // Postgres: INTERVAL '30 days'
 <span class="boring">}</span></code></pre>
-<p>See <a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/interval/struct.Interval.html"><code>Interval</code></a> for available constructors (<code>days</code>,
+<p>See <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/interval/struct.Interval.html"><code>Interval</code></a> for available constructors (<code>days</code>,
 <code>hours</code>, <code>months</code>, etc.).</p>
 <h2 id="date_format--date-formatting"><a class="header" href="#date_format--date-formatting"><code>date_format()</code> — Date Formatting</a></h2>
 <p>Portable strftime-style formatting. Translates format tokens per backend:</p>
@@ -4239,9 +5353,9 @@ let f = Fx::new("coalesce", args);
 // MySQL:    DATE_FORMAT("created_at", '%Y-%m-%d')
 // Postgres: TO_CHAR("created_at", 'YYYY-MM-DD')
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/date_format/fn.date_format.html"><code>date_format()</code></a> is a shorthand for
-<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/date_format/struct.DateFormat.html#method.new"><code>DateFormat::new()</code></a>. Use
-<a href="https://docs.rs/vantage_sql/0.4.0/vantage_sql/primitives/date_format/struct.DateFormat.html#method.raw_format"><code>.raw_format()</code></a> to skip token
+<p><a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/date_format/fn.date_format.html"><code>date_format()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/date_format/struct.DateFormat.html#method.new"><code>DateFormat::new()</code></a>. Use
+<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/date_format/struct.DateFormat.html#method.raw_format"><code>.raw_format()</code></a> to skip token
 translation and pass a native format string.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="type-conversions"><a class="header" href="#type-conversions">Type Conversions</a></h1>

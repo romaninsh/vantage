@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-8f068220.js";
+            window.path_to_searchindex_js = "../searchindex-d9838aed.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-10b285ad.js"></script>
+        <script src="../toc-f0872746.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -254,7 +254,7 @@ important differences:</p>
 </tbody>
 </table>
 </div>
-<p>A <a href="https://docs.rs/vantage_table/0.4.0/vantage_table/table/base/struct.Table.html"><code>Table</code></a> is typically defined in its own file alongside the entity.
+<p>A <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html"><code>Table</code></a> is typically defined in its own file alongside the entity.
 Create <code>src/product.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -330,8 +330,8 @@ let sum_query = table.get_sum_query(&amp;table["price"]);
 assembles them for you. But most of the time you won’t need the raw query at all.</p>
 <hr>
 <h2 id="crud-operations"><a class="header" href="#crud-operations">CRUD operations</a></h2>
-<p>With the table defined, all four operations — create, read, update, delete — are one-liners.
-Each comes from a trait in the prelude:</p>
+<p>With the table defined, all four operations — create, read, update, delete — are one-liners. Each
+comes from a trait in the prelude:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>let table = Product::table(db);
@@ -351,10 +351,10 @@ table.replace(&amp;"muffin".to_string(), &amp;updated).await?;
 // Delete
 table.delete(&amp;"muffin".to_string()).await?;
 <span class="boring">}</span></code></pre>
-<p>That’s it. <code>list()</code> returns an <code>IndexMap&lt;Id, Product&gt;</code> — ordered and keyed by ID. <code>get()</code>
-returns the entity or an error if the ID doesn’t exist. There’s also <code>get_some()</code> which
-returns <code>Option</code> for when you’re not sure there are any records, and <code>insert_return_id()</code>
-for when you want the database to generate the ID.</p>
+<p>That’s it. <code>list()</code> returns an <code>IndexMap&lt;Id, Product&gt;</code> — ordered and keyed by ID. <code>get()</code> returns
+the entity or an error if the ID doesn’t exist. There’s also <code>get_some()</code> which returns <code>Option</code> for
+when you’re not sure there are any records, and <code>insert_return_id()</code> for when you want the database
+to generate the ID.</p>
 <div id="admonition-idempotent-operations" class="admonition admonish-tip" role="note" aria-labelledby="admonition-idempotent-operations-title">
 <div class="admonition-title">
 <div id="admonition-idempotent-operations-title">
@@ -375,12 +375,12 @@ side effects.</p>
 
 <hr>
 <h2 id="type-erased-tables"><a class="header" href="#type-erased-tables">Type-erased tables</a></h2>
-<p><code>Table&lt;SqliteDB, Product&gt;</code> is great when you know the types at compile time. But what if you
-want to write a function that lists <em>any</em> table — products, orders, customers — without
-knowing the entity type?</p>
-<p><a href="https://docs.rs/vantage_table/0.4.0/vantage_table/any/struct.AnyTable.html"><code>AnyTable</code></a> wraps a concrete table and erases its type parameters. Values come back as
-<code>Record&lt;serde_json::Value&gt;</code> instead of typed entities. You can iterate columns by name and
-build a generic display:</p>
+<p><code>Table&lt;SqliteDB, Product&gt;</code> is great when you know the types at compile time. But what if you want to
+write a function that lists <em>any</em> table — products, orders, customers — without knowing the entity
+type?</p>
+<p><a href="https://docs.rs/vantage_table/0.4.1/vantage_table/any/struct.AnyTable.html"><code>AnyTable</code></a> wraps a concrete table and erases its type parameters.
+Values come back as <code>Record&lt;serde_json::Value&gt;</code> instead of typed entities. You can iterate columns
+by name and build a generic display:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>async fn list_table(table: &amp;AnyTable) -&gt; VantageResult&lt;()&gt; {
@@ -417,10 +417,10 @@ list_table(&amp;any).await?;
 // donut       "Doughnut"      135
 // ...
 <span class="boring">}</span></code></pre>
-<p>Under the hood, <code>AnyTable</code> converts values to and from <code>serde_json::Value</code> on the fly.
-Conditions, pagination, and all CRUD operations still work — you just lose compile-time
-type safety on the entity fields. This is the trade-off: <code>AnyTable</code> lets you build generic
-UI components, CLI tools, and admin panels that work with any table definition.</p>
+<p>Under the hood, <code>AnyTable</code> converts values to and from <code>serde_json::Value</code> on the fly. Conditions,
+pagination, and all CRUD operations still work — you just lose compile-time type safety on the
+entity fields. This is the trade-off: <code>AnyTable</code> lets you build generic UI components, CLI tools,
+and admin panels that work with any table definition.</p>
 <div id="admonition-generics-vs-type-erasure" class="admonition admonish-info" role="note" aria-labelledby="admonition-generics-vs-type-erasure-title">
 <div class="admonition-title">
 <div id="admonition-generics-vs-type-erasure-title">
@@ -452,8 +452,8 @@ type erasure via <code>AnyTable</code> is the way to go.</p>
 
 <hr>
 <h2 id="relationships"><a class="header" href="#relationships">Relationships</a></h2>
-<p>Our database has a <code>category</code> table that we haven’t used yet. Let’s define it and connect it
-to products.</p>
+<p>Our database has a <code>category</code> table that we haven’t used yet. Let’s define it and connect it to
+products.</p>
 <p>Create <code>src/category.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -491,9 +491,9 @@ Category has many products; the foreign key lives on product.</p>
 let products = categories.get_ref_as::&lt;Product&gt;("products")?;
 <span class="boring">}</span></code></pre>
 <p>The result is a <code>Table&lt;SqliteDB, Product&gt;</code> with an extra condition — only products whose
-<code>category_id</code> matches one of the category IDs. Narrow the categories first and the subquery
-narrows too. Let’s use this in a CLI that accepts an optional search filter. The <code>.with_search()</code>
-method adds a LIKE condition across all columns of the table — handy for quick filtering.</p>
+<code>category_id</code> matches one of the category IDs. Narrow the categories first and the subquery narrows
+too. Let’s use this in a CLI that accepts an optional search filter. The <code>.with_search()</code> method
+adds a LIKE condition across all columns of the table — handy for quick filtering.</p>
 <p>Update <code>src/main.rs</code>:</p>
 <pre class="playground"><code class="language-rust">mod category;
 mod product;
@@ -540,8 +540,8 @@ cargo run "Sweet"        # Cupcake, Doughnut, Cookies
 cargo run "Pastries"     # Tart, Pie
 cargo run "t"            # matches "Sweet Treats" AND "Pastries" — 5 products
 </code></pre>
-<p>The search <code>"t"</code> matches two categories (“Sweet Treats” and “Pastries”), so products from
-both are returned.</p>
+<p>The search <code>"t"</code> matches two categories (“Sweet Treats” and “Pastries”), so products from both are
+returned.</p>
 <div id="admonition-sets-not-joins" class="admonition admonish-info" role="note" aria-labelledby="admonition-sets-not-joins-title">
 <div class="admonition-title">
 <div id="admonition-sets-not-joins-title">
@@ -569,11 +569,10 @@ need to rewrite the traversal logic.</p>
 
 <hr>
 <h2 id="computed-fields-with-expressions"><a class="header" href="#computed-fields-with-expressions">Computed fields with expressions</a></h2>
-<p>So far, <code>list_products</code> only shows name and price. It would be nice to show the category
-name too — but <code>Product</code> doesn’t have a <code>category</code> field, and the category name lives in
-a different table.</p>
-<p>Vantage solves this with <strong>expressions</strong> — computed fields that are evaluated as part of the
-SELECT query. You define them on the table, and they appear alongside regular columns.</p>
+<p>So far, <code>list_products</code> only shows name and price. It would be nice to show the category name too —
+but <code>Product</code> doesn’t have a <code>category</code> field, and the category name lives in a different table.</p>
+<p>Vantage solves this with <strong>expressions</strong> — computed fields that are evaluated as part of the SELECT
+query. You define them on the table, and they appear alongside regular columns.</p>
 <p>First, add a <code>with_one</code> relationship on Product (the reverse of <code>with_many</code> on Category):</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -589,7 +588,9 @@ SELECT query. You define them on the table, and they appear alongside regular co
         .select_column("name")
 })
 <span class="boring">}</span></code></pre>
-<p><code>select_column("name")</code> builds a subquery like <code>SELECT "name" FROM "category" WHERE "id" = "product"."category_id"</code> — a correlated subquery that fetches the category name for each product row.</p>
+<p><code>select_column("name")</code> builds a subquery like
+<code>SELECT "name" FROM "category" WHERE "id" = "product"."category_id"</code> — a correlated subquery that
+fetches the category name for each product row.</p>
 <p>Here’s the updated <code>src/product.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -626,11 +627,10 @@ impl Product {
 <span class="boring">}</span></code></pre>
 <p>A few things to note:</p>
 <ul>
-<li><strong><code>category: Option&lt;String&gt;</code></strong> — the field is <code>Option</code> because a product might not have a
-category (NULL in the database). The expression result is deserialized into this field
-automatically.</li>
-<li><strong>No <code>with_column_of</code> for “category”</strong> — the expression replaces what would normally be a
-column. Vantage adds it to the SELECT as a computed field.</li>
+<li><strong><code>category: Option&lt;String&gt;</code></strong> — the field is <code>Option</code> because a product might not have a category
+(NULL in the database). The expression result is deserialized into this field automatically.</li>
+<li><strong>No <code>with_column_of</code> for “category”</strong> — the expression replaces what would normally be a column.
+Vantage adds it to the SELECT as a computed field.</li>
 <li><strong><code>with_one</code> + <code>with_expression</code></strong> — the relationship defines how to traverse; the expression
 defines what to fetch. They work together but serve different purposes.</li>
 </ul>
@@ -655,8 +655,8 @@ defines what to fetch. They work together but serve different purposes.</li>
   5    Cookies              199 cents  [Sweet Treats]
   7    Sourdough Loaf       350 cents  [Breads]
 </code></pre>
-<p>The category name comes from a subquery — no JOIN, no extra round trip. And the category
-filter still works:</p>
+<p>The category name comes from a subquery — no JOIN, no extra round trip. And the category filter
+still works:</p>
 <pre><code class="language-sh">cargo run "t"
 </code></pre>
 <pre><code class="language-text">  1    Cupcake              120 cents  [Sweet Treats]
@@ -722,11 +722,11 @@ extra round trip to the database.</p>
 
 <hr>
 <h2 id="extension-traits"><a class="header" href="#extension-traits">Extension traits</a></h2>
-<p>Throughout this chapter you’ve seen calls like <code>categories.get_ref_as::&lt;Product&gt;("products")</code>.
-The turbofish <code>::&lt;Product&gt;</code> and the string <code>"products"</code> are repetitive and error-prone —
-get the string wrong and you get a runtime error.</p>
-<p>Rust’s extension traits solve this. Define a trait on <code>Table&lt;SqliteDB, Category&gt;</code> that
-wraps the traversal:</p>
+<p>Throughout this chapter you’ve seen calls like <code>categories.get_ref_as::&lt;Product&gt;("products")</code>. The
+turbofish <code>::&lt;Product&gt;</code> and the string <code>"products"</code> are repetitive and error-prone — get the string
+wrong and you get a runtime error.</p>
+<p>Rust’s extension traits solve this. Define a trait on <code>Table&lt;SqliteDB, Category&gt;</code> that wraps the
+traversal:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>pub trait CategoryTable: ReadableDataSet&lt;Category&gt; {
@@ -736,11 +736,11 @@ wraps the traversal:</p>
 }
 impl CategoryTable for Table&lt;SqliteDB, Category&gt; {}
 <span class="boring">}</span></code></pre>
-<p>The default method lives in the trait — <code>impl</code> is just <code>{}</code>. The <code>unwrap()</code> is safe because
-we know “products” is defined on every <code>CategoryTable</code>. If the string were wrong, it would
-panic immediately during development, not silently fail at runtime.</p>
-<p>Now callers write <code>categories.ref_products()</code> — no turbofish, no string, no <code>?</code>, and the
-compiler catches typos.</p>
+<p>The default method lives in the trait — <code>impl</code> is just <code>{}</code>. The <code>unwrap()</code> is safe because we know
+“products” is defined on every <code>CategoryTable</code>. If the string were wrong, it would panic immediately
+during development, not silently fail at runtime.</p>
+<p>Now callers write <code>categories.ref_products()</code> — no turbofish, no string, no <code>?</code>, and the compiler
+catches typos.</p>
 <p>The same pattern works for typed column access:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -822,6 +822,76 @@ The table is yours to extend.</p>
 
 </div>
 
+<hr>
+<h2 id="persistence-abstraction"><a class="header" href="#persistence-abstraction">Persistence Abstraction</a></h2>
+<p>It is time for a pause and reflection. The files you have written so far — <code>Cargo.toml</code>,
+<code>product.rs</code>, <code>category.rs</code>, <code>main.rs</code> — are the makings of an extensible business software
+architecture. Scalable, maintainable, testable, and portable across databases without rewriting a
+single line of business logic.</p>
+<p>What you have is four distinct components, each with a clear job:</p>
+<pre class="mermaid">flowchart TD
+    A["&lt;b&gt;Business code&lt;/b&gt;&lt;br/&gt;&lt;code&gt;main.rs&lt;/code&gt;&lt;br/&gt;minimal, domain-focused"]
+    B["&lt;b&gt;Model definitions&lt;/b&gt;&lt;br/&gt;&lt;code&gt;product.rs&lt;/code&gt;, &lt;code&gt;category.rs&lt;/code&gt;&lt;br/&gt;entities, tables, relationships, domain methods"]
+    C["&lt;b&gt;Persistence crate&lt;/b&gt;&lt;br/&gt;&lt;code&gt;vantage-sql&lt;/code&gt; (or surrealdb, mongodb, csv…)&lt;br/&gt;query builder, CRUD, type system"]
+    D["&lt;b&gt;Vantage framework&lt;/b&gt;&lt;br/&gt;&lt;code&gt;vantage-table&lt;/code&gt;, &lt;code&gt;vantage-expressions&lt;/code&gt;, &lt;code&gt;vantage-types&lt;/code&gt;&lt;br/&gt;the extensible mechanism that ties it together"]
+    A --&gt; B
+    B --&gt; C
+    C --&gt; D
+</pre>
+
+<p>The majority of your business code can work with data without any knowledge of where it’s stored or
+how. It operates on typed entities, relationships, and domain methods — nothing else.</p>
+<p>The model definitions focus on describing <em>where</em> and <em>how</em> data is stored, but they don’t
+micro-manage the process. If storage requirements change — a new backend, a schema migration, a
+cached layer in front — the model is where you make the tweaks. Business code remains untouched.</p>
+<p>This separation gives you:</p>
+<ul>
+<li><input disabled="" type="checkbox" checked=""> <strong>Separation of concerns</strong> - framework to establish great design for your software from day
+one, then scale.</li>
+<li><input disabled="" type="checkbox" checked=""> <strong>No ripple effect</strong> — in Rust code refactoring cascade through entire codebase. Vantage model
+layer contains that pain, and enterprise codebases don’t unravel when requirements shift.</li>
+<li><input disabled="" type="checkbox" checked=""> <strong>Concise syntax</strong> — the ergonomics Python, JavaScript, and PHP developers enjoy, now in Rust.
+Cuting boilerplate, making code readablle.</li>
+<li><input disabled="" type="checkbox" checked=""> <strong>Strong types, zero cost</strong> — everything TypeScript has and more, without sacrificing
+performance. The abstraction compiles down to direct calls.</li>
+<li><input disabled="" type="checkbox" checked=""> <strong>A usable alternative to OOP</strong> — Java and C# developers get entities, methods, and
+composition without inheritance hierarchies or dependency injection containers.</li>
+<li><input disabled="" type="checkbox" checked=""> <strong>Safe concurrency, async, ownership, no memory leaks</strong> — the performance of C with ergonomics
+that make concurrent code readable.</li>
+<li><input disabled="" type="checkbox" checked=""> <strong>Portability</strong> — take Vantage with you anywhere: server, desktop, web, mobile, embedded. One
+static binary per target.</li>
+</ul>
+<div id="admonition-a-sneak-peek-at-whats-next" class="admonition admonish-tip" role="note" aria-labelledby="admonition-a-sneak-peek-at-whats-next-title">
+<div class="admonition-title">
+<div id="admonition-a-sneak-peek-at-whats-next-title">
+<p>A sneak peek at what’s next</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-a-sneak-peek-at-whats-next"></a>
+</div>
+
+<div>
+<p>This introduction gets you productive quickly, but it barely scratches the surface.
+Later chapters explore more complex challenges that make Vantage is equipped to deal with:</p>
+<ul>
+<li><strong>Zero-cost cross-persistence traversal</strong> — follow a relationship from a Postgres table
+into a MongoDB collection, all expressed in Rust, executed efficiently on each side.</li>
+<li><strong>In-memory entity caching with indexing</strong> — Using <code>vantage-redb</code> for powerful and
+transparent client-side caching.</li>
+<li><strong>Facades and middleware APIs, almost for free</strong> — wrap your model to expose a filtered
+or transformed view to another team an API.</li>
+<li><strong>Super-efficient API clients and SDKs</strong> — your model becomes the client. Typed endpoints,
+retries, pagination, and rate limits — all in one abstraction.</li>
+<li><strong>UI framework integration</strong> — the same model drives desktop, terminal, web, and mobile
+UIs through <code>vantage-ui-adapters</code>. Define once, render anywhere.</li>
+<li><strong>Reactive in-memory data</strong> — make your local data reactive, receiving live updates
+from your database or websocket APIs.</li>
+</ul>
+<p>The patterns you’ve learned scale all the way up.</p>
+</div>
+
+</div>
+
 
                     </main>
 
@@ -831,7 +901,7 @@ The table is yours to extend.</p>
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../history.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../intro/step3-axum-server.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -845,7 +915,7 @@ The table is yours to extend.</p>
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../history.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../intro/step3-axum-server.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
