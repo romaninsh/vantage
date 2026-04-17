@@ -5,8 +5,10 @@ publish = false
 edition = "2021"
 
 [dependencies]
-vantage-sql = { path = "../vantage-sql", features = ["sqlite", "postgres"] }
-vantage-mongodb = { path = "../vantage-mongodb" }
+vantage-core = { path = "../vantage-core" }
+vantage-dataset = { path = "../vantage-dataset" }
 vantage-expressions = { path = "../vantage-expressions" }
+vantage-mongodb = { path = "../vantage-mongodb" }
+vantage-sql = { path = "../vantage-sql", features = ["sqlite", "postgres"] }
 vantage-table = { path = "../vantage-table" }
 vantage-types = { path = "../vantage-types" }

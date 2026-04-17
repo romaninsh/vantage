@@ -3905,6 +3905,8 @@ dependencies = [
 name = "vantage-docs"
 version = "0.0.0"
 dependencies = [
+ "vantage-core",
+ "vantage-dataset",
  "vantage-expressions",
  "vantage-mongodb",
  "vantage-sql",
