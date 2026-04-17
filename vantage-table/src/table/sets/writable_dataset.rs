@@ -48,7 +48,6 @@ where
         E::try_from_record(&result_record)
             .map_err(|_| vantage_core::error!("Failed to convert record to entity"))
     }
-
 }
 
 #[cfg(test)]

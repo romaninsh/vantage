@@ -88,7 +88,6 @@ where
         })?;
         Ok(merged_entity)
     }
-
 }
 
 // Tests are in tests/im_dataset.rs integration tests

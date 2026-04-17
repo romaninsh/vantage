@@ -98,10 +98,10 @@ impl From<String> for MongoId {
     /// `String`. Mirrors [`MongoId::from_str`] so `.get(id_string)` and similar
     /// call sites work without an explicit parse.
     fn from(s: String) -> Self {
-        if s.len() == 24 {
-            if let Ok(oid) = ObjectId::parse_str(&s) {
-                return MongoId::ObjectId(oid);
-            }
+        if s.len() == 24
+            && let Ok(oid) = ObjectId::parse_str(&s)
+        {
+            return MongoId::ObjectId(oid);
         }
         MongoId::String(s)
     }
@@ -111,10 +111,10 @@ impl From<&str> for MongoId {
     /// 24-character hex strings parse as `ObjectId`, anything else stays a plain
     /// `String`. Mirrors [`MongoId::from_str`].
     fn from(s: &str) -> Self {
-        if s.len() == 24 {
-            if let Ok(oid) = ObjectId::parse_str(s) {
-                return MongoId::ObjectId(oid);
-            }
+        if s.len() == 24
+            && let Ok(oid) = ObjectId::parse_str(s)
+        {
+            return MongoId::ObjectId(oid);
         }
         MongoId::String(s.to_string())
     }

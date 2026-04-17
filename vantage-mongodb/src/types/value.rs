@@ -78,10 +78,10 @@ impl From<&str> for AnyMongoType {
     /// [`MongoId::from_str`] and makes id comparisons like `column.eq("68c1...")`
     /// work without an explicit `MongoId::parse` step.
     fn from(val: &str) -> Self {
-        if val.len() == 24 {
-            if let Ok(oid) = bson::oid::ObjectId::parse_str(val) {
-                return AnyMongoType::new(oid);
-            }
+        if val.len() == 24
+            && let Ok(oid) = bson::oid::ObjectId::parse_str(val)
+        {
+            return AnyMongoType::new(oid);
         }
         AnyMongoType::new(val.to_string())
     }
