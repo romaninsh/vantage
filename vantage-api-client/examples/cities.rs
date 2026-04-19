@@ -70,13 +70,19 @@ async fn main() -> anyhow::Result<()> {
     print_table(&countries).await?;
 
     // Load Argentina (on first page) → traverse to cities
-    let country: Country = countries.get("Argentina").await?;
+    let country: Country = countries
+        .get("Argentina")
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Argentina not found"))?;
     let cities = country.ref_cities();
     println!("\nCities in {}:", country.name);
     print_table(&cities).await?;
 
     // Load a specific city entity
-    let rosario: City = cities.get("Rosario").await?;
+    let rosario: City = cities
+        .get("Rosario")
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Rosario not found"))?;
     println!("\nRosario population: {}", rosario.population);
 
     Ok(())

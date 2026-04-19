@@ -37,14 +37,18 @@ impl IntoResponse for ApiError {
 
 impl From<VantageError> for ApiError {
     fn from(e: VantageError) -> Self {
-        let message = e.to_string();
-        let status = if message.contains("no row found") || message.contains("Document not found") {
-            StatusCode::NOT_FOUND
-        } else {
-            StatusCode::INTERNAL_SERVER_ERROR
-        };
         eprintln!("API error: {:?}", e);
-        Self { status, message }
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: e.to_string(),
+        }
+    }
+}
+
+fn not_found(id: &str) -> ApiError {
+    ApiError {
+        status: StatusCode::NOT_FOUND,
+        message: format!("not found: {}", id),
     }
 }
 
@@ -100,7 +104,10 @@ where
                 let f = f.clone();
                 move |Path(params): Path<Params>| async move {
                     let id = params["id"].clone();
-                    let entity = f(db(), &params).get(id).await?;
+                    let entity = f(db(), &params)
+                        .get(id.clone())
+                        .await?
+                        .ok_or_else(|| not_found(&id))?;
                     ApiResult::Ok(Json(entity))
                 }
             })

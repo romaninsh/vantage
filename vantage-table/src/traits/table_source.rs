@@ -79,12 +79,14 @@ pub trait TableSource: DataSource + Clone + 'static {
         E: Entity<Self::Value>,
         Self: Sized;
 
-    /// Get a single record by ID as Record value (for ReadableValueSet implementation)
+    /// Get a single record by ID as Record value (for ReadableValueSet implementation).
+    ///
+    /// Returns `Ok(None)` when no record exists with the given ID.
     async fn get_table_value<E>(
         &self,
         table: &Table<Self, E>,
         id: &Self::Id,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Option<Record<Self::Value>>>
     where
         E: Entity<Self::Value>,
         Self: Sized;

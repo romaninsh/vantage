@@ -52,7 +52,8 @@ async fn test_get_product() {
     let record = table
         .get_value(&MongoId::from("delorean_donut"))
         .await
-        .unwrap();
+        .unwrap()
+        .expect("delorean_donut exists");
     assert_eq!(
         record["name"].try_get::<String>(),
         Some("DeLorean Doughnut".into())

@@ -182,7 +182,7 @@ impl TableSource for MockTableSource {
         &self,
         table: &Table<Self, E>,
         id: &Self::Id,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Option<Record<Self::Value>>>
     where
         E: Entity,
         Self: Sized,
@@ -270,7 +270,7 @@ impl TableSource for MockTableSource {
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
 
         // Check if record already exists - fail if it does
-        if im_table.get_value(id).await.is_ok() {
+        if im_table.get_value(id).await?.is_some() {
             return Err(vantage_core::error!(
                 "Record with ID already exists",
                 id = id
@@ -325,7 +325,7 @@ impl TableSource for MockTableSource {
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
 
         // Check if record exists - fail if it doesn't
-        if im_table.get_value(id).await.is_err() {
+        if im_table.get_value(id).await?.is_none() {
             return Err(vantage_core::error!("Record not found", id = id));
         }
 

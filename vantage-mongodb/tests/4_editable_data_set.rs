@@ -54,7 +54,7 @@ async fn test_insert() {
     assert_eq!(result["name"].try_get::<String>(), Some("Gamma".into()));
     assert_eq!(result["price"].try_get::<i64>(), Some(30));
 
-    let fetched = table.get_value(&MongoId::from("c")).await.unwrap();
+    let fetched = table.get_value(&MongoId::from("c")).await.unwrap().expect("row exists");
     assert_eq!(fetched["name"].try_get::<String>(), Some("Gamma".into()));
 }
 
@@ -71,7 +71,11 @@ async fn test_replace() {
         .await
         .unwrap();
 
-    let fetched = table.get_value(&MongoId::from("a")).await.unwrap();
+    let fetched = table
+        .get_value(&MongoId::from("a"))
+        .await
+        .unwrap()
+        .expect("row a exists");
     assert_eq!(
         fetched["name"].try_get::<String>(),
         Some("Alpha Replaced".into())
@@ -89,7 +93,11 @@ async fn test_patch() {
         .await
         .unwrap();
 
-    let fetched = table.get_value(&MongoId::from("a")).await.unwrap();
+    let fetched = table
+        .get_value(&MongoId::from("a"))
+        .await
+        .unwrap()
+        .expect("row a exists");
     assert_eq!(fetched["price"].try_get::<i64>(), Some(55));
     // name untouched
     assert_eq!(fetched["name"].try_get::<String>(), Some("Alpha".into()));
@@ -135,7 +143,7 @@ async fn test_insert_return_id() {
     let id = table.insert_return_id_value(&rec).await.unwrap();
     assert!(!id.to_string().is_empty());
 
-    let fetched = table.get_value(&id).await.unwrap();
+    let fetched = table.get_value(&id).await.unwrap().expect("row exists");
     assert_eq!(fetched["name"].try_get::<String>(), Some("Auto".into()));
     assert_eq!(fetched["price"].try_get::<i64>(), Some(42));
 }

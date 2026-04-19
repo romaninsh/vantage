@@ -94,7 +94,8 @@ async fn test_insert_table_return_id() {
         .data_source()
         .get_table_value(&table, &id)
         .await
-        .expect("get_table_value failed");
+        .expect("get_table_value failed")
+        .expect("row exists");
 
     assert_eq!(
         fetched.get("name").and_then(|v| v.try_get::<String>()),
@@ -292,7 +293,8 @@ async fn test_full_crud_lifecycle() {
         .data_source()
         .get_table_value(&table, &id)
         .await
-        .unwrap();
+        .unwrap()
+        .expect("row exists");
     assert_eq!(
         fetched.get("name").and_then(|v| v.try_get::<String>()),
         Some("Lifecycle".to_string())
@@ -312,7 +314,8 @@ async fn test_full_crud_lifecycle() {
         .data_source()
         .get_table_value(&table, &id)
         .await
-        .unwrap();
+        .unwrap()
+        .expect("row exists");
     assert_eq!(
         updated.get("score").and_then(|v| v.try_get::<i64>()),
         Some(999)
@@ -334,7 +337,8 @@ async fn test_full_crud_lifecycle() {
         .data_source()
         .get_table_value(&table, &id)
         .await
-        .unwrap();
+        .unwrap()
+        .expect("row exists");
     assert_eq!(
         replaced.get("name").and_then(|v| v.try_get::<String>()),
         Some("Replaced".to_string())

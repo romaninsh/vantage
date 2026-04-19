@@ -62,7 +62,11 @@ async fn test_get_product() {
     let db = get_db().await;
     let table = Product::sqlite_table(db);
 
-    let product = table.get("delorean_donut").await.unwrap();
+    let product = table
+        .get("delorean_donut")
+        .await
+        .unwrap()
+        .expect("delorean_donut exists");
     assert_eq!(product.name, "DeLorean Doughnut");
     assert_eq!(product.price, 135);
     assert_eq!(product.calories, 250);

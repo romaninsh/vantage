@@ -32,8 +32,8 @@ async fn test_readable_dataset() {
     assert_eq!(result.len(), 0);
 
     // Test get non-existent record
-    let result = table.get("nonexistent".to_string()).await;
-    assert!(result.is_err());
+    let result = table.get("nonexistent".to_string()).await.unwrap();
+    assert!(result.is_none());
 
     // Test get_some on empty dataset
     let result = table.get_some().await.unwrap();
@@ -133,8 +133,8 @@ async fn test_writable_dataset() {
 
     // Test delete
     table.delete(&"user-1".to_string()).await.unwrap();
-    let result = table.get("user-1".to_string()).await;
-    assert!(result.is_err());
+    let result = table.get("user-1".to_string()).await.unwrap();
+    assert!(result.is_none());
 
     // Test delete_all
     let _ = table.insert(&"user-2".to_string(), &user).await.unwrap();
@@ -161,7 +161,11 @@ async fn test_full_crud_cycle() {
     assert_eq!(result, product);
 
     // Read
-    let retrieved = table.get("prod-1".to_string()).await.unwrap();
+    let retrieved = table
+        .get("prod-1".to_string())
+        .await
+        .unwrap()
+        .expect("prod-1 exists");
     assert_eq!(retrieved, product);
 
     // Update
@@ -178,14 +182,18 @@ async fn test_full_crud_cycle() {
     assert_eq!(result, updated_product);
 
     // Verify update
-    let retrieved = table.get("prod-1".to_string()).await.unwrap();
+    let retrieved = table
+        .get("prod-1".to_string())
+        .await
+        .unwrap()
+        .expect("prod-1 exists");
     assert_eq!(retrieved.name, "Gaming Laptop");
     assert_eq!(retrieved.price, 1500);
 
     // Delete
     table.delete(&"prod-1".to_string()).await.unwrap();
-    let result = table.get("prod-1".to_string()).await;
-    assert!(result.is_err());
+    let result = table.get("prod-1".to_string()).await.unwrap();
+    assert!(result.is_none());
 }
 
 #[tokio::test]
@@ -205,7 +213,11 @@ async fn test_record_field_handling() {
     table.insert(&"test-user".to_string(), &user).await.unwrap();
 
     // Retrieve and verify ID is properly restored
-    let retrieved = table.get("test-user".to_string()).await.unwrap();
+    let retrieved = table
+        .get("test-user".to_string())
+        .await
+        .unwrap()
+        .expect("test-user exists");
     assert_eq!(retrieved.id, Some("test-user".to_string()));
     assert_eq!(retrieved.name, "Test User");
     assert_eq!(retrieved.age, 42);
@@ -242,8 +254,8 @@ async fn test_error_conditions() {
     assert!(result.is_err());
 
     // Test get on non-existent record
-    let result = table.get("nonexistent".to_string()).await;
-    assert!(result.is_err());
+    let result = table.get("nonexistent".to_string()).await.unwrap();
+    assert!(result.is_none());
 }
 
 #[tokio::test]

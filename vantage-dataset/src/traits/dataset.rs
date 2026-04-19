@@ -90,7 +90,7 @@ where
 ///
 /// // Type-safe entity access
 /// let all_users: IndexMap<String, User> = users.list().await?;
-/// let specific_user: User = users.get(&user_id).await?;
+/// let specific_user: Option<User> = users.get(&user_id).await?;
 ///
 /// // Sample data without loading everything
 /// if let Some((id, user)) = users.get_some().await? {
@@ -115,12 +115,14 @@ where
 
     /// Retrieve a specific entity by ID.
     ///
-    /// The storage value is automatically deserialized to the entity type.
+    /// Returns `Ok(None)` when no entity exists with the given ID. The storage
+    /// value is automatically deserialized to the entity type.
     ///
     /// # Errors
     ///
-    /// Returns an error if the entity doesn't exist or deserialization fails.
-    async fn get(&self, id: impl Into<Self::Id> + Send) -> Result<E>;
+    /// Returns an error only if the lookup itself fails (connection errors,
+    /// deserialization failures). A missing row is not an error.
+    async fn get(&self, id: impl Into<Self::Id> + Send) -> Result<Option<E>>;
 
     /// Retrieve one single entity from the set. If entities are ordered - return first entity.
     ///
@@ -331,10 +333,10 @@ where
     /// - `Ok(None)`: entity doesn't exist
     /// - `Err`: Storage or deserialization error
     async fn get_entity(&self, id: &Self::Id) -> Result<Option<ActiveEntity<'_, Self, E>>> {
-        match self.get(id.clone()).await {
-            Ok(data) => Ok(Some(ActiveEntity::new(id.clone(), data, self))),
-            Err(_) => Ok(None),
-        }
+        Ok(self
+            .get(id.clone())
+            .await?
+            .map(|data| ActiveEntity::new(id.clone(), data, self)))
     }
 
     /// Retrieve all entities wrapped for change tracking.

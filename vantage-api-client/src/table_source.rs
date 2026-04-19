@@ -110,7 +110,7 @@ impl TableSource for RestApi {
         &self,
         table: &Table<Self, E>,
         id: &Self::Id,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Option<Record<Self::Value>>>
     where
         E: Entity<Self::Value>,
         Self: Sized,
@@ -118,10 +118,7 @@ impl TableSource for RestApi {
         let records = self
             .fetch_records(table.table_name(), id_field_name(table).as_deref())
             .await?;
-        records
-            .get(id)
-            .cloned()
-            .ok_or_else(|| error!("Record not found", id = id))
+        Ok(records.get(id).cloned())
     }
 
     async fn get_table_some_value<E>(

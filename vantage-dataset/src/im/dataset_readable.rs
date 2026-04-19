@@ -35,21 +35,20 @@ where
         Ok(records)
     }
 
-    async fn get(&self, id: impl Into<Self::Id> + Send) -> Result<E> {
+    async fn get(&self, id: impl Into<Self::Id> + Send) -> Result<Option<E>> {
         let id = id.into();
         let table = self.data_source.get_or_create_table(&self.table_name);
 
-        match table.get(&id) {
-            Some(record) => {
-                // Add the id field to the record for conversion
-                let mut record_with_id = record.clone();
-                record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
+        let Some(record) = table.get(&id) else {
+            return Ok(None);
+        };
 
-                E::try_from_record(&record_with_id)
-                    .map_err(|e| vantage_error!("Failed to convert record to entity: {:?}", e))
-            }
-            None => Err(vantage_error!("Record with id '{}' not found", id)),
-        }
+        let mut record_with_id = record.clone();
+        record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
+
+        let entity = E::try_from_record(&record_with_id)
+            .map_err(|e| vantage_error!("Failed to convert record to entity: {:?}", e))?;
+        Ok(Some(entity))
     }
 
     async fn get_some(&self) -> Result<Option<(Self::Id, E)>> {

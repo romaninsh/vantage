@@ -170,14 +170,20 @@ impl TableSource for SurrealDB {
         &self,
         _table: &Table<Self, E>,
         id: &Self::Id,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Option<Record<Self::Value>>>
     where
         E: Entity<Self::Value>,
     {
         let query = crate::surreal_expr!("SELECT * FROM ONLY {}", (id.clone()));
         let result = self.execute(&query).await?;
 
-        let map = result.into_value().into_map().map_err(|_| {
+        // `SELECT ... FROM ONLY` returns Null (in cbor) when no row matches.
+        let value = result.into_value();
+        if matches!(value, ciborium::Value::Null) {
+            return Ok(None);
+        }
+
+        let map = value.into_map().map_err(|_| {
             error!(
                 "get_table_value: expected map result",
                 id = format!("{:?}", id)
@@ -185,7 +191,7 @@ impl TableSource for SurrealDB {
         })?;
 
         let (_thing, record) = parse_cbor_row(map, "id");
-        Ok(record)
+        Ok(Some(record))
     }
 
     async fn get_table_some_value<E>(

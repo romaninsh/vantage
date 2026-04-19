@@ -88,16 +88,13 @@ impl TableSource for Csv {
         &self,
         table: &Table<Self, E>,
         id: &Self::Id,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Option<Record<Self::Value>>>
     where
         E: Entity<Self::Value>,
         Self: Sized,
     {
         let records = self.read_csv(table.table_name(), table.columns())?;
-        records
-            .get(id)
-            .cloned()
-            .ok_or_else(|| error!("Record not found", id = id))
+        Ok(records.get(id).cloned())
     }
 
     async fn get_table_some_value<E>(
@@ -376,7 +373,11 @@ mod tests {
             .with_column_of::<String>("name")
             .with_column_of::<String>("email");
 
-        let record = table.get_value(&"doc".to_string()).await.unwrap();
+        let record = table
+            .get_value(&"doc".to_string())
+            .await
+            .unwrap()
+            .expect("doc exists");
         assert_eq!(record["name"].try_get::<String>().unwrap(), "Doc Brown");
         assert_eq!(
             record["email"].try_get::<String>().unwrap(),
@@ -389,8 +390,8 @@ mod tests {
         let csv = test_csv();
         let table = Table::<Csv, EmptyEntity>::new("client", csv);
 
-        let result = table.get_value(&"nonexistent".to_string()).await;
-        assert!(result.is_err());
+        let result = table.get_value(&"nonexistent".to_string()).await.unwrap();
+        assert!(result.is_none());
     }
 
     #[tokio::test]

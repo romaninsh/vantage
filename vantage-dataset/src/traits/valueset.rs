@@ -87,7 +87,10 @@ pub trait ReadableValueSet: ValueSet {
     async fn list_values(&self) -> Result<IndexMap<Self::Id, Record<Self::Value>>>;
 
     /// Retrieve a specific record by ID as a structured record.
-    async fn get_value(&self, id: &Self::Id) -> Result<Record<Self::Value>>;
+    ///
+    /// Returns `Ok(None)` when no record exists with the given ID. Returns an
+    /// error only if the lookup itself fails.
+    async fn get_value(&self, id: &Self::Id) -> Result<Option<Record<Self::Value>>>;
 
     /// Retrieve one single record from the set. If records are ordered - return first record.
     /// will return Ok(None).
@@ -217,9 +220,10 @@ pub trait ActiveRecordSet: ReadableValueSet + WritableValueSet {
     ///
     /// # Returns
     ///
-    /// - `Ok(RecordValue)`: Record wrapper with change tracking
-    /// - `Err`: If record doesn't exist or cannot be loaded
-    async fn get_value_record(&self, id: &Self::Id) -> Result<ActiveRecord<'_, Self>>;
+    /// - `Ok(Some(RecordValue))`: Record wrapper with change tracking
+    /// - `Ok(None)`: No record with this ID
+    /// - `Err`: If the lookup itself fails
+    async fn get_value_record(&self, id: &Self::Id) -> Result<Option<ActiveRecord<'_, Self>>>;
 
     /// Retrieve all records wrapped for change tracking.
     ///
@@ -239,9 +243,11 @@ impl<T> ActiveRecordSet for T
 where
     T: ReadableValueSet + WritableValueSet + Sync,
 {
-    async fn get_value_record(&self, id: &Self::Id) -> Result<ActiveRecord<'_, Self>> {
-        let record = self.get_value(id).await?;
-        Ok(ActiveRecord::new(id.clone(), record, self))
+    async fn get_value_record(&self, id: &Self::Id) -> Result<Option<ActiveRecord<'_, Self>>> {
+        Ok(self
+            .get_value(id)
+            .await?
+            .map(|record| ActiveRecord::new(id.clone(), record, self)))
     }
 
     async fn list_value_records(&self) -> Result<Vec<ActiveRecord<'_, Self>>> {

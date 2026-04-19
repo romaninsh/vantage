@@ -74,7 +74,7 @@ async fn test_text_decimal() {
     };
     let inserted = t.insert(&"t1".to_string(), &orig).await.unwrap();
     assert_eq!(inserted, orig);
-    let fetched = t.get("t1").await.unwrap();
+    let fetched = t.get("t1").await.unwrap().expect("row exists");
     assert_eq!(fetched, orig);
 }
 
@@ -88,7 +88,7 @@ async fn test_text_high_precision() {
     };
     let inserted = t.insert(&"t2".to_string(), &orig).await.unwrap();
     assert_eq!(inserted, orig);
-    let fetched = t.get("t2").await.unwrap();
+    let fetched = t.get("t2").await.unwrap().expect("row exists");
     assert_eq!(fetched, orig);
 }
 
@@ -106,7 +106,7 @@ async fn test_numeric_decimal() {
     };
     let inserted = t.insert(&"n1".to_string(), &orig).await.unwrap();
     assert_eq!(inserted, orig);
-    let fetched = t.get("n1").await.unwrap();
+    let fetched = t.get("n1").await.unwrap().expect("row exists");
     assert_eq!(fetched, orig);
 }
 

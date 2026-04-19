@@ -190,7 +190,11 @@ async fn test_get_table_value_product() {
     let table = Product::surreal_table(db.clone());
 
     let id = Thing::new("product", "delorean_donut");
-    let record = db.get_table_value(&table, &id).await.unwrap();
+    let record = db
+        .get_table_value(&table, &id)
+        .await
+        .unwrap()
+        .expect("product exists");
     let product = Product::from_record(record).unwrap();
     assert_eq!(product.name, "DeLorean Doughnut");
     assert_eq!(product.calories, 250);
@@ -203,7 +207,11 @@ async fn test_get_table_value_client() {
     let table = Client::surreal_table(db.clone());
 
     let id = Thing::new("client", "doc");
-    let record = db.get_table_value(&table, &id).await.unwrap();
+    let record = db
+        .get_table_value(&table, &id)
+        .await
+        .unwrap()
+        .expect("client exists");
     let client = Client::from_record(record).unwrap();
     assert_eq!(client.name, "Doc Brown");
     assert_eq!(client.email, "doc@brown.com");

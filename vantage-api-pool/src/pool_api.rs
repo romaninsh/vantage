@@ -172,17 +172,14 @@ impl TableSource for PoolApi {
         &self,
         table: &Table<Self, E>,
         id: &Self::Id,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Option<Record<Self::Value>>>
     where
         E: Entity<Self::Value>,
         Self: Sized,
     {
         // Fetch all and find by id — could be optimized with a direct endpoint later
         let records = self.list_table_values(table).await?;
-        records
-            .get(id)
-            .cloned()
-            .ok_or_else(|| error!("Record not found", id = id))
+        Ok(records.get(id).cloned())
     }
 
     async fn get_table_some_value<E>(
