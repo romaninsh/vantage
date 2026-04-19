@@ -82,7 +82,8 @@ fn main() {
             cx.quit();
         });
 
-        cx.set_menus(vec![Menu::new("Bakery Model 3").items([MenuItem::action("Quit", Quit)])]);
+        let app_menu = Menu::new("Bakery Model 3").items([MenuItem::action("Quit", Quit)]);
+        cx.set_menus(vec![app_menu]);
 
         cx.activate(true);
 
