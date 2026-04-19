@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
-use bakery_model3::{Client, connect_surrealdb, surrealdb};
-use dataset_ui_adapters::{TableStore, VantageTableAdapter, slint_adapter::SlintTable};
+use bakery_model3::{connect_surrealdb, surrealdb, Client};
+use dataset_ui_adapters::{slint_adapter::SlintTable, TableStore, VantageTableAdapter};
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use vantage_table::any::AnyTable;
 

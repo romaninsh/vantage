@@ -1,5 +1,5 @@
-use bakery_model3::{Client, connect_surrealdb, surrealdb};
-use dataset_ui_adapters::{TableStore, VantageTableAdapter, egui_adapter::EguiTable};
+use bakery_model3::{connect_surrealdb, surrealdb, Client};
+use dataset_ui_adapters::{egui_adapter::EguiTable, TableStore, VantageTableAdapter};
 use eframe::egui;
 use vantage_table::any::AnyTable;
 

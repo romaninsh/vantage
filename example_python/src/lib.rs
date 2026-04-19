@@ -4,7 +4,7 @@
 //! supporting `count()` and `list_all()`. Tables are wrapped via `AnyTable` so
 //! the binding is decoupled from the SurrealDB backend type.
 
-use bakery_model3::{Bakery, Client, Order, Product, connect_surrealdb, surrealdb};
+use bakery_model3::{connect_surrealdb, surrealdb, Bakery, Client, Order, Product};
 use pyo3::exceptions::{PyConnectionError, PyRuntimeError};
 use pyo3::prelude::*;
 use vantage_dataset::prelude::ReadableValueSet;
@@ -71,9 +71,10 @@ macro_rules! py_table_class {
             }
 
             fn list_all<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-                pyo3_async_runtimes::tokio::future_into_py(py, async move {
-                    list_any($factory()).await
-                })
+                pyo3_async_runtimes::tokio::future_into_py(
+                    py,
+                    async move { list_any($factory()).await },
+                )
             }
         }
     };

@@ -1,5 +1,5 @@
-use bakery_model3::{Client, connect_surrealdb, surrealdb};
-use dataset_ui_adapters::{TableStore, VantageTableAdapter, tauri_adapter::TauriTable};
+use bakery_model3::{connect_surrealdb, surrealdb, Client};
+use dataset_ui_adapters::{tauri_adapter::TauriTable, TableStore, VantageTableAdapter};
 use vantage_table::any::AnyTable;
 
 #[tokio::main]

@@ -4,15 +4,9 @@ use std::cell::RefCell;
 use std::sync::Arc;
 
 /// A row type for Slint - represents a single table row
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct SlintTableRow {
     pub cells: Vec<SharedString>,
-}
-
-impl Default for SlintTableRow {
-    fn default() -> Self {
-        Self { cells: Vec::new() }
-    }
 }
 
 /// Slint table model implementing the Model trait
@@ -50,19 +44,20 @@ impl<D: DataSet + 'static> SlintTableModel<D> {
             // Prefetch all rows and then get them individually
             let _ = self.store.prefetch_range(0, row_count).await;
 
-            if let Ok(rows) = self.rows.try_borrow_mut() {
-                let mut vec_data = Vec::new();
-                for i in 0..row_count {
-                    if let Ok(table_row) = self.store.get_row(i).await {
-                        let slint_row = SlintTableRow {
-                            cells: table_row
-                                .into_iter()
-                                .map(|cell| SharedString::from(cell.as_string()))
-                                .collect(),
-                        };
-                        vec_data.push(slint_row);
-                    }
+            let mut vec_data = Vec::new();
+            for i in 0..row_count {
+                if let Ok(table_row) = self.store.get_row(i).await {
+                    let slint_row = SlintTableRow {
+                        cells: table_row
+                            .into_iter()
+                            .map(|cell| SharedString::from(cell.as_string()))
+                            .collect(),
+                    };
+                    vec_data.push(slint_row);
                 }
+            }
+
+            if let Ok(rows) = self.rows.try_borrow_mut() {
                 rows.set_vec(vec_data);
             }
         }

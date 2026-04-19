@@ -41,13 +41,14 @@ impl<D: DataSet + 'static> EguiTableViewer<D> {
         if let Ok(row_count) = self.store.row_count().await {
             let _ = self.store.prefetch_range(0, row_count).await;
 
-            if let Ok(mut data) = self.cached_data.try_borrow_mut() {
-                let mut rows = Vec::new();
-                for i in 0..row_count {
-                    if let Ok(table_row) = self.store.get_row(i).await {
-                        rows.push(table_row);
-                    }
+            let mut rows = Vec::new();
+            for i in 0..row_count {
+                if let Ok(table_row) = self.store.get_row(i).await {
+                    rows.push(table_row);
                 }
+            }
+
+            if let Ok(mut data) = self.cached_data.try_borrow_mut() {
                 *data = Some(rows);
             }
         }

@@ -1,13 +1,13 @@
-use bakery_model3::{Client, connect_surrealdb, surrealdb};
+use bakery_model3::{connect_surrealdb, surrealdb, Client};
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use dataset_ui_adapters::{ratatui_adapter::RatatuiTableAdapter, TableStore, VantageTableAdapter};
 use ratatui::{
-    DefaultTerminal, Frame,
     layout::{Constraint, Layout, Margin, Rect},
     style::{Color, Style},
     text::Text,
     widgets::{Block, BorderType, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    DefaultTerminal, Frame,
 };
 use vantage_table::any::AnyTable;
 

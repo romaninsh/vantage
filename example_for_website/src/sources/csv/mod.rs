@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use indexmap::IndexMap;
 use serde_json::Value;
-use vantage_core::Result;
 use vantage_core::util::error::Context;
+use vantage_core::Result;
 use vantage_dataset::traits::{ReadableValueSet, ValueSet};
 use vantage_types::Record;
 
@@ -19,7 +19,8 @@ impl CsvSource {
         let mut reader = csv::Reader::from_path(&self.path)
             .with_context(|| vantage_core::error!("Failed to open CSV file", path = &self.path))?;
 
-        let headers = reader.headers()
+        let headers = reader
+            .headers()
             .context("Failed to read CSV headers")?
             .clone();
 
@@ -114,8 +115,14 @@ mod tests {
         let source = CsvSource::new(data("inventions.csv"));
         let records = source.list_values().await.unwrap();
         let delorean = &records[&0];
-        assert_eq!(delorean["name"], Value::String("DeLorean Time Machine".to_string()));
-        assert_eq!(delorean["inventor"], Value::String("Emmett Brown".to_string()));
+        assert_eq!(
+            delorean["name"],
+            Value::String("DeLorean Time Machine".to_string())
+        );
+        assert_eq!(
+            delorean["inventor"],
+            Value::String("Emmett Brown".to_string())
+        );
         assert_eq!(delorean["status"], Value::String("Destroyed".to_string()));
     }
 

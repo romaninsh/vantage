@@ -958,7 +958,7 @@ checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
 
 [[package]]
 name = "dataset-ui-adapters"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "serde",
@@ -1276,7 +1276,7 @@ dependencies = [
 
 [[package]]
 name = "example_tauri"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "bakery_model3",

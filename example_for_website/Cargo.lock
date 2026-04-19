@@ -480,7 +480,7 @@ dependencies = [
 
 [[package]]
 name = "example_for_website"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "clap",
