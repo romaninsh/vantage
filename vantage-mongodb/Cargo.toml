@@ -1,6 +1,6 @@
 [package]
 name = "vantage-mongodb"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "MongoDB persistence backend for Vantage framework"
@@ -10,8 +10,8 @@ repository = "https://github.com/romaninsh/vantage"
 vantage-core = { version = "0.4", path = "../vantage-core" }
 vantage-types = { version = "0.4", path = "../vantage-types" }
 vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
-vantage-table = { version = "0.4", path = "../vantage-table" }
-vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
+vantage-table = { version = "0.4.2", path = "../vantage-table" }
+vantage-dataset = { version = "0.4.1", path = "../vantage-dataset" }
 
 bson = "2"
 serde = { version = "1", features = ["derive"] }
