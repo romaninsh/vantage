@@ -313,6 +313,9 @@ the following rules:
 - **PRs**: same rules — short conversational title, short body, no generated
   footers.
 - **Never** add `Co-Authored-By: Claude` or similar trailers.
+- **Never** amend, force-push, or rebase to tidy up the branch. History does
+  not need to be linear — a follow-up commit (`fix`, `fmt`, `clippy`, etc.) is
+  always fine.
 
 ## List of sub-crates and very brief description for each:
 

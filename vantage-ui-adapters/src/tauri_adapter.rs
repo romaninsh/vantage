@@ -2,15 +2,9 @@ use crate::{DataSet, TableStore};
 use std::sync::{Arc, RwLock};
 
 /// A row type for Tauri - represents a single table row
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct TauriTableRow {
     pub cells: Vec<String>,
-}
-
-impl Default for TauriTableRow {
-    fn default() -> Self {
-        Self { cells: Vec::new() }
-    }
 }
 
 /// Tauri table model implementing similar pattern to other adapters
@@ -44,16 +38,17 @@ impl<D: DataSet + 'static> TauriTableModel<D> {
         if let Ok(row_count) = self.store.row_count().await {
             let _ = self.store.prefetch_range(0, row_count).await;
 
-            if let Ok(mut rows) = self.rows.write() {
-                let mut row_data = Vec::new();
-                for i in 0..row_count {
-                    if let Ok(table_row) = self.store.get_row(i).await {
-                        let tauri_row = TauriTableRow {
-                            cells: table_row.into_iter().map(|cell| cell.as_string()).collect(),
-                        };
-                        row_data.push(tauri_row);
-                    }
+            let mut row_data = Vec::new();
+            for i in 0..row_count {
+                if let Ok(table_row) = self.store.get_row(i).await {
+                    let tauri_row = TauriTableRow {
+                        cells: table_row.into_iter().map(|cell| cell.as_string()).collect(),
+                    };
+                    row_data.push(tauri_row);
                 }
+            }
+
+            if let Ok(mut rows) = self.rows.write() {
                 *rows = row_data;
             }
         }

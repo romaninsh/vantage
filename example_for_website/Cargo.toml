@@ -2,7 +2,7 @@
 
 [package]
 name = "example_for_website"
-version = "0.1.0"
+version = "0.4.0"
 edition = "2021"
 
 [features]
@@ -15,8 +15,8 @@ name = "agnostic_jsonl_exporter"
 path = "examples/agnostic_jsonl_exporter.rs"
 
 [dependencies]
-tokio = { version = "1.0", features = ["full"] }
-clap = { version = "4.5", features = ["derive"] }
+tokio = { version = "1.52", features = ["full"] }
+clap = { version = "4.6", features = ["derive"] }
 serde_json = "1.0"
 indexmap = "2"
 async-trait = "0.1"

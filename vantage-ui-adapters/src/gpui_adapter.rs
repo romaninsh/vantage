@@ -4,7 +4,7 @@ use std::sync::Arc;
 #[cfg(feature = "gpui")]
 use gpui::{div, px, App, Context, InteractiveElement, IntoElement, ParentElement, Window};
 #[cfg(feature = "gpui")]
-use gpui_component::table::{Column, Table, TableDelegate};
+use gpui_component::table::{Column, TableDelegate, TableState};
 
 /// GPUI adapter implementing TableDelegate
 pub struct GpuiTableDelegate<D: DataSet> {
@@ -39,12 +39,7 @@ impl<D: DataSet + 'static> GpuiTableDelegate<D> {
     // Convenience methods for direct access without App context
     pub fn rows_count(&self) -> usize {
         let store = self.store.clone();
-        self.block_on(async move {
-            match store.row_count().await {
-                Ok(count) => count,
-                Err(_) => 0,
-            }
-        })
+        self.block_on(async move { store.row_count().await.unwrap_or_default() })
     }
 
     pub fn columns_count(&self) -> usize {
@@ -107,37 +102,25 @@ impl<D: DataSet + 'static> TableDelegate for GpuiTableDelegate<D> {
         }
 
         let store = self.store.clone();
-        let count = self.block_on(async move {
-            match store.row_count().await {
-                Ok(count) => count,
-                Err(_) => 0,
-            }
-        });
-
-        count
+        self.block_on(async move { store.row_count().await.unwrap_or_default() })
     }
 
-    fn column(&self, col_ix: usize, _cx: &App) -> &Column {
-        static FALLBACK_COLUMN: std::sync::LazyLock<Column> =
-            std::sync::LazyLock::new(|| Column::new("data", "Data").width(px(150.)));
-
+    fn column(&self, col_ix: usize, _cx: &App) -> Column {
         let store = self.store.clone();
-        if let Ok(columns) = self.block_on(async move { store.column_info().await }) {
-            if columns.get(col_ix).is_some() {
-                &FALLBACK_COLUMN
-            } else {
-                &FALLBACK_COLUMN
-            }
-        } else {
-            &FALLBACK_COLUMN
-        }
+        let (id, label) = self
+            .block_on(async move { store.column_info().await })
+            .ok()
+            .and_then(|cols| cols.into_iter().nth(col_ix))
+            .map(|col| (col.name.clone(), col.name))
+            .unwrap_or_else(|| (format!("col_{col_ix}"), format!("Column {col_ix}")));
+        Column::new(id, label).width(px(150.))
     }
 
     fn render_th(
-        &self,
+        &mut self,
         col_ix: usize,
         _window: &mut Window,
-        _cx: &mut Context<Table<Self>>,
+        _cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
         let store = self.store.clone();
         let column_name = self.block_on(async move {
@@ -154,11 +137,11 @@ impl<D: DataSet + 'static> TableDelegate for GpuiTableDelegate<D> {
     }
 
     fn render_td(
-        &self,
+        &mut self,
         row_ix: usize,
         col_ix: usize,
         _window: &mut Window,
-        _cx: &mut Context<Table<Self>>,
+        _cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
         let store = self.store.clone();
         let cell_text = self.block_on(async move {
@@ -172,10 +155,10 @@ impl<D: DataSet + 'static> TableDelegate for GpuiTableDelegate<D> {
     }
 
     fn render_tr(
-        &self,
+        &mut self,
         row_ix: usize,
         _window: &mut Window,
-        _cx: &mut Context<Table<Self>>,
+        _cx: &mut Context<TableState<Self>>,
     ) -> gpui::Stateful<gpui::Div> {
         div().id(row_ix)
     }
@@ -184,21 +167,17 @@ impl<D: DataSet + 'static> TableDelegate for GpuiTableDelegate<D> {
         false
     }
 
-    fn is_eof(&self, _cx: &App) -> bool {
-        true
-    }
-
     fn load_more_threshold(&self) -> usize {
         0
     }
 
-    fn load_more(&mut self, _window: &mut Window, _cx: &mut Context<Table<Self>>) {}
+    fn load_more(&mut self, _window: &mut Window, _cx: &mut Context<TableState<Self>>) {}
 
     fn visible_rows_changed(
         &mut self,
         _range: std::ops::Range<usize>,
         _window: &mut Window,
-        _cx: &mut Context<Table<Self>>,
+        _cx: &mut Context<TableState<Self>>,
     ) {
     }
 
@@ -206,7 +185,7 @@ impl<D: DataSet + 'static> TableDelegate for GpuiTableDelegate<D> {
         &mut self,
         _range: std::ops::Range<usize>,
         _window: &mut Window,
-        _cx: &mut Context<Table<Self>>,
+        _cx: &mut Context<TableState<Self>>,
     ) {
     }
 }
