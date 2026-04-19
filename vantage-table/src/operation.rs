@@ -110,37 +110,7 @@ pub trait Operation<T>: Expressive<T> {
             vec![ExpressiveEnum::Nested(self.expr())],
         )
     }
-
-    /// Creates a NULL check condition: field IS NULL
-    fn is_null(&self) -> Expression<T> {
-        Expression::new("{} IS NULL", vec![ExpressiveEnum::Nested(self.expr())])
-    }
-
-    /// Creates a NOT NULL check condition: field IS NOT NULL
-    fn is_not_null(&self) -> Expression<T> {
-        Expression::new("{} IS NOT NULL", vec![ExpressiveEnum::Nested(self.expr())])
-    }
 }
 
 /// Blanket implementation: any type that implements `Expressive<T>` gets `Operation<T>` for free.
 impl<T, S: Expressive<T>> Operation<T> for S {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::column::core::Column;
-
-    #[test]
-    fn test_is_null() {
-        let deleted_at = Column::<String>::new("deleted_at");
-        let expr = deleted_at.is_null();
-        assert_eq!(expr.preview(), "deleted_at IS NULL");
-    }
-
-    #[test]
-    fn test_is_not_null() {
-        let email = Column::<String>::new("email");
-        let expr = email.is_not_null();
-        assert_eq!(expr.preview(), "email IS NOT NULL");
-    }
-}

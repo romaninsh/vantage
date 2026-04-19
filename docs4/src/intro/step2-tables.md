@@ -159,7 +159,7 @@ let table = Product::table(db);
 
 // Read — list all, get one by ID
 let all = table.list().await?;             // IndexMap<String, Product>
-let pie = table.get("pie").await?;         // Product
+let pie = table.get("pie").await?;         // Option<Product>
 
 // Create — insert with a known ID
 let muffin = Product { name: "Muffin".into(), price: 175 };
@@ -174,9 +174,10 @@ table.delete(&"muffin".to_string()).await?;
 ```
 
 That's it. `list()` returns an `IndexMap<Id, Product>` — ordered and keyed by ID. `get()` returns
-the entity or an error if the ID doesn't exist. There's also `get_some()` which returns `Option` for
-when you're not sure there are any records, and `insert_return_id()` for when you want the database
-to generate the ID.
+`Option<Product>` — `None` when the ID doesn't exist, so you can pattern-match or `.ok_or(...)` into
+your own not-found error. There's also `get_some()` which returns an `(Id, Product)` pair (still
+`Option`-wrapped) for sampling, and `insert_return_id()` for when you want the database to generate
+the ID.
 
 ```admonish tip title="Idempotent operations"
 Try duplicating the `replace()` and `delete()` calls — the result is the same. Replacing

@@ -3952,7 +3952,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "async-trait",
  "chrono",

@@ -400,7 +400,7 @@ where
                 let f = f.clone();
                 move |Path(params): Path<Params>| async move {
                     let id = params["id"].clone();
-                    let entity = f(db(), &params).get(&id).await.unwrap();
+                    let entity = f(db(), &params).get(&id).await.unwrap().unwrap();
                     Json(entity)
                 }
             })
@@ -569,26 +569,33 @@ impl IntoResponse for ApiError {
 
 impl From<VantageError> for ApiError {
     fn from(e: VantageError) -> Self {
-        let message = e.to_string();
-        let status = if message.contains("no row found") {
-            StatusCode::NOT_FOUND
-        } else {
-            StatusCode::INTERNAL_SERVER_ERROR
-        };
         eprintln!("API error: {:?}", e);
-        Self { status, message }
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: e.to_string(),
+        }
+    }
+}
+
+fn not_found(id: &str) -> ApiError {
+    ApiError {
+        status: StatusCode::NOT_FOUND,
+        message: format!("not found: {}", id),
     }
 }
 
 type ApiResult<T> = Result<T, ApiError>;
 ```
 
-Two things earn their keep:
+Three things earn their keep:
 
 - **`IntoResponse`** makes `ApiError` returnable from a handler; axum calls `into_response()`
   to assemble status, headers, and body.
-- **`From<VantageError>`** lets us use `?` inside a handler. Every `.await?` now short-circuits
-  to an `ApiError` that axum will render for us.
+- **`From<VantageError>`** lets us use `?` inside a handler — every `.await?` short-circuits
+  to an `ApiError` mapped to a 500, which axum will render for us.
+- **`not_found(id)`** is how we build a 404 explicitly. Vantage's `get` returns
+  `Option<E>`, so we `.ok_or_else(|| not_found(&id))?` the missing case straight into a 404
+  — no error-message string-matching, no brittleness.
 
 With that in place, the `unwrap`s inside `crud` turn into `?`, and each handler returns
 `ApiResult<T>`:
@@ -604,21 +611,36 @@ get({
 })
 ```
 
-Do the same for the other four (`post`, `get /{id}`, `patch`, `delete`) — drop the
-`.unwrap()`, add `?`, wrap the happy path in `ApiResult::Ok(...)`. Handler bodies stay three
-lines long.
+For the `GET /{id}` handler, convert the `Option` into a 404 at the handler:
+
+```rust
+get({
+    let f = f.clone();
+    move |Path(params): Path<Params>| async move {
+        let id = params["id"].clone();
+        let entity = f(db(), &params)
+            .get(id.clone())
+            .await?
+            .ok_or_else(|| not_found(&id))?;
+        ApiResult::Ok(Json(entity))
+    }
+})
+```
+
+Do the same shape for `post`, `patch`, `delete` — drop the `.unwrap()`, add `?`, wrap the
+happy path in `ApiResult::Ok(...)`. Handlers that don't read by id just need the `?`.
 
 Try a few error cases:
 
 ```sh
 curl -w "\nstatus=%{http_code}\n" http://localhost:3001/categories/999
-# {"error":"get_table_value: no row found (id: \"999\")"}
+# {"error":"not found: 999"}
 # status=404
 
 curl -w "\nstatus=%{http_code}\n" -X PATCH http://localhost:3001/categories/999 \
   -H 'content-type: application/json' -d '{"name":"Ghost"}'
-# {"error":"get_table_value: no row found (id: \"999\")"}
-# status=404
+# {"error":"patch_table_value: no row found (id: \"999\")"}
+# status=500
 
 curl -w "\nstatus=%{http_code}\n" -X POST http://localhost:3001/categories \
   -H 'content-type: application/json' -d '{not-json}'
@@ -629,20 +651,19 @@ curl -w "\nstatus=%{http_code}\n" -X DELETE http://localhost:3001/categories/999
 # status=204
 ```
 
-Missing ids produce 404s with a JSON body the client can show to a user. The malformed body
-gets axum's built-in 400 for free. `DELETE` on a missing id still returns 204 — vantage's
-`delete` is idempotent, and "the resource is gone" is true whether or not it was ever there.
+Missing ids produce 404s with a clean JSON body. The malformed body gets axum's built-in 400
+for free. `DELETE` on a missing id still returns 204 — vantage's `delete` is idempotent, and
+"the resource is gone" is true whether or not it was ever there. `PATCH` on a missing id
+still 500s for now — patching doesn't go through `get`, so there's no `Option` to intercept;
+adding a pre-flight `get`-and-`ok_or(not_found)` before the `patch` call would give you 404
+there too.
 
-```admonish info title="Why match on the error message?"
-`VantageError` is a flat struct — it has a message, a location, and a context map, but no
-typed discriminant you could match against. "Not-found" errors happen to carry the string
-`"no row found"` in their message, so that's what we key on.
-
-It's slightly brittle: if vantage ever rewrites that message, every API using this pattern
-silently downgrades 404s to 500s. A stronger guarantee would require vantage exposing an
-`ErrorKind` enum, or for the handler to detect missing rows explicitly — narrow the table by
-id and call `get_some()`, where `None` means absent. For this tutorial the string match is
-good enough; production code with strict SLAs should prefer the explicit `get_some` path.
+```admonish info title="Why not match on the error message?"
+An earlier draft of this tutorial matched `e.to_string().contains("no row found")` to
+decide between 404 and 500 — brittle, because it hard-codes a vantage-internal error
+string. Once `ReadableDataSet::get` switched to `Result<Option<E>>`, the handler can map
+missing rows explicitly with `.ok_or_else(|| not_found(&id))?`. Errors are errors, misses
+are `None` — no string-matching required.
 ```
 
 ```admonish info title="Logging with {:?} on the server side"

@@ -273,6 +273,30 @@ macro_rules! define_sql_operation {
                 );
                 $condition::from_typed(expr)
             }
+
+            /// `field IS NULL`
+            fn is_null(&self) -> $condition
+            where
+                Self: Sized,
+            {
+                use $crate::vantage_expressions::Expression;
+                use $crate::vantage_expressions::traits::expressive::ExpressiveEnum;
+                let expr: Expression<T> =
+                    Expression::new("{} IS NULL", vec![ExpressiveEnum::Nested(self.expr())]);
+                $condition::from_typed(expr)
+            }
+
+            /// `field IS NOT NULL`
+            fn is_not_null(&self) -> $condition
+            where
+                Self: Sized,
+            {
+                use $crate::vantage_expressions::Expression;
+                use $crate::vantage_expressions::traits::expressive::ExpressiveEnum;
+                let expr: Expression<T> =
+                    Expression::new("{} IS NOT NULL", vec![ExpressiveEnum::Nested(self.expr())]);
+                $condition::from_typed(expr)
+            }
         }
 
         /// Blanket: any `Expressive<T>` where `T: Into<AnyType>` gets the
