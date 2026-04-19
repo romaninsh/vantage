@@ -25,12 +25,10 @@
 - [x] **Remove `delete`/`delete_all` from `WritableDataSet`** — `WritableValueSet` is the canonical
       place for deletion (doesn't require entity type). Having both causes ambiguity when calling
       `table.delete()`. Keep only in `WritableValueSet`.
-- [ ] **Change `ReadableDataSet::get(id)` to return `Result<Option<E>>`** — current contract
-      returns `Err` when the row is missing, which forces consumers (e.g. the axum tutorial's
-      `From<VantageError> for ApiError` impl) to string-match `"no row found"` to produce 404s.
-      Options: (a) additive — add `get_opt(id) -> Result<Option<E>>`, leave `get` as-is; (b) full
-      contract change — `get` itself returns `Result<Option<E>>`. Preference: (a) first, migrate
-      callers over time; `Option` is the Rust-native way to express "lookup missed".
+- [x] **Change `ReadableDataSet::get(id)` to return `Result<Option<E>>`** — went with the full
+      contract change. `ReadableValueSet::get_value` and the per-backend `get_table_value`
+      helpers flipped the same way. `ActiveEntitySet::get_entity` used to swallow errors as
+      `Ok(None)` — now propagates them. axum tutorial's `contains("no row found")` hack gone.
 - [ ] **Decouple `column_table_values_expr` from `ExprDataSource`** — the method returns
       `AssociatedExpression` which forces `ExprDataSource` dependency. Consider moving to a
       sub-trait so non-SQL backends don't carry dead code. SQL backends use it internally in
