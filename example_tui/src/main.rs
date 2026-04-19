@@ -1,14 +1,15 @@
-use bakery_model3::*;
+use bakery_model3::{Client, connect_surrealdb, surrealdb};
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use dataset_ui_adapters::{ratatui_adapter::RatatuiTableAdapter, TableStore, VantageTableAdapter};
 use ratatui::{
+    DefaultTerminal, Frame,
     layout::{Constraint, Layout, Margin, Rect},
     style::{Color, Style},
     text::Text,
     widgets::{Block, BorderType, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
-    DefaultTerminal, Frame,
 };
+use vantage_table::any::AnyTable;
 
 const INFO_TEXT: [&str; 2] = [
     "(Esc) quit | (↑) move up | (↓) move down",
@@ -122,19 +123,16 @@ impl<D: dataset_ui_adapters::DataSet + 'static> App<D> {
 async fn main() -> Result<()> {
     color_eyre::install()?;
 
-    // Connect to SurrealDB and get client table
-    bakery_model3::connect_surrealdb()
+    connect_surrealdb()
         .await
         .expect("Failed to connect to SurrealDB");
-    let client_table = Client::table();
+    let client_table = AnyTable::from_table(Client::surreal_table(surrealdb()));
 
-    // Create the dataset and table store
     let dataset = VantageTableAdapter::new(client_table).await;
     let store = TableStore::new(dataset);
 
-    println!("Starting Bakery Model 3 - Ratatui Client List...");
+    println!("Starting Bakery Model 3 — Ratatui Client List (SurrealDB)");
     println!("Controls: ↑/↓ navigate, q/Esc to quit, r to refresh");
-    println!("Real SurrealDB data using Vantage 0.3 architecture");
 
     // Create and run the app
     let terminal = ratatui::init();

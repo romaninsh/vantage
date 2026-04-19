@@ -1,20 +1,22 @@
-use bakery_model3::*;
-use dataset_ui_adapters::{gpui_adapter::GpuiTableDelegate, TableStore, VantageTableAdapter};
+use bakery_model3::{Client, connect_surrealdb, surrealdb};
+use dataset_ui_adapters::{TableStore, VantageTableAdapter, gpui_adapter::GpuiTableDelegate};
 use gpui::*;
 use gpui_component::{
+    ActiveTheme, ContextModal as _, Root, StyledExt,
     button::{Button, ButtonVariants},
     checkbox::Checkbox,
     form::{form_field, v_form},
     input::{InputState, TextInput},
     modal::Modal,
     table::Table,
-    v_flex, ActiveTheme, ContextModal as _, Root, StyledExt,
+    v_flex,
 };
+use vantage_table::any::AnyTable;
 
 actions!(example_gpui, [Quit, AddClient]);
 
 struct TableApp {
-    table: Entity<Table<GpuiTableDelegate<VantageTableAdapter<SurrealDB, Client>>>>,
+    table: Entity<Table<GpuiTableDelegate<VantageTableAdapter>>>,
     name_input: Entity<InputState>,
     email_input: Entity<InputState>,
     contact_input: Entity<InputState>,
@@ -25,7 +27,7 @@ struct TableApp {
 
 impl TableApp {
     fn new(
-        table: Entity<Table<GpuiTableDelegate<VantageTableAdapter<SurrealDB, Client>>>>,
+        table: Entity<Table<GpuiTableDelegate<VantageTableAdapter>>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -64,7 +66,7 @@ impl Render for TableApp {
                 .child(
                     div()
                         .text_color(cx.theme().muted_foreground)
-                        .child("Real SurrealDB data using Vantage 0.3 architecture"),
+                        .child("Real SurrealDB data"),
                 )
                 .child(
                     div()
@@ -86,14 +88,12 @@ impl TableApp {
     fn show_add_client_modal(&mut self, _cx: &mut Context<Self>) {
         println!("Modal function called - this will be implemented with a simple overlay");
 
-        // For now, let's just simulate the action
         let new_client = Client {
             name: "Test Client".to_string(),
             email: "test@example.com".to_string(),
             contact_details: "555-1234".to_string(),
             is_paying_client: true,
-            bakery: "test_bakery".to_string(),
-            metadata: None,
+            bakery_id: Some("test_bakery".to_string()),
         };
 
         dbg!(&new_client);
@@ -101,10 +101,9 @@ impl TableApp {
 }
 
 fn main() {
-    // Initialize SurrealDB before starting GPUI
     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
     rt.block_on(async {
-        bakery_model3::connect_surrealdb()
+        connect_surrealdb()
             .await
             .expect("Failed to connect to SurrealDB");
     });
@@ -149,7 +148,7 @@ fn main() {
                 ..Default::default()
             };
 
-            let client_table = Client::table();
+            let client_table = AnyTable::from_table(Client::surreal_table(surrealdb()));
             let dataset = VantageTableAdapter::new(client_table).await;
             let store = TableStore::new(dataset);
             let delegate = GpuiTableDelegate::new(store);
