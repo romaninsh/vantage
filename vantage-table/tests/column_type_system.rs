@@ -322,16 +322,12 @@ impl TableSource for Type3TableSource {
         &self,
         _table: &Table<Self, E>,
         id: &Self::Id,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Option<Record<Self::Value>>>
     where
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        if let Some(row) = self.data.get(*id) {
-            Ok(Record::from_indexmap(row.clone()))
-        } else {
-            Err(vantage_core::error!("Record not found", id = id))
-        }
+        Ok(self.data.get(*id).cloned().map(Record::from_indexmap))
     }
 
     async fn get_table_some_value<E>(

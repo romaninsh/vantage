@@ -167,7 +167,7 @@ impl ReadableValueSet for AnyTable {
         self.inner.list_values().await
     }
 
-    async fn get_value(&self, id: &Self::Id) -> Result<Record<Self::Value>> {
+    async fn get_value(&self, id: &Self::Id) -> Result<Option<Record<Self::Value>>> {
         self.inner.get_value(id).await
     }
 
@@ -350,14 +350,14 @@ where
             .collect())
     }
 
-    async fn get_value(&self, id: &String) -> Result<Record<Value>> {
+    async fn get_value(&self, id: &String) -> Result<Option<Record<Value>>> {
         let native_id: T::Id = id.clone().into();
         let rec = self
             .inner
             .data_source()
             .get_table_value(&self.inner, &native_id)
             .await?;
-        Ok(Self::convert_record(rec))
+        Ok(rec.map(Self::convert_record))
     }
 
     async fn get_some_value(&self) -> Result<Option<(String, Record<Value>)>> {

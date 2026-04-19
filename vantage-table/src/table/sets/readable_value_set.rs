@@ -16,7 +16,7 @@ impl<T: TableSource, E: Entity<T::Value>> ReadableValueSet for Table<T, E> {
         self.data_source().list_table_values(self).await
     }
 
-    async fn get_value(&self, id: &Self::Id) -> Result<Record<Self::Value>> {
+    async fn get_value(&self, id: &Self::Id) -> Result<Option<Record<Self::Value>>> {
         self.data_source().get_table_value(self, id).await
     }
 
@@ -67,13 +67,17 @@ mod tests {
         assert_eq!(record_1["age"], json!(30));
 
         // Test get_value with existing ID
-        let value_2 = table.get_value(&"2".to_string()).await.unwrap();
+        let value_2 = table
+            .get_value(&"2".to_string())
+            .await
+            .unwrap()
+            .expect("row 2");
         assert_eq!(value_2["name"], json!("Bob"));
         assert_eq!(value_2["age"], json!(25));
 
         // Test get_value with non-existing ID
-        let result = table.get_value(&"999".to_string()).await;
-        assert!(result.is_err());
+        let result = table.get_value(&"999".to_string()).await.unwrap();
+        assert!(result.is_none());
 
         // Test get_some_value
         let some_value = table.get_some_value().await.unwrap();

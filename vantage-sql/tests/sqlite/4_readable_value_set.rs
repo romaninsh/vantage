@@ -69,7 +69,8 @@ async fn test_get_value_product() {
     let record = table
         .get_value(&"delorean_donut".to_string())
         .await
-        .unwrap();
+        .unwrap()
+        .expect("delorean_donut exists");
     assert_eq!(
         record["name"].try_get::<String>(),
         Some("DeLorean Doughnut".to_string())

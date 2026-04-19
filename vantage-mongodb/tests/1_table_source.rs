@@ -99,7 +99,7 @@ async fn test_get_value_by_id() {
     ]);
     table.insert_value(&id, &rec).await.unwrap();
 
-    let fetched = table.get_value(&id).await.unwrap();
+    let fetched = table.get_value(&id).await.unwrap().expect("row exists");
     assert_eq!(fetched["name"].try_get::<String>(), Some("Tart".into()));
 
     teardown(&db, &db_name).await;
@@ -199,7 +199,7 @@ async fn test_replace() {
     ]);
     table.replace_value(&id, &replacement).await.unwrap();
 
-    let fetched = table.get_value(&id).await.unwrap();
+    let fetched = table.get_value(&id).await.unwrap().expect("row exists");
     assert_eq!(fetched["name"].try_get::<String>(), Some("New".into()));
     assert_eq!(fetched["price"].try_get::<i64>(), Some(99));
 
@@ -223,7 +223,7 @@ async fn test_patch() {
     let patch = record(&[("price", AnyMongoType::new(75i64))]);
     table.patch_value(&id, &patch).await.unwrap();
 
-    let fetched = table.get_value(&id).await.unwrap();
+    let fetched = table.get_value(&id).await.unwrap().expect("row exists");
     assert_eq!(fetched["name"].try_get::<String>(), Some("Original".into()));
     assert_eq!(fetched["price"].try_get::<i64>(), Some(75));
     assert_eq!(fetched["calories"].try_get::<i64>(), Some(200));
@@ -278,7 +278,7 @@ async fn test_insert_return_id() {
     ]);
     let id = table.insert_return_id_value(&rec).await.unwrap();
 
-    let fetched = table.get_value(&id).await.unwrap();
+    let fetched = table.get_value(&id).await.unwrap().expect("row exists");
     assert_eq!(fetched["name"].try_get::<String>(), Some("Auto".into()));
 
     teardown(&db, &db_name).await;

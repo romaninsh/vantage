@@ -14,16 +14,9 @@ where
         Ok(table)
     }
 
-    async fn get_value(&self, id: &Self::Id) -> crate::traits::Result<Record<Self::Value>> {
+    async fn get_value(&self, id: &Self::Id) -> crate::traits::Result<Option<Record<Self::Value>>> {
         let table = self.data_source.get_or_create_table(&self.table_name);
-
-        match table.get(id) {
-            Some(record) => Ok(record.clone()),
-            None => Err(vantage_core::util::error::vantage_error!(
-                "Record with id '{}' not found",
-                id
-            )),
-        }
+        Ok(table.get(id).cloned())
     }
 
     async fn get_some_value(
@@ -64,8 +57,8 @@ mod tests {
         let ds = ImDataSource::new();
         let table = ImTable::<User>::new(&ds, "users");
 
-        let result = table.get_value(&"nonexistent".to_string()).await;
-        assert!(result.is_err());
+        let result = table.get_value(&"nonexistent".to_string()).await.unwrap();
+        assert!(result.is_none());
     }
 
     #[tokio::test]

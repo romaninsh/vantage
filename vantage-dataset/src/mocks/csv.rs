@@ -148,12 +148,14 @@ where
         Ok(records)
     }
 
-    async fn get(&self, id: impl Into<Self::Id> + Send) -> Result<T> {
+    async fn get(&self, id: impl Into<Self::Id> + Send) -> Result<Option<T>> {
         let id = id.into();
-        let record = self.get_value(&id).await?;
+        let Some(record) = self.get_value(&id).await? else {
+            return Ok(None);
+        };
         let entity = T::try_from_record(&record)
             .map_err(|_| vantage_error!("Failed to convert record to entity"))?;
-        Ok(entity)
+        Ok(Some(entity))
     }
 
     async fn get_some(&self) -> Result<Option<(Self::Id, T)>> {
@@ -203,7 +205,7 @@ where
         Ok(records)
     }
 
-    async fn get_value(&self, id: &Self::Id) -> Result<Record<Self::Value>> {
+    async fn get_value(&self, id: &Self::Id) -> Result<Option<Record<Self::Value>>> {
         let content = self
             .csv_ds
             .get_file_content(&self.filename)
@@ -229,11 +231,11 @@ where
                     }
                 }
 
-                return Ok(csv_record_map);
+                return Ok(Some(csv_record_map));
             }
         }
 
-        Err(vantage_error!("Record with index {} not found", id))
+        Ok(None)
     }
 
     async fn get_some_value(&self) -> Result<Option<(Self::Id, Record<Self::Value>)>> {

@@ -30,11 +30,14 @@ where
         Ok(entities)
     }
 
-    async fn get(&self, id: impl Into<Self::Id> + Send) -> Result<E> {
+    async fn get(&self, id: impl Into<Self::Id> + Send) -> Result<Option<E>> {
         let id = id.into();
-        let record = self.data_source().get_table_value(self, &id).await?;
-        E::try_from_record(&record)
-            .map_err(|_| vantage_core::error!("Failed to convert record to entity"))
+        let Some(record) = self.data_source().get_table_value(self, &id).await? else {
+            return Ok(None);
+        };
+        let entity = E::try_from_record(&record)
+            .map_err(|_| vantage_core::error!("Failed to convert record to entity"))?;
+        Ok(Some(entity))
     }
 
     async fn get_some(&self) -> Result<Option<(Self::Id, E)>> {
@@ -136,14 +139,14 @@ mod tests {
         assert_eq!(entity_1.age, 30);
 
         // Test get() with existing ID
-        let entity_2 = table.get("2".to_string()).await.unwrap();
+        let entity_2 = table.get("2".to_string()).await.unwrap().expect("row 2");
         assert_eq!(entity_2.id, Some("2".to_string()));
         assert_eq!(entity_2.name, "Bob");
         assert_eq!(entity_2.age, 25);
 
         // Test get() with non-existing ID
-        let result = table.get("999".to_string()).await;
-        assert!(result.is_err());
+        let result = table.get("999".to_string()).await.unwrap();
+        assert!(result.is_none());
 
         // Test get_some()
         let some_entity = table.get_some().await.unwrap();
@@ -179,6 +182,7 @@ mod tests {
         let result = table.list().await;
         assert!(result.is_err());
 
+        // Test get() with existing id but broken record — surfaces conversion error.
         let result = table.get("1".to_string()).await;
         assert!(result.is_err());
 

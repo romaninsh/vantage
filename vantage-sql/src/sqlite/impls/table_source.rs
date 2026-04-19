@@ -151,7 +151,7 @@ impl TableSource for SqliteDB {
         &self,
         table: &Table<Self, E>,
         id: &Self::Id,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Option<Record<Self::Value>>>
     where
         E: Entity<Self::Value>,
     {
@@ -166,8 +166,7 @@ impl TableSource for SqliteDB {
         let result = self.execute(&select.expr()).await?;
 
         let mut rows = parse_rows(result, &id_field_name)?;
-        rows.swap_remove(id)
-            .ok_or_else(|| error!("get_table_value: no row found", id = id.clone()))
+        Ok(rows.swap_remove(id))
     }
 
     async fn get_table_some_value<E>(
@@ -256,7 +255,9 @@ impl TableSource for SqliteDB {
             .with_record(record);
         self.execute(&insert.expr()).await?;
 
-        self.get_table_value(table, id).await
+        self.get_table_value(table, id)
+            .await?
+            .ok_or_else(|| error!("Inserted row disappeared", id = id.clone()))
     }
 
     async fn replace_table_value<E>(
@@ -286,7 +287,9 @@ impl TableSource for SqliteDB {
         );
         self.execute(&replace_expr).await?;
 
-        self.get_table_value(table, id).await
+        self.get_table_value(table, id)
+            .await?
+            .ok_or_else(|| error!("Row missing after replace", id = id.clone()))
     }
 
     async fn patch_table_value<E>(
@@ -310,7 +313,9 @@ impl TableSource for SqliteDB {
             .with_condition(id_condition);
         self.execute(&update.expr()).await?;
 
-        self.get_table_value(table, id).await
+        self.get_table_value(table, id)
+            .await?
+            .ok_or_else(|| error!("Row not found after patch", id = id.clone()))
     }
 
     async fn delete_table_value<E>(&self, table: &Table<Self, E>, id: &Self::Id) -> Result<()>

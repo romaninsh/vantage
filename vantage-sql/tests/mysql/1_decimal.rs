@@ -46,7 +46,11 @@ async fn try_round_trip(
         .replace(&id.to_string(), entity)
         .await
         .map_err(|e| e.to_string())?;
-    table.get(id).await.map_err(|e| e.to_string())
+    table
+        .get(id)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "row missing after replace".to_string())
 }
 
 fn dec(s: &str) -> Decimal {
@@ -246,7 +250,11 @@ async fn try_i64(
         .replace(&id.to_string(), entity)
         .await
         .map_err(|e| e.to_string())?;
-    table.get(id).await.map_err(|e| e.to_string())
+    table
+        .get(id)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "row missing after replace".to_string())
 }
 
 #[tokio::test]
@@ -356,7 +364,11 @@ async fn try_f64(
         .replace(&id.to_string(), entity)
         .await
         .map_err(|e| e.to_string())?;
-    table.get(id).await.map_err(|e| e.to_string())
+    table
+        .get(id)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "row missing after replace".to_string())
 }
 
 #[tokio::test]

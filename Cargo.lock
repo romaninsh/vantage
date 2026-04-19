@@ -3796,7 +3796,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vantage-api-client"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3816,7 +3816,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-pool"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -3865,7 +3865,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-csv"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "async-trait",
  "csv",
@@ -3883,7 +3883,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -3931,7 +3931,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-mongodb"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "async-trait",
  "bson",
@@ -3952,7 +3952,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3975,7 +3975,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "async-trait",
  "bakery_model3",
@@ -4003,7 +4003,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "async-stream",
  "async-trait",

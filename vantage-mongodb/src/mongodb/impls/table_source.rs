@@ -179,20 +179,22 @@ impl TableSource for MongoDB {
         &self,
         table: &Table<Self, E>,
         id: &Self::Id,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Option<Record<Self::Value>>>
     where
         E: Entity<Self::Value>,
     {
         let coll = self.doc_collection(table.table_name());
 
-        let d = coll
+        let Some(d) = coll
             .find_one(doc! { "_id": id })
             .await
             .map_err(|e| error!("MongoDB find_one failed", details = e.to_string()))?
-            .ok_or_else(|| error!("Document not found", id = id.to_string()))?;
+        else {
+            return Ok(None);
+        };
 
         let (_oid, record) = doc_to_record(d);
-        Ok(record)
+        Ok(Some(record))
     }
 
     async fn get_table_some_value<E>(
@@ -347,7 +349,9 @@ impl TableSource for MongoDB {
             .await
             .map_err(|e| error!("MongoDB insert_one failed", details = e.to_string()))?;
 
-        self.get_table_value(table, id).await
+        self.get_table_value(table, id)
+            .await?
+            .ok_or_else(|| error!("Inserted row disappeared", id = id.to_string()))
     }
 
     async fn replace_table_value<E>(
@@ -371,7 +375,9 @@ impl TableSource for MongoDB {
             .await
             .map_err(|e| error!("MongoDB replace_one failed", details = e.to_string()))?;
 
-        self.get_table_value(table, id).await
+        self.get_table_value(table, id)
+            .await?
+            .ok_or_else(|| error!("Replaced row disappeared", id = id.to_string()))
     }
 
     async fn patch_table_value<E>(
@@ -395,7 +401,9 @@ impl TableSource for MongoDB {
             .await
             .map_err(|e| error!("MongoDB update_one failed", details = e.to_string()))?;
 
-        self.get_table_value(table, id).await
+        self.get_table_value(table, id)
+            .await?
+            .ok_or_else(|| error!("Record not found after patch", id = id.to_string()))
     }
 
     async fn delete_table_value<E>(&self, table: &Table<Self, E>, id: &Self::Id) -> Result<()>

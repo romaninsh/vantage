@@ -55,7 +55,11 @@ async fn test_insert_value() {
     assert_eq!(result["name"].try_get::<String>().unwrap(), "Gamma");
 
     // Verify it's actually there
-    let fetched = table.get_value(&"c".to_string()).await.unwrap();
+    let fetched = table
+        .get_value(&"c".to_string())
+        .await
+        .unwrap()
+        .expect("c exists");
     assert_eq!(fetched["price"].try_get::<i64>().unwrap(), 30);
 }
 
@@ -66,7 +70,11 @@ async fn test_replace_value() {
     let rec = record(&[("name", "Alpha Replaced".into()), ("price", 99i64.into())]);
     table.replace_value(&"a".to_string(), &rec).await.unwrap();
 
-    let fetched = table.get_value(&"a".to_string()).await.unwrap();
+    let fetched = table
+        .get_value(&"a".to_string())
+        .await
+        .unwrap()
+        .expect("a exists");
     assert_eq!(
         fetched["name"].try_get::<String>().unwrap(),
         "Alpha Replaced"
@@ -82,7 +90,11 @@ async fn test_patch_value() {
     let partial = record(&[("price", 55i64.into())]);
     table.patch_value(&"a".to_string(), &partial).await.unwrap();
 
-    let fetched = table.get_value(&"a".to_string()).await.unwrap();
+    let fetched = table
+        .get_value(&"a".to_string())
+        .await
+        .unwrap()
+        .expect("a exists");
     assert_eq!(fetched["name"].try_get::<String>().unwrap(), "Alpha"); // unchanged
     assert_eq!(fetched["price"].try_get::<i64>().unwrap(), 55); // updated
 }
@@ -133,7 +145,7 @@ async fn test_insert_return_id_value() {
     let id = table.insert_return_id_value(&rec).await.unwrap();
     assert!(!id.is_empty());
 
-    let fetched = table.get_value(&id).await.unwrap();
+    let fetched = table.get_value(&id).await.unwrap().expect("inserted row");
     assert_eq!(
         fetched["message"].try_get::<String>().unwrap(),
         "hello world"

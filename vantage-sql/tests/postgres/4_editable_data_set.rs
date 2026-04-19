@@ -67,7 +67,7 @@ async fn test_insert() {
     assert_eq!(result.name, "Gamma");
     assert_eq!(result.price, 30);
 
-    let fetched = table.get("c").await.unwrap();
+    let fetched = table.get("c").await.unwrap().expect("row c");
     assert_eq!(fetched.name, "Gamma");
 }
 
@@ -81,7 +81,7 @@ async fn test_replace() {
     };
     table.replace(&"a".to_string(), &item).await.unwrap();
 
-    let fetched = table.get("a").await.unwrap();
+    let fetched = table.get("a").await.unwrap().expect("row a");
     assert_eq!(fetched.name, "Alpha Replaced");
     assert_eq!(fetched.price, 99);
 }
@@ -96,7 +96,7 @@ async fn test_patch() {
     };
     table.patch(&"a".to_string(), &partial).await.unwrap();
 
-    let fetched = table.get("a").await.unwrap();
+    let fetched = table.get("a").await.unwrap().expect("row a");
     assert_eq!(fetched.price, 55);
 }
 
@@ -151,7 +151,7 @@ async fn test_insert_return_id() {
     let id = table.insert_return_id(&item).await.unwrap();
     assert!(!id.is_empty());
 
-    let fetched = table.get(id).await.unwrap();
+    let fetched = table.get(id).await.unwrap().expect("inserted row");
     assert_eq!(fetched.name, "Auto");
     assert_eq!(fetched.price, 42);
 }

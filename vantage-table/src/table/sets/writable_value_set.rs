@@ -117,8 +117,8 @@ mod tests {
 
         // Test delete
         table.delete(&"2".to_string()).await.unwrap();
-        let result3 = table.get_value(&"2".to_string()).await;
-        assert!(result3.is_err()); // Should be deleted
+        let result3 = table.get_value(&"2".to_string()).await.unwrap();
+        assert!(result3.is_none()); // Should be deleted
 
         // Test delete non-existing ID should fail
         let result4 = table.delete(&"999".to_string()).await;

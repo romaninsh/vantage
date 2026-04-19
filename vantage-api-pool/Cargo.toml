@@ -1,7 +1,7 @@
 [package]
 edition = "2021"
 name = "vantage-api-pool"
-version = "0.1.0"
+version = "0.1.1"
 license = "MIT OR Apache-2.0"
 description = "Paginated REST API client pool for Vantage"
 
@@ -18,11 +18,11 @@ tokio-stream = "0.1"
 async-trait = "0.1"
 indexmap = { version = "2", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
-vantage-core = { path = "../vantage-core" }
-vantage-dataset = { path = "../vantage-dataset" }
-vantage-expressions = { path = "../vantage-expressions" }
-vantage-table = { path = "../vantage-table" }
-vantage-types = { path = "../vantage-types", features = ["serde"] }
+vantage-core = { version = "0.4", path = "../vantage-core" }
+vantage-dataset = { version = "0.4.1", path = "../vantage-dataset" }
+vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
+vantage-table = { version = "0.4.2", path = "../vantage-table" }
+vantage-types = { version = "0.4", path = "../vantage-types", features = ["serde"] }
 
 [dev-dependencies]
 anyhow = "1.0"

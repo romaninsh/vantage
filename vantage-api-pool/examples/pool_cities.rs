@@ -94,13 +94,19 @@ async fn main() -> Result<()> {
     print_table(&countries).await?;
 
     // Load a country and traverse to its cities
-    let argentina: Country = countries.get("Argentina").await?;
+    let argentina: Country = countries
+        .get("Argentina")
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Argentina not found"))?;
     let cities = argentina.ref_cities();
     println!("\nCities in {}:", argentina.name);
     print_table(&cities).await?;
 
     // Load a specific city
-    let rosario: City = cities.get("Rosario").await?;
+    let rosario: City = cities
+        .get("Rosario")
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Rosario not found"))?;
     println!("\nRosario population: {}", rosario.population);
 
     Ok(())
