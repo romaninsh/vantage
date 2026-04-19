@@ -1,6 +1,6 @@
 [package]
 name = "vantage-table"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Table, Column, and operation traits for the Vantage data framework"
@@ -19,7 +19,7 @@ doctest = false
 vantage-core = { version = "0.4", path = "../vantage-core" }
 vantage-types = { version = "0.4", path = "../vantage-types" }
 vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
-vantage-dataset = { version = "0.4.1", path = "../vantage-dataset" }
+vantage-dataset = { version = "0.4.2", path = "../vantage-dataset" }
 async-stream = "0.3"
 async-trait = "0.1"
 futures-core = "0.3"

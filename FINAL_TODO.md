@@ -163,9 +163,9 @@ collision logic are gone.
 0.4 has `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in_`, `in_list` on columns
 (`vantage-table/src/operation.rs`). Missing:
 
-- [ ] **`is()` / `is_not()` / NULL checks** — no `IS NULL` / `IS NOT NULL` on
-      the `Operations` trait. Legacy had `column.is(Value::Null)`. Grep for
-      `is_null`, `is_not_null`, `IS NULL` in `vantage-*/src/` returns nothing.
+- [x] **`is_null()` / `is_not_null()` / NULL checks** — added to the generic
+      `Operation` trait (SQL: `{} IS NULL` / `{} IS NOT NULL`) and to the
+      `MongoOperation` trait (BSON `{ field: null }` / `{ field: { $ne: null } }`).
 - [ ] **Nested condition composition** — legacy `Condition::from_condition()`
       let you build arbitrary AND/OR trees. Confirm whether 0.4 supports
       arbitrary nesting or only the flat AND-of-conditions attached to a table;
@@ -185,11 +185,10 @@ collision logic are gone.
 
 `ActiveEntity` in 0.4 (`vantage-dataset/src/record.rs`) has `.save()` but not:
 
-- [ ] **`reload()`** — refetch the entity from the datasource in place, for use
-      after external mutations.
-- [ ] **`delete()`** — delete the entity by id without reaching back to the
-      table. Currently callers have to remember the id and call
-      `table.delete(id)` themselves.
+- [x] **`reload()`** — refetches the entity in place via the stored id;
+      returns an error if the row is gone.
+- [x] **`delete()`** — deletes by the id the `ActiveEntity` already holds.
+      Callers no longer need to keep the id around separately.
 
 Legacy: `AssociatedEntity<T>` had both, plus `.id()`. (0.4's `ActiveEntity`
 stores the id internally; it's just not exposed as a convenience method.)

@@ -195,6 +195,89 @@ async fn test_bulk_record_processing() {
 }
 
 #[tokio::test]
+async fn test_active_entity_delete() {
+    let mock = MockTableSource::new().with_data(
+        "users",
+        vec![
+            serde_json::json!({"id": "1", "name": "Alice", "email": "alice@test.com", "active": true}),
+            serde_json::json!({"id": "2", "name": "Bob", "email": "bob@test.com", "active": true}),
+        ],
+    );
+
+    let table =
+        Table::<MockTableSource, EmptyEntity>::new("users", mock.await).into_entity::<TestUser>();
+
+    let alice = table.get_entity(&"1".to_string()).await.unwrap().unwrap();
+    alice.delete().await.unwrap();
+
+    let missing = table.get_entity(&"1".to_string()).await.unwrap();
+    assert!(missing.is_none());
+
+    // Other rows untouched.
+    let bob = table.get_entity(&"2".to_string()).await.unwrap();
+    assert!(bob.is_some());
+}
+
+#[tokio::test]
+async fn test_active_entity_reload() {
+    let mock = MockTableSource::new().with_data(
+        "users",
+        vec![
+            serde_json::json!({"id": "1", "name": "Alice", "email": "alice@test.com", "active": false}),
+        ],
+    );
+
+    let table =
+        Table::<MockTableSource, EmptyEntity>::new("users", mock.await).into_entity::<TestUser>();
+
+    let mut alice = table.get_entity(&"1".to_string()).await.unwrap().unwrap();
+    assert!(!alice.active);
+
+    // Simulate an external write
+    table
+        .replace(
+            &"1".to_string(),
+            &TestUser {
+                id: Some("1".to_string()),
+                name: "Alice".into(),
+                email: "alice@test.com".into(),
+                active: true,
+            },
+        )
+        .await
+        .unwrap();
+
+    // Our in-memory copy is stale
+    assert!(!alice.active);
+
+    alice.reload().await.unwrap();
+    assert!(alice.active);
+}
+
+#[tokio::test]
+async fn test_active_entity_reload_missing() {
+    let mock = MockTableSource::new().with_data(
+        "users",
+        vec![
+            serde_json::json!({"id": "1", "name": "Alice", "email": "alice@test.com", "active": false}),
+        ],
+    );
+
+    let table =
+        Table::<MockTableSource, EmptyEntity>::new("users", mock.await).into_entity::<TestUser>();
+
+    let mut alice = table.get_entity(&"1".to_string()).await.unwrap().unwrap();
+
+    // Delete via the table — the ActiveEntity's id is now orphaned.
+    WritableValueSet::delete(&table, &"1".to_string())
+        .await
+        .unwrap();
+
+    let result = alice.reload().await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
 async fn test_empty_table_record_methods() {
     let mock = MockTableSource::new().with_data("users", vec![]);
     let table =

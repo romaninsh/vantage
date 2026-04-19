@@ -137,6 +137,23 @@ pub trait MongoOperation<T>: Expressive<T> {
         let arr: Vec<Bson> = values.into_iter().map(to_bson_val).collect();
         MongoCondition::Doc(doc! { field_name(self): { "$in": arr } })
     }
+
+    /// `{ field: null }` — matches documents where the field is null **or missing**.
+    /// Mongo's `$eq: null` semantics, which is what most callers want.
+    fn is_null(&self) -> MongoCondition
+    where
+        Self: Sized,
+    {
+        MongoCondition::Doc(doc! { field_name(self): Bson::Null })
+    }
+
+    /// `{ field: { "$ne": null } }` — matches documents where the field exists and is non-null.
+    fn is_not_null(&self) -> MongoCondition
+    where
+        Self: Sized,
+    {
+        MongoCondition::Doc(doc! { field_name(self): { "$ne": Bson::Null } })
+    }
 }
 
 /// Blanket: any `Expressive<T>` gets `MongoOperation<T>` for free.
@@ -273,5 +290,29 @@ mod tests {
         let price = Column::<i64>::new("price");
         let cond: MongoCondition = price.gt(100i64);
         let _: MongoCondition = cond;
+    }
+
+    #[test]
+    fn test_is_null() {
+        let deleted_at = Column::<String>::new("deleted_at");
+        let cond = deleted_at.is_null();
+        match cond {
+            MongoCondition::Doc(doc) => {
+                assert_eq!(doc, doc! { "deleted_at": Bson::Null });
+            }
+            _ => panic!("expected Doc"),
+        }
+    }
+
+    #[test]
+    fn test_is_not_null() {
+        let email = Column::<String>::new("email");
+        let cond = email.is_not_null();
+        match cond {
+            MongoCondition::Doc(doc) => {
+                assert_eq!(doc, doc! { "email": { "$ne": Bson::Null } });
+            }
+            _ => panic!("expected Doc"),
+        }
     }
 }

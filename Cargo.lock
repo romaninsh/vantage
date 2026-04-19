@@ -3883,7 +3883,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -3931,7 +3931,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-mongodb"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "async-trait",
  "bson",
@@ -4003,7 +4003,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "async-stream",
  "async-trait",

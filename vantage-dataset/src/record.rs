@@ -1,6 +1,7 @@
-use crate::traits::{Result, WritableDataSet, WritableValueSet};
+use crate::traits::{ReadableDataSet, Result, WritableDataSet, WritableValueSet};
 use std::ops::{Deref, DerefMut};
-use vantage_types::{IntoRecord, Record, TryFromRecord};
+use vantage_core::util::error::vantage_error;
+use vantage_types::{Entity, IntoRecord, Record, TryFromRecord};
 
 /// A record represents a single entity with its ID, providing save functionality
 pub struct ActiveEntity<'a, D, E>
@@ -30,6 +31,36 @@ where
     /// Save the current state of the record back to the dataset
     pub async fn save(&self) -> Result<E> {
         self.dataset.replace(&self.id, &self.data).await
+    }
+}
+
+impl<'a, D, E> ActiveEntity<'a, D, E>
+where
+    D: WritableDataSet<E> + WritableValueSet + ?Sized,
+    E: Entity<D::Value> + Send + Sync + Clone,
+{
+    /// Delete this entity from the dataset.
+    pub async fn delete(&self) -> Result<()> {
+        self.dataset.delete(&self.id).await
+    }
+}
+
+impl<'a, D, E> ActiveEntity<'a, D, E>
+where
+    D: WritableDataSet<E> + ReadableDataSet<E> + ?Sized,
+    E: Entity<D::Value> + Send + Sync + Clone,
+{
+    /// Re-fetch the entity from the dataset, replacing the in-memory copy.
+    ///
+    /// Errors if the row has been deleted by someone else since we loaded it.
+    pub async fn reload(&mut self) -> Result<()> {
+        let fresh = self
+            .dataset
+            .get(self.id.clone())
+            .await?
+            .ok_or_else(|| vantage_error!("reload: row not found"))?;
+        self.data = fresh;
+        Ok(())
     }
 }
 
