@@ -1,22 +1,26 @@
 use bakery_model3::{connect_surrealdb, surrealdb, Client};
 use dataset_ui_adapters::{gpui_adapter::GpuiTableDelegate, TableStore, VantageTableAdapter};
 use gpui::*;
-use gpui_component::{button::Button, table::Table, v_flex, ActiveTheme, Root, StyledExt};
+use gpui_component::{
+    button::Button,
+    table::{DataTable, TableState},
+    v_flex, ActiveTheme, Root, StyledExt,
+};
 use vantage_table::any::AnyTable;
 
 actions!(example_gpui, [Quit, AddClient]);
 
 struct TableApp {
-    table: Entity<Table<GpuiTableDelegate<VantageTableAdapter>>>,
+    state: Entity<TableState<GpuiTableDelegate<VantageTableAdapter>>>,
 }
 
 impl TableApp {
     fn new(
-        table: Entity<Table<GpuiTableDelegate<VantageTableAdapter>>>,
+        state: Entity<TableState<GpuiTableDelegate<VantageTableAdapter>>>,
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Self {
-        Self { table }
+        Self { state }
     }
 }
 
@@ -57,7 +61,7 @@ impl Render for TableApp {
                             })),
                     ),
             )
-            .child(self.table.clone())
+            .child(DataTable::new(&self.state).stripe(true).bordered(true))
     }
 }
 
@@ -69,9 +73,7 @@ fn main() {
             .expect("Failed to connect to SurrealDB");
     });
 
-    let app = Application::new();
-
-    app.run(move |cx| {
+    gpui_platform::application().run(move |cx| {
         gpui_component::init(cx);
 
         // Set up quit action and key binding
@@ -80,11 +82,7 @@ fn main() {
             cx.quit();
         });
 
-        // Set up simple menu with just Quit
-        cx.set_menus(vec![Menu {
-            name: "Bakery Model 3".into(),
-            items: vec![MenuItem::action("Quit", Quit)],
-        }]);
+        cx.set_menus(vec![Menu::new("Bakery Model 3").items([MenuItem::action("Quit", Quit)])]);
 
         cx.activate(true);
 
@@ -116,10 +114,9 @@ fn main() {
 
             let window = cx
                 .open_window(options, |window, cx| {
-                    let table =
-                        cx.new(|cx| Table::new(delegate, window, cx).stripe(true).border(true));
-                    let view = cx.new(|cx| TableApp::new(table, window, cx));
-                    cx.new(|cx| Root::new(view.into(), window, cx))
+                    let state = cx.new(|cx| TableState::new(delegate, window, cx));
+                    let view = cx.new(|cx| TableApp::new(state, window, cx));
+                    cx.new(|cx| Root::new(view, window, cx))
                 })
                 .expect("failed to open window");
 
