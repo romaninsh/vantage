@@ -67,7 +67,11 @@ mod tests {
         assert_eq!(record_1["age"], json!(30));
 
         // Test get_value with existing ID
-        let value_2 = table.get_value(&"2".to_string()).await.unwrap().expect("row 2");
+        let value_2 = table
+            .get_value(&"2".to_string())
+            .await
+            .unwrap()
+            .expect("row 2");
         assert_eq!(value_2["name"], json!("Bob"));
         assert_eq!(value_2["age"], json!(25));
 

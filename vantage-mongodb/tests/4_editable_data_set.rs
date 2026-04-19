@@ -54,7 +54,11 @@ async fn test_insert() {
     assert_eq!(result["name"].try_get::<String>(), Some("Gamma".into()));
     assert_eq!(result["price"].try_get::<i64>(), Some(30));
 
-    let fetched = table.get_value(&MongoId::from("c")).await.unwrap().expect("row exists");
+    let fetched = table
+        .get_value(&MongoId::from("c"))
+        .await
+        .unwrap()
+        .expect("row exists");
     assert_eq!(fetched["name"].try_get::<String>(), Some("Gamma".into()));
 }
 

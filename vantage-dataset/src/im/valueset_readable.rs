@@ -14,10 +14,7 @@ where
         Ok(table)
     }
 
-    async fn get_value(
-        &self,
-        id: &Self::Id,
-    ) -> crate::traits::Result<Option<Record<Self::Value>>> {
+    async fn get_value(&self, id: &Self::Id) -> crate::traits::Result<Option<Record<Self::Value>>> {
         let table = self.data_source.get_or_create_table(&self.table_name);
         Ok(table.get(id).cloned())
     }
