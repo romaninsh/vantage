@@ -299,6 +299,21 @@ the following rules:
    this repository, keeping it clean and short, add important notes and
    learnings from chat sessions, if you think those are essential later.
 
+### Commit and PR style
+
+- **Titles**: short, lowercase, imperative — 3–6 words (`add vantage-table`,
+  `refactor refs`, `implement SurrealColumn`). Trivial fix-ups are just `fix` /
+  `fixes` / `fmt` / `clippy`.
+- **Bodies**: no fixed format, adapt to the change. For substantive work,
+  usually a sentence of background, then an example or short bullet list of
+  what's in it, plus a line on how it helps the framework user (new
+  capability, ergonomic win, removed footgun). Markup (bullets, backticked
+  identifiers, small snippets) is fine, but keep it brief. No `## Summary` /
+  `## Test plan` scaffolding.
+- **PRs**: same rules — short conversational title, short body, no generated
+  footers.
+- **Never** add `Co-Authored-By: Claude` or similar trailers.
+
 ## List of sub-crates and very brief description for each:
 
 ### Core Framework Crates
