@@ -1,206 +1,106 @@
+//! Python bindings for the bakery_model3 tables over SurrealDB.
+//!
+//! Exposes one Python class per entity (Bakery, Client, Order, Product), each
+//! supporting `count()` and `list_all()`. Tables are wrapped via `AnyTable` so
+//! the binding is decoupled from the SurrealDB backend type.
+
+use bakery_model3::{connect_surrealdb, surrealdb, Bakery, Client, Order, Product};
+use pyo3::exceptions::{PyConnectionError, PyRuntimeError};
 use pyo3::prelude::*;
-use rust_decimal::Decimal;
+use vantage_dataset::prelude::ReadableValueSet;
+use vantage_table::any::AnyTable;
 
-use bakery_model3::{
-    Bakery, Client, Order, Product,
-    ClientTable as ClientTableTrait,
-    connect_surrealdb, surrealdb
-};
-use vantage_core::Entity;
-use vantage_table::Table;
-use vantage_surrealdb::SurrealDB;
-
-// ===== Helper Functions =====
-
-/// Helper to get count of records for any table
-fn py_count_helper<E: Entity>(table: &Table<SurrealDB, E>, py: Python) -> PyResult<PyObject> {
-    let t = table.clone();
-    pyo3_asyncio::tokio::future_into_py(py, async move {
-        use vantage_table::traits::table_like::TableLike;
-        t.get_count().await
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    })
+fn any_client() -> AnyTable {
+    AnyTable::from_table(Client::surreal_table(surrealdb()))
 }
 
-/// Helper to list all records as JSON for any table
-fn py_list_helper<E: Entity>(table: &Table<SurrealDB, E>, py: Python) -> PyResult<PyObject> {
-    let t = table.clone();
-    pyo3_asyncio::tokio::future_into_py(py, async move {
-        use vantage_dataset::dataset::ReadableValueSet;
-        let data = t.list_values().await
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-
-        let json_strings: Vec<String> = data.into_iter()
-            .map(|(id, value)| format!(r#"{{"id": "{}", "data": {}}}"#, id, value))
-            .collect();
-        Ok(json_strings)
-    })
+fn any_bakery() -> AnyTable {
+    AnyTable::from_table(Bakery::surreal_table(surrealdb()))
 }
 
-/// Helper to add conditions (placeholder for now)
-fn py_add_condition_helper<E: Entity>(_table: &mut Table<SurrealDB, E>, _condition_expr: String) -> PyResult<()> {
-    // TODO: Parse condition_expr and add to table
-    Ok(())
+fn any_order() -> AnyTable {
+    AnyTable::from_table(Order::surreal_table(surrealdb()))
 }
 
-/// Macro to generate common table method invocations
-macro_rules! common_table_methods {
-    () => {
-        pub fn add_condition(&mut self, condition_expr: String) -> PyResult<()> {
-            py_add_condition_helper(&mut self.inner, condition_expr)
-        }
-        pub fn count(&self, py: Python) -> PyResult<PyObject> {
-            py_count_helper(&self.inner, py)
-        }
-        pub fn list_all(&self, py: Python) -> PyResult<PyObject> {
-            py_list_helper(&self.inner, py)
+fn any_product() -> AnyTable {
+    AnyTable::from_table(Product::surreal_table(surrealdb()))
+}
+
+fn to_py_err<E: std::fmt::Display>(e: E) -> PyErr {
+    PyRuntimeError::new_err(e.to_string())
+}
+
+async fn count_any(table: AnyTable) -> PyResult<i64> {
+    use vantage_table::traits::table_like::TableLike;
+    table.get_count().await.map_err(to_py_err)
+}
+
+async fn list_any(table: AnyTable) -> PyResult<Vec<String>> {
+    let records = table.list_values().await.map_err(to_py_err)?;
+    Ok(records
+        .into_iter()
+        .map(|(id, record)| {
+            let mut obj = serde_json::Map::new();
+            obj.insert("id".to_string(), serde_json::Value::String(id));
+            let mut data = serde_json::Map::new();
+            for (k, v) in record {
+                data.insert(k, v);
+            }
+            obj.insert("data".to_string(), serde_json::Value::Object(data));
+            serde_json::Value::Object(obj).to_string()
+        })
+        .collect())
+}
+
+macro_rules! py_table_class {
+    ($Name:ident, $factory:ident) => {
+        #[pyclass]
+        pub struct $Name;
+
+        #[pymethods]
+        impl $Name {
+            #[new]
+            fn new() -> Self {
+                Self
+            }
+
+            fn count<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+                pyo3_async_runtimes::tokio::future_into_py(py, async move {
+                    count_any($factory()).await
+                })
+            }
+
+            fn list_all<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+                pyo3_async_runtimes::tokio::future_into_py(
+                    py,
+                    async move { list_any($factory()).await },
+                )
+            }
         }
     };
 }
 
-// ===== Python Classes =====
+py_table_class!(PyClient, any_client);
+py_table_class!(PyBakery, any_bakery);
+py_table_class!(PyOrder, any_order);
+py_table_class!(PyProduct, any_product);
 
-/// Python wrapper for Client table
-#[pyclass]
-pub struct PyClient {
-    inner: Table<SurrealDB, Client>,
-}
-
-#[pymethods]
-impl PyClient {
-    #[new]
-    pub fn new() -> PyResult<Self> {
-        Ok(Self { inner: Client::table(surrealdb()) })
-    }
-
-    // Common table methods
-    common_table_methods!();
-
-    // Client-specific methods
-    pub fn get_paying_balance(&self, py: Python) -> PyResult<PyObject> {
-        let table = self.inner.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            let balance = table.get_paying_balance().await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-            Ok(balance.to_string())
-        })
-    }
-
-    pub fn ref_bakery(&self) -> PyResult<PyBakery> {
-        let bakery_table = self.inner.ref_bakery();
-        Ok(PyBakery { inner: bakery_table })
-    }
-
-    pub fn ref_orders(&self) -> PyResult<PyOrder> {
-        let orders_table = self.inner.ref_orders();
-        Ok(PyOrder { inner: orders_table })
-    }
-}
-
-/// Python wrapper for Bakery table
-#[pyclass]
-pub struct PyBakery {
-    inner: Table<SurrealDB, Bakery>,
-}
-
-#[pymethods]
-impl PyBakery {
-    #[new]
-    pub fn new() -> PyResult<Self> {
-        Ok(Self { inner: Bakery::table(surrealdb()) })
-    }
-
-    // Common table methods
-    common_table_methods!();
-
-    // Bakery-specific methods
-    pub fn ref_clients(&self) -> PyResult<PyClient> {
-        // TODO: Implement bakery -> clients relationship
-        // For now, return a new client table (should be filtered by bakery_id)
-        PyClient::new()
-    }
-
-    pub fn ref_products(&self) -> PyResult<PyProduct> {
-        // TODO: Implement bakery -> products relationship
-        PyProduct::new()
-    }
-}
-
-/// Python wrapper for Order table
-#[pyclass]
-pub struct PyOrder {
-    inner: Table<SurrealDB, Order>,
-}
-
-#[pymethods]
-impl PyOrder {
-    #[new]
-    pub fn new() -> PyResult<Self> {
-        Ok(Self { inner: Order::table(surrealdb()) })
-    }
-
-    // Common table methods
-    common_table_methods!();
-
-    // Order-specific methods (to be added)
-}
-
-/// Python wrapper for Product table
-#[pyclass]
-pub struct PyProduct {
-    inner: Table<SurrealDB, Product>,
-}
-
-#[pymethods]
-impl PyProduct {
-    #[new]
-    pub fn new() -> PyResult<Self> {
-        Ok(Self { inner: Product::table(surrealdb()) })
-    }
-
-    // Common table methods
-    common_table_methods!();
-
-    // Product-specific methods (to be added)
-}
-
-// ===== Database Connection Functions =====
-
-/// Initialize database connection
 #[pyfunction]
-pub fn init_database(py: Python) -> PyResult<PyObject> {
-    pyo3_asyncio::tokio::future_into_py(py, async {
-        connect_surrealdb().await
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyConnectionError, _>(e.to_string()))?;
+fn init_database<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    pyo3_async_runtimes::tokio::future_into_py(py, async {
+        connect_surrealdb()
+            .await
+            .map_err(|e| PyConnectionError::new_err(e.to_string()))?;
         Ok(())
     })
 }
 
-/// Initialize database with debug logging
-#[pyfunction]
-pub fn init_database_debug(py: Python) -> PyResult<PyObject> {
-    pyo3_asyncio::tokio::future_into_py(py, async {
-        bakery_model3::connect_surrealdb_with_debug(true).await
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyConnectionError, _>(e.to_string()))?;
-        Ok(())
-    })
-}
-
-/// Python module definition
 #[pymodule]
-fn example_python(py: Python, m: &PyModule) -> PyResult<()> {
-    // Setup async runtime
-    pyo3_asyncio::tokio::init(py);
-
-    // Individual model classes
+fn example_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyClient>()?;
     m.add_class::<PyBakery>()?;
     m.add_class::<PyOrder>()?;
     m.add_class::<PyProduct>()?;
-
-    // Utility functions
     m.add_function(wrap_pyfunction!(init_database, m)?)?;
-    m.add_function(wrap_pyfunction!(init_database_debug, m)?)?;
-
     Ok(())
 }

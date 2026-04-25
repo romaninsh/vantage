@@ -1,18 +1,19 @@
-use bakery_model3::*;
+use std::rc::Rc;
+
+use bakery_model3::{connect_surrealdb, surrealdb, Client};
 use dataset_ui_adapters::{slint_adapter::SlintTable, TableStore, VantageTableAdapter};
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
-use std::rc::Rc;
+use vantage_table::any::AnyTable;
 
 slint::include_modules!();
 
 #[tokio::main]
 async fn main() -> Result<(), slint::PlatformError> {
-    // Connect to SurrealDB and get client table
-    bakery_model3::connect_surrealdb()
+    connect_surrealdb()
         .await
         .expect("Failed to connect to SurrealDB");
 
-    let client_table = Client::table();
+    let client_table = AnyTable::from_table(Client::surreal_table(surrealdb()));
     let dataset = VantageTableAdapter::new(client_table).await;
     let store = TableStore::new(dataset);
     let table = SlintTable::new(store).await;
