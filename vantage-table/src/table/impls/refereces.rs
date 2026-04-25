@@ -27,7 +27,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         build_target: impl Fn(T) -> Table<T, E2> + Send + Sync + 'static,
     ) -> Self
     where
-        T::Value: Into<serde_json::Value> + From<serde_json::Value>,
+        T::Value: Into<ciborium::Value> + From<ciborium::Value>,
         T::Id: std::fmt::Display + From<String>,
     {
         let reference = HasOne::<T, E, E2>::new(foreign_key, build_target);
@@ -47,7 +47,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         build_target: impl Fn(T) -> Table<T, E2> + Send + Sync + 'static,
     ) -> Self
     where
-        T::Value: Into<serde_json::Value> + From<serde_json::Value>,
+        T::Value: Into<ciborium::Value> + From<ciborium::Value>,
         T::Id: std::fmt::Display + From<String>,
     {
         let reference = HasMany::<T, E, E2>::new(foreign_key, build_target);

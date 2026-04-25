@@ -152,3 +152,22 @@ impl From<serde_json::Value> for AnyMongoType {
         AnyMongoType::untyped(bson)
     }
 }
+
+// CBOR bridge for `AnyTable` interop. Round-trips via serde_json since
+// neither bson nor ciborium has a direct conversion path; both are
+// serde-friendly so the round-trip is short and lossy in the same way as
+// the JSON bridge above (binary, NaN, etc. fall back to their JSON
+// representation).
+impl From<AnyMongoType> for ciborium::Value {
+    fn from(val: AnyMongoType) -> Self {
+        let json: serde_json::Value = val.into();
+        ciborium::Value::serialized(&json).unwrap_or(ciborium::Value::Null)
+    }
+}
+
+impl From<ciborium::Value> for AnyMongoType {
+    fn from(val: ciborium::Value) -> Self {
+        let json: serde_json::Value = serde_json::to_value(&val).unwrap_or(serde_json::Value::Null);
+        AnyMongoType::from(json)
+    }
+}

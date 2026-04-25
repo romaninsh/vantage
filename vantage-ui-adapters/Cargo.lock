@@ -1334,6 +1334,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "ciborium"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42e69ffd6f0917f5c029256a24d0161db17cea3997d185db0d35926308770f0e"
+dependencies = [
+ "ciborium-io",
+ "ciborium-ll",
+ "serde",
+]
+
+[[package]]
+name = "ciborium-io"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05afea1e0a06c9be33d539b876f1ce3692f4afea2cb41f740e7743225ed1c757"
+
+[[package]]
+name = "ciborium-ll"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57663b653d948a338bfb3eeba9bb2fd5fcfaecb9e199e87e1eda4d9e8b240fd9"
+dependencies = [
+ "ciborium-io",
+ "half",
+]
+
+[[package]]
 name = "clang-sys"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1428,7 +1455,7 @@ version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af491d569909a7e4dee0ad7db7f5341fef5c614d5b8ec8cf765732aba3cff681"
 dependencies = [
- "unicode-width 0.1.14",
+ "unicode-width 0.2.2",
 ]
 
 [[package]]
@@ -10786,7 +10813,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "0.4.0"
+version = "0.4.2"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -10817,10 +10844,11 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.4.1"
+version = "0.4.3"
 dependencies = [
  "async-stream",
  "async-trait",
+ "ciborium",
  "futures-core",
  "indexmap 2.14.0",
  "mockall",
@@ -10839,6 +10867,7 @@ dependencies = [
 name = "vantage-types"
 version = "0.4.0"
 dependencies = [
+ "ciborium",
  "indexmap 2.14.0",
  "paste",
  "serde",

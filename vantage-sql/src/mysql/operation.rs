@@ -102,4 +102,18 @@ mod tests {
         let price = Column::<i64>::new("price");
         let _: MysqlCondition = price.gt(150i64);
     }
+
+    #[test]
+    fn test_is_null() {
+        let deleted_at = Column::<String>::new("deleted_at");
+        let cond = deleted_at.is_null();
+        assert_eq!(cond.into_expr().preview(), "deleted_at IS NULL");
+    }
+
+    #[test]
+    fn test_is_not_null() {
+        let email = Column::<String>::new("email");
+        let cond = email.is_not_null();
+        assert_eq!(cond.into_expr().preview(), "email IS NOT NULL");
+    }
 }

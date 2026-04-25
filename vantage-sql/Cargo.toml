@@ -1,6 +1,6 @@
 [package]
 name = "vantage-sql"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -21,8 +21,8 @@ vantage-types = { version = "0.4", path = "../vantage-types", features = ["serde
 vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
 paste = "1.0"
 
-vantage-dataset = { version = "0.4.1", path = "../vantage-dataset" }
-vantage-table = { version = "0.4.2", path = "../vantage-table" }
+vantage-dataset = { version = "0.4.2", path = "../vantage-dataset" }
+vantage-table = { version = "0.4.3", path = "../vantage-table" }
 async-trait = "0.1"
 sqlx = { version = "0.8", features = ["runtime-tokio", "rust_decimal", "uuid", "chrono"] }
 rust_decimal = "1"

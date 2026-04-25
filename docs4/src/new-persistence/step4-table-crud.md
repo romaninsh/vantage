@@ -155,12 +155,12 @@ hit — only the column and expression infrastructure you already implemented.
 
 - **`ReadableValueSet`** — returns raw `Record<Value>` (untyped storage values):
   - `list_values()` → all records as `IndexMap<Id, Record<Value>>`
-  - `get_value(id)` → single record by ID
+  - `get_value(id)` → `Option<Record<Value>>` — `None` if no record matches the id
   - `get_some_value()` → one arbitrary record (or `None` if empty)
 
 - **`ReadableDataSet<E>`** — returns deserialized entities (calls `E::try_from_record()` for you):
   - `list()` → all entities as `IndexMap<Id, E>`
-  - `get(id)` → single entity by ID
+  - `get(id)` → `Option<E>` — `None` if no entity matches the id
   - `get_some()` → one arbitrary entity
 
 Both traits delegate to three `TableSource` methods: `list_table_values`, `get_table_value`, and
@@ -171,8 +171,9 @@ Both traits delegate to three `TableSource` methods: `list_table_values`, `get_t
 3. Execute via `self.execute(&select.expr())`
 4. Parse the result — split each row into an ID and a `Record`
 
-For `get_table_value`, add a WHERE condition on the id field. For `get_table_some_value`, set
-`LIMIT 1` and return the first row (or `None` if empty).
+For `get_table_value`, add a WHERE condition on the id field and return `Ok(None)` when the
+lookup misses — errors are reserved for actual connection or parse failures.
+For `get_table_some_value`, set `LIMIT 1` and return the first row (or `None` if empty).
 
 Write tests for both `ReadableValueSet` and `ReadableDataSet` in separate files — import the traits
 from `vantage_dataset` and call `list_values()`, `get_value()`, `get_some_value()`, `list()`,
