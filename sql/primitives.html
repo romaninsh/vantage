@@ -36,7 +36,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-d9838aed.js";
+            window.path_to_searchindex_js = "../searchindex-4cf84826.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-f0872746.js"></script>
@@ -207,7 +207,7 @@ the underlying struct directly.</p>
 
 <h2 id="or_--and_--logical-combinators"><a class="header" href="#or_--and_--logical-combinators"><code>or_()</code> / <code>and_()</code> — Logical Combinators</a></h2>
 <p>By default, multiple calls to <code>.with_condition()</code> combine with <code>AND</code>. When you need <code>OR</code>, use
-<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/logical/fn.or_.html"><code>or_()</code></a>:</p>
+<a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/logical/fn.or_.html"><code>or_()</code></a>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use vantage_sql::primitives::*;
@@ -215,7 +215,7 @@ the underlying struct directly.</p>
 // role = 'admin' OR role = 'superuser'
 let cond = or_(ident("role").eq("admin"), ident("role").eq("superuser"));
 <span class="boring">}</span></code></pre>
-<p>For nested logic, combine with <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/logical/fn.and_.html"><code>and_()</code></a>:</p>
+<p>For nested logic, combine with <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/logical/fn.and_.html"><code>and_()</code></a>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>// (price &gt; 100 AND in_stock = 1) OR (featured = 1)
@@ -234,11 +234,11 @@ for MySQL).</p>
 let qualified = ident("name").dot_of("u");    // "u"."name"
 let aliased = ident("total").with_alias("t"); // "total" AS "t"
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/identifier/fn.ident.html"><code>ident()</code></a> is a shorthand for
-<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/identifier/struct.Identifier.html#method.new"><code>Identifier::new()</code></a>. Reserved words and
+<p><a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/identifier/fn.ident.html"><code>ident()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/identifier/struct.Identifier.html#method.new"><code>Identifier::new()</code></a>. Reserved words and
 names with spaces are quoted automatically.</p>
 <h2 id="fx--function-calls"><a class="header" href="#fx--function-calls"><code>fx!</code> — Function Calls</a></h2>
-<p>The <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/macro.fx.html"><code>fx!</code></a> macro builds a SQL function call. Arguments are passed directly —
+<p>The <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/macro.fx.html"><code>fx!</code></a> macro builds a SQL function call. Arguments are passed directly —
 <code>.expr()</code> is called on each one automatically:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -257,7 +257,7 @@ fx!("round", fx!("avg", ident("price")), 2i64)
 // =&gt; ROUND(AVG("price"), 2)
 <span class="boring">}</span></code></pre>
 <p>If you need to build arguments programmatically (e.g. from a <code>Vec</code>), use
-<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/fx/struct.Fx.html#method.new"><code>Fx::new()</code></a> directly:</p>
+<a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/fx/struct.Fx.html#method.new"><code>Fx::new()</code></a> directly:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>let args: Vec&lt;Expression&lt;AnySqliteType&gt;&gt; = columns.iter().map(|c| c.expr()).collect();
@@ -274,10 +274,10 @@ let f = Fx::new("coalesce", args);
     "sold out",
 );
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/ternary/fn.ternary.html"><code>ternary()</code></a> is a shorthand for
-<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/ternary/struct.Ternary.html#method.new"><code>Ternary::new()</code></a>.</p>
+<p><a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/ternary/fn.ternary.html"><code>ternary()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/ternary/struct.Ternary.html#method.new"><code>Ternary::new()</code></a>.</p>
 <h2 id="case--case-expressions"><a class="header" href="#case--case-expressions"><code>Case</code> — CASE Expressions</a></h2>
-<p>For more than two branches, use <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/case/struct.Case.html"><code>Case</code></a> to build a full
+<p>For more than two branches, use <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/case/struct.Case.html"><code>Case</code></a> to build a full
 <code>CASE WHEN ... END</code> block:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -288,12 +288,12 @@ let f = Fx::new("coalesce", args);
 <span class="boring">}</span></code></pre>
 <h2 id="concat_--string-concatenation"><a class="header" href="#concat_--string-concatenation"><code>concat_!</code> — String Concatenation</a></h2>
 <p>Concatenates expressions. Renders as <code>||</code> on SQLite/Postgres, <code>CONCAT()</code> on MySQL. The
-<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/macro.concat_.html"><code>concat_!</code></a> macro calls <code>.expr()</code> on each argument automatically:</p>
+<a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/macro.concat_.html"><code>concat_!</code></a> macro calls <code>.expr()</code> on each argument automatically:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>concat_!(ident("first_name"), " ", ident("last_name"))
 <span class="boring">}</span></code></pre>
-<p>Use <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/concat/struct.Concat.html#method.ws"><code>.ws()</code></a> for a separator — it accepts any
+<p>Use <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/concat/struct.Concat.html#method.ws"><code>.ws()</code></a> for a separator — it accepts any
 <code>Expressive&lt;T&gt;</code>, including string literals:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -310,7 +310,7 @@ let f = Fx::new("coalesce", args);
 // MySQL:    INTERVAL 30 DAY
 // Postgres: INTERVAL '30 days'
 <span class="boring">}</span></code></pre>
-<p>See <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/interval/struct.Interval.html"><code>Interval</code></a> for available constructors (<code>days</code>,
+<p>See <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/interval/struct.Interval.html"><code>Interval</code></a> for available constructors (<code>days</code>,
 <code>hours</code>, <code>months</code>, etc.).</p>
 <h2 id="date_format--date-formatting"><a class="header" href="#date_format--date-formatting"><code>date_format()</code> — Date Formatting</a></h2>
 <p>Portable strftime-style formatting. Translates format tokens per backend:</p>
@@ -321,9 +321,9 @@ let f = Fx::new("coalesce", args);
 // MySQL:    DATE_FORMAT("created_at", '%Y-%m-%d')
 // Postgres: TO_CHAR("created_at", 'YYYY-MM-DD')
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/date_format/fn.date_format.html"><code>date_format()</code></a> is a shorthand for
-<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/date_format/struct.DateFormat.html#method.new"><code>DateFormat::new()</code></a>. Use
-<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/date_format/struct.DateFormat.html#method.raw_format"><code>.raw_format()</code></a> to skip token
+<p><a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/date_format/fn.date_format.html"><code>date_format()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/date_format/struct.DateFormat.html#method.new"><code>DateFormat::new()</code></a>. Use
+<a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/date_format/struct.DateFormat.html#method.raw_format"><code>.raw_format()</code></a> to skip token
 translation and pass a native format string.</p>
 
                     </main>

@@ -36,7 +36,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-d9838aed.js";
+            window.path_to_searchindex_js = "../searchindex-4cf84826.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-f0872746.js"></script>
@@ -254,7 +254,7 @@ important differences:</p>
 </tbody>
 </table>
 </div>
-<p>A <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html"><code>Table</code></a> is typically defined in its own file alongside the entity.
+<p>A <a href="https://docs.rs/vantage_table/0.4.3/vantage_table/table/base/struct.Table.html"><code>Table</code></a> is typically defined in its own file alongside the entity.
 Create <code>src/product.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -338,7 +338,7 @@ comes from a trait in the prelude:</p>
 
 // Read — list all, get one by ID
 let all = table.list().await?;             // IndexMap&lt;String, Product&gt;
-let pie = table.get("pie").await?;         // Product
+let pie = table.get("pie").await?;         // Option&lt;Product&gt;
 
 // Create — insert with a known ID
 let muffin = Product { name: "Muffin".into(), price: 175 };
@@ -352,9 +352,10 @@ table.replace(&amp;"muffin".to_string(), &amp;updated).await?;
 table.delete(&amp;"muffin".to_string()).await?;
 <span class="boring">}</span></code></pre>
 <p>That’s it. <code>list()</code> returns an <code>IndexMap&lt;Id, Product&gt;</code> — ordered and keyed by ID. <code>get()</code> returns
-the entity or an error if the ID doesn’t exist. There’s also <code>get_some()</code> which returns <code>Option</code> for
-when you’re not sure there are any records, and <code>insert_return_id()</code> for when you want the database
-to generate the ID.</p>
+<code>Option&lt;Product&gt;</code> — <code>None</code> when the ID doesn’t exist, so you can pattern-match or <code>.ok_or(...)</code> into
+your own not-found error. There’s also <code>get_some()</code> which returns an <code>(Id, Product)</code> pair (still
+<code>Option</code>-wrapped) for sampling, and <code>insert_return_id()</code> for when you want the database to generate
+the ID.</p>
 <div id="admonition-idempotent-operations" class="admonition admonish-tip" role="note" aria-labelledby="admonition-idempotent-operations-title">
 <div class="admonition-title">
 <div id="admonition-idempotent-operations-title">
@@ -378,7 +379,7 @@ side effects.</p>
 <p><code>Table&lt;SqliteDB, Product&gt;</code> is great when you know the types at compile time. But what if you want to
 write a function that lists <em>any</em> table — products, orders, customers — without knowing the entity
 type?</p>
-<p><a href="https://docs.rs/vantage_table/0.4.1/vantage_table/any/struct.AnyTable.html"><code>AnyTable</code></a> wraps a concrete table and erases its type parameters.
+<p><a href="https://docs.rs/vantage_table/0.4.3/vantage_table/any/struct.AnyTable.html"><code>AnyTable</code></a> wraps a concrete table and erases its type parameters.
 Values come back as <code>Record&lt;serde_json::Value&gt;</code> instead of typed entities. You can iterate columns
 by name and build a generic display:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]

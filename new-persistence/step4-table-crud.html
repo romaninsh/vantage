@@ -36,7 +36,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-d9838aed.js";
+            window.path_to_searchindex_js = "../searchindex-4cf84826.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-f0872746.js"></script>
@@ -319,7 +319,7 @@ hit — only the column and expression infrastructure you already implemented.</
 <p><strong><code>ReadableValueSet</code></strong> — returns raw <code>Record&lt;Value&gt;</code> (untyped storage values):</p>
 <ul>
 <li><code>list_values()</code> → all records as <code>IndexMap&lt;Id, Record&lt;Value&gt;&gt;</code></li>
-<li><code>get_value(id)</code> → single record by ID</li>
+<li><code>get_value(id)</code> → <code>Option&lt;Record&lt;Value&gt;&gt;</code> — <code>None</code> if no record matches the id</li>
 <li><code>get_some_value()</code> → one arbitrary record (or <code>None</code> if empty)</li>
 </ul>
 </li>
@@ -327,7 +327,7 @@ hit — only the column and expression infrastructure you already implemented.</
 <p><strong><code>ReadableDataSet&lt;E&gt;</code></strong> — returns deserialized entities (calls <code>E::try_from_record()</code> for you):</p>
 <ul>
 <li><code>list()</code> → all entities as <code>IndexMap&lt;Id, E&gt;</code></li>
-<li><code>get(id)</code> → single entity by ID</li>
+<li><code>get(id)</code> → <code>Option&lt;E&gt;</code> — <code>None</code> if no entity matches the id</li>
 <li><code>get_some()</code> → one arbitrary entity</li>
 </ul>
 </li>
@@ -340,8 +340,9 @@ hit — only the column and expression infrastructure you already implemented.</
 <li>Execute via <code>self.execute(&amp;select.expr())</code></li>
 <li>Parse the result — split each row into an ID and a <code>Record</code></li>
 </ol>
-<p>For <code>get_table_value</code>, add a WHERE condition on the id field. For <code>get_table_some_value</code>, set
-<code>LIMIT 1</code> and return the first row (or <code>None</code> if empty).</p>
+<p>For <code>get_table_value</code>, add a WHERE condition on the id field and return <code>Ok(None)</code> when the
+lookup misses — errors are reserved for actual connection or parse failures.
+For <code>get_table_some_value</code>, set <code>LIMIT 1</code> and return the first row (or <code>None</code> if empty).</p>
 <p>Write tests for both <code>ReadableValueSet</code> and <code>ReadableDataSet</code> in separate files — import the traits
 from <code>vantage_dataset</code> and call <code>list_values()</code>, <code>get_value()</code>, <code>get_some_value()</code>, <code>list()</code>,
 <code>get()</code>, <code>get_some()</code> against your pre-populated test database. Keep these tests condition-free —

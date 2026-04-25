@@ -37,7 +37,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-d9838aed.js";
+            window.path_to_searchindex_js = "searchindex-4cf84826.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-f0872746.js"></script>
@@ -349,8 +349,8 @@ async fn run() -&gt; VantageResult&lt;()&gt; {
 }</code></pre>
 <p>A few things going on here:</p>
 <ul>
-<li><strong><code>use vantage_sql::prelude::*</code></strong> brings in everything we need for this chapter — <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>,
-<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a>, the <code>sqlite_expr!</code> macro, error types, and the traits that make builder and
+<li><strong><code>use vantage_sql::prelude::*</code></strong> brings in everything we need for this chapter — <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>,
+<a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a>, the <code>sqlite_expr!</code> macro, error types, and the traits that make builder and
 execution methods work.</li>
 <li><strong><code>VantageResult&lt;()&gt;</code></strong> is Vantage’s own Result type. It uses <code>VantageError</code>, which tracks context
 and error chains for readable diagnostics.</li>
@@ -416,10 +416,10 @@ any <code>Result</code> with a standard error type.</p>
 
 <hr>
 <h2 id="build-a-select"><a class="header" href="#build-a-select">Build a SELECT</a></h2>
-<p><a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a> is the query builder for SQLite.
+<p><a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a> is the query builder for SQLite.
 Other persistences have their own —
-<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/postgres/statements/select/struct.PostgresSelect.html"><code>PostgresSelect</code></a>,
-<a href="https://docs.rs/vantage_mongodb/0.4.1/vantage_mongodb/select/struct.MongoSelect.html"><code>MongoSelect</code></a> — and they all implement the
+<a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/postgres/statements/select/struct.PostgresSelect.html"><code>PostgresSelect</code></a>,
+<a href="https://docs.rs/vantage_mongodb/0.4.3/vantage_mongodb/select/struct.MongoSelect.html"><code>MongoSelect</code></a> — and they all implement the
 <a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a> trait, so the interface is identical apart from
 vendor-specific extensions. None of them need a database connection — they’re just structs that
 accumulate query parts. You build them with a chain of <code>.with_*()</code> calls:</p>
@@ -476,7 +476,7 @@ println!("{:?}", result);
 <p>Two steps here: <code>.expr()</code> turns the builder into an <a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a>
 — Vantage’s internal representation that keeps parameters separate from the SQL template. Then
 <a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/traits/datasource/trait.ExprDataSource.html#tymethod.execute"><code>db.execute()</code></a> sends it to the database.</p>
-<p>The result is <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> — a type-tagged wrapper around whatever came back. The <code>Debug</code> output
+<p>The result is <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> — a type-tagged wrapper around whatever came back. The <code>Debug</code> output
 isn’t pretty, but you should see all 6 product rows in there.</p>
 <div id="admonition-when-does-vantage-hit-the-database" class="admonition admonish-tip" role="note" aria-labelledby="admonition-when-does-vantage-hit-the-database-title">
 <div class="admonition-title">
@@ -542,8 +542,8 @@ See <a href="#persistence-aligned-type-system">Persistence-aligned Type System</
 
 <h2 id="typed-columns-and-operators"><a class="header" href="#typed-columns-and-operators">Typed columns and operators</a></h2>
 <p>Writing <code>\"is_deleted\"</code> in a raw expression works, but there’s a cleaner way.
-<a href="https://docs.rs/vantage_table/0.4.1/vantage_table/column/core/struct.Column.html"><code>Column&lt;T&gt;</code></a> creates a typed column reference, then chain an
-<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a> like <code>.eq()</code> to build the
+<a href="https://docs.rs/vantage_table/0.4.3/vantage_table/column/core/struct.Column.html"><code>Column&lt;T&gt;</code></a> creates a typed column reference, then chain an
+<a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a> like <code>.eq()</code> to build the
 condition:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -553,7 +553,7 @@ let condition = is_deleted.eq(false);
 <p>Same result, but the type parameter <code>&lt;bool&gt;</code> ensures you can only compare against matching types.
 Try <code>is_deleted.eq(42)</code> — it won’t compile. Other operators — <code>.gt()</code>, <code>.lt()</code>, <code>.ne()</code>, <code>.in_()</code> —
 enforce the same type safety.</p>
-<p>The result is a <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/condition/struct.SqliteCondition.html"><code>SqliteCondition</code></a> — the backend’s native condition type — ready to be passed
+<p>The result is a <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/condition/struct.SqliteCondition.html"><code>SqliteCondition</code></a> — the backend’s native condition type — ready to be passed
 directly to <code>.with_condition()</code>.</p>
 <div id="admonition-type-safety-and-backend-specific-operations" class="admonition admonish-info" role="note" aria-labelledby="admonition-type-safety-and-backend-specific-operations-title">
 <div class="admonition-title">
@@ -651,7 +651,7 @@ its prelude:</p>
 <span class="boring">}</span></code></pre>
 <p>So far we’ve been printing raw <code>AnySqliteType</code> with <code>Debug</code>. That works for verifying queries, but
 it’s useless for real work. When <code>db.execute()</code> returns a multi-row result, the
-<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> holds an array of maps internally. Convert it
+<a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> holds an array of maps internally. Convert it
 to <code>Vec&lt;Record&lt;AnySqliteType&gt;&gt;</code> to work with individual rows:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -823,11 +823,11 @@ async fn run() -&gt; VantageResult&lt;()&gt; {
 <tr><th>Concept</th><th>What it does</th><th>More info</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a></td><td>Builds SELECT queries via builder pattern</td><td><a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a></td></tr>
-<tr><td><a href="https://docs.rs/vantage_table/0.4.1/vantage_table/column/core/struct.Column.html"><code>Column</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
-<tr><td><a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a></td><td>Ext trait giving <code>.eq()</code>, <code>.gt()</code>, etc. → <code>SqliteCondition</code></td><td></td></tr>
+<tr><td><a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a></td><td>Builds SELECT queries via builder pattern</td><td><a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a></td></tr>
+<tr><td><a href="https://docs.rs/vantage_table/0.4.3/vantage_table/column/core/struct.Column.html"><code>Column</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
+<tr><td><a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a></td><td>Ext trait giving <code>.eq()</code>, <code>.gt()</code>, etc. → <code>SqliteCondition</code></td><td></td></tr>
 <tr><td><code>sqlite_expr!</code></td><td>Creates expressions with typed, bound parameters</td><td><a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a></td></tr>
-<tr><td><code>db.execute()</code></td><td>Runs an expression, returns <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a></td><td><a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/traits/datasource/trait.ExprDataSource.html"><code>ExprDataSource</code></a></td></tr>
+<tr><td><code>db.execute()</code></td><td>Runs an expression, returns <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a></td><td><a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/traits/datasource/trait.ExprDataSource.html"><code>ExprDataSource</code></a></td></tr>
 <tr><td><a href="https://docs.rs/vantage_types/0.4.0/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a></td><td>Ordered map of column names to values — row-level access</td><td><code>.try_get::&lt;T&gt;()</code></td></tr>
 <tr><td><code>#[entity(SqliteType)]</code></td><td>Generates lossless record-to-struct conversion</td><td><a href="https://docs.rs/vantage_types/0.4.0/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord</code></a></td></tr>
 </tbody>
@@ -913,7 +913,7 @@ important differences:</p>
 </tbody>
 </table>
 </div>
-<p>A <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html"><code>Table</code></a> is typically defined in its own file alongside the entity.
+<p>A <a href="https://docs.rs/vantage_table/0.4.3/vantage_table/table/base/struct.Table.html"><code>Table</code></a> is typically defined in its own file alongside the entity.
 Create <code>src/product.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -997,7 +997,7 @@ comes from a trait in the prelude:</p>
 
 // Read — list all, get one by ID
 let all = table.list().await?;             // IndexMap&lt;String, Product&gt;
-let pie = table.get("pie").await?;         // Product
+let pie = table.get("pie").await?;         // Option&lt;Product&gt;
 
 // Create — insert with a known ID
 let muffin = Product { name: "Muffin".into(), price: 175 };
@@ -1011,9 +1011,10 @@ table.replace(&amp;"muffin".to_string(), &amp;updated).await?;
 table.delete(&amp;"muffin".to_string()).await?;
 <span class="boring">}</span></code></pre>
 <p>That’s it. <code>list()</code> returns an <code>IndexMap&lt;Id, Product&gt;</code> — ordered and keyed by ID. <code>get()</code> returns
-the entity or an error if the ID doesn’t exist. There’s also <code>get_some()</code> which returns <code>Option</code> for
-when you’re not sure there are any records, and <code>insert_return_id()</code> for when you want the database
-to generate the ID.</p>
+<code>Option&lt;Product&gt;</code> — <code>None</code> when the ID doesn’t exist, so you can pattern-match or <code>.ok_or(...)</code> into
+your own not-found error. There’s also <code>get_some()</code> which returns an <code>(Id, Product)</code> pair (still
+<code>Option</code>-wrapped) for sampling, and <code>insert_return_id()</code> for when you want the database to generate
+the ID.</p>
 <div id="admonition-idempotent-operations" class="admonition admonish-tip" role="note" aria-labelledby="admonition-idempotent-operations-title">
 <div class="admonition-title">
 <div id="admonition-idempotent-operations-title">
@@ -1037,7 +1038,7 @@ side effects.</p>
 <p><code>Table&lt;SqliteDB, Product&gt;</code> is great when you know the types at compile time. But what if you want to
 write a function that lists <em>any</em> table — products, orders, customers — without knowing the entity
 type?</p>
-<p><a href="https://docs.rs/vantage_table/0.4.1/vantage_table/any/struct.AnyTable.html"><code>AnyTable</code></a> wraps a concrete table and erases its type parameters.
+<p><a href="https://docs.rs/vantage_table/0.4.3/vantage_table/any/struct.AnyTable.html"><code>AnyTable</code></a> wraps a concrete table and erases its type parameters.
 Values come back as <code>Record&lt;serde_json::Value&gt;</code> instead of typed entities. You can iterate columns
 by name and build a generic display:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -1576,7 +1577,7 @@ chapter we <strong>migrate</strong> them to MongoDB. That migration is a change 
 and routes don’t know the difference.</li>
 </ul>
 <p>The handler functions are each written <strong>once</strong> and mounted against any
-<a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html"><code>Table&lt;Backend, Entity&gt;</code></a> the router has on hand — one <code>list</code>, one
+<a href="https://docs.rs/vantage_table/0.4.3/vantage_table/table/base/struct.Table.html"><code>Table&lt;Backend, Entity&gt;</code></a> the router has on hand — one <code>list</code>, one
 <code>get</code>, one <code>post</code>, one <code>patch</code>, one <code>delete</code>, parameterised over the backend and entity types.
 Adding another entity is a route registration, not a new handler.</p>
 <hr>
@@ -1591,7 +1592,7 @@ the existing <code>serde</code> to encode response bodies as JSON.</p>
 a computed <code>category</code> field. Both were assembled from subqueries — great for display, but they don’t
 round-trip cleanly through a <code>POST</code> body because the JSON would try to write columns that don’t
 exist. For a writable API we replace the computed fields with the plain FK column that sits under
-them. (See <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.with_expression"><code>with_expression</code></a> for the chapter-2
+them. (See <a href="https://docs.rs/vantage_table/0.4.3/vantage_table/table/base/struct.Table.html#method.with_expression"><code>with_expression</code></a> for the chapter-2
 computed-field setup we’re walking away from here.)</p>
 <p><code>src/category.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -1689,7 +1690,7 @@ async fn main() -&gt; VantageResult&lt;()&gt; {
 }</code></pre>
 <p>A few notes on what this is doing:</p>
 <ul>
-<li><strong><code>static DB: OnceLock&lt;</code><a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a><code>&gt;</code>.</strong> The handler needs a
+<li><strong><code>static DB: OnceLock&lt;</code><a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a><code>&gt;</code>.</strong> The handler needs a
 database handle but we don’t want to open a new connection per request. A program-wide <code>OnceLock</code>
 is the simplest possible holder — set once in <code>main</code>, read from anywhere.</li>
 <li><strong>Each request calls <code>Category::table(db())</code></strong> — building the table (columns, relationships) and
@@ -1731,17 +1732,17 @@ of <code>Category::table</code>:</p>
 <ul>
 <li><strong>Return type is <code>&amp;'static Table&lt;...&gt;</code> instead of <code>Table&lt;...&gt;</code>.</strong> The cache owns the definition;
 callers get a shared reference. Most table operations
-(<a href="https://docs.rs/vantage_dataset/0.4.0/vantage_dataset/traits/dataset/trait.ReadableDataSet.html#tymethod.list"><code>list</code></a>,
-<a href="https://docs.rs/vantage_dataset/0.4.0/vantage_dataset/traits/dataset/trait.ReadableDataSet.html#tymethod.get"><code>get</code></a>,
-<a href="https://docs.rs/vantage_dataset/0.4.0/vantage_dataset/traits/dataset/trait.WritableDataSet.html#tymethod.insert"><code>insert</code></a>,
-<a href="https://docs.rs/vantage_dataset/0.4.0/vantage_dataset/traits/dataset/trait.WritableDataSet.html#tymethod.replace"><code>replace</code></a>,
-<a href="https://docs.rs/vantage_dataset/0.4.0/vantage_dataset/traits/valueset/trait.WritableValueSet.html#tymethod.delete"><code>delete</code></a>,
-<a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>) take <code>&amp;self</code>, so they work on the
+(<a href="https://docs.rs/vantage_dataset/0.4.2/vantage_dataset/traits/dataset/trait.ReadableDataSet.html#tymethod.list"><code>list</code></a>,
+<a href="https://docs.rs/vantage_dataset/0.4.2/vantage_dataset/traits/dataset/trait.ReadableDataSet.html#tymethod.get"><code>get</code></a>,
+<a href="https://docs.rs/vantage_dataset/0.4.2/vantage_dataset/traits/dataset/trait.WritableDataSet.html#tymethod.insert"><code>insert</code></a>,
+<a href="https://docs.rs/vantage_dataset/0.4.2/vantage_dataset/traits/dataset/trait.WritableDataSet.html#tymethod.replace"><code>replace</code></a>,
+<a href="https://docs.rs/vantage_dataset/0.4.2/vantage_dataset/traits/valueset/trait.WritableValueSet.html#tymethod.delete"><code>delete</code></a>,
+<a href="https://docs.rs/vantage_table/0.4.3/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>) take <code>&amp;self</code>, so they work on the
 reference without any clone.</li>
 <li><strong><code>static CACHE: OnceLock&lt;...&gt;</code> lives inside the function.</strong> A function-local static is still a
 program-wide single instance — Rust allows this and it keeps the cache private to the table that
 owns it.</li>
-<li><strong>The <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> callback is a closure: <code>|db| Product::table(db).clone()</code>.</strong> The framework still hands us a db and expects an owned
+<li><strong>The <a href="https://docs.rs/vantage_table/0.4.3/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> callback is a closure: <code>|db| Product::table(db).clone()</code>.</strong> The framework still hands us a db and expects an owned
 <code>Table&lt;SqliteDB, Product&gt;</code> back, so we call the cached accessor and clone the reference. On the
 first call this triggers Product’s cache to build; every subsequent call just clones a pre-built
 definition.</li>
@@ -1780,7 +1781,7 @@ it’s a copy of the shape (columns, conditions, relationships), and it’s chea
 
 <hr>
 <h2 id="products-of-a-category"><a class="header" href="#products-of-a-category">Products of a category</a></h2>
-<p>The <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> relationship we kept from chapter 2 lets
+<p>The <a href="https://docs.rs/vantage_table/0.4.3/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> relationship we kept from chapter 2 lets
 us serve a nested route — <code>/categories/{id}/products</code>. Before writing the handler, give the
 relationship a proper name with an extension trait on <code>Table&lt;SqliteDB, Category&gt;</code>. Add this to
 <code>src/category.rs</code>:</p>
@@ -1820,13 +1821,13 @@ async fn list_category_products(Path(id): Path&lt;i64&gt;) -&gt; Json&lt;Vec&lt;
 <span class="boring">}</span></code></pre>
 <p>Three things going on:</p>
 <ul>
-<li><strong><code>Category::table(db()).clone()</code></strong> — we need an owned <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html"><code>Table</code></a> to
-chain <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.with_condition"><code>with_condition</code></a> onto, so we clone the cached
+<li><strong><code>Category::table(db()).clone()</code></strong> — we need an owned <a href="https://docs.rs/vantage_table/0.4.3/vantage_table/table/base/struct.Table.html"><code>Table</code></a> to
+chain <a href="https://docs.rs/vantage_table/0.4.3/vantage_table/table/base/struct.Table.html#method.with_condition"><code>with_condition</code></a> onto, so we clone the cached
 definition. The clone copies the shape (columns, conditions, relationships), not any rows.</li>
 <li><strong><code>with_condition(id_col.eq(id))</code></strong> — narrows the category table to one row: the one we’re asking
 for. Nothing hits the database yet.</li>
 <li><strong><code>ref_products()</code></strong> — traverses the <code>with_many</code> relationship we registered on Category in
-chapter 2, via <a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>. The returned table is
+chapter 2, via <a href="https://docs.rs/vantage_table/0.4.3/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>. The returned table is
 <code>Table&lt;SqliteDB, Product&gt;</code>, already scoped to products whose <code>category_id</code> matches the narrowed
 category set. Chapter 2 walked through what the emitted SQL looks like; it’s the same here.</li>
 </ul>
@@ -1908,7 +1909,7 @@ where
                 let f = f.clone();
                 move |Path(params): Path&lt;Params&gt;| async move {
                     let id = params["id"].clone();
-                    let entity = f(db(), &amp;params).get(&amp;id).await.unwrap();
+                    let entity = f(db(), &amp;params).get(&amp;id).await.unwrap().unwrap();
                     Json(entity)
                 }
             })
@@ -2096,25 +2097,32 @@ impl IntoResponse for ApiError {
 
 impl From&lt;VantageError&gt; for ApiError {
     fn from(e: VantageError) -&gt; Self {
-        let message = e.to_string();
-        let status = if message.contains("no row found") {
-            StatusCode::NOT_FOUND
-        } else {
-            StatusCode::INTERNAL_SERVER_ERROR
-        };
         eprintln!("API error: {:?}", e);
-        Self { status, message }
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: e.to_string(),
+        }
+    }
+}
+
+fn not_found(id: &amp;str) -&gt; ApiError {
+    ApiError {
+        status: StatusCode::NOT_FOUND,
+        message: format!("not found: {}", id),
     }
 }
 
 type ApiResult&lt;T&gt; = Result&lt;T, ApiError&gt;;
 <span class="boring">}</span></code></pre>
-<p>Two things earn their keep:</p>
+<p>Three things earn their keep:</p>
 <ul>
 <li><strong><code>IntoResponse</code></strong> makes <code>ApiError</code> returnable from a handler; axum calls <code>into_response()</code>
 to assemble status, headers, and body.</li>
-<li><strong><code>From&lt;VantageError&gt;</code></strong> lets us use <code>?</code> inside a handler. Every <code>.await?</code> now short-circuits
-to an <code>ApiError</code> that axum will render for us.</li>
+<li><strong><code>From&lt;VantageError&gt;</code></strong> lets us use <code>?</code> inside a handler — every <code>.await?</code> short-circuits
+to an <code>ApiError</code> mapped to a 500, which axum will render for us.</li>
+<li><strong><code>not_found(id)</code></strong> is how we build a 404 explicitly. Vantage’s <code>get</code> returns
+<code>Option&lt;E&gt;</code>, so we <code>.ok_or_else(|| not_found(&amp;id))?</code> the missing case straight into a 404
+— no error-message string-matching, no brittleness.</li>
 </ul>
 <p>With that in place, the <code>unwrap</code>s inside <code>crud</code> turn into <code>?</code>, and each handler returns
 <code>ApiResult&lt;T&gt;</code>:</p>
@@ -2129,18 +2137,32 @@ to an <code>ApiError</code> that axum will render for us.</li>
     }
 })
 <span class="boring">}</span></code></pre>
-<p>Do the same for the other four (<code>post</code>, <code>get /{id}</code>, <code>patch</code>, <code>delete</code>) — drop the
-<code>.unwrap()</code>, add <code>?</code>, wrap the happy path in <code>ApiResult::Ok(...)</code>. Handler bodies stay three
-lines long.</p>
+<p>For the <code>GET /{id}</code> handler, convert the <code>Option</code> into a 404 at the handler:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>get({
+    let f = f.clone();
+    move |Path(params): Path&lt;Params&gt;| async move {
+        let id = params["id"].clone();
+        let entity = f(db(), &amp;params)
+            .get(id.clone())
+            .await?
+            .ok_or_else(|| not_found(&amp;id))?;
+        ApiResult::Ok(Json(entity))
+    }
+})
+<span class="boring">}</span></code></pre>
+<p>Do the same shape for <code>post</code>, <code>patch</code>, <code>delete</code> — drop the <code>.unwrap()</code>, add <code>?</code>, wrap the
+happy path in <code>ApiResult::Ok(...)</code>. Handlers that don’t read by id just need the <code>?</code>.</p>
 <p>Try a few error cases:</p>
 <pre><code class="language-sh">curl -w "\nstatus=%{http_code}\n" http://localhost:3001/categories/999
-# {"error":"get_table_value: no row found (id: \"999\")"}
+# {"error":"not found: 999"}
 # status=404
 
 curl -w "\nstatus=%{http_code}\n" -X PATCH http://localhost:3001/categories/999 \
   -H 'content-type: application/json' -d '{"name":"Ghost"}'
-# {"error":"get_table_value: no row found (id: \"999\")"}
-# status=404
+# {"error":"patch_table_value: no row found (id: \"999\")"}
+# status=500
 
 curl -w "\nstatus=%{http_code}\n" -X POST http://localhost:3001/categories \
   -H 'content-type: application/json' -d '{not-json}'
@@ -2150,27 +2172,27 @@ curl -w "\nstatus=%{http_code}\n" -X POST http://localhost:3001/categories \
 curl -w "\nstatus=%{http_code}\n" -X DELETE http://localhost:3001/categories/999
 # status=204
 </code></pre>
-<p>Missing ids produce 404s with a JSON body the client can show to a user. The malformed body
-gets axum’s built-in 400 for free. <code>DELETE</code> on a missing id still returns 204 — vantage’s
-<code>delete</code> is idempotent, and “the resource is gone” is true whether or not it was ever there.</p>
-<div id="admonition-why-match-on-the-error-message" class="admonition admonish-info" role="note" aria-labelledby="admonition-why-match-on-the-error-message-title">
+<p>Missing ids produce 404s with a clean JSON body. The malformed body gets axum’s built-in 400
+for free. <code>DELETE</code> on a missing id still returns 204 — vantage’s <code>delete</code> is idempotent, and
+“the resource is gone” is true whether or not it was ever there. <code>PATCH</code> on a missing id
+still 500s for now — patching doesn’t go through <code>get</code>, so there’s no <code>Option</code> to intercept;
+adding a pre-flight <code>get</code>-and-<code>ok_or(not_found)</code> before the <code>patch</code> call would give you 404
+there too.</p>
+<div id="admonition-why-not-match-on-the-error-message" class="admonition admonish-info" role="note" aria-labelledby="admonition-why-not-match-on-the-error-message-title">
 <div class="admonition-title">
-<div id="admonition-why-match-on-the-error-message-title">
-<p>Why match on the error message?</p>
+<div id="admonition-why-not-match-on-the-error-message-title">
+<p>Why not match on the error message?</p>
 </div>
 
-<a class="admonition-anchor-link" href="#admonition-why-match-on-the-error-message"></a>
+<a class="admonition-anchor-link" href="#admonition-why-not-match-on-the-error-message"></a>
 </div>
 
 <div>
-<p><code>VantageError</code> is a flat struct — it has a message, a location, and a context map, but no
-typed discriminant you could match against. “Not-found” errors happen to carry the string
-<code>"no row found"</code> in their message, so that’s what we key on.</p>
-<p>It’s slightly brittle: if vantage ever rewrites that message, every API using this pattern
-silently downgrades 404s to 500s. A stronger guarantee would require vantage exposing an
-<code>ErrorKind</code> enum, or for the handler to detect missing rows explicitly — narrow the table by
-id and call <code>get_some()</code>, where <code>None</code> means absent. For this tutorial the string match is
-good enough; production code with strict SLAs should prefer the explicit <code>get_some</code> path.</p>
+<p>An earlier draft of this tutorial matched <code>e.to_string().contains("no row found")</code> to
+decide between 404 and 500 — brittle, because it hard-codes a vantage-internal error
+string. Once <code>ReadableDataSet::get</code> switched to <code>Result&lt;Option&lt;E&gt;&gt;</code>, the handler can map
+missing rows explicitly with <code>.ok_or_else(|| not_found(&amp;id))?</code>. Errors are errors, misses
+are <code>None</code> — no string-matching required.</p>
 </div>
 
 </div>
@@ -2241,11 +2263,11 @@ table with whatever the caller asked for, and lists:</p>
 <span class="boring">}</span></code></pre>
 <p>Two things happen:</p>
 <ul>
-<li><strong><a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.set_pagination"><code>set_pagination</code></a><code>(Some(</code><a href="https://docs.rs/vantage_table/0.4.1/vantage_table/pagination/struct.Pagination.html#method.new"><code>Pagination::new</code></a><code>(page, per_page)))</code></strong>
+<li><strong><a href="https://docs.rs/vantage_table/0.4.3/vantage_table/table/base/struct.Table.html#method.set_pagination"><code>set_pagination</code></a><code>(Some(</code><a href="https://docs.rs/vantage_table/0.4.3/vantage_table/pagination/struct.Pagination.html#method.new"><code>Pagination::new</code></a><code>(page, per_page)))</code></strong>
 takes a page number and a page size. Vantage applies these as <code>LIMIT … OFFSET …</code> on the SELECT.
 Missing params fall back to the defaults (page 1, 50 per page) — and if neither is supplied we
 don’t touch pagination at all, so the unfiltered list still hits the whole set.</li>
-<li><strong><a href="https://docs.rs/vantage_table/0.4.1/vantage_table/table/base/struct.Table.html#method.add_search"><code>add_search</code></a><code>(term)</code></strong> is the <code>.with_search</code> we used
+<li><strong><a href="https://docs.rs/vantage_table/0.4.3/vantage_table/table/base/struct.Table.html#method.add_search"><code>add_search</code></a><code>(term)</code></strong> is the <code>.with_search</code> we used
 in chapter 2 to add a LIKE filter across all columns. Both end up as extra <code>WHERE</code> clauses on the
 query that vantage already compiles for us.</li>
 </ul>
@@ -2321,7 +2343,7 @@ already knows how to render a 400.</p>
 databases is a change to the model, not to the routes, handlers, or business logic. Now we
 cash the check. <code>/categories</code>, <code>/categories/{id}</code>, and <code>/categories/{cat_id}/products</code> keep
 their exact URL shape, response bodies, and behaviour — but the data lives in
-<a href="https://docs.rs/vantage_mongodb/0.4.1/vantage_mongodb/mongodb/struct.MongoDB.html"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>.</p>
+<a href="https://docs.rs/vantage_mongodb/0.4.3/vantage_mongodb/mongodb/struct.MongoDB.html"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>.</p>
 <p>Start Mongo — Docker is the easiest way:</p>
 <pre><code class="language-sh">docker run -d --name mongo-learn -p 27017:27017 mongo:7
 </code></pre>
@@ -2432,7 +2454,7 @@ URL’s <code>cat_id</code> string directly:</p>
 })
 <span class="boring">}</span></code></pre>
 <p><code>.eq(&amp;str)</code> works here because <code>vantage-mongodb</code>’s <code>From&lt;&amp;str&gt;</code> for
-<a href="https://docs.rs/vantage_mongodb/0.4.1/vantage_mongodb/types/struct.AnyMongoType.html"><code>AnyMongoType</code></a> auto-promotes 24-character hex strings to
+<a href="https://docs.rs/vantage_mongodb/0.4.3/vantage_mongodb/types/struct.AnyMongoType.html"><code>AnyMongoType</code></a> auto-promotes 24-character hex strings to
 <code>ObjectId</code> and leaves everything else as <code>String</code>. The comparison fires with the right BSON type
 whichever <code>_id</code> convention the collection uses.</p>
 <h3 id="mainrs"><a class="header" href="#mainrs">main.rs</a></h3>
@@ -4895,7 +4917,7 @@ hit — only the column and expression infrastructure you already implemented.</
 <p><strong><code>ReadableValueSet</code></strong> — returns raw <code>Record&lt;Value&gt;</code> (untyped storage values):</p>
 <ul>
 <li><code>list_values()</code> → all records as <code>IndexMap&lt;Id, Record&lt;Value&gt;&gt;</code></li>
-<li><code>get_value(id)</code> → single record by ID</li>
+<li><code>get_value(id)</code> → <code>Option&lt;Record&lt;Value&gt;&gt;</code> — <code>None</code> if no record matches the id</li>
 <li><code>get_some_value()</code> → one arbitrary record (or <code>None</code> if empty)</li>
 </ul>
 </li>
@@ -4903,7 +4925,7 @@ hit — only the column and expression infrastructure you already implemented.</
 <p><strong><code>ReadableDataSet&lt;E&gt;</code></strong> — returns deserialized entities (calls <code>E::try_from_record()</code> for you):</p>
 <ul>
 <li><code>list()</code> → all entities as <code>IndexMap&lt;Id, E&gt;</code></li>
-<li><code>get(id)</code> → single entity by ID</li>
+<li><code>get(id)</code> → <code>Option&lt;E&gt;</code> — <code>None</code> if no entity matches the id</li>
 <li><code>get_some()</code> → one arbitrary entity</li>
 </ul>
 </li>
@@ -4916,8 +4938,9 @@ hit — only the column and expression infrastructure you already implemented.</
 <li>Execute via <code>self.execute(&amp;select.expr())</code></li>
 <li>Parse the result — split each row into an ID and a <code>Record</code></li>
 </ol>
-<p>For <code>get_table_value</code>, add a WHERE condition on the id field. For <code>get_table_some_value</code>, set
-<code>LIMIT 1</code> and return the first row (or <code>None</code> if empty).</p>
+<p>For <code>get_table_value</code>, add a WHERE condition on the id field and return <code>Ok(None)</code> when the
+lookup misses — errors are reserved for actual connection or parse failures.
+For <code>get_table_some_value</code>, set <code>LIMIT 1</code> and return the first row (or <code>None</code> if empty).</p>
 <p>Write tests for both <code>ReadableValueSet</code> and <code>ReadableDataSet</code> in separate files — import the traits
 from <code>vantage_dataset</code> and call <code>list_values()</code>, <code>get_value()</code>, <code>get_some_value()</code>, <code>list()</code>,
 <code>get()</code>, <code>get_some()</code> against your pre-populated test database. Keep these tests condition-free —
@@ -5239,7 +5262,7 @@ the underlying struct directly.</p>
 
 <h2 id="or_--and_--logical-combinators"><a class="header" href="#or_--and_--logical-combinators"><code>or_()</code> / <code>and_()</code> — Logical Combinators</a></h2>
 <p>By default, multiple calls to <code>.with_condition()</code> combine with <code>AND</code>. When you need <code>OR</code>, use
-<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/logical/fn.or_.html"><code>or_()</code></a>:</p>
+<a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/logical/fn.or_.html"><code>or_()</code></a>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use vantage_sql::primitives::*;
@@ -5247,7 +5270,7 @@ the underlying struct directly.</p>
 // role = 'admin' OR role = 'superuser'
 let cond = or_(ident("role").eq("admin"), ident("role").eq("superuser"));
 <span class="boring">}</span></code></pre>
-<p>For nested logic, combine with <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/logical/fn.and_.html"><code>and_()</code></a>:</p>
+<p>For nested logic, combine with <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/logical/fn.and_.html"><code>and_()</code></a>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>// (price &gt; 100 AND in_stock = 1) OR (featured = 1)
@@ -5266,11 +5289,11 @@ for MySQL).</p>
 let qualified = ident("name").dot_of("u");    // "u"."name"
 let aliased = ident("total").with_alias("t"); // "total" AS "t"
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/identifier/fn.ident.html"><code>ident()</code></a> is a shorthand for
-<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/identifier/struct.Identifier.html#method.new"><code>Identifier::new()</code></a>. Reserved words and
+<p><a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/identifier/fn.ident.html"><code>ident()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/identifier/struct.Identifier.html#method.new"><code>Identifier::new()</code></a>. Reserved words and
 names with spaces are quoted automatically.</p>
 <h2 id="fx--function-calls"><a class="header" href="#fx--function-calls"><code>fx!</code> — Function Calls</a></h2>
-<p>The <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/macro.fx.html"><code>fx!</code></a> macro builds a SQL function call. Arguments are passed directly —
+<p>The <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/macro.fx.html"><code>fx!</code></a> macro builds a SQL function call. Arguments are passed directly —
 <code>.expr()</code> is called on each one automatically:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -5289,7 +5312,7 @@ fx!("round", fx!("avg", ident("price")), 2i64)
 // =&gt; ROUND(AVG("price"), 2)
 <span class="boring">}</span></code></pre>
 <p>If you need to build arguments programmatically (e.g. from a <code>Vec</code>), use
-<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/fx/struct.Fx.html#method.new"><code>Fx::new()</code></a> directly:</p>
+<a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/fx/struct.Fx.html#method.new"><code>Fx::new()</code></a> directly:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>let args: Vec&lt;Expression&lt;AnySqliteType&gt;&gt; = columns.iter().map(|c| c.expr()).collect();
@@ -5306,10 +5329,10 @@ let f = Fx::new("coalesce", args);
     "sold out",
 );
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/ternary/fn.ternary.html"><code>ternary()</code></a> is a shorthand for
-<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/ternary/struct.Ternary.html#method.new"><code>Ternary::new()</code></a>.</p>
+<p><a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/ternary/fn.ternary.html"><code>ternary()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/ternary/struct.Ternary.html#method.new"><code>Ternary::new()</code></a>.</p>
 <h2 id="case--case-expressions"><a class="header" href="#case--case-expressions"><code>Case</code> — CASE Expressions</a></h2>
-<p>For more than two branches, use <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/case/struct.Case.html"><code>Case</code></a> to build a full
+<p>For more than two branches, use <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/case/struct.Case.html"><code>Case</code></a> to build a full
 <code>CASE WHEN ... END</code> block:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -5320,12 +5343,12 @@ let f = Fx::new("coalesce", args);
 <span class="boring">}</span></code></pre>
 <h2 id="concat_--string-concatenation"><a class="header" href="#concat_--string-concatenation"><code>concat_!</code> — String Concatenation</a></h2>
 <p>Concatenates expressions. Renders as <code>||</code> on SQLite/Postgres, <code>CONCAT()</code> on MySQL. The
-<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/macro.concat_.html"><code>concat_!</code></a> macro calls <code>.expr()</code> on each argument automatically:</p>
+<a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/macro.concat_.html"><code>concat_!</code></a> macro calls <code>.expr()</code> on each argument automatically:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>concat_!(ident("first_name"), " ", ident("last_name"))
 <span class="boring">}</span></code></pre>
-<p>Use <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/concat/struct.Concat.html#method.ws"><code>.ws()</code></a> for a separator — it accepts any
+<p>Use <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/concat/struct.Concat.html#method.ws"><code>.ws()</code></a> for a separator — it accepts any
 <code>Expressive&lt;T&gt;</code>, including string literals:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -5342,7 +5365,7 @@ let f = Fx::new("coalesce", args);
 // MySQL:    INTERVAL 30 DAY
 // Postgres: INTERVAL '30 days'
 <span class="boring">}</span></code></pre>
-<p>See <a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/interval/struct.Interval.html"><code>Interval</code></a> for available constructors (<code>days</code>,
+<p>See <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/interval/struct.Interval.html"><code>Interval</code></a> for available constructors (<code>days</code>,
 <code>hours</code>, <code>months</code>, etc.).</p>
 <h2 id="date_format--date-formatting"><a class="header" href="#date_format--date-formatting"><code>date_format()</code> — Date Formatting</a></h2>
 <p>Portable strftime-style formatting. Translates format tokens per backend:</p>
@@ -5353,9 +5376,9 @@ let f = Fx::new("coalesce", args);
 // MySQL:    DATE_FORMAT("created_at", '%Y-%m-%d')
 // Postgres: TO_CHAR("created_at", 'YYYY-MM-DD')
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/date_format/fn.date_format.html"><code>date_format()</code></a> is a shorthand for
-<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/date_format/struct.DateFormat.html#method.new"><code>DateFormat::new()</code></a>. Use
-<a href="https://docs.rs/vantage_sql/0.4.1/vantage_sql/primitives/date_format/struct.DateFormat.html#method.raw_format"><code>.raw_format()</code></a> to skip token
+<p><a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/date_format/fn.date_format.html"><code>date_format()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/date_format/struct.DateFormat.html#method.new"><code>DateFormat::new()</code></a>. Use
+<a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/primitives/date_format/struct.DateFormat.html#method.raw_format"><code>.raw_format()</code></a> to skip token
 translation and pass a native format string.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="type-conversions"><a class="header" href="#type-conversions">Type Conversions</a></h1>
