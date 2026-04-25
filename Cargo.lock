@@ -3866,7 +3866,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-csv"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -3933,7 +3933,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-mongodb"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "async-trait",
  "bson",
@@ -4006,7 +4006,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -4029,7 +4029,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "ciborium",
  "csv",
