@@ -25,6 +25,9 @@ pub use crate::pagination::Pagination;
 // Conditions
 pub use crate::conditions::ConditionHandle;
 
+// CBOR value accessor helpers (for Record<CborValue> consumers of AnyTable)
+pub use crate::cbor_ext::CborValueExt;
+
 // Mock functionality for testing
 pub use crate::mocks::mock_table_source::MockTableSource;
 

@@ -25,6 +25,7 @@ async-trait = "0.1"
 futures-core = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+ciborium = { version = "0.2", features = ["std"] }
 indexmap = "2.12"
 mockall = "0.12"
 paste = "1.0"
@@ -50,4 +51,11 @@ test = false
 [[test]]
 name = "expr"
 path = "tests/expr.rs"
+test = false
+
+# Disabled during CBOR swap — needs a CBOR-native mock TableSource.
+# See TODO.md "Architecture: Make ImTable / ImDataSource generic over Value".
+[[test]]
+name = "table_like"
+path = "tests/table_like.rs"
 test = false

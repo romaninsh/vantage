@@ -66,7 +66,7 @@ impl<
     TargetE: Entity<T::Value> + 'static,
 > Reference for HasOne<T, SourceE, TargetE>
 where
-    T::Value: Into<serde_json::Value> + From<serde_json::Value>,
+    T::Value: Into<ciborium::Value> + From<ciborium::Value>,
     T::Id: Display + From<String>,
 {
     fn columns(&self, _source_id: &str, target_id: &str) -> (String, String) {

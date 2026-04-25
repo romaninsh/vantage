@@ -335,6 +335,29 @@ pub fn record_to_json(
         .collect()
 }
 
+// -- CBOR bridge (for AnyTable interop) --------------------------------------
+//
+// `AnyTable` carries `Record<ciborium::Value>` across the type-erased
+// boundary. CSV is a string-based format with no native CBOR
+// representation; we round-trip via JSON so we get the same lossy
+// behaviour as the JSON bridge above (binary → "[binary]" etc., handled
+// by serde's CBOR↔JSON conversion).
+
+impl From<ciborium::Value> for AnyCsvType {
+    fn from(v: ciborium::Value) -> Self {
+        let json: serde_json::Value =
+            serde_json::to_value(&v).unwrap_or(serde_json::Value::Null);
+        AnyCsvType::from(json)
+    }
+}
+
+impl From<AnyCsvType> for ciborium::Value {
+    fn from(csv: AnyCsvType) -> Self {
+        let json = serde_json::Value::from(csv);
+        ciborium::Value::serialized(&json).unwrap_or(ciborium::Value::Null)
+    }
+}
+
 use vantage_types::TerminalRender;
 
 impl TerminalRender for AnyCsvType {

@@ -273,7 +273,15 @@ impl VantageTableAdapter {
                 column_names
                     .iter()
                     .map(|name| match record.get(name) {
-                        Some(value) => json_to_cell(value),
+                        // AnyTable carries Record<ciborium::Value>; convert
+                        // to serde_json::Value once for the existing cell
+                        // mapper. Lossy bits (binary/tags) fall through to
+                        // serde's default JSON representation.
+                        Some(value) => {
+                            let json = serde_json::to_value(value)
+                                .unwrap_or(serde_json::Value::Null);
+                            json_to_cell(&json)
+                        }
                         None => CellValue::Null,
                     })
                     .collect()

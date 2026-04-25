@@ -85,3 +85,27 @@ impl TerminalRender for serde_json::Value {
         }
     }
 }
+
+impl TerminalRender for ciborium::Value {
+    fn render(&self) -> String {
+        match self {
+            ciborium::Value::Text(s) => s.clone(),
+            ciborium::Value::Null => "-".to_string(),
+            ciborium::Value::Bool(b) => b.to_string(),
+            ciborium::Value::Integer(i) => i128::from(*i).to_string(),
+            ciborium::Value::Float(f) => f.to_string(),
+            ciborium::Value::Bytes(b) => format!("[{} bytes]", b.len()),
+            ciborium::Value::Tag(_, inner) => inner.render(),
+            other => format!("{:?}", other),
+        }
+    }
+
+    fn color_hint(&self) -> Option<&'static str> {
+        match self {
+            ciborium::Value::Bool(true) => Some("green"),
+            ciborium::Value::Bool(false) => Some("red"),
+            ciborium::Value::Null => Some("dim"),
+            _ => None,
+        }
+    }
+}

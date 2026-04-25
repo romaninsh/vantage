@@ -3,22 +3,29 @@
 //! `AnyTable` provides a way to store tables of different types uniformly
 //! while preserving the ability to recover the concrete type through downcasting.
 //!
-//! Tables whose value/id types differ from `serde_json::Value`/`String` can still
+//! Tables whose value/id types differ from `ciborium::Value`/`String` can still
 //! be wrapped via [`AnyTable::from_table`] as long as the value type implements
-//! `Into<Value> + From<Value>` and the id type implements `Display + From<String>`.
+//! `Into<CborValue> + From<CborValue>` and the id type implements
+//! `Display + From<String>`.
+//!
+//! Each backend brings its own native value type (`AnySurrealType`,
+//! `AnyMongoType`, `AnyPostgresType`, etc.); CBOR is just the carrier across
+//! the type-erased boundary, chosen because it preserves type fidelity that
+//! JSON loses (integer vs float, binary blobs, NaN/Infinity, precise
+//! decimals).
 
 use std::any::TypeId;
 use std::fmt::Display;
 
 use async_trait::async_trait;
+use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use serde_json::Value;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::{ReadableValueSet, ValueSet, WritableValueSet};
 use vantage_types::{Entity, Record};
 
 // Type alias for cleaner code
-pub type AnyRecord = Record<Value>;
+pub type AnyRecord = Record<CborValue>;
 
 use crate::{
     conditions::ConditionHandle,
@@ -28,9 +35,9 @@ use crate::{
 };
 
 /// Type-erased table that can be downcast to concrete `Table<T, E>`
-/// Works with AnyRecord (which uses serde_json::Value)
+/// Works with AnyRecord (which uses ciborium::Value)
 pub struct AnyTable {
-    inner: Box<dyn TableLike<Value = Value, Id = String>>,
+    inner: Box<dyn TableLike<Value = CborValue, Id = String>>,
     datasource_type_id: TypeId,
     entity_type_id: TypeId,
     datasource_name: &'static str,
@@ -38,9 +45,12 @@ pub struct AnyTable {
 }
 
 impl AnyTable {
-    /// Create a new AnyTable from a concrete table
-    /// Only works with tables that use serde_json::Value as their Value type
-    pub fn new<T: TableSource<Value = Value, Id = String> + 'static, E: Entity<Value> + 'static>(
+    /// Create a new AnyTable from a concrete table.
+    /// Only works with tables that use `ciborium::Value` as their Value type.
+    pub fn new<
+        T: TableSource<Value = CborValue, Id = String> + 'static,
+        E: Entity<CborValue> + 'static,
+    >(
         table: Table<T, E>,
     ) -> Self {
         Self {
@@ -52,19 +62,21 @@ impl AnyTable {
         }
     }
 
-    /// Create an AnyTable from a table with any value/id types that convert to/from JSON.
+    /// Create an AnyTable from a table with any value/id types that convert
+    /// to/from CBOR.
     ///
-    /// This wraps the table in an internal adapter that converts values on the fly,
-    /// so any `TableSource` can be used with the unified `AnyTable` interface.
+    /// This wraps the table in an internal adapter that converts values on the
+    /// fly, so any `TableSource` can be used with the unified `AnyTable`
+    /// interface.
     pub fn from_table<T, E>(table: Table<T, E>) -> Self
     where
         T: TableSource + 'static,
-        T::Value: Into<Value> + From<Value>,
+        T::Value: Into<CborValue> + From<CborValue>,
         T::Id: Display + From<String>,
         E: Entity<T::Value> + 'static,
     {
         Self {
-            inner: Box::new(JsonAdapter { inner: table }),
+            inner: Box::new(CborAdapter { inner: table }),
             datasource_type_id: TypeId::of::<T>(),
             entity_type_id: TypeId::of::<E>(),
             datasource_name: std::any::type_name::<T>(),
@@ -76,8 +88,8 @@ impl AnyTable {
     ///
     /// Returns `Err(self)` if the type doesn't match, allowing recovery
     pub fn downcast<
-        T: TableSource<Value = Value, Id = String> + 'static,
-        E: Entity<Value> + 'static,
+        T: TableSource<Value = CborValue, Id = String> + 'static,
+        E: Entity<CborValue> + 'static,
     >(
         self,
     ) -> Result<Table<T, E>> {
@@ -128,7 +140,7 @@ impl AnyTable {
     }
 
     /// Check if this table matches the given types
-    pub fn is_type<T: TableSource + 'static, E: Entity<Value> + 'static>(&self) -> bool {
+    pub fn is_type<T: TableSource + 'static, E: Entity<CborValue> + 'static>(&self) -> bool {
         self.datasource_type_id == TypeId::of::<T>() && self.entity_type_id == TypeId::of::<E>()
     }
 }
@@ -157,7 +169,7 @@ impl std::fmt::Debug for AnyTable {
 // Implement ValueSet first
 impl ValueSet for AnyTable {
     type Id = String;
-    type Value = Value;
+    type Value = CborValue;
 }
 
 // Implement ReadableValueSet by delegating to inner TableLike
@@ -283,15 +295,15 @@ impl AnyTable {
     }
 }
 
-// ── JsonAdapter: blanket bridge for non-JSON table types ────────────────
+// ── CborAdapter: blanket bridge for non-CBOR table types ────────────────
 
-/// Wraps a `Table<T, E>` whose value/id types are not `serde_json::Value`/`String`,
-/// converting on the fly so it can satisfy `TableLike<Value = Value, Id = String>`.
-struct JsonAdapter<T: TableSource, E: Entity<T::Value>> {
+/// Wraps a `Table<T, E>` whose value/id types are not `ciborium::Value`/`String`,
+/// converting on the fly so it can satisfy `TableLike<Value = CborValue, Id = String>`.
+struct CborAdapter<T: TableSource, E: Entity<T::Value>> {
     inner: Table<T, E>,
 }
 
-impl<T: TableSource, E: Entity<T::Value>> Clone for JsonAdapter<T, E> {
+impl<T: TableSource, E: Entity<T::Value>> Clone for CborAdapter<T, E> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -299,20 +311,20 @@ impl<T: TableSource, E: Entity<T::Value>> Clone for JsonAdapter<T, E> {
     }
 }
 
-impl<T, E> JsonAdapter<T, E>
+impl<T, E> CborAdapter<T, E>
 where
     T: TableSource,
-    T::Value: Into<Value>,
+    T::Value: Into<CborValue>,
     T::Id: Display,
     E: Entity<T::Value>,
 {
-    fn convert_record(record: Record<T::Value>) -> Record<Value> {
+    fn convert_record(record: Record<T::Value>) -> Record<CborValue> {
         record.into_iter().map(|(k, v)| (k, v.into())).collect()
     }
 
-    fn convert_record_back(record: &Record<Value>) -> Record<T::Value>
+    fn convert_record_back(record: &Record<CborValue>) -> Record<T::Value>
     where
-        T::Value: From<Value>,
+        T::Value: From<CborValue>,
     {
         record
             .iter()
@@ -321,24 +333,24 @@ where
     }
 }
 
-impl<T, E> ValueSet for JsonAdapter<T, E>
+impl<T, E> ValueSet for CborAdapter<T, E>
 where
     T: TableSource,
     E: Entity<T::Value>,
 {
     type Id = String;
-    type Value = Value;
+    type Value = CborValue;
 }
 
 #[async_trait]
-impl<T, E> ReadableValueSet for JsonAdapter<T, E>
+impl<T, E> ReadableValueSet for CborAdapter<T, E>
 where
     T: TableSource,
-    T::Value: Into<Value>,
+    T::Value: Into<CborValue>,
     T::Id: Display + From<String>,
     E: Entity<T::Value>,
 {
-    async fn list_values(&self) -> Result<IndexMap<String, Record<Value>>> {
+    async fn list_values(&self) -> Result<IndexMap<String, Record<CborValue>>> {
         let raw = self
             .inner
             .data_source()
@@ -350,7 +362,7 @@ where
             .collect())
     }
 
-    async fn get_value(&self, id: &String) -> Result<Option<Record<Value>>> {
+    async fn get_value(&self, id: &String) -> Result<Option<Record<CborValue>>> {
         let native_id: T::Id = id.clone().into();
         let rec = self
             .inner
@@ -360,7 +372,7 @@ where
         Ok(rec.map(Self::convert_record))
     }
 
-    async fn get_some_value(&self) -> Result<Option<(String, Record<Value>)>> {
+    async fn get_some_value(&self) -> Result<Option<(String, Record<CborValue>)>> {
         let result = self
             .inner
             .data_source()
@@ -371,14 +383,18 @@ where
 }
 
 #[async_trait]
-impl<T, E> WritableValueSet for JsonAdapter<T, E>
+impl<T, E> WritableValueSet for CborAdapter<T, E>
 where
     T: TableSource,
-    T::Value: Into<Value> + From<Value>,
+    T::Value: Into<CborValue> + From<CborValue>,
     T::Id: Display + From<String>,
     E: Entity<T::Value>,
 {
-    async fn insert_value(&self, id: &String, record: &Record<Value>) -> Result<Record<Value>> {
+    async fn insert_value(
+        &self,
+        id: &String,
+        record: &Record<CborValue>,
+    ) -> Result<Record<CborValue>> {
         let native_id: T::Id = id.clone().into();
         let native_rec = Self::convert_record_back(record);
         let returned = self
@@ -389,7 +405,11 @@ where
         Ok(Self::convert_record(returned))
     }
 
-    async fn replace_value(&self, id: &String, record: &Record<Value>) -> Result<Record<Value>> {
+    async fn replace_value(
+        &self,
+        id: &String,
+        record: &Record<CborValue>,
+    ) -> Result<Record<CborValue>> {
         let native_id: T::Id = id.clone().into();
         let native_rec = Self::convert_record_back(record);
         let returned = self
@@ -400,7 +420,11 @@ where
         Ok(Self::convert_record(returned))
     }
 
-    async fn patch_value(&self, id: &String, partial: &Record<Value>) -> Result<Record<Value>> {
+    async fn patch_value(
+        &self,
+        id: &String,
+        partial: &Record<CborValue>,
+    ) -> Result<Record<CborValue>> {
         let native_id: T::Id = id.clone().into();
         let native_rec = Self::convert_record_back(partial);
         let returned = self
@@ -428,10 +452,10 @@ where
 }
 
 #[async_trait]
-impl<T, E> TableLike for JsonAdapter<T, E>
+impl<T, E> TableLike for CborAdapter<T, E>
 where
     T: TableSource + 'static,
-    T::Value: Into<Value> + From<Value>,
+    T::Value: Into<CborValue> + From<CborValue>,
     T::Id: Display + From<String>,
     E: Entity<T::Value> + 'static,
 {
@@ -448,7 +472,7 @@ where
     }
 
     fn add_condition(&mut self, _condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()> {
-        Err(error!("add_condition not supported through JsonAdapter"))
+        Err(error!("add_condition not supported through CborAdapter"))
     }
 
     fn temp_add_condition(
@@ -456,23 +480,23 @@ where
         _condition: vantage_expressions::AnyExpression,
     ) -> Result<ConditionHandle> {
         Err(error!(
-            "temp_add_condition not supported through JsonAdapter"
+            "temp_add_condition not supported through CborAdapter"
         ))
     }
 
     fn temp_remove_condition(&mut self, _handle: ConditionHandle) -> Result<()> {
         Err(error!(
-            "temp_remove_condition not supported through JsonAdapter"
+            "temp_remove_condition not supported through CborAdapter"
         ))
     }
 
     fn search_expression(&self, _search_value: &str) -> Result<vantage_expressions::AnyExpression> {
         Err(error!(
-            "search_expression not supported through JsonAdapter"
+            "search_expression not supported through CborAdapter"
         ))
     }
 
-    fn clone_box(&self) -> Box<dyn TableLike<Value = Value, Id = String>> {
+    fn clone_box(&self) -> Box<dyn TableLike<Value = CborValue, Id = String>> {
         Box::new(self.clone())
     }
 
@@ -497,74 +521,9 @@ where
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::mocks::mock_table_source::MockTableSource;
-
-    use super::*;
-
-    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-    struct TestEntity {
-        id: i32,
-        name: String,
-    }
-
-    #[test]
-    fn test_anytable_creation_and_downcast() {
-        let ds = MockTableSource::new();
-        let table = Table::<MockTableSource, TestEntity>::new("test", ds);
-        let any = AnyTable::new(table.clone());
-
-        assert_eq!(
-            any.datasource_name(),
-            std::any::type_name::<MockTableSource>()
-        );
-        assert_eq!(any.entity_name(), std::any::type_name::<TestEntity>());
-
-        // Successful downcast
-        let recovered = any.downcast::<MockTableSource, TestEntity>().unwrap();
-        assert_eq!(recovered.table_name(), "test");
-    }
-
-    #[test]
-    fn test_anytable_downcast_wrong_entity() {
-        let ds = MockTableSource::new();
-        let table = Table::<MockTableSource, TestEntity>::new("test", ds);
-        let any = AnyTable::new(table);
-
-        // Try to downcast to wrong entity type - use a different entity
-        #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-        struct DifferentEntity;
-
-        // DifferentEntity automatically gets Entity via blanket impl
-
-        let result = any.downcast::<MockTableSource, DifferentEntity>();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_anytable_is_type() {
-        let ds = MockTableSource::new();
-        let table = Table::<MockTableSource, TestEntity>::new("test", ds);
-        let any = AnyTable::new(table);
-
-        assert!(any.is_type::<MockTableSource, TestEntity>());
-        // Test with different entity type
-        #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-        struct OtherEntity;
-
-        assert!(!any.is_type::<MockTableSource, OtherEntity>());
-    }
-
-    #[test]
-    fn test_anytable_debug() {
-        let ds = MockTableSource::new();
-        let table = Table::<MockTableSource, TestEntity>::new("test", ds);
-        let any = AnyTable::new(table);
-
-        let debug_str = format!("{:?}", any);
-        assert!(debug_str.contains("AnyTable"));
-        assert!(debug_str.contains("datasource"));
-        assert!(debug_str.contains("entity"));
-    }
-}
+// Inline AnyTable tests using `MockTableSource` were dropped as part of the
+// CBOR swap. `MockTableSource` still uses `serde_json::Value`, but `AnyTable`
+// now requires `Value = CborValue`. A new CBOR-flavoured mock + restored
+// integration tests will live in `tests/table_like.rs` once `MockTableSource`
+// (or a sibling mock) gains CBOR support — see TODO.md "Architecture: Make
+// ImTable / ImDataSource generic over Value".

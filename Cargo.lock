@@ -225,6 +225,7 @@ name = "bakery_model3"
 version = "0.1.0"
 dependencies = [
  "bson",
+ "ciborium",
  "clap",
  "indexmap",
  "serde_json",
@@ -3868,6 +3869,7 @@ name = "vantage-csv"
 version = "0.4.2"
 dependencies = [
  "async-trait",
+ "ciborium",
  "csv",
  "indexmap",
  "paste",
@@ -3935,6 +3937,7 @@ version = "0.4.3"
 dependencies = [
  "async-trait",
  "bson",
+ "ciborium",
  "futures-util",
  "indexmap",
  "mongodb",

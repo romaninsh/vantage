@@ -154,6 +154,39 @@ impl From<Record<serde_json::Value>> for serde_json::Value {
     }
 }
 
+// Direct conversion from ciborium::Value to Record — mirrors the JSON
+// impl above. Non-Map values are wrapped under a `"value"` key.
+impl From<ciborium::Value> for Record<ciborium::Value> {
+    fn from(value: ciborium::Value) -> Self {
+        match value {
+            ciborium::Value::Map(pairs) => pairs
+                .into_iter()
+                .filter_map(|(k, v)| match k {
+                    ciborium::Value::Text(s) => Some((s, v)),
+                    _ => None,
+                })
+                .collect(),
+            _ => {
+                let mut record = Record::new();
+                record.insert("value".to_string(), value);
+                record
+            }
+        }
+    }
+}
+
+// Reverse conversion from Record to ciborium::Value (always a Map).
+impl From<Record<ciborium::Value>> for ciborium::Value {
+    fn from(val: Record<ciborium::Value>) -> Self {
+        ciborium::Value::Map(
+            val.inner
+                .into_iter()
+                .map(|(k, v)| (ciborium::Value::Text(k), v))
+                .collect(),
+        )
+    }
+}
+
 // Clean record conversion traits
 pub trait IntoRecord<T> {
     fn into_record(self) -> Record<T>;
@@ -229,5 +262,56 @@ where
 
         let json_value = serde_json::Value::Object(json_object);
         serde_json::from_value(json_value)
+    }
+}
+
+// Blanket impls bridging serde-derived entity structs to ciborium::Value.
+// `AnyTable` carries `Record<ciborium::Value>` across the type-erased
+// boundary, so any entity that wants to be wrapped via `AnyTable::new`
+// (i.e. without going through the `CborAdapter` conversion path) needs
+// `Entity<ciborium::Value>`. These impls auto-supply that for any
+// Serialize/DeserializeOwned struct, mirroring the JSON impls above.
+#[cfg(feature = "serde")]
+impl<T> IntoRecord<ciborium::Value> for T
+where
+    T: serde::Serialize,
+{
+    fn into_record(self) -> Record<ciborium::Value> {
+        let cbor_value =
+            ciborium::Value::serialized(&self).expect("Failed to serialize entity to CBOR");
+
+        match cbor_value {
+            ciborium::Value::Map(pairs) => pairs
+                .into_iter()
+                .filter_map(|(k, v)| match k {
+                    ciborium::Value::Text(s) => Some((s, v)),
+                    _ => None,
+                })
+                .collect(),
+            _ => {
+                let mut record = Record::new();
+                record.insert("value".to_string(), cbor_value);
+                record
+            }
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<T> TryFromRecord<ciborium::Value> for T
+where
+    T: serde::de::DeserializeOwned,
+{
+    type Error = ciborium::value::Error;
+
+    fn from_record(record: Record<ciborium::Value>) -> Result<Self, Self::Error> {
+        let cbor_map: Vec<(ciborium::Value, ciborium::Value)> = record
+            .inner
+            .into_iter()
+            .map(|(k, v)| (ciborium::Value::Text(k), v))
+            .collect();
+
+        let cbor_value = ciborium::Value::Map(cbor_map);
+        cbor_value.deserialized()
     }
 }

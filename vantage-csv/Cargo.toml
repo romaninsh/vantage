@@ -10,6 +10,7 @@ repository = "https://github.com/romaninsh/vantage"
 
 [dependencies]
 async-trait = "0.1"
+ciborium = { version = "0.2", features = ["std"] }
 csv = "1.4"
 paste = "1.0"
 indexmap = { version = "2", features = ["serde"] }

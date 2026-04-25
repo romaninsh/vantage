@@ -17,6 +17,7 @@ vantage-types-entity = { version = "0.4", path = "./entity" }
 indexmap = "2.0"
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0.145", optional = true }
+ciborium = { version = "0.2", features = ["std"] }
 vantage-core = { version = "0.4", path = "../vantage-core" }
 
 [dev-dependencies]

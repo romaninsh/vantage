@@ -267,7 +267,10 @@ async fn handle_commands(
                 }
 
                 let id = qualify_id(source, table.table_name(), id_str);
-                let record = vantage_types::Record::from(json_val);
+                let cbor_val = ciborium::Value::serialized(&json_val).map_err(|e| {
+                    vantage_core::error!("Invalid JSON for CBOR", details = e.to_string())
+                })?;
+                let record = vantage_types::Record::from(cbor_val);
                 table.insert_value(&id, &record).await?;
                 println!("Inserted: {}", id);
             }
