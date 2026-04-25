@@ -167,8 +167,7 @@ impl From<AnyMongoType> for ciborium::Value {
 
 impl From<ciborium::Value> for AnyMongoType {
     fn from(val: ciborium::Value) -> Self {
-        let json: serde_json::Value =
-            serde_json::to_value(&val).unwrap_or(serde_json::Value::Null);
+        let json: serde_json::Value = serde_json::to_value(&val).unwrap_or(serde_json::Value::Null);
         AnyMongoType::from(json)
     }
 }

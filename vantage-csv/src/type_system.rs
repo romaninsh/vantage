@@ -345,8 +345,7 @@ pub fn record_to_json(
 
 impl From<ciborium::Value> for AnyCsvType {
     fn from(v: ciborium::Value) -> Self {
-        let json: serde_json::Value =
-            serde_json::to_value(&v).unwrap_or(serde_json::Value::Null);
+        let json: serde_json::Value = serde_json::to_value(&v).unwrap_or(serde_json::Value::Null);
         AnyCsvType::from(json)
     }
 }

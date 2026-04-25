@@ -105,5 +105,4 @@ mod tests {
         }
         assert_eq!(record.get("age").and_then(|v| v.as_i64()), Some(31));
     }
-
 }
