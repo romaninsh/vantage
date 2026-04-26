@@ -16,48 +16,82 @@ For the architectural rationale see [`DESIGN.md`](./DESIGN.md).
 
 ## Demo
 
-The crate ships a self-contained CLI that exercises every feature
-without needing an external server. A redb file plays the role of "the
-remote database"; `LiveTable` wraps it.
+The crate ships a CLI with two master modes — `local` (redb file
+pretending to be a remote database, full read/write/event cycle) and
+`api` (JSONPlaceholder over the public internet, read-only but the
+cache benefit is dramatic).
+
+### Local mode — full cycle
 
 ```sh
-# 1. Populate the master with sample data.
-cargo run --example live_demo -- seed
+# Populate the master.
+cargo run --example live_demo -- local seed
 
-# 2. Read everything. Run twice — first is a miss, second a hit
-#    (you'll see ~80x speedup in the "wall time" line).
-cargo run --example live_demo -- list
-cargo run --example live_demo -- list
+# Read everything. Run twice — first is a miss, second a hit
+# (~80x speedup in the "wall time" line).
+cargo run --example live_demo -- local list
+cargo run --example live_demo -- local list
 
-# 3. Insert through the LiveTable. Cache is invalidated; next read
-#    repopulates from master.
-cargo run --example live_demo -- add d Donut 5
-cargo run --example live_demo -- list
+# Insert through the LiveTable. Cache is invalidated; next read
+# repopulates from master.
+cargo run --example live_demo -- local add d Donut 5
+cargo run --example live_demo -- local list
 
-# 4. Look up one row.
-cargo run --example live_demo -- get a
+# Push a fake "remote change" event and watch the cache invalidate.
+cargo run --example live_demo -- local event-then-list
+cargo run --example live_demo -- local event-then-list --id a   # targeted
 
-# 5. Push a fake "remote change" event and watch the cache invalidate.
-#    The demo prints first list (miss), second list (hit), then the
-#    event lands and the next list misses again.
-cargo run --example live_demo -- event-then-list
-
-# 6. Targeted event for one id.
-cargo run --example live_demo -- event-then-list --id a
-
-# 7. Show the LiveTable's wiring.
-cargo run --example live_demo -- info
-
-# 8. Watch every cache hit/miss and queue event in tracing output.
-cargo run --example live_demo -- --debug list
-RUST_LOG=vantage_live=trace cargo run --example live_demo -- --debug add e Eclair 9
+# Watch the dance in tracing output.
+cargo run --example live_demo -- --debug local list
+RUST_LOG=vantage_live=trace cargo run --example live_demo -- --debug local add e Eclair 9
 ```
 
-Useful flags:
+### API mode — JSONPlaceholder
 
-- `--master <PATH>` — point at a different redb file (default
+`https://jsonplaceholder.typicode.com` over the public internet. First
+fetch hits the network (50–500ms), subsequent fetches are
+microseconds-fast.
+
+```sh
+# Pick a resource. JSONPlaceholder offers users / posts / comments / albums / todos.
+cargo run --example live_demo -- api users list
+cargo run --example live_demo -- api posts list
+cargo run --example live_demo -- api comments list
+
+# Fetch by id.
+cargo run --example live_demo -- api users get 1
+
+# Pagination is pushed into the URL — each page caches under its own key.
+cargo run --example live_demo -- api users list --page 1 --limit 3
+cargo run --example live_demo -- api users list --page 2 --limit 3
+
+# Filter with --filter field=value (eq-condition). The filter becomes
+# part of the URL (?postId=1) and part of the cache_key, so different
+# filters cache under different slots — postId=1 and postId=2 don't
+# trample each other.
+cargo run --example live_demo -- api comments list --filter postId=1 --limit 5
+cargo run --example live_demo -- api todos    list --filter completed=true --limit 10
+```
+
+### Persistent disk cache
+
+A folder path becomes a `RedbCache` — cache survives process restarts.
+With API mode this gives a network-call → microseconds speedup *across
+runs*, which is the closest the demo gets to a real "mobile UI cached
+on disk" scenario.
+
+```sh
+cargo run --example live_demo -- --cache ./vlive-cache api users list   # cold network
+cargo run --example live_demo -- --cache ./vlive-cache api users list   # warm disk
+```
+
+### Flags
+
+- `--master <PATH>` — redb file for the `local` master (default
   `./demo-master.redb`).
-- `--cache mem|none|<PATH>` — pick a cache backend.
+- `--cache mem|none|<FOLDER>` — pick a cache backend. A folder path
+  becomes a `RedbCache`, persisting cache state across process
+  restarts.
 - `--debug` — emit tracing spans (cache hit/miss, queue events,
   invalidations).
 
@@ -92,8 +126,8 @@ keeps working.
 v1 covers: read-side cache keyed by caller-supplied `cache_key` plus
 page number, write-queue worker that doesn't block callers, sloppy
 invalidation on every write or live event, pluggable cache backends
-(`MemCache`, `NoCache`, `RedbCache` is on the roadmap), pluggable
-event source via `LiveStream`.
+(`MemCache`, `NoCache`, `RedbCache`), pluggable event source via
+`LiveStream`.
 
 Out of scope for v1 — see `DESIGN.md`:
 
