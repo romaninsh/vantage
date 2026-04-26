@@ -2,7 +2,7 @@
 //!
 //! Embedded redb key-value persistence for the Vantage framework.
 //!
-//! Implements [`vantage_table::TableSource`] over [redb], with full CRUD,
+//! Implements [`vantage_table::traits::table_source::TableSource`] over [redb], with full CRUD,
 //! ACID write transactions, and column-driven secondary indexes maintained
 //! atomically alongside main rows.
 //!
