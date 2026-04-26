@@ -21,68 +21,80 @@ pretending to be a remote database, full read/write/event cycle) and
 `api` (JSONPlaceholder over the public internet, read-only but the
 cache benefit is dramatic).
 
+A folder cache (`--cache <PATH>`) is used in every example below — the
+`mem` default doesn't persist between CLI invocations, which makes most
+of these examples uninteresting.
+
 ### Local mode — full cycle
 
 ```sh
 # Populate the master.
-cargo run --example live_demo -- local seed
+cargo run --example live_demo -- --cache ./vlive-cache local seed
 
-# Read everything. Run twice — first is a miss, second a hit
-# (~80x speedup in the "wall time" line).
-cargo run --example live_demo -- local list
-cargo run --example live_demo -- local list
+# Read everything. Run twice — first is a miss, second a hit.
+cargo run --example live_demo -- --cache ./vlive-cache local list
+cargo run --example live_demo -- --cache ./vlive-cache local list
 
 # Insert through the LiveTable. Cache is invalidated; next read
 # repopulates from master.
-cargo run --example live_demo -- local add d Donut 5
-cargo run --example live_demo -- local list
+cargo run --example live_demo -- --cache ./vlive-cache local add d Donut 5
+cargo run --example live_demo -- --cache ./vlive-cache local list
 
 # Push a fake "remote change" event and watch the cache invalidate.
-cargo run --example live_demo -- local event-then-list
-cargo run --example live_demo -- local event-then-list --id a   # targeted
+cargo run --example live_demo -- --cache ./vlive-cache local event-then-list
+cargo run --example live_demo -- --cache ./vlive-cache local event-then-list --id a
 
 # Watch the dance in tracing output.
-cargo run --example live_demo -- --debug local list
-RUST_LOG=vantage_live=trace cargo run --example live_demo -- --debug local add e Eclair 9
+cargo run --example live_demo -- --debug --cache ./vlive-cache local list
 ```
 
 ### API mode — JSONPlaceholder
 
 `https://jsonplaceholder.typicode.com` over the public internet. First
-fetch hits the network (50–500ms), subsequent fetches are
-microseconds-fast.
+fetch hits the network, subsequent fetches are sub-millisecond from the
+cache.
 
 ```sh
 # Pick a resource. JSONPlaceholder offers users / posts / comments / albums / todos.
-cargo run --example live_demo -- api users list
-cargo run --example live_demo -- api posts list
-cargo run --example live_demo -- api comments list
+cargo run --example live_demo -- --cache ./vlive-cache api users list
+cargo run --example live_demo -- --cache ./vlive-cache api posts list
+cargo run --example live_demo -- --cache ./vlive-cache api comments list
 
 # Fetch by id.
-cargo run --example live_demo -- api users get 1
+cargo run --example live_demo -- --cache ./vlive-cache api users get 1
 
 # Pagination is pushed into the URL — each page caches under its own key.
-cargo run --example live_demo -- api users list --page 1 --limit 3
-cargo run --example live_demo -- api users list --page 2 --limit 3
+cargo run --example live_demo -- --cache ./vlive-cache api users list --page 1 --limit 3
+cargo run --example live_demo -- --cache ./vlive-cache api users list --page 2 --limit 3
 
 # Filter with --filter field=value (eq-condition). The filter becomes
 # part of the URL (?postId=1) and part of the cache_key, so different
 # filters cache under different slots — postId=1 and postId=2 don't
 # trample each other.
-cargo run --example live_demo -- api comments list --filter postId=1 --limit 5
-cargo run --example live_demo -- api todos    list --filter completed=true --limit 10
+cargo run --example live_demo -- --cache ./vlive-cache api comments list --filter postId=1 --limit 5
+cargo run --example live_demo -- --cache ./vlive-cache api todos    list --filter completed=true --limit 10
 ```
 
-### Persistent disk cache
+### Configuring vantage-api-client for other public APIs
 
-A folder path becomes a `RedbCache` — cache survives process restarts.
-With API mode this gives a network-call → microseconds speedup *across
-runs*, which is the closest the demo gets to a real "mobile UI cached
-on disk" scenario.
+`RestApi::builder` lets you point at any REST API by configuring the
+response shape and pagination convention. Two common public APIs:
 
-```sh
-cargo run --example live_demo -- --cache ./vlive-cache api users list   # cold network
-cargo run --example live_demo -- --cache ./vlive-cache api users list   # warm disk
+```rust
+use vantage_api_client::{RestApi, ResponseShape, PaginationParams};
+
+// JSONPlaceholder: bare-array responses, JSON-Server-style pagination.
+let api = RestApi::builder("https://jsonplaceholder.typicode.com")
+    .response_shape(ResponseShape::BareArray)
+    .pagination_params(PaginationParams::page_limit("_page", "_limit"))
+    .build();
+
+// DummyJSON: response wrapped under a key matching the table name,
+// skip-based pagination.
+let api = RestApi::builder("https://dummyjson.com")
+    .response_shape(ResponseShape::WrappedByTableName)
+    .pagination_params(PaginationParams::skip_limit("skip", "limit"))
+    .build();
 ```
 
 ### Flags
