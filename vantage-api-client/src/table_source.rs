@@ -102,8 +102,13 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        self.fetch_records(table.table_name(), id_field_name(table).as_deref())
-            .await
+        self.fetch_records(
+            table.table_name(),
+            id_field_name(table).as_deref(),
+            table.pagination(),
+            table.conditions(),
+        )
+        .await
     }
 
     async fn get_table_value<E>(
@@ -116,7 +121,12 @@ impl TableSource for RestApi {
         Self: Sized,
     {
         let records = self
-            .fetch_records(table.table_name(), id_field_name(table).as_deref())
+            .fetch_records(
+                table.table_name(),
+                id_field_name(table).as_deref(),
+                table.pagination(),
+                table.conditions(),
+            )
             .await?;
         Ok(records.get(id).cloned())
     }
@@ -130,7 +140,12 @@ impl TableSource for RestApi {
         Self: Sized,
     {
         let records = self
-            .fetch_records(table.table_name(), id_field_name(table).as_deref())
+            .fetch_records(
+                table.table_name(),
+                id_field_name(table).as_deref(),
+                table.pagination(),
+                table.conditions(),
+            )
             .await?;
         Ok(records.into_iter().next())
     }
@@ -141,7 +156,12 @@ impl TableSource for RestApi {
         Self: Sized,
     {
         let records = self
-            .fetch_records(table.table_name(), id_field_name(table).as_deref())
+            .fetch_records(
+                table.table_name(),
+                id_field_name(table).as_deref(),
+                table.pagination(),
+                table.conditions(),
+            )
             .await?;
         Ok(records.len() as i64)
     }

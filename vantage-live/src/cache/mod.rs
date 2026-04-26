@@ -14,9 +14,11 @@ use vantage_types::Record;
 
 mod mem;
 mod noop;
+mod redb;
 
 pub use mem::MemCache;
 pub use noop::NoCache;
+pub use redb::RedbCache;
 
 /// A row set as stored in the cache, with the wall-clock instant the master
 /// fetch completed. Fetch time isn't used in v1 (no TTL), but we keep it

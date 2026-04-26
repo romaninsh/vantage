@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1 — 2026-04-26
+
+- New `RedbCache::open(folder)` cache backend. Persists cached rows on disk so cache state survives process restarts. One redb file inside the folder, one redb table per `cache_key` (namespaced `__vlive__{cache_key}`) so the hot `invalidate_prefix(cache_key)` path is just a `delete_table` call — O(1)-ish, no scan. Sub-prefix invalidation falls back to scan-and-delete inside the table.
+- `examples/live_demo.rs` reworked into two master modes: `local` (redb-backed master, full read/write/event cycle, same as 0.4.0) and `api <users|posts|comments|…>` (read-only JSONPlaceholder master, demonstrates the cache benefit dramatically — first call ~300ms over the network, second call sub-millisecond from the cache). Pagination is pushed into the API URL via `--page` / `--limit` flags, each page caches under its own key. `--filter field=value` adds an eq-condition that becomes a URL query param and folds into the cache_key — different filters cache under different keys, matching the caller-owned-cache-key contract.
+- `--cache <PATH>` now uses `RedbCache` for real (was falling back to `MemCache` in 0.4.0). Combined with `api`, runs survive process restarts: `cargo run --example live_demo -- --cache ./vlive-cache api users list` — second invocation is microseconds-fast even though it's a fresh process.
+- `vantage-redb` and `vantage-api-client` moved from runtime deps to dev-deps — runtime never needed either (the `RedbCache` impl uses raw `redb` directly; vantage-api-client is only used by the demo).
+
 ## 0.4.0 — 2026-04-26
 
 First 0.4-line release. The crate was commented out of the workspace through the 0.4 type-system rewrite; this version replaces the 0.3 `RecordEdit` / `RwValueSet` design with a focused write-through cache around `AnyTable`. **Public API and storage shape are not compatible with 0.3** — there is no in-place upgrade.

@@ -1,6 +1,6 @@
 [package]
 name = "vantage-live"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -16,12 +16,12 @@ vantage-types = { version = "0.4", path = "../vantage-types" }
 vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
 vantage-dataset = { version = "0.4.2", path = "../vantage-dataset" }
 vantage-table = { version = "0.4.6", path = "../vantage-table" }
-vantage-redb = { version = "0.4", path = "../vantage-redb" }
 
 async-trait = "0.1"
 ciborium = { version = "0.2", features = ["std"] }
 indexmap = "2"
 futures-util = "0.3"
+redb = "2.6"
 tokio = { version = "1", features = ["sync", "rt", "macros", "time"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tracing = "0.1"
@@ -32,6 +32,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tempfile = "3"
 pretty_assertions = "1"
 clap = { version = "4", features = ["derive"] }
+serde_json = "1"
+# vantage-redb only used in tests for the master fixture and the demo CLI.
+vantage-redb = { version = "0.4", path = "../vantage-redb" }
+vantage-api-client = { version = "0.1.2", path = "../vantage-api-client" }
 
 [[example]]
 name = "live_demo"

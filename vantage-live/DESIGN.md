@@ -142,7 +142,12 @@ pub struct CachedRows {
 
 Three impls in v1:
 
-- `RedbCache` — disk-backed, opens a redb file. Production fit.
+- `RedbCache` — disk-backed, takes a folder. Inside, one redb file
+  (`vlive.redb`) with one redb table per `cache_key`, namespaced
+  `__vlive__{cache_key}`. Sub-keys (`page_n`, `id/foo`) are `&str`
+  inside that table; values are CBOR-encoded `CachedRows`.
+  `invalidate_prefix(cache_key)` drops the whole redb table — O(1)-ish.
+  redb's exclusive file lock means one process per cache folder.
 - `MemCache` — `Arc<RwLock<HashMap<String, CachedRows>>>`. Fast, fine for
   tests and short-lived processes.
 - `NoCache` — every method is a no-op / returns `None`. Equivalent to
