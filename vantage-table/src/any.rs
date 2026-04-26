@@ -84,6 +84,24 @@ impl AnyTable {
         }
     }
 
+    /// Wrap any `TableLike<Value = CborValue, Id = String>` directly. Use
+    /// this for table-like wrappers (e.g. `vantage_live::LiveTable`) that
+    /// aren't a `Table<T, E>` instance themselves but already satisfy the
+    /// `AnyTable`-facing trait surface. The entity type is recorded as
+    /// `()` since wrappers don't carry one.
+    pub fn from_table_like<T>(table: T) -> Self
+    where
+        T: TableLike<Value = CborValue, Id = String> + 'static,
+    {
+        Self {
+            inner: Box::new(table),
+            datasource_type_id: TypeId::of::<T>(),
+            entity_type_id: TypeId::of::<()>(),
+            datasource_name: std::any::type_name::<T>(),
+            entity_name: "<wrapped>",
+        }
+    }
+
     /// Attempt to downcast to a concrete `Table<T, E>`
     ///
     /// Returns `Err(self)` if the type doesn't match, allowing recovery

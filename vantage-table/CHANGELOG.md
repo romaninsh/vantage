@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.6 — 2026-04-26
+
+- New `AnyTable::from_table_like<T: TableLike<…>>` constructor. Wraps any table-like type that already speaks `Value = CborValue, Id = String` — needed by `vantage-live::LiveTable`, which is `TableLike` but not a `Table<T, E>` instance.
+
 ## 0.4.5 — 2026-04-26
 
 - New `ColumnFlag::Indexed` variant. UI hint that a column is cheap to sort or filter on; `vantage-redb` is the only backend that uses it for actual index maintenance.

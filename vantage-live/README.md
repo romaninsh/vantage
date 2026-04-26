@@ -1,238 +1,104 @@
 # vantage-live
 
-Live data synchronization layer for the Vantage framework.
+A write-through cache layer that wraps any `AnyTable` (the "master") and
+adds a local cache plus an optional event stream. Reads consult the cache
+first; misses fall through to the master and populate the cache on the
+way back. Writes are queued on a worker task and applied to the master,
+then the cache is invalidated. An optional `LiveStream` keeps the cache
+in sync with out-of-band changes (SurrealDB LIVE, Kafka, etc.).
 
-## Overview
+The point: make UI code non-blocking when it shouldn't be. Scrolling a
+list of clients on a phone shouldn't wait for the network on every page
+change, and editing a record shouldn't lock the form while the write is
+in flight.
 
-`vantage-live` provides an in-memory caching layer with async backend persistence, designed for building responsive UIs that work with remote data sources. It bridges the gap between instant UI updates and eventual database consistency.
+For the architectural rationale see [`DESIGN.md`](./DESIGN.md).
 
-## Key Features
+## Demo
 
-- **LiveTable**: Cache layer over any backend storage (SQL, SurrealDB, MongoDB, etc.)
-- **RecordEdit**: Editing sessions with change tracking and snapshot management
-- **Async persistence**: Write operations return immediately, persist in background
-- **Conflict detection**: Track remote changes vs local edits
-- **Field-level diffing**: Know exactly which fields were modified
-- **No validation enforcement**: UI controls validation timing
+The crate ships a self-contained CLI that exercises every feature
+without needing an external server. A redb file plays the role of "the
+remote database"; `LiveTable` wraps it.
 
-## Architecture
+```sh
+# 1. Populate the master with sample data.
+cargo run --example live_demo -- seed
 
+# 2. Read everything. Run twice — first is a miss, second a hit
+#    (you'll see ~80x speedup in the "wall time" line).
+cargo run --example live_demo -- list
+cargo run --example live_demo -- list
+
+# 3. Insert through the LiveTable. Cache is invalidated; next read
+#    repopulates from master.
+cargo run --example live_demo -- add d Donut 5
+cargo run --example live_demo -- list
+
+# 4. Look up one row.
+cargo run --example live_demo -- get a
+
+# 5. Push a fake "remote change" event and watch the cache invalidate.
+#    The demo prints first list (miss), second list (hit), then the
+#    event lands and the next list misses again.
+cargo run --example live_demo -- event-then-list
+
+# 6. Targeted event for one id.
+cargo run --example live_demo -- event-then-list --id a
+
+# 7. Show the LiveTable's wiring.
+cargo run --example live_demo -- info
+
+# 8. Watch every cache hit/miss and queue event in tracing output.
+cargo run --example live_demo -- --debug list
+RUST_LOG=vantage_live=trace cargo run --example live_demo -- --debug add e Eclair 9
 ```
-UI Layer
-   ↓
-RecordEdit (editing session)
-   ↓
-LiveTable (synchronization)
-   ↓
-├─ Cache (fast: ImTable, ReDB, Redis)
-└─ Backend (permanent: SurrealDB, PostgreSQL, MongoDB)
-```
 
-## Usage
+Useful flags:
 
-### Initialize LiveTable
+- `--master <PATH>` — point at a different redb file (default
+  `./demo-master.redb`).
+- `--cache mem|none|<PATH>` — pick a cache backend.
+- `--debug` — emit tracing spans (cache hit/miss, queue events,
+  invalidations).
+
+## Programmatic use
 
 ```rust
-use vantage_live::LiveTable;
-use vantage_dataset::im::ImTable;
+use std::sync::Arc;
+use vantage_live::{LiveTable, cache::MemCache};
+use vantage_table::any::AnyTable;
 
-// Create backend (e.g., SurrealDB table)
-let backend = BakeryTable::surreal_table(client, "bakery");
+// Wrap any AnyTable as the master.
+let master  = AnyTable::from_table(my_table);
+let cache   = Arc::new(MemCache::new());
 
-// Create cache (in-memory)
-let cache = ImTable::new(&im_ds, "bakery_cache");
+// `cache_key` is caller-owned. Use a different key for a different
+// view (different conditions, ordering, etc.).
+let live = LiveTable::new(master, "clients", cache);
 
-// Initialize LiveTable (populates cache from backend)
-let mut live_table = LiveTable::new(backend, cache).await?;
+// LiveTable implements TableLike, so it slots into AnyTable too —
+// generic code (UI adapters, axum handlers, etc.) doesn't know it's
+// talking to a cache.
+let any = AnyTable::from_table_like(live);
 ```
 
-### Edit Existing Record
+`LiveTable` implements the standard value-set traits from
+`vantage-dataset` (`ReadableValueSet`, `WritableValueSet`,
+`ActiveRecordSet`), so any consumer that already speaks `Record<Value>`
+keeps working.
 
-```rust
-// Start editing session
-let mut edit = live_table.edit_record("bakery:123").await?;
+## Status
 
-// Direct field access via Deref
-edit.name = "New Bakery Name".to_string();
-edit.profit_margin = 0.25;
+v1 covers: read-side cache keyed by caller-supplied `cache_key` plus
+page number, write-queue worker that doesn't block callers, sloppy
+invalidation on every write or live event, pluggable cache backends
+(`MemCache`, `NoCache`, `RedbCache` is on the roadmap), pluggable
+event source via `LiveStream`.
 
-// Check what changed
-println!("Modified fields: {:?}", edit.get_modified_fields());
+Out of scope for v1 — see `DESIGN.md`:
 
-// Highlight in UI
-for field in edit.get_modified_fields() {
-    if edit.is_field_modified(&field) {
-        highlight_field(&field);
-    }
-}
-
-// Save when ready (async persist to backend)
-match edit.save().await? {
-    SaveResult::Saved => println!("Success!"),
-    SaveResult::Error(e) => show_error(&e),
-    SaveResult::PartialSave(fields) => {
-        println!("Some fields didn't persist: {:?}", fields);
-    }
-    _ => {}
-}
-```
-
-### Create New Record
-
-```rust
-// Create new record
-let mut edit = live_table.new_record(Bakery {
-    name: "Brand New Bakery".to_string(),
-    profit_margin: 0.20,
-    ..Default::default()
-});
-
-// Edit before saving
-edit.name = "Even Better Name".to_string();
-
-// Save (returns real ID from backend)
-match edit.save().await? {
-    SaveResult::Created(real_id) => {
-        println!("Created with ID: {}", real_id);
-        // edit.id() now returns real_id
-    }
-    SaveResult::Error(e) => show_error(&e),
-    _ => {}
-}
-```
-
-### Handle Remote Changes
-
-```rust
-// Register callback for remote updates
-let live_table = LiveTable::new(backend, cache)
-    .await?
-    .on_remote_change(|id| {
-        println!("Record {} changed remotely", id);
-        ui.refresh(id);
-    });
-
-// When LIVE query notifies of change
-live_table.on_backend_change("bakery:123").await?;
-
-// If user has edit session open, refresh snapshot
-if let Some(mut edit) = active_sessions.get_mut("bakery:123") {
-    let conflicts = edit.refresh_snapshot().await?;
-    if !conflicts.is_empty() {
-        show_warning(&format!(
-            "Remote changes conflict with your edits: {:?}",
-            conflicts
-        ));
-    }
-}
-```
-
-## RecordEdit Lifetime
-
-`RecordEdit` borrows mutably from `LiveTable`, ensuring:
-- No orphaned edit sessions
-- Automatic cleanup on drop
-- Simple `edit.save()` API (no need to pass edit back to table)
-
-```rust
-{
-    let mut edit = live_table.edit_record("id").await?;
-    edit.name = "Changed".to_string();
-    edit.save().await?;
-} // edit dropped, live_table available again
-```
-
-## Snapshot Management
-
-Each `RecordEdit` maintains:
-- `live_snapshot`: State when editing started
-- `local`: Current edited state
-- `snapshot_time`: When snapshot was taken
-
-This enables:
-- Field-level change detection
-- Conflict resolution (local vs remote changes)
-- Revert to original state
-
-```rust
-// Check snapshot age
-let age = edit.snapshot_time().elapsed()?;
-if age > Duration::from_secs(300) {
-    println!("Snapshot is {} seconds old", age.as_secs());
-}
-
-// Compare local vs snapshot
-println!("Original: {}", edit.live_snapshot().name);
-println!("Current: {}", edit.local().name);
-
-// Revert changes
-edit.revert();
-```
-
-## DataSet Trait Integration
-
-`LiveTable` implements all standard Vantage dataset traits:
-- `ReadableDataSet<E>`
-- `ReadableValueSet`
-- `WritableDataSet<E>`
-- `WritableValueSet`
-- `InsertableDataSet<E>`
-
-This makes it a drop-in replacement for regular tables in existing code.
-
-## No Validation
-
-`vantage-live` does not enforce validation. Example:
-- User typing email: `"john@"` (incomplete, but valid local state)
-- Form can validate before calling `save()`
-- Backend validates on persist
-
-This gives UI full control over validation timing and UX.
-
-## Save Error Handling
-
-If `save()` fails, UI can:
-1. Show error message
-2. Let user correct data
-3. Call `save()` again
-4. Or refresh snapshot if backend changed
-
-```rust
-loop {
-    match edit.save().await {
-        Ok(SaveResult::Saved) => break,
-        Ok(SaveResult::Error(e)) => {
-            if user_wants_to_retry(&e) {
-                continue; // Try again
-            } else {
-                edit.refresh_snapshot().await?;
-                break; // Give up, reload
-            }
-        }
-        _ => break,
-    }
-}
-```
-
-## Implementation Status
-
-### ✅ Implemented (Interfaces)
-- LiveTable struct with RwValueSet trait
-- RecordEdit with lifetime management
-- DataSet trait implementations
-- SaveResult enum
-
-### ⏳ TODO
-- Actual implementation (currently all methods are `todo!()`)
-- Helper functions (extract_id, diff_fields)
-- Background persist worker
-- SurrealDB LIVE query integration
-- Tests
-
-## Contributing
-
-This crate is part of the Vantage framework rewrite (v0.2 → v0.3).
-
-## License
-
-MIT
+- Multi-page glue when UI ipp > master ipp.
+- Per-page surgical invalidation.
+- `RecordEdit` / snapshot-based dirty tracking.
+- TTL-based expiry.
+- The entity-shaped traits (`DataSet<E>` etc.) — `Record<Value>` only.

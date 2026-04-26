@@ -6,7 +6,9 @@
       "Bash(cargo build:*)",
       "Bash(cargo run:*)",
       "Bash(cargo fmt:*)",
-      "Bash(cargo clippy:*)"
+      "Bash(cargo clippy:*)",
+      "mcp__mcp-server-context7__resolve-library-id",
+      "mcp__mcp-server-context7__query-docs"
     ]
   }
 }

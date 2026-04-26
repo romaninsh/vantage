@@ -1,49 +1,19 @@
 //! # vantage-live
 //!
-//! Live data synchronization layer for Vantage framework.
+//! A write-through cache layer that wraps any `AnyTable` (the "master") and
+//! adds a local cache plus an optional event stream. Reads consult the cache
+//! first; misses fall through to the master and populate the cache on the way
+//! back. Writes are queued on a worker task and applied to the master, then
+//! the cache is invalidated. An optional [`LiveStream`] keeps the cache in
+//! sync with out-of-band changes (SurrealDB LIVE, Kafka, etc.).
 //!
-//! Provides in-memory caching with async backend persistence, conflict detection,
-//! and editing sessions for building responsive UIs.
-//!
-//! ## Key Features
-//!
-//! - **LiveTable**: Cache layer over any backend storage (SQL, SurrealDB, etc.)
-//! - **RecordEdit**: Editing sessions with change tracking and snapshot management
-//! - **Async persistence**: Write operations happen in background
-//! - **Conflict detection**: Track remote changes vs local edits
-//!
-//! ## Example
-//!
-//! ```rust,ignore
-//! use vantage_live::LiveTable;
-//!
-//! // Create LiveTable with backend and cache
-//! let backend = SurrealTable::new(client, "bakery");
-//! let cache = ImTable::new(&im_ds, "bakery_cache");
-//! let mut live_table = LiveTable::new(backend, cache).await?;
-//!
-//! // Edit existing record
-//! let mut edit = live_table.edit_record("bakery:123").await?;
-//! edit.name = "New Name".to_string();
-//!
-//! // Check what changed
-//! println!("Modified: {:?}", edit.get_modified_fields());
-//!
-//! // Save when ready
-//! match edit.save().await? {
-//!     SaveResult::Saved => println!("Success!"),
-//!     SaveResult::Error(e) => eprintln!("Failed: {}", e),
-//!     _ => {}
-//! }
-//! ```
+//! See `DESIGN.md` in this crate for the architectural rationale.
 
-mod helpers;
-mod live_table;
-mod record_edit;
+pub mod cache;
+pub mod live_stream;
+pub mod live_table;
+pub mod prelude;
 
+pub use cache::{Cache, CachedRows};
+pub use live_stream::{LiveEvent, LiveStream, ManualLiveStream};
 pub use live_table::LiveTable;
-pub use record_edit::{RecordEdit, SaveResult};
-
-pub mod prelude {
-    pub use crate::{LiveTable, RecordEdit, SaveResult};
-}
