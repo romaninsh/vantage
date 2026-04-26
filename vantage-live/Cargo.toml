@@ -13,8 +13,9 @@ readme = "../README.md"
 [dependencies]
 vantage-core = { version = "0.4", path = "../vantage-core" }
 vantage-types = { version = "0.4", path = "../vantage-types" }
+vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
 vantage-dataset = { version = "0.4.2", path = "../vantage-dataset" }
-vantage-table = { version = "0.4.5", path = "../vantage-table" }
+vantage-table = { version = "0.4.6", path = "../vantage-table" }
 vantage-redb = { version = "0.4", path = "../vantage-redb" }
 
 async-trait = "0.1"
@@ -30,3 +31,8 @@ tokio = { version = "1", features = ["full", "test-util"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tempfile = "3"
 pretty_assertions = "1"
+clap = { version = "4", features = ["derive"] }
+
+[[example]]
+name = "live_demo"
+path = "examples/live_demo.rs"

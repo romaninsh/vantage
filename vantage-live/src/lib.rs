@@ -11,7 +11,9 @@
 
 pub mod cache;
 pub mod live_stream;
+pub mod live_table;
 pub mod prelude;
 
 pub use cache::{Cache, CachedRows};
-pub use live_stream::{LiveEvent, LiveStream};
+pub use live_stream::{LiveEvent, LiveStream, ManualLiveStream};
+pub use live_table::LiveTable;
