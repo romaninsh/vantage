@@ -11,9 +11,6 @@ pub enum ColumnFlag {
     TitleField,
     /// Searchable marks this column as searchable in text searches
     Searchable,
-    /// Indexed marks this column as having a backend-maintained secondary index.
-    /// Backends that don't support indexes (CSV, SQL with native indexes) ignore the flag.
-    /// vantage-redb uses it to decide which columns get index tables and to gate
-    /// which columns can carry conditions.
+    /// Indexed marks this column as cheap to sort or filter on, hinting to generic UIs that they can offer sort headers and filter inputs without a performance penalty
     Indexed,
 }

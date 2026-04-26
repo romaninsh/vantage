@@ -140,7 +140,7 @@ that into your expected Rust type — all type-checked at compile time.
 
 ```rust
 // Column preserves type through erasure
-let price = Column::<i64>::new("price").with_flag(ColumnFlag::Sortable);
+let price = Column::<i64>::new("price").with_flag(ColumnFlag::Indexed);
 let erased = Column::<AnyType>::from_column(price);
 assert_eq!(erased.get_type(), "i64");  // original type survives
 

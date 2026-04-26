@@ -14,7 +14,7 @@ readme = "../README.md"
 vantage-core = { version = "0.4", path = "../vantage-core" }
 vantage-types = { version = "0.4", path = "../vantage-types" }
 vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
-vantage-table = { version = "0.4.4", path = "../vantage-table" }
+vantage-table = { version = "0.4.5", path = "../vantage-table" }
 vantage-dataset = { version = "0.4.2", path = "../vantage-dataset" }
 
 redb = "2.6"
