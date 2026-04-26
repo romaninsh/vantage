@@ -1,28 +1,28 @@
-//! # Vantage redb Extension
+//! # vantage-redb
 //!
-//! Extends Vantage by adding support for redb key-value database.
-//! Unlike SQL databases, redb is a key-value store with ACID transactions
-//! and support for multiple tables (key spaces).
+//! Embedded redb key-value persistence for the Vantage framework.
 //!
-//! ## Features
+//! Implements [`vantage_table::traits::table_source::TableSource`] over [redb], with full CRUD,
+//! ACID write transactions, and column-driven secondary indexes maintained
+//! atomically alongside main rows.
 //!
-//! - ACID transactions
-//! - Multiple tables for organizing data
-//! - Secondary indexes through separate tables
-//! - Serialization/deserialization with serde
+//! ## Capabilities
 //!
+//! - CBOR row bodies that preserve `RedbTypeVariants` tags through
+//!   round-trip.
+//! - Secondary indexes opt-in via `ColumnFlag::Indexed`. Index tables use
+//!   redb's composite keys `(value_bytes, id)` for non-unique columns.
+//! - Conditions limited to `eq` / `in_` on indexed columns (or the table's
+//!   id column, which short-circuits to a direct main-table lookup).
+//! - No query builder — redb has no query language.
 
+pub mod condition;
+pub mod operation;
 pub mod prelude;
 pub mod redb;
-pub mod redb_column;
-pub mod table;
-pub mod util;
+pub mod types;
 
-pub mod expression;
-pub mod select;
-
-pub use expression::RedbExpression;
-pub use redb::{Redb, RedbError};
-pub use redb_column::{RedbColumn, RedbColumnOperations};
-pub use select::RedbSelect;
-pub use util::{Context, Error, Result, vantage_error};
+pub use condition::RedbCondition;
+pub use operation::RedbOperation;
+pub use redb::Redb;
+pub use types::{AnyRedbType, RedbType, RedbTypeVariants};

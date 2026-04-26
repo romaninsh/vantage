@@ -2444,6 +2444,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "redb"
+version = "2.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8eca1e9d98d5a7e9002d0013e18d5a9b000aee942eb134883a82f06ebffb6c01"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3954,6 +3963,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "vantage-redb"
+version = "0.4.0"
+dependencies = [
+ "async-trait",
+ "ciborium",
+ "futures-util",
+ "indexmap",
+ "paste",
+ "pretty_assertions",
+ "redb",
+ "serde",
+ "tempfile",
+ "tokio",
+ "uuid",
+ "vantage-core",
+ "vantage-dataset",
+ "vantage-expressions",
+ "vantage-table",
+ "vantage-types",
+]
+
+[[package]]
 name = "vantage-sql"
 version = "0.4.3"
 dependencies = [
@@ -4006,7 +4037,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "async-stream",
  "async-trait",

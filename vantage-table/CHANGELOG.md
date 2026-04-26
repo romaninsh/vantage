@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.5 — 2026-04-26
+
+- New `ColumnFlag::Indexed` variant. UI hint that a column is cheap to sort or filter on; `vantage-redb` is the only backend that uses it for actual index maintenance.
+
 ## 0.4.4 — 2026-04-25
 
 - **Breaking**: `AnyTable` now carries `ciborium::Value` instead of `serde_json::Value`. Backends already store CBOR (surreal/sql) or BSON (mongo) internally; this drops the last lossy JSON hop at the type-erased boundary.

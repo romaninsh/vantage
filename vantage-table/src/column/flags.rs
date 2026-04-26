@@ -11,4 +11,6 @@ pub enum ColumnFlag {
     TitleField,
     /// Searchable marks this column as searchable in text searches
     Searchable,
+    /// Indexed marks this column as cheap to sort or filter on, hinting to generic UIs that they can offer sort headers and filter inputs without a performance penalty
+    Indexed,
 }
