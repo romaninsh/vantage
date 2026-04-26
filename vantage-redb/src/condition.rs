@@ -17,10 +17,7 @@ use crate::types::AnyRedbType;
 #[derive(Clone)]
 pub enum RedbCondition {
     /// `column == value` — resolved via index lookup on `column`.
-    Eq {
-        column: String,
-        value: AnyRedbType,
-    },
+    Eq { column: String, value: AnyRedbType },
     /// `column IN (values)` — multiple index lookups merged in memory.
     In {
         column: String,

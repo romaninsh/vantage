@@ -79,10 +79,7 @@ fn test_untyped_record_creation() {
         "price".into(),
         AnyRedbType::untyped(CborValue::Integer(120i64.into())),
     );
-    record.insert(
-        "active".into(),
-        AnyRedbType::untyped(CborValue::Bool(true)),
-    );
+    record.insert("active".into(), AnyRedbType::untyped(CborValue::Bool(true)));
 
     assert_eq!(
         record["name"].try_get::<String>(),
@@ -154,8 +151,14 @@ fn test_typed_wrong_extraction() {
 #[test]
 fn test_try_from_map() {
     let map = CborValue::Map(vec![
-        (CborValue::Text("name".into()), CborValue::Text("Cupcake".into())),
-        (CborValue::Text("price".into()), CborValue::Integer(120i64.into())),
+        (
+            CborValue::Text("name".into()),
+            CborValue::Text("Cupcake".into()),
+        ),
+        (
+            CborValue::Text("price".into()),
+            CborValue::Integer(120i64.into()),
+        ),
         (CborValue::Text("active".into()), CborValue::Bool(true)),
     ]);
     let any = AnyRedbType::untyped(map);

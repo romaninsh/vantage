@@ -6,7 +6,9 @@
 //! expression returns an error — it's not meant to be a general query
 //! interface.
 
-use vantage_expressions::{DeferredFn, Expression, ExpressiveEnum, traits::datasource::ExprDataSource};
+use vantage_expressions::{
+    DeferredFn, Expression, ExpressiveEnum, traits::datasource::ExprDataSource,
+};
 
 use crate::redb::Redb;
 use crate::types::AnyRedbType;

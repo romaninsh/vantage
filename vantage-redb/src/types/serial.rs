@@ -71,10 +71,7 @@ pub fn decode_record(bytes: &[u8]) -> Result<Record<AnyRedbType>> {
         // If the write was untyped, re-tag by inspecting the CBOR shape.
         let variant = variant.or_else(|| RedbTypeVariants::from_cbor(&value));
 
-        record.insert(
-            name,
-            AnyRedbType::untyped_with(value, variant),
-        );
+        record.insert(name, AnyRedbType::untyped_with(value, variant));
     }
     Ok(record)
 }
@@ -126,23 +123,14 @@ mod tests {
         let back = decode_record(&bytes).unwrap();
 
         assert_eq!(back.len(), 3);
-        assert_eq!(
-            back["name"].try_get::<String>(),
-            Some("Alice".to_string())
-        );
+        assert_eq!(back["name"].try_get::<String>(), Some("Alice".to_string()));
         assert_eq!(back["age"].try_get::<i64>(), Some(30));
         assert_eq!(back["active"].try_get::<bool>(), Some(true));
 
         // Variant tags survive round-trip.
-        assert_eq!(
-            back["name"].type_variant(),
-            Some(RedbTypeVariants::String)
-        );
+        assert_eq!(back["name"].type_variant(), Some(RedbTypeVariants::String));
         assert_eq!(back["age"].type_variant(), Some(RedbTypeVariants::Int));
-        assert_eq!(
-            back["active"].type_variant(),
-            Some(RedbTypeVariants::Bool)
-        );
+        assert_eq!(back["active"].type_variant(), Some(RedbTypeVariants::Bool));
     }
 
     #[test]

@@ -46,8 +46,7 @@ fn test_table_without_id_column_has_none_id_field() {
 
 #[test]
 fn test_indexed_flag_visible_on_column() {
-    let indexed_email =
-        Column::<String>::new("email").with_flag(ColumnFlag::Indexed);
+    let indexed_email = Column::<String>::new("email").with_flag(ColumnFlag::Indexed);
 
     let (_tmp, db) = fresh_db();
     let table = Table::<Redb, EmptyEntity>::new("users", db)

@@ -245,11 +245,9 @@ impl TableSource for Redb {
 
         // Write new main row + new index entries.
         {
-            let mut main = txn
-                .open_table(main_table_def(table_name))
-                .map_err(|e| {
-                    error!("Failed to reopen main for replace", details = e.to_string())
-                })?;
+            let mut main = txn.open_table(main_table_def(table_name)).map_err(|e| {
+                error!("Failed to reopen main for replace", details = e.to_string())
+            })?;
             main.insert(id.as_str(), new_bytes.as_slice())
                 .map_err(|e| error!("Replace insert failed", details = e.to_string()))?;
         }
@@ -425,7 +423,9 @@ impl TableSource for Redb {
             Box::pin(async move {
                 let rows = load_filtered(&db, &source).await?;
                 let values: Vec<ciborium::Value> = if col == source_id_col {
-                    rows.keys().map(|id| ciborium::Value::Text(id.clone())).collect()
+                    rows.keys()
+                        .map(|id| ciborium::Value::Text(id.clone()))
+                        .collect()
                 } else {
                     rows.values()
                         .filter_map(|r| r.get(col.as_str()).map(|v| v.value().clone()))

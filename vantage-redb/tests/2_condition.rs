@@ -7,9 +7,9 @@
 
 use ciborium::Value as CborValue;
 use vantage_expressions::{DeferredFn, ExpressiveEnum};
+use vantage_redb::AnyRedbType;
 use vantage_redb::condition::RedbCondition;
 use vantage_redb::operation::RedbOperation;
-use vantage_redb::AnyRedbType;
 use vantage_table::column::core::Column;
 
 // ── Eq ─────────────────────────────────────────────────────────────────────
@@ -129,9 +129,7 @@ async fn test_deferred_resolves_to_in() {
 
     let deferred = DeferredFn::new(move || {
         let payload = payload.clone();
-        Box::pin(async move {
-            Ok(ExpressiveEnum::Scalar(AnyRedbType::untyped(payload)))
-        })
+        Box::pin(async move { Ok(ExpressiveEnum::Scalar(AnyRedbType::untyped(payload))) })
     });
 
     let cond = RedbCondition::Deferred(deferred);
@@ -150,15 +148,10 @@ async fn test_deferred_resolves_to_in() {
 
 #[tokio::test]
 async fn test_deferred_with_empty_values() {
-    let payload = CborValue::Array(vec![
-        CborValue::Text("fk".into()),
-        CborValue::Array(vec![]),
-    ]);
+    let payload = CborValue::Array(vec![CborValue::Text("fk".into()), CborValue::Array(vec![])]);
     let deferred = DeferredFn::new(move || {
         let payload = payload.clone();
-        Box::pin(async move {
-            Ok(ExpressiveEnum::Scalar(AnyRedbType::untyped(payload)))
-        })
+        Box::pin(async move { Ok(ExpressiveEnum::Scalar(AnyRedbType::untyped(payload))) })
     });
     let resolved = RedbCondition::Deferred(deferred).resolve().await.unwrap();
     match resolved {

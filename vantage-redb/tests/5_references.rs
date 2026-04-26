@@ -154,7 +154,7 @@ async fn test_typed_entity_round_trip() {
     // Reads through the typed `get` go entity → record → struct via the
     // generated TryFromRecord impl on Client.
     let marty: Client = table
-        .get(&"marty".to_string())
+        .get("marty".to_string())
         .await
         .unwrap()
         .expect("marty exists");
