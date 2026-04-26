@@ -1,28 +1,32 @@
 [package]
 name = "vantage-live"
-version = "0.3.0"
-edition = "2021"
-authors = ["Romans Malinovskis <romans@malinovskis.com>"]
-license = "MIT"
-description = "Live data synchronization layer for Vantage framework"
+version = "0.4.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+authors = ["Romans Malinovskis <me@nearly.guru>"]
+description = "Locally-cached, write-through table wrapper for the Vantage framework"
+documentation = "https://docs.rs/vantage-live"
+homepage = "https://romaninsh.github.io/vantage"
 repository = "https://github.com/romaninsh/vantage"
-keywords = ["database", "orm", "sync", "cache", "live"]
-categories = ["database"]
+readme = "../README.md"
 
 [dependencies]
-vantage-core = { path = "../vantage-core", version = "0.3.0" }
-vantage-dataset = { path = "../vantage-dataset", version = "0.3.0" }
+vantage-core = { version = "0.4", path = "../vantage-core" }
+vantage-types = { version = "0.4", path = "../vantage-types" }
+vantage-dataset = { version = "0.4.2", path = "../vantage-dataset" }
+vantage-table = { version = "0.4.5", path = "../vantage-table" }
+vantage-redb = { version = "0.4", path = "../vantage-redb" }
 
 async-trait = "0.1"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tokio = { version = "1.0", features = ["sync", "time"] }
-uuid = { version = "1.0", features = ["v4"] }
+ciborium = { version = "0.2", features = ["std"] }
+indexmap = "2"
+futures-util = "0.3"
+tokio = { version = "1", features = ["sync", "rt", "macros", "time"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tracing = "0.1"
 
 [dev-dependencies]
-tokio = { version = "1.0", features = ["full"] }
-bakery_model3 = { path = "../bakery_model3" }
-vantage-surrealdb = { path = "../vantage-surrealdb" }
-vantage-table = { path = "../vantage-table" }
-surreal-client = { path = "../surreal-client" }
-anyhow = "1.0"
+tokio = { version = "1", features = ["full", "test-util"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tempfile = "3"
+pretty_assertions = "1"
