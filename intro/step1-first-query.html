@@ -36,7 +36,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-4cf84826.js";
+            window.path_to_searchindex_js = "../searchindex-c3abb0cf.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-f0872746.js"></script>
@@ -363,7 +363,7 @@ any <code>Result</code> with a standard error type.</p>
 <p><a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a> is the query builder for SQLite.
 Other persistences have their own —
 <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/postgres/statements/select/struct.PostgresSelect.html"><code>PostgresSelect</code></a>,
-<a href="https://docs.rs/vantage_mongodb/0.4.3/vantage_mongodb/select/struct.MongoSelect.html"><code>MongoSelect</code></a> — and they all implement the
+<a href="https://docs.rs/vantage_mongodb/0.4.4/vantage_mongodb/select/struct.MongoSelect.html"><code>MongoSelect</code></a> — and they all implement the
 <a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a> trait, so the interface is identical apart from
 vendor-specific extensions. None of them need a database connection — they’re just structs that
 accumulate query parts. You build them with a chain of <code>.with_*()</code> calls:</p>
@@ -486,7 +486,7 @@ See <a href="../type-system.html">Persistence-aligned Type System</a> for detail
 
 <h2 id="typed-columns-and-operators"><a class="header" href="#typed-columns-and-operators">Typed columns and operators</a></h2>
 <p>Writing <code>\"is_deleted\"</code> in a raw expression works, but there’s a cleaner way.
-<a href="https://docs.rs/vantage_table/0.4.3/vantage_table/column/core/struct.Column.html"><code>Column&lt;T&gt;</code></a> creates a typed column reference, then chain an
+<a href="https://docs.rs/vantage_table/0.4.5/vantage_table/column/core/struct.Column.html"><code>Column&lt;T&gt;</code></a> creates a typed column reference, then chain an
 <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a> like <code>.eq()</code> to build the
 condition:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -584,7 +584,7 @@ eligible to be parameters of expressions.</p>
 
 <hr>
 <h2 id="working-with-any-types"><a class="header" href="#working-with-any-types">Working with Any-types</a></h2>
-<p><a href="https://docs.rs/vantage_types/0.4.0/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a> is an ordered map (<code>IndexMap&lt;String, V&gt;</code>) — one record per row,
+<p><a href="https://docs.rs/vantage_types/0.4.1/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a> is an ordered map (<code>IndexMap&lt;String, V&gt;</code>) — one record per row,
 with column names as keys. It lives in the <code>vantage-types</code> crate, so add that dependency and import
 its prelude:</p>
 <pre><code class="language-sh">cargo add vantage-types --features serde
@@ -654,7 +654,7 @@ println!("{:?}", price_cbor);
 <hr>
 <h2 id="mapping-rows-to-structs"><a class="header" href="#mapping-rows-to-structs">Mapping rows to structs</a></h2>
 <p>Calling <code>.try_get::&lt;T&gt;()</code> on every field gets tedious. The <code>#[entity]</code> macro generates
-<a href="https://docs.rs/vantage_types/0.4.0/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord&lt;AnySqliteType&gt;</code></a> for your struct, so conversion
+<a href="https://docs.rs/vantage_types/0.4.1/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord&lt;AnySqliteType&gt;</code></a> for your struct, so conversion
 happens in one call with no type information lost:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -768,12 +768,12 @@ async fn run() -&gt; VantageResult&lt;()&gt; {
 </thead>
 <tbody>
 <tr><td><a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a></td><td>Builds SELECT queries via builder pattern</td><td><a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a></td></tr>
-<tr><td><a href="https://docs.rs/vantage_table/0.4.3/vantage_table/column/core/struct.Column.html"><code>Column</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
+<tr><td><a href="https://docs.rs/vantage_table/0.4.5/vantage_table/column/core/struct.Column.html"><code>Column</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
 <tr><td><a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a></td><td>Ext trait giving <code>.eq()</code>, <code>.gt()</code>, etc. → <code>SqliteCondition</code></td><td></td></tr>
 <tr><td><code>sqlite_expr!</code></td><td>Creates expressions with typed, bound parameters</td><td><a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a></td></tr>
 <tr><td><code>db.execute()</code></td><td>Runs an expression, returns <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a></td><td><a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/traits/datasource/trait.ExprDataSource.html"><code>ExprDataSource</code></a></td></tr>
-<tr><td><a href="https://docs.rs/vantage_types/0.4.0/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a></td><td>Ordered map of column names to values — row-level access</td><td><code>.try_get::&lt;T&gt;()</code></td></tr>
-<tr><td><code>#[entity(SqliteType)]</code></td><td>Generates lossless record-to-struct conversion</td><td><a href="https://docs.rs/vantage_types/0.4.0/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord</code></a></td></tr>
+<tr><td><a href="https://docs.rs/vantage_types/0.4.1/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a></td><td>Ordered map of column names to values — row-level access</td><td><code>.try_get::&lt;T&gt;()</code></td></tr>
+<tr><td><code>#[entity(SqliteType)]</code></td><td>Generates lossless record-to-struct conversion</td><td><a href="https://docs.rs/vantage_types/0.4.1/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord</code></a></td></tr>
 </tbody>
 </table>
 </div>

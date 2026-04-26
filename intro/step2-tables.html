@@ -36,7 +36,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-4cf84826.js";
+            window.path_to_searchindex_js = "../searchindex-c3abb0cf.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-f0872746.js"></script>
@@ -254,7 +254,7 @@ important differences:</p>
 </tbody>
 </table>
 </div>
-<p>A <a href="https://docs.rs/vantage_table/0.4.3/vantage_table/table/base/struct.Table.html"><code>Table</code></a> is typically defined in its own file alongside the entity.
+<p>A <a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html"><code>Table</code></a> is typically defined in its own file alongside the entity.
 Create <code>src/product.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -379,7 +379,7 @@ side effects.</p>
 <p><code>Table&lt;SqliteDB, Product&gt;</code> is great when you know the types at compile time. But what if you want to
 write a function that lists <em>any</em> table — products, orders, customers — without knowing the entity
 type?</p>
-<p><a href="https://docs.rs/vantage_table/0.4.3/vantage_table/any/struct.AnyTable.html"><code>AnyTable</code></a> wraps a concrete table and erases its type parameters.
+<p><a href="https://docs.rs/vantage_table/0.4.5/vantage_table/any/struct.AnyTable.html"><code>AnyTable</code></a> wraps a concrete table and erases its type parameters.
 Values come back as <code>Record&lt;serde_json::Value&gt;</code> instead of typed entities. You can iterate columns
 by name and build a generic display:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]

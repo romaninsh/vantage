@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-4cf84826.js";
+            window.path_to_searchindex_js = "searchindex-c3abb0cf.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-f0872746.js"></script>
@@ -329,7 +329,7 @@ that into your expected Rust type — all type-checked at compile time.</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>// Column preserves type through erasure
-let price = Column::&lt;i64&gt;::new("price").with_flag(ColumnFlag::Sortable);
+let price = Column::&lt;i64&gt;::new("price").with_flag(ColumnFlag::Indexed);
 let erased = Column::&lt;AnyType&gt;::from_column(price);
 assert_eq!(erased.get_type(), "i64");  // original type survives
 
