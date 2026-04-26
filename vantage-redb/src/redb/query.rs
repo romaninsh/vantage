@@ -1,191 +1,266 @@
-//! Query execution methods for ReDB
+//! Read path — condition resolution, candidate-id seeding via index lookup,
+//! and in-memory verification of remaining conditions.
+//!
+//! Algorithm (single condition is the common case):
+//! 1. Resolve any deferred conditions concurrently.
+//! 2. With no conditions → full scan.
+//! 3. Otherwise the first condition seeds the candidate id list via
+//!    `candidates_for`; for each candidate we fetch the row and verify the
+//!    remaining conditions in memory with `condition_matches`.
+//!
+//! Conditions on the id column short-circuit to a direct `main.get(id)`.
+//! Conditions on a non-indexed column **panic** at this layer — the
+//! contract is that flagging columns `Indexed` is a deliberate, declarative
+//! step.
 
-use redb::{ReadableTable, TableDefinition};
+use indexmap::IndexMap;
+use redb::ReadableTable;
+use std::collections::HashSet;
 
-use super::core::Redb;
-use crate::util::{Context, Result, vantage_error};
+use vantage_core::{Result, error};
+use vantage_table::table::Table;
+use vantage_types::{Entity, Record};
 
-impl Redb {
-    async fn get_all_records<E>(
-        &self,
-        table_name: &str,
-        limit: Option<usize>,
-        skip: usize,
-    ) -> Result<Vec<E>>
-    where
-        E: vantage_core::Entity,
-    {
-        let table_def: TableDefinition<&str, &[u8]> = TableDefinition::new(table_name);
-        let read_txn = self.begin_read()?;
-        let table = read_txn.open_table(table_def)?;
+use crate::condition::RedbCondition;
+use crate::redb::helpers::{id_column_name, indexed_columns, paginate};
+use crate::redb::{Redb, index_table_def, index_table_name, main_table_def};
+use crate::types::{AnyRedbType, decode_record, value_to_index_key};
 
-        let mut results = Vec::new();
-        let mut count = 0;
+pub(crate) async fn load_filtered<E>(
+    db: &Redb,
+    table: &Table<Redb, E>,
+) -> Result<IndexMap<String, Record<AnyRedbType>>>
+where
+    E: Entity<AnyRedbType>,
+{
+    let table_name = table.table_name();
+    let id_col = id_column_name(table);
+    let indexed = indexed_columns(table);
 
-        for (i, item) in table.iter()?.enumerate() {
-            if i < skip {
-                continue;
+    // Resolve any deferred conditions up front (they may need DB roundtrips).
+    let conditions: Vec<RedbCondition> =
+        futures_util::future::try_join_all(table.conditions().map(|c| c.clone().resolve())).await?;
+
+    let mut out: IndexMap<String, Record<AnyRedbType>> = IndexMap::new();
+
+    if conditions.is_empty() {
+        let txn = db.begin_read()?;
+        let main = match txn.open_table(main_table_def(table_name)) {
+            Ok(t) => t,
+            // A wholesale truncate (`delete_all_values` with no conditions)
+            // drops the main table; subsequent reads should see an empty set
+            // rather than an error.
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(out),
+            Err(e) => {
+                return Err(error!(
+                    "Failed to open table for scan",
+                    details = e.to_string()
+                ));
             }
-            if let Some(limit) = limit
-                && count >= limit
-            {
-                break;
-            }
-
-            let (_id, data) = item?;
-            let entity = bincode::deserialize::<E>(data.value())?;
-            results.push(entity);
-            count += 1;
-        }
-
-        Ok(results)
-    }
-
-    async fn get_records_by_ids<E>(&self, table_name: &str, ids: Vec<String>) -> Result<Vec<E>>
-    where
-        E: vantage_core::Entity,
-    {
-        let table_def: TableDefinition<&str, &[u8]> = TableDefinition::new(table_name);
-        let read_txn = self.begin_read()?;
-        let table = read_txn.open_table(table_def)?;
-
-        let mut results = Vec::new();
-
-        for id in ids {
-            let data = table.get(id.as_str())?;
-            let data_access =
-                data.ok_or_else(|| vantage_error!("Record with id '{}' not found", id))?;
-            let entity = bincode::deserialize::<E>(data_access.value())?;
-            results.push(entity);
-        }
-
-        Ok(results)
-    }
-
-    async fn get_ids_by_condition(
-        &self,
-        table_name: &str,
-        column: &str,
-        value: &serde_json::Value,
-    ) -> Result<Vec<String>> {
-        let index_table_name = format!("{}_by_{}", table_name, column);
-        let index_table_def: TableDefinition<&str, &str> = TableDefinition::new(&index_table_name);
-        let read_txn = self.begin_read()?;
-
-        // Try to open index table, fail if it doesn't exist
-        let index_table = read_txn
-            .open_table(index_table_def)
-            .with_context(|| format!("Index table '{}_by_{}' not found", table_name, column))?;
-
-        // Encode value as JSON string for index lookup
-        let lookup_key = serde_json::to_string(value).with_context(|| {
-            format!(
-                "Failed to encode value as JSON for index lookup: {:?}",
-                value
-            )
-        })?;
-
-        // Look up in index table
-        match index_table.get(lookup_key.as_str())? {
-            Some(user_id) => Ok(vec![user_id.value().to_string()]),
-            None => Ok(vec![]), // Return empty vector if no record found
-        }
-    }
-
-    fn apply_order<E>(&self, results: Vec<E>, column: &str, ascending: bool) -> Result<Vec<E>>
-    where
-        E: vantage_core::Entity,
-    {
-        // Serialize all entities to JSON for ordering
-        let mut json_results: Vec<(serde_json::Value, E)> = Vec::new();
-
-        for entity in results {
-            let json_value = serde_json::to_value(&entity)
-                .with_context(|| "Failed to serialize entity for ordering".to_string())?;
-            json_results.push((json_value, entity));
-        }
-
-        // Check if any entity had the field, if not return error
-        json_results
+        };
+        let iter = main
             .iter()
-            .find(|(json, _)| json.get(column).is_some())
-            .ok_or_else(|| vantage_error!("Field '{}' not found in any entity", column))?;
+            .map_err(|e| error!("Failed to iterate redb table", details = e.to_string()))?;
+        for entry in iter {
+            let (k, v) =
+                entry.map_err(|e| error!("Failed to read redb row", details = e.to_string()))?;
+            out.insert(k.value().to_string(), decode_record(v.value())?);
+        }
+        return Ok(paginate(table, out));
+    }
 
-        // Sort by the specified column
-        json_results.sort_by(|(json_a, _), (json_b, _)| {
-            let val_a = json_a.get(column);
-            let val_b = json_b.get(column);
+    let (first, rest) = conditions.split_first().unwrap();
+    let candidates = candidates_for(db, table_name, &id_col, &indexed, first)?;
 
-            let cmp = match (val_a, val_b) {
-                (Some(a), Some(b)) => {
-                    if let (Some(a_str), Some(b_str)) = (a.as_str(), b.as_str()) {
-                        a_str.cmp(b_str)
-                    } else if let (Some(a_num), Some(b_num)) = (a.as_u64(), b.as_u64()) {
-                        a_num.cmp(&b_num)
-                    } else if let (Some(a_bool), Some(b_bool)) = (a.as_bool(), b.as_bool()) {
-                        a_bool.cmp(&b_bool)
-                    } else {
-                        std::cmp::Ordering::Equal
+    let txn = db.begin_read()?;
+    let main = match txn.open_table(main_table_def(table_name)) {
+        Ok(t) => t,
+        // Same case as the unconditional scan: post-truncate reads should
+        // see an empty set rather than error.
+        Err(redb::TableError::TableDoesNotExist(_)) => return Ok(out),
+        Err(e) => {
+            return Err(error!(
+                "Failed to open table for verify",
+                details = e.to_string()
+            ));
+        }
+    };
+
+    for id in candidates {
+        let row_bytes = match main
+            .get(id.as_str())
+            .map_err(|e| error!("Failed to read row by id", details = e.to_string()))?
+        {
+            Some(b) => b,
+            None => continue, // dangling index entry — ignore
+        };
+        let record = decode_record(row_bytes.value())?;
+        if rest
+            .iter()
+            .all(|c| condition_matches(c, &record, &id_col, &id))
+        {
+            out.insert(id, record);
+        }
+    }
+
+    Ok(paginate(table, out))
+}
+
+/// Seed candidate IDs from a single condition. Panics if the condition
+/// targets a column that's neither flagged `Indexed` nor the table id.
+fn candidates_for(
+    db: &Redb,
+    table_name: &str,
+    id_col: &str,
+    indexed: &HashSet<String>,
+    cond: &RedbCondition,
+) -> Result<Vec<String>> {
+    match cond {
+        RedbCondition::Eq { column, value } => {
+            if column == id_col {
+                return id_lookup(db, table_name, std::slice::from_ref(value));
+            }
+            require_indexed(indexed, column);
+            scan_index(db, table_name, column, value)
+        }
+        RedbCondition::In { column, values } => {
+            if column == id_col {
+                return id_lookup(db, table_name, values);
+            }
+            require_indexed(indexed, column);
+            let mut out = Vec::new();
+            let mut seen: HashSet<String> = HashSet::new();
+            for v in values {
+                for id in scan_index(db, table_name, column, v)? {
+                    if seen.insert(id.clone()) {
+                        out.push(id);
                     }
                 }
-                (Some(_), None) => std::cmp::Ordering::Greater,
-                (None, Some(_)) => std::cmp::Ordering::Less,
-                (None, None) => std::cmp::Ordering::Equal,
-            };
-
-            if ascending { cmp } else { cmp.reverse() }
-        });
-
-        // Extract the sorted entities
-        Ok(json_results.into_iter().map(|(_, entity)| entity).collect())
-    }
-
-    /// Execute a RedbSelect with entity type information
-    pub async fn redb_execute_select<E>(&self, select: &crate::RedbSelect<E>) -> Result<Vec<E>>
-    where
-        E: vantage_core::Entity,
-    {
-        let table_name = select.table().map(|s| s.as_str()).unwrap_or("users");
-
-        let records = if let Some(key_expr) = select.key() {
-            let (column, value) = key_expr
-                .as_eq()
-                .ok_or_else(|| vantage_error!("ReDB only supports Eq conditions"))?;
-
-            let mut ids = self.get_ids_by_condition(table_name, column, value).await?;
-
-            // Apply skip first
-            if let Some(skip) = select.skip() {
-                let skip = skip as usize;
-                if skip < ids.len() {
-                    ids = ids[skip..].to_vec();
-                } else {
-                    ids = vec![];
-                }
             }
-
-            // Then apply limit
-            if let Some(limit) = select.limit() {
-                let limit = limit as usize;
-                if ids.len() > limit {
-                    ids = ids[..limit].to_vec();
-                }
-            }
-
-            self.get_records_by_ids(table_name, ids).await?
-        } else {
-            self.get_all_records::<E>(
-                table_name,
-                select.limit().map(|l| l as usize),
-                select.skip().unwrap_or(0) as usize,
-            )
-            .await?
-        };
-
-        if let Some(order_col) = select.order_column() {
-            self.apply_order(records, order_col, select.order_ascending())
-        } else {
-            Ok(records)
+            Ok(out)
         }
+        RedbCondition::Deferred(_) => {
+            // Resolved in load_filtered before reaching here.
+            unreachable!("deferred condition reached candidates_for after resolve()")
+        }
+    }
+}
+
+fn require_indexed(indexed: &HashSet<String>, column: &str) {
+    if !indexed.contains(column) {
+        panic!(
+            "vantage-redb: condition on non-indexed column `{}` — flag the column with ColumnFlag::Indexed",
+            column
+        );
+    }
+}
+
+/// Direct main-table lookup for one or more id values; preserves order
+/// and skips ids that don't exist.
+fn id_lookup(db: &Redb, table_name: &str, ids: &[AnyRedbType]) -> Result<Vec<String>> {
+    let txn = db.begin_read()?;
+    let main = match txn.open_table(main_table_def(table_name)) {
+        Ok(t) => t,
+        Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
+        Err(e) => {
+            return Err(error!(
+                "Failed to open main for id lookup",
+                details = e.to_string()
+            ));
+        }
+    };
+    let mut out = Vec::with_capacity(ids.len());
+    for v in ids {
+        let id_str = match v.try_get::<String>() {
+            Some(s) => s,
+            None => continue,
+        };
+        if main
+            .get(id_str.as_str())
+            .map_err(|e| error!("Main get failed", details = e.to_string()))?
+            .is_some()
+        {
+            out.push(id_str);
+        }
+    }
+    Ok(out)
+}
+
+/// Walk the index table for a single value, returning all matching IDs.
+/// Composite key `(value_bytes, id) → ()` is range-scanned over the window
+/// `[(value_bytes, ""), (value_bytes, sentinel)]`.
+fn scan_index(
+    db: &Redb,
+    table_name: &str,
+    column: &str,
+    value: &AnyRedbType,
+) -> Result<Vec<String>> {
+    let key_bytes = value_to_index_key(value)?;
+    let idx_name = index_table_name(table_name, column);
+    let txn = db.begin_read()?;
+    let idx = match txn.open_table(index_table_def(&idx_name)) {
+        Ok(t) => t,
+        Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
+        Err(e) => {
+            return Err(error!(
+                "Failed to open index table",
+                table = idx_name,
+                details = e.to_string()
+            ));
+        }
+    };
+
+    let lo = (key_bytes.as_slice(), "");
+    // Sentinel "id past any string" — no realistic id exceeds this.
+    let hi_id = "\u{10FFFF}".repeat(2);
+    let hi = (key_bytes.as_slice(), hi_id.as_str());
+
+    let iter = idx
+        .range(lo..=hi)
+        .map_err(|e| error!("Index range scan failed", details = e.to_string()))?;
+
+    let mut ids = Vec::new();
+    for entry in iter {
+        let (k, _) =
+            entry.map_err(|e| error!("Index iteration failed", details = e.to_string()))?;
+        let (vbytes, id) = k.value();
+        if vbytes != key_bytes.as_slice() {
+            break;
+        }
+        ids.push(id.to_string());
+    }
+    Ok(ids)
+}
+
+/// In-memory check for a condition against an already-loaded record.
+fn condition_matches(
+    cond: &RedbCondition,
+    record: &Record<AnyRedbType>,
+    id_col: &str,
+    id: &str,
+) -> bool {
+    match cond {
+        RedbCondition::Eq { column, value } => {
+            if column == id_col {
+                value.try_get::<String>().as_deref() == Some(id)
+            } else {
+                record
+                    .get(column.as_str())
+                    .map(|v| v.value() == value.value())
+                    .unwrap_or(false)
+            }
+        }
+        RedbCondition::In { column, values } => {
+            if column == id_col {
+                values
+                    .iter()
+                    .any(|v| v.try_get::<String>().as_deref() == Some(id))
+            } else if let Some(field) = record.get(column.as_str()) {
+                values.iter().any(|v| v.value() == field.value())
+            } else {
+                false
+            }
+        }
+        RedbCondition::Deferred(_) => false,
     }
 }
