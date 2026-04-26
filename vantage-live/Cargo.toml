@@ -8,7 +8,7 @@ description = "Locally-cached, write-through table wrapper for the Vantage frame
 documentation = "https://docs.rs/vantage-live"
 homepage = "https://romaninsh.github.io/vantage"
 repository = "https://github.com/romaninsh/vantage"
-readme = "../README.md"
+readme = "README.md"
 
 [dependencies]
 vantage-core = { version = "0.4", path = "../vantage-core" }
