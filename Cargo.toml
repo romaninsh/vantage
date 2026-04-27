@@ -23,6 +23,8 @@ members = [
 ]
 exclude = [
     "vantage",
+    "vantage-aws",
+    "vantage-aws-models",
     "bakery_model",
     "bakery_api",
     "example_*",
