@@ -44,10 +44,9 @@ impl AwsAccount {
         }
     }
 
-    /// Construct from `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
-    /// optional `AWS_SESSION_TOKEN`, and `AWS_REGION` environment
-    /// variables. The credential chain (profiles, IMDS, SSO) is out of
-    /// scope for v0 — set the env vars yourself or call `new`.
+    /// Read `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and
+    /// `AWS_REGION` from the environment. Picks up `AWS_SESSION_TOKEN`
+    /// for temporary credentials if present.
     pub fn from_env() -> Result<Self> {
         let access_key =
             std::env::var("AWS_ACCESS_KEY_ID").map_err(|_| error!("AWS_ACCESS_KEY_ID not set"))?;
@@ -67,13 +66,12 @@ impl AwsAccount {
         })
     }
 
-    /// Construct from `~/.aws/credentials` and `~/.aws/config`, reading
-    /// only the `[default]` profile. Named profiles, `AWS_PROFILE`,
-    /// SSO, and the assume-role flow are out of scope for v0.
+    /// Read the `[default]` profile from `~/.aws/credentials`. Other
+    /// profiles, `AWS_PROFILE`, SSO, and assume-role aren't supported
+    /// in v0.
     ///
-    /// Region resolution: `AWS_REGION` env var first, then
-    /// `AWS_DEFAULT_REGION`, then the `region` key in `~/.aws/config`'s
-    /// `[default]` profile.
+    /// Region resolution falls through `AWS_REGION` →
+    /// `AWS_DEFAULT_REGION` → `~/.aws/config` `[default]` `region`.
     pub fn from_credentials_file() -> Result<Self> {
         let home_dir = home_dir().ok_or_else(|| error!("HOME not set"))?;
         let creds_path = home_dir.join(".aws/credentials");
@@ -127,11 +125,9 @@ impl AwsAccount {
         })
     }
 
-    /// Try [`from_env`](Self::from_env) first, then fall back to
-    /// [`from_credentials_file`](Self::from_credentials_file). The
-    /// error returned on failure is the file-based one — env-var
-    /// failures are silently swallowed since they're the expected
-    /// "not configured this way" path.
+    /// Try [`from_env`](Self::from_env), fall back to
+    /// [`from_credentials_file`](Self::from_credentials_file). Use
+    /// this when you don't care which one — typical CLI / dev setup.
     pub fn from_default() -> Result<Self> {
         match Self::from_env() {
             Ok(acc) => Ok(acc),

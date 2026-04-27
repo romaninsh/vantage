@@ -1,19 +1,16 @@
-//! AWS-specific operation trait that produces `AwsCondition` from columns.
+//! `column.eq(value)` / `column.in_(subquery)` for AWS-backed tables.
 //!
-//! Mirrors `vantage-redb`'s `RedbOperation` shape — blanket-implemented
-//! for any `Expressive<CborValue>` so `Column<T>` and bare identifiers
-//! can write `column.eq(value)` / `column.in_(expr)` and get
-//! `AwsCondition` back, ready for `Table::add_condition`.
+//! Bring [`AwsOperation`] into scope and any column or identifier
+//! expression you already have picks up the methods automatically:
 //!
-//! Why a custom trait when `vantage-table` already has a generic
-//! `Operation`? Because the generic one returns `Expression<T>`; AWS's
-//! condition type is `AwsCondition` (a small enum), so we need our own
-//! producer to keep the call-site ergonomics.
+//! ```ignore
+//! use vantage_aws::AwsOperation;
 //!
-//! `in_` takes an `Expressive<CborValue>` (typically the deferred
-//! subquery from `Table::column_values_expr`) and produces
-//! `AwsCondition::Deferred`. For literal multi-value sets, use the
-//! free-function constructor [`crate::in_`] directly.
+//! let cond = events["logGroupName"].eq("/aws/lambda/foo");
+//! ```
+//!
+//! For literal multi-value sets — rare, since AWS only accepts a
+//! single value anyway — call [`crate::in_`] directly.
 
 use ciborium::Value as CborValue;
 use vantage_expressions::Expressive;
@@ -24,9 +21,10 @@ fn field_name<T>(expr: &(impl Expressive<T> + ?Sized)) -> String {
     expr.expr().template
 }
 
-/// AWS conditions on `Column<T>` and other `Expressive<CborValue>` values.
+/// `eq` / `in_` for AWS-backed columns. Auto-implemented for any
+/// `Expressive<CborValue>` — `Column<T>`, identifier expressions, etc.
 pub trait AwsOperation<T>: Expressive<T> {
-    /// `column == value`
+    /// `column == value`.
     fn eq(&self, value: impl Into<CborValue>) -> AwsCondition
     where
         Self: Sized,
@@ -34,12 +32,12 @@ pub trait AwsOperation<T>: Expressive<T> {
         AwsCondition::eq(field_name(self), value)
     }
 
-    /// `column IN <expression>` — the expression resolves
-    /// asynchronously at execute time. AWS APIs only accept exact
-    /// matches, so the resolved value list must contain exactly one
-    /// element; multi-value resolution errors at query time.
+    /// `column == value` where `value` comes from another query.
+    /// The subquery runs at execute time and must yield exactly one
+    /// value (AWS APIs don't accept multi-value filters).
     ///
-    /// Most natural call: `events["logGroupName"].in_(source.column_values_expr("logGroupName"))`.
+    /// Typical call:
+    /// `events["logGroupName"].in_(source.column_values_expr("logGroupName"))`.
     fn in_<E>(&self, source: E) -> AwsCondition
     where
         Self: Sized,

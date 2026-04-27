@@ -1,15 +1,17 @@
-//! AWS resource models — proof-of-concept.
+//! Two ready-made CloudWatch tables to skip the table-name dance.
 //!
-//! Two CloudWatch resources, wired up to demonstrate that `vantage-aws`
-//! can drive real AWS endpoints:
+//! - [`log_groups_table`] — `DescribeLogGroups`
+//! - [`log_events_table`] — `FilterLogEvents`
 //!
-//! - [`LogGroup`] — `Logs_20140328.DescribeLogGroups`
-//! - [`LogEvent`] — `Logs_20140328.FilterLogEvents`
-//!
-//! Cross-resource navigation: [`LogGroup::ref_events`] returns a
-//! pre-conditioned `Table<AwsAccount, LogEvent>`. AWS doesn't accept
-//! multi-value filters, so traversal is one-parent-at-a-time;
-//! hand-written `ref_*` methods on entities are the v0 idiom.
+//! ```no_run
+//! # use vantage_aws::{AwsAccount, eq};
+//! # use vantage_aws::models::log_groups_table;
+//! # async fn run() -> vantage_core::Result<()> {
+//! let aws = AwsAccount::from_default()?;
+//! let mut groups = log_groups_table(aws);
+//! groups.add_condition(eq("logGroupNamePrefix", "/aws/lambda/"));
+//! # Ok(()) }
+//! ```
 
 pub mod log_event;
 pub mod log_group;

@@ -1,23 +1,23 @@
 //! AWS API wrapper for Vantage — incubating.
 //!
-//! Thin layer that lets you treat AWS JSON-1.1 RPC endpoints (CloudWatch
-//! Logs, ECS, DynamoDB control plane, KMS, Lambda invoke, …) as Vantage
-//! `TableSource`s. `AwsAccount` *is* the source — per-operation config
-//! lives in the table name, formatted as `array_key:service/target`:
+//! Treat AWS JSON-1.1 RPC endpoints (CloudWatch Logs, ECS, DynamoDB
+//! control plane, KMS, …) as Vantage `TableSource`s. Build an
+//! [`AwsAccount`], hand it to a `Table`, and encode the operation in
+//! the table name as `array_key:service/target`:
 //!
 //! ```text
 //! "logGroups:logs/Logs_20140328.DescribeLogGroups"
 //!     │       │       └── X-Amz-Target header value
-//!     │       └────────── service code
+//!     │       └────────── service code (also the URL hostname segment)
 //!     └────────────────── response field that holds the row array
 //! ```
 //!
-//! Conditions on the table fold into the JSON request body; the
-//! response array is parsed into `Record<CborValue>`.
+//! Conditions on the table fold into the JSON request body. v0 is
+//! read-only, first-page only, JSON-1.1 only — REST-JSON and S3 will
+//! arrive as separate source types.
 //!
-//! v0 scope: read-only, first page only, JSON 1.1 only. Lambda-style
-//! REST-JSON and S3 arrive as separate source types in a future
-//! revision.
+//! Ready-made CloudWatch models live under [`models`] if you want to
+//! skip the table-name dance and start querying.
 //!
 //! ```no_run
 //! # use vantage_aws::{AwsAccount, eq};
@@ -27,15 +27,11 @@
 //! // env vars first, falling back to ~/.aws/credentials [default]
 //! let aws = AwsAccount::from_default()?;
 //!
-//! // List CloudWatch log groups.
-//! let groups: Table<AwsAccount, EmptyEntity> = Table::new(
+//! let mut groups: Table<AwsAccount, EmptyEntity> = Table::new(
 //!     "logGroups:logs/Logs_20140328.DescribeLogGroups",
-//!     aws.clone(),
+//!     aws,
 //! );
-//!
-//! // Filter by prefix — folded into the request body as `logGroupNamePrefix`.
-//! let mut filtered = groups.clone();
-//! filtered.add_condition(eq("logGroupNamePrefix", "/aws/lambda/"));
+//! groups.add_condition(eq("logGroupNamePrefix", "/aws/lambda/"));
 //! # Ok(()) }
 //! ```
 

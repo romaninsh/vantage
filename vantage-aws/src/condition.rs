@@ -1,13 +1,10 @@
 //! Conditions for AWS-backed Vantage tables.
 //!
-//! Mirrors `vantage-redb`'s shape with one extra variant: `Eq`, `In`,
-//! and `Deferred`. AWS APIs don't accept multi-value filters, so an
-//! `In` with more than one value (or a `Deferred` that resolves to
-//! more than one) is an error at execute time.
-//!
-//! Values are `ciborium::Value` so the table source plays directly
-//! with `AnyTable` (whose carrier is CBOR). On the wire we still speak
-//! JSON; conversion happens once at the body-building step.
+//! AWS APIs only accept exact-match filters, so the only operator
+//! that survives the round-trip is equality. `In` and `Deferred` are
+//! here to support `with_one` / `with_many` traversal — they must
+//! collapse to a single value at execute time, otherwise the call
+//! errors loudly.
 
 use ciborium::Value as CborValue;
 use serde_json::Value as JsonValue;
@@ -15,18 +12,17 @@ use vantage_expressions::Expression;
 
 #[derive(Clone)]
 pub enum AwsCondition {
-    /// `field = value` — folds straight into the JSON request body.
+    /// `field == value`. Folds into the JSON request body verbatim.
     Eq { field: String, value: CborValue },
-    /// `field IN values` (literal). Single-element resolves to Eq;
-    /// multi-element errors at execute time.
+    /// `field == value` from a literal set. A single-element set
+    /// collapses to `Eq`; zero or multi-element is a hard error.
     In {
         field: String,
         values: Vec<CborValue>,
     },
-    /// `field IN <expression>` — the expression is resolved
-    /// asynchronously at execute time (typically a deferred subquery
-    /// from `Table::column_values_expr`). After resolution the same
-    /// take-1-or-error rule as `In` applies.
+    /// `field == value` where the value comes from another query.
+    /// Resolved at execute time; the source must yield exactly one
+    /// value.
     Deferred {
         field: String,
         source: Expression<CborValue>,
@@ -85,12 +81,19 @@ impl AwsCondition {
     }
 }
 
-/// Free-function constructor. Re-exported at the crate root.
+/// `field == value`. Shorthand for [`AwsCondition::eq`].
+///
+/// ```
+/// # use vantage_aws::eq;
+/// let cond = eq("logGroupNamePrefix", "/aws/lambda/");
+/// ```
 pub fn eq(field: impl Into<String>, value: impl Into<CborValue>) -> AwsCondition {
     AwsCondition::eq(field, value)
 }
 
-/// Free-function constructor. Re-exported at the crate root.
+/// `field IN values` (literal set). Shorthand for [`AwsCondition::in_`].
+/// Remember the single-value rule — a multi-element set will error
+/// at execute time.
 pub fn in_<I, V>(field: impl Into<String>, values: I) -> AwsCondition
 where
     I: IntoIterator<Item = V>,
