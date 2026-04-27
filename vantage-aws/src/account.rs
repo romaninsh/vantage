@@ -199,10 +199,8 @@ fn parse_default_profile(content: &str) -> Option<HashMap<String, String>> {
             }
             continue;
         }
-        if in_default {
-            if let Some((k, v)) = line.split_once('=') {
-                map.insert(k.trim().to_string(), v.trim().to_string());
-            }
+        if in_default && let Some((k, v)) = line.split_once('=') {
+            map.insert(k.trim().to_string(), v.trim().to_string());
         }
     }
 
