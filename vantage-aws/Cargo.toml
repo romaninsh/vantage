@@ -8,7 +8,7 @@ description = "AWS API persistence backend for Vantage framework — incubating"
 documentation = "https://docs.rs/vantage-aws"
 homepage = "https://romaninsh.github.io/vantage"
 repository = "https://github.com/romaninsh/vantage"
-readme = "../README.md"
+readme = "README.md"
 publish = false
 
 [dependencies]
