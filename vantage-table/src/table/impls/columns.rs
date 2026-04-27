@@ -120,9 +120,7 @@ where
         let col = self
             .get_column::<T::AnyType>(column_name)
             .unwrap_or_else(|| panic!("column {column_name:?} not found on table"));
-        self.data_source
-            .column_table_values_expr(self, &col)
-            .expr()
+        self.data_source.column_table_values_expr(self, &col).expr()
     }
 }
 

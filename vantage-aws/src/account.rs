@@ -49,12 +49,11 @@ impl AwsAccount {
     /// variables. The credential chain (profiles, IMDS, SSO) is out of
     /// scope for v0 — set the env vars yourself or call `new`.
     pub fn from_env() -> Result<Self> {
-        let access_key = std::env::var("AWS_ACCESS_KEY_ID")
-            .map_err(|_| error!("AWS_ACCESS_KEY_ID not set"))?;
+        let access_key =
+            std::env::var("AWS_ACCESS_KEY_ID").map_err(|_| error!("AWS_ACCESS_KEY_ID not set"))?;
         let secret_key = std::env::var("AWS_SECRET_ACCESS_KEY")
             .map_err(|_| error!("AWS_SECRET_ACCESS_KEY not set"))?;
-        let region = std::env::var("AWS_REGION")
-            .map_err(|_| error!("AWS_REGION not set"))?;
+        let region = std::env::var("AWS_REGION").map_err(|_| error!("AWS_REGION not set"))?;
         let session_token = std::env::var("AWS_SESSION_TOKEN").ok();
 
         Ok(Self {
@@ -80,9 +79,8 @@ impl AwsAccount {
         let creds_path = home_dir.join(".aws/credentials");
         let creds_text = std::fs::read_to_string(&creds_path)
             .map_err(|e| error!(format!("failed to read {}: {}", creds_path.display(), e)))?;
-        let creds = parse_default_profile(&creds_text).ok_or_else(|| {
-            error!(format!("no [default] profile in {}", creds_path.display()))
-        })?;
+        let creds = parse_default_profile(&creds_text)
+            .ok_or_else(|| error!(format!("no [default] profile in {}", creds_path.display())))?;
 
         let access_key = creds
             .get("aws_access_key_id")
@@ -168,7 +166,10 @@ impl std::fmt::Debug for AwsAccount {
             .field("region", &self.inner.region)
             .field("access_key", &"<redacted>")
             .field("secret_key", &"<redacted>")
-            .field("session_token", &self.inner.session_token.as_ref().map(|_| "<redacted>"))
+            .field(
+                "session_token",
+                &self.inner.session_token.as_ref().map(|_| "<redacted>"),
+            )
             .finish()
     }
 }

@@ -91,10 +91,8 @@ impl AwsAccount {
                 })
                 .unwrap_or_else(|| idx.to_string());
 
-            let record: Record<CborValue> = obj
-                .into_iter()
-                .map(|(k, v)| (k, json_to_cbor(v)))
-                .collect();
+            let record: Record<CborValue> =
+                obj.into_iter().map(|(k, v)| (k, json_to_cbor(v))).collect();
             out.insert(id, record);
         }
         Ok(out)
@@ -104,10 +102,7 @@ impl AwsAccount {
     /// running the embedded expression. AWS doesn't accept multi-value
     /// filters, so the resolved value list must contain exactly one
     /// element; zero or more is a hard error.
-    async fn resolve_conditions(
-        &self,
-        conditions: &[AwsCondition],
-    ) -> Result<Vec<AwsCondition>> {
+    async fn resolve_conditions(&self, conditions: &[AwsCondition]) -> Result<Vec<AwsCondition>> {
         let mut out = Vec::with_capacity(conditions.len());
         for cond in conditions {
             match cond {

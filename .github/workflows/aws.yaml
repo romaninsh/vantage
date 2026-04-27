@@ -21,8 +21,9 @@ jobs:
           cache-on-failure: true
           cache-workspace-crates: false
           cache-all-crates: true
-          key: vantage-aws
-          workspaces: vantage-aws -> target
+          shared-key: "vantage-aws"
+          workspaces: |
+            vantage-aws -> target
 
       - name: Build vantage-aws
         working-directory: vantage-aws

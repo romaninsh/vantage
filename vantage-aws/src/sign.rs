@@ -83,8 +83,7 @@ pub fn sign_v4(
 
     // 2. String to sign.
     let crq_hash = hex::encode(Sha256::digest(canonical_request.as_bytes()));
-    let string_to_sign =
-        format!("AWS4-HMAC-SHA256\n{datetime}\n{credential_scope}\n{crq_hash}");
+    let string_to_sign = format!("AWS4-HMAC-SHA256\n{datetime}\n{credential_scope}\n{crq_hash}");
 
     // 3. Signing key = HMAC chain over (date, region, service, "aws4_request").
     let k_secret = format!("AWS4{secret_key}");
@@ -176,7 +175,10 @@ fn parse_url_path_query(url: &str) -> Result<(String, String)> {
         .split_once("://")
         .map(|(_, rest)| rest)
         .ok_or_else(|| error!("URL missing scheme", url = url))?;
-    let path_and_query = after_scheme.split_once('/').map(|(_, rest)| rest).unwrap_or("");
+    let path_and_query = after_scheme
+        .split_once('/')
+        .map(|(_, rest)| rest)
+        .unwrap_or("");
     let (path_raw, query_raw) = match path_and_query.split_once('?') {
         Some((p, q)) => (p, q),
         None => (path_and_query, ""),
@@ -217,8 +219,7 @@ fn parse_url_path_query(url: &str) -> Result<(String, String)> {
 fn sigv4_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for &b in s.as_bytes() {
-        let unreserved = b.is_ascii_alphanumeric()
-            || matches!(b, b'-' | b'_' | b'.' | b'~');
+        let unreserved = b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~');
         if unreserved {
             out.push(b as char);
         } else {

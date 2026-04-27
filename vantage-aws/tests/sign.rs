@@ -65,7 +65,10 @@ fn temporary_credentials_carry_session_token() {
         "logs",
         "POST",
         "https://logs.eu-west-2.amazonaws.com/",
-        &[("host".to_string(), "logs.eu-west-2.amazonaws.com".to_string())],
+        &[(
+            "host".to_string(),
+            "logs.eu-west-2.amazonaws.com".to_string(),
+        )],
         b"{}",
         time,
     )

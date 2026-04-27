@@ -19,7 +19,10 @@ pub enum AwsCondition {
     Eq { field: String, value: CborValue },
     /// `field IN values` (literal). Single-element resolves to Eq;
     /// multi-element errors at execute time.
-    In { field: String, values: Vec<CborValue> },
+    In {
+        field: String,
+        values: Vec<CborValue>,
+    },
     /// `field IN <expression>` — the expression is resolved
     /// asynchronously at execute time (typically a deferred subquery
     /// from `Table::column_values_expr`). After resolution the same
@@ -77,9 +80,7 @@ impl AwsCondition {
 
     pub fn field(&self) -> &str {
         match self {
-            Self::Eq { field, .. } | Self::In { field, .. } | Self::Deferred { field, .. } => {
-                field
-            }
+            Self::Eq { field, .. } | Self::In { field, .. } | Self::Deferred { field, .. } => field,
         }
     }
 }
@@ -165,7 +166,10 @@ mod tests {
 
     #[test]
     fn single_element_in_collapses_to_eq() {
-        let conds = [in_("logGroupName", vec![CborValue::from("/aws/lambda/foo")])];
+        let conds = [in_(
+            "logGroupName",
+            vec![CborValue::from("/aws/lambda/foo")],
+        )];
         let body = build_body(&conds).unwrap();
         assert_eq!(body["logGroupName"], json!("/aws/lambda/foo"));
     }
