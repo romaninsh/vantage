@@ -50,6 +50,10 @@ impl AwsAccount {
     /// Pull the configured array out of a successful response and build
     /// records keyed by `id_field`. Each value is converted from
     /// `serde_json::Value` to `ciborium::Value` via the serde bridge.
+    ///
+    /// Scalar array elements (strings/numbers) get wrapped as
+    /// `{<id_field>: value}` — this is what the ECS List* APIs return
+    /// (`clusterArns: ["arn:…", …]` instead of objects).
     pub(crate) fn parse_records(
         &self,
         table_name: &str,
@@ -69,13 +73,20 @@ impl AwsAccount {
             })?
             .clone();
 
+        let scalar_field = id_field.unwrap_or("value");
+
         let mut out = IndexMap::with_capacity(array.len());
         for (idx, item) in array.into_iter().enumerate() {
             let obj = match item {
                 JsonValue::Object(map) => map,
+                JsonValue::String(_) | JsonValue::Number(_) => {
+                    let mut m = serde_json::Map::new();
+                    m.insert(scalar_field.to_string(), item);
+                    m
+                }
                 other => {
                     return Err(error!(
-                        "AWS response array entry is not an object",
+                        "AWS response array entry is not an object or scalar",
                         index = idx,
                         got = format!("{:?}", other)
                     ));

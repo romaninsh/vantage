@@ -1,6 +1,6 @@
 [package]
 name = "vantage-aws"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -9,7 +9,6 @@ documentation = "https://docs.rs/vantage-aws"
 homepage = "https://romaninsh.github.io/vantage"
 repository = "https://github.com/romaninsh/vantage"
 readme = "README.md"
-publish = false
 
 [dependencies]
 vantage-core = { version = "0.4", path = "../vantage-core" }
