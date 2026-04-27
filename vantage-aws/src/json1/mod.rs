@@ -1,18 +1,23 @@
-//! `AwsJson1` — TableSource for AWS JSON-1.1 services.
+//! JSON-1.1 protocol implementation for `AwsAccount`.
 //!
-//! Internal value type is `ciborium::Value`, matching `AnyTable`'s
-//! carrier — so any `Table<AwsJson1, E>` wraps directly with
-//! `AnyTable::new(table)` for `with_foreign` registration.
+//! `AwsAccount` itself is the `TableSource` — there's no separate
+//! per-operation wrapper. All per-operation configuration lives in the
+//! table name, parsed as:
 //!
-//! The `Table::new` name encodes `"service/target"` (e.g.
-//! `"logs/Logs_20140328.DescribeLogGroups"`); the `array_key` passed to
-//! `aws.json1(...)` tells us where in the response the row array lives.
+//! ```text
+//! "array_key:service/target"
+//!     │       │       └── X-Amz-Target header value (e.g. "Logs_20140328.DescribeLogGroups")
+//!     │       └────────── service code, also the URL hostname segment ("logs", "ecs", …)
+//!     └────────────────── response field that holds the row array ("logGroups", "events", …)
+//! ```
+//!
 //! Conditions on the table fold into the JSON request body as
-//! `{ field: value }`. v0 returns the first page only.
+//! `{ field: value }`. v0 returns the first page only; deferred
+//! conditions resolve via [`AwsAccount::resolve_conditions`] before
+//! the body is built.
 //!
 //! Trait impls (`DataSource`, `ExprDataSource`, `TableSource`) live
-//! under `impls/` to keep this file focused on the data shape and the
-//! private helpers.
+//! under `impls/` to keep this file focused on protocol mechanics.
 
 mod impls;
 
@@ -27,17 +32,7 @@ use crate::account::AwsAccount;
 use crate::condition::{AwsCondition, build_body};
 use crate::transport::json1_call;
 
-#[derive(Clone, Debug)]
-pub struct AwsJson1 {
-    account: AwsAccount,
-    array_key: String,
-}
-
-impl AwsJson1 {
-    pub(crate) fn new(account: AwsAccount, array_key: String) -> Self {
-        Self { account, array_key }
-    }
-
+impl AwsAccount {
     /// Run the configured RPC, returning the parsed JSON response.
     /// Deferred conditions get materialised into `Eq` first via
     /// [`Self::resolve_conditions`].
@@ -46,10 +41,63 @@ impl AwsJson1 {
         table_name: &str,
         conditions: &[AwsCondition],
     ) -> Result<JsonValue> {
-        let (service, target) = parse_endpoint(table_name)?;
+        let (_array_key, service, target) = parse_table_name(table_name)?;
         let resolved = self.resolve_conditions(conditions).await?;
         let body = build_body(&resolved)?;
-        json1_call(&self.account, service, target, &JsonValue::Object(body)).await
+        json1_call(self, service, target, &JsonValue::Object(body)).await
+    }
+
+    /// Pull the configured array out of a successful response and build
+    /// records keyed by `id_field`. Each value is converted from
+    /// `serde_json::Value` to `ciborium::Value` via the serde bridge.
+    pub(crate) fn parse_records(
+        &self,
+        table_name: &str,
+        resp: JsonValue,
+        id_field: Option<&str>,
+    ) -> Result<IndexMap<String, Record<CborValue>>> {
+        let (array_key, _service, _target) = parse_table_name(table_name)?;
+        let array = resp
+            .get(array_key)
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| {
+                error!(
+                    "AWS response missing expected array key",
+                    array_key = array_key,
+                    body = format!("{}", resp)
+                )
+            })?
+            .clone();
+
+        let mut out = IndexMap::with_capacity(array.len());
+        for (idx, item) in array.into_iter().enumerate() {
+            let obj = match item {
+                JsonValue::Object(map) => map,
+                other => {
+                    return Err(error!(
+                        "AWS response array entry is not an object",
+                        index = idx,
+                        got = format!("{:?}", other)
+                    ));
+                }
+            };
+
+            let id = id_field
+                .and_then(|f| obj.get(f))
+                .and_then(|v| match v {
+                    JsonValue::String(s) => Some(s.clone()),
+                    JsonValue::Number(n) => Some(n.to_string()),
+                    _ => None,
+                })
+                .unwrap_or_else(|| idx.to_string());
+
+            let record: Record<CborValue> = obj
+                .into_iter()
+                .map(|(k, v)| (k, json_to_cbor(v)))
+                .collect();
+            out.insert(id, record);
+        }
+        Ok(out)
     }
 
     /// Walk conditions and materialise any `Deferred` into `Eq` by
@@ -96,68 +144,23 @@ impl AwsJson1 {
         }
         Ok(out)
     }
-
-    /// Pull the configured array out of a successful response and build
-    /// records keyed by `id_field`. Each value is converted from
-    /// `serde_json::Value` to `ciborium::Value` via the serde bridge.
-    pub(crate) fn parse_records(
-        &self,
-        resp: JsonValue,
-        id_field: Option<&str>,
-    ) -> Result<IndexMap<String, Record<CborValue>>> {
-        let array = resp
-            .get(&self.array_key)
-            .and_then(|v| v.as_array())
-            .ok_or_else(|| {
-                error!(
-                    "AWS response missing expected array key",
-                    array_key = self.array_key.as_str(),
-                    body = format!("{}", resp)
-                )
-            })?
-            .clone();
-
-        let mut out = IndexMap::with_capacity(array.len());
-        for (idx, item) in array.into_iter().enumerate() {
-            let obj = match item {
-                JsonValue::Object(map) => map,
-                other => {
-                    return Err(error!(
-                        "AWS response array entry is not an object",
-                        index = idx,
-                        got = format!("{:?}", other)
-                    ));
-                }
-            };
-
-            let id = id_field
-                .and_then(|f| obj.get(f))
-                .and_then(|v| match v {
-                    JsonValue::String(s) => Some(s.clone()),
-                    JsonValue::Number(n) => Some(n.to_string()),
-                    _ => None,
-                })
-                .unwrap_or_else(|| idx.to_string());
-
-            let record: Record<CborValue> = obj
-                .into_iter()
-                .map(|(k, v)| (k, json_to_cbor(v)))
-                .collect();
-            out.insert(id, record);
-        }
-        Ok(out)
-    }
 }
 
-/// Parse `"service/target"` into `("service", "target")`. Anything else
-/// is an error — the table name *is* the routing info for JSON-1.1.
-fn parse_endpoint(table_name: &str) -> Result<(&str, &str)> {
-    table_name.split_once('/').ok_or_else(|| {
+/// Parse `"array_key:service/target"` into its three components.
+pub(crate) fn parse_table_name(name: &str) -> Result<(&str, &str, &str)> {
+    let (array_key, rest) = name.split_once(':').ok_or_else(|| {
         error!(
-            "AwsJson1 table name must be \"service/target\" — got",
-            name = table_name
+            "AwsAccount table name must be \"array_key:service/target\" — got",
+            name = name
         )
-    })
+    })?;
+    let (service, target) = rest.split_once('/').ok_or_else(|| {
+        error!(
+            "AwsAccount table name must be \"array_key:service/target\" — got",
+            name = name
+        )
+    })?;
+    Ok((array_key, service, target))
 }
 
 /// JSON → CBOR via ciborium's serde bridge. JSON's value space is a
@@ -172,15 +175,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_endpoint_splits_on_slash() {
-        let (service, target) = parse_endpoint("logs/Logs_20140328.DescribeLogGroups").unwrap();
+    fn parses_three_components() {
+        let (array_key, service, target) =
+            parse_table_name("logGroups:logs/Logs_20140328.DescribeLogGroups").unwrap();
+        assert_eq!(array_key, "logGroups");
         assert_eq!(service, "logs");
         assert_eq!(target, "Logs_20140328.DescribeLogGroups");
     }
 
     #[test]
-    fn parse_endpoint_rejects_missing_slash() {
-        let err = parse_endpoint("DescribeLogGroups").unwrap_err();
-        assert!(format!("{err}").contains("service/target"));
+    fn rejects_missing_colon() {
+        let err = parse_table_name("logs/Logs_20140328.DescribeLogGroups").unwrap_err();
+        assert!(format!("{err}").contains("array_key:service/target"));
+    }
+
+    #[test]
+    fn rejects_missing_slash() {
+        let err = parse_table_name("logGroups:DescribeLogGroups").unwrap_err();
+        assert!(format!("{err}").contains("array_key:service/target"));
     }
 }

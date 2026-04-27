@@ -1,11 +1,12 @@
-//! `TableSource` impl for `AwsJson1`.
+//! `TableSource` impl for `AwsAccount` (JSON-1.1 protocol).
 //!
 //! Read-only in v0. Writes are stubbed to error. Aggregations
 //! (sum/min/max) likewise. The two interesting methods are
 //! `list_table_values` (folds conditions into a JSON request body and
 //! parses the response) and `column_table_values_expr` (returns a
 //! deferred expression over the column's values — same shape as
-//! `vantage-csv`).
+//! `vantage-csv`). `related_in_condition` builds on top of that to
+//! make `with_one` / `with_many` work for cross-resource navigation.
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
@@ -15,7 +16,7 @@ use serde_json::json;
 use vantage_core::error;
 use vantage_dataset::traits::Result as DatasetResult;
 use vantage_expressions::{
-    Expression, expr_any,
+    Expression, Expressive, expr_any,
     traits::associated_expressions::AssociatedExpression,
     traits::datasource::ExprDataSource,
     traits::expressive::{DeferredFn, ExpressiveEnum},
@@ -25,11 +26,11 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
+use crate::account::AwsAccount;
 use crate::condition::AwsCondition;
-use crate::json1::AwsJson1;
 
 #[async_trait]
-impl TableSource for AwsJson1 {
+impl TableSource for AwsAccount {
     type Column<Type>
         = Column<Type>
     where
@@ -90,7 +91,7 @@ impl TableSource for AwsJson1 {
         let id_field = table.id_field().map(|c| c.name().to_string());
         let conditions: Vec<AwsCondition> = table.conditions().cloned().collect();
         let resp = self.execute_rpc(table.table_name(), &conditions).await?;
-        Ok(self.parse_records(resp, id_field.as_deref())?)
+        Ok(self.parse_records(table.table_name(), resp, id_field.as_deref())?)
     }
 
     async fn get_table_value<E>(
@@ -239,18 +240,25 @@ impl TableSource for AwsJson1 {
 
     fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(
         &self,
-        _target_field: &str,
-        _source_table: &Table<Self, SourceE>,
-        _source_column: &str,
+        target_field: &str,
+        source_table: &Table<Self, SourceE>,
+        source_column: &str,
     ) -> Self::Condition
     where
         Self: Sized,
     {
-        unimplemented!(
-            "vantage-aws v0: cross-resource references should be hand-written \
-             on the entity, or registered via with_foreign with a closure that \
-             lifts the source's literal conditions onto the target."
-        )
+        // Build "target_field IN (subquery)" as a Deferred condition:
+        // at execute time, the embedded expression runs the source
+        // query, projects `source_column`, and we apply the same
+        // take-1-or-error rule as any other Deferred. AWS doesn't
+        // accept multi-value filters, so traversal is implicitly
+        // single-parent — multi-row sources error loudly.
+        let src_col = self.create_column::<Self::AnyType>(source_column);
+        let values_expr = self.column_table_values_expr(source_table, &src_col);
+        AwsCondition::Deferred {
+            field: target_field.to_string(),
+            source: values_expr.expr(),
+        }
     }
 
     fn column_table_values_expr<'a, E, Type: ColumnType>(

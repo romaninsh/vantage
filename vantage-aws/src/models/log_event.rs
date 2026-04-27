@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
-use vantage_aws::{AwsAccount, AwsJson1};
 use vantage_table::table::Table;
+
+use crate::AwsAccount;
 
 /// One log event from `FilterLogEvents`. Timestamps are CloudWatch's
 /// usual milliseconds-since-epoch.
@@ -19,13 +20,10 @@ pub struct LogEvent {
 /// `Logs_20140328.FilterLogEvents` — needs `logGroupName` to be set on
 /// the table via a condition before `list` will succeed (AWS rejects
 /// the call otherwise).
-pub fn log_events_table(aws: AwsAccount) -> Table<AwsJson1, LogEvent> {
-    Table::new(
-        "logs/Logs_20140328.FilterLogEvents",
-        aws.json1("events"),
-    )
-    .with_id_column("eventId")
-    .with_column_of::<String>("logStreamName")
-    .with_column_of::<i64>("timestamp")
-    .with_column_of::<String>("message")
+pub fn log_events_table(aws: AwsAccount) -> Table<AwsAccount, LogEvent> {
+    Table::new("events:logs/Logs_20140328.FilterLogEvents", aws)
+        .with_id_column("eventId")
+        .with_column_of::<String>("logStreamName")
+        .with_column_of::<i64>("timestamp")
+        .with_column_of::<String>("message")
 }

@@ -34,5 +34,13 @@ hex = "0.4"
 ciborium = "0.2"
 
 [dev-dependencies]
+vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
+vantage-cli-util = { version = "0.4", path = "../vantage-cli-util" }
+
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }
+clap = { version = "4", features = ["derive"] }
+
+[[example]]
+name = "aws-cli"
+path = "examples/aws-cli.rs"

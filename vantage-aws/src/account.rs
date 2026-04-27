@@ -66,14 +66,6 @@ impl AwsAccount {
         })
     }
 
-    /// Build a JSON-1.1 source. Call this once per operation —
-    /// `array_key` is the response field that holds the row array
-    /// (`"logGroups"` for `DescribeLogGroups`, `"events"` for
-    /// `FilterLogEvents`, etc.).
-    pub fn json1(&self, array_key: impl Into<String>) -> AwsJson1 {
-        AwsJson1::new(self.clone(), array_key.into())
-    }
-
     pub(crate) fn region(&self) -> &str {
         &self.inner.region
     }

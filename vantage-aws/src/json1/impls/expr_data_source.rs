@@ -17,9 +17,9 @@ use vantage_expressions::{
     traits::expressive::{DeferredFn, ExpressiveEnum},
 };
 
-use crate::json1::AwsJson1;
+use crate::account::AwsAccount;
 
-impl ExprDataSource<CborValue> for AwsJson1 {
+impl ExprDataSource<CborValue> for AwsAccount {
     async fn execute(&self, expr: &Expression<CborValue>) -> Result<CborValue> {
         if expr.parameters.is_empty() {
             Ok(CborValue::Text(expr.template.clone()))

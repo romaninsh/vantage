@@ -13,8 +13,8 @@
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use vantage_aws::models::{log_events_table, log_groups_table};
 use vantage_aws::{AwsAccount, eq};
-use vantage_aws_models::{log_events_table, log_groups_table};
 use vantage_cli_util::{print_table, render_records};
 use vantage_dataset::prelude::ReadableValueSet;
 

@@ -1,4 +1,4 @@
-//! AWS resource models for `vantage-aws` — proof-of-concept.
+//! AWS resource models — proof-of-concept.
 //!
 //! Two CloudWatch resources, wired up to demonstrate that `vantage-aws`
 //! can drive real AWS endpoints:
@@ -7,7 +7,7 @@
 //! - [`LogEvent`] — `Logs_20140328.FilterLogEvents`
 //!
 //! Cross-resource navigation: [`LogGroup::ref_events`] returns a
-//! pre-conditioned `Table<AwsJson1, LogEvent>`. AWS doesn't accept
+//! pre-conditioned `Table<AwsAccount, LogEvent>`. AWS doesn't accept
 //! multi-value filters, so traversal is one-parent-at-a-time;
 //! hand-written `ref_*` methods on entities are the v0 idiom.
 
