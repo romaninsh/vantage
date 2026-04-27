@@ -4,7 +4,9 @@
 //! `Table` / `TableSource` machinery the rest of the framework uses.
 //!
 //! Reads creds from the standard env vars (`AWS_ACCESS_KEY_ID`,
-//! `AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN`, `AWS_REGION`).
+//! `AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN`, `AWS_REGION`),
+//! falling back to the `[default]` profile in `~/.aws/credentials`
+//! and `~/.aws/config`.
 //!
 //! Subcommands:
 //!   list-groups [--prefix <p>]   → DescribeLogGroups
@@ -23,6 +25,10 @@ const TRAVERSE_GROUP: &str = "/ecs/ba-nginx";
 #[derive(Parser)]
 #[command(name = "vantage-aws-cli", about = "vantage-aws CloudWatch demo")]
 struct Cli {
+    /// Override the AWS region (sets AWS_REGION before credential load).
+    #[arg(long, global = true)]
+    region: Option<String>,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -43,8 +49,12 @@ enum Command {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    let aws = AwsAccount::from_env().context(
-        "Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION (and optionally AWS_SESSION_TOKEN)",
+    if let Some(region) = &cli.region {
+        // SAFETY: single-threaded, before any other env reads.
+        unsafe { std::env::set_var("AWS_REGION", region) };
+    }
+    let aws = AwsAccount::from_default().context(
+        "Set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/AWS_REGION, or configure ~/.aws/credentials [default]",
     )?;
 
     match cli.command {

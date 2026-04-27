@@ -24,7 +24,8 @@
 //! # use vantage_table::table::Table;
 //! # use vantage_types::EmptyEntity;
 //! # async fn run() -> vantage_core::Result<()> {
-//! let aws = AwsAccount::from_env()?;
+//! // env vars first, falling back to ~/.aws/credentials [default]
+//! let aws = AwsAccount::from_default()?;
 //!
 //! // List CloudWatch log groups.
 //! let groups: Table<AwsAccount, EmptyEntity> = Table::new(
