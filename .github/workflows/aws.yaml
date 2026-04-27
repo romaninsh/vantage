@@ -1,0 +1,53 @@
+name: AWS Backend Tests
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "vantage-aws/**"
+      - ".github/workflows/aws.yaml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          cache-workspace-crates: false
+          cache-all-crates: true
+          shared-key: "vantage-aws"
+          workspaces: |
+            vantage-aws -> target
+
+      - name: Build vantage-aws
+        working-directory: vantage-aws
+        run: cargo build --all-targets
+
+      - name: Run tests (offline only — integration tests are #[ignore]d)
+        working-directory: vantage-aws
+        run: cargo test
+
+      - name: Check formatting
+        working-directory: vantage-aws
+        run: cargo fmt -- --check
+
+      - name: Run clippy
+        working-directory: vantage-aws
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Run aws-cli against live AWS
+        working-directory: vantage-aws
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: eu-west-2
+        run: |
+          cargo run --example aws-cli -- list-groups
+          cargo run --example aws-cli -- list-groups --prefix /aws/lambda/
+          cargo run --example aws-cli -- traverse

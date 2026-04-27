@@ -71,6 +71,40 @@
   - SurrealDB returns `{id: "bakery:hill_valley"}` from subquery, not `"bakery:hill_valley"`
   - Need `SELECT VALUE id` but that's SurrealDB-specific, not in generic Selectable trait
   - Affects: Reference traversal in bakery_model4 (e.g., `bakery ref products list`)
+- [ ] **Wire up real LIVE query support end-to-end.** `surreal-client/src/engines/ws_cbor.rs`
+      has a comment claiming LIVE was added, but `handle_messages` only routes responses with
+      a matching pending-request id. LIVE notifications arrive as `Binary` frames whose id
+      references a live-query UUID with no pending request — they're silently dropped today.
+      Full plumbing needs (rough order):
+
+  - [ ] **`surreal-client`**: detect notification frames in `WsCborEngine::handle_messages`
+        and route to per-live-query channels. Add `Client::live_select(query) -> impl Stream<
+        Item = Notification>` (or similar). Drop semantics: cancelling the stream should send
+        a `KILL <uuid>` so the server stops emitting. Mirror impl in `WsEngine` (text JSON).
+        Patch bump to surreal-client.
+  - [ ] **`vantage-surrealdb`**: new `SurrealLiveStream` (gated behind a `live` feature) that
+        implements `vantage_live::LiveStream`. Subscribes via the new surreal-client method
+        and translates `Notification { action: CREATE | UPDATE | DELETE, … }` into vantage
+        `LiveEvent::{Inserted, Updated, Deleted}`. Adds `vantage-live` as an optional dep.
+        Patch bump.
+  - [ ] **`vantage-live` demo (`examples/live_demo.rs`)**: replace the `local` redb-as-master
+        subcommand with a `bakery` mode using `bakery_model3`'s SurrealDB tables. Expose all
+        four entities (`bakery`, `clients`, `products`, `orders`) as subcommands. Drop
+        redb-as-master entirely from the example. Add `--watch` and `--timeout <secs>` flags
+        on `list`: poll on a 1s tick (cache-served when warm) AND consume the SurrealLiveStream
+        in the background so external mutations land immediately as cache invalidations →
+        next poll re-fetches.
+  - [ ] **Helper script** at `bakery_model3/scripts/insert-client-every-second.sh`: bash loop
+        that uses `surreal sql` against the bakery namespace to insert a fresh client every
+        second. Lets you run the watch demo in one terminal and the helper in another to see
+        cache invalidation fire from real LIVE events.
+  - [ ] **CHANGELOG entries** in surreal-client / vantage-surrealdb / vantage-live (new
+        feature in the demo).
+
+  Future-universal note: the `LiveStream` trait currently lives in `vantage-live`. If more
+  backends grow live-event support (Postgres LISTEN/NOTIFY, Mongo change streams, Kafka),
+  consider lifting the trait into a lower-level crate so backends can implement it without
+  taking vantage-live as a dep.
 
 # CI/CD
 

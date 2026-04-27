@@ -1,4 +1,5 @@
 use indexmap::IndexMap;
+use vantage_expressions::{Expression, Expressive, traits::datasource::ExprDataSource};
 use vantage_types::Entity;
 
 use crate::{
@@ -95,6 +96,31 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             use vantage_expressions::Expressive;
             self.columns.get(name).map(|c| c.expr())
         }
+    }
+}
+
+impl<T, E> Table<T, E>
+where
+    T: TableSource + ExprDataSource<T::Value>,
+    E: Entity<T::Value> + 'static,
+{
+    /// Expression yielding all values of the named column under the
+    /// table's current conditions.
+    ///
+    /// SQL backends materialise this as a `SELECT col FROM tbl WHERE …`
+    /// subquery (embeddable directly into IN clauses); non-query
+    /// backends wrap a `DeferredFn` that runs `list_table_values` and
+    /// projects the column at execute time.
+    ///
+    /// Panics if `column_name` isn't a column on this table — the
+    /// callsite is meant to be a literal column reference, so a typo
+    /// is a programmer error, not a runtime failure mode worth
+    /// surfacing as `Result`.
+    pub fn column_values_expr(&self, column_name: &str) -> Expression<T::Value> {
+        let col = self
+            .get_column::<T::AnyType>(column_name)
+            .unwrap_or_else(|| panic!("column {column_name:?} not found on table"));
+        self.data_source.column_table_values_expr(self, &col).expr()
     }
 }
 
