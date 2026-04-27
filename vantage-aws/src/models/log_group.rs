@@ -4,6 +4,7 @@ use vantage_table::table::Table;
 use crate::{AwsAccount, eq};
 
 use super::log_event::{LogEvent, log_events_table};
+use super::log_stream::{LogStream, log_streams_table};
 
 /// One CloudWatch Logs group. Field names match the wire shape —
 /// these are exactly what `DescribeLogGroups` returns.
@@ -20,10 +21,13 @@ pub struct LogGroup {
 /// `DescribeLogGroups` table — every log group in the account. Filter
 /// by adding `eq("logGroupNamePrefix", "...")`.
 ///
-/// Comes with an `events` relation that traverses to the group's
-/// log events. AWS doesn't accept multi-value filters, so the source
-/// has to narrow to a single group before traversal — otherwise the
-/// traversal errors at execute time.
+/// Two relations:
+///   - `events` → `FilterLogEvents` for this group
+///   - `streams` → `DescribeLogStreams` for this group
+///
+/// AWS doesn't accept multi-value filters, so the source has to narrow
+/// to a single group before traversal — otherwise the call errors at
+/// execute time.
 ///
 /// ```no_run
 /// # use vantage_aws::{AwsAccount, eq};
@@ -40,14 +44,20 @@ pub fn log_groups_table(aws: AwsAccount) -> Table<AwsAccount, LogGroup> {
         .with_column_of::<i64>("creationTime")
         .with_column_of::<i64>("storedBytes")
         .with_many("events", "logGroupName", log_events_table)
+        .with_many("streams", "logGroupName", log_streams_table)
 }
 
 impl LogGroup {
-    /// Events table pre-filtered to *this* group's name. Use when
-    /// you already have a resolved `LogGroup` in hand and don't need
-    /// to go through the table-level relation traversal.
+    /// Events table pre-filtered to *this* group's name.
     pub fn ref_events(&self, aws: AwsAccount) -> Table<AwsAccount, LogEvent> {
         let mut t = log_events_table(aws);
+        t.add_condition(eq("logGroupName", self.log_group_name.clone()));
+        t
+    }
+
+    /// Streams table pre-filtered to *this* group's name.
+    pub fn ref_streams(&self, aws: AwsAccount) -> Table<AwsAccount, LogStream> {
+        let mut t = log_streams_table(aws);
         t.add_condition(eq("logGroupName", self.log_group_name.clone()));
         t
     }

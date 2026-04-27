@@ -61,10 +61,13 @@ parsed into `Record<CborValue>` rows.
 You only have to write this once per resource — usually you wrap it in
 a model factory and forget about the encoding (see below).
 
-## Built-in CloudWatch models
+## Built-in models
 
-`vantage_aws::models` ships two CloudWatch tables ready-made so you
-don't have to memorise the table-name format:
+`vantage_aws::models` ships ready-made tables so you don't have to
+memorise the table-name format:
+
+- CloudWatch Logs: `log_groups_table`, `log_streams_table`, `log_events_table`.
+- ECS (under `models::ecs`): `clusters_table`, `services_table`, `tasks_table`, `task_definitions_table`.
 
 ```rust
 use vantage_aws::models::{log_groups_table, log_events_table};
@@ -79,10 +82,16 @@ events.add_condition(eq("logGroupName", "/aws/lambda/foo"));
 let logs = events.list_values().await?;
 ```
 
-`log_groups_table` registers `events` as a `with_many` relation that
-traverses to the group's log events. AWS doesn't accept multi-value
-filters, so the source has to narrow to a single group before
-traversal — otherwise the call errors at execute time.
+`log_groups_table` registers two `with_many` relations — `events` and
+`streams` — that traverse to the group's log events / streams. AWS
+doesn't accept multi-value filters, so the source has to narrow to a
+single group before traversal — otherwise the call errors at execute
+time.
+
+ECS APIs split into a `List*` step (returns ARNs only) and a `Describe*`
+step (full objects). v0 exposes the `List*` side; rows hold the ARN
+plus parsed-out short-name helpers (`Cluster::name()`,
+`Task::task_id()`, etc.).
 
 ## Conditions
 
@@ -134,7 +143,8 @@ something else, you probably want a different crate.
 
 v0 covers: `AwsAccount` + JSON-1.1 transport, hand-rolled SigV4,
 `Eq` / `In` / `Deferred` conditions, `with_one` / `with_many`
-traversal, two CloudWatch models (`LogGroup`, `LogEvent`), env-var and
+traversal, CloudWatch (`LogGroup`, `LogStream`, `LogEvent`) and ECS
+(`Cluster`, `Service`, `Task`, `TaskDefinition`) models, env-var and
 `~/.aws/credentials` `[default]` credential loading.
 
 Out of scope for v0:
