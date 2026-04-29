@@ -299,9 +299,20 @@ impl TableLike for AnyTable {
     async fn get_count(&self) -> vantage_core::Result<i64> {
         self.inner.get_count().await
     }
+
+    fn get_ref(&self, relation: &str) -> Result<AnyTable> {
+        self.inner.get_ref(relation)
+    }
 }
 
 impl AnyTable {
+    /// Traverse a named reference and return the related table as `AnyTable`.
+    ///
+    /// Inherent wrapper so callers don't need `use TableLike` in scope.
+    pub fn get_ref(&self, relation: &str) -> Result<AnyTable> {
+        TableLike::get_ref(self, relation)
+    }
+
     /// Configure pagination using a callback
     pub fn with_pagination<F>(&mut self, func: F)
     where
@@ -536,6 +547,10 @@ where
 
     async fn get_count(&self) -> Result<i64> {
         self.inner.data_source().get_table_count(&self.inner).await
+    }
+
+    fn get_ref(&self, relation: &str) -> Result<AnyTable> {
+        self.inner.get_ref(relation)
     }
 }
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.2 — 2026-04-29
+
+- `LiveTable::get_ref(relation)` now forwards through to the master `AnyTable`, so reference traversal works on a `LiveTable` the same way it does on the underlying table — `live.get_ref("orders")` returns an `AnyTable` you can keep wrapping.
+- Pins `vantage-table = "0.4.7"` for the new `AnyTable::get_ref` / `TableLike::get_ref` surface.
+
 ## 0.4.1 — 2026-04-26
 
 - New `RedbCache::open(folder)` cache backend. Persists cached rows on disk so cache state survives process restarts. One redb file inside the folder, one redb table per `cache_key` (namespaced `__vlive__{cache_key}`) so the hot `invalidate_prefix(cache_key)` path is just a `delete_table` call — O(1)-ish, no scan. Sub-prefix invalidation falls back to scan-and-delete inside the table.

@@ -4,6 +4,7 @@ use vantage_expressions::AnyExpression;
 use vantage_types::Entity;
 
 use crate::{
+    any::AnyTable,
     conditions::ConditionHandle,
     pagination::Pagination,
     table::Table,
@@ -92,5 +93,9 @@ where
 
     async fn get_count(&self) -> Result<i64> {
         self.data_source().get_table_count(self).await
+    }
+
+    fn get_ref(&self, relation: &str) -> Result<AnyTable> {
+        Table::<T, E>::get_ref(self, relation)
     }
 }
