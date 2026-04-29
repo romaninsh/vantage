@@ -57,10 +57,12 @@ mod query;
 mod sign;
 
 pub mod models;
+pub mod types;
 
 pub use account::AwsAccount;
 pub use condition::{AwsCondition, eq, in_};
 pub use operation::AwsOperation;
+pub use types::{AnyAwsType, Arn, AwsDateTime, typed_records, untyped_records};
 
 #[doc(hidden)]
 pub mod __test_support {

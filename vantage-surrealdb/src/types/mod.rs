@@ -238,23 +238,15 @@ impl std::fmt::Display for AnySurrealType {
 }
 
 impl TerminalRender for AnySurrealType {
-    fn render(&self) -> String {
+    fn render(&self) -> vantage_types::RichText {
         use ciborium::Value;
+        use vantage_types::{RichText, Style};
         match &self.value {
-            Value::Null | Value::Tag(6, _) => "-".to_string(),
-            Value::Text(s) => s.clone(),
-            Value::Bool(b) => b.to_string(),
-            _ => format!("{}", self),
-        }
-    }
-
-    fn color_hint(&self) -> Option<&'static str> {
-        use ciborium::Value;
-        match &self.value {
-            Value::Bool(true) => Some("green"),
-            Value::Bool(false) => Some("red"),
-            Value::Null | Value::Tag(6, _) => Some("dim"),
-            _ => None,
+            Value::Null | Value::Tag(6, _) => RichText::styled("—", Style::Muted),
+            Value::Text(s) => RichText::plain(s.clone()),
+            Value::Bool(true) => RichText::styled("true", Style::Success),
+            Value::Bool(false) => RichText::styled("false", Style::Error),
+            _ => RichText::plain(format!("{}", self)),
         }
     }
 }

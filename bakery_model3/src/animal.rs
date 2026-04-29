@@ -6,7 +6,7 @@ use vantage_sql::postgres::{PostgresType, types::PostgresTypeTextMarker};
 use vantage_sql::sqlite::{SqliteType, types::SqliteTypeTextMarker};
 use vantage_surrealdb::types::SurrealTypeStringMarker;
 use vantage_surrealdb::{CborValue, SurrealType};
-use vantage_types::TerminalRender;
+use vantage_types::{RichText, TerminalRender};
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum Animal {
@@ -46,14 +46,15 @@ impl Animal {
 }
 
 impl TerminalRender for Animal {
-    fn render(&self) -> String {
-        match self {
-            Animal::Cat => "🐱".to_string(),
-            Animal::Dog => "🐶".to_string(),
-            Animal::Pig => "🐷".to_string(),
-            Animal::Cow => "🐮".to_string(),
-            Animal::Chicken => "🐔".to_string(),
-        }
+    fn render(&self) -> RichText {
+        let glyph = match self {
+            Animal::Cat => "🐱",
+            Animal::Dog => "🐶",
+            Animal::Pig => "🐷",
+            Animal::Cow => "🐮",
+            Animal::Chicken => "🐔",
+        };
+        RichText::plain(glyph.to_string())
     }
 }
 

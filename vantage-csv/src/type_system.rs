@@ -357,38 +357,33 @@ impl From<AnyCsvType> for ciborium::Value {
     }
 }
 
-use vantage_types::TerminalRender;
+use vantage_types::{RichText, Style, TerminalRender};
 
 impl TerminalRender for AnyCsvType {
-    fn render(&self) -> String {
+    fn render(&self) -> RichText {
         match self.type_variant() {
             // HACK: Animal is domain-specific, hardcoded here for now.
             // TODO: Make custom type rendering extensible at compile time.
-            Some(CsvTypeVariants::Animal) => match self.value().as_str() {
-                "cat" => "🐱",
-                "dog" => "🐶",
-                "pig" => "🐷",
-                "cow" => "🐮",
-                "chicken" => "🐔",
-                other => return other.to_string(),
+            Some(CsvTypeVariants::Animal) => {
+                let glyph = match self.value().as_str() {
+                    "cat" => "🐱",
+                    "dog" => "🐶",
+                    "pig" => "🐷",
+                    "cow" => "🐮",
+                    "chicken" => "🐔",
+                    other => return RichText::plain(other.to_string()),
+                };
+                RichText::plain(glyph.to_string())
             }
-            .to_string(),
-            None if self.value().is_empty() => "-".to_string(),
-            _ => self.value().clone(),
-        }
-    }
-
-    fn color_hint(&self) -> Option<&'static str> {
-        match self.type_variant() {
             Some(CsvTypeVariants::Bool) => {
                 if self.value() == "true" {
-                    Some("green")
+                    RichText::styled("true", Style::Success)
                 } else {
-                    Some("red")
+                    RichText::styled("false", Style::Error)
                 }
             }
-            None if self.value().is_empty() => Some("dim"),
-            _ => None,
+            None if self.value().is_empty() => RichText::styled("—", Style::Muted),
+            _ => RichText::plain(self.value().clone()),
         }
     }
 }

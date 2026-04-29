@@ -35,6 +35,9 @@ ciborium = "0.2"
 # AWS Query protocol responses are XML (IAM, STS, EC2, …).
 quick-xml = "0.36"
 
+# Date parsing for AWS timestamps.
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+
 [dev-dependencies]
 vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
 vantage-cli-util = { version = "0.4", path = "../vantage-cli-util" }

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use vantage_table::table::Table;
 
+use crate::types::{Arn, AwsDateTime};
 use crate::{AwsAccount, eq};
 
 use super::access_key::{AccessKey, access_keys_table};
@@ -54,10 +55,10 @@ pub fn users_table(aws: AwsAccount) -> Table<AwsAccount, User> {
     Table::new("query/Users:iam/2010-05-08.ListUsers", aws)
         .with_id_column("UserName")
         .with_column_of::<String>("UserId")
-        .with_column_of::<String>("Arn")
+        .with_column_of::<Arn>("Arn")
         .with_column_of::<String>("Path")
-        .with_column_of::<String>("CreateDate")
-        .with_column_of::<String>("PasswordLastUsed")
+        .with_column_of::<AwsDateTime>("CreateDate")
+        .with_column_of::<AwsDateTime>("PasswordLastUsed")
         .with_many("groups", "UserName", groups_for_user_table)
         .with_many("access_keys", "UserName", access_keys_table)
         .with_many(

@@ -9,8 +9,9 @@ repository = "https://github.com/romaninsh/vantage"
 
 [dependencies]
 async-trait = "0.1"
-comfy-table = "7"
+comfy-table = { version = "7", features = ["custom_styling"] }
 indexmap = "2"
+owo-colors = "4"
 vantage-core = { version = "0.4", path = "../vantage-core" }
 vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
 vantage-table = { version = "0.4", path = "../vantage-table" }

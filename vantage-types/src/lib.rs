@@ -8,7 +8,7 @@ pub mod terminal_render;
 pub mod type_system;
 
 pub use record::{IntoRecord, Record, TryFromRecord};
-pub use terminal_render::TerminalRender;
+pub use terminal_render::{RichText, Span, Style, TerminalRender};
 
 /// Empty entity type for testing and dynamic table scenarios
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

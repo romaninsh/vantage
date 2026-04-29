@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use vantage_table::table::Table;
 
+use crate::types::{Arn, AwsDateTime};
 use crate::{AwsAccount, eq};
 
 use super::attached_policy::{AttachedPolicy, attached_group_policies_table};
@@ -31,9 +32,9 @@ pub fn groups_table(aws: AwsAccount) -> Table<AwsAccount, Group> {
     Table::new("query/Groups:iam/2010-05-08.ListGroups", aws)
         .with_id_column("GroupName")
         .with_column_of::<String>("GroupId")
-        .with_column_of::<String>("Arn")
+        .with_column_of::<Arn>("Arn")
         .with_column_of::<String>("Path")
-        .with_column_of::<String>("CreateDate")
+        .with_column_of::<AwsDateTime>("CreateDate")
         .with_many(
             "attached_policies",
             "GroupName",
@@ -48,9 +49,9 @@ pub(crate) fn groups_for_user_table(aws: AwsAccount) -> Table<AwsAccount, Group>
     Table::new("query/Groups:iam/2010-05-08.ListGroupsForUser", aws)
         .with_id_column("GroupName")
         .with_column_of::<String>("GroupId")
-        .with_column_of::<String>("Arn")
+        .with_column_of::<Arn>("Arn")
         .with_column_of::<String>("Path")
-        .with_column_of::<String>("CreateDate")
+        .with_column_of::<AwsDateTime>("CreateDate")
 }
 
 impl Group {
