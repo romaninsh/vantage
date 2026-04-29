@@ -169,8 +169,7 @@ mod tests {
 
     #[test]
     fn parses_json1_form() {
-        let op =
-            parse_table_name("json1/logGroups:logs/Logs_20140328.DescribeLogGroups").unwrap();
+        let op = parse_table_name("json1/logGroups:logs/Logs_20140328.DescribeLogGroups").unwrap();
         assert_eq!(op.protocol, Protocol::Json1);
         assert_eq!(op.array_key, "logGroups");
         assert_eq!(op.service, "logs");

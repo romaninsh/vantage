@@ -26,7 +26,10 @@ use vantage_dataset::prelude::{ReadableDataSet, ReadableValueSet};
 const TRAVERSE_GROUP: &str = "/ecs/ba-nginx";
 
 #[derive(Parser)]
-#[command(name = "vantage-aws-cli", about = "vantage-aws CloudWatch + ECS + IAM demo")]
+#[command(
+    name = "vantage-aws-cli",
+    about = "vantage-aws CloudWatch + ECS + IAM demo"
+)]
 struct Cli {
     /// Override the AWS region (sets AWS_REGION before credential load).
     #[arg(long, global = true)]
@@ -315,14 +318,14 @@ async fn main() -> Result<()> {
 
 async fn find_user(aws: AwsAccount, name: &str) -> Result<User> {
     users_table(aws)
-        .get(&name.to_string())
+        .get(name.to_string())
         .await?
         .with_context(|| format!("IAM user {name:?} not found in this account"))
 }
 
 async fn find_role(aws: AwsAccount, name: &str) -> Result<Role> {
     roles_table(aws)
-        .get(&name.to_string())
+        .get(name.to_string())
         .await?
         .with_context(|| format!("IAM role {name:?} not found in this account"))
 }

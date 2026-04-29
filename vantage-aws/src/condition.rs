@@ -109,9 +109,7 @@ where
 /// Errors on zero- or multi-element `In`. Panics if a `Deferred`
 /// reached this point — those must be resolved upstream
 /// (see `AwsAccount::resolve_conditions`).
-fn resolved_pairs(
-    conditions: &[AwsCondition],
-) -> vantage_core::Result<Vec<(String, CborValue)>> {
+fn resolved_pairs(conditions: &[AwsCondition]) -> vantage_core::Result<Vec<(String, CborValue)>> {
     let mut out = Vec::with_capacity(conditions.len());
     for cond in conditions {
         match cond {
@@ -264,14 +262,14 @@ mod tests {
 
     #[test]
     fn query_form_renders_strings_and_numbers() {
-        let conds = [
-            eq("UserName", "alice"),
-            eq("MaxItems", 50i64),
-        ];
+        let conds = [eq("UserName", "alice"), eq("MaxItems", 50i64)];
         let form = build_query_form(&conds).unwrap();
-        assert_eq!(form, vec![
-            ("UserName".to_string(), "alice".to_string()),
-            ("MaxItems".to_string(), "50".to_string()),
-        ]);
+        assert_eq!(
+            form,
+            vec![
+                ("UserName".to_string(), "alice".to_string()),
+                ("MaxItems".to_string(), "50".to_string()),
+            ]
+        );
     }
 }

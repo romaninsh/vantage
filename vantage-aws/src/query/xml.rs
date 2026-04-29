@@ -136,7 +136,9 @@ fn read_children(reader: &mut Reader<&[u8]>) -> Result<Vec<XmlNode>> {
                 }
             }
             Ok(Event::CData(t)) => {
-                children.push(XmlNode::Text(String::from_utf8_lossy(t.as_ref()).into_owned()));
+                children.push(XmlNode::Text(
+                    String::from_utf8_lossy(t.as_ref()).into_owned(),
+                ));
             }
             Ok(Event::End(_)) => return Ok(children),
             Ok(Event::Eof) => {
@@ -171,8 +173,7 @@ fn element_children_to_json(children: &[XmlNode]) -> JsonValue {
 }
 
 fn nodes_to_json(children: &[&XmlNode]) -> JsonValue {
-    let only_text = !children.is_empty()
-        && children.iter().all(|n| matches!(n, XmlNode::Text(_)));
+    let only_text = !children.is_empty() && children.iter().all(|n| matches!(n, XmlNode::Text(_)));
     if only_text {
         let mut s = String::new();
         for n in children {
@@ -197,7 +198,9 @@ fn nodes_to_json(children: &[&XmlNode]) -> JsonValue {
         return JsonValue::String(String::new());
     }
 
-    let all_member = elements.iter().all(|n| matches!(n, XmlNode::Element { name, .. } if name == "member"));
+    let all_member = elements
+        .iter()
+        .all(|n| matches!(n, XmlNode::Element { name, .. } if name == "member"));
     if all_member {
         let arr = elements
             .iter()

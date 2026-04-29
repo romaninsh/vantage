@@ -34,7 +34,11 @@ pub fn groups_table(aws: AwsAccount) -> Table<AwsAccount, Group> {
         .with_column_of::<String>("Arn")
         .with_column_of::<String>("Path")
         .with_column_of::<String>("CreateDate")
-        .with_many("attached_policies", "GroupName", attached_group_policies_table)
+        .with_many(
+            "attached_policies",
+            "GroupName",
+            attached_group_policies_table,
+        )
 }
 
 /// `ListGroupsForUser` table — IAM groups that a given user belongs

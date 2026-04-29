@@ -40,15 +40,18 @@ pub struct LogStream {
 /// # Ok(()) }
 /// ```
 pub fn streams_table(aws: AwsAccount) -> Table<AwsAccount, LogStream> {
-    Table::new("json1/logStreams:logs/Logs_20140328.DescribeLogStreams", aws)
-        .with_id_column("logStreamName")
-        .with_column_of::<String>("arn")
-        .with_column_of::<i64>("creationTime")
-        .with_column_of::<i64>("firstEventTimestamp")
-        .with_column_of::<i64>("lastEventTimestamp")
-        .with_column_of::<i64>("lastIngestionTime")
-        .with_column_of::<i64>("storedBytes")
-        .with_column_of::<String>("uploadSequenceToken")
+    Table::new(
+        "json1/logStreams:logs/Logs_20140328.DescribeLogStreams",
+        aws,
+    )
+    .with_id_column("logStreamName")
+    .with_column_of::<String>("arn")
+    .with_column_of::<i64>("creationTime")
+    .with_column_of::<i64>("firstEventTimestamp")
+    .with_column_of::<i64>("lastEventTimestamp")
+    .with_column_of::<i64>("lastIngestionTime")
+    .with_column_of::<i64>("storedBytes")
+    .with_column_of::<String>("uploadSequenceToken")
 }
 
 impl LogStream {
