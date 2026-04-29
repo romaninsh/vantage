@@ -97,10 +97,14 @@ impl AnyAwsType {
             CborValue::Null => AnyAwsType::Null,
             CborValue::Bool(b) => AnyAwsType::Bool(b),
             CborValue::Text(s) => {
-                if s.starts_with("arn:") && let Ok(arn) = Arn::try_parse(&s) {
+                if s.starts_with("arn:")
+                    && let Ok(arn) = Arn::try_parse(&s)
+                {
                     return AnyAwsType::Arn(arn);
                 }
-                if looks_like_iso_timestamp(&s) && let Ok(dt) = AwsDateTime::try_parse(&s) {
+                if looks_like_iso_timestamp(&s)
+                    && let Ok(dt) = AwsDateTime::try_parse(&s)
+                {
                     return AnyAwsType::DateTime(dt);
                 }
                 AnyAwsType::Text(s)
