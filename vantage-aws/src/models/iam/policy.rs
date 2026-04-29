@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use vantage_table::table::Table;
 
 use crate::AwsAccount;
+use crate::types::{Arn, AwsDateTime};
 
 /// One IAM managed policy from `ListPolicies`. Numeric fields stay as
 /// strings — the Query protocol's XML response is untyped, and we
@@ -50,13 +51,13 @@ pub fn policies_table(aws: AwsAccount) -> Table<AwsAccount, Policy> {
     Table::new("query/Policies:iam/2010-05-08.ListPolicies", aws)
         .with_id_column("PolicyName")
         .with_column_of::<String>("PolicyId")
-        .with_column_of::<String>("Arn")
+        .with_column_of::<Arn>("Arn")
         .with_column_of::<String>("Path")
         .with_column_of::<String>("DefaultVersionId")
-        .with_column_of::<String>("AttachmentCount")
-        .with_column_of::<String>("PermissionsBoundaryUsageCount")
-        .with_column_of::<String>("IsAttachable")
-        .with_column_of::<String>("CreateDate")
-        .with_column_of::<String>("UpdateDate")
+        .with_column_of::<i64>("AttachmentCount")
+        .with_column_of::<i64>("PermissionsBoundaryUsageCount")
+        .with_column_of::<bool>("IsAttachable")
+        .with_column_of::<AwsDateTime>("CreateDate")
+        .with_column_of::<AwsDateTime>("UpdateDate")
         .with_column_of::<String>("Description")
 }

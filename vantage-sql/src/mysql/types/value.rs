@@ -331,35 +331,24 @@ impl TryFrom<AnyMysqlType> for vantage_types::Record<serde_json::Value> {
 }
 
 impl vantage_types::TerminalRender for AnyMysqlType {
-    fn render(&self) -> String {
+    fn render(&self) -> vantage_types::RichText {
+        use vantage_types::{RichText, Style};
         match self.value() {
-            CborValue::Null => "-".to_string(),
-            CborValue::Text(s) => s.clone(),
-            CborValue::Bool(b) => b.to_string(),
-            CborValue::Tag(10, inner) => {
+            CborValue::Null => RichText::styled("—", Style::Muted),
+            CborValue::Text(s) => RichText::plain(s.clone()),
+            CborValue::Bool(true) => RichText::styled("true", Style::Success),
+            CborValue::Bool(false) => RichText::styled("false", Style::Error),
+            CborValue::Tag(10, inner)
+            | CborValue::Tag(0, inner)
+            | CborValue::Tag(100, inner)
+            | CborValue::Tag(101, inner) => {
                 if let CborValue::Text(s) = inner.as_ref() {
-                    s.clone()
+                    RichText::plain(s.clone())
                 } else {
-                    format!("{}", self)
+                    RichText::plain(format!("{}", self))
                 }
             }
-            CborValue::Tag(0, inner) | CborValue::Tag(100, inner) | CborValue::Tag(101, inner) => {
-                if let CborValue::Text(s) = inner.as_ref() {
-                    s.clone()
-                } else {
-                    format!("{}", self)
-                }
-            }
-            _ => format!("{}", self),
-        }
-    }
-
-    fn color_hint(&self) -> Option<&'static str> {
-        match self.value() {
-            CborValue::Bool(true) => Some("green"),
-            CborValue::Bool(false) => Some("red"),
-            CborValue::Null => Some("dim"),
-            _ => None,
+            _ => RichText::plain(format!("{}", self)),
         }
     }
 }

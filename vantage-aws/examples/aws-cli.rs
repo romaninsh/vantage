@@ -10,7 +10,9 @@
 //! and `~/.aws/config`.
 
 use anyhow::{Context, Result};
+use ciborium::Value as CborValue;
 use clap::{Parser, Subcommand};
+use indexmap::IndexMap;
 use vantage_aws::models::ecs::{
     clusters_table, services_table, task_definitions_table, tasks_table,
 };
@@ -19,9 +21,40 @@ use vantage_aws::models::iam::{
     policies_table, roles_table, users_table,
 };
 use vantage_aws::models::logs::{events_table, groups_table, streams_table};
-use vantage_aws::{AwsAccount, eq};
-use vantage_cli_util::{print_table, render_records};
+use vantage_aws::{AwsAccount, eq, typed_records, untyped_records};
+use vantage_cli_util::render_records_typed;
 use vantage_dataset::prelude::{ReadableDataSet, ReadableValueSet};
+use vantage_table::prelude::ColumnLike;
+use vantage_table::table::Table;
+use vantage_table::traits::table_source::TableSource;
+use vantage_types::{Entity, Record};
+
+/// Print an AWS table with rich rendering: ARNs and dates get
+/// multi-segment styling, booleans get green/red, etc. Reads column
+/// metadata to drive parsing of typed values from the raw response.
+async fn print_table<E>(t: &Table<AwsAccount, E>) -> Result<()>
+where
+    E: Entity<<AwsAccount as TableSource>::Value>,
+{
+    let id_field = t.id_field().map(|c| c.name().to_string());
+    let column_types: IndexMap<String, &'static str> = t
+        .columns()
+        .iter()
+        .map(|(name, col)| (name.clone(), col.get_type()))
+        .collect();
+    let records = t.list_values().await?;
+    let typed = typed_records(records, &column_types);
+    render_records_typed(&typed, id_field.as_deref(), &column_types);
+    Ok(())
+}
+
+/// Render ad-hoc records (e.g. from `AnyTable::list_values`) with
+/// detection-based ARN/datetime rendering — no column metadata
+/// available, so we sniff strings.
+fn render_any_records(records: IndexMap<String, Record<CborValue>>, id_field: Option<&str>) {
+    let typed = untyped_records(records);
+    render_records_typed(&typed, id_field, &IndexMap::new());
+}
 
 const TRAVERSE_GROUP: &str = "/ecs/ba-nginx";
 
@@ -170,7 +203,7 @@ async fn main() -> Result<()> {
 
             let events_any = log_groups.get_ref("events")?;
             let records = events_any.list_values().await?;
-            render_records(&records, Some("eventId"));
+            render_any_records(records, Some("eventId"));
         }
 
         Command::TraverseLogStreams => {
@@ -182,7 +215,7 @@ async fn main() -> Result<()> {
 
             let streams_any = log_groups.get_ref("streams")?;
             let records = streams_any.list_values().await?;
-            render_records(&records, Some("logStreamName"));
+            render_any_records(records, Some("logStreamName"));
         }
 
         Command::ListClusters => {
