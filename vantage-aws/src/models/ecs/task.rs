@@ -3,7 +3,7 @@ use vantage_table::table::Table;
 
 use crate::{AwsAccount, eq};
 
-use crate::models::log_event::{LogEvent, log_events_table};
+use crate::models::logs::event::{LogEvent, events_table};
 
 /// One ECS task — `ListTasks` returns just an ARN per row.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,7 +21,7 @@ pub struct Task {
 /// `STOPPED`), `launchType`, `containerInstance`.
 pub fn tasks_table(aws: AwsAccount) -> Table<AwsAccount, Task> {
     Table::new(
-        "taskArns:ecs/AmazonEC2ContainerServiceV20141113.ListTasks",
+        "json1/taskArns:ecs/AmazonEC2ContainerServiceV20141113.ListTasks",
         aws,
     )
     .with_id_column("taskArn")
@@ -51,7 +51,7 @@ impl Task {
         log_group_name: &str,
         prefix: &str,
     ) -> Table<AwsAccount, LogEvent> {
-        let mut t = log_events_table(aws);
+        let mut t = events_table(aws);
         t.add_condition(eq("logGroupName", log_group_name));
         t.add_condition(eq("logStreamNamePrefix", prefix));
         t

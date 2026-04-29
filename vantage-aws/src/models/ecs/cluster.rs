@@ -26,7 +26,7 @@ pub struct Cluster {
 /// ```
 pub fn clusters_table(aws: AwsAccount) -> Table<AwsAccount, Cluster> {
     Table::new(
-        "clusterArns:ecs/AmazonEC2ContainerServiceV20141113.ListClusters",
+        "json1/clusterArns:ecs/AmazonEC2ContainerServiceV20141113.ListClusters",
         aws,
     )
     .with_id_column("clusterArn")

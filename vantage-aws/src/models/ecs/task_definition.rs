@@ -16,7 +16,7 @@ pub struct TaskDefinition {
 /// `INACTIVE`), `sort` (`ASC` / `DESC`).
 pub fn task_definitions_table(aws: AwsAccount) -> Table<AwsAccount, TaskDefinition> {
     Table::new(
-        "taskDefinitionArns:ecs/AmazonEC2ContainerServiceV20141113.ListTaskDefinitions",
+        "json1/taskDefinitionArns:ecs/AmazonEC2ContainerServiceV20141113.ListTaskDefinitions",
         aws,
     )
     .with_id_column("taskDefinitionArn")

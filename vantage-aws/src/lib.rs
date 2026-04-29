@@ -1,23 +1,35 @@
 //! AWS API wrapper for Vantage — incubating.
 //!
-//! Treat AWS JSON-1.1 RPC endpoints (CloudWatch Logs, ECS, DynamoDB
-//! control plane, KMS, …) as Vantage `TableSource`s. Build an
+//! Treat AWS API endpoints as Vantage `TableSource`s. Build an
 //! [`AwsAccount`], hand it to a `Table`, and encode the operation in
-//! the table name as `array_key:service/target`:
+//! the table name as `{protocol}/{array_key}:{service}/{target}`:
 //!
 //! ```text
-//! "logGroups:logs/Logs_20140328.DescribeLogGroups"
-//!     │       │       └── X-Amz-Target header value
-//!     │       └────────── service code (also the URL hostname segment)
-//!     └────────────────── response field that holds the row array
+//! json1/logGroups:logs/Logs_20140328.DescribeLogGroups
+//!   │       │      │    └── X-Amz-Target header value
+//!   │       │      └─────── service code (also URL hostname segment)
+//!   │       └────────────── response field that holds the row array
+//!   └────────────────────── wire protocol
+//!
+//! query/Users:iam/2010-05-08.ListUsers
+//!   │     │    │     │
+//!   │     │    │     └── "VERSION.Action" — both go in the form body
+//!   │     │    └──────── service code (also URL hostname segment)
+//!   │     └───────────── response element name (Query lists wrap in <member>)
+//!   └─────────────────── wire protocol
 //! ```
 //!
-//! Conditions on the table fold into the JSON request body. v0 is
-//! read-only, first-page only, JSON-1.1 only — REST-JSON and S3 will
-//! arrive as separate source types.
+//! Two protocols ship today: **JSON-1.1** for CloudWatch, ECS, KMS,
+//! DynamoDB control-plane, etc.; and **Query** (form-encoded request,
+//! XML response) for IAM, STS, EC2, ELBv1, SES, etc. Both are routed
+//! through the same `AwsAccount` `TableSource`, so relations span
+//! services and protocols freely.
 //!
-//! Ready-made CloudWatch models live under [`models`] if you want to
-//! skip the table-name dance and start querying.
+//! Conditions on the table fold into the request body. v0 is
+//! read-only, first-page only — pagination and writes arrive later.
+//!
+//! Ready-made models live under [`models`] if you want to skip the
+//! table-name dance and start querying.
 //!
 //! ```no_run
 //! # use vantage_aws::{AwsAccount, eq};
@@ -28,7 +40,7 @@
 //! let aws = AwsAccount::from_default()?;
 //!
 //! let mut groups: Table<AwsAccount, EmptyEntity> = Table::new(
-//!     "logGroups:logs/Logs_20140328.DescribeLogGroups",
+//!     "json1/logGroups:logs/Logs_20140328.DescribeLogGroups",
 //!     aws,
 //! );
 //! groups.add_condition(eq("logGroupNamePrefix", "/aws/lambda/"));
@@ -37,10 +49,12 @@
 
 mod account;
 mod condition;
+mod dispatch;
+mod impls;
 mod json1;
 mod operation;
+mod query;
 mod sign;
-mod transport;
 
 pub mod models;
 

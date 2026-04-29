@@ -3,7 +3,7 @@ use vantage_table::table::Table;
 
 use crate::{AwsAccount, eq};
 
-use super::log_event::{LogEvent, log_events_table};
+use super::event::{LogEvent, events_table};
 
 /// One CloudWatch Logs stream from `DescribeLogStreams`. Field names
 /// match the wire shape.
@@ -32,15 +32,15 @@ pub struct LogStream {
 ///
 /// ```no_run
 /// # use vantage_aws::{AwsAccount, eq};
-/// # use vantage_aws::models::log_streams_table;
+/// # use vantage_aws::models::logs::streams_table;
 /// # async fn run() -> vantage_core::Result<()> {
 /// # let aws = AwsAccount::from_default()?;
-/// let mut streams = log_streams_table(aws);
+/// let mut streams = streams_table(aws);
 /// streams.add_condition(eq("logGroupName", "/aws/lambda/foo"));
 /// # Ok(()) }
 /// ```
-pub fn log_streams_table(aws: AwsAccount) -> Table<AwsAccount, LogStream> {
-    Table::new("logStreams:logs/Logs_20140328.DescribeLogStreams", aws)
+pub fn streams_table(aws: AwsAccount) -> Table<AwsAccount, LogStream> {
+    Table::new("json1/logStreams:logs/Logs_20140328.DescribeLogStreams", aws)
         .with_id_column("logStreamName")
         .with_column_of::<String>("arn")
         .with_column_of::<i64>("creationTime")
@@ -76,7 +76,7 @@ impl LogStream {
         aws: AwsAccount,
         log_group_name: &str,
     ) -> Table<AwsAccount, LogEvent> {
-        let mut t = log_events_table(aws);
+        let mut t = events_table(aws);
         t.add_condition(eq("logGroupName", log_group_name));
         t.add_condition(eq("logStreamNamePrefix", self.log_stream_name.clone()));
         t
