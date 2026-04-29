@@ -1,6 +1,6 @@
 [package]
 name = "vantage-live"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -15,7 +15,7 @@ vantage-core = { version = "0.4", path = "../vantage-core" }
 vantage-types = { version = "0.4", path = "../vantage-types" }
 vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
 vantage-dataset = { version = "0.4.2", path = "../vantage-dataset" }
-vantage-table = { version = "0.4.6", path = "../vantage-table" }
+vantage-table = { version = "0.4.7", path = "../vantage-table" }
 
 async-trait = "0.1"
 ciborium = { version = "0.2", features = ["std"] }

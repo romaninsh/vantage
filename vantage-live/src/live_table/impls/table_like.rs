@@ -8,6 +8,7 @@ use ciborium::Value as CborValue;
 use tracing::warn;
 use vantage_core::{Result, error};
 use vantage_expressions::AnyExpression;
+use vantage_table::any::AnyTable;
 use vantage_table::conditions::ConditionHandle;
 use vantage_table::pagination::Pagination;
 use vantage_table::traits::table_like::TableLike;
@@ -87,6 +88,10 @@ impl TableLike for LiveTable {
         let mut master = self.master.clone();
         master.set_pagination(self.pagination);
         master.get_count().await
+    }
+
+    fn get_ref(&self, relation: &str) -> Result<AnyTable> {
+        self.master.get_ref(relation)
     }
 }
 

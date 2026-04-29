@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.7 — 2026-04-29
+
+- New `AnyTable::get_ref(relation) -> Result<AnyTable>`. Lets reference traversal continue on the type-erased side — previously `get_ref` only existed on the typed `Table<T, E>`, so once you wrapped a table into `AnyTable` the relation graph was unreachable.
+- `TableLike` gains a `get_ref` method with a default impl that errors out (`"get_ref not supported on this TableLike"`). `Table<T, E>` overrides to delegate to the inherent; `AnyTable` and the internal `CborAdapter` forward to the wrapped table; downstream wrappers like `vantage_live::LiveTable` override to forward through to their master.
+- The trait method is sync — `Reference::resolve_as_any` is sync (no IO), so callers don't need an `.await`.
+
 ## 0.4.6 — 2026-04-26
 
 - New `AnyTable::from_table_like<T: TableLike<…>>` constructor. Wraps any table-like type that already speaks `Value = CborValue, Id = String` — needed by `vantage-live::LiveTable`, which is `TableLike` but not a `Table<T, E>` instance.

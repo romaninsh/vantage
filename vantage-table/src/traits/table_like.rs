@@ -3,7 +3,7 @@ use vantage_core::Result;
 use vantage_dataset::prelude::{ReadableValueSet, WritableValueSet};
 use vantage_expressions::AnyExpression;
 
-use crate::{conditions::ConditionHandle, pagination::Pagination};
+use crate::{any::AnyTable, conditions::ConditionHandle, pagination::Pagination};
 
 /// Dyn-safe trait for table operations.
 #[async_trait]
@@ -40,4 +40,16 @@ pub trait TableLike: ReadableValueSet + WritableValueSet + Send + Sync {
 
     /// Get count of records in the table
     async fn get_count(&self) -> Result<i64>;
+
+    /// Traverse a named reference and return the related table as `AnyTable`.
+    ///
+    /// Default impl returns an error so wrappers without ref support compile
+    /// unchanged. `Table<T, E>` overrides this to delegate to its inherent
+    /// `get_ref`; `AnyTable`, `CborAdapter` and `LiveTable` override to forward
+    /// through to the underlying table that holds the refs.
+    fn get_ref(&self, _relation: &str) -> Result<AnyTable> {
+        Err(vantage_core::error!(
+            "get_ref not supported on this TableLike"
+        ))
+    }
 }

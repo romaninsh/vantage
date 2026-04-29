@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.2 — 2026-04-29
+
+AWS Query protocol (form-encoded request, XML response) lands alongside the existing JSON-1.1 transport, plus an IAM submodule that uses it. Same `AwsAccount` is the `TableSource` for both — relations span protocols freely. ([#212](https://github.com/romaninsh/vantage/pull/212))
+
+- The protocol is encoded as a prefix in the table name. Existing tables get `json1/` (e.g. `json1/logGroups:logs/Logs_20140328.DescribeLogGroups`); new IAM tables use `query/` (e.g. `query/Users:iam/2010-05-08.ListUsers`). `AwsAccount::execute_rpc` and `parse_records` match on the prefix and dispatch.
+- New `src/query/` mirrors `src/json1/` — `transport.rs` for the signed POST, `mod.rs` with `execute` + `parse_records`. Same hand-rolled SigV4 signer powers both protocols. Responses are XML; `query/xml.rs` normalises them to `serde_json::Value` by stripping `{Action}Response` / `{Action}Result` wrappers and hoisting `<member>` collections into JSON arrays.
+- Global services (IAM today, STS later) get a one-line override in `query/transport.rs`: served from `iam.amazonaws.com` (no region in the host) and signed with `us-east-1` regardless of the configured region.
+- New `vantage_aws::models::iam` submodule with six top-level tables: `users_table`, `groups_table`, `roles_table`, `policies_table`, `access_keys_table`, `instance_profiles_table`. One `AttachedPolicy` struct shared across `ListAttachedUserPolicies` / `ListAttachedGroupPolicies` / `ListAttachedRolePolicies` (same response shape, different action per source).
+- IAM relations on entity factories: `User` → `groups`, `access_keys`, `attached_policies`; `Group` → `attached_policies`; `Role` → `attached_policies`, `instance_profiles`. Both `with_many` traversal and `User::ref_*` / `Group::ref_*` / `Role::ref_*` entity-in-hand forms work — the ref-* form is the right tool for IAM since `ListUsers` / `ListRoles` ignore name filters and return the whole account.
+- **Reorganised**: `models::log_*` collapses into `models::logs::*` — `log_groups_table` becomes `logs::groups_table`, etc. Lets the IAM `groups_table` live cleanly under `models::iam::` without a name clash, and matches the `models::ecs::*` shape from 0.4.1. Existing call sites need to update imports.
+- `query::parse_records` treats an empty string at the array key as an empty array. `<Foo/>` (self-closing) is what IAM returns for an empty list and the XML normaliser surfaces that as `""` — `list-groups` on an account with no IAM groups now returns "No records found." instead of an obscure decode failure.
+- `examples/aws-cli.rs` picks up `list-users`, `list-policies` (`--scope`), `list-roles` (`--path-prefix`), `list-access-keys` (`--user`), `traverse-user-policies`, `traverse-user-access-keys`, `traverse-role-policies`, `traverse-role-profiles`. Log commands renamed to free up `list-groups` for IAM.
+
 ## 0.4.1 — 2026-04-28
 
 More built-in models — CloudWatch `LogStream`, plus an ECS submodule covering clusters, services, tasks, and task definitions. The `parse_records` path now wraps scalar array elements (which is what AWS's ECS `List*` APIs return) so they look like ordinary single-field rows.
