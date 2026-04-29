@@ -23,15 +23,15 @@ pub struct LogEvent {
 ///
 /// ```no_run
 /// # use vantage_aws::{AwsAccount, eq};
-/// # use vantage_aws::models::log_events_table;
+/// # use vantage_aws::models::logs::events_table;
 /// # async fn run() -> vantage_core::Result<()> {
 /// # let aws = AwsAccount::from_default()?;
-/// let mut events = log_events_table(aws);
+/// let mut events = events_table(aws);
 /// events.add_condition(eq("logGroupName", "/aws/lambda/foo"));
 /// # Ok(()) }
 /// ```
-pub fn log_events_table(aws: AwsAccount) -> Table<AwsAccount, LogEvent> {
-    Table::new("events:logs/Logs_20140328.FilterLogEvents", aws)
+pub fn events_table(aws: AwsAccount) -> Table<AwsAccount, LogEvent> {
+    Table::new("json1/events:logs/Logs_20140328.FilterLogEvents", aws)
         .with_id_column("eventId")
         .with_column_of::<String>("logStreamName")
         .with_column_of::<i64>("timestamp")

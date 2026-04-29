@@ -1,4 +1,4 @@
-//! `ExprDataSource` impl for `AwsJson1`.
+//! `ExprDataSource` impl for `AwsAccount`.
 //!
 //! `execute` resolves an expression's single parameter — the shape
 //! `column_table_values_expr` produces (one Deferred parameter wrapping

@@ -1,8 +1,10 @@
-//! `TableSource` impl for `AwsAccount` (JSON-1.1 protocol).
+//! `TableSource` impl for `AwsAccount`.
 //!
-//! Read-only in v0. Writes are stubbed to error. Aggregations
+//! Protocol-agnostic — `execute_rpc` and `parse_records` (in
+//! `crate::dispatch`) pick the wire protocol from the table-name
+//! prefix. Read-only in v0. Writes are stubbed to error. Aggregations
 //! (sum/min/max) likewise. The two interesting methods are
-//! `list_table_values` (folds conditions into a JSON request body and
+//! `list_table_values` (folds conditions into a request body and
 //! parses the response) and `column_table_values_expr` (returns a
 //! deferred expression over the column's values — same shape as
 //! `vantage-csv`). `related_in_condition` builds on top of that to

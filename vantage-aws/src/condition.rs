@@ -102,24 +102,22 @@ where
     AwsCondition::in_(field, values)
 }
 
-/// Fold a slice of conditions into a JSON object suitable for an AWS
-/// JSON-1.1 request body. Errors if any `In` has zero or multi-element
-/// values, and panics if a `Deferred` reached this point — `Deferred`
-/// must be resolved into `Eq` *before* `build_body` runs (see
-/// `AwsJson1::resolve_conditions`).
-pub(crate) fn build_body(
-    conditions: &[AwsCondition],
-) -> vantage_core::Result<serde_json::Map<String, JsonValue>> {
-    let mut body = serde_json::Map::new();
+/// Resolve conditions to a flat list of `(field, value)` pairs. Both
+/// JSON-1.1 and Query body builders sit on top of this — they only
+/// differ in how they format the result for the wire.
+///
+/// Errors on zero- or multi-element `In`. Panics if a `Deferred`
+/// reached this point — those must be resolved upstream
+/// (see `AwsAccount::resolve_conditions`).
+fn resolved_pairs(conditions: &[AwsCondition]) -> vantage_core::Result<Vec<(String, CborValue)>> {
+    let mut out = Vec::with_capacity(conditions.len());
     for cond in conditions {
         match cond {
             AwsCondition::Eq { field, value } => {
-                body.insert(field.clone(), cbor_to_json(value));
+                out.push((field.clone(), value.clone()));
             }
             AwsCondition::In { field, values } => match values.as_slice() {
-                [single] => {
-                    body.insert(field.clone(), cbor_to_json(single));
-                }
+                [single] => out.push((field.clone(), single.clone())),
                 [] => {
                     return Err(vantage_core::error!(
                         "AwsCondition::In with zero values is not representable",
@@ -137,14 +135,56 @@ pub(crate) fn build_body(
             },
             AwsCondition::Deferred { field, .. } => {
                 return Err(vantage_core::error!(
-                    "Internal: Deferred condition reached build_body unresolved \
-                     — AwsJson1::resolve_conditions should have materialised it",
+                    "Internal: Deferred condition reached body builder unresolved \
+                     — AwsAccount::resolve_conditions should have materialised it",
                     field = field.as_str()
                 ));
             }
         }
     }
+    Ok(out)
+}
+
+/// Fold conditions into a JSON object suitable for an AWS JSON-1.1
+/// request body.
+pub(crate) fn build_json1_body(
+    conditions: &[AwsCondition],
+) -> vantage_core::Result<serde_json::Map<String, JsonValue>> {
+    let pairs = resolved_pairs(conditions)?;
+    let mut body = serde_json::Map::new();
+    for (field, value) in pairs {
+        body.insert(field, cbor_to_json(&value));
+    }
     Ok(body)
+}
+
+/// Fold conditions into form-encoded `(key, value)` pairs for the AWS
+/// Query protocol. CBOR scalars get rendered to strings (text → as-is,
+/// integers / floats / bools → `to_string`); compound values become a
+/// best-effort JSON-flavoured string. Query APIs in v0 only see
+/// scalars, so the JSON fallback is purely defensive.
+pub(crate) fn build_query_form(
+    conditions: &[AwsCondition],
+) -> vantage_core::Result<Vec<(String, String)>> {
+    let pairs = resolved_pairs(conditions)?;
+    Ok(pairs
+        .into_iter()
+        .map(|(k, v)| (k, cbor_to_string(&v)))
+        .collect())
+}
+
+fn cbor_to_string(v: &CborValue) -> String {
+    match v {
+        CborValue::Text(s) => s.clone(),
+        CborValue::Integer(i) => {
+            let n: i128 = (*i).into();
+            n.to_string()
+        }
+        CborValue::Float(f) => f.to_string(),
+        CborValue::Bool(b) => b.to_string(),
+        CborValue::Null => String::new(),
+        other => cbor_to_json(other).to_string(),
+    }
 }
 
 /// CBOR → JSON via ciborium's serde bridge. Used at the wire boundary
@@ -163,7 +203,7 @@ mod tests {
     #[test]
     fn eq_folds_into_body() {
         let conds = [eq("logGroupNamePrefix", "/aws/lambda/")];
-        let body = build_body(&conds).unwrap();
+        let body = build_json1_body(&conds).unwrap();
         assert_eq!(body["logGroupNamePrefix"], json!("/aws/lambda/"));
     }
 
@@ -173,7 +213,7 @@ mod tests {
             "logGroupName",
             vec![CborValue::from("/aws/lambda/foo")],
         )];
-        let body = build_body(&conds).unwrap();
+        let body = build_json1_body(&conds).unwrap();
         assert_eq!(body["logGroupName"], json!("/aws/lambda/foo"));
     }
 
@@ -183,7 +223,7 @@ mod tests {
             "logGroupName",
             vec![CborValue::from("a"), CborValue::from("b")],
         )];
-        let err = build_body(&conds).unwrap_err();
+        let err = build_json1_body(&conds).unwrap_err();
         assert!(format!("{err}").contains("more than one value"));
     }
 
@@ -193,19 +233,19 @@ mod tests {
             field: "x".into(),
             values: vec![],
         }];
-        assert!(build_body(&conds).is_err());
+        assert!(build_json1_body(&conds).is_err());
     }
 
     #[test]
     fn deferred_in_build_body_is_internal_error() {
-        // build_body should never see Deferred — resolve_conditions
+        // The body builder should never see Deferred — resolve_conditions
         // turns them into Eq first. If one slips through, surface it
         // loudly rather than silently dropping the filter.
         let conds = [AwsCondition::Deferred {
             field: "x".into(),
             source: Expression::new("noop", vec![]),
         }];
-        let err = build_body(&conds).unwrap_err();
+        let err = build_json1_body(&conds).unwrap_err();
         assert!(format!("{err}").contains("Deferred"));
     }
 
@@ -215,8 +255,21 @@ mod tests {
             eq("logGroupName", "/aws/lambda/foo"),
             eq("startTime", 1_700_000_000_000i64),
         ];
-        let body = build_body(&conds).unwrap();
+        let body = build_json1_body(&conds).unwrap();
         assert_eq!(body["logGroupName"], json!("/aws/lambda/foo"));
         assert_eq!(body["startTime"], json!(1_700_000_000_000i64));
+    }
+
+    #[test]
+    fn query_form_renders_strings_and_numbers() {
+        let conds = [eq("UserName", "alice"), eq("MaxItems", 50i64)];
+        let form = build_query_form(&conds).unwrap();
+        assert_eq!(
+            form,
+            vec![
+                ("UserName".to_string(), "alice".to_string()),
+                ("MaxItems".to_string(), "50".to_string()),
+            ]
+        );
     }
 }

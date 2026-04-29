@@ -3,10 +3,14 @@
 AWS API backend for the [Vantage](https://github.com/romaninsh/vantage)
 data framework — incubating.
 
-Treats AWS JSON-1.1 RPC endpoints (CloudWatch Logs, ECS, DynamoDB
-control plane, KMS, …) as Vantage `TableSource`s. `AwsAccount` *is* the
-source — there's no per-operation wrapper. The operation you want to
-run lives in the table name.
+Treats AWS API endpoints as Vantage `TableSource`s. `AwsAccount` *is*
+the source — there's no per-operation wrapper. The operation you want
+to run lives in the table name.
+
+Two wire protocols ship today: **JSON-1.1** (CloudWatch, ECS, KMS,
+DynamoDB control plane, …) and **Query** (IAM, STS, EC2, ELBv1, SES, …).
+The protocol is picked from the table name's prefix, so the same
+`AwsAccount` covers everything and relations span services freely.
 
 ## Authentication
 
@@ -37,7 +41,7 @@ use vantage_dataset::prelude::ReadableValueSet;
 let aws = AwsAccount::from_default()?;
 
 let mut groups: Table<AwsAccount, EmptyEntity> = Table::new(
-    "logGroups:logs/Logs_20140328.DescribeLogGroups",
+    "json1/logGroups:logs/Logs_20140328.DescribeLogGroups",
     aws,
 );
 groups.add_condition(eq("logGroupNamePrefix", "/aws/lambda/"));
@@ -52,10 +56,18 @@ parsed into `Record<CborValue>` rows.
 ## Anatomy of a table name
 
 ```text
-"logGroups:logs/Logs_20140328.DescribeLogGroups"
-    │       │       └── X-Amz-Target header value
-    │       └────────── service code (also URL hostname segment)
-    └────────────────── response field that holds the row array
+"json1/logGroups:logs/Logs_20140328.DescribeLogGroups"
+   │       │      │       └── X-Amz-Target header value
+   │       │      └────────── service code (also URL hostname segment)
+   │       └───────────────── response field that holds the row array
+   └───────────────────────── wire protocol (json1 or query)
+
+"query/Users:iam/2010-05-08.ListUsers"
+   │     │    │     │
+   │     │    │     └── "VERSION.Action" — both go into the form body
+   │     │    └──────── service code (also URL hostname segment)
+   │     └───────────── response element name (Query lists wrap in <member>)
+   └─────────────────── wire protocol
 ```
 
 You only have to write this once per resource — usually you wrap it in
@@ -66,23 +78,24 @@ a model factory and forget about the encoding (see below).
 `vantage_aws::models` ships ready-made tables so you don't have to
 memorise the table-name format:
 
-- CloudWatch Logs: `log_groups_table`, `log_streams_table`, `log_events_table`.
+- CloudWatch Logs (under `models::logs`): `groups_table`, `streams_table`, `events_table`.
 - ECS (under `models::ecs`): `clusters_table`, `services_table`, `tasks_table`, `task_definitions_table`.
+- IAM (under `models::iam`): `users_table`, `groups_table`, `roles_table`, `policies_table`, `access_keys_table`, `instance_profiles_table`.
 
 ```rust
-use vantage_aws::models::{log_groups_table, log_events_table};
+use vantage_aws::models::logs::{groups_table, events_table};
 use vantage_aws::eq;
 
-let mut groups = log_groups_table(aws.clone());
+let mut groups = groups_table(aws.clone());
 groups.add_condition(eq("logGroupNamePrefix", "/aws/lambda/"));
 let rows = groups.list_values().await?;
 
-let mut events = log_events_table(aws);
+let mut events = events_table(aws);
 events.add_condition(eq("logGroupName", "/aws/lambda/foo"));
 let logs = events.list_values().await?;
 ```
 
-`log_groups_table` registers two `with_many` relations — `events` and
+`logs::groups_table` registers two `with_many` relations — `events` and
 `streams` — that traverse to the group's log events / streams. AWS
 doesn't accept multi-value filters, so the source has to narrow to a
 single group before traversal — otherwise the call errors at execute
@@ -136,23 +149,24 @@ uses.
 
 No `aws-sdk-*`, no `aws-sigv4` — signing is hand-rolled in `src/sign.rs`
 with `hmac` + `sha2` + `hex` and pinned to AWS's canonical-example
-fixture. Non-streaming, non-presigned, JSON-1.1 only. If you need
-something else, you probably want a different crate.
+fixture. Non-streaming, non-presigned. The same signer powers both the
+JSON-1.1 transport and the form-encoded Query transport.
 
 ## Status
 
-v0 covers: `AwsAccount` + JSON-1.1 transport, hand-rolled SigV4,
-`Eq` / `In` / `Deferred` conditions, `with_one` / `with_many`
-traversal, CloudWatch (`LogGroup`, `LogStream`, `LogEvent`) and ECS
-(`Cluster`, `Service`, `Task`, `TaskDefinition`) models, env-var and
-`~/.aws/credentials` `[default]` credential loading.
+v0 covers: `AwsAccount` + JSON-1.1 *and* Query transports, hand-rolled
+SigV4, `Eq` / `In` / `Deferred` conditions, `with_one` / `with_many`
+traversal, CloudWatch (`LogGroup`, `LogStream`, `LogEvent`), ECS
+(`Cluster`, `Service`, `Task`, `TaskDefinition`), and IAM (`User`,
+`Role`) models, env-var and `~/.aws/credentials` `[default]` credential
+loading.
 
 Out of scope for v0:
 
 - **Writes.** `insert_table_value` and friends return errors. Read-only
   end-to-end.
-- **Pagination.** First page only. Most JSON-1.1 list operations cap at
-  50–100 items per call.
+- **Pagination.** First page only. Most list operations cap at 50–100
+  items per call.
 - **Aggregations.** `sum` / `min` / `max` error out — would need a full
   scan.
 - **REST-JSON / S3.** Lambda invoke and S3 are different protocols;

@@ -48,6 +48,8 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: eu-west-2
         run: |
-          cargo run --example aws-cli -- list-groups
-          cargo run --example aws-cli -- list-groups --prefix /aws/lambda/
-          cargo run --example aws-cli -- traverse
+          cargo run --example aws-cli -- log-groups
+          cargo run --example aws-cli -- log-groups --prefix /aws/lambda/
+          cargo run --example aws-cli -- traverse-log-events
+          cargo run --example aws-cli -- list-users
+          cargo run --example aws-cli -- list-roles --path-prefix /aws-service-role/

@@ -15,7 +15,7 @@ pub struct Service {
 /// traverse from a [`Cluster`](super::cluster::Cluster).
 pub fn services_table(aws: AwsAccount) -> Table<AwsAccount, Service> {
     Table::new(
-        "serviceArns:ecs/AmazonEC2ContainerServiceV20141113.ListServices",
+        "json1/serviceArns:ecs/AmazonEC2ContainerServiceV20141113.ListServices",
         aws,
     )
     .with_id_column("serviceArn")
