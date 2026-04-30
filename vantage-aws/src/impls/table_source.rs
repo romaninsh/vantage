@@ -42,6 +42,10 @@ impl TableSource for AwsAccount {
     type Id = String;
     type Condition = AwsCondition;
 
+    fn eq_condition(field: &str, value: &str) -> DatasetResult<Self::Condition> {
+        Ok(AwsCondition::eq(field.to_string(), value.to_string()))
+    }
+
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
         Column::new(name)
     }
@@ -93,7 +97,26 @@ impl TableSource for AwsAccount {
         let id_field = table.id_field().map(|c| c.name().to_string());
         let conditions: Vec<AwsCondition> = table.conditions().cloned().collect();
         let resp = self.execute_rpc(table.table_name(), &conditions).await?;
-        Ok(self.parse_records(table.table_name(), resp, id_field.as_deref())?)
+        let mut records = self.parse_records(table.table_name(), resp, id_field.as_deref())?;
+
+        // AWS APIs only push down their own request-param filters
+        // (e.g. `PathPrefix`, `logGroupNamePrefix`, `cluster`). Eq
+        // conditions naming actual record fields (`UserName`, `Path`,
+        // `clusterArn`) are still useful — apply them post-hoc so
+        // narrowing works regardless of what the API filters
+        // server-side. Field names that don't appear on any record are
+        // assumed to be request params and skipped.
+        records.retain(|_id, record| {
+            conditions.iter().all(|c| match c {
+                AwsCondition::Eq { field, value } => match record.get(field) {
+                    Some(rec_val) => rec_val == value,
+                    None => true,
+                },
+                _ => true,
+            })
+        });
+
+        Ok(records)
     }
 
     async fn get_table_value<E>(

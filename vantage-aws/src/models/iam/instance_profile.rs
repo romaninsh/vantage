@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use vantage_table::table::Table;
 
-use crate::AwsAccount;
+use crate::{AwsAccount, eq};
 
 /// One IAM instance profile from `ListInstanceProfiles` /
 /// `ListInstanceProfilesForRole`. The nested `Roles` array isn't
@@ -31,7 +31,7 @@ pub fn instance_profiles_table(aws: AwsAccount) -> Table<AwsAccount, InstancePro
     .with_id_column("InstanceProfileName")
     .with_column_of::<String>("InstanceProfileId")
     .with_column_of::<String>("Arn")
-    .with_column_of::<String>("Path")
+    .with_title_column_of::<String>("Path")
     .with_column_of::<String>("CreateDate")
 }
 
@@ -50,4 +50,23 @@ pub(crate) fn instance_profiles_for_role_table(
     .with_column_of::<String>("Arn")
     .with_column_of::<String>("Path")
     .with_column_of::<String>("CreateDate")
+}
+
+impl InstanceProfile {
+    /// Build an [`instance_profiles_table`] narrowed to the profile
+    /// named in `arn`. Accepts ARNs of the shape
+    /// `arn:aws:iam::<account>:instance-profile/<path/>?<name>`.
+    pub fn from_arn(arn: &str, aws: AwsAccount) -> Option<Table<AwsAccount, InstanceProfile>> {
+        let after = arn
+            .strip_prefix("arn:aws:iam::")?
+            .split(":instance-profile/")
+            .nth(1)?;
+        let name = after.rsplit('/').next()?;
+        if name.is_empty() {
+            return None;
+        }
+        let mut t = instance_profiles_table(aws);
+        t.add_condition(eq("InstanceProfileName", name.to_string()));
+        Some(t)
+    }
 }

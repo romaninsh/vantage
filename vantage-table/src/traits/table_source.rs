@@ -31,6 +31,20 @@ pub trait TableSource: DataSource + Clone + 'static {
     /// can use a native filter type (e.g. `bson::Document`).
     type Condition: Clone + Send + Sync + 'static;
 
+    /// Build a textual `field == value` condition.
+    ///
+    /// Generic UIs (e.g. CLI argument parsers) only have strings on
+    /// hand, so they need a way to construct a `Self::Condition` without
+    /// knowing the backend's native expression type. Backends that
+    /// don't support raw text filtering can leave the default, which
+    /// returns an error.
+    fn eq_condition(field: &str, value: &str) -> Result<Self::Condition> {
+        let _ = (field, value);
+        Err(vantage_core::error!(
+            "eq_condition not implemented for this TableSource"
+        ))
+    }
+
     /// Create a new column with the given name
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type>;
 

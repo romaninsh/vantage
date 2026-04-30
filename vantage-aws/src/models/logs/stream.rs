@@ -48,13 +48,30 @@ pub fn streams_table(aws: AwsAccount) -> Table<AwsAccount, LogStream> {
     .with_column_of::<String>("arn")
     .with_column_of::<i64>("creationTime")
     .with_column_of::<i64>("firstEventTimestamp")
-    .with_column_of::<i64>("lastEventTimestamp")
+    .with_title_column_of::<i64>("lastEventTimestamp")
     .with_column_of::<i64>("lastIngestionTime")
-    .with_column_of::<i64>("storedBytes")
+    .with_title_column_of::<i64>("storedBytes")
     .with_column_of::<String>("uploadSequenceToken")
 }
 
 impl LogStream {
+    /// Build a [`streams_table`] narrowed to the stream identified by
+    /// `arn`. Accepts ARNs of the shape
+    /// `arn:aws:logs:<region>:<account>:log-group:<group>:log-stream:<stream>`.
+    pub fn from_arn(arn: &str, aws: AwsAccount) -> Option<Table<AwsAccount, LogStream>> {
+        let after_group = arn.split(":log-group:").nth(1)?;
+        let mut parts = after_group.splitn(2, ":log-stream:");
+        let group_name = parts.next()?;
+        let stream_name = parts.next()?;
+        if group_name.is_empty() || stream_name.is_empty() {
+            return None;
+        }
+        let mut t = streams_table(aws);
+        t.add_condition(eq("logGroupName", group_name.to_string()));
+        t.add_condition(eq("logStreamNamePrefix", stream_name.to_string()));
+        Some(t)
+    }
+
     /// The owning log group's name, parsed out of [`Self::arn`].
     /// Stream ARNs have the shape
     /// `arn:aws:logs:<region>:<account>:log-group:<group>:log-stream:<stream>`.

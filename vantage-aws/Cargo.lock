@@ -2109,6 +2109,7 @@ name = "vantage-cli-util"
 version = "0.4.0"
 dependencies = [
  "async-trait",
+ "ciborium",
  "comfy-table",
  "indexmap",
  "owo-colors",

@@ -9,6 +9,7 @@ repository = "https://github.com/romaninsh/vantage"
 
 [dependencies]
 async-trait = "0.1"
+ciborium = "0.2.2"
 comfy-table = { version = "7", features = ["custom_styling"] }
 indexmap = "2"
 owo-colors = "4"

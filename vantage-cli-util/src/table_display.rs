@@ -98,6 +98,64 @@ where
     render_records_typed(records, id_field, &IndexMap::new());
 }
 
+/// Render records with an explicit column list — no auto-prepended
+/// id column. `column_types` is consulted for per-column alignment but
+/// doesn't drive which columns appear; `columns` does.
+///
+/// Used by the model-driven CLI when the caller passes `=col1,col2`:
+/// the user spelled out exactly what they want to see, and an extra
+/// id column would just be noise.
+pub fn render_records_columns<Id, V>(
+    records: &IndexMap<Id, Record<V>>,
+    columns: &[String],
+    column_types: &IndexMap<String, &'static str>,
+) where
+    Id: std::fmt::Display,
+    V: TerminalRender,
+{
+    if records.is_empty() {
+        println!("{}", "No records.".dimmed());
+        return;
+    }
+
+    let mut table = ComfyTable::new();
+    table
+        .load_preset(presets::UTF8_HORIZONTAL_ONLY)
+        .remove_style(TableComponent::HorizontalLines)
+        .remove_style(TableComponent::MiddleIntersections)
+        .remove_style(TableComponent::LeftBorderIntersections)
+        .remove_style(TableComponent::RightBorderIntersections)
+        .set_content_arrangement(ContentArrangement::Disabled);
+
+    let header: Vec<Cell> = columns.iter().map(|c| header_cell(c)).collect();
+    table.set_header(header);
+
+    for (idx, name) in columns.iter().enumerate() {
+        if let Some(type_name) = column_types.get(name) {
+            let align = alignment_for(type_name);
+            if let Some(col) = table.column_mut(idx) {
+                col.set_cell_alignment(align);
+            }
+        }
+    }
+
+    for (_id, record) in records {
+        let row: Vec<Cell> = columns
+            .iter()
+            .map(|col| match record.get(col.as_str()) {
+                Some(value) => Cell::new(rich_to_ansi(&value.render())),
+                None => Cell::new("—".bright_black().to_string()),
+            })
+            .collect();
+        table.add_row(row);
+    }
+
+    println!("{table}");
+    let n = records.len();
+    let label = if n == 1 { "record" } else { "records" };
+    println!("{}", format!("{n} {label}").dimmed());
+}
+
 /// Render records as a styled table.
 ///
 /// `id_field` names the column used as the record key — printed as the

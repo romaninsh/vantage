@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use indexmap::IndexMap;
 use vantage_core::Result;
 use vantage_dataset::prelude::{ReadableValueSet, WritableValueSet};
 use vantage_expressions::AnyExpression;
@@ -12,9 +13,45 @@ pub trait TableLike: ReadableValueSet + WritableValueSet + Send + Sync {
     fn table_alias(&self) -> &str;
     fn column_names(&self) -> Vec<String>;
 
+    /// Name of the column flagged as the id field, if any.
+    fn id_field_name(&self) -> Option<String> {
+        None
+    }
+
+    /// Names of columns flagged as `TitleField`.
+    fn title_field_names(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Map of column name -> original Rust type name. Backends that
+    /// preserve type metadata (e.g. `Column::get_type()`) override this
+    /// so generic UIs can drive type-aware rendering without poking at
+    /// concrete column types.
+    fn column_types(&self) -> IndexMap<String, &'static str> {
+        IndexMap::new()
+    }
+
+    /// Names of relations traversable via [`get_ref`].
+    fn get_ref_names(&self) -> Vec<String> {
+        Vec::new()
+    }
+
     /// Add a condition to this table using a type-erased expression
     /// The expression must be of type T::Expr for the underlying table's TableSource
     fn add_condition(&mut self, condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()>;
+
+    /// Add a permanent equality condition expressed as raw strings.
+    ///
+    /// Generic CLIs (and other type-erased callers) work with
+    /// `field=value` text and cannot reach into `T::Condition`. Each
+    /// backend that supports textual eq filtering overrides this; the
+    /// default returns an error.
+    fn add_condition_eq(&mut self, field: &str, value: &str) -> Result<()> {
+        let _ = (field, value);
+        Err(vantage_core::error!(
+            "add_condition_eq not supported on this TableLike"
+        ))
+    }
 
     /// Add a temporary condition using AnyExpression that can be removed later
     fn temp_add_condition(&mut self, condition: AnyExpression) -> Result<ConditionHandle>;

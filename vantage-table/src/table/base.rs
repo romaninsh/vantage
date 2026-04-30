@@ -32,6 +32,7 @@ where
     pub(super) expressions: IndexMap<String, ExpressionFn<T, E>>,
     pub(super) pagination: Option<Pagination>,
     pub(super) title_field: Option<String>,
+    pub(super) title_fields: Vec<String>,
     pub(super) id_field: Option<String>,
 }
 
@@ -51,6 +52,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             expressions: IndexMap::new(),
             pagination: None,
             title_field: None,
+            title_fields: Vec::new(),
             id_field: None,
         }
     }
@@ -70,6 +72,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             expressions: IndexMap::new(),
             pagination: self.pagination,
             title_field: self.title_field,
+            title_fields: self.title_fields,
             id_field: self.id_field,
         }
     }
@@ -108,6 +111,13 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self.title_field
             .as_ref()
             .and_then(|name| self.columns.get(name))
+    }
+
+    /// Names of columns marked as display titles (set via
+    /// [`Self::with_title_column_of`]). These show alongside the id in
+    /// list views and on the leading lines of single-record displays.
+    pub fn title_fields(&self) -> &[String] {
+        &self.title_fields
     }
 
     /// Get the id field column if set

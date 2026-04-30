@@ -51,8 +51,8 @@ pub fn roles_table(aws: AwsAccount) -> Table<AwsAccount, Role> {
         .with_id_column("RoleName")
         .with_column_of::<String>("RoleId")
         .with_column_of::<Arn>("Arn")
-        .with_column_of::<String>("Path")
-        .with_column_of::<AwsDateTime>("CreateDate")
+        .with_title_column_of::<String>("Path")
+        .with_title_column_of::<AwsDateTime>("CreateDate")
         .with_column_of::<String>("Description")
         .with_column_of::<String>("AssumeRolePolicyDocument")
         .with_column_of::<String>("MaxSessionDuration")
@@ -69,6 +69,24 @@ pub fn roles_table(aws: AwsAccount) -> Table<AwsAccount, Role> {
 }
 
 impl Role {
+    /// Build a [`roles_table`] narrowed to the role named in `arn`.
+    ///
+    /// Accepts ARNs of the shape
+    /// `arn:aws:iam::<account>:role/<path/>?<name>`. Returns `None` if
+    /// `arn` isn't an IAM-role ARN.
+    pub fn from_arn(arn: &str, aws: AwsAccount) -> Option<Table<AwsAccount, Role>> {
+        // Role names can sit under a path: arn:aws:iam::123:role/some/path/MyRole
+        // — strip back to the trailing component for the IAM filter.
+        let after = arn.strip_prefix("arn:aws:iam::")?.split(":role/").nth(1)?;
+        let name = after.rsplit('/').next()?;
+        if name.is_empty() {
+            return None;
+        }
+        let mut t = roles_table(aws);
+        t.add_condition(eq("RoleName", name.to_string()));
+        Some(t)
+    }
+
     /// Attached managed policies for *this* role.
     pub fn ref_attached_policies(&self, aws: AwsAccount) -> Table<AwsAccount, AttachedPolicy> {
         let mut t = attached_role_policies_table(aws);

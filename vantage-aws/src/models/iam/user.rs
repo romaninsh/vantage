@@ -56,8 +56,8 @@ pub fn users_table(aws: AwsAccount) -> Table<AwsAccount, User> {
         .with_id_column("UserName")
         .with_column_of::<String>("UserId")
         .with_column_of::<Arn>("Arn")
-        .with_column_of::<String>("Path")
-        .with_column_of::<AwsDateTime>("CreateDate")
+        .with_title_column_of::<String>("Path")
+        .with_title_column_of::<AwsDateTime>("CreateDate")
         .with_column_of::<AwsDateTime>("PasswordLastUsed")
         .with_many("groups", "UserName", groups_for_user_table)
         .with_many("access_keys", "UserName", access_keys_table)
@@ -69,6 +69,21 @@ pub fn users_table(aws: AwsAccount) -> Table<AwsAccount, User> {
 }
 
 impl User {
+    /// Build a [`users_table`] narrowed to the user named in `arn`.
+    ///
+    /// Accepts ARNs of the shape
+    /// `arn:aws:iam::<account>:user/<name>`. Returns `None` if `arn`
+    /// isn't an IAM-user ARN.
+    pub fn from_arn(arn: &str, aws: AwsAccount) -> Option<Table<AwsAccount, User>> {
+        let name = arn.strip_prefix("arn:aws:iam::")?.split(":user/").nth(1)?;
+        if name.is_empty() {
+            return None;
+        }
+        let mut t = users_table(aws);
+        t.add_condition(eq("UserName", name.to_string()));
+        Some(t)
+    }
+
     /// Groups *this* user belongs to.
     pub fn ref_groups(&self, aws: AwsAccount) -> Table<AwsAccount, Group> {
         let mut t = groups_for_user_table(aws);

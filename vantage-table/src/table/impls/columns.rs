@@ -55,6 +55,27 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self
     }
 
+    /// Add a typed column AND mark it as a display title.
+    ///
+    /// Title columns show alongside the id in generic list views and
+    /// lead the body of single-record displays. Multiple title columns
+    /// are allowed; their order matches the order of these calls.
+    pub fn with_title_column_of<NewColumnType>(mut self, name: impl Into<String>) -> Self
+    where
+        NewColumnType: ColumnType,
+    {
+        let name = name.into();
+        if !self.title_fields.contains(&name) {
+            self.title_fields.push(name.clone());
+        }
+        if self.title_field.is_none() {
+            self.title_field = Some(name.clone());
+        }
+        let column = self.data_source.create_column::<NewColumnType>(&name);
+        self.add_column(column);
+        self
+    }
+
     /// Add a typed column to the table (builder pattern)
     pub fn with_column_of<NewColumnType>(self, name: impl Into<String>) -> Self
     where
