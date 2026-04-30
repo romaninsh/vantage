@@ -137,10 +137,7 @@ impl Factory {
             // log.stream / log.event intentionally omitted: AWS
             // requires `logGroupName`. Reach them via
             // `log.group ... :streams` / `:events`.
-            "ecs.cluster" => (
-                AnyTable::new(ecs::clusters_table(aws)),
-                FactoryMode::Single,
-            ),
+            "ecs.cluster" => (AnyTable::new(ecs::clusters_table(aws)), FactoryMode::Single),
             "ecs.clusters" => (AnyTable::new(ecs::clusters_table(aws)), FactoryMode::List),
             // ecs.service / ecs.task intentionally omitted: AWS
             // requires `cluster` as a filter, so listing them

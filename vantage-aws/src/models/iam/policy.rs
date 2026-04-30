@@ -67,7 +67,10 @@ impl Policy {
     /// `arn`. Accepts both AWS-managed (`arn:aws:iam::aws:policy/...`)
     /// and customer-managed (`arn:aws:iam::<account>:policy/...`) ARNs.
     pub fn from_arn(arn: &str, aws: AwsAccount) -> Option<Table<AwsAccount, Policy>> {
-        let after = arn.strip_prefix("arn:aws:iam::")?.split(":policy/").nth(1)?;
+        let after = arn
+            .strip_prefix("arn:aws:iam::")?
+            .split(":policy/")
+            .nth(1)?;
         // Customer-managed policies can sit under a path; managed
         // policies don't. Either way, the policy name is the last
         // path component.

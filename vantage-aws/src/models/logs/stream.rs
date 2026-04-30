@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use vantage_table::table::Table;
 
-use crate::{AwsAccount, eq};
+use crate::{eq, AwsAccount};
 
-use super::event::{LogEvent, events_table};
+use super::event::{events_table, LogEvent};
 
 /// One CloudWatch Logs stream from `DescribeLogStreams`. Field names
 /// match the wire shape.
@@ -60,9 +60,7 @@ impl LogStream {
     /// `arn:aws:logs:<region>:<account>:log-group:<group>:log-stream:<stream>`.
     pub fn from_arn(arn: &str, aws: AwsAccount) -> Option<Table<AwsAccount, LogStream>> {
         let after_group = arn.split(":log-group:").nth(1)?;
-        let mut parts = after_group.splitn(2, ":log-stream:");
-        let group_name = parts.next()?;
-        let stream_name = parts.next()?;
+        let (group_name, stream_name) = after_group.split_once(":log-stream:")?;
         if group_name.is_empty() || stream_name.is_empty() {
             return None;
         }
