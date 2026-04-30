@@ -85,14 +85,15 @@ enum Token {
 }
 
 fn split_index_suffix(s: &str) -> (&str, Option<usize>) {
-    if let Some(stripped) = s.strip_suffix(']') {
-        if let Some(open) = stripped.rfind('[') {
-            let inner = &stripped[open + 1..];
-            if !inner.is_empty() && inner.chars().all(|c| c.is_ascii_digit()) {
-                if let Ok(n) = inner.parse::<usize>() {
-                    return (&stripped[..open], Some(n));
-                }
-            }
+    if let Some(stripped) = s.strip_suffix(']')
+        && let Some(open) = stripped.rfind('[')
+    {
+        let inner = &stripped[open + 1..];
+        if !inner.is_empty()
+            && inner.chars().all(|c| c.is_ascii_digit())
+            && let Ok(n) = inner.parse::<usize>()
+        {
+            return (&stripped[..open], Some(n));
         }
     }
     (s, None)
@@ -140,12 +141,13 @@ fn parse_token(arg: &str) -> Result<Token> {
             return Err(error!(format!("Empty field name in token `{arg}`")));
         }
         let value_part = &arg[eq_pos + 1..];
-        let (value, idx) = if value_part.starts_with('"') && value_part.ends_with('"') && value_part.len() >= 2 {
-            (value_part[1..value_part.len() - 1].to_string(), None)
-        } else {
-            let (v, i) = split_index_suffix(value_part);
-            (v.to_string(), i)
-        };
+        let (value, idx) =
+            if value_part.starts_with('"') && value_part.ends_with('"') && value_part.len() >= 2 {
+                (value_part[1..value_part.len() - 1].to_string(), None)
+            } else {
+                let (v, i) = split_index_suffix(value_part);
+                (v.to_string(), i)
+            };
         return Ok(Token::Condition(field, value, idx));
     }
     let (name, idx) = split_index_suffix(arg);
