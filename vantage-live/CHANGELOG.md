@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.3 — 2026-04-30
+
+- `LiveTable` forwards the four new `TableLike` reflection methods (`id_field_name`, `title_field_names`, `column_types`, `get_ref_names`) through to the master `AnyTable`, so generic UIs that drive a `LiveTable` see the same metadata they would see on the underlying table.
+- Pins `vantage-table = "0.4.8"` for those new trait surfaces.
+
 ## 0.4.2 — 2026-04-29
 
 - `LiveTable::get_ref(relation)` now forwards through to the master `AnyTable`, so reference traversal works on a `LiveTable` the same way it does on the underlying table — `live.get_ref("orders")` returns an `AnyTable` you can keep wrapping.

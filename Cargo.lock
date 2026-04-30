@@ -3958,7 +3958,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cli-util"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4052,7 +4052,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-live"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4173,7 +4173,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "async-stream",
  "async-trait",

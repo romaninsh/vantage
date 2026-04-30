@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.3 — 2026-04-30
+
+`vantage-aws` picks up a generic, type-erased model factory and the AWS-side machinery to back the new model-driven CLI in `vantage-cli-util`. ([#215](https://github.com/romaninsh/vantage/pull/215))
+
+- New `vantage_aws::models::Factory` — dotted-string lookup (`iam.user`, `log.group`, `ecs.cluster`, …) to `AnyTable` plus a single `Factory::from_arn` entry point. Singular forms drop into `FactoryMode::Single`, plural into `FactoryMode::List`. Models whose AWS API requires a parent filter aren't exposed top-level; they're reachable via traversal:
+  - `iam.user … :access_keys`        (`ListAccessKeys` needs `UserName`)
+  - `log.group … :streams`           (`DescribeLogStreams` needs `logGroupName`)
+  - `log.group … :events`            (`FilterLogEvents` needs `logGroupName`)
+  - `ecs.cluster … :services`        (`ListServices` needs `cluster`)
+  - `ecs.cluster … :tasks`           (`ListTasks` needs `cluster`)
+- New per-entity `from_arn(arn, aws) -> Option<Table<…>>` on `User`, `Group`, `Role`, `Policy`, `InstanceProfile`, `AccessKey`, `LogGroup`, `LogStream`, `Cluster`. Each parses its own ARN shape and returns a pre-conditioned table. `Factory::from_arn` walks them in order.
+- `ecs::clusters_table` gains the previously-missing `with_many("services", "cluster", services_table)` and `with_many("tasks", "cluster", tasks_table)` so cluster traversal hits the registered relations.
+- Existing IAM / Logs models pick up `with_title_column_of` for the columns worth showing in lists (`Path`, `CreateDate`, `UserName`, `Status`, `PolicyName`, `IsAttachable`, …). Long, noisy, or always-empty columns (`Arn`, `AssumeRolePolicyDocument`, `PasswordLastUsed`, log message body) stay hidden by default and surface when you drill into a single record.
+- New `TableSource::eq_condition` impl on `AwsAccount` — builds an `AwsCondition::Eq` from raw strings so the generic CLI's `add_condition_eq` works without reaching into the backend's expression type.
+- `AwsAccount::list_table_values` now post-filters records by any `Eq` condition whose field appears on the records. AWS APIs only push down their own request-param filters (`PathPrefix`, `logGroupNamePrefix`, `cluster`); eq conditions on actual record fields (`UserName`, `Path`, `clusterArn`) used to be silently dropped on the wire. Fields not on any record are assumed to be request params and skipped (no over-filtering on `PathPrefix` etc.). Also makes the deferred-subquery path under `:relation` resolve correctly when the source is narrowed in-memory.
+- `examples/aws-cli.rs` rewritten as a thin adapter around `vantage_cli_util::model_cli::run` — same end-to-end paths as before plus filters / index / column-overrides / ARN-as-first-argument. The previous clap subcommand surface is gone; everything goes through the generic argv parser.
+- Pins `vantage-table = "0.4.8"` for the new `TableLike` reflection methods + `with_title_column_of`.
+
 ## 0.4.2 — 2026-04-29
 
 AWS Query protocol (form-encoded request, XML response) lands alongside the existing JSON-1.1 transport, plus an IAM submodule that uses it. Same `AwsAccount` is the `TableSource` for both — relations span protocols freely. ([#212](https://github.com/romaninsh/vantage/pull/212))
