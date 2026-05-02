@@ -2080,7 +2080,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.4.2"
+version = "0.4.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2106,9 +2106,10 @@ dependencies = [
 
 [[package]]
 name = "vantage-cli-util"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "async-trait",
+ "ciborium",
  "comfy-table",
  "indexmap",
  "owo-colors",
@@ -2162,7 +2163,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2183,7 +2184,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "ciborium",
  "indexmap",

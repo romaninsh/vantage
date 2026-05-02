@@ -52,8 +52,11 @@ mod condition;
 mod dispatch;
 mod impls;
 mod json1;
+mod json10;
 mod operation;
 mod query;
+mod restjson;
+mod restxml;
 mod sign;
 
 pub mod models;

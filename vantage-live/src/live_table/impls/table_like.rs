@@ -5,6 +5,7 @@
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
+use indexmap::IndexMap;
 use tracing::warn;
 use vantage_core::{Result, error};
 use vantage_expressions::AnyExpression;
@@ -27,6 +28,22 @@ impl TableLike for LiveTable {
 
     fn column_names(&self) -> Vec<String> {
         self.master.column_names()
+    }
+
+    fn id_field_name(&self) -> Option<String> {
+        self.master.id_field_name()
+    }
+
+    fn title_field_names(&self) -> Vec<String> {
+        self.master.title_field_names()
+    }
+
+    fn column_types(&self) -> IndexMap<String, &'static str> {
+        self.master.column_types()
+    }
+
+    fn get_ref_names(&self) -> Vec<String> {
+        self.master.get_ref_names()
     }
 
     fn add_condition(&mut self, _condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()> {

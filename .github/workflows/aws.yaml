@@ -48,8 +48,10 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: eu-west-2
         run: |
-          cargo run --example aws-cli -- log-groups
-          cargo run --example aws-cli -- log-groups --prefix /aws/lambda/
-          cargo run --example aws-cli -- traverse-log-events
-          cargo run --example aws-cli -- list-users
-          cargo run --example aws-cli -- list-roles --path-prefix /aws-service-role/
+          cargo run --example aws-cli -- log.groups
+          cargo run --example aws-cli -- log.groups logGroupNamePrefix=/aws/lambda/
+          cargo run --example aws-cli -- iam.users
+          cargo run --example aws-cli -- iam.roles PathPrefix=/aws-service-role/
+          cargo run --example aws-cli -- s3.buckets
+          cargo run --example aws-cli -- lambda.functions
+          cargo run --example aws-cli -- dynamodb.tables

@@ -28,7 +28,7 @@ pub fn attached_user_policies_table(aws: AwsAccount) -> Table<AwsAccount, Attach
         aws,
     )
     .with_id_column("PolicyArn")
-    .with_column_of::<String>("PolicyName")
+    .with_title_column_of::<String>("PolicyName")
 }
 
 /// `ListAttachedGroupPolicies` — requires `eq("GroupName", "...")`.
@@ -39,7 +39,7 @@ pub fn attached_group_policies_table(aws: AwsAccount) -> Table<AwsAccount, Attac
         aws,
     )
     .with_id_column("PolicyArn")
-    .with_column_of::<String>("PolicyName")
+    .with_title_column_of::<String>("PolicyName")
 }
 
 /// `ListAttachedRolePolicies` — requires `eq("RoleName", "...")`.
@@ -50,5 +50,5 @@ pub fn attached_role_policies_table(aws: AwsAccount) -> Table<AwsAccount, Attach
         aws,
     )
     .with_id_column("PolicyArn")
-    .with_column_of::<String>("PolicyName")
+    .with_title_column_of::<String>("PolicyName")
 }

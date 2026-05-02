@@ -30,9 +30,23 @@ pub fn clusters_table(aws: AwsAccount) -> Table<AwsAccount, Cluster> {
         aws,
     )
     .with_id_column("clusterArn")
+    .with_many("services", "cluster", services_table)
+    .with_many("tasks", "cluster", tasks_table)
 }
 
 impl Cluster {
+    /// Build a [`clusters_table`] narrowed to the cluster identified
+    /// by `arn`. Accepts ARNs of the shape
+    /// `arn:aws:ecs:<region>:<account>:cluster/<name>`.
+    pub fn from_arn(arn: &str, aws: AwsAccount) -> Option<Table<AwsAccount, Cluster>> {
+        if !arn.contains(":cluster/") {
+            return None;
+        }
+        let mut t = clusters_table(aws);
+        t.add_condition(eq("clusterArn", arn.to_string()));
+        Some(t)
+    }
+
     /// The cluster's short name, parsed out of [`Self::cluster_arn`].
     /// Cluster ARNs have the shape
     /// `arn:aws:ecs:<region>:<account>:cluster/<name>`.

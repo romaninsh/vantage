@@ -33,8 +33,8 @@ pub fn groups_table(aws: AwsAccount) -> Table<AwsAccount, Group> {
         .with_id_column("GroupName")
         .with_column_of::<String>("GroupId")
         .with_column_of::<Arn>("Arn")
-        .with_column_of::<String>("Path")
-        .with_column_of::<AwsDateTime>("CreateDate")
+        .with_title_column_of::<String>("Path")
+        .with_title_column_of::<AwsDateTime>("CreateDate")
         .with_many(
             "attached_policies",
             "GroupName",
@@ -55,6 +55,21 @@ pub(crate) fn groups_for_user_table(aws: AwsAccount) -> Table<AwsAccount, Group>
 }
 
 impl Group {
+    /// Build a [`groups_table`] narrowed to the group named in `arn`.
+    ///
+    /// Accepts ARNs of the shape
+    /// `arn:aws:iam::<account>:group/<name>`. Returns `None` if `arn`
+    /// isn't an IAM-group ARN.
+    pub fn from_arn(arn: &str, aws: AwsAccount) -> Option<Table<AwsAccount, Group>> {
+        let name = arn.strip_prefix("arn:aws:iam::")?.split(":group/").nth(1)?;
+        if name.is_empty() {
+            return None;
+        }
+        let mut t = groups_table(aws);
+        t.add_condition(eq("GroupName", name.to_string()));
+        Some(t)
+    }
+
     /// Attached managed policies for *this* group.
     pub fn ref_attached_policies(&self, aws: AwsAccount) -> Table<AwsAccount, AttachedPolicy> {
         let mut t = attached_group_policies_table(aws);

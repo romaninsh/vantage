@@ -1,17 +1,10 @@
-//! JSON-1.1 protocol — the wire used by CloudWatch, ECS, KMS,
-//! DynamoDB control plane, etc.
+//! REST-JSON protocol — Lambda, API Gateway v2, and a few others.
 //!
-//! Two entry points:
-//!   - [`execute`] builds the JSON request body, signs, sends.
-//!   - [`parse_records`] plucks the configured array from the
-//!     parsed response and folds it into `Record<CborValue>`s.
-//!
-//! Both are called from [`crate::dispatch`] after the protocol switch
-//! has fired. The shape that distinguishes JSON-1.1 from sibling
-//! protocols: request body is a JSON object posted with
-//! `Content-Type: application/x-amz-json-1.1` and an `X-Amz-Target`
-//! header naming the operation; response body is a JSON object whose
-//! top-level key is the array of rows.
+//! Same request shape as [`crate::restxml`] (METHOD + path-template,
+//! placeholders filled from conditions, leftovers go to the query
+//! string), but the response body is JSON. Records get plucked using
+//! the dotted-path lookup so callers can target nested arrays
+//! (`Functions`, `Aliases`, `Versions`, …).
 
 mod transport;
 
@@ -22,30 +15,21 @@ use vantage_core::{Result, error};
 use vantage_types::Record;
 
 use crate::account::AwsAccount;
-use crate::condition::{AwsCondition, build_json1_body};
+use crate::condition::AwsCondition;
 use crate::dispatch::{OperationDescriptor, json_to_cbor, lookup_path};
 
-pub(crate) use transport::{json_aws_call, json1_call};
-
-/// Build the JSON-1.1 request body and post it. `target` is used
-/// verbatim as the `X-Amz-Target` header; `service` is both the SigV4
-/// service name and the URL hostname segment.
 pub(crate) async fn execute(
     account: &AwsAccount,
     op: &OperationDescriptor<'_>,
     resolved: &[AwsCondition],
 ) -> Result<JsonValue> {
-    let body = build_json1_body(resolved)?;
-    json1_call(account, op.service, op.target, &JsonValue::Object(body)).await
+    // REST-JSON request shape is identical to REST-XML, so reuse the
+    // builder. Path templating, placeholder substitution, and query
+    // assembly are all in one place.
+    let (method, path, query) = crate::restxml::transport::build_request(op.target, resolved)?;
+    transport::restjson_call(account, op.service, &method, &path, &query).await
 }
 
-/// Pull the configured array out of the response and build records
-/// keyed by `id_field`. Each value is converted from
-/// `serde_json::Value` to `ciborium::Value` via the serde bridge.
-///
-/// Scalar array elements (strings/numbers) get wrapped as
-/// `{<id_field>: value}` — this is what the ECS List* APIs return
-/// (`clusterArns: ["arn:…", …]` instead of objects).
 pub(crate) fn parse_records(
     op: &OperationDescriptor<'_>,
     resp: JsonValue,
@@ -55,7 +39,7 @@ pub(crate) fn parse_records(
         .and_then(|v| v.as_array())
         .ok_or_else(|| {
             error!(
-                "AWS JSON-1.1 response missing expected array key",
+                "AWS REST-JSON response missing expected array key",
                 array_key = op.array_key,
                 body = format!("{}", resp)
             )
@@ -75,7 +59,7 @@ pub(crate) fn parse_records(
             }
             other => {
                 return Err(error!(
-                    "AWS response array entry is not an object or scalar",
+                    "AWS REST-JSON response array entry is not an object or scalar",
                     index = idx,
                     got = format!("{:?}", other)
                 ));

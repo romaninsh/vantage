@@ -1,14 +1,16 @@
 use async_trait::async_trait;
+use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_expressions::AnyExpression;
 use vantage_types::Entity;
 
 use crate::{
     any::AnyTable,
+    column::flags::ColumnFlag,
     conditions::ConditionHandle,
     pagination::Pagination,
     table::Table,
-    traits::{table_like::TableLike, table_source::TableSource},
+    traits::{column_like::ColumnLike, table_like::TableLike, table_source::TableSource},
 };
 
 #[async_trait]
@@ -29,6 +31,35 @@ where
         self.columns.keys().cloned().collect()
     }
 
+    fn id_field_name(&self) -> Option<String> {
+        self.id_field().map(|c| c.name().to_string())
+    }
+
+    fn title_field_names(&self) -> Vec<String> {
+        // Two paths: the explicit `with_title_column_of` ordered list,
+        // and any columns that have `TitleField` flagged on them
+        // directly. The flagged path covers backends whose column type
+        // sets flags during construction (e.g. SQL).
+        let mut out: Vec<String> = self.title_fields.clone();
+        for (name, col) in &self.columns {
+            if col.flags().contains(&ColumnFlag::TitleField) && !out.contains(name) {
+                out.push(name.clone());
+            }
+        }
+        out
+    }
+
+    fn column_types(&self) -> IndexMap<String, &'static str> {
+        self.columns
+            .iter()
+            .map(|(name, col)| (name.clone(), col.get_type()))
+            .collect()
+    }
+
+    fn get_ref_names(&self) -> Vec<String> {
+        self.references()
+    }
+
     fn add_condition(&mut self, condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()> {
         // Downcast the boxed Any to T::Condition
         let cond = condition
@@ -40,6 +71,15 @@ where
         let id = -next_id;
         *self.next_condition_id_mut() = next_id + 1;
         self.conditions_mut().insert(id, *cond);
+        Ok(())
+    }
+
+    fn add_condition_eq(&mut self, field: &str, value: &str) -> Result<()> {
+        let cond = T::eq_condition(field, value)?;
+        let next_id = *self.next_condition_id_mut();
+        let id = -next_id;
+        *self.next_condition_id_mut() = next_id + 1;
+        self.conditions_mut().insert(id, cond);
         Ok(())
     }
 

@@ -257,8 +257,28 @@ impl TableLike for AnyTable {
         self.inner.column_names()
     }
 
+    fn id_field_name(&self) -> Option<String> {
+        self.inner.id_field_name()
+    }
+
+    fn title_field_names(&self) -> Vec<String> {
+        self.inner.title_field_names()
+    }
+
+    fn column_types(&self) -> IndexMap<String, &'static str> {
+        self.inner.column_types()
+    }
+
+    fn get_ref_names(&self) -> Vec<String> {
+        self.inner.get_ref_names()
+    }
+
     fn add_condition(&mut self, condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()> {
         self.inner.add_condition(condition)
+    }
+
+    fn add_condition_eq(&mut self, field: &str, value: &str) -> Result<()> {
+        self.inner.add_condition_eq(field, value)
     }
 
     fn temp_add_condition(
@@ -500,8 +520,28 @@ where
         self.inner.columns().keys().cloned().collect()
     }
 
+    fn id_field_name(&self) -> Option<String> {
+        TableLike::id_field_name(&self.inner)
+    }
+
+    fn title_field_names(&self) -> Vec<String> {
+        TableLike::title_field_names(&self.inner)
+    }
+
+    fn column_types(&self) -> IndexMap<String, &'static str> {
+        TableLike::column_types(&self.inner)
+    }
+
+    fn get_ref_names(&self) -> Vec<String> {
+        TableLike::get_ref_names(&self.inner)
+    }
+
     fn add_condition(&mut self, _condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()> {
         Err(error!("add_condition not supported through CborAdapter"))
+    }
+
+    fn add_condition_eq(&mut self, field: &str, value: &str) -> Result<()> {
+        TableLike::add_condition_eq(&mut self.inner, field, value)
     }
 
     fn temp_add_condition(

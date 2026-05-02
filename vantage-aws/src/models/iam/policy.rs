@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use vantage_table::table::Table;
 
-use crate::AwsAccount;
 use crate::types::{Arn, AwsDateTime};
+use crate::{AwsAccount, eq};
 
 /// One IAM managed policy from `ListPolicies`. Numeric fields stay as
 /// strings — the Query protocol's XML response is untyped, and we
@@ -52,12 +52,34 @@ pub fn policies_table(aws: AwsAccount) -> Table<AwsAccount, Policy> {
         .with_id_column("PolicyName")
         .with_column_of::<String>("PolicyId")
         .with_column_of::<Arn>("Arn")
-        .with_column_of::<String>("Path")
+        .with_title_column_of::<String>("Path")
         .with_column_of::<String>("DefaultVersionId")
-        .with_column_of::<i64>("AttachmentCount")
+        .with_title_column_of::<i64>("AttachmentCount")
         .with_column_of::<i64>("PermissionsBoundaryUsageCount")
-        .with_column_of::<bool>("IsAttachable")
+        .with_title_column_of::<bool>("IsAttachable")
         .with_column_of::<AwsDateTime>("CreateDate")
         .with_column_of::<AwsDateTime>("UpdateDate")
         .with_column_of::<String>("Description")
+}
+
+impl Policy {
+    /// Build a [`policies_table`] narrowed to the policy named in
+    /// `arn`. Accepts both AWS-managed (`arn:aws:iam::aws:policy/...`)
+    /// and customer-managed (`arn:aws:iam::<account>:policy/...`) ARNs.
+    pub fn from_arn(arn: &str, aws: AwsAccount) -> Option<Table<AwsAccount, Policy>> {
+        let after = arn
+            .strip_prefix("arn:aws:iam::")?
+            .split(":policy/")
+            .nth(1)?;
+        // Customer-managed policies can sit under a path; managed
+        // policies don't. Either way, the policy name is the last
+        // path component.
+        let name = after.rsplit('/').next()?;
+        if name.is_empty() {
+            return None;
+        }
+        let mut t = policies_table(aws);
+        t.add_condition(eq("PolicyName", name.to_string()));
+        Some(t)
+    }
 }

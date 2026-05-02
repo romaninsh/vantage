@@ -1,165 +1,196 @@
-//! `vantage-aws-cli` — proof-of-concept CLI driving the CloudWatch
-//! Logs, ECS, and IAM models through `vantage-aws`. Renders results
-//! via `vantage_cli_util::print_table` so the output exercises the
-//! same `Table` / `TableSource` machinery the rest of the framework
-//! uses.
+//! `vantage-aws-cli` — generic, model-driven CLI over `vantage-aws`.
+//!
+//! Argument shape (everything after `--region`):
+//!
+//! ```text
+//! aws-cli <model | arn> [field=value ...] [[N]] [:relation [[N]] ...]
+//! ```
+//!
+//! - First positional is either a dotted model name (`iam.users`,
+//!   `log.group`, `ecs.task_definitions`, …) or an ARN (`arn:...`).
+//! - Singular forms (`iam.user`) drop into single-record mode and
+//!   render the first matching record. Plural forms (`iam.users`)
+//!   render a list.
+//! - Filters (`field=value` or `field="quoted value"`) AND together.
+//! - `[N]` selects the Nth record from a list and switches into
+//!   single-record mode.
+//! - `:relation` traverses a `with_many` / `with_one` registered on
+//!   the current table and switches into list mode for the child.
+//! - Glued forms work too: `users[0]`, `:members[0]`, `name=foo[0]`.
 //!
 //! Reads creds from the standard env vars (`AWS_ACCESS_KEY_ID`,
-//! `AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN`, `AWS_REGION`),
-//! falling back to the `[default]` profile in `~/.aws/credentials`
-//! and `~/.aws/config`.
+//! `AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN`,
+//! `AWS_REGION`), falling back to the `[default]` profile in
+//! `~/.aws/credentials` and `~/.aws/config`.
 
 use anyhow::{Context, Result};
 use ciborium::Value as CborValue;
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use indexmap::IndexMap;
-use vantage_aws::models::ecs::{
-    clusters_table, services_table, task_definitions_table, tasks_table,
-};
-use vantage_aws::models::iam::{
-    Role, User, access_keys_table, groups_table as iam_groups_table, instance_profiles_table,
-    policies_table, roles_table, users_table,
-};
-use vantage_aws::models::logs::{events_table, groups_table, streams_table};
-use vantage_aws::{AwsAccount, eq, typed_records, untyped_records};
-use vantage_cli_util::render_records_typed;
-use vantage_dataset::prelude::{ReadableDataSet, ReadableValueSet};
-use vantage_table::prelude::ColumnLike;
-use vantage_table::table::Table;
-use vantage_table::traits::table_source::TableSource;
-use vantage_types::{Entity, Record};
-
-/// Print an AWS table with rich rendering: ARNs and dates get
-/// multi-segment styling, booleans get green/red, etc. Reads column
-/// metadata to drive parsing of typed values from the raw response.
-async fn print_table<E>(t: &Table<AwsAccount, E>) -> Result<()>
-where
-    E: Entity<<AwsAccount as TableSource>::Value>,
-{
-    let id_field = t.id_field().map(|c| c.name().to_string());
-    let column_types: IndexMap<String, &'static str> = t
-        .columns()
-        .iter()
-        .map(|(name, col)| (name.clone(), col.get_type()))
-        .collect();
-    let records = t.list_values().await?;
-    let typed = typed_records(records, &column_types);
-    render_records_typed(&typed, id_field.as_deref(), &column_types);
-    Ok(())
-}
-
-/// Render ad-hoc records (e.g. from `AnyTable::list_values`) with
-/// detection-based ARN/datetime rendering — no column metadata
-/// available, so we sniff strings.
-fn render_any_records(records: IndexMap<String, Record<CborValue>>, id_field: Option<&str>) {
-    let typed = untyped_records(records);
-    render_records_typed(&typed, id_field, &IndexMap::new());
-}
-
-const TRAVERSE_GROUP: &str = "/ecs/ba-nginx";
+use vantage_aws::AwsAccount;
+use vantage_aws::models::{Factory, FactoryMode};
+use vantage_aws::types::{AnyAwsType, typed_records};
+use vantage_cli_util::model_cli::{self, Mode, ModelFactory, Renderer};
+use vantage_cli_util::{render_records_columns, render_records_typed};
+use vantage_table::any::AnyTable;
+use vantage_table::traits::table_like::TableLike;
+use vantage_types::{Record, TerminalRender};
 
 #[derive(Parser)]
 #[command(
     name = "vantage-aws-cli",
-    about = "vantage-aws CloudWatch + ECS + IAM demo"
+    about = "Generic CLI for vantage-aws models",
+    long_about = "Use a dotted model name (e.g. iam.users, log.group) or an ARN as the first arg, \
+                  then chain filters (field=value), index selectors ([0]), and relation \
+                  traversals (:relation). Example: aws-cli iam.user UserName=alice :groups."
 )]
 struct Cli {
     /// Override the AWS region (sets AWS_REGION before credential load).
     #[arg(long, global = true)]
     region: Option<String>,
 
-    #[command(subcommand)]
-    command: Command,
+    /// Positional tokens: model-or-ARN, filters, indices, traversals.
+    #[arg(trailing_var_arg = true, allow_hyphen_values = false)]
+    args: Vec<String>,
 }
 
-#[derive(Subcommand)]
-enum Command {
-    /// CloudWatch: list log groups (optionally filtered by prefix).
-    LogGroups {
-        #[arg(long)]
-        prefix: Option<String>,
-    },
-    /// CloudWatch: list log streams in a group.
-    LogStreams { log_group_name: String },
-    /// CloudWatch: list log events in a group.
-    LogEvents { log_group_name: String },
-    /// CloudWatch: filter to one group, drill into its events via `with_many("events")`.
-    TraverseLogEvents,
-    /// CloudWatch: filter to one group, drill into its streams via `with_many("streams")`.
-    TraverseLogStreams,
+/// Adapts the standalone [`Factory`] (which lives in `vantage-aws`
+/// proper) to `vantage-cli-util`'s [`ModelFactory`] trait. Keeps
+/// `vantage-aws` itself free of a runtime dep on `vantage-cli-util`.
+struct AwsFactoryAdapter(Factory);
 
-    /// ECS: list clusters in the account.
-    ListClusters,
-    /// ECS: list services in a cluster (name or ARN).
-    ListServices { cluster: String },
-    /// ECS: list tasks in a cluster (name or ARN).
-    ListTasks {
-        cluster: String,
-        /// Filter by service name.
-        #[arg(long)]
-        service: Option<String>,
-        /// Filter by task definition family.
-        #[arg(long)]
-        family: Option<String>,
-        /// RUNNING / PENDING / STOPPED.
-        #[arg(long)]
-        status: Option<String>,
-    },
-    /// ECS: list active task definitions (optionally filtered by family prefix).
-    ListTaskDefs {
-        #[arg(long)]
-        family_prefix: Option<String>,
-    },
+impl ModelFactory for AwsFactoryAdapter {
+    fn for_name(&self, name: &str) -> Option<(AnyTable, Mode)> {
+        self.0.for_name(name).map(|(t, m)| {
+            (
+                t,
+                match m {
+                    FactoryMode::List => Mode::List,
+                    FactoryMode::Single => Mode::Single,
+                },
+            )
+        })
+    }
 
-    /// IAM: list users in the account.
-    ListUsers {
-        /// Filter by IAM path prefix.
-        #[arg(long)]
-        path_prefix: Option<String>,
-    },
-    /// IAM: list groups in the account.
-    ListGroups {
-        #[arg(long)]
-        path_prefix: Option<String>,
-    },
-    /// IAM: list roles in the account.
-    ListRoles {
-        /// Filter by IAM path prefix (e.g. "/service-role/").
-        #[arg(long)]
-        path_prefix: Option<String>,
-    },
-    /// IAM: list managed policies in the account.
-    ListPolicies {
-        /// AWS / Local / All — defaults to All on the AWS side.
-        #[arg(long)]
-        scope: Option<String>,
-        /// true to skip dormant policies.
-        #[arg(long)]
-        only_attached: Option<String>,
-        #[arg(long)]
-        path_prefix: Option<String>,
-    },
-    /// IAM: list access keys for a user (defaults to the caller).
-    ListAccessKeys {
-        #[arg(long)]
-        user: Option<String>,
-    },
-    /// IAM: list instance profiles in the account.
-    ListInstanceProfiles {
-        #[arg(long)]
-        path_prefix: Option<String>,
-    },
+    fn for_arn(&self, arn: &str) -> Option<AnyTable> {
+        self.0.from_arn(arn)
+    }
+}
 
-    /// IAM: filter to one user, drill into their groups via `with_many("groups")`.
-    TraverseUserGroups { user: String },
-    /// IAM: filter to one user, drill into their attached managed policies.
-    TraverseUserPolicies { user: String },
-    /// IAM: filter to one user, drill into their access keys.
-    TraverseUserAccessKeys { user: String },
-    /// IAM: filter to one role, drill into its attached managed policies.
-    TraverseRolePolicies { role: String },
-    /// IAM: filter to one role, drill into the instance profiles wrapping it.
-    TraverseRoleProfiles { role: String },
+/// AWS-aware renderer. Lists go through the existing typed table
+/// renderer (with non-title columns hidden); single records print
+/// `id` + title columns, then `----`, then the rest, and finally a
+/// list of traversable relations.
+struct AwsRenderer;
+
+impl Renderer for AwsRenderer {
+    fn render_list(
+        &self,
+        table: &AnyTable,
+        records: &IndexMap<String, Record<CborValue>>,
+        column_override: Option<&[String]>,
+    ) {
+        let id_field = table.id_field_name();
+        let column_types = table.column_types();
+        let title_fields = table.title_field_names();
+
+        let typed = typed_records(records.clone(), &column_types);
+
+        if let Some(cols) = column_override {
+            // Explicit override: only the spelled-out columns are
+            // shown. `id` resolves to the table's id field.
+            let resolved: Vec<String> = cols
+                .iter()
+                .map(|raw| {
+                    if raw == "id" {
+                        id_field.clone().unwrap_or_else(|| raw.clone())
+                    } else {
+                        raw.clone()
+                    }
+                })
+                .collect();
+            render_records_columns(&typed, &resolved, &column_types);
+            return;
+        }
+
+        // Default: show id + title columns. Tables with no title
+        // columns (single-column ARN tables in ECS) fall back to
+        // every non-id column so the listing isn't empty.
+        let visible: IndexMap<String, &'static str> = if title_fields.is_empty() {
+            column_types.clone()
+        } else {
+            let mut v = IndexMap::new();
+            for f in &title_fields {
+                if let Some(t) = column_types.get(f) {
+                    v.insert(f.clone(), *t);
+                }
+            }
+            v
+        };
+        render_records_typed(&typed, id_field.as_deref(), &visible);
+    }
+
+    fn render_record(
+        &self,
+        table: &AnyTable,
+        id: &str,
+        record: &Record<CborValue>,
+        relations: &[String],
+    ) {
+        let id_field = table.id_field_name();
+        let title_fields = table.title_field_names();
+        let column_types = table.column_types();
+
+        let typed_rec: Record<AnyAwsType> = record
+            .iter()
+            .map(|(k, v)| {
+                let declared = column_types.get(k).copied().unwrap_or("");
+                (k.clone(), AnyAwsType::from_cbor_typed(v.clone(), declared))
+            })
+            .collect();
+
+        // id leads, then title columns, then `--------`, then the rest.
+        if let Some(ref name) = id_field {
+            println!(
+                "{}: {}",
+                name,
+                format_field(&typed_rec, name).unwrap_or_else(|| id.to_string())
+            );
+        } else {
+            println!("id: {id}");
+        }
+        for tf in &title_fields {
+            if Some(tf.as_str()) == id_field.as_deref() {
+                continue;
+            }
+            if let Some(s) = format_field(&typed_rec, tf) {
+                println!("{tf}: {s}");
+            }
+        }
+
+        println!("--------");
+
+        for k in column_types.keys() {
+            if Some(k.as_str()) == id_field.as_deref() || title_fields.contains(k) {
+                continue;
+            }
+            if let Some(s) = format_field(&typed_rec, k) {
+                println!("{k}: {s}");
+            }
+        }
+
+        if !relations.is_empty() {
+            println!();
+            println!("Relations:");
+            for r in relations {
+                println!("  :{r}");
+            }
+        }
+    }
+}
+
+fn format_field(record: &Record<AnyAwsType>, key: &str) -> Option<String> {
+    record.get(key).map(|v| v.render().to_string())
 }
 
 #[tokio::main]
@@ -173,192 +204,17 @@ async fn main() -> Result<()> {
         "Set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/AWS_REGION, or configure ~/.aws/credentials [default]",
     )?;
 
-    match cli.command {
-        Command::LogGroups { prefix } => {
-            let mut t = groups_table(aws);
-            if let Some(p) = prefix {
-                t.add_condition(eq("logGroupNamePrefix", p));
-            }
-            print_table(&t).await?;
+    if cli.args.is_empty() {
+        eprintln!("usage: aws-cli <model | arn> [field=value ...] [[N]] [:relation ...]");
+        eprintln!("\nKnown models:");
+        for name in Factory::known_names() {
+            eprintln!("  {name}");
         }
-
-        Command::LogStreams { log_group_name } => {
-            let mut t = streams_table(aws);
-            t.add_condition(eq("logGroupName", log_group_name));
-            print_table(&t).await?;
-        }
-
-        Command::LogEvents { log_group_name } => {
-            let mut t = events_table(aws);
-            t.add_condition(eq("logGroupName", log_group_name));
-            print_table(&t).await?;
-        }
-
-        Command::TraverseLogEvents => {
-            let mut log_groups = groups_table(aws);
-            log_groups.add_condition(eq("logGroupNamePrefix", TRAVERSE_GROUP));
-            print_table(&log_groups).await?;
-
-            println!("\n→ events via with_many(\"events\"):\n");
-
-            let events_any = log_groups.get_ref("events")?;
-            let records = events_any.list_values().await?;
-            render_any_records(records, Some("eventId"));
-        }
-
-        Command::TraverseLogStreams => {
-            let mut log_groups = groups_table(aws);
-            log_groups.add_condition(eq("logGroupNamePrefix", TRAVERSE_GROUP));
-            print_table(&log_groups).await?;
-
-            println!("\n→ streams via with_many(\"streams\"):\n");
-
-            let streams_any = log_groups.get_ref("streams")?;
-            let records = streams_any.list_values().await?;
-            render_any_records(records, Some("logStreamName"));
-        }
-
-        Command::ListClusters => {
-            let t = clusters_table(aws);
-            print_table(&t).await?;
-        }
-
-        Command::ListServices { cluster } => {
-            let mut t = services_table(aws);
-            t.add_condition(eq("cluster", cluster));
-            print_table(&t).await?;
-        }
-
-        Command::ListTasks {
-            cluster,
-            service,
-            family,
-            status,
-        } => {
-            let mut t = tasks_table(aws);
-            t.add_condition(eq("cluster", cluster));
-            if let Some(s) = service {
-                t.add_condition(eq("serviceName", s));
-            }
-            if let Some(f) = family {
-                t.add_condition(eq("family", f));
-            }
-            if let Some(s) = status {
-                t.add_condition(eq("desiredStatus", s));
-            }
-            print_table(&t).await?;
-        }
-
-        Command::ListTaskDefs { family_prefix } => {
-            let mut t = task_definitions_table(aws);
-            if let Some(p) = family_prefix {
-                t.add_condition(eq("familyPrefix", p));
-            }
-            print_table(&t).await?;
-        }
-
-        Command::ListUsers { path_prefix } => {
-            let mut t = users_table(aws);
-            if let Some(p) = path_prefix {
-                t.add_condition(eq("PathPrefix", p));
-            }
-            print_table(&t).await?;
-        }
-
-        Command::ListGroups { path_prefix } => {
-            let mut t = iam_groups_table(aws);
-            if let Some(p) = path_prefix {
-                t.add_condition(eq("PathPrefix", p));
-            }
-            print_table(&t).await?;
-        }
-
-        Command::ListRoles { path_prefix } => {
-            let mut t = roles_table(aws);
-            if let Some(p) = path_prefix {
-                t.add_condition(eq("PathPrefix", p));
-            }
-            print_table(&t).await?;
-        }
-
-        Command::ListPolicies {
-            scope,
-            only_attached,
-            path_prefix,
-        } => {
-            let mut t = policies_table(aws);
-            if let Some(s) = scope {
-                t.add_condition(eq("Scope", s));
-            }
-            if let Some(o) = only_attached {
-                t.add_condition(eq("OnlyAttached", o));
-            }
-            if let Some(p) = path_prefix {
-                t.add_condition(eq("PathPrefix", p));
-            }
-            print_table(&t).await?;
-        }
-
-        Command::ListAccessKeys { user } => {
-            let mut t = access_keys_table(aws);
-            if let Some(u) = user {
-                t.add_condition(eq("UserName", u));
-            }
-            print_table(&t).await?;
-        }
-
-        Command::ListInstanceProfiles { path_prefix } => {
-            let mut t = instance_profiles_table(aws);
-            if let Some(p) = path_prefix {
-                t.add_condition(eq("PathPrefix", p));
-            }
-            print_table(&t).await?;
-        }
-
-        // IAM ListUsers / ListRoles ignore unknown filters and return
-        // the whole account, so the parent table can't be narrowed
-        // API-side. The entity-method helpers (`User::ref_*`,
-        // `Role::ref_*`) are the right tool here — they take the
-        // already-loaded entity and pre-filter the child table.
-        Command::TraverseUserGroups { user } => {
-            let target = find_user(aws.clone(), &user).await?;
-            print_table(&target.ref_groups(aws)).await?;
-        }
-
-        Command::TraverseUserPolicies { user } => {
-            let target = find_user(aws.clone(), &user).await?;
-            print_table(&target.ref_attached_policies(aws)).await?;
-        }
-
-        Command::TraverseUserAccessKeys { user } => {
-            let target = find_user(aws.clone(), &user).await?;
-            print_table(&target.ref_access_keys(aws)).await?;
-        }
-
-        Command::TraverseRolePolicies { role } => {
-            let target = find_role(aws.clone(), &role).await?;
-            print_table(&target.ref_attached_policies(aws)).await?;
-        }
-
-        Command::TraverseRoleProfiles { role } => {
-            let target = find_role(aws.clone(), &role).await?;
-            print_table(&target.ref_instance_profiles(aws)).await?;
-        }
+        std::process::exit(2);
     }
 
+    let factory = AwsFactoryAdapter(Factory::new(aws));
+    let renderer = AwsRenderer;
+    model_cli::run(&factory, &renderer, &cli.args).await?;
     Ok(())
-}
-
-async fn find_user(aws: AwsAccount, name: &str) -> Result<User> {
-    users_table(aws)
-        .get(name.to_string())
-        .await?
-        .with_context(|| format!("IAM user {name:?} not found in this account"))
-}
-
-async fn find_role(aws: AwsAccount, name: &str) -> Result<Role> {
-    roles_table(aws)
-        .get(name.to_string())
-        .await?
-        .with_context(|| format!("IAM role {name:?} not found in this account"))
 }

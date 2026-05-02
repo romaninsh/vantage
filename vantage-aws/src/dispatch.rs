@@ -23,15 +23,21 @@ use vantage_types::Record;
 
 use crate::account::AwsAccount;
 use crate::condition::AwsCondition;
-use crate::{json1, query};
+use crate::{json1, json10, query, restjson, restxml};
 
 /// Which AWS wire protocol an operation uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Protocol {
-    /// `application/x-amz-json-1.1`. CloudWatch Logs, ECS, KMS, DynamoDB, …
+    /// `application/x-amz-json-1.1`. CloudWatch Logs, ECS, KMS, …
     Json1,
+    /// `application/x-amz-json-1.0`. DynamoDB control + data plane.
+    Json10,
     /// AWS Query (form-encoded request, XML response). IAM, STS, EC2, …
     Query,
+    /// REST-XML over GET/POST. S3.
+    RestXml,
+    /// REST-JSON over GET/POST. Lambda, API Gateway v2, …
+    RestJson,
 }
 
 /// Parsed table name. Borrows from the input string.
@@ -57,14 +63,17 @@ impl AwsAccount {
         let resolved = self.resolve_conditions(conditions).await?;
         match op.protocol {
             Protocol::Json1 => json1::execute(self, &op, &resolved).await,
+            Protocol::Json10 => json10::execute(self, &op, &resolved).await,
             Protocol::Query => query::execute(self, &op, &resolved).await,
+            Protocol::RestXml => restxml::execute(self, &op, &resolved).await,
+            Protocol::RestJson => restjson::execute(self, &op, &resolved).await,
         }
     }
 
     /// Pull records out of a successful response. Each protocol owns
     /// the array-extraction since their wire shapes differ (json1
     /// returns the array at the top level; query wraps it in
-    /// `{Action}Result`).
+    /// `{Action}Result`; restxml/restjson follow REST conventions).
     pub(crate) fn parse_records(
         &self,
         table_name: &str,
@@ -73,8 +82,10 @@ impl AwsAccount {
     ) -> Result<IndexMap<String, Record<CborValue>>> {
         let op = parse_table_name(table_name)?;
         match op.protocol {
-            Protocol::Json1 => json1::parse_records(&op, resp, id_field),
+            Protocol::Json1 | Protocol::Json10 => json1::parse_records(&op, resp, id_field),
             Protocol::Query => query::parse_records(&op, resp, id_field),
+            Protocol::RestXml => restxml::parse_records(&op, resp, id_field),
+            Protocol::RestJson => restjson::parse_records(&op, resp, id_field),
         }
     }
 
@@ -133,10 +144,14 @@ pub(crate) fn parse_table_name(name: &str) -> Result<OperationDescriptor<'_>> {
     let (proto_str, rest) = name.split_once('/').ok_or_else(bad)?;
     let protocol = match proto_str {
         "json1" => Protocol::Json1,
+        "json10" => Protocol::Json10,
         "query" => Protocol::Query,
+        "restxml" => Protocol::RestXml,
+        "restjson" => Protocol::RestJson,
         other => {
             return Err(error!(
-                "Unknown AWS protocol prefix — expected \"json1\" or \"query\"",
+                "Unknown AWS protocol prefix — expected one of \
+                 json1, json10, query, restxml, restjson",
                 got = other
             ));
         }
@@ -161,6 +176,17 @@ pub(crate) fn parse_table_name(name: &str) -> Result<OperationDescriptor<'_>> {
 /// well-formed `serde_json::Value`.
 pub(crate) fn json_to_cbor(v: JsonValue) -> CborValue {
     CborValue::serialized(&v).expect("json → cbor cannot fail")
+}
+
+/// Walk a dotted path (`"Buckets.Bucket"`) through a JSON value, taking
+/// each segment as an object key. Returns `None` if any segment misses.
+/// Plain (non-dotted) keys are passed through `Value::get` directly.
+pub(crate) fn lookup_path<'a>(value: &'a JsonValue, path: &str) -> Option<&'a JsonValue> {
+    let mut cur = value;
+    for part in path.split('.') {
+        cur = cur.get(part)?;
+    }
+    Some(cur)
 }
 
 #[cfg(test)]
