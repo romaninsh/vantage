@@ -19,6 +19,18 @@
 //!   - [`iam::access_keys_table`]        — `ListAccessKeys`  (per user)
 //!   - [`iam::instance_profiles_table`]  — `ListInstanceProfiles`
 //!
+//! S3 (REST-XML, under [`s3`]):
+//!   - [`s3::buckets_table`] — `ListBuckets`
+//!   - [`s3::objects_table`] — `ListObjectsV2` (per bucket)
+//!
+//! Lambda (REST-JSON, under [`lambda`]):
+//!   - [`lambda::functions_table`] — `ListFunctions`
+//!   - [`lambda::aliases_table`]   — `ListAliases` (per function)
+//!   - [`lambda::versions_table`]  — `ListVersionsByFunction` (per function)
+//!
+//! DynamoDB (JSON-1.0, under [`dynamodb`]):
+//!   - [`dynamodb::tables_table`] — `ListTables`
+//!
 //! ## Generic factory ([`Factory`])
 //!
 //! Wraps every table above behind dotted-string names (`iam.users`,
@@ -38,9 +50,12 @@
 //! # Ok(()) }
 //! ```
 
+pub mod dynamodb;
 pub mod ecs;
 pub mod iam;
+pub mod lambda;
 pub mod logs;
+pub mod s3;
 
 use vantage_table::any::AnyTable;
 
@@ -84,6 +99,10 @@ impl Factory {
     ///   - `log.group ... :events`            (FilterLogEvents needs logGroupName)
     ///   - `ecs.cluster ... :services`        (ListServices needs cluster)
     ///   - `ecs.cluster ... :tasks`           (ListTasks needs cluster)
+    ///   - `s3.bucket ... :objects`           (ListObjectsV2 needs Bucket)
+    ///   - `lambda.function ... :aliases`     (ListAliases needs FunctionName)
+    ///   - `lambda.function ... :versions`    (ListVersionsByFunction needs FunctionName)
+    ///   - `lambda.function ... :log_group`   (CloudWatch group at /aws/lambda/<name>)
     ///
     /// Per-resource ARNs still work as the first argument for any of
     /// these — see [`Factory::from_arn`].
@@ -105,6 +124,12 @@ impl Factory {
             "ecs.clusters",
             "ecs.task_definition",
             "ecs.task_definitions",
+            "s3.bucket",
+            "s3.buckets",
+            "lambda.function",
+            "lambda.functions",
+            "dynamodb.table",
+            "dynamodb.tables",
         ]
     }
 
@@ -151,6 +176,29 @@ impl Factory {
                 AnyTable::new(ecs::task_definitions_table(aws)),
                 FactoryMode::List,
             ),
+            "s3.bucket" => (AnyTable::new(s3::buckets_table(aws)), FactoryMode::Single),
+            "s3.buckets" => (AnyTable::new(s3::buckets_table(aws)), FactoryMode::List),
+            // s3.object intentionally omitted: ListObjectsV2 requires
+            // a Bucket. Reach via `s3.bucket ... :objects`.
+            "lambda.function" => (
+                AnyTable::new(lambda::functions_table(aws)),
+                FactoryMode::Single,
+            ),
+            "lambda.functions" => (
+                AnyTable::new(lambda::functions_table(aws)),
+                FactoryMode::List,
+            ),
+            // lambda.alias / lambda.version intentionally omitted:
+            // both list APIs require FunctionName. Reach via
+            // `lambda.function ... :aliases` / `:versions`.
+            "dynamodb.table" => (
+                AnyTable::new(dynamodb::tables_table(aws)),
+                FactoryMode::Single,
+            ),
+            "dynamodb.tables" => (
+                AnyTable::new(dynamodb::tables_table(aws)),
+                FactoryMode::List,
+            ),
             _ => return None,
         };
         Some((table, mode))
@@ -186,6 +234,20 @@ impl Factory {
             return Some(AnyTable::new(t));
         }
         if let Some(t) = ecs::cluster::Cluster::from_arn(arn, aws.clone()) {
+            return Some(AnyTable::new(t));
+        }
+        // S3 — object ARNs (`arn:aws:s3:::bucket/key`) check first
+        // since they're a strict superset of bucket ARNs.
+        if let Some(t) = s3::object::Object::from_arn(arn, aws.clone()) {
+            return Some(AnyTable::new(t));
+        }
+        if let Some(t) = s3::bucket::Bucket::from_arn(arn, aws.clone()) {
+            return Some(AnyTable::new(t));
+        }
+        if let Some(t) = lambda::function::Function::from_arn(arn, aws.clone()) {
+            return Some(AnyTable::new(t));
+        }
+        if let Some(t) = dynamodb::table::DynamoDbTable::from_arn(arn, aws.clone()) {
             return Some(AnyTable::new(t));
         }
         None

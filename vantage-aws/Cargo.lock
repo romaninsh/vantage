@@ -2080,7 +2080,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2184,7 +2184,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "ciborium",
  "indexmap",

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.4 — 2026-05-02
+
+Three more AWS wire protocols and three more model trees — S3, Lambda, DynamoDB — wired into the same `Factory` / `from_arn` surface as the IAM/ECS/CloudWatch models. ([#216](https://github.com/romaninsh/vantage/pull/216))
+
+- New `restxml/` protocol prefix, used by S3. Target syntax is `restxml/<array_key>:<service>/<METHOD> <path>?<static-query>` — conditions whose name matches a `{Placeholder}` segment fill the path; everything else appends to the query string. The transport adds `x-amz-content-sha256` to the signed headers (mandatory on S3, harmless elsewhere); the response parser strips the XML root and supports dotted lookup so callers can target nested arrays like `Buckets.Bucket`.
+- New `restjson/` protocol prefix, used by Lambda. Same request shape as `restxml/` (reuses the path-template builder) but parses a JSON response. No content-sha256 header — Lambda doesn't require it.
+- New `json10/` protocol prefix, used by DynamoDB. Differs from `json1/` only in the `application/x-amz-json-1.0` content type, so it shares the JSON-1.1 transport via a new `json_aws_call(..., content_type)` helper. Parse path is identical to `json1/`.
+- New `vantage_aws::models::s3` submodule: `buckets_table` (`ListBuckets`) + `objects_table` (`ListObjectsV2`, requires `Bucket`). `Bucket` carries an `objects` `with_many` relation. Path-style addressing only — cross-region buckets surface AWS's 301 verbatim with the home-region endpoint in the error body, so the caller can re-point `AwsAccount`'s region.
+- New `vantage_aws::models::lambda` submodule: `functions_table` (`ListFunctions`) + `aliases_table` / `versions_table` (per function). `Function` carries `aliases` and `versions` `with_many`s plus a cross-service `log_group` `with_foreign` that resolves to the matching CloudWatch group at `/aws/lambda/<FunctionName>` via a deferred expression — projects `FunctionName` from the source row, prefixes it, and hands the result to `logGroupNamePrefix` for AWS-side narrowing.
+- New `vantage_aws::models::dynamodb` submodule: `tables_table` (`ListTables`). The list-side response is just an array of strings, so v0 surfaces `TableName` only; richer `DescribeTable` metadata is a follow-up.
+- `Factory::known_names` picks up six new entries: `s3.bucket(s)`, `lambda.function(s)`, `dynamodb.table(s)`. Sub-resources (`s3.object`, `lambda.alias`, `lambda.version`) intentionally aren't exposed top-level — listing them standalone needs a parent filter, so they're reachable only via traversal. `Factory::from_arn` learns four new ARN shapes (S3 object, S3 bucket, Lambda function, DynamoDB table).
+- `dispatch::lookup_path` — small helper that walks dotted paths through `serde_json::Value`. Adopted by `json1::parse_records` and the new REST parsers so the same `array_key` syntax works across protocols.
+
 ## 0.4.3 — 2026-04-30
 
 `vantage-aws` picks up a generic, type-erased model factory and the AWS-side machinery to back the new model-driven CLI in `vantage-cli-util`. ([#215](https://github.com/romaninsh/vantage/pull/215))

@@ -15,14 +15,30 @@ use crate::sign::sign_v4;
 
 /// Issue a JSON-1.1 RPC and return the parsed response body.
 ///
-/// `service` is the lowercased service code (e.g. `"logs"`, `"ecs"`),
-/// which is both the SigV4 service name and the URL hostname segment.
-/// `target` is the full `X-Amz-Target` header value.
+/// Thin wrapper around [`json_aws_call`] for the 1.1 case — the only
+/// thing it sets is the content type.
 pub(crate) async fn json1_call(
     account: &AwsAccount,
     service: &str,
     target: &str,
     body: &Value,
+) -> Result<Value> {
+    json_aws_call(account, service, target, body, "application/x-amz-json-1.1").await
+}
+
+/// Underlying JSON-RPC dispatcher. Same shape as the 1.1 form but with
+/// a caller-supplied content type — DynamoDB and a few siblings still
+/// expect 1.0 (`application/x-amz-json-1.0`) on the wire.
+///
+/// `service` is the lowercased service code (e.g. `"logs"`, `"dynamodb"`),
+/// which is both the SigV4 service name and the URL hostname segment.
+/// `target` is the full `X-Amz-Target` header value.
+pub(crate) async fn json_aws_call(
+    account: &AwsAccount,
+    service: &str,
+    target: &str,
+    body: &Value,
+    content_type: &str,
 ) -> Result<Value> {
     let region = account.region();
     if region.is_empty() {
@@ -39,10 +55,7 @@ pub(crate) async fn json1_call(
 
     let signing_headers = [
         ("host".to_string(), host.clone()),
-        (
-            "content-type".to_string(),
-            "application/x-amz-json-1.1".to_string(),
-        ),
+        ("content-type".to_string(), content_type.to_string()),
         ("x-amz-target".to_string(), target.to_string()),
     ];
 
@@ -62,7 +75,7 @@ pub(crate) async fn json1_call(
     let mut req = account
         .http()
         .post(&url)
-        .header("content-type", "application/x-amz-json-1.1")
+        .header("content-type", content_type)
         .header("x-amz-target", target)
         .body(body_bytes);
     for h in &signed {
@@ -71,7 +84,7 @@ pub(crate) async fn json1_call(
 
     let resp = req.send().await.map_err(|e| {
         error!(
-            "AWS JSON-1.1 request failed",
+            "AWS JSON-RPC request failed",
             url = url.as_str(),
             target = target,
             detail = e
@@ -95,7 +108,7 @@ pub(crate) async fn json1_call(
 
     serde_json::from_str(&response_text).map_err(|e| {
         error!(
-            "Failed to parse AWS JSON-1.1 response",
+            "Failed to parse AWS JSON-RPC response",
             target = target,
             detail = e,
             body_preview = response_text.chars().take(200).collect::<String>()
