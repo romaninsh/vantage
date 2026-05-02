@@ -64,28 +64,25 @@ pub struct Function {
 /// # Ok(()) }
 /// ```
 pub fn functions_table(aws: AwsAccount) -> Table<AwsAccount, Function> {
-    Table::new(
-        "restjson/Functions:lambda/GET /2015-03-31/functions/",
-        aws,
-    )
-    .with_id_column("FunctionName")
-    .with_column_of::<Arn>("FunctionArn")
-    .with_title_column_of::<String>("Runtime")
-    .with_title_column_of::<String>("Handler")
-    .with_column_of::<String>("Description")
-    .with_column_of::<Arn>("Role")
-    .with_column_of::<i64>("Timeout")
-    .with_column_of::<i64>("MemorySize")
-    .with_column_of::<AwsDateTime>("LastModified")
-    .with_column_of::<String>("Version")
-    .with_column_of::<String>("PackageType")
-    .with_many("aliases", "FunctionName", aliases_table)
-    .with_many("versions", "FunctionName", versions_table)
-    .with_foreign(
-        "log_group",
-        std::any::type_name::<Table<AwsAccount, LogGroup>>(),
-        log_group_relation,
-    )
+    Table::new("restjson/Functions:lambda/GET /2015-03-31/functions/", aws)
+        .with_id_column("FunctionName")
+        .with_column_of::<Arn>("FunctionArn")
+        .with_title_column_of::<String>("Runtime")
+        .with_title_column_of::<String>("Handler")
+        .with_column_of::<String>("Description")
+        .with_column_of::<Arn>("Role")
+        .with_column_of::<i64>("Timeout")
+        .with_column_of::<i64>("MemorySize")
+        .with_column_of::<AwsDateTime>("LastModified")
+        .with_column_of::<String>("Version")
+        .with_column_of::<String>("PackageType")
+        .with_many("aliases", "FunctionName", aliases_table)
+        .with_many("versions", "FunctionName", versions_table)
+        .with_foreign(
+            "log_group",
+            std::any::type_name::<Table<AwsAccount, LogGroup>>(),
+            log_group_relation,
+        )
 }
 
 /// Build the `:log_group` traversal target for a Lambda function.
@@ -99,9 +96,7 @@ pub fn functions_table(aws: AwsAccount) -> Table<AwsAccount, Function> {
 /// constraint that all `Deferred` conditions live under still applies
 /// — multi-row sources error at execute time, same as any other
 /// traversal.
-fn log_group_relation(
-    functions: &Table<AwsAccount, Function>,
-) -> vantage_core::Result<AnyTable> {
+fn log_group_relation(functions: &Table<AwsAccount, Function>) -> vantage_core::Result<AnyTable> {
     let aws = functions.data_source().clone();
     let mut groups = log_groups_table(aws.clone());
 
@@ -115,9 +110,7 @@ fn log_group_relation(
             let names: Vec<CborValue> = records
                 .values()
                 .filter_map(|r| match r.get("FunctionName") {
-                    Some(CborValue::Text(s)) => {
-                        Some(CborValue::Text(format!("/aws/lambda/{s}")))
-                    }
+                    Some(CborValue::Text(s)) => Some(CborValue::Text(format!("/aws/lambda/{s}"))),
                     _ => None,
                 })
                 .collect();

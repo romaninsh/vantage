@@ -25,7 +25,7 @@ use crate::account::AwsAccount;
 use crate::condition::{AwsCondition, build_json1_body};
 use crate::dispatch::{OperationDescriptor, json_to_cbor, lookup_path};
 
-pub(crate) use transport::{json1_call, json_aws_call};
+pub(crate) use transport::{json_aws_call, json1_call};
 
 /// Build the JSON-1.1 request body and post it. `target` is used
 /// verbatim as the `X-Amz-Target` header; `service` is both the SigV4

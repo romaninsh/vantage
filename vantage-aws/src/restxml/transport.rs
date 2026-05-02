@@ -28,8 +28,7 @@ use crate::sign::sign_v4;
 
 /// SHA256 of the empty body — used as the `x-amz-content-sha256`
 /// value for every read-only request we issue (always GET / no body).
-const EMPTY_BODY_SHA256: &str =
-    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+const EMPTY_BODY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
 /// Parse a `"METHOD path?query"` target and splice the resolved
 /// conditions in: `{Placeholder}` segments take their value from a

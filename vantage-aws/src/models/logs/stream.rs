@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use vantage_table::table::Table;
 
-use crate::{eq, AwsAccount};
+use crate::{AwsAccount, eq};
 
-use super::event::{events_table, LogEvent};
+use super::event::{LogEvent, events_table};
 
 /// One CloudWatch Logs stream from `DescribeLogStreams`. Field names
 /// match the wire shape.

@@ -31,7 +31,7 @@ pub trait TableLike: ReadableValueSet + WritableValueSet + Send + Sync {
         IndexMap::new()
     }
 
-    /// Names of relations traversable via [`get_ref`].
+    /// Names of relations traversable via `get_ref`.
     fn get_ref_names(&self) -> Vec<String> {
         Vec::new()
     }

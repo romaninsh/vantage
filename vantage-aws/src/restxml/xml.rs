@@ -123,8 +123,7 @@ fn element_children_to_json(children: &[XmlNode]) -> JsonValue {
 }
 
 fn nodes_to_json(children: &[&XmlNode]) -> JsonValue {
-    let only_text =
-        !children.is_empty() && children.iter().all(|n| matches!(n, XmlNode::Text(_)));
+    let only_text = !children.is_empty() && children.iter().all(|n| matches!(n, XmlNode::Text(_)));
     if only_text {
         let mut s = String::new();
         for n in children {
