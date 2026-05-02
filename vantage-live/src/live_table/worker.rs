@@ -23,12 +23,20 @@ pub(super) fn spawn(
     cache_key: String,
     cache: Arc<dyn Cache>,
 ) {
-    tokio::spawn(async move {
+    let fut = async move {
         while let Some(op) = rx.recv().await {
             handle(&master, &custom_write_target, &cache_key, &cache, op).await;
         }
         debug!(target: "vantage_live::worker", cache_key = %cache_key, "write-queue worker shutting down");
-    });
+    };
+
+    #[cfg(feature = "sentry")]
+    {
+        use sentry_core::SentryFutureExt as _;
+        tokio::spawn(fut.bind_hub(sentry_core::Hub::current()));
+    }
+    #[cfg(not(feature = "sentry"))]
+    tokio::spawn(fut);
 }
 
 #[instrument(

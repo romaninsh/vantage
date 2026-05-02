@@ -14,7 +14,7 @@ use crate::cache::Cache;
 use crate::live_stream::{LiveEvent, LiveStream};
 
 pub(super) fn spawn(stream: Arc<dyn LiveStream>, cache_key: String, cache: Arc<dyn Cache>) {
-    tokio::spawn(async move {
+    let fut = async move {
         let mut sub = stream.subscribe();
         debug!(target: "vantage_live::events", cache_key = %cache_key, "event consumer started");
 
@@ -22,7 +22,15 @@ pub(super) fn spawn(stream: Arc<dyn LiveStream>, cache_key: String, cache: Arc<d
             handle(&cache_key, &cache, event).await;
         }
         debug!(target: "vantage_live::events", cache_key = %cache_key, "event consumer stopped");
-    });
+    };
+
+    #[cfg(feature = "sentry")]
+    {
+        use sentry_core::SentryFutureExt as _;
+        tokio::spawn(fut.bind_hub(sentry_core::Hub::current()));
+    }
+    #[cfg(not(feature = "sentry"))]
+    tokio::spawn(fut);
 }
 
 #[instrument(

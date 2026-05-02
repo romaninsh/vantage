@@ -1,6 +1,6 @@
 [package]
 name = "vantage-live"
-version = "0.4.3"
+version = "0.4.4"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -25,6 +25,14 @@ redb = "2.6"
 tokio = { version = "1", features = ["sync", "rt", "macros", "time"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tracing = "0.1"
+sentry-core = { version = "0.48", default-features = false, features = ["client"], optional = true }
+
+[features]
+default = []
+# Propagate the calling task's Sentry Hub onto background workers
+# (write queue + live-stream consumer) so panics and tracing events
+# emitted from those tasks correlate to the same trace as the caller.
+sentry = ["dep:sentry-core"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }
