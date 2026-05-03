@@ -269,6 +269,7 @@ dependencies = [
  "vantage-surrealdb",
  "vantage-table",
  "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]
@@ -4002,6 +4003,7 @@ dependencies = [
  "vantage-expressions",
  "vantage-table",
  "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]

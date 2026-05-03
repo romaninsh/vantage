@@ -6,7 +6,8 @@ edition = "2024"
 [dependencies]
 vantage-core = { path = "../vantage-core" }
 vantage-table = { path = "../vantage-table" }
-vantage-csv = { path = "../vantage-csv" }
+vantage-csv = { path = "../vantage-csv", features = ["vista"] }
+vantage-vista = { path = "../vantage-vista" }
 vantage-expressions = { path = "../vantage-expressions" }
 vantage-dataset = { path = "../vantage-dataset" }
 vantage-types = { path = "../vantage-types" }

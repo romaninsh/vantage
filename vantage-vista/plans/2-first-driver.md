@@ -1,6 +1,6 @@
 # Stage 2 — First driver integration
 
-Status: **Not started**
+Status: **Done**
 
 Pick one driver and wire it through end-to-end: typed `Table<T, E>` →
 Vista via that driver's factory, executing a real `list` query. Validates
@@ -8,17 +8,20 @@ the trait shape from stage 1 against a real backend.
 
 ## Discussion phase
 
-- [ ] Pick first driver. Recommendation: **vantage-sqlite** (simple,
-      well-understood, no async runtime quirks). Alternative:
-      **vantage-mongodb** (already exercises type translation deeply).
-- [ ] Confirm the bridge approach: factory in the driver crate consumes
-      typed `Table<T, E>` and produces a `Vista`. `vantage-table` is
-      *not* a god-struct — it gains only minimal accessors (typed column
-      iteration) needed by drivers.
-- [ ] Confirm CBOR translation lives in the driver, not in vantage-table
-      or vantage-vista.
-- [ ] Confirm what vantage-table accessors drivers need (column kinds,
-      flags, refs definitions) — minimise additions.
+Confirmed with the user:
+
+- [x] First driver: **vantage-csv**. CSV stores everything as `String`,
+      which makes the CBOR conversion boundary easy to inspect, and
+      sample fixture rows already live under `vantage-csv/data/`.
+- [x] Bridge approach: factory in the driver crate consumes typed
+      `Table<Csv, E>` and produces a `Vista`. `vantage-table` already
+      exposed every accessor we needed (`columns()`, `id_field()`,
+      `title_fields()`, `table_name()`); no additions required.
+- [x] CBOR translation lives in the driver — vantage-csv already had
+      `From<AnyCsvType> for ciborium::Value` for the `AnyTable` path,
+      and vista reuses it at the `VistaSource` boundary.
+- [x] vantage-vista is opt-in via a `vista` cargo feature on
+      vantage-csv; the existing TableSource path is unaffected.
 
 ## Scope
 
@@ -37,19 +40,27 @@ Out:
 
 ## Plan
 
-- [ ] Discuss with user: which driver, which accessors to add to
+- [x] Discuss with user: which driver, which accessors to add to
       vantage-table
-- [ ] In `vantage-table`: add minimal typed-column accessor methods
-      drivers need (no behaviour change, just visibility)
-- [ ] In chosen driver crate: `pub fn vista_factory(&self) -> XVistaFactory`
-- [ ] Implement `VistaFactory::from_table` for that driver
-- [ ] Implement `VistaSource` for the driver — `list`, `get`, `count`
-      sufficient for first slice; rest stub with `not implemented`
-- [ ] CBOR translation: per-type bridges in the driver
-- [ ] Capability declaration — populate `VistaCapabilities` honestly
-- [ ] Round-trip integration test: typed Table → Vista → list → assert
-      CBOR shape
-- [ ] Ensure typed `Table<T, E>` is unchanged in API; only added accessors
+- [x] In `vantage-table`: no additions needed — `Table::columns`,
+      `id_field`, `title_fields`, `table_name` already public
+- [x] In `vantage-csv`: `pub fn vista_factory(&self) -> CsvVistaFactory`
+      (gated behind the `vista` feature)
+- [x] Implement `VistaFactory::from_table` for `CsvVistaFactory`
+- [x] Implement `VistaSource` for `CsvVistaSource` — read path
+      (`list`, `get`, `get_some`, `count`) returns CBOR; writes return
+      "CSV is a read-only data source"
+- [x] CBOR translation: reused existing `From<AnyCsvType>` impls at
+      the Vista boundary (`csv_record_to_cbor` + eq-condition matcher)
+- [x] Capability declaration — `can_count: true`; everything else
+      `false` (CSV is read-only)
+- [x] Round-trip integration test in `vantage-csv/tests/vista.rs` —
+      typed Table → Vista → list/get/count, eq-condition filtering,
+      write-error advertising
+- [x] Typed `Table<Csv, E>` API unchanged
+- [x] Convert the csv branch of `bakery_model3/examples/cli.rs` to
+      drive a Vista — preserves identical command surface, validates
+      the API on real fixtures
 
 ## References
 
