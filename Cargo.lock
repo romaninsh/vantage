@@ -4007,7 +4007,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-csv"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4247,7 +4247,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "async-stream",
  "async-trait",
