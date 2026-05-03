@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
-use tracing::{debug, instrument, warn};
+use tracing::{debug, instrument, warn, Instrument as _};
 use vantage_dataset::traits::WritableValueSet;
 use vantage_table::any::AnyTable;
 
@@ -23,20 +23,21 @@ pub(super) fn spawn(
     cache_key: String,
     cache: Arc<dyn Cache>,
 ) {
-    let fut = async move {
-        while let Some(op) = rx.recv().await {
-            handle(&master, &custom_write_target, &cache_key, &cache, op).await;
+    // `.in_current_span()` carries the caller's tracing span across the
+    // `tokio::spawn` boundary. Any tracing layer the consumer installed
+    // (sentry-tracing, tracing-opentelemetry, console-subscriber, ...)
+    // sees the spawned task's events as descendants of the caller, so
+    // panics and errors stitch into the same trace as the originating
+    // write request rather than appearing as orphans.
+    tokio::spawn(
+        async move {
+            while let Some(op) = rx.recv().await {
+                handle(&master, &custom_write_target, &cache_key, &cache, op).await;
+            }
+            debug!(target: "vantage_live::worker", cache_key = %cache_key, "write-queue worker shutting down");
         }
-        debug!(target: "vantage_live::worker", cache_key = %cache_key, "write-queue worker shutting down");
-    };
-
-    #[cfg(feature = "sentry")]
-    {
-        use sentry_core::SentryFutureExt as _;
-        tokio::spawn(fut.bind_hub(sentry_core::Hub::current()));
-    }
-    #[cfg(not(feature = "sentry"))]
-    tokio::spawn(fut);
+        .in_current_span(),
+    );
 }
 
 #[instrument(
