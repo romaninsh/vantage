@@ -3283,7 +3283,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "surreal-client"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "bincode",
@@ -3302,6 +3302,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-tungstenite",
+ "tracing",
  "url",
  "uuid",
  "vantage-core",
@@ -3934,7 +3935,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-pool"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -3947,6 +3948,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-stream",
+ "tracing",
  "urlencoding",
  "vantage-cli-util",
  "vantage-core",
@@ -4052,7 +4054,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-live"
-version = "0.4.4"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "ciborium",
