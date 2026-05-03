@@ -3283,7 +3283,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "surreal-client"
-version = "0.5.0"
+version = "0.4.1"
 dependencies = [
  "async-trait",
  "bincode",
@@ -3935,7 +3935,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-pool"
-version = "0.2.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -4054,7 +4054,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-live"
-version = "0.5.0"
+version = "0.4.5"
 dependencies = [
  "async-trait",
  "ciborium",

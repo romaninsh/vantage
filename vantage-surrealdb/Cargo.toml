@@ -20,7 +20,7 @@ vantage-expressions = { version = "0.4", path = "../vantage-expressions", featur
 vantage-table = { version = "0.4.2", path = "../vantage-table" }
 vantage-dataset = { version = "0.4.1", path = "../vantage-dataset" }
 vantage-types = { version = "0.4", path = "../vantage-types", features = ["serde"] }
-surreal-client = { version = "0.5", path = "../surreal-client" }
+surreal-client = { version = "0.4", path = "../surreal-client" }
 
 ciborium = "0.2"
 hex = "0.4"

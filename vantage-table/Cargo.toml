@@ -37,7 +37,7 @@ tokio = { version = "1.48", features = ["macros", "rt-multi-thread", "sync"] }
 serde_json = "1.0"
 vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
 # vantage-surrealdb = { path = "../vantage-surrealdb" }
-surreal-client = { version = "0.5", path = "../surreal-client" }
+surreal-client = { version = "0.4", path = "../surreal-client" }
 async-trait = "0.1"
 ciborium = { version = "0.2", features = ["std"] }
 url = { version = "2.5", features = ["serde"] }
