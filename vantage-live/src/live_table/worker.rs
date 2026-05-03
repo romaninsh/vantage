@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
-use tracing::{debug, instrument, warn, Instrument as _};
+use tracing::{Instrument as _, debug, instrument, warn};
 use vantage_dataset::traits::WritableValueSet;
 use vantage_table::any::AnyTable;
 

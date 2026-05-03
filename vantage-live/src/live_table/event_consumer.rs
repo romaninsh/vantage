@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use futures_util::StreamExt;
-use tracing::{debug, instrument, warn, Instrument as _};
+use tracing::{Instrument as _, debug, instrument, warn};
 
 use crate::cache::Cache;
 use crate::live_stream::{LiveEvent, LiveStream};
