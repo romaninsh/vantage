@@ -1,7 +1,7 @@
 [package]
 edition = "2024"
 name = "vantage-expressions"
-version = "0.4.2"
+version = "0.4.3"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
 description = "Database agnostic expressions"
@@ -16,6 +16,7 @@ serde_json = "1.0.145"
 thiserror = "2.0.17"
 vantage-core = { version = "0.4", path = "../vantage-core" }
 vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
+vantage-vista = { version = "0.4", path = "../vantage-vista" }
 
 [dev-dependencies]
 tokio = { version = "1.48", features = ["full"] }
