@@ -6,6 +6,7 @@ use anyhow::Error;
 use futures_core::{Future, Stream};
 use serde_json::Value;
 use tokio::task::JoinHandle;
+use tracing::Instrument as _;
 
 use crate::AwwPool;
 
@@ -58,11 +59,14 @@ impl PaginatedStream {
         let url = format!("{}?page={}", self.endpoint, page);
         let pool = self.pool.clone();
 
-        tokio::spawn(async move {
-            let response = pool.get(&url).await?;
-            let body: Value = response.json().await?;
-            Ok(body)
-        })
+        tokio::spawn(
+            async move {
+                let response = pool.get(&url).await?;
+                let body: Value = response.json().await?;
+                Ok(body)
+            }
+            .in_current_span(),
+        )
     }
 
     fn extract_page_data(&mut self, body: &Value) -> (Vec<Value>, Option<usize>) {

@@ -6,6 +6,7 @@ use anyhow::Error;
 use futures_core::{Future, Stream};
 use serde_json::Value;
 use tokio::task::JoinHandle;
+use tracing::Instrument as _;
 
 use crate::AwwPool;
 
@@ -34,11 +35,14 @@ impl PaginatedStream {
         let url = format!("{}?page={}", endpoint, 1);
         let pool_clone = pool.clone();
 
-        let handle = tokio::spawn(async move {
-            let response = pool_clone.get(&url).await?;
-            let body: Value = response.json().await?;
-            Ok(body)
-        });
+        let handle = tokio::spawn(
+            async move {
+                let response = pool_clone.get(&url).await?;
+                let body: Value = response.json().await?;
+                Ok(body)
+            }
+            .in_current_span(),
+        );
 
         Self {
             pool,
@@ -143,11 +147,14 @@ impl Stream for PaginatedStream {
                             // Start fetching next page
                             let url = format!("{}?page={}", endpoint, page_num);
 
-                            let handle = tokio::spawn(async move {
-                                let response = pool.get(&url).await?;
-                                let body: Value = response.json().await?;
-                                Ok(body)
-                            });
+                            let handle = tokio::spawn(
+                                async move {
+                                    let response = pool.get(&url).await?;
+                                    let body: Value = response.json().await?;
+                                    Ok(body)
+                                }
+                                .in_current_span(),
+                            );
 
                             self.state = StreamState::FetchingPage {
                                 handle,

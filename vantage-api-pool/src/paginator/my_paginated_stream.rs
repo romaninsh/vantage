@@ -9,6 +9,7 @@ use std::{
 use anyhow::Result;
 use futures_core::Stream;
 use serde_json::Value;
+use tracing::Instrument as _;
 
 use crate::AwwPool;
 
@@ -51,13 +52,16 @@ impl PageStream {
         let endpoint = self.endpoint.clone();
         let page_num = self.page.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        tokio::spawn(async move {
-            let path = format!("{}?page={}", endpoint, page_num + 1);
-            let response = pool.get(&path).await?;
-            let json = response.json::<Value>().await?;
+        tokio::spawn(
+            async move {
+                let path = format!("{}?page={}", endpoint, page_num + 1);
+                let response = pool.get(&path).await?;
+                let json = response.json::<Value>().await?;
 
-            Ok(json)
-        })
+                Ok(json)
+            }
+            .in_current_span(),
+        )
     }
 }
 
