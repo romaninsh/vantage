@@ -11,5 +11,6 @@ use crate::vista::Vista;
 /// does not need to depend on vantage-table (which would create a dep cycle
 /// via vantage-expressions).
 pub trait VistaFactory: Send + Sync + 'static {
+    #[allow(clippy::wrong_self_convention)]
     fn from_yaml(&self, yaml: &str) -> Result<Vista>;
 }

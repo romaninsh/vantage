@@ -20,7 +20,13 @@ use crate::{capabilities::VistaCapabilities, vista::Vista};
 /// stringify here. Methods are named with the `_vista_` infix to mirror
 /// `TableSource`'s `_table_` convention; `Vista`'s `ValueSet` impls
 /// delegate by stripping the infix.
+///
+/// `id: &String` (rather than `&str`) is intentional: the upstream
+/// `vantage_dataset::ValueSet` trait family fixes `Id = String` and uses
+/// `&Self::Id` in its signatures, so impls receive `&String` and forward
+/// it through unchanged.
 #[async_trait]
+#[allow(clippy::ptr_arg)]
 pub trait VistaSource: Send + Sync + 'static {
     // ---- ReadableValueSet delegates ----------------------------------------
 
