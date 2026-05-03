@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use rust_decimal::prelude::*;
 use tokio::{sync::mpsc, task::JoinHandle};
+use tracing::{error, Instrument as _};
 
 use crate::{eventual_request::EventualRequestResult, EventualRequest, KeyedRateLimiter};
 
@@ -27,14 +28,20 @@ impl<T: Sync + Send + Sized> HttpClientPool<T> {
 
         let rate_limit = rate_limit.map(|d| Arc::new(KeyedRateLimiter::new(d)));
 
+        // `.in_current_span()` carries the caller's tracing span across the
+        // `tokio::spawn` boundary, so per-worker errors stitch into the same
+        // trace as the originating request rather than appearing as orphans.
         for w in 0..workers {
-            shared_handles.push(tokio::spawn(Self::worker_thread(
-                reqwest::Client::new(),
-                rate_limit.clone(),
-                request_receiver.clone(),
-                response_sender.clone(),
-                w,
-            )));
+            shared_handles.push(tokio::spawn(
+                Self::worker_thread(
+                    reqwest::Client::new(),
+                    rate_limit.clone(),
+                    request_receiver.clone(),
+                    response_sender.clone(),
+                    w,
+                )
+                .in_current_span(),
+            ));
         }
 
         (
@@ -84,7 +91,7 @@ impl<T: Sync + Send + Sized> HttpClientPool<T> {
                 EventualRequestResult::Success => {
                     request.time_queue_start();
                     if let Err(e) = response_sender.send(request).await {
-                        eprintln!("Error sending response back from worker: {}", e)
+                        error!(error = %e, worker = w, "failed to send response from worker");
                     }
                 }
                 EventualRequestResult::Retry => {
@@ -92,7 +99,7 @@ impl<T: Sync + Send + Sized> HttpClientPool<T> {
                     continue;
                 }
                 EventualRequestResult::Error(e) => {
-                    eprintln!("Error executing http request in worker {}: {}", w, e)
+                    error!(error = %e, worker = w, "http request failed in worker");
                 }
             };
         }

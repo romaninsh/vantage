@@ -11,6 +11,7 @@ use tokio::net::TcpStream;
 use tokio::sync::{Mutex, oneshot};
 use tokio_tungstenite::MaybeTlsStream;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
+use tracing::{Instrument as _, debug, warn};
 
 use crate::SurrealConnection;
 use crate::{
@@ -60,55 +61,70 @@ impl WsEngine {
         let stream = Arc::clone(&self.stream);
         let pending_requests = Arc::clone(&self.pending_requests);
 
-        tokio::spawn(async move {
-            loop {
-                let msg = {
-                    let mut stream_guard = stream.lock().await;
-                    stream_guard.next().await
-                };
+        // `.in_current_span()` carries the caller's tracing span across the
+        // `tokio::spawn` boundary so connection-level events stay attached to
+        // the trace that opened the connection.
+        tokio::spawn(
+            async move {
+                loop {
+                    let msg = {
+                        let mut stream_guard = stream.lock().await;
+                        stream_guard.next().await
+                    };
 
-                let msg = match msg {
-                    None => {
-                        println!("Stream ended");
-                        break;
-                    }
-                    Some(Err(e)) => {
-                        eprintln!("Error receiving message: {}", e);
-                        break;
-                    }
-                    Some(Ok(msg)) => msg,
-                };
-
-                match msg {
-                    Message::Text(text) => {
-                        let parsed = serde_json::from_str::<Value>(&text).unwrap();
-                        let id = parsed.get("id").unwrap().as_u64().unwrap();
-
-                        let tx = {
-                            let mut pending = pending_requests.lock().await;
-                            pending.remove(&id)
-                        };
-
-                        if let Some(tx) = tx {
-                            // Send the entire response, not just the result field
-                            let _ = tx.send(parsed);
+                    let msg = match msg {
+                        None => {
+                            debug!("ws stream ended");
+                            break;
                         }
-                    }
-                    Message::Ping(_) => {}
-                    Message::Pong(_) => {}
-                    Message::Binary(bin) => {
-                        println!("Received binary: {:?}", bin);
-                    }
-                    Message::Close(_) => {
-                        println!("Connection closed");
-                        break;
-                    }
-                    x => {
-                        println!("Received something weird: {:?}", x)
+                        Some(Err(e)) => {
+                            warn!(error = %e, "ws receive error");
+                            break;
+                        }
+                        Some(Ok(msg)) => msg,
+                    };
+
+                    match msg {
+                        Message::Text(text) => {
+                            let parsed = match serde_json::from_str::<Value>(&text) {
+                                Ok(v) => v,
+                                Err(e) => {
+                                    warn!(error = %e, payload_len = text.len(), "ws JSON parse failed");
+                                    continue;
+                                }
+                            };
+                            let Some(id) = parsed.get("id").and_then(|v| v.as_u64()) else {
+                                warn!("ws message missing numeric id field");
+                                continue;
+                            };
+
+                            let tx = {
+                                let mut pending = pending_requests.lock().await;
+                                pending.remove(&id)
+                            };
+
+                            if let Some(tx) = tx {
+                                // Send the entire response, not just the result field
+                                let _ = tx.send(parsed);
+                            }
+                        }
+                        Message::Ping(_) => {}
+                        Message::Pong(_) => {}
+                        Message::Binary(bin) => {
+                            debug!(bytes = bin.len(), "ws binary frame on JSON engine");
+                        }
+                        Message::Close(_) => {
+                            debug!("ws connection closed by peer");
+                            break;
+                        }
+                        x => {
+                            debug!(frame = ?x, "ws unexpected frame");
+                        }
                     }
                 }
             }
-        });
+            .in_current_span(),
+        );
     }
 }
 

@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
+use tracing::Instrument as _;
 use url::Url;
 
 use crate::surreal_client::{
@@ -47,7 +48,7 @@ impl WsConnection {
         let stream = Arc::new(Mutex::new(ws_stream));
 
         // Start the message handler
-        let handle = tokio::spawn(Self::handle_messages(stream, request_rx));
+        let handle = tokio::spawn(Self::handle_messages(stream, request_rx).in_current_span());
 
         Ok(WsConnection {
             request_tx,

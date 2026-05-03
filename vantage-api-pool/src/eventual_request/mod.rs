@@ -9,6 +9,7 @@ use tokio::{
     sync::{oneshot, Mutex},
     time::sleep,
 };
+use tracing::warn;
 
 /// Eventual request will be sent to the client... eventually. Might take
 /// a little bit of time, but we will get that response back.
@@ -130,10 +131,7 @@ impl<T: Sync + Send + Sized> EventualRequest<T> {
                     .unwrap_or_else(|| self.calculate_backoff_delay());
 
                 self.response = Some(response);
-                eprintln!(
-                    "Received 429, retrying... attempt {} (delay: {:?})",
-                    self.retries, delay
-                );
+                warn!(attempt = self.retries, ?delay, "received 429, retrying");
                 sleep(delay).await;
                 EventualRequestResult::Retry
             }
@@ -145,10 +143,7 @@ impl<T: Sync + Send + Sized> EventualRequest<T> {
 
                 self.response = Some(response);
                 sleep(delay).await;
-                eprintln!(
-                    "Received 5xx error ({}), retrying... attempt {} (delay: {:?})",
-                    status, self.retries, delay
-                );
+                warn!(%status, attempt = self.retries, ?delay, "received 5xx, retrying");
                 EventualRequestResult::Retry
             }
             Ok(response) if response.status().is_success() => {
@@ -167,10 +162,7 @@ impl<T: Sync + Send + Sized> EventualRequest<T> {
                 let delay = self.calculate_backoff_delay();
 
                 sleep(delay).await;
-                eprintln!(
-                    "Network error: {}, retrying... attempt {} (delay: {:?})",
-                    err, self.retries, delay
-                );
+                warn!(error = %err, attempt = self.retries, ?delay, "network error, retrying");
                 EventualRequestResult::Retry
             }
         }

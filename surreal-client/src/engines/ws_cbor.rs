@@ -18,6 +18,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::tungstenite::http::header::SEC_WEBSOCKET_PROTOCOL;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
+use tracing::{Instrument as _, warn};
 
 use crate::SurrealConnection;
 use crate::{
@@ -102,84 +103,87 @@ impl WsCborEngine {
         let stream = Arc::clone(&self.stream);
         let pending_requests = Arc::clone(&self.pending_requests);
 
-        tokio::spawn(async move {
-            loop {
-                let msg = {
-                    let mut stream_guard = stream.lock().await;
-                    stream_guard.next().await
-                };
+        tokio::spawn(
+            async move {
+                loop {
+                    let msg = {
+                        let mut stream_guard = stream.lock().await;
+                        stream_guard.next().await
+                    };
 
-                let msg = match msg {
-                    None => break,
-                    Some(Err(e)) => {
-                        eprintln!("CBOR Engine error: {}", e);
-                        break;
-                    }
-                    Some(Ok(msg)) => msg,
-                };
+                    let msg = match msg {
+                        None => break,
+                        Some(Err(e)) => {
+                            warn!(error = %e, "CBOR ws receive error");
+                            break;
+                        }
+                        Some(Ok(msg)) => msg,
+                    };
 
-                match msg {
-                    Message::Text(_text) => {
-                        // Ignore text messages - we only use CBOR binary
-                    }
-                    Message::Binary(binary) => {
-                        // Parse CBOR response: {id, result} or {id, error}
-                        match ciborium::from_reader(binary.as_ref()) {
-                            Ok(cbor_response) => {
-                                // Handle map format: {id: "0", result: "..."}
-                                if let CborValue::Map(map) = cbor_response {
-                                    let mut id_str = None;
-                                    let mut result = None;
-                                    let mut error = None;
+                    match msg {
+                        Message::Text(_text) => {
+                            // Ignore text messages - we only use CBOR binary
+                        }
+                        Message::Binary(binary) => {
+                            // Parse CBOR response: {id, result} or {id, error}
+                            match ciborium::from_reader(binary.as_ref()) {
+                                Ok(cbor_response) => {
+                                    // Handle map format: {id: "0", result: "..."}
+                                    if let CborValue::Map(map) = cbor_response {
+                                        let mut id_str = None;
+                                        let mut result = None;
+                                        let mut error = None;
 
-                                    for (key, value) in &map {
-                                        if let CborValue::Text(k) = key {
-                                            match k.as_str() {
-                                                "id" => {
-                                                    if let CborValue::Text(id) = value {
-                                                        id_str = Some(id.clone());
+                                        for (key, value) in &map {
+                                            if let CborValue::Text(k) = key {
+                                                match k.as_str() {
+                                                    "id" => {
+                                                        if let CborValue::Text(id) = value {
+                                                            id_str = Some(id.clone());
+                                                        }
                                                     }
+                                                    "result" => result = Some(value.clone()),
+                                                    "error" => error = Some(value.clone()),
+                                                    _ => {}
                                                 }
-                                                "result" => result = Some(value.clone()),
-                                                "error" => error = Some(value.clone()),
-                                                _ => {}
                                             }
                                         }
-                                    }
 
-                                    if let Some(id) = id_str {
-                                        let tx = {
-                                            let mut pending = pending_requests.lock().await;
-                                            pending.remove(&id)
-                                        };
+                                        if let Some(id) = id_str {
+                                            let tx = {
+                                                let mut pending = pending_requests.lock().await;
+                                                pending.remove(&id)
+                                            };
 
-                                        if let Some(tx) = tx {
-                                            if let Some(err) = error {
-                                                let _ = tx.send(CborValue::Map(vec![(
-                                                    CborValue::Text("error".to_string()),
-                                                    err,
-                                                )]));
-                                            } else if let Some(res) = result {
-                                                let _ = tx.send(res);
-                                            } else {
-                                                let _ = tx.send(CborValue::Null);
+                                            if let Some(tx) = tx {
+                                                if let Some(err) = error {
+                                                    let _ = tx.send(CborValue::Map(vec![(
+                                                        CborValue::Text("error".to_string()),
+                                                        err,
+                                                    )]));
+                                                } else if let Some(res) = result {
+                                                    let _ = tx.send(res);
+                                                } else {
+                                                    let _ = tx.send(CborValue::Null);
+                                                }
                                             }
                                         }
                                     }
                                 }
-                            }
-                            Err(_e) => {
-                                // Failed to parse CBOR response
+                                Err(e) => {
+                                    warn!(error = %e, bytes = binary.len(), "CBOR parse failed");
+                                }
                             }
                         }
+                        Message::Ping(_) => {}
+                        Message::Pong(_) => {}
+                        Message::Close(_) => break,
+                        _ => {}
                     }
-                    Message::Ping(_) => {}
-                    Message::Pong(_) => {}
-                    Message::Close(_) => break,
-                    _ => {}
                 }
             }
-        })
+            .in_current_span(),
+        )
     }
 }
 

@@ -9,6 +9,7 @@ use anyhow::Result;
 use futures_core::Stream;
 use serde_json::Value;
 use tokio::sync::mpsc;
+use tracing::Instrument as _;
 
 use crate::AwwPool;
 
@@ -21,9 +22,12 @@ impl PageStream {
     pub fn new(pool: Arc<AwwPool>, endpoint: String, prefetch_limit: Option<usize>) -> Self {
         let (item_sender, item_receiver) = mpsc::unbounded_channel();
 
-        let worker_handle = tokio::spawn(async move {
-            Self::worker_thread(pool, endpoint, prefetch_limit, item_sender).await;
-        });
+        let worker_handle = tokio::spawn(
+            async move {
+                Self::worker_thread(pool, endpoint, prefetch_limit, item_sender).await;
+            }
+            .in_current_span(),
+        );
 
         Self {
             item_receiver,
@@ -93,11 +97,14 @@ impl PageStream {
             let pool = pool.clone();
             let endpoint = endpoint.clone();
             let page = next_page;
-            let handle = tokio::spawn(async move {
-                let response = pool.get(&format!("{}?page={}", endpoint, page)).await?;
-                let json: Value = response.json().await?;
-                Ok((page, json))
-            });
+            let handle = tokio::spawn(
+                async move {
+                    let response = pool.get(&format!("{}?page={}", endpoint, page)).await?;
+                    let json: Value = response.json().await?;
+                    Ok((page, json))
+                }
+                .in_current_span(),
+            );
             join_handles.push_back(handle);
             pages_spawned += 1;
             next_page += 1;
@@ -121,11 +128,15 @@ impl PageStream {
                         let pool = pool.clone();
                         let endpoint = endpoint.clone();
                         let page = next_page;
-                        let handle = tokio::spawn(async move {
-                            let response = pool.get(&format!("{}?page={}", endpoint, page)).await?;
-                            let json: Value = response.json().await?;
-                            Ok((page, json))
-                        });
+                        let handle = tokio::spawn(
+                            async move {
+                                let response =
+                                    pool.get(&format!("{}?page={}", endpoint, page)).await?;
+                                let json: Value = response.json().await?;
+                                Ok((page, json))
+                            }
+                            .in_current_span(),
+                        );
                         join_handles.push_back(handle);
                         next_page += 1;
                     }

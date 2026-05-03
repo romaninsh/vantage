@@ -5,6 +5,7 @@ use std::{
 
 use reqwest::{Request, Response};
 use tokio::sync::{mpsc, oneshot, Mutex};
+use tracing::{warn, Instrument as _};
 
 use crate::EventualRequest;
 
@@ -21,10 +22,9 @@ impl<T: Send + Sync + Sized + 'static> EventualRequestMatcher<T> {
         response_receiver: mpsc::Receiver<EventualRequest<T>>,
     ) -> Self {
         let pending_requests = Arc::new(Mutex::new(HashMap::new()));
-        let thread_handle = tokio::spawn(Self::worker_thread(
-            pending_requests.clone(),
-            response_receiver,
-        ));
+        let thread_handle = tokio::spawn(
+            Self::worker_thread(pending_requests.clone(), response_receiver).in_current_span(),
+        );
 
         Self {
             request_sender,
@@ -45,21 +45,15 @@ impl<T: Send + Sync + Sized + 'static> EventualRequestMatcher<T> {
     ) {
         loop {
             let Some(response) = response_receiver.recv().await else {
-                eprintln!("EventualRequestMatcher: response channel closed");
+                warn!("response channel closed, matcher shutting down");
                 break;
             };
 
             match ch.lock().await.remove(&response.get_id().unwrap()) {
                 Some(sender) => sender.send(response).unwrap_or_else(|response| {
-                    eprintln!(
-                        "EventualRequestMatcher: failed to send response for id {:?}",
-                        response.get_id()
-                    )
+                    warn!(id = ?response.get_id(), "failed to send response (caller dropped receiver)");
                 }),
-                None => eprintln!(
-                    "EventualRequestMatcher: no pending request found for id {:?}",
-                    response.get_id()
-                ),
+                None => warn!(id = ?response.get_id(), "no pending request found for response"),
             }
         }
     }

@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
-use tracing::{debug, instrument, warn};
+use tracing::{Instrument as _, debug, instrument, warn};
 use vantage_dataset::traits::WritableValueSet;
 use vantage_table::any::AnyTable;
 
@@ -23,12 +23,17 @@ pub(super) fn spawn(
     cache_key: String,
     cache: Arc<dyn Cache>,
 ) {
-    tokio::spawn(async move {
-        while let Some(op) = rx.recv().await {
-            handle(&master, &custom_write_target, &cache_key, &cache, op).await;
+    // Propagate the caller's tracing span across the spawn boundary so
+    // worker errors stitch into the same trace as the originating write.
+    tokio::spawn(
+        async move {
+            while let Some(op) = rx.recv().await {
+                handle(&master, &custom_write_target, &cache_key, &cache, op).await;
+            }
+            debug!(target: "vantage_live::worker", cache_key = %cache_key, "write-queue worker shutting down");
         }
-        debug!(target: "vantage_live::worker", cache_key = %cache_key, "write-queue worker shutting down");
-    });
+        .in_current_span(),
+    );
 }
 
 #[instrument(

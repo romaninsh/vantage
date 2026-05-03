@@ -8,21 +8,24 @@
 use std::sync::Arc;
 
 use futures_util::StreamExt;
-use tracing::{debug, instrument, warn};
+use tracing::{Instrument as _, debug, instrument, warn};
 
 use crate::cache::Cache;
 use crate::live_stream::{LiveEvent, LiveStream};
 
 pub(super) fn spawn(stream: Arc<dyn LiveStream>, cache_key: String, cache: Arc<dyn Cache>) {
-    tokio::spawn(async move {
-        let mut sub = stream.subscribe();
-        debug!(target: "vantage_live::events", cache_key = %cache_key, "event consumer started");
+    tokio::spawn(
+        async move {
+            let mut sub = stream.subscribe();
+            debug!(target: "vantage_live::events", cache_key = %cache_key, "event consumer started");
 
-        while let Some(event) = sub.next().await {
-            handle(&cache_key, &cache, event).await;
+            while let Some(event) = sub.next().await {
+                handle(&cache_key, &cache, event).await;
+            }
+            debug!(target: "vantage_live::events", cache_key = %cache_key, "event consumer stopped");
         }
-        debug!(target: "vantage_live::events", cache_key = %cache_key, "event consumer stopped");
-    });
+        .in_current_span(),
+    );
 }
 
 #[instrument(

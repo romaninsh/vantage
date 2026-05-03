@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.5 — 2026-05-03
+
+- The write-queue worker and live-event consumer wrap their spawned futures with `tracing::Instrument::in_current_span()` so the caller's span follows the future across the `tokio::spawn` boundary. With a tracing layer installed (e.g. `sentry-tracing`, `tracing-opentelemetry`), worker errors and panics stitch into the same trace as the originating write request rather than appearing as orphans.
+
 ## 0.4.3 — 2026-04-30
 
 - `LiveTable` forwards the four new `TableLike` reflection methods (`id_field_name`, `title_field_names`, `column_types`, `get_ref_names`) through to the master `AnyTable`, so generic UIs that drive a `LiveTable` see the same metadata they would see on the underlying table.
