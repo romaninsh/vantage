@@ -19,7 +19,6 @@ pub struct Vista {
     pub(crate) references: IndexMap<String, Reference>,
     pub(crate) capabilities: VistaCapabilities,
     pub(crate) id_column: Option<String>,
-    pub(crate) title_columns: Vec<String>,
     pub(crate) eq_conditions: Vec<(String, CborValue)>,
     pub(crate) source: Box<dyn VistaSource>,
 }
@@ -37,7 +36,6 @@ impl Vista {
             references: metadata.references,
             capabilities,
             id_column: metadata.id_column,
-            title_columns: metadata.title_columns,
             eq_conditions: Vec::new(),
             source,
         }
@@ -61,8 +59,13 @@ impl Vista {
         self.id_column.as_deref()
     }
 
-    pub fn get_title_columns(&self) -> &[String] {
-        &self.title_columns
+    /// Columns flagged `title` (in declaration order).
+    pub fn get_title_columns(&self) -> Vec<&str> {
+        self.columns
+            .values()
+            .filter(|c| c.is_title())
+            .map(|c| c.name.as_str())
+            .collect()
     }
 
     pub fn get_column_names(&self) -> Vec<&str> {

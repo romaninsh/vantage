@@ -198,12 +198,11 @@ mod tests {
 
     fn build_user_vista(source: MockVistaSource) -> Vista {
         let metadata = VistaMetadata::new()
-            .with_column(Column::new("id", "String"))
-            .with_column(Column::new("name", "String"))
+            .with_column(Column::new("id", "String").with_flag("id"))
+            .with_column(Column::new("name", "String").with_flag("title"))
             .with_column(Column::new("email", "String").hidden())
             .with_column(Column::new("vip_flag", "bool"))
             .with_id_column("id")
-            .with_title_columns(["name"])
             .with_reference(Reference::new(
                 "orders",
                 "orders",
@@ -219,13 +218,13 @@ mod tests {
 
         assert_eq!(vista.name(), "users");
         assert_eq!(vista.get_id_column(), Some("id"));
-        assert_eq!(vista.get_title_columns(), &["name".to_string()]);
+        assert_eq!(vista.get_title_columns(), vec!["name"]);
         assert_eq!(
             vista.get_column_names(),
             vec!["id", "name", "email", "vip_flag"]
         );
-        assert!(vista.get_column("email").unwrap().hidden);
-        assert!(!vista.get_column("name").unwrap().hidden);
+        assert!(vista.get_column("email").unwrap().is_hidden());
+        assert!(!vista.get_column("name").unwrap().is_hidden());
         assert_eq!(vista.get_references(), vec!["orders"]);
         assert_eq!(
             vista.get_reference("orders").unwrap().foreign_key,
