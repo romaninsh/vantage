@@ -23,7 +23,7 @@ consumers — it only changes how the produced Vista behaves at runtime.
 
 | Stage | File | Status |
 |---|---|---|
-| 1 | [Crate skeleton](1-skeleton.md) | Not started |
+| 1 | [Crate skeleton](1-skeleton.md) | Done |
 | 2 | [First driver integration](2-first-driver.md) | Not started |
 | 3 | [Universal YAML loader](3-yaml-loader.md) | Not started |
 | 4 | [Driver rollout](4-driver-rollout.md) | Not started |

@@ -1,6 +1,6 @@
 # Stage 1 — vantage-vista crate skeleton
 
-Status: **Not started**
+Status: **Done**
 
 Set up the new crate with type definitions and trait surfaces only. No
 execution logic. No driver implementations. Output: workspace compiles
@@ -8,19 +8,33 @@ and `vantage-vista` exposes the public API shape we'll build on.
 
 ## Discussion phase
 
-Confirm with the user:
+Confirmed with the user:
 
-- [ ] `Vista` struct fields — what data does it own?
-- [ ] `VistaSource` trait method list — async signatures, error type
-- [ ] `VistaFactory` shape — `from_yaml` + `from_table` on one trait, or
-      split?
-- [ ] `VistaCapabilities` struct — explicit fields or open-ended map?
-- [ ] What moves from `vantage-expressions` (`AnyExpression`) and
-      `vantage-table` (column / reference metadata types) into
-      `vantage-vista`; what stays
-- [ ] Cargo features and workspace placement
-- [ ] Carrier types: `Id = CborValue`, `Value = CborValue` confirmed at
-      the `VistaSource` boundary
+- [x] `Vista` struct fields — name, columns (`IndexMap<String, Column>`),
+      references (`IndexMap<String, Reference>`), capabilities, id_column,
+      title_columns, eq_conditions (`Vec<(String, CborValue)>`), source
+      (`Box<dyn VistaSource>`).
+- [x] `VistaSource` trait method list — async `list`, `get`, `insert`,
+      `replace`, `delete`, `count`; sync `capabilities`. No associated
+      types, no `translate_condition`. `vantage_core::Result` everywhere.
+- [x] `VistaFactory` shape — single trait with `from_yaml` only;
+      driver-specific factories add their own inherent
+      `from_table<E>(Table<DriverSource, E>)` to avoid a vantage-vista →
+      vantage-table → vantage-expressions → vantage-vista cycle.
+- [x] `VistaCapabilities` struct — explicit fields (`can_count`,
+      `can_insert`, `can_update`, `can_delete`, `can_subscribe`,
+      `can_invalidate`, `paginate_kind`).
+- [x] What moves: `AnyExpression` + `ExpressionLike` move from
+      `vantage-expressions` into `vantage-vista`; vantage-expressions
+      keeps a re-export. `Column` and `Reference` are *new* parallel
+      types in vantage-vista — `vantage_table::ColumnFlag` does **not**
+      come along; driver factories translate flags into vista's purpose-
+      bucketed accessors (`get_id_column`, `get_title_columns`).
+- [x] Cargo features and workspace placement — no features; member of
+      the root workspace.
+- [x] Carrier types — methods take `&CborValue` for ids and
+      `&Record<CborValue>` for records. `VistaSource` does **not**
+      mirror `TableSource`; no `type Id` / `type Value` ceremony.
 
 ## Scope
 
@@ -47,25 +61,29 @@ Out:
 
 ## Plan
 
-- [ ] Create `vantage-vista/` crate directory structure
-- [ ] Add to root `Cargo.toml` workspace members
-- [ ] `Cargo.toml`: deps `vantage-core`, `vantage-types`, `ciborium`,
+- [x] Create `vantage-vista/` crate directory structure
+- [x] Add to root `Cargo.toml` workspace members
+- [x] `Cargo.toml`: deps `vantage-core`, `vantage-types`, `ciborium`,
       `indexmap`, `async-trait`, `serde`, `thiserror`
-- [ ] Define `Vista` struct (name, columns, references, capabilities,
+- [x] Define `Vista` struct (name, columns, references, capabilities,
       source — minimal fields)
-- [ ] Define `VistaSource` trait — `list`, `get`, `insert`, `replace`,
-      `delete`, `count`, `capabilities`, `translate_condition`
-- [ ] Define `VistaFactory` trait — `from_yaml`, `from_table`
-- [ ] Define `VistaCapabilities` struct (explicit fields:
+- [x] Define `VistaSource` trait — `list`, `get`, `insert`, `replace`,
+      `delete`, `count`, `capabilities` (no `translate_condition`; the
+      Vista's eq-condition list is read directly by drivers)
+- [x] Define `VistaFactory` trait — `from_yaml` only on the trait;
+      `from_table` is a per-driver inherent method to avoid a
+      vista → table → expressions → vista cycle
+- [x] Define `VistaCapabilities` struct (explicit fields:
       `can_count`, `can_insert`, `can_update`, `can_delete`,
       `can_subscribe`, `can_invalidate`, `paginate_kind`)
-- [ ] Define `Column` struct (name, type marker, flags, condition policy
-      placeholder)
-- [ ] Define `Reference` struct (name, target, kind, foreign_key)
-- [ ] Move `AnyExpression` from `vantage-expressions` → `vantage-vista`;
+- [x] Define `Column` struct (name, original_type, hidden — no
+      `ColumnFlag`; driver factories bucket by purpose into vista
+      accessors instead)
+- [x] Define `Reference` struct (name, target, kind, foreign_key)
+- [x] Move `AnyExpression` from `vantage-expressions` → `vantage-vista`;
       keep a re-export from `vantage-expressions` to preserve callers
-- [ ] `cargo check --workspace` passes
-- [ ] No unit tests yet; this is a shape-only stage
+- [x] `cargo check --workspace` passes
+- [x] No unit tests yet; this is a shape-only stage
 
 ## References
 

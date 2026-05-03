@@ -4050,6 +4050,7 @@ dependencies = [
  "tokio-test",
  "vantage-core",
  "vantage-dataset",
+ "vantage-vista",
 ]
 
 [[package]]
@@ -4220,6 +4221,23 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "vantage-vista"
+version = "0.4.0"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "ciborium",
+ "futures-core",
+ "indexmap",
+ "serde",
+ "thiserror 2.0.18",
+ "tokio",
+ "vantage-core",
+ "vantage-dataset",
+ "vantage-types",
 ]
 
 [[package]]

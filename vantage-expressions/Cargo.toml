@@ -16,6 +16,7 @@ serde_json = "1.0.145"
 thiserror = "2.0.17"
 vantage-core = { version = "0.4", path = "../vantage-core" }
 vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
+vantage-vista = { version = "0.4", path = "../vantage-vista" }
 
 [dev-dependencies]
 tokio = { version = "1.48", features = ["full"] }
