@@ -112,8 +112,8 @@ async fn vista_writes_return_read_only_error() {
 #[tokio::test]
 async fn vista_capabilities_advertise_read_only() {
     let csv = csv();
-    let table = Table::<Csv, EmptyEntity>::new("bakery", csv.clone())
-        .with_column_of::<String>("name");
+    let table =
+        Table::<Csv, EmptyEntity>::new("bakery", csv.clone()).with_column_of::<String>("name");
     let vista = csv.vista_factory().from_table(table).unwrap();
 
     let caps = vista.capabilities();

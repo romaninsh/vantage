@@ -102,15 +102,16 @@ fn csv_record_to_cbor(record: Record<AnyCsvType>) -> Record<CborValue> {
 }
 
 fn matches_eq_conditions(record: &Record<AnyCsvType>, vista: &Vista) -> bool {
-    vista.eq_conditions().iter().all(|(field, expected)| {
-        match record.get(field) {
+    vista
+        .eq_conditions()
+        .iter()
+        .all(|(field, expected)| match record.get(field) {
             Some(v) => {
                 let actual: CborValue = v.clone().into();
                 &actual == expected
             }
             None => false,
-        }
-    })
+        })
 }
 
 #[async_trait]
