@@ -162,7 +162,7 @@ impl VistaSource for MockVistaSource {
     ) -> Result<String> {
         let id = match record.get("id") {
             Some(CborValue::Text(s)) if !s.is_empty() => s.clone(),
-            Some(CborValue::Integer(i)) => format!("{:?}", i),
+            Some(CborValue::Integer(i)) => i128::from(*i).to_string(),
             _ => self.next_auto_id(),
         };
         self.insert_vista_value(vista, &id, record).await?;
