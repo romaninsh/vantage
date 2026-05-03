@@ -23,12 +23,8 @@ pub(super) fn spawn(
     cache_key: String,
     cache: Arc<dyn Cache>,
 ) {
-    // `.in_current_span()` carries the caller's tracing span across the
-    // `tokio::spawn` boundary. Any tracing layer the consumer installed
-    // (sentry-tracing, tracing-opentelemetry, console-subscriber, ...)
-    // sees the spawned task's events as descendants of the caller, so
-    // panics and errors stitch into the same trace as the originating
-    // write request rather than appearing as orphans.
+    // Propagate the caller's tracing span across the spawn boundary so
+    // worker errors stitch into the same trace as the originating write.
     tokio::spawn(
         async move {
             while let Some(op) = rx.recv().await {

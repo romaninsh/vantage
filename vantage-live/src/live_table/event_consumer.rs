@@ -14,10 +14,6 @@ use crate::cache::Cache;
 use crate::live_stream::{LiveEvent, LiveStream};
 
 pub(super) fn spawn(stream: Arc<dyn LiveStream>, cache_key: String, cache: Arc<dyn Cache>) {
-    // `.in_current_span()` propagates the caller's tracing span across
-    // the `tokio::spawn` boundary so any tracing layer the consumer
-    // installed (sentry-tracing, tracing-opentelemetry, ...) sees the
-    // event-consumer's events as descendants of the caller.
     tokio::spawn(
         async move {
             let mut sub = stream.subscribe();
