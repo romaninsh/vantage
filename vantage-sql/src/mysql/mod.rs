@@ -6,6 +6,9 @@ pub mod statements;
 mod table_source;
 pub mod types;
 
+#[cfg(feature = "vista")]
+pub mod vista;
+
 use ciborium::Value as CborValue;
 use sqlx::mysql::MySqlPool;
 

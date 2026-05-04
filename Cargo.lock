@@ -4150,7 +4150,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4161,6 +4161,7 @@ dependencies = [
  "rust_decimal",
  "serde",
  "serde_json",
+ "serde_yaml_ng",
  "sqlx",
  "tokio",
  "uuid",
@@ -4169,6 +4170,7 @@ dependencies = [
  "vantage-expressions",
  "vantage-table",
  "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]

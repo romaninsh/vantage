@@ -106,13 +106,13 @@ jobs:
           done
 
       - name: Build
-        run: cargo build -p vantage-sql --features ${{ matrix.backend }}
+        run: cargo build -p vantage-sql --features "${{ matrix.backend }},vista"
 
       - name: Test
-        run: cargo test -p vantage-sql --features ${{ matrix.backend }} --test ${{ matrix.backend }}
+        run: cargo test -p vantage-sql --features "${{ matrix.backend }},vista" --test ${{ matrix.backend }}
 
       - name: Clippy
-        run: cargo clippy -p vantage-sql --features ${{ matrix.backend }} --all-targets -- -D warnings
+        run: cargo clippy -p vantage-sql --features "${{ matrix.backend }},vista" --all-targets -- -D warnings
 
       - name: Build bakery_model3
         if: matrix.backend != 'mysql'
