@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.3 — 2026-05-04
+
+Renames the driver-facing trait so its name describes what it actually is.
+
+- The trait formerly known as `VistaSource` is now [`TableShell`](https://docs.rs/vantage-vista/0.4.3/vantage_vista/trait.TableShell.html). It wraps a typed `Table<T, E>` and exposes it through the CBOR/`String` boundary — "shell" reads more accurately than "source", which already meant something else in `TableSource`.
+- The in-tree mock follows: `MockVistaSource` → [`MockShell`](https://docs.rs/vantage-vista/0.4.3/vantage_vista/mocks/struct.MockShell.html).
+- **Breaking** for anyone naming the trait directly. Existing in-tree drivers (`vantage-csv`, `vantage-mongodb`) move with the rename in lock-step; downstream drivers need a one-line change at their `impl` site and at every `Box<dyn VistaSource>`.
+- New driver-author guide at [Step 8: Vista Integration](https://romaninsh.github.io/vantage/new-persistence/step8-vista-integration.html) — distilled from the CSV and MongoDB rollouts, covering the factory split, the `column_paths` pattern for nested fields, the capability honesty contract, and the tests that catch the common mistakes.
+
 ## 0.4.2 — 2026-05-04
 
 Conditions now delegate to the driver instead of being stashed on `Vista`.
