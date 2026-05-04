@@ -12,6 +12,8 @@ use sqlx::sqlite::SqliteRow;
 use sqlx::{Column, Row, TypeInfo};
 use vantage_types::Record;
 
+use crate::types::cbor_to_json;
+
 use super::types::{AnySqliteType, SqliteTypeVariants};
 
 /// Bind an AnySqliteType to a sqlx query. Uses the variant tag to pick
@@ -109,10 +111,21 @@ fn bind_by_cbor<'q>(
                 query.bind(None::<String>)
             }
         }
-        other => panic!(
-            "bind_by_cbor: unexpected CBOR value type {:?} — this is a bug upstream",
-            other
-        ),
+        // Complex types (Array, Map) and any other unhandled CBOR variants are
+        // serialised to a JSON text string and stored as SQLite TEXT. This
+        // prevents a panic when form data contains JSON arrays or objects (e.g.
+        // a foreign-key widget that emits `{"id": 1, "name": "…"}` instead of
+        // a plain scalar). The round-trip is lossy but safe — the worker task
+        // will no longer crash and the caller receives a proper error or the
+        // serialised representation instead of an unhandled panic.
+        //
+        // Binding an owned `String` is valid here: sqlx's `Encode` impl for
+        // `String` moves the data into the arguments buffer, so no `'q`
+        // borrow lifetime issue arises (same pattern as the `i128` branch above).
+        other => {
+            let json = cbor_to_json(other.clone());
+            query.bind(json.to_string())
+        }
     }
 }
 
