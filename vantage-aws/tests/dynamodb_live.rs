@@ -27,7 +27,9 @@ const PRODUCTS_TABLE: &str = "vantage-demo-products";
 const TEST_REGION: &str = "eu-west-2";
 
 fn account_or_skip() -> Option<AwsAccount> {
-    AwsAccount::from_default().ok().map(|a| a.with_region(TEST_REGION))
+    AwsAccount::from_default()
+        .ok()
+        .map(|a| a.with_region(TEST_REGION))
 }
 
 /// Build a unique id prefix for one test run so cleanup of leftovers
@@ -122,7 +124,8 @@ async fn list_returns_inserted_items() -> vantage_core::Result<()> {
     let all_ids: std::collections::HashSet<&DynamoId> = all.keys().collect();
     let inserted_count = ids.iter().filter(|id| all_ids.contains(id)).count();
     assert_eq!(
-        inserted_count, 3,
+        inserted_count,
+        3,
         "expected 3 freshly-inserted items in scan; saw {} of them (table has {} total)",
         inserted_count,
         all.len()
@@ -176,9 +179,6 @@ async fn get_value_returns_none_for_missing_id() -> vantage_core::Result<()> {
 
     let missing = DynamoId::new(format!("{}-does-not-exist", run_prefix()));
     let result = table.get_value(&missing).await?;
-    assert!(
-        result.is_none(),
-        "missing id should return None, not error"
-    );
+    assert!(result.is_none(), "missing id should return None, not error");
     Ok(())
 }

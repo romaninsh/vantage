@@ -43,7 +43,10 @@ fn id_field_name<E: Entity<AnyDynamoType>>(table: &Table<DynamoDB, E>) -> String
 }
 
 /// Build a single-field DynamoDB `Key` map from a partition-key id.
-fn key_for_id(field: &str, id: &DynamoId) -> std::result::Result<JsonMap<String, JsonValue>, vantage_core::VantageError> {
+fn key_for_id(
+    field: &str,
+    id: &DynamoId,
+) -> std::result::Result<JsonMap<String, JsonValue>, vantage_core::VantageError> {
     let mut key = JsonMap::new();
     key.insert(field.to_string(), attr_to_json(&id.to_attr())?);
     Ok(key)
@@ -262,9 +265,9 @@ impl TableSource for DynamoDB {
         // PutItem doesn't return the written item by default; re-fetch
         // so callers see exactly what's now in storage (including any
         // columns DynamoDB may have stored differently).
-        self.get_table_value(table, id).await?.ok_or_else(|| {
-            error!("Inserted item not found by GetItem", id = id.to_string())
-        })
+        self.get_table_value(table, id)
+            .await?
+            .ok_or_else(|| error!("Inserted item not found by GetItem", id = id.to_string()))
     }
 
     async fn replace_table_value<E>(
@@ -320,7 +323,10 @@ impl TableSource for DynamoDB {
 
         for item in items {
             let pairs = json_to_item_map(item)?;
-            let id_av = pairs.iter().find(|(k, _)| k == &id_field).map(|(_, v)| v.clone());
+            let id_av = pairs
+                .iter()
+                .find(|(k, _)| k == &id_field)
+                .map(|(_, v)| v.clone());
             if let Some(av) = id_av
                 && let Some(id) = DynamoId::from_attr(&av)
             {
@@ -394,4 +400,3 @@ impl TableSource for DynamoDB {
         AssociatedExpression::new(expr, self)
     }
 }
-
