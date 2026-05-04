@@ -26,9 +26,7 @@ impl ExprDataSource<Value> for LogWriter {
     where
         Value: Clone + Send + Sync + 'static,
     {
-        DeferredFn::new(move || {
-            Box::pin(async move { Err(unsupported("defer")) })
-        })
+        DeferredFn::new(move || Box::pin(async move { Err(unsupported("defer")) }))
     }
 }
 

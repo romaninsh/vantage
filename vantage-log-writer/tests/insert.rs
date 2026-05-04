@@ -110,8 +110,8 @@ async fn read_methods_return_unsupported() {
 async fn insert_with_explicit_id_uses_it() {
     let dir = tempdir().unwrap();
     let writer = LogWriter::new(dir.path());
-    let table = Table::<LogWriter, EmptyEntity>::new("events", writer)
-        .with_column_of::<String>("name");
+    let table =
+        Table::<LogWriter, EmptyEntity>::new("events", writer).with_column_of::<String>("name");
 
     use vantage_dataset::traits::WritableValueSet;
     let mut record = vantage_types::Record::<serde_json::Value>::new();

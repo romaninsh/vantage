@@ -16,7 +16,10 @@ pub struct LogWriterTableShell {
 }
 
 impl LogWriterTableShell {
-    pub(crate) fn new(table: Table<LogWriter, EmptyEntity>, capabilities: VistaCapabilities) -> Self {
+    pub(crate) fn new(
+        table: Table<LogWriter, EmptyEntity>,
+        capabilities: VistaCapabilities,
+    ) -> Self {
         Self {
             table,
             capabilities,

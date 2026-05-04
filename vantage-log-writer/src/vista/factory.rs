@@ -41,7 +41,10 @@ impl LogWriterVistaFactory {
         Ok(Vista::new(name, Box::new(source), metadata))
     }
 
-    pub fn table_from_spec(&self, spec: &LogWriterVistaSpec) -> Result<Table<LogWriter, EmptyEntity>> {
+    pub fn table_from_spec(
+        &self,
+        spec: &LogWriterVistaSpec,
+    ) -> Result<Table<LogWriter, EmptyEntity>> {
         let table_name = spec
             .driver
             .log_writer
@@ -114,7 +117,9 @@ fn build_column(
 
 fn column_for_type(name: &str, ty: &str) -> Result<TableColumn<AnyJsonType>> {
     let col: TableColumn<AnyJsonType> = match ty {
-        "int" | "integer" | "i64" | "i32" => TableColumn::from_column(TableColumn::<i64>::new(name)),
+        "int" | "integer" | "i64" | "i32" => {
+            TableColumn::from_column(TableColumn::<i64>::new(name))
+        }
         "float" | "double" | "f64" | "f32" => {
             TableColumn::from_column(TableColumn::<f64>::new(name))
         }
