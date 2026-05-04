@@ -1,0 +1,25 @@
+name: bakery
+columns:
+  id:
+    type: string
+    flags: [id]
+  name:
+    type: string
+    flags: [title, searchable]
+  profit_margin:
+    type: int
+sqlite:
+  table: bakery
+references:
+  clients:
+    table: client
+    kind: has_many
+    foreign_key: bakery_id
+  products:
+    table: product
+    kind: has_many
+    foreign_key: bakery_id
+  orders:
+    table: order
+    kind: has_many
+    foreign_key: bakery_id

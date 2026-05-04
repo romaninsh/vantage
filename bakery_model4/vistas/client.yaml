@@ -1,0 +1,23 @@
+name: client
+columns:
+  id:
+    type: string
+    flags: [id]
+  email:
+    type: string
+    flags: [searchable]
+  name:
+    type: string
+    flags: [title, searchable]
+  contact_details:
+    type: string
+    flags: [searchable]
+  is_paying_client:
+    type: bool
+  balance:
+    type: decimal
+  bakery_id:
+    type: string
+    references: bakery
+sqlite:
+  table: client

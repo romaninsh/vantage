@@ -31,11 +31,13 @@ impl PostgresVistaFactory {
         E: Entity<AnyPostgresType> + 'static,
     {
         let name = table.table_name().to_string();
-        let any_table = table.into_entity::<EmptyEntity>();
-        Ok(self.wrap(any_table, name))
+        Ok(self.wrap(table, name))
     }
 
-    fn wrap(&self, table: Table<PostgresDB, EmptyEntity>, name: String) -> Vista {
+    fn wrap<E>(&self, table: Table<PostgresDB, E>, name: String) -> Vista
+    where
+        E: Entity<AnyPostgresType> + 'static,
+    {
         let metadata = metadata_from_table(&table);
         let source = PostgresTableShell::new(
             table,

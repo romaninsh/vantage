@@ -1,8 +1,7 @@
-//! Multi-source CLI for browsing and managing bakery data.
+//! SurrealDB CLI for browsing and managing bakery data.
 //!
-//! Usage: db [--debug] <source> <entity> [command ...]
+//! Usage: db [--debug] <entity> [command ...]
 //!
-//! Sources: csv, surreal, sqlite, postgres, mongo
 //! Entities: bakery, client, product, order
 //!
 //! Commands:
@@ -16,7 +15,6 @@ use bakery_model3::*;
 use clap::{Arg, Command};
 use vantage_cli_util::render_records;
 use vantage_core::util::error::Context;
-use vantage_csv::Csv;
 use vantage_dataset::prelude::*;
 use vantage_table::any::AnyTable;
 use vantage_table::traits::table_like::TableLike;
@@ -35,18 +33,13 @@ async fn main() {
 
 async fn run() -> vantage_core::Result<()> {
     let app = Command::new("db")
-        .about("Database management utility for Bakery")
+        .about("SurrealDB management utility for Bakery")
         .arg(
             Arg::new("debug")
                 .long("debug")
                 .help("Enable debug mode (show queries)")
                 .action(clap::ArgAction::SetTrue)
                 .global(true),
-        )
-        .arg(
-            Arg::new("source")
-                .help("Data source: csv, surreal, sqlite, postgres, mongo")
-                .required(true),
         )
         .arg(
             Arg::new("entity")
@@ -62,7 +55,6 @@ async fn run() -> vantage_core::Result<()> {
 
     let matches = app.get_matches();
     let debug = matches.get_flag("debug");
-    let source = matches.get_one::<String>("source").unwrap();
 
     let entity_name = match matches.get_one::<String>("entity") {
         Some(name) => name.clone(),
@@ -79,124 +71,35 @@ async fn run() -> vantage_core::Result<()> {
         .cloned()
         .collect();
 
-    let table = build_table(source, &entity_name, debug).await?;
-
-    let table = match table {
+    let table = match build_table(&entity_name, debug).await? {
         Some(t) => t,
         None => return Ok(()),
     };
 
-    handle_commands(table, commands, source).await
+    handle_commands(table, commands).await
 }
 
-async fn build_table(
-    source: &str,
-    entity_name: &str,
-    debug: bool,
-) -> vantage_core::Result<Option<AnyTable>> {
-    match source {
-        "csv" => {
-            let csv = Csv::new("bakery_model3/data");
-            let table = match entity_name {
-                "bakery" => AnyTable::from_table(Bakery::csv_table(csv)),
-                "client" => AnyTable::from_table(Client::csv_table(csv)),
-                "product" => AnyTable::from_table(Product::csv_table(csv)),
-                "order" => AnyTable::from_table(Order::csv_table(csv)),
-                _ => {
-                    println!("Unknown entity: {}", entity_name);
-                    return Ok(None);
-                }
-            };
-            Ok(Some(table))
-        }
-        "surreal" => {
-            connect_surrealdb_with_debug(debug)
-                .await
-                .context("Failed to connect to SurrealDB")?;
-            let db = surrealdb();
-            let table = match entity_name {
-                "bakery" => AnyTable::from_table(Bakery::surreal_table(db)),
-                "client" => AnyTable::from_table(Client::surreal_table(db)),
-                "product" => AnyTable::from_table(Product::surreal_table(db)),
-                "order" => AnyTable::from_table(Order::surreal_table(db)),
-                _ => {
-                    println!("Unknown entity: {}", entity_name);
-                    return Ok(None);
-                }
-            };
-            Ok(Some(table))
-        }
-        "sqlite" => {
-            let db = SqliteDB::connect("sqlite:target/bakery.sqlite")
-                .await
-                .map_err(|e| {
-                    vantage_core::error!("Failed to connect to SQLite", details = e.to_string())
-                })?;
-            let table = match entity_name {
-                "bakery" => AnyTable::from_table(Bakery::sqlite_table(db)),
-                "client" => AnyTable::from_table(Client::sqlite_table(db)),
-                "product" => AnyTable::from_table(Product::sqlite_table(db)),
-                "order" => AnyTable::from_table(Order::sqlite_table(db)),
-                _ => {
-                    println!("Unknown entity: {}", entity_name);
-                    return Ok(None);
-                }
-            };
-            Ok(Some(table))
-        }
-        "postgres" => {
-            let url = std::env::var("POSTGRES_URL").unwrap_or_else(|_| {
-                "postgres://vantage:vantage@localhost:5433/vantage".to_string()
-            });
-            let db = PostgresDB::connect(&url).await.map_err(|e| {
-                vantage_core::error!("Failed to connect to PostgreSQL", details = e.to_string())
-            })?;
-            let table = match entity_name {
-                "bakery" => AnyTable::from_table(Bakery::postgres_table(db)),
-                "client" => AnyTable::from_table(Client::postgres_table(db)),
-                "product" => AnyTable::from_table(Product::postgres_table(db)),
-                "order" => AnyTable::from_table(Order::postgres_table(db)),
-                _ => {
-                    println!("Unknown entity: {}", entity_name);
-                    return Ok(None);
-                }
-            };
-            Ok(Some(table))
-        }
-        "mongo" => {
-            let url = std::env::var("MONGODB_URL")
-                .unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
-            let db_name = std::env::var("MONGODB_DB").unwrap_or_else(|_| "vantage".to_string());
-            let db = MongoDB::connect(&url, &db_name).await.map_err(|e| {
-                vantage_core::error!("Failed to connect to MongoDB", details = e.to_string())
-            })?;
-            let table = match entity_name {
-                "bakery" => AnyTable::from_table(Bakery::mongo_table(db)),
-                "client" => AnyTable::from_table(Client::mongo_table(db)),
-                "product" => AnyTable::from_table(Product::mongo_table(db)),
-                "order" => AnyTable::from_table(Order::mongo_table(db)),
-                _ => {
-                    println!("Unknown entity: {}", entity_name);
-                    return Ok(None);
-                }
-            };
-            Ok(Some(table))
-        }
+async fn build_table(entity_name: &str, debug: bool) -> vantage_core::Result<Option<AnyTable>> {
+    connect_surrealdb_with_debug(debug)
+        .await
+        .context("Failed to connect to SurrealDB")?;
+    let db = surrealdb();
+    let table = match entity_name {
+        "bakery" => AnyTable::from_table(Bakery::surreal_table(db)),
+        "client" => AnyTable::from_table(Client::surreal_table(db)),
+        "product" => AnyTable::from_table(Product::surreal_table(db)),
+        "order" => AnyTable::from_table(Order::surreal_table(db)),
         _ => {
-            println!(
-                "Unknown source: {}. Use: csv, surreal, sqlite, postgres, mongo",
-                source
-            );
-            Ok(None)
+            println!("Unknown entity: {}", entity_name);
+            return Ok(None);
         }
-    }
+    };
+    Ok(Some(table))
 }
 
 fn print_usage() {
     println!();
-    println!("Usage: db [--debug] <source> <entity> <command>");
-    println!();
-    println!("Sources: csv, surreal, sqlite, postgres, mongo");
+    println!("Usage: db [--debug] <entity> <command>");
     println!();
     println!("Commands:");
     println!("  list              List all records");
@@ -206,18 +109,14 @@ fn print_usage() {
     println!("  delete <id>       Delete a record by ID");
     println!();
     println!("Examples:");
-    println!("  db csv bakery list");
-    println!("  db surreal product list");
-    println!("  db mongo bakery count");
-    println!(r#"  db surreal bakery add myid '{{"name":"Test","profit_margin":10}}'"#);
-    println!("  db surreal bakery delete myid");
+    println!("  db bakery list");
+    println!("  db product list");
+    println!("  db bakery count");
+    println!(r#"  db bakery add myid '{{"name":"Test","profit_margin":10}}'"#);
+    println!("  db bakery delete myid");
 }
 
-async fn handle_commands(
-    table: AnyTable,
-    commands: Vec<String>,
-    source: &str,
-) -> vantage_core::Result<()> {
+async fn handle_commands(table: AnyTable, commands: Vec<String>) -> vantage_core::Result<()> {
     if commands.is_empty() {
         println!("No command. Try: list, get, count, add, delete");
         return Ok(());
@@ -266,7 +165,7 @@ async fn handle_commands(
                     break;
                 }
 
-                let id = qualify_id(source, table.table_name(), id_str);
+                let id = qualify_id(table.table_name(), id_str);
                 let cbor_val = ciborium::Value::serialized(&json_val).map_err(|e| {
                     vantage_core::error!("Invalid JSON for CBOR", details = e.to_string())
                 })?;
@@ -282,7 +181,7 @@ async fn handle_commands(
                 let id_str = &commands[i];
                 i += 1;
 
-                let id = qualify_id(source, table.table_name(), id_str);
+                let id = qualify_id(table.table_name(), id_str);
                 table.delete(&id).await?;
                 println!("Deleted: {}", id);
             }
@@ -296,9 +195,8 @@ async fn handle_commands(
 }
 
 /// Qualify a bare id for SurrealDB (which needs "table:id" format).
-/// All other backends use the id as-is.
-fn qualify_id(source: &str, table_name: &str, id: &str) -> String {
-    if source == "surreal" && !id.contains(':') {
+fn qualify_id(table_name: &str, id: &str) -> String {
+    if !id.contains(':') {
         format!("{}:{}", table_name, id)
     } else {
         id.to_string()
