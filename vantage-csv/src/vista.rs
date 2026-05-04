@@ -100,7 +100,8 @@ impl CsvVistaFactory {
 
         let source = CsvVistaSource {
             path,
-            id_column: self.csv.id_column.clone(),
+            id_header: self.csv.id_column.clone(),
+            header_to_spec: IndexMap::new(),
             column_variants: variants,
             capabilities: VistaCapabilities {
                 can_count: true,
@@ -126,6 +127,7 @@ impl VistaFactory for CsvVistaFactory {
 
         let mut metadata = VistaMetadata::new();
         let mut variants: IndexMap<String, Option<CsvTypeVariants>> = IndexMap::new();
+        let mut header_to_spec: IndexMap<String, String> = IndexMap::new();
         let mut id_column = spec.id_column.clone();
 
         for (name, col_spec) in &spec.columns {
@@ -145,6 +147,9 @@ impl VistaFactory for CsvVistaFactory {
                 .as_ref()
                 .and_then(|b| b.source.clone())
                 .unwrap_or_else(|| name.clone());
+            if header != *name {
+                header_to_spec.insert(header.clone(), name.clone());
+            }
             variants.insert(header, variant_from_yaml_type(&original_type));
         }
 
@@ -152,11 +157,17 @@ impl VistaFactory for CsvVistaFactory {
             metadata = metadata.with_id_column(id.clone());
         }
 
-        let id_for_source = id_column.clone().unwrap_or_else(|| "id".to_string());
+        // Resolve the spec's id column to its CSV-header form for file lookup.
+        let id_spec = id_column.unwrap_or_else(|| "id".to_string());
+        let id_header = header_to_spec
+            .iter()
+            .find_map(|(header, spec_name)| (spec_name == &id_spec).then(|| header.clone()))
+            .unwrap_or_else(|| id_spec.clone());
 
         let source = CsvVistaSource {
             path,
-            id_column: id_for_source,
+            id_header,
+            header_to_spec,
             column_variants: variants,
             capabilities: VistaCapabilities {
                 can_count: true,
@@ -188,7 +199,11 @@ use crate::type_system::variant_from_type_name;
 /// Per-Vista executor for CSV files.
 pub struct CsvVistaSource {
     path: PathBuf,
-    id_column: String,
+    /// CSV-header form of the id column (after any `csv.source` rename).
+    id_header: String,
+    /// CSV-header → spec column-name renames. Identity entries omitted.
+    header_to_spec: IndexMap<String, String>,
+    /// Column type variants keyed by CSV header name (for parsing).
     column_variants: IndexMap<String, Option<CsvTypeVariants>>,
     capabilities: VistaCapabilities,
 }
@@ -198,6 +213,7 @@ impl CsvVistaSource {
         let raw = self.read_raw()?;
         let out = raw
             .into_iter()
+            .map(|(id, record)| (id, self.rename_to_spec(record)))
             .filter(|(_, record)| matches_eq_conditions(record, vista))
             .map(|(id, record)| (id, csv_record_to_cbor(record)))
             .collect();
@@ -205,10 +221,22 @@ impl CsvVistaSource {
     }
 
     fn read_raw(&self) -> Result<IndexMap<String, Record<AnyCsvType>>> {
-        // Borrow a Csv just to reuse the file reader. We pass our own path
-        // and id column so the Csv's base_dir doesn't matter here.
-        let csv = Csv::new("/").with_id_column(&self.id_column);
-        csv.read_csv_with_variants(&self.path, &self.id_column, &self.column_variants)
+        let csv = Csv::new("/").with_id_column(&self.id_header);
+        csv.read_csv_with_variants(&self.path, &self.id_header, &self.column_variants)
+    }
+
+    /// Translate record keys from CSV header form to spec column names.
+    fn rename_to_spec(&self, record: Record<AnyCsvType>) -> Record<AnyCsvType> {
+        if self.header_to_spec.is_empty() {
+            return record;
+        }
+        record
+            .into_iter()
+            .map(|(k, v)| match self.header_to_spec.get(&k) {
+                Some(spec_name) => (spec_name.clone(), v),
+                None => (k, v),
+            })
+            .collect()
     }
 }
 
