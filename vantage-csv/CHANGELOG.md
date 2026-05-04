@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.8 — 2026-05-04
+
+- Implements [`TableShell::driver_name`](https://docs.rs/vantage-vista/0.4.4/vantage_vista/trait.TableShell.html#method.driver_name) — `Vista::driver()` reports `"csv"` for tables wrapped through `csv.vista_factory()`.
+- Bumps minimum [`vantage-vista`](https://docs.rs/vantage-vista/0.4.4/) requirement to 0.4.4.
+
 ## 0.4.7 — 2026-05-04
 
 - `CsvVistaSource` is now [`CsvTableShell`](https://docs.rs/vantage-csv/0.4.7/vantage_csv/struct.CsvTableShell.html), tracking the [`vantage-vista 0.4.3`](https://docs.rs/vantage-vista/0.4.3/vantage_vista/trait.TableShell.html) trait rename. The factory's surface is unchanged — most users go through `csv.vista_factory().from_table(...)` or `from_yaml(...)` and never name the source struct.
