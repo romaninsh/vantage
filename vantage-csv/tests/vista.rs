@@ -95,6 +95,7 @@ async fn vista_count_with_eq_condition() {
 
 #[tokio::test]
 async fn vista_writes_return_read_only_error() {
+    use vantage_core::ErrorKind;
     use vantage_dataset::prelude::WritableValueSet;
     use vantage_types::Record;
 
@@ -105,8 +106,22 @@ async fn vista_writes_return_read_only_error() {
     let vista = csv.vista_factory().from_table(table).unwrap();
 
     let empty = Record::new();
-    assert!(vista.insert_value(&"x".to_string(), &empty).await.is_err());
-    assert!(vista.delete(&"x".to_string()).await.is_err());
+
+    // CSV doesn't advertise can_insert/can_delete → Unsupported, not the
+    // Unimplemented placeholder that would mean a driver bug.
+    let insert_err = vista
+        .insert_value(&"x".to_string(), &empty)
+        .await
+        .unwrap_err();
+    assert_eq!(insert_err.kind(), ErrorKind::Unsupported);
+    assert!(
+        insert_err.to_string().contains("can_insert"),
+        "expected message to mention capability: {}",
+        insert_err
+    );
+
+    let delete_err = vista.delete(&"x".to_string()).await.unwrap_err();
+    assert_eq!(delete_err.kind(), ErrorKind::Unsupported);
 }
 
 #[tokio::test]

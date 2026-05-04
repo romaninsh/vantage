@@ -45,6 +45,12 @@ impl Vista {
         &self.name
     }
 
+    /// Override the vista's display name. Used by spec-driven construction
+    /// to expose `spec.name` rather than the underlying file/table name.
+    pub fn set_name(&mut self, name: impl Into<String>) {
+        self.name = name.into();
+    }
+
     pub fn capabilities(&self) -> &VistaCapabilities {
         &self.capabilities
     }

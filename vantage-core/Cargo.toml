@@ -12,6 +12,7 @@ doctest = false
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"
+tracing = "0.1"
 indexmap = "2.12"
 owo-colors = { version = "4.2", optional = true }
 atty = { version = "0.2", optional = true }

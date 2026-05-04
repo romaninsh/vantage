@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use indexmap::IndexMap;
 use vantage_core::error;
@@ -34,46 +34,28 @@ impl Csv {
         self
     }
 
-    /// Get the file path for a given table name.
     fn file_path(&self, table_name: &str) -> PathBuf {
-        self.file_path_for(table_name)
-    }
-
-    pub(crate) fn file_path_for(&self, table_name: &str) -> PathBuf {
         self.base_dir.join(format!("{}.csv", table_name))
     }
 
-    pub(crate) fn base_dir(&self) -> &Path {
+    pub(crate) fn base_dir(&self) -> &std::path::Path {
         &self.base_dir
     }
 
     /// Parse a CSV file and return all rows as records.
     ///
-    /// Column types from the table definition are used to parse values.
-    /// Fields without a known column type are stored as plain strings.
+    /// Behavior under aliasing: a column defined with [`Column::with_alias`]
+    /// reads from the CSV header named by its alias and stores under the
+    /// column name. Headers without a corresponding column are passed
+    /// through untyped (string) under their raw header name — so a table
+    /// with zero declared columns still surfaces every field of the file.
     pub(crate) fn read_csv(
         &self,
         table_name: &str,
         columns: &IndexMap<String, Column<AnyCsvType>>,
     ) -> Result<IndexMap<String, Record<AnyCsvType>>> {
-        let mut variants = IndexMap::new();
-        for (name, col) in columns {
-            variants.insert(name.clone(), variant_from_type_name(col.get_type()));
-        }
-        self.read_csv_with_variants(&self.file_path(table_name), &self.id_column, &variants)
-    }
-
-    /// Parse a CSV file using pre-resolved column type variants.
-    ///
-    /// Used by the Vista bridge, where column types come from a `VistaSpec`
-    /// rather than a typed `Table<E>`.
-    pub(crate) fn read_csv_with_variants(
-        &self,
-        path: &Path,
-        id_column: &str,
-        column_variants: &IndexMap<String, Option<CsvTypeVariants>>,
-    ) -> Result<IndexMap<String, Record<AnyCsvType>>> {
-        let mut reader = csv::Reader::from_path(path)
+        let path = self.file_path(table_name);
+        let mut reader = csv::Reader::from_path(&path)
             .map_err(|e| error!("Failed to open CSV file", path = path.display(), detail = e))?;
 
         let headers = reader
@@ -81,10 +63,27 @@ impl Csv {
             .map_err(|e| error!("Failed to read CSV headers", detail = e))?
             .clone();
 
-        let id_col_index = headers.iter().position(|h| h == id_column);
+        // For each CSV column index, decide the record key + parsing variant.
+        // Default: pass the header through untyped. If a declared column
+        // matches (by alias-or-name), use the column name + its type.
+        let mut key_for: Vec<String> = headers.iter().map(|h| h.to_string()).collect();
+        let mut variant_for: Vec<Option<CsvTypeVariants>> = vec![None; headers.len()];
+        for (name, col) in columns {
+            let csv_header = col.alias().unwrap_or(name);
+            if let Some(idx) = headers.iter().position(|h| h == csv_header) {
+                key_for[idx] = name.clone();
+                variant_for[idx] = variant_from_type_name(col.get_type());
+            }
+        }
+
+        // id column may itself carry an alias.
+        let id_header = columns
+            .get(&self.id_column)
+            .and_then(|c| c.alias())
+            .unwrap_or(&self.id_column);
+        let id_col_index = headers.iter().position(|h| h == id_header);
 
         let mut records = IndexMap::new();
-
         for (row_idx, result) in reader.records().enumerate() {
             let csv_record = result.map_err(|e| error!("Failed to read CSV row", detail = e))?;
 
@@ -96,9 +95,9 @@ impl Csv {
 
             let mut record = Record::new();
             for (i, field) in csv_record.iter().enumerate() {
-                if let Some(header) = headers.get(i) {
-                    let variant = column_variants.get(header).copied().flatten();
-                    record.insert(header.to_string(), parse_with_type(field, variant));
+                if let Some(key) = key_for.get(i) {
+                    let variant = variant_for.get(i).copied().flatten();
+                    record.insert(key.clone(), parse_with_type(field, variant));
                 }
             }
 

@@ -6,10 +6,38 @@
 use indexmap::IndexMap;
 use std::fmt;
 
+/// Severity / category for a `VantageError`. Set via `.is_*()` modifiers
+/// after construction. Higher layers pattern-match to choose 4xx vs 5xx
+/// behavior, alerting policy, etc.
+///
+/// Each non-`Generic` modifier emits a `tracing::error!` event at the
+/// callsite carrying the error's message and structured context, so
+/// observability sinks (Sentry, OTEL collectors) capture classified
+/// errors without callers needing to log explicitly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ErrorKind {
+    /// Default — error not yet classified by the producer.
+    #[default]
+    Generic,
+    /// Operation is intentionally not provided by this implementation.
+    /// Callers should normally check capability flags first; reaching this
+    /// error means the caller didn't, so it's worth tracing.
+    Unsupported,
+    /// Operation is intended to exist here but isn't built yet (placeholder
+    /// / TODO). Distinct from `Unsupported` (which says "never will") in
+    /// that it tracks scaffolding to fill in.
+    Unimplemented,
+    /// Caller violated a contract — invalid argument combination, missing
+    /// required state, two parts of the framework disagreeing. Always a bug
+    /// at one end of the call.
+    IncorrectUsage,
+}
+
 /// VantageError with location tracking and context information
 #[derive(Debug)]
 pub struct VantageError {
     message: String,
+    kind: ErrorKind,
     location: Option<String>,
     pub context: Box<IndexMap<String, String>>,
     source: Option<Box<dyn std::error::Error + Send + Sync>>,
@@ -191,16 +219,68 @@ impl VantageError {
     pub fn new(message: impl Into<String>, location: String) -> Self {
         Self {
             message: message.into(),
+            kind: ErrorKind::Generic,
             location: Some(location),
             context: Box::new(IndexMap::new()),
             source: None,
         }
     }
 
+    /// Current classification — see [`ErrorKind`].
+    pub fn kind(&self) -> ErrorKind {
+        self.kind
+    }
+
+    /// Mark as [`ErrorKind::Unsupported`] and emit a `tracing::error!`
+    /// event with the error's message and context.
+    pub fn is_unsupported(mut self) -> Self {
+        self.kind = ErrorKind::Unsupported;
+        self.emit_trace();
+        self
+    }
+
+    /// Mark as [`ErrorKind::Unimplemented`] and emit a `tracing::error!`
+    /// event with the error's message and context.
+    pub fn is_unimplemented(mut self) -> Self {
+        self.kind = ErrorKind::Unimplemented;
+        self.emit_trace();
+        self
+    }
+
+    /// Mark as [`ErrorKind::IncorrectUsage`] and emit a `tracing::error!`
+    /// event with the error's message and context.
+    pub fn is_incorrect_usage(mut self) -> Self {
+        self.kind = ErrorKind::IncorrectUsage;
+        self.emit_trace();
+        self
+    }
+
+    fn emit_trace(&self) {
+        // Flatten context into a single string so it lands as a structured
+        // attribute on the tracing event without needing a serializer.
+        let context_str = if self.context.is_empty() {
+            String::new()
+        } else {
+            self.context
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        tracing::error!(
+            kind = ?self.kind,
+            location = self.location.as_deref().unwrap_or(""),
+            context = %context_str,
+            "{}",
+            self.message
+        );
+    }
+
     /// Create a "no data available" error
     pub fn no_data() -> Self {
         Self {
             message: "No data available".to_string(),
+            kind: ErrorKind::Generic,
             location: None,
             context: Box::new(IndexMap::new()),
             source: None,
@@ -208,6 +288,9 @@ impl VantageError {
     }
 
     /// Create a "capability not implemented" error with method and type information
+    #[deprecated(
+        note = "Use `error!(...).is_unsupported()` or `is_unimplemented()` modifier API instead"
+    )]
     pub fn no_capability(method: impl Into<String>, type_name: impl Into<String>) -> Self {
         Self {
             message: format!(
@@ -215,6 +298,7 @@ impl VantageError {
                 method.into(),
                 type_name.into()
             ),
+            kind: ErrorKind::Generic,
             location: None,
             context: Box::new(IndexMap::new()),
             source: None,
@@ -225,6 +309,7 @@ impl VantageError {
     pub fn other(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            kind: ErrorKind::Generic,
             location: None,
             context: Box::new(IndexMap::new()),
             source: None,
@@ -236,6 +321,7 @@ impl From<std::io::Error> for VantageError {
     fn from(err: std::io::Error) -> Self {
         VantageError {
             message: "IO error".to_string(),
+            kind: ErrorKind::Generic,
             location: None,
             context: Box::new(IndexMap::new()),
             source: Some(Box::new(err)),
@@ -316,6 +402,7 @@ impl From<String> for VantageError {
     fn from(msg: String) -> Self {
         VantageError {
             message: msg,
+            kind: ErrorKind::Generic,
             location: None,
             context: Box::new(IndexMap::new()),
             source: None,
@@ -372,6 +459,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_no_capability_error() {
         let err = VantageError::no_capability("insert", "ReadOnlyDataSet");
         assert_eq!(
