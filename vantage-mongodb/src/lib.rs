@@ -11,9 +11,13 @@ pub mod operation;
 pub mod prelude;
 pub mod select;
 pub mod types;
+#[cfg(feature = "vista")]
+pub mod vista;
 
 pub use condition::MongoCondition;
 pub use id::MongoId;
 pub use mongodb::MongoDB;
 pub use select::MongoSelect;
 pub use types::{AnyMongoType, MongoType, MongoTypeVariants};
+#[cfg(feature = "vista")]
+pub use vista::{MongoVistaFactory, MongoVistaSource};

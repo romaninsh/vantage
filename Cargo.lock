@@ -4116,12 +4116,14 @@ dependencies = [
  "pretty_assertions",
  "serde",
  "serde_json",
+ "serde_yaml_ng",
  "tokio",
  "vantage-core",
  "vantage-dataset",
  "vantage-expressions",
  "vantage-table",
  "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]

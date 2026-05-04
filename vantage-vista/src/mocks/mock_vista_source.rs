@@ -13,6 +13,7 @@ use crate::{capabilities::VistaCapabilities, source::VistaSource, vista::Vista};
 pub struct MockVistaSource {
     data: Arc<Mutex<IndexMap<String, Record<CborValue>>>>,
     next_auto_id: Arc<Mutex<i64>>,
+    filters: Arc<Mutex<Vec<(String, CborValue)>>>,
     capabilities: VistaCapabilities,
 }
 
@@ -21,6 +22,7 @@ impl MockVistaSource {
         Self {
             data: Arc::new(Mutex::new(IndexMap::new())),
             next_auto_id: Arc::new(Mutex::new(1)),
+            filters: Arc::new(Mutex::new(Vec::new())),
             capabilities: VistaCapabilities {
                 can_count: true,
                 can_insert: true,
@@ -42,9 +44,10 @@ impl MockVistaSource {
         self
     }
 
-    fn matches_conditions(record: &Record<CborValue>, vista: &Vista) -> bool {
-        vista
-            .eq_conditions()
+    fn matches_filters(&self, record: &Record<CborValue>) -> bool {
+        self.filters
+            .lock()
+            .unwrap()
             .iter()
             .all(|(field, expected)| record.get(field) == Some(expected))
     }
@@ -67,12 +70,12 @@ impl Default for MockVistaSource {
 impl VistaSource for MockVistaSource {
     async fn list_vista_values(
         &self,
-        vista: &Vista,
+        _vista: &Vista,
     ) -> Result<IndexMap<String, Record<CborValue>>> {
         let data = self.data.lock().unwrap();
         Ok(data
             .iter()
-            .filter(|(_, record)| Self::matches_conditions(record, vista))
+            .filter(|(_, record)| self.matches_filters(record))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect())
     }
@@ -87,12 +90,12 @@ impl VistaSource for MockVistaSource {
 
     async fn get_vista_some_value(
         &self,
-        vista: &Vista,
+        _vista: &Vista,
     ) -> Result<Option<(String, Record<CborValue>)>> {
         let data = self.data.lock().unwrap();
         Ok(data
             .iter()
-            .find(|(_, record)| Self::matches_conditions(record, vista))
+            .find(|(_, record)| self.matches_filters(record))
             .map(|(k, v)| (k.clone(), v.clone())))
     }
 
@@ -175,6 +178,14 @@ impl VistaSource for MockVistaSource {
 
     fn capabilities(&self) -> &VistaCapabilities {
         &self.capabilities
+    }
+
+    fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
+        self.filters
+            .lock()
+            .unwrap()
+            .push((field.to_string(), value.clone()));
+        Ok(())
     }
 }
 
@@ -285,7 +296,9 @@ mod tests {
                 ]),
             );
         let mut vista = build_user_vista(source);
-        vista.add_condition_eq("vip_flag", CborValue::Bool(true));
+        vista
+            .add_condition_eq("vip_flag", CborValue::Bool(true))
+            .unwrap();
 
         let rows = vista.list_values().await.unwrap();
         assert_eq!(rows.len(), 2);

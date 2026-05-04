@@ -129,6 +129,26 @@ pub trait VistaSource: Send + Sync + 'static {
         Ok(self.list_vista_values(vista).await?.len() as i64)
     }
 
+    // ---- Conditions --------------------------------------------------------
+
+    /// Translate `field == value` into the driver's native condition type and
+    /// apply it to the wrapped table. The default impl returns `Unimplemented`
+    /// — every driver is expected to override.
+    ///
+    /// `value` is the universal CBOR carrier; the driver picks the appropriate
+    /// translation (e.g. `cbor_to_bson` for Mongo, `cbor → AnyCsvType` for CSV).
+    fn add_eq_condition(&mut self, _field: &str, _value: &CborValue) -> Result<()> {
+        Err(error!(
+            format!(
+                "add_eq_condition not implemented for '{}'",
+                std::any::type_name::<Self>()
+            ),
+            method = "add_eq_condition",
+            source_type = std::any::type_name::<Self>()
+        )
+        .is_unimplemented())
+    }
+
     // ---- Capability advertisement -----------------------------------------
 
     fn capabilities(&self) -> &VistaCapabilities;

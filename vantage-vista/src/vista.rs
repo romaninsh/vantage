@@ -11,7 +11,9 @@ use crate::{
 ///
 /// A `Vista` is produced by a driver factory from a typed `Table<T, E>` or
 /// from a YAML schema. Once built, its metadata is read-only — callers
-/// observe via accessors and may narrow the data set with `add_condition_eq`.
+/// observe via accessors and may narrow the data set with `add_condition_eq`,
+/// which delegates to the underlying driver's native condition system. Vista
+/// itself stores no condition state.
 /// CRUD goes through the `ValueSet` trait family `Table<T, E>` also implements.
 pub struct Vista {
     pub(crate) name: String,
@@ -19,7 +21,6 @@ pub struct Vista {
     pub(crate) references: IndexMap<String, Reference>,
     pub(crate) capabilities: VistaCapabilities,
     pub(crate) id_column: Option<String>,
-    pub(crate) eq_conditions: Vec<(String, CborValue)>,
     pub(crate) source: Box<dyn VistaSource>,
 }
 
@@ -36,7 +37,6 @@ impl Vista {
             references: metadata.references,
             capabilities,
             id_column: metadata.id_column,
-            eq_conditions: Vec::new(),
             source,
         }
     }
@@ -92,12 +92,19 @@ impl Vista {
 
     // ---- conditions --------------------------------------------------------
 
-    pub fn add_condition_eq(&mut self, field: impl Into<String>, value: CborValue) {
-        self.eq_conditions.push((field.into(), value));
-    }
-
-    pub fn eq_conditions(&self) -> &[(String, CborValue)] {
-        &self.eq_conditions
+    /// Narrow the vista to records matching `field == value`. Delegates to the
+    /// underlying driver, which translates the value into its native condition
+    /// type (BSON document for Mongo, `Expression` for CSV/SQL, …) and applies
+    /// it to the wrapped table.
+    ///
+    /// Returns `Err` if the field is unknown to the driver or the value cannot
+    /// be translated into the driver's condition vocabulary.
+    pub fn add_condition_eq(
+        &mut self,
+        field: impl Into<String>,
+        value: CborValue,
+    ) -> Result<()> {
+        self.source.add_eq_condition(&field.into(), &value)
     }
 
     // ---- aggregates (not part of ValueSet) ---------------------------------
