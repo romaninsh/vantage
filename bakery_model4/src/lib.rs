@@ -34,9 +34,8 @@ pub fn entity_yaml(entity: &str) -> Option<&'static str> {
 pub fn vista(db: SqliteDB, entity: &str) -> Result<Vista> {
     use vantage_vista::VistaFactory;
 
-    let yaml = entity_yaml(entity).ok_or_else(|| {
-        vantage_core::error!("Unknown entity in bakery_model4", entity = entity)
-    })?;
+    let yaml = entity_yaml(entity)
+        .ok_or_else(|| vantage_core::error!("Unknown entity in bakery_model4", entity = entity))?;
     db.vista_factory()
         .from_yaml(yaml)
         .with_context(|| vantage_core::error!("Failed to build vista from YAML", entity = entity))
