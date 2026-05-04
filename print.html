@@ -37,10 +37,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-a80dff17.js";
+            window.path_to_searchindex_js = "searchindex-ddb5229b.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-91be589d.js"></script>
+        <script src="toc-99e15bc2.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -419,7 +419,7 @@ any <code>Result</code> with a standard error type.</p>
 <p><a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a> is the query builder for SQLite.
 Other persistences have their own —
 <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/postgres/statements/select/struct.PostgresSelect.html"><code>PostgresSelect</code></a>,
-<a href="https://docs.rs/vantage_mongodb/0.4.5/vantage_mongodb/select/struct.MongoSelect.html"><code>MongoSelect</code></a> — and they all implement the
+<a href="https://docs.rs/vantage_mongodb/0.4.6/vantage_mongodb/select/struct.MongoSelect.html"><code>MongoSelect</code></a> — and they all implement the
 <a href="https://docs.rs/vantage_expressions/0.4.3/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a> trait, so the interface is identical apart from
 vendor-specific extensions. None of them need a database connection — they’re just structs that
 accumulate query parts. You build them with a chain of <code>.with_*()</code> calls:</p>
@@ -2343,7 +2343,7 @@ already knows how to render a 400.</p>
 databases is a change to the model, not to the routes, handlers, or business logic. Now we
 cash the check. <code>/categories</code>, <code>/categories/{id}</code>, and <code>/categories/{cat_id}/products</code> keep
 their exact URL shape, response bodies, and behaviour — but the data lives in
-<a href="https://docs.rs/vantage_mongodb/0.4.5/vantage_mongodb/mongodb/struct.MongoDB.html"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>.</p>
+<a href="https://docs.rs/vantage_mongodb/0.4.6/vantage_mongodb/mongodb/struct.MongoDB.html"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>.</p>
 <p>Start Mongo — Docker is the easiest way:</p>
 <pre><code class="language-sh">docker run -d --name mongo-learn -p 27017:27017 mongo:7
 </code></pre>
@@ -2454,7 +2454,7 @@ URL’s <code>cat_id</code> string directly:</p>
 })
 <span class="boring">}</span></code></pre>
 <p><code>.eq(&amp;str)</code> works here because <code>vantage-mongodb</code>’s <code>From&lt;&amp;str&gt;</code> for
-<a href="https://docs.rs/vantage_mongodb/0.4.5/vantage_mongodb/types/struct.AnyMongoType.html"><code>AnyMongoType</code></a> auto-promotes 24-character hex strings to
+<a href="https://docs.rs/vantage_mongodb/0.4.6/vantage_mongodb/types/struct.AnyMongoType.html"><code>AnyMongoType</code></a> auto-promotes 24-character hex strings to
 <code>ObjectId</code> and leaves everything else as <code>String</code>. The comparison fires with the right BSON type
 whichever <code>_id</code> convention the collection uses.</p>
 <h3 id="mainrs"><a class="header" href="#mainrs">main.rs</a></h3>
@@ -3989,7 +3989,7 @@ eight; stop whenever your persistence has enough capability for your use case.</
 <tr><td><a href="#step-4-table-abstraction-and-entity-crud">5. Table &amp; CRUD</a></td><td><code>TableSource</code>, entity tables, aggregates, writes</td><td><code>Table&lt;DB, Entity&gt;</code>, full CRUD, <code>ReadableDataSet</code>, <code>WritableDataSet</code></td><td><strong>Required</strong> for table support</td></tr>
 <tr><td><a href="#step-5-relationships">6. Relationships</a></td><td><code>with_one</code>, <code>with_many</code>, correlated subqueries</td><td>Reference traversal, expression fields</td><td>Skip if you don’t need cross-table queries</td></tr>
 <tr><td><a href="#step-6-multi-backend-applications">7. Multi-Backend</a></td><td><code>AnyTable::from_table()</code>, CLI example</td><td>Type-erased tables, generic UI/API code</td><td>Skip if you only use one persistence</td></tr>
-<tr><td><a href="#step-8-add-vista-support-to-your-driver">8. Vista</a></td><td><code>&lt;Driver&gt;VistaFactory</code>, <code>&lt;Driver&gt;VistaSource</code>, YAML extras</td><td>YAML-defined data handles consumed by UI / scripting / agents</td><td>Skip if you don’t need Vista support</td></tr>
+<tr><td><a href="#step-7-vista-integration">8. Vista</a></td><td><code>&lt;Driver&gt;VistaFactory</code>, <code>&lt;Driver&gt;TableShell</code>, YAML extras</td><td>YAML-defined data handles consumed by UI / scripting / agents</td><td>Skip if you don’t need Vista support</td></tr>
 </tbody>
 </table>
 </div>
@@ -4052,7 +4052,7 @@ persistence — all through a uniform <code>serde_json::Value</code>-based inter
 scripting, and agents consume through a CBOR / <code>String</code> boundary. Adds YAML schema loading and
 condition delegation so callers don’t need a Rust entity struct.</p>
 <p>Skip this step if your driver is only consumed from typed Rust code.</p>
-<p><strong><a href="#step-8-add-vista-support-to-your-driver">Read Step 8 →</a></strong></p>
+<p><strong><a href="new-persistence/step8-vista.html">Read Step 8 →</a></strong></p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="step-1-define-your-type-system"><a class="header" href="#step-1-define-your-type-system">Step 1: Define Your Type System</a></h1>
 <p>Every database has its own idea of what types exist. SQLite has 5 storage classes (NULL, INTEGER,
@@ -5173,157 +5173,490 @@ cargo run --example cli -- surreal bakery delete myid
 <code>AnyTable::from_table()</code> bridges the gap between your backend’s native types and a uniform
 JSON-based interface.</p>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="step-8-add-vista-support-to-your-driver"><a class="header" href="#step-8-add-vista-support-to-your-driver">Step 8: Add Vista Support to Your Driver</a></h1>
-<p><code>Vista</code> is the universal, schema-bearing handle that scripting, UI, and agent
-code consume. Your driver already exposes a typed <code>Table&lt;T, E&gt;</code> (Steps 1–7);
-adding Vista means wrapping that table so callers can drive it through a
-CBOR/<code>String</code> boundary without knowing which backend is behind it.</p>
-<p>This is a <em>thin</em> layer. Most of the work is decisions, not code.</p>
+<h1 id="step-7-vista-integration"><a class="header" href="#step-7-vista-integration">Step 7: Vista Integration</a></h1>
+<p>By the end of Step 6 your backend is a fully-featured persistence — typed <code>Table&lt;T, E&gt;</code>, conditions,
+relationships, the lot. That’s exactly what business logic wants. It’s also exactly what generic
+code can’t consume.</p>
+<p>A CLI that lists “any table from any backend” can’t carry an entity generic. A web admin that draws
+forms from a YAML schema doesn’t know your <code>Product</code> struct exists. A Rhai script that filters rows
+by a string field name shouldn’t have to compile against your backend’s condition type. <strong>Vista</strong> is
+the bridge: a schema-bearing handle that wraps a typed <code>Table</code> and exposes it through a uniform,
+CBOR-typed surface.</p>
+<p>This step adds Vista support to your backend. The work is small — one factory, one source, a few
+hundred lines — but it’s the doorway through which UI, CLI, and config-driven tooling start
+seeing your database at all.</p>
 <h3 id="before-you-start"><a class="header" href="#before-you-start">Before you start</a></h3>
-<p>Vista support sits on top of everything Steps 1–7 deliver — there is nothing
-new to learn about your backend’s protocol here. Confirm you have:</p>
+<p>Vista is a thin layer over what Steps 1–6 already gave you. Most of the work here is decisions
+rather than code. Confirm you have:</p>
 <ul>
-<li><input disabled="" type="checkbox"> Working <code>TableSource</code> impl (Step 5) — Vista delegates all CRUD to it.</li>
-<li><input disabled="" type="checkbox"> Native value type with <code>From&lt;&amp;Bson|&amp;Value&gt;</code>/<code>Into&lt;CborValue&gt;</code> story
-(Step 1) — the source layer translates at this boundary.</li>
-<li><input disabled="" type="checkbox"> An id type that round-trips to <code>String</code> (Step 5). If it doesn’t yet,
-add <code>FromStr</code> and <code>Display</code> impls before going further.</li>
-<li><input disabled="" type="checkbox"> A <code>vista</code> cargo feature gating the new module so non-Vista users don’t
-pull in <code>vantage-vista</code>.</li>
+<li>A working <code>TableSource</code> impl (Step 4) — Vista’s read/write path delegates to it unchanged.</li>
+<li>A native value type with an <code>Into&lt;CborValue&gt;</code> story (Step 1). If your value type is already JSON-
+shaped you’re done; otherwise you need a dedicated bridge (see <code>cbor.rs</code> below).</li>
+<li>An id type that round-trips through <code>String</code> — <code>FromStr</code> and <code>Display</code> impls. If the native id
+doesn’t have these yet, add them before going further. The vista boundary stringifies ids
+unconditionally.</li>
 </ul>
-<h3 id="pick-your-yaml-vocabulary"><a class="header" href="#pick-your-yaml-vocabulary">Pick your YAML vocabulary</a></h3>
-<p>Driver-specific YAML lives under a top-level key named after your driver
-(<code>mongo:</code>, <code>csv:</code>, <code>sqlite:</code>, …). Keep the universal vocabulary —
-<code>name</code>, <code>columns</code>, <code>flags</code>, <code>references</code>, <code>id_column</code> — for things every
-backend understands. Push backend quirks (collection name, file path,
-auth profile) into your block.</p>
-<p>The strict rule: any struct you deserialize for your block sets
-<code>#[serde(deny_unknown_fields)]</code>. Typos in YAML must be loud, not silent.</p>
+<h3 id="what-vista-actually-is"><a class="header" href="#what-vista-actually-is">What Vista actually is</a></h3>
+<p><code>Vista</code> is a concrete struct in <code>vantage-vista</code> (no consumer-facing trait surface). It owns
+universal metadata — name, columns, references, capabilities, id column — and a boxed <code>TableShell</code>
+that does the real work. Your job as a driver author is two-fold:</p>
+<ol>
+<li>A <strong>factory</strong> that produces a <code>Vista</code> from either a typed <code>Table&lt;YourDB, E&gt;</code> or a YAML schema.</li>
+<li>A <strong>source</strong> that implements <code>TableShell</code> — the per-driver executor <code>Vista</code> delegates to.</li>
+</ol>
+<p>Both construction paths converge on the same source-creation code. That’s a deliberate constraint:
+post-construction Vista usage is fully database-agnostic, so the same UI/CLI/script drives a Mongo
+Vista, a SurrealDB Vista, or your CSV one without caring how it got built.</p>
+<h3 id="why-not-just-hand-around-tablet-e"><a class="header" href="#why-not-just-hand-around-tablet-e">Why not just hand around <code>Table&lt;T, E&gt;</code>?</a></h3>
+<p>You can! Anywhere the entity is known at compile time, <code>Table&lt;T, E&gt;</code> is the better tool — it’s
+typed, it composes, and it’s what you’ve spent six steps building. Vista exists for the cases where
+the entity <em>isn’t</em> known at compile time, or where the backend itself is chosen at runtime:</p>
 <ul>
-<li><input disabled="" type="checkbox"> Define <code>&lt;Driver&gt;TableExtras</code> with one field per top-level YAML knob,
-under <code>#[serde(deny_unknown_fields)]</code>.</li>
-<li><input disabled="" type="checkbox"> Define <code>&lt;Driver&gt;ColumnExtras</code> for per-column quirks (BSON aliases,
-nested paths, type hints your backend cares about).</li>
-<li><input disabled="" type="checkbox"> Reuse <code>NoExtras</code> for <code>ReferenceExtras</code> until you have a concrete need
-(Step 5 reference handling, stage 5 conditions).</li>
-<li><input disabled="" type="checkbox"> Make every field inside the block <code>Option&lt;T&gt;</code> with <code>#[serde(default)]</code>
-so the block can be omitted entirely when the spec name is enough.</li>
-<li><input disabled="" type="checkbox"> Type-alias <code>&lt;Driver&gt;VistaSpec = VistaSpec&lt;TableExtras, ColumnExtras, NoExtras&gt;</code>
-so callers see one short name.</li>
+<li>A CLI driven by <code>--source surreal --table client list</code> — no <code>Client</code> struct in scope.</li>
+<li>A YAML-driven admin tool that reads schema from disk.</li>
+<li>A Rhai callback running in an editor that filters rows by a string column name.</li>
 </ul>
-<h3 id="decide-your-capability-surface"><a class="header" href="#decide-your-capability-surface">Decide your capability surface</a></h3>
-<p><code>VistaCapabilities</code> is <em>the</em> contract. Lying here is worse than not
-implementing — a <code>true</code> flag with no override is reported as
-<code>Unimplemented</code>, while a <code>false</code> flag with no override is reported as
-<code>Unsupported</code>. Both are loud, but they tell the operator different things.</p>
-<p>Default policy: <strong>only set a flag to <code>true</code> if the matching trait method
-is overridden and works</strong>. Read-only stores set <code>can_count: true</code> and stop
-there. Don’t pre-flag <code>can_subscribe</code> for “later” — flip it on the day
-LIVE-query / change-streams actually land.</p>
+<p>For those cases you need erasure. The price of erasure is that values become <code>CborValue</code> and ids
+become <code>String</code> at the boundary; the type system from Step 1 doesn’t propagate any further. That’s
+fine — generic code is rendering values, not deserialising into structs.</p>
+<h3 id="cargo-wiring"><a class="header" href="#cargo-wiring">Cargo wiring</a></h3>
+<p>The bridge is opt-in via a <code>vista</code> feature so non-Vista users don’t transitively pull in
+<code>vantage-vista</code>:</p>
+<pre><code class="language-toml"># in your backend's Cargo.toml
+[features]
+default = []
+vista = ["dep:vantage-vista"]
+
+[dependencies]
+vantage-vista = { path = "../vantage-vista", optional = true }
+</code></pre>
+<p>Everything Vista-related — the factory module, the source, the YAML extras — sits under
+<code>#[cfg(feature = "vista")]</code>. The <code>TableSource</code> path is unaffected, and downstream crates compile
+without <code>vantage-vista</code> in their tree.</p>
+<h3 id="file-layout"><a class="header" href="#file-layout">File layout</a></h3>
+<p>Both in-tree drivers (CSV and MongoDB) converged on the same shape:</p>
+<pre><code>&lt;driver&gt;/src/vista/
+├── mod.rs       re-exports + &lt;Driver&gt;::vista_factory() inherent impl
+├── spec.rs      &lt;Driver&gt;TableExtras / &lt;Driver&gt;ColumnExtras / &lt;Driver&gt;VistaSpec
+├── factory.rs   &lt;Driver&gt;VistaFactory + impl VistaFactory + spec→table helpers
+├── source.rs    &lt;Driver&gt;TableShell + impl TableShell
+└── cbor.rs      native ↔ CBOR bridge (only when native value type ≠ JSON-shaped)
+</code></pre>
+<p>CSV doesn’t have <code>cbor.rs</code> — <code>From&lt;AnyCsvType&gt; for CborValue</code> already lived in the type-system
+module for the <code>AnyTable</code> path, and the source reuses it. MongoDB’s <code>bson::Bson</code> needs a richer
+bridge (ObjectId, DateTime, Timestamp, Decimal128 each have lossy paths) so it gets a dedicated
+file. Pick whichever fits — the trait shape doesn’t change either way.</p>
+<h3 id="the-factory"><a class="header" href="#the-factory">The factory</a></h3>
+<p>Drivers expose a <code>vista_factory()</code> inherent method on the data source struct, so users construct
+factories without naming an extra type:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl YourDB {
+    pub fn vista_factory(&amp;self) -&gt; YourVistaFactory {
+        YourVistaFactory::new(self.clone())
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>The factory struct holds whatever connection state it needs, plus two entry points and a trait
+impl:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct YourVistaFactory { db: YourDB }
+
+impl YourVistaFactory {
+    pub fn new(db: YourDB) -&gt; Self { Self { db } }
+
+    /// Typed entry point — kept off the `VistaFactory` trait to avoid making
+    /// vantage-vista depend on vantage-table.
+    pub fn from_table&lt;E&gt;(&amp;self, table: Table&lt;YourDB, E&gt;) -&gt; Result&lt;Vista&gt;
+    where E: Entity&lt;AnyYourType&gt; + 'static
+    { /* ... */ }
+}
+
+impl VistaFactory for YourVistaFactory {
+    type TableExtras = YourTableExtras;
+    type ColumnExtras = YourColumnExtras;
+    type ReferenceExtras = NoExtras;
+
+    fn build_from_spec(&amp;self, spec: YourVistaSpec) -&gt; Result&lt;Vista&gt; { /* ... */ }
+}
+<span class="boring">}</span></code></pre>
+<p>The <code>from_table</code> method is <strong>inherent</strong>, not on the trait. That’s deliberate: putting it on the
+trait would force <code>vantage-vista</code> to depend on <code>vantage-table</code>, which would couple the two crates
+unnecessarily. Drivers want both, of course — but the universal Vista crate doesn’t.</p>
+<h4 id="one-source-two-paths"><a class="header" href="#one-source-two-paths">One source, two paths</a></h4>
+<p>The two construction paths must converge on identical source-creation code. Here’s the pattern from
+<code>MongoVistaFactory</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub fn from_table&lt;E&gt;(&amp;self, table: Table&lt;YourDB, E&gt;) -&gt; Result&lt;Vista&gt;
+where E: Entity&lt;AnyYourType&gt; + 'static
+{
+    let name = table.table_name().to_string();
+    let any_table = table.into_entity::&lt;EmptyEntity&gt;();
+    let column_paths = paths_from_table_columns(&amp;any_table);   // typed → paths
+    Ok(self.wrap(any_table, column_paths, name))
+}
+
+fn build_from_spec(&amp;self, spec: YourVistaSpec) -&gt; Result&lt;Vista&gt; {
+    let column_paths = self.paths_from_spec(&amp;spec)?;            // YAML → paths
+    let table = self.table_from_spec(&amp;spec)?;
+    Ok(self.wrap(table, column_paths, spec.name))
+}
+
+fn wrap(&amp;self, table: Table&lt;YourDB, EmptyEntity&gt;, column_paths: ..., name: String) -&gt; Vista {
+    // single Vista::new call site — capability flags, source construction
+}
+<span class="boring">}</span></code></pre>
+<p>The two paths only differ in <em>where they get their inputs from</em> — column metadata, the path map,
+the table itself. Once the inputs are gathered, they go through the same <code>wrap</code> helper. That means a
+future capability flip (advertising <code>can_subscribe</code>, say) is a one-line edit, not two. Drift between
+the two construction paths is the most common Vista bug; this pattern is what keeps it out.</p>
+<h4 id="two-boundary-details-that-bite"><a class="header" href="#two-boundary-details-that-bite">Two boundary details that bite</a></h4>
+<p>Two more details that look incidental but trip every driver:</p>
+<p><strong>The vista’s display name comes from <code>spec.name</code>, not the underlying table name.</strong> A spec called
+<code>client</code> mapped to a Mongo <code>clients</code> collection should expose <code>vista.name() == "client"</code> — that’s
+what UIs label their tabs with. The pattern: build the table from the spec (it gets the
+collection/file/table name), wrap it via the same code as <code>from_table</code> (which sets the vista’s name
+from the table), then call <code>vista.set_name(spec.name)</code> to override. CSV’s factory does this in
+<code>build_from_spec</code> with one extra line; the typed <code>from_table</code> path doesn’t need it because there
+is no separate spec name.</p>
+<p><strong>Resolve the id column in a fixed order</strong>: explicit <code>spec.id_column</code> first, then the first column
+flagged with <code>id</code>, then a backend default (<code>"_id"</code> for Mongo, <code>"id"</code> for most SQL, whatever your
+backend’s idiom is). Both in-tree drivers ship a <code>resolve_id_column</code> helper following exactly this
+order. Don’t reverse it — <code>spec.id_column</code> overrides flags is the rule that lets a YAML author
+correct a bad column flag without editing the schema source.</p>
+<h3 id="harvesting-metadata-from-a-typed-table"><a class="header" href="#harvesting-metadata-from-a-typed-table">Harvesting metadata from a typed table</a></h3>
+<p>The typed entry path needs to project the typed table’s columns into vista’s universal column
+metadata. Both in-tree drivers ship a near-identical helper:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn metadata_from_table&lt;T, E&gt;(table: &amp;Table&lt;T, E&gt;) -&gt; VistaMetadata
+where
+    T: TableSource,
+    E: Entity&lt;T::Value&gt;,
+    T::Column&lt;T::AnyType&gt;: ColumnLike&lt;T::AnyType&gt;,
+{
+    let mut metadata = VistaMetadata::new();
+    for (name, col) in table.columns() {
+        let mut vc = VistaColumn::new(name.clone(), col.get_type().to_string());
+        if col.flags().contains(&amp;ColumnFlag::Hidden) {
+            vc = vc.with_flag(vista_flags::HIDDEN);
+        }
+        metadata = metadata.with_column(vc);
+    }
+    if let Some(id) = table.id_field() {
+        metadata = metadata.with_id_column(id.name().to_string());
+    }
+    for title in table.title_fields() {
+        if let Some(col) = metadata.columns.get_mut(title) {
+            col.flags.push(vista_flags::TITLE.to_string());
+        }
+    }
+    metadata
+}
+<span class="boring">}</span></code></pre>
+<p>The helper is generic enough to live in <code>vantage-vista</code> itself, but the in-tree drivers keep their
+own copy. The reason is that <code>metadata</code> is <em>just</em> the universal projection — the moment you start
+adding driver-specific column attributes (Mongo’s BSON path, CSV’s header alias) the helper has to
+diverge. Keeping it next to the factory leaves room for that divergence without a refactor.</p>
+<h3 id="the-source"><a class="header" href="#the-source">The source</a></h3>
+<p><code>TableShell</code> is the trait your executor implements. It mirrors <code>TableSource</code> in spirit — most
+methods take <code>&amp;Vista</code> so the source can read the current condition state, columns, and metadata —
+but the value carrier is <code>CborValue</code> and the id is <code>String</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[async_trait]
+impl TableShell for YourTableShell {
+    async fn list_vista_values(&amp;self, _vista: &amp;Vista)
+        -&gt; Result&lt;IndexMap&lt;String, Record&lt;CborValue&gt;&gt;&gt;
+    { self.read_all().await }
+
+    async fn get_vista_value(&amp;self, _vista: &amp;Vista, id: &amp;String)
+        -&gt; Result&lt;Option&lt;Record&lt;CborValue&gt;&gt;&gt;
+    { /* ... */ }
+
+    fn add_eq_condition(&amp;mut self, field: &amp;str, value: &amp;CborValue) -&gt; Result&lt;()&gt; {
+        let condition = /* translate (field, value) → native condition */;
+        self.table.add_condition(condition);
+        Ok(())
+    }
+
+    fn capabilities(&amp;self) -&gt; &amp;VistaCapabilities { &amp;self.capabilities }
+}
+<span class="boring">}</span></code></pre>
+<p>Two boundary conventions you must honour:</p>
 <ul>
-<li><input disabled="" type="checkbox"> List the operations your backend natively supports (read, write,
-count, subscribe, invalidate).</li>
-<li><input disabled="" type="checkbox"> For each, decide: implement now, or accept the default <code>Unsupported</code>
-error. Skip rather than stub.</li>
-<li><input disabled="" type="checkbox"> Pick <code>PaginateKind</code> honestly (<code>None</code>/<code>Offset</code>/<code>Cursor</code>). Cursor-only
-backends should not advertise offset.</li>
-<li><input disabled="" type="checkbox"> Document non-obvious gaps in the driver’s README — <code>can_update: true</code>
-with no support for partial patches, for instance.</li>
+<li>
+<p><strong>Ids stringify at the boundary.</strong> Mongo’s <code>ObjectId</code> becomes its 24-char hex; SurrealDB’s <code>Thing</code>
+becomes its <code>table:id</code> form; AWS composite keys become whatever stable string they round-trip
+through. Inside the source you parse the string back to the native id type. <code>MongoTableShell</code>’s
+<code>parse_id</code> is one line — <code>MongoId::from_str(id)</code> with a <code>String</code> fallback so non-hex ids still
+flow through the same call.</p>
+</li>
+<li>
+<p><strong>Values translate to CBOR at the boundary.</strong> Drivers with already-JSON-shaped values
+(CSV strings, REST JSON) reuse their existing <code>Into&lt;CborValue&gt;</code> impls. Drivers with richer native
+values (BSON, Surreal CBOR) need a dedicated bridge. The <code>cbor.rs</code> module is where lossy paths
+live — flag them in module docs, write round-trip tests for the lossless ones, and document the
+rest. Mongo’s <code>bson_to_cbor</code> collapses <code>ObjectId</code>, <code>DateTime</code>, <code>Decimal128</code>, <code>Regex</code>,
+<code>JavaScriptCode</code>, and <code>Symbol</code> to strings; consumers wanting the native types back need to go
+through <code>Table&lt;T, E&gt;</code> directly.</p>
+<p>Two non-obvious conventions: on the way in (CBOR → native), unwrap <code>CborValue::Tag(_, inner)</code> and
+drop the tag — the inner value is what the backend stores. And integers wider than your native
+signed 64-bit type (<code>i128</code>, big BigInts) should stringify rather than silently truncate. Mongo’s
+<code>cbor_to_bson</code> does both. Keep the bridge module-private (<code>pub(crate)</code> at most); a leaking BSON
+↔ CBOR conversion gets called from places that should be going through <code>Vista</code> instead.</p>
+</li>
 </ul>
-<h3 id="implement-the-value-bridge"><a class="header" href="#implement-the-value-bridge">Implement the value bridge</a></h3>
-<p>Your source converts between the native value type and CBOR at the
-<code>VistaSource</code> boundary. Callers see <code>CborValue</code>; the wrapped table sees
-your native type.</p>
+<h3 id="capabilities--the-honesty-contract"><a class="header" href="#capabilities--the-honesty-contract">Capabilities — the honesty contract</a></h3>
+<p><code>VistaCapabilities</code> is six booleans plus a <code>PaginateKind</code>. They’re the contract a generic UI relies
+on to decide which buttons to draw:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>VistaCapabilities {
+    can_count: true,
+    can_insert: true,
+    can_update: true,
+    can_delete: true,
+    can_subscribe: false,
+    can_invalidate: false,
+    paginate_kind: PaginateKind::None,
+}
+<span class="boring">}</span></code></pre>
+<p>Set a flag to <code>true</code> <em>only</em> if you actually override the matching <code>TableShell</code> method. Default
+trait impls return <code>default_error(method, capability, vista)</code>, which produces one of two error
+kinds:</p>
 <ul>
-<li><input disabled="" type="checkbox"> Write <code>native_to_cbor(&amp;NativeValue) -&gt; CborValue</code> — exhaustive match
-on all variants, lossy paths flagged in module docs.</li>
-<li><input disabled="" type="checkbox"> Write <code>cbor_to_native(&amp;CborValue) -&gt; NativeValue</code> — handle CBOR <code>Tag</code>
-by unwrapping (drop the tag). Integers wider than your native type
-should stringify rather than silently truncate.</li>
-<li><input disabled="" type="checkbox"> Cover scalars + nested map + nested array in unit tests; one
-round-trip test catches most regressions.</li>
-<li><input disabled="" type="checkbox"> Don’t expose the bridge as <code>pub</code> outside the vista module unless a
-specific caller needs it — keeps the surface small.</li>
+<li>Flag is <code>false</code> → <code>ErrorKind::Unsupported</code> (“backend doesn’t claim to do this; caller should have
+checked capabilities first”).</li>
+<li>Flag is <code>true</code> → <code>ErrorKind::Unimplemented</code> (“backend advertised support but didn’t override the
+method — placeholder bug”).</li>
 </ul>
-<h3 id="implement-the-source"><a class="header" href="#implement-the-source">Implement the source</a></h3>
-<p>The source is a struct that owns one <code>Table&lt;Driver, EmptyEntity&gt;</code> plus the
-capability set, plus any per-column metadata you need (nested paths,
-aliases). Methods translate at the boundary and delegate everything else
-to the table.</p>
+<p>This is the <strong>lie detector</strong>. If a UI sees <code>can_insert: true</code> and calls <code>insert_value</code>, it must
+either succeed or fail with a real driver error — never a “you advertised this but didn’t ship it”
+placeholder. CSV illustrates the read-only end of this: <code>can_count: true</code> and everything else
+<code>false</code>, so writes return <code>Unsupported</code> and the test asserts the kind explicitly.</p>
+<h3 id="conditions-delegate-they-never-live-on-vista"><a class="header" href="#conditions-delegate-they-never-live-on-vista">Conditions delegate; they never live on Vista</a></h3>
+<p>This is the design decision that made everything else click into place, and it’s worth dwelling on
+because the original plan had it backwards.</p>
+<p><code>Vista::add_condition_eq(field, CborValue)</code> delegates straight to
+<code>TableShell::add_eq_condition(&amp;mut self, field, value)</code>. The source translates the pair into the
+driver’s native condition type and pushes it onto the wrapped <code>Table</code>’s condition list. Vista
+itself stores no condition state.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn add_eq_condition(&amp;mut self, field: &amp;str, value: &amp;CborValue) -&gt; Result&lt;()&gt; {
+    // CSV: build an Expression&lt;AnyCsvType&gt; via the operation trait
+    let column = self.table.columns().get(field)
+        .ok_or_else(|| error!("Unknown column for eq condition", field = field))?
+        .clone();
+    let csv_value: AnyCsvType = value.clone().into();
+    self.table.add_condition(column.eq(csv_value));
+    Ok(())
+}
+
+// Mongo: build a bson::Document with dot-notation for nested fields
+fn add_eq_condition(&amp;mut self, field: &amp;str, value: &amp;CborValue) -&gt; Result&lt;()&gt; {
+    let dotted = self.dotted_path(field);
+    let bson_value = cbor_to_bson(value);
+    self.table.add_condition(doc! { dotted: bson_value });
+    Ok(())
+}
+<span class="boring">}</span></code></pre>
+<h4 id="why-not-filter-in-memory-after-the-fetch"><a class="header" href="#why-not-filter-in-memory-after-the-fetch">Why not filter in memory after the fetch?</a></h4>
+<p>Because that defeats the database. A REST source pulling 50,000 rows over the wire to discard 49,990
+in-memory is not a useful product. Every backend that supports server-side filtering — and that’s
+all of them — benefits from push-down. SQL drivers translate to <code>WHERE</code>, Mongo to <code>find</code> filter,
+REST to query parameters, AWS to DynamoDB filter expressions. The universal CBOR pair is the lowest
+common denominator that drivers translate up from.</p>
+<h4 id="why-cborvalue-and-not-a-typed-value"><a class="header" href="#why-cborvalue-and-not-a-typed-value">Why <code>&amp;CborValue</code> and not a typed value?</a></h4>
+<p>Because at the Vista boundary the Rust type isn’t known. The caller is a CLI parsing a string
+argument, or a YAML field, or a Rhai script. CBOR is the carrier; the driver decides how to project
+it onto its native type. CSV’s <code>From&lt;CborValue&gt; for AnyCsvType</code> and Mongo’s <code>cbor_to_bson</code> are the
+two halves of that translation in the in-tree drivers.</p>
+<h3 id="nested-fields-the-column_paths-pattern"><a class="header" href="#nested-fields-the-column_paths-pattern">Nested fields: the <code>column_paths</code> pattern</a></h3>
+<p>The MongoDB rollout surfaced a problem that any document-shaped backend will hit eventually: how do
+you let a column called <code>city</code> in the spec map to <code>address.city</code> in the underlying document?</p>
+<p>The answer is <code>column_paths: IndexMap&lt;String, Vec&lt;String&gt;&gt;</code> — a per-source map from spec column
+name to BSON path segments. The source uses it three ways:</p>
 <ul>
-<li><input disabled="" type="checkbox"> Struct holds: typed <code>Table&lt;Driver, EmptyEntity&gt;</code>, <code>VistaCapabilities</code>,
-and a <code>column_paths: IndexMap&lt;String, Vec&lt;String&gt;&gt;</code> if your backend
-supports nested fields.</li>
-<li><input disabled="" type="checkbox"> <code>impl VistaSource</code> — implement only the methods your capability set
-claims; let the others fall through to the default <code>Unsupported</code>
-error.</li>
-<li><input disabled="" type="checkbox"> <code>add_eq_condition</code> translates <code>(field, CborValue)</code> into your native
-condition type and pushes it onto the wrapped table via
-<code>table.add_condition(...)</code>. <strong>Never store conditions on Vista or in
-the source struct itself.</strong></li>
-<li><input disabled="" type="checkbox"> Path-aware reads: when <code>column_paths</code> is non-empty, walk the path
-for each spec column instead of returning top-level keys verbatim.</li>
-<li><input disabled="" type="checkbox"> Path-aware writes: rebuild nested sub-documents from sibling
-columns sharing a prefix.</li>
+<li><strong>On read</strong>, walk the path through the raw document and project the value out under the spec
+name.</li>
+<li><strong>On write</strong>, rebuild intermediate sub-documents so <code>{ "address.city", "address.zip" }</code> lands as
+one <code>address: { city, zip }</code> BSON entry.</li>
+<li><strong>On filter</strong>, join the path with <code>.</code> so Mongo can use the index server-side.</li>
 </ul>
-<h3 id="implement-the-factory"><a class="header" href="#implement-the-factory">Implement the factory</a></h3>
-<p>The factory is the construction surface. It exposes one inherent method
-per entry path and one trait impl for YAML.</p>
+<p>The path map is computed once at construction. Typed-table sources read column aliases (single-level
+renames, since <code>with_alias</code> doesn’t carry dotted paths). YAML-driven sources read each column’s
+<code>mongo: { nested_path: "address.city" }</code> block. Both feed the same <code>wrap</code> helper, so reads, writes,
+and filters all see the same translation.</p>
+<p>This is the second piece of accumulated wisdom from the rollout (alongside the eq-condition
+delegation). Document-shaped backends — Surreal nested objects, REST JSON paths, AWS attribute maps
+— should reuse the pattern. SQL backends won’t need it: their column-to-field mapping is already
+flat, and aliases ride on <code>with_alias</code>.</p>
+<h3 id="yaml-extras-three-associated-types-one-deny_unknown_fields"><a class="header" href="#yaml-extras-three-associated-types-one-deny_unknown_fields">YAML extras: three associated types, one <code>deny_unknown_fields</code></a></h3>
+<p>Driver-specific YAML lives under three associated types on <code>VistaFactory</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub trait VistaFactory: Send + Sync + 'static {
+    type TableExtras: Serialize + DeserializeOwned + Default + Send + Sync + 'static;
+    type ColumnExtras: Serialize + DeserializeOwned + Default + Send + Sync + 'static;
+    type ReferenceExtras: Serialize + DeserializeOwned + Default + Send + Sync + 'static;
+    /* ... */
+}
+<span class="boring">}</span></code></pre>
+<p>Each defaults to <code>NoExtras</code> for drivers with no driver-specific blocks. The convention is a
+top-level key named after the driver — <code>csv:</code>, <code>mongo:</code>, <code>surreal:</code> — and the same key inside each
+column entry:</p>
+<pre><code class="language-yaml">name: client
+columns:
+  _id:
+    type: object_id
+    flags: [id]
+  full_name:
+    type: string
+    flags: [title]
+    mongo:
+      field: fullName        # column-level extras under `mongo:`
+  city:
+    type: string
+    mongo:
+      nested_path: address.city
+mongo:
+  collection: clients         # table-level extras under `mongo:`
+</code></pre>
+<p>Set <code>#[serde(deny_unknown_fields)]</code> on every extras struct. The outer <code>VistaSpec</code> can’t (it uses
+<code>#[serde(flatten)]</code> to merge the driver block in), but each <em>driver-owned</em> block must reject
+typos — otherwise <code>mongo: { collctiom: clients }</code> silently falls back to defaults and you’re
+debugging a missing collection at runtime instead of at parse time.</p>
+<p>Make every field inside the block <code>Option&lt;T&gt;</code> with <code>#[serde(default)]</code>, so the entire block can be
+omitted when the spec name is enough. CSV’s <code>csv: { path }</code> is mandatory (no path means no file);
+Mongo’s <code>mongo: { collection }</code> is optional and falls back to <code>spec.name</code>. Pick the convention that
+fits your backend, but lean <em>omit</em> over <em>required</em> — YAML authors hate writing the same name twice.</p>
+<p>Treat YAML errors as <em>parse errors</em>, not runtime errors. Validate paths, reject empty segments,
+reject mutually-exclusive options up-front in <code>build_from_spec</code> and friends. The Mongo driver’s
+<code>MongoColumnBlock::resolved_path</code> is a worked example — it errors on empty <code>nested_path</code>, on
+<code>a..b</code> style paths, and on empty <code>field</code> — woven with the column name so the YAML author can find
+the bad entry.</p>
+<h3 id="tests"><a class="header" href="#tests">Tests</a></h3>
+<p>Vista tests are gated on <code>feature = "vista"</code> and run against the <strong>real</strong> backend, not a mock —
+same as the <code>TableSource</code> tests in earlier steps. Use <code>Result&lt;(), Box&lt;dyn Error&gt;&gt;</code> so <code>?</code> covers
+both your driver’s native error type and <code>vantage_core::Error</code> uniformly:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span>#![cfg(feature = "vista")]
+
+<span class="boring">fn main() {
+</span>type TestResult = std::result::Result&lt;(), Box&lt;dyn Error&gt;&gt;;
+
+#[tokio::test]
+async fn vista_lists_typed_as_cbor() -&gt; TestResult {
+    let (db, name) = setup().await;          // fresh randomised database
+    let table = product_table(db.clone());
+    /* seed a row */
+    let vista = db.vista_factory().from_table(table)?;
+
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 1);
+    /* assert CborValue shapes */
+
+    teardown(&amp;db, &amp;name).await;
+    Ok(())
+}
+<span class="boring">}</span></code></pre>
+<p>Ship two layers. Cheap unit tests (no backend needed) cover:</p>
 <ul>
-<li><input disabled="" type="checkbox"> <code>&lt;Driver&gt;::vista_factory(&amp;self) -&gt; &lt;Driver&gt;VistaFactory</code> — inherent
-method on your data source so callers find it without imports.</li>
-<li><input disabled="" type="checkbox"> <code>from_table&lt;E&gt;(Table&lt;Driver, E&gt;) -&gt; Result&lt;Vista&gt;</code> — typed entry
-point. Collapse to <code>EmptyEntity</code>, harvest column metadata, hand off
-to the source.</li>
-<li><input disabled="" type="checkbox"> <code>impl VistaFactory</code> with the <code>Extras</code> associated types and a
-<code>build_from_spec</code> that builds a <code>Table&lt;Driver, EmptyEntity&gt;</code> from
-the spec, then wraps it via the same code path as <code>from_table</code>.
-One construction path, one reading path.</li>
-<li><input disabled="" type="checkbox"> Override the vista’s display name with <code>spec.name</code> (since the
-spec name often differs from the underlying collection/file/table).</li>
-<li><input disabled="" type="checkbox"> Resolve the id column in this order: <code>spec.id_column</code> → first
-column with the <code>id</code> flag → backend default (e.g. <code>"_id"</code> for Mongo,
-<code>"id"</code> for most SQL).</li>
+<li><strong>The CBOR bridge</strong> — round-trip every native variant through CBOR and back. Scalars, nested
+maps, nested arrays. Lossy variants assert the documented lossy form rather than equality.</li>
+<li><strong>YAML parsing</strong> — a minimal spec parses, an unknown field in the driver block errors loudly,
+optional blocks can be omitted.</li>
 </ul>
-<h3 id="test-the-integration"><a class="header" href="#test-the-integration">Test the integration</a></h3>
-<p>Ship two layers: cheap unit tests for the bridge + spec parsing (no
-backend needed), and gated integration tests against a real instance.</p>
+<p>Gated integration tests against the real backend then cover:</p>
 <ul>
-<li><input disabled="" type="checkbox"> Unit-test the value bridge — round-trip every variant, including
-lossy ones (assert the documented lossy form).</li>
-<li><input disabled="" type="checkbox"> Unit-test YAML parsing — minimal spec, unknown-field rejection,
-missing optional block.</li>
-<li><input disabled="" type="checkbox"> Integration: typed <code>from_table</code> round-trip — insert via table,
-list via vista, assert CBOR shapes.</li>
-<li><input disabled="" type="checkbox"> Integration: spec round-trip — <code>from_yaml</code>, list, filter via
-<code>add_condition_eq</code>, write via vista, read back.</li>
-<li><input disabled="" type="checkbox"> Capability honesty test — <code>vista.capabilities()</code> matches what the
-source actually overrides.</li>
-<li><input disabled="" type="checkbox"> Use <code>Result&lt;(), Box&lt;dyn Error&gt;&gt;</code> as the test return type and <code>?</code>
-everywhere. Avoid <code>.unwrap()</code> in test bodies — error context is
-worth more than a panic.</li>
+<li><strong>Typed <code>from_table</code> round-trip</strong> — list, get-by-id, count match the seeded data.</li>
+<li><strong>YAML <code>from_yaml</code> round-trip</strong> — same, plus the spec name overrides the underlying table name.</li>
+<li><strong><code>add_condition_eq</code> push-down</strong> — the count and list both honour the filter, and a second
+condition stacks via AND.</li>
+<li><strong>Capability advertisement</strong> — the booleans match what the driver actually overrode. Read-only
+drivers must assert <code>can_insert: false</code> etc.</li>
+<li><strong>Read-only error kinds</strong> — for an unsupported op, assert <code>ErrorKind::Unsupported</code> <em>and</em> that the
+message mentions the capability name. This is what catches the “advertised but unimplemented”
+drift.</li>
+<li><strong>Write round-trip via CBOR</strong> (writeable drivers only) — insert, get, delete via the spec column
+names; verify the raw underlying document has the native shape (e.g. nested sub-doc rather than
+flattened keys).</li>
+<li><strong>Nested-path read/write/filter</strong> (drivers using <code>column_paths</code>) — the most subtle of the lot,
+since it’s where read, write, and filter must agree on the path map.</li>
 </ul>
-<h3 id="known-sharp-edges"><a class="header" href="#known-sharp-edges">Known sharp edges</a></h3>
-<p>A few things bite every driver. They’re worth flagging up front rather
-than discovering during review.</p>
+<h3 id="sharp-edges"><a class="header" href="#sharp-edges">Sharp edges</a></h3>
+<p>A few things bite every driver. They’re worth flagging up front rather than discovering during
+review.</p>
+<p><strong>Id translation is the most common bug.</strong> Round-trip your native id through <code>String</code> and back.
+Assert that <code>vista.get_value(&amp;id)</code> finds what <code>vista.list_values()</code> returned the id for — using
+the <em>same</em> string, not a re-parsed one. Mongo’s <code>MongoId::from_str</code> falling back to <code>String</code> for
+non-hex inputs is the kind of asymmetry that hides until production.</p>
+<p><strong>Aliases at the table level may not survive.</strong> <code>Column::with_alias</code> is honoured by some
+<code>TableSource</code> impls and ignored by others when materialising records — Mongo’s <code>doc_to_record</code>
+ignores them, which is why MongoDB’s vista layer routes single-level renames through
+<code>column_paths</code> instead. Audit your read path before relying on aliases for column renames; if the
+table layer doesn’t honour them, do the renaming in the vista source.</p>
+<p><strong>Cursor-only backends should not advertise offset.</strong> <code>PaginateKind</code> is a UI hint as much as a
+declaration; getting it wrong means the UI offers an offset slider that never works. If the
+backend is genuinely cursor-only (DynamoDB, many REST APIs), say so, and let consumers reject the
+pagination shape they can’t render.</p>
+<p><strong>Conditions stay driver-typed for now.</strong> Universal/portable conditions are a later stage. Until
+then, only translate <code>eq</code>, and reject the rest at construction with a clear message — “operator
+<code>Lt</code> not yet supported on <code>&lt;DriverTableShell&gt;</code>” beats a silent fall-back to in-memory filtering
+every time.</p>
+<p><strong>Capability flags are cheap to flip later.</strong> Start narrow. A driver that ships with
+<code>can_subscribe: false</code> and turns it on the day LIVE-query lands is a healthier state than one that
+flagged it <code>true</code> in week one and has been shipping <code>Unimplemented</code> errors ever since.</p>
+<h3 id="step-7-conclusion"><a class="header" href="#step-7-conclusion">Step 7 conclusion</a></h3>
+<p>At this point your backend should have:</p>
+<ol>
+<li>
+<p><strong>A <code>vista</code> cargo feature</strong> gating the bridge so non-Vista users don’t pull in <code>vantage-vista</code>.</p>
+</li>
+<li>
+<p><strong><code>&lt;Driver&gt;::vista_factory()</code></strong> — inherent method on the data source returning a
+<code>&lt;Driver&gt;VistaFactory</code>.</p>
+</li>
+<li>
+<p><strong><code>&lt;Driver&gt;VistaFactory</code></strong> with two entry points and a trait impl:</p>
 <ul>
-<li><input disabled="" type="checkbox"> <strong>Id translation is the most common bug.</strong> Round-trip your native
-id through <code>String</code> and back; assert that <code>vista.get_value(&amp;id)</code>
-finds what <code>vista.list_values()</code> returned the id for.</li>
-<li><input disabled="" type="checkbox"> <strong>Aliases at the table level may not survive.</strong> Some drivers’
-<code>TableSource</code> impls ignore column aliases when materializing
-records. Audit your read path before relying on aliases for
-renames; the safer bet is to handle renames in the vista source
-via <code>column_paths</code>.</li>
-<li><input disabled="" type="checkbox"> <strong>Don’t filter in memory.</strong> If your backend can push the filter
-down (SQL <code>WHERE</code>, Mongo filter doc, REST query param), do that —
-that’s the entire reason <code>add_eq_condition</code> mutates the underlying
-table instead of stashing state on Vista.</li>
-<li><input disabled="" type="checkbox"> <strong>Conditions stay driver-typed for now.</strong> Universal/portable
-conditions land in a later stage; until then, only translate <code>eq</code>,
-and reject the rest at construction with a clear message.</li>
-<li><input disabled="" type="checkbox"> <strong>Capability flags are cheap to flip later.</strong> Start narrow.</li>
+<li><code>from_table&lt;E&gt;(Table&lt;YourDB, E&gt;) -&gt; Result&lt;Vista&gt;</code> (inherent, typed path).</li>
+<li><code>impl VistaFactory</code> with <code>build_from_spec</code> (YAML path).</li>
+<li>Both routing through one <code>wrap</code> helper that calls <code>Vista::new</code> exactly once.</li>
 </ul>
+</li>
+<li>
+<p><strong><code>&lt;Driver&gt;TableShell</code></strong> implementing <code>TableShell</code>:</p>
+<ul>
+<li>Read methods translate native ids → <code>String</code> and native values → <code>CborValue</code> at the boundary.</li>
+<li>Write methods (where supported) translate the other way.</li>
+<li><code>add_eq_condition</code> pushes a native condition onto the wrapped <code>Table</code>.</li>
+<li><code>capabilities()</code> returns a <code>VistaCapabilities</code> whose <code>true</code> flags exactly match the methods
+you actually overrode.</li>
+</ul>
+</li>
+<li>
+<p><strong>YAML extras</strong> under <code>spec.rs</code>:</p>
+<ul>
+<li><code>&lt;Driver&gt;TableExtras</code> and <code>&lt;Driver&gt;ColumnExtras</code> — both <code>deny_unknown_fields</code>.</li>
+<li><code>&lt;Driver&gt;VistaSpec</code> type alias resolving the three associated types.</li>
+<li>Up-front validation of paths, mutual-exclusion rules, etc., as part of spec lowering.</li>
+</ul>
+</li>
+<li>
+<p><strong>Tests</strong> in <code>tests/&lt;n&gt;_vista.rs</code> — gated on <code>feature = "vista"</code>, run against a real backend,
+covering typed/YAML construction, read, write (where supported), <code>add_condition_eq</code> push-down,
+capability advertisement, and the <code>Unsupported</code> vs <code>Unimplemented</code> error-kind boundary.</p>
+</li>
+</ol>
+<p>Once Vista’s wired up, the same generic CLI, admin UI, or scripting layer that already drives CSV
+and MongoDB drives your backend too — without recompiling, without an entity import, without a
+single backend-specific line of code on the consumer side. That’s what the six previous steps were
+clearing the runway for.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="persistence-aligned-type-system"><a class="header" href="#persistence-aligned-type-system">Persistence-aligned Type System</a></h1>
 <p>Every Vantage persistence defines its own type trait — <code>SqliteType</code>, <code>PostgresType</code>, <code>SurrealType</code>,

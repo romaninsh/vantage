@@ -1,0 +1,721 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Step 8: Vista Integration - Vantage 0.4 Framework</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-2459343d.css">
+        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href=".././mdbook-admonish.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../searchindex-ddb5229b.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc-99e15bc2.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Vantage 0.4 Framework</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="step-7-vista-integration"><a class="header" href="#step-7-vista-integration">Step 7: Vista Integration</a></h1>
+<p>By the end of Step 6 your backend is a fully-featured persistence — typed <code>Table&lt;T, E&gt;</code>, conditions,
+relationships, the lot. That’s exactly what business logic wants. It’s also exactly what generic
+code can’t consume.</p>
+<p>A CLI that lists “any table from any backend” can’t carry an entity generic. A web admin that draws
+forms from a YAML schema doesn’t know your <code>Product</code> struct exists. A Rhai script that filters rows
+by a string field name shouldn’t have to compile against your backend’s condition type. <strong>Vista</strong> is
+the bridge: a schema-bearing handle that wraps a typed <code>Table</code> and exposes it through a uniform,
+CBOR-typed surface.</p>
+<p>This step adds Vista support to your backend. The work is small — one factory, one source, a few
+hundred lines — but it’s the doorway through which UI, CLI, and config-driven tooling start
+seeing your database at all.</p>
+<h3 id="before-you-start"><a class="header" href="#before-you-start">Before you start</a></h3>
+<p>Vista is a thin layer over what Steps 1–6 already gave you. Most of the work here is decisions
+rather than code. Confirm you have:</p>
+<ul>
+<li>A working <code>TableSource</code> impl (Step 4) — Vista’s read/write path delegates to it unchanged.</li>
+<li>A native value type with an <code>Into&lt;CborValue&gt;</code> story (Step 1). If your value type is already JSON-
+shaped you’re done; otherwise you need a dedicated bridge (see <code>cbor.rs</code> below).</li>
+<li>An id type that round-trips through <code>String</code> — <code>FromStr</code> and <code>Display</code> impls. If the native id
+doesn’t have these yet, add them before going further. The vista boundary stringifies ids
+unconditionally.</li>
+</ul>
+<h3 id="what-vista-actually-is"><a class="header" href="#what-vista-actually-is">What Vista actually is</a></h3>
+<p><code>Vista</code> is a concrete struct in <code>vantage-vista</code> (no consumer-facing trait surface). It owns
+universal metadata — name, columns, references, capabilities, id column — and a boxed <code>TableShell</code>
+that does the real work. Your job as a driver author is two-fold:</p>
+<ol>
+<li>A <strong>factory</strong> that produces a <code>Vista</code> from either a typed <code>Table&lt;YourDB, E&gt;</code> or a YAML schema.</li>
+<li>A <strong>source</strong> that implements <code>TableShell</code> — the per-driver executor <code>Vista</code> delegates to.</li>
+</ol>
+<p>Both construction paths converge on the same source-creation code. That’s a deliberate constraint:
+post-construction Vista usage is fully database-agnostic, so the same UI/CLI/script drives a Mongo
+Vista, a SurrealDB Vista, or your CSV one without caring how it got built.</p>
+<h3 id="why-not-just-hand-around-tablet-e"><a class="header" href="#why-not-just-hand-around-tablet-e">Why not just hand around <code>Table&lt;T, E&gt;</code>?</a></h3>
+<p>You can! Anywhere the entity is known at compile time, <code>Table&lt;T, E&gt;</code> is the better tool — it’s
+typed, it composes, and it’s what you’ve spent six steps building. Vista exists for the cases where
+the entity <em>isn’t</em> known at compile time, or where the backend itself is chosen at runtime:</p>
+<ul>
+<li>A CLI driven by <code>--source surreal --table client list</code> — no <code>Client</code> struct in scope.</li>
+<li>A YAML-driven admin tool that reads schema from disk.</li>
+<li>A Rhai callback running in an editor that filters rows by a string column name.</li>
+</ul>
+<p>For those cases you need erasure. The price of erasure is that values become <code>CborValue</code> and ids
+become <code>String</code> at the boundary; the type system from Step 1 doesn’t propagate any further. That’s
+fine — generic code is rendering values, not deserialising into structs.</p>
+<h3 id="cargo-wiring"><a class="header" href="#cargo-wiring">Cargo wiring</a></h3>
+<p>The bridge is opt-in via a <code>vista</code> feature so non-Vista users don’t transitively pull in
+<code>vantage-vista</code>:</p>
+<pre><code class="language-toml"># in your backend's Cargo.toml
+[features]
+default = []
+vista = ["dep:vantage-vista"]
+
+[dependencies]
+vantage-vista = { path = "../vantage-vista", optional = true }
+</code></pre>
+<p>Everything Vista-related — the factory module, the source, the YAML extras — sits under
+<code>#[cfg(feature = "vista")]</code>. The <code>TableSource</code> path is unaffected, and downstream crates compile
+without <code>vantage-vista</code> in their tree.</p>
+<h3 id="file-layout"><a class="header" href="#file-layout">File layout</a></h3>
+<p>Both in-tree drivers (CSV and MongoDB) converged on the same shape:</p>
+<pre><code>&lt;driver&gt;/src/vista/
+├── mod.rs       re-exports + &lt;Driver&gt;::vista_factory() inherent impl
+├── spec.rs      &lt;Driver&gt;TableExtras / &lt;Driver&gt;ColumnExtras / &lt;Driver&gt;VistaSpec
+├── factory.rs   &lt;Driver&gt;VistaFactory + impl VistaFactory + spec→table helpers
+├── source.rs    &lt;Driver&gt;TableShell + impl TableShell
+└── cbor.rs      native ↔ CBOR bridge (only when native value type ≠ JSON-shaped)
+</code></pre>
+<p>CSV doesn’t have <code>cbor.rs</code> — <code>From&lt;AnyCsvType&gt; for CborValue</code> already lived in the type-system
+module for the <code>AnyTable</code> path, and the source reuses it. MongoDB’s <code>bson::Bson</code> needs a richer
+bridge (ObjectId, DateTime, Timestamp, Decimal128 each have lossy paths) so it gets a dedicated
+file. Pick whichever fits — the trait shape doesn’t change either way.</p>
+<h3 id="the-factory"><a class="header" href="#the-factory">The factory</a></h3>
+<p>Drivers expose a <code>vista_factory()</code> inherent method on the data source struct, so users construct
+factories without naming an extra type:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl YourDB {
+    pub fn vista_factory(&amp;self) -&gt; YourVistaFactory {
+        YourVistaFactory::new(self.clone())
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>The factory struct holds whatever connection state it needs, plus two entry points and a trait
+impl:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct YourVistaFactory { db: YourDB }
+
+impl YourVistaFactory {
+    pub fn new(db: YourDB) -&gt; Self { Self { db } }
+
+    /// Typed entry point — kept off the `VistaFactory` trait to avoid making
+    /// vantage-vista depend on vantage-table.
+    pub fn from_table&lt;E&gt;(&amp;self, table: Table&lt;YourDB, E&gt;) -&gt; Result&lt;Vista&gt;
+    where E: Entity&lt;AnyYourType&gt; + 'static
+    { /* ... */ }
+}
+
+impl VistaFactory for YourVistaFactory {
+    type TableExtras = YourTableExtras;
+    type ColumnExtras = YourColumnExtras;
+    type ReferenceExtras = NoExtras;
+
+    fn build_from_spec(&amp;self, spec: YourVistaSpec) -&gt; Result&lt;Vista&gt; { /* ... */ }
+}
+<span class="boring">}</span></code></pre>
+<p>The <code>from_table</code> method is <strong>inherent</strong>, not on the trait. That’s deliberate: putting it on the
+trait would force <code>vantage-vista</code> to depend on <code>vantage-table</code>, which would couple the two crates
+unnecessarily. Drivers want both, of course — but the universal Vista crate doesn’t.</p>
+<h4 id="one-source-two-paths"><a class="header" href="#one-source-two-paths">One source, two paths</a></h4>
+<p>The two construction paths must converge on identical source-creation code. Here’s the pattern from
+<code>MongoVistaFactory</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub fn from_table&lt;E&gt;(&amp;self, table: Table&lt;YourDB, E&gt;) -&gt; Result&lt;Vista&gt;
+where E: Entity&lt;AnyYourType&gt; + 'static
+{
+    let name = table.table_name().to_string();
+    let any_table = table.into_entity::&lt;EmptyEntity&gt;();
+    let column_paths = paths_from_table_columns(&amp;any_table);   // typed → paths
+    Ok(self.wrap(any_table, column_paths, name))
+}
+
+fn build_from_spec(&amp;self, spec: YourVistaSpec) -&gt; Result&lt;Vista&gt; {
+    let column_paths = self.paths_from_spec(&amp;spec)?;            // YAML → paths
+    let table = self.table_from_spec(&amp;spec)?;
+    Ok(self.wrap(table, column_paths, spec.name))
+}
+
+fn wrap(&amp;self, table: Table&lt;YourDB, EmptyEntity&gt;, column_paths: ..., name: String) -&gt; Vista {
+    // single Vista::new call site — capability flags, source construction
+}
+<span class="boring">}</span></code></pre>
+<p>The two paths only differ in <em>where they get their inputs from</em> — column metadata, the path map,
+the table itself. Once the inputs are gathered, they go through the same <code>wrap</code> helper. That means a
+future capability flip (advertising <code>can_subscribe</code>, say) is a one-line edit, not two. Drift between
+the two construction paths is the most common Vista bug; this pattern is what keeps it out.</p>
+<h4 id="two-boundary-details-that-bite"><a class="header" href="#two-boundary-details-that-bite">Two boundary details that bite</a></h4>
+<p>Two more details that look incidental but trip every driver:</p>
+<p><strong>The vista’s display name comes from <code>spec.name</code>, not the underlying table name.</strong> A spec called
+<code>client</code> mapped to a Mongo <code>clients</code> collection should expose <code>vista.name() == "client"</code> — that’s
+what UIs label their tabs with. The pattern: build the table from the spec (it gets the
+collection/file/table name), wrap it via the same code as <code>from_table</code> (which sets the vista’s name
+from the table), then call <code>vista.set_name(spec.name)</code> to override. CSV’s factory does this in
+<code>build_from_spec</code> with one extra line; the typed <code>from_table</code> path doesn’t need it because there
+is no separate spec name.</p>
+<p><strong>Resolve the id column in a fixed order</strong>: explicit <code>spec.id_column</code> first, then the first column
+flagged with <code>id</code>, then a backend default (<code>"_id"</code> for Mongo, <code>"id"</code> for most SQL, whatever your
+backend’s idiom is). Both in-tree drivers ship a <code>resolve_id_column</code> helper following exactly this
+order. Don’t reverse it — <code>spec.id_column</code> overrides flags is the rule that lets a YAML author
+correct a bad column flag without editing the schema source.</p>
+<h3 id="harvesting-metadata-from-a-typed-table"><a class="header" href="#harvesting-metadata-from-a-typed-table">Harvesting metadata from a typed table</a></h3>
+<p>The typed entry path needs to project the typed table’s columns into vista’s universal column
+metadata. Both in-tree drivers ship a near-identical helper:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn metadata_from_table&lt;T, E&gt;(table: &amp;Table&lt;T, E&gt;) -&gt; VistaMetadata
+where
+    T: TableSource,
+    E: Entity&lt;T::Value&gt;,
+    T::Column&lt;T::AnyType&gt;: ColumnLike&lt;T::AnyType&gt;,
+{
+    let mut metadata = VistaMetadata::new();
+    for (name, col) in table.columns() {
+        let mut vc = VistaColumn::new(name.clone(), col.get_type().to_string());
+        if col.flags().contains(&amp;ColumnFlag::Hidden) {
+            vc = vc.with_flag(vista_flags::HIDDEN);
+        }
+        metadata = metadata.with_column(vc);
+    }
+    if let Some(id) = table.id_field() {
+        metadata = metadata.with_id_column(id.name().to_string());
+    }
+    for title in table.title_fields() {
+        if let Some(col) = metadata.columns.get_mut(title) {
+            col.flags.push(vista_flags::TITLE.to_string());
+        }
+    }
+    metadata
+}
+<span class="boring">}</span></code></pre>
+<p>The helper is generic enough to live in <code>vantage-vista</code> itself, but the in-tree drivers keep their
+own copy. The reason is that <code>metadata</code> is <em>just</em> the universal projection — the moment you start
+adding driver-specific column attributes (Mongo’s BSON path, CSV’s header alias) the helper has to
+diverge. Keeping it next to the factory leaves room for that divergence without a refactor.</p>
+<h3 id="the-source"><a class="header" href="#the-source">The source</a></h3>
+<p><code>TableShell</code> is the trait your executor implements. It mirrors <code>TableSource</code> in spirit — most
+methods take <code>&amp;Vista</code> so the source can read the current condition state, columns, and metadata —
+but the value carrier is <code>CborValue</code> and the id is <code>String</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[async_trait]
+impl TableShell for YourTableShell {
+    async fn list_vista_values(&amp;self, _vista: &amp;Vista)
+        -&gt; Result&lt;IndexMap&lt;String, Record&lt;CborValue&gt;&gt;&gt;
+    { self.read_all().await }
+
+    async fn get_vista_value(&amp;self, _vista: &amp;Vista, id: &amp;String)
+        -&gt; Result&lt;Option&lt;Record&lt;CborValue&gt;&gt;&gt;
+    { /* ... */ }
+
+    fn add_eq_condition(&amp;mut self, field: &amp;str, value: &amp;CborValue) -&gt; Result&lt;()&gt; {
+        let condition = /* translate (field, value) → native condition */;
+        self.table.add_condition(condition);
+        Ok(())
+    }
+
+    fn capabilities(&amp;self) -&gt; &amp;VistaCapabilities { &amp;self.capabilities }
+}
+<span class="boring">}</span></code></pre>
+<p>Two boundary conventions you must honour:</p>
+<ul>
+<li>
+<p><strong>Ids stringify at the boundary.</strong> Mongo’s <code>ObjectId</code> becomes its 24-char hex; SurrealDB’s <code>Thing</code>
+becomes its <code>table:id</code> form; AWS composite keys become whatever stable string they round-trip
+through. Inside the source you parse the string back to the native id type. <code>MongoTableShell</code>’s
+<code>parse_id</code> is one line — <code>MongoId::from_str(id)</code> with a <code>String</code> fallback so non-hex ids still
+flow through the same call.</p>
+</li>
+<li>
+<p><strong>Values translate to CBOR at the boundary.</strong> Drivers with already-JSON-shaped values
+(CSV strings, REST JSON) reuse their existing <code>Into&lt;CborValue&gt;</code> impls. Drivers with richer native
+values (BSON, Surreal CBOR) need a dedicated bridge. The <code>cbor.rs</code> module is where lossy paths
+live — flag them in module docs, write round-trip tests for the lossless ones, and document the
+rest. Mongo’s <code>bson_to_cbor</code> collapses <code>ObjectId</code>, <code>DateTime</code>, <code>Decimal128</code>, <code>Regex</code>,
+<code>JavaScriptCode</code>, and <code>Symbol</code> to strings; consumers wanting the native types back need to go
+through <code>Table&lt;T, E&gt;</code> directly.</p>
+<p>Two non-obvious conventions: on the way in (CBOR → native), unwrap <code>CborValue::Tag(_, inner)</code> and
+drop the tag — the inner value is what the backend stores. And integers wider than your native
+signed 64-bit type (<code>i128</code>, big BigInts) should stringify rather than silently truncate. Mongo’s
+<code>cbor_to_bson</code> does both. Keep the bridge module-private (<code>pub(crate)</code> at most); a leaking BSON
+↔ CBOR conversion gets called from places that should be going through <code>Vista</code> instead.</p>
+</li>
+</ul>
+<h3 id="capabilities--the-honesty-contract"><a class="header" href="#capabilities--the-honesty-contract">Capabilities — the honesty contract</a></h3>
+<p><code>VistaCapabilities</code> is six booleans plus a <code>PaginateKind</code>. They’re the contract a generic UI relies
+on to decide which buttons to draw:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>VistaCapabilities {
+    can_count: true,
+    can_insert: true,
+    can_update: true,
+    can_delete: true,
+    can_subscribe: false,
+    can_invalidate: false,
+    paginate_kind: PaginateKind::None,
+}
+<span class="boring">}</span></code></pre>
+<p>Set a flag to <code>true</code> <em>only</em> if you actually override the matching <code>TableShell</code> method. Default
+trait impls return <code>default_error(method, capability, vista)</code>, which produces one of two error
+kinds:</p>
+<ul>
+<li>Flag is <code>false</code> → <code>ErrorKind::Unsupported</code> (“backend doesn’t claim to do this; caller should have
+checked capabilities first”).</li>
+<li>Flag is <code>true</code> → <code>ErrorKind::Unimplemented</code> (“backend advertised support but didn’t override the
+method — placeholder bug”).</li>
+</ul>
+<p>This is the <strong>lie detector</strong>. If a UI sees <code>can_insert: true</code> and calls <code>insert_value</code>, it must
+either succeed or fail with a real driver error — never a “you advertised this but didn’t ship it”
+placeholder. CSV illustrates the read-only end of this: <code>can_count: true</code> and everything else
+<code>false</code>, so writes return <code>Unsupported</code> and the test asserts the kind explicitly.</p>
+<h3 id="conditions-delegate-they-never-live-on-vista"><a class="header" href="#conditions-delegate-they-never-live-on-vista">Conditions delegate; they never live on Vista</a></h3>
+<p>This is the design decision that made everything else click into place, and it’s worth dwelling on
+because the original plan had it backwards.</p>
+<p><code>Vista::add_condition_eq(field, CborValue)</code> delegates straight to
+<code>TableShell::add_eq_condition(&amp;mut self, field, value)</code>. The source translates the pair into the
+driver’s native condition type and pushes it onto the wrapped <code>Table</code>’s condition list. Vista
+itself stores no condition state.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn add_eq_condition(&amp;mut self, field: &amp;str, value: &amp;CborValue) -&gt; Result&lt;()&gt; {
+    // CSV: build an Expression&lt;AnyCsvType&gt; via the operation trait
+    let column = self.table.columns().get(field)
+        .ok_or_else(|| error!("Unknown column for eq condition", field = field))?
+        .clone();
+    let csv_value: AnyCsvType = value.clone().into();
+    self.table.add_condition(column.eq(csv_value));
+    Ok(())
+}
+
+// Mongo: build a bson::Document with dot-notation for nested fields
+fn add_eq_condition(&amp;mut self, field: &amp;str, value: &amp;CborValue) -&gt; Result&lt;()&gt; {
+    let dotted = self.dotted_path(field);
+    let bson_value = cbor_to_bson(value);
+    self.table.add_condition(doc! { dotted: bson_value });
+    Ok(())
+}
+<span class="boring">}</span></code></pre>
+<h4 id="why-not-filter-in-memory-after-the-fetch"><a class="header" href="#why-not-filter-in-memory-after-the-fetch">Why not filter in memory after the fetch?</a></h4>
+<p>Because that defeats the database. A REST source pulling 50,000 rows over the wire to discard 49,990
+in-memory is not a useful product. Every backend that supports server-side filtering — and that’s
+all of them — benefits from push-down. SQL drivers translate to <code>WHERE</code>, Mongo to <code>find</code> filter,
+REST to query parameters, AWS to DynamoDB filter expressions. The universal CBOR pair is the lowest
+common denominator that drivers translate up from.</p>
+<h4 id="why-cborvalue-and-not-a-typed-value"><a class="header" href="#why-cborvalue-and-not-a-typed-value">Why <code>&amp;CborValue</code> and not a typed value?</a></h4>
+<p>Because at the Vista boundary the Rust type isn’t known. The caller is a CLI parsing a string
+argument, or a YAML field, or a Rhai script. CBOR is the carrier; the driver decides how to project
+it onto its native type. CSV’s <code>From&lt;CborValue&gt; for AnyCsvType</code> and Mongo’s <code>cbor_to_bson</code> are the
+two halves of that translation in the in-tree drivers.</p>
+<h3 id="nested-fields-the-column_paths-pattern"><a class="header" href="#nested-fields-the-column_paths-pattern">Nested fields: the <code>column_paths</code> pattern</a></h3>
+<p>The MongoDB rollout surfaced a problem that any document-shaped backend will hit eventually: how do
+you let a column called <code>city</code> in the spec map to <code>address.city</code> in the underlying document?</p>
+<p>The answer is <code>column_paths: IndexMap&lt;String, Vec&lt;String&gt;&gt;</code> — a per-source map from spec column
+name to BSON path segments. The source uses it three ways:</p>
+<ul>
+<li><strong>On read</strong>, walk the path through the raw document and project the value out under the spec
+name.</li>
+<li><strong>On write</strong>, rebuild intermediate sub-documents so <code>{ "address.city", "address.zip" }</code> lands as
+one <code>address: { city, zip }</code> BSON entry.</li>
+<li><strong>On filter</strong>, join the path with <code>.</code> so Mongo can use the index server-side.</li>
+</ul>
+<p>The path map is computed once at construction. Typed-table sources read column aliases (single-level
+renames, since <code>with_alias</code> doesn’t carry dotted paths). YAML-driven sources read each column’s
+<code>mongo: { nested_path: "address.city" }</code> block. Both feed the same <code>wrap</code> helper, so reads, writes,
+and filters all see the same translation.</p>
+<p>This is the second piece of accumulated wisdom from the rollout (alongside the eq-condition
+delegation). Document-shaped backends — Surreal nested objects, REST JSON paths, AWS attribute maps
+— should reuse the pattern. SQL backends won’t need it: their column-to-field mapping is already
+flat, and aliases ride on <code>with_alias</code>.</p>
+<h3 id="yaml-extras-three-associated-types-one-deny_unknown_fields"><a class="header" href="#yaml-extras-three-associated-types-one-deny_unknown_fields">YAML extras: three associated types, one <code>deny_unknown_fields</code></a></h3>
+<p>Driver-specific YAML lives under three associated types on <code>VistaFactory</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub trait VistaFactory: Send + Sync + 'static {
+    type TableExtras: Serialize + DeserializeOwned + Default + Send + Sync + 'static;
+    type ColumnExtras: Serialize + DeserializeOwned + Default + Send + Sync + 'static;
+    type ReferenceExtras: Serialize + DeserializeOwned + Default + Send + Sync + 'static;
+    /* ... */
+}
+<span class="boring">}</span></code></pre>
+<p>Each defaults to <code>NoExtras</code> for drivers with no driver-specific blocks. The convention is a
+top-level key named after the driver — <code>csv:</code>, <code>mongo:</code>, <code>surreal:</code> — and the same key inside each
+column entry:</p>
+<pre><code class="language-yaml">name: client
+columns:
+  _id:
+    type: object_id
+    flags: [id]
+  full_name:
+    type: string
+    flags: [title]
+    mongo:
+      field: fullName        # column-level extras under `mongo:`
+  city:
+    type: string
+    mongo:
+      nested_path: address.city
+mongo:
+  collection: clients         # table-level extras under `mongo:`
+</code></pre>
+<p>Set <code>#[serde(deny_unknown_fields)]</code> on every extras struct. The outer <code>VistaSpec</code> can’t (it uses
+<code>#[serde(flatten)]</code> to merge the driver block in), but each <em>driver-owned</em> block must reject
+typos — otherwise <code>mongo: { collctiom: clients }</code> silently falls back to defaults and you’re
+debugging a missing collection at runtime instead of at parse time.</p>
+<p>Make every field inside the block <code>Option&lt;T&gt;</code> with <code>#[serde(default)]</code>, so the entire block can be
+omitted when the spec name is enough. CSV’s <code>csv: { path }</code> is mandatory (no path means no file);
+Mongo’s <code>mongo: { collection }</code> is optional and falls back to <code>spec.name</code>. Pick the convention that
+fits your backend, but lean <em>omit</em> over <em>required</em> — YAML authors hate writing the same name twice.</p>
+<p>Treat YAML errors as <em>parse errors</em>, not runtime errors. Validate paths, reject empty segments,
+reject mutually-exclusive options up-front in <code>build_from_spec</code> and friends. The Mongo driver’s
+<code>MongoColumnBlock::resolved_path</code> is a worked example — it errors on empty <code>nested_path</code>, on
+<code>a..b</code> style paths, and on empty <code>field</code> — woven with the column name so the YAML author can find
+the bad entry.</p>
+<h3 id="tests"><a class="header" href="#tests">Tests</a></h3>
+<p>Vista tests are gated on <code>feature = "vista"</code> and run against the <strong>real</strong> backend, not a mock —
+same as the <code>TableSource</code> tests in earlier steps. Use <code>Result&lt;(), Box&lt;dyn Error&gt;&gt;</code> so <code>?</code> covers
+both your driver’s native error type and <code>vantage_core::Error</code> uniformly:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span>#![cfg(feature = "vista")]
+
+<span class="boring">fn main() {
+</span>type TestResult = std::result::Result&lt;(), Box&lt;dyn Error&gt;&gt;;
+
+#[tokio::test]
+async fn vista_lists_typed_as_cbor() -&gt; TestResult {
+    let (db, name) = setup().await;          // fresh randomised database
+    let table = product_table(db.clone());
+    /* seed a row */
+    let vista = db.vista_factory().from_table(table)?;
+
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 1);
+    /* assert CborValue shapes */
+
+    teardown(&amp;db, &amp;name).await;
+    Ok(())
+}
+<span class="boring">}</span></code></pre>
+<p>Ship two layers. Cheap unit tests (no backend needed) cover:</p>
+<ul>
+<li><strong>The CBOR bridge</strong> — round-trip every native variant through CBOR and back. Scalars, nested
+maps, nested arrays. Lossy variants assert the documented lossy form rather than equality.</li>
+<li><strong>YAML parsing</strong> — a minimal spec parses, an unknown field in the driver block errors loudly,
+optional blocks can be omitted.</li>
+</ul>
+<p>Gated integration tests against the real backend then cover:</p>
+<ul>
+<li><strong>Typed <code>from_table</code> round-trip</strong> — list, get-by-id, count match the seeded data.</li>
+<li><strong>YAML <code>from_yaml</code> round-trip</strong> — same, plus the spec name overrides the underlying table name.</li>
+<li><strong><code>add_condition_eq</code> push-down</strong> — the count and list both honour the filter, and a second
+condition stacks via AND.</li>
+<li><strong>Capability advertisement</strong> — the booleans match what the driver actually overrode. Read-only
+drivers must assert <code>can_insert: false</code> etc.</li>
+<li><strong>Read-only error kinds</strong> — for an unsupported op, assert <code>ErrorKind::Unsupported</code> <em>and</em> that the
+message mentions the capability name. This is what catches the “advertised but unimplemented”
+drift.</li>
+<li><strong>Write round-trip via CBOR</strong> (writeable drivers only) — insert, get, delete via the spec column
+names; verify the raw underlying document has the native shape (e.g. nested sub-doc rather than
+flattened keys).</li>
+<li><strong>Nested-path read/write/filter</strong> (drivers using <code>column_paths</code>) — the most subtle of the lot,
+since it’s where read, write, and filter must agree on the path map.</li>
+</ul>
+<h3 id="sharp-edges"><a class="header" href="#sharp-edges">Sharp edges</a></h3>
+<p>A few things bite every driver. They’re worth flagging up front rather than discovering during
+review.</p>
+<p><strong>Id translation is the most common bug.</strong> Round-trip your native id through <code>String</code> and back.
+Assert that <code>vista.get_value(&amp;id)</code> finds what <code>vista.list_values()</code> returned the id for — using
+the <em>same</em> string, not a re-parsed one. Mongo’s <code>MongoId::from_str</code> falling back to <code>String</code> for
+non-hex inputs is the kind of asymmetry that hides until production.</p>
+<p><strong>Aliases at the table level may not survive.</strong> <code>Column::with_alias</code> is honoured by some
+<code>TableSource</code> impls and ignored by others when materialising records — Mongo’s <code>doc_to_record</code>
+ignores them, which is why MongoDB’s vista layer routes single-level renames through
+<code>column_paths</code> instead. Audit your read path before relying on aliases for column renames; if the
+table layer doesn’t honour them, do the renaming in the vista source.</p>
+<p><strong>Cursor-only backends should not advertise offset.</strong> <code>PaginateKind</code> is a UI hint as much as a
+declaration; getting it wrong means the UI offers an offset slider that never works. If the
+backend is genuinely cursor-only (DynamoDB, many REST APIs), say so, and let consumers reject the
+pagination shape they can’t render.</p>
+<p><strong>Conditions stay driver-typed for now.</strong> Universal/portable conditions are a later stage. Until
+then, only translate <code>eq</code>, and reject the rest at construction with a clear message — “operator
+<code>Lt</code> not yet supported on <code>&lt;DriverTableShell&gt;</code>” beats a silent fall-back to in-memory filtering
+every time.</p>
+<p><strong>Capability flags are cheap to flip later.</strong> Start narrow. A driver that ships with
+<code>can_subscribe: false</code> and turns it on the day LIVE-query lands is a healthier state than one that
+flagged it <code>true</code> in week one and has been shipping <code>Unimplemented</code> errors ever since.</p>
+<h3 id="step-7-conclusion"><a class="header" href="#step-7-conclusion">Step 7 conclusion</a></h3>
+<p>At this point your backend should have:</p>
+<ol>
+<li>
+<p><strong>A <code>vista</code> cargo feature</strong> gating the bridge so non-Vista users don’t pull in <code>vantage-vista</code>.</p>
+</li>
+<li>
+<p><strong><code>&lt;Driver&gt;::vista_factory()</code></strong> — inherent method on the data source returning a
+<code>&lt;Driver&gt;VistaFactory</code>.</p>
+</li>
+<li>
+<p><strong><code>&lt;Driver&gt;VistaFactory</code></strong> with two entry points and a trait impl:</p>
+<ul>
+<li><code>from_table&lt;E&gt;(Table&lt;YourDB, E&gt;) -&gt; Result&lt;Vista&gt;</code> (inherent, typed path).</li>
+<li><code>impl VistaFactory</code> with <code>build_from_spec</code> (YAML path).</li>
+<li>Both routing through one <code>wrap</code> helper that calls <code>Vista::new</code> exactly once.</li>
+</ul>
+</li>
+<li>
+<p><strong><code>&lt;Driver&gt;TableShell</code></strong> implementing <code>TableShell</code>:</p>
+<ul>
+<li>Read methods translate native ids → <code>String</code> and native values → <code>CborValue</code> at the boundary.</li>
+<li>Write methods (where supported) translate the other way.</li>
+<li><code>add_eq_condition</code> pushes a native condition onto the wrapped <code>Table</code>.</li>
+<li><code>capabilities()</code> returns a <code>VistaCapabilities</code> whose <code>true</code> flags exactly match the methods
+you actually overrode.</li>
+</ul>
+</li>
+<li>
+<p><strong>YAML extras</strong> under <code>spec.rs</code>:</p>
+<ul>
+<li><code>&lt;Driver&gt;TableExtras</code> and <code>&lt;Driver&gt;ColumnExtras</code> — both <code>deny_unknown_fields</code>.</li>
+<li><code>&lt;Driver&gt;VistaSpec</code> type alias resolving the three associated types.</li>
+<li>Up-front validation of paths, mutual-exclusion rules, etc., as part of spec lowering.</li>
+</ul>
+</li>
+<li>
+<p><strong>Tests</strong> in <code>tests/&lt;n&gt;_vista.rs</code> — gated on <code>feature = "vista"</code>, run against a real backend,
+covering typed/YAML construction, read, write (where supported), <code>add_condition_eq</code> push-down,
+capability advertisement, and the <code>Unsupported</code> vs <code>Unimplemented</code> error-kind boundary.</p>
+</li>
+</ol>
+<p>Once Vista’s wired up, the same generic CLI, admin UI, or scripting layer that already drives CSV
+and MongoDB drives your backend too — without recompiling, without an entity import, without a
+single backend-specific line of code on the consumer side. That’s what the six previous steps were
+clearing the runway for.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../new-persistence/step7-multi-backend.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../type-system.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../new-persistence/step7-multi-backend.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../type-system.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
+
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../mermaid-eefea253.min.js"></script>
+        <script src="../mermaid-init-ccf746f1.js"></script>
+
+
+
+    </div>
+    </body>
+</html>
