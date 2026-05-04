@@ -1,0 +1,20 @@
+name: client
+datasource: bakery_csv
+columns:
+  id:
+    type: string
+    flags: [id]
+  name:
+    type: string
+    flags: [title, searchable]
+  email:
+    type: string
+  contact_details:
+    type: string
+    flags: [hidden]
+  is_paying_client:
+    type: bool
+  metadata:
+    type: string
+csv:
+  path: client.csv

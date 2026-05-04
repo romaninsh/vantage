@@ -5,7 +5,7 @@
 pub mod util;
 
 // use serde::{Deserialize, Serialize, de::DeserializeOwned};
-pub use util::{Context, IntoVec, Result, VantageError};
+pub use util::{Context, ErrorKind, IntoVec, Result, VantageError};
 
 // /// Entity trait for types that can be used with datasets
 // ///

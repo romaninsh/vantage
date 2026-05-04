@@ -25,7 +25,7 @@ consumers — it only changes how the produced Vista behaves at runtime.
 |---|---|---|
 | 1 | [Crate skeleton](1-skeleton.md) | Done |
 | 2 | [First driver integration](2-first-driver.md) | Done |
-| 3 | [Universal YAML loader](3-yaml-loader.md) | Not started |
+| 3 | [Universal YAML loader](3-yaml-loader.md) | Done |
 | 4 | [Driver rollout](4-driver-rollout.md) | Not started |
 | 5 | [Portable conditions](5-conditions.md) | Not started |
 | 6 | [Hooks + Rhai](6-hooks.md) | Not started |

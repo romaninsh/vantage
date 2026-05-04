@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.1 — 2026-05-03
+
+Stage 3 — universal YAML loader.
+
+- New [`VistaSpec<T, C, R>`](https://docs.rs/vantage-vista/0.4.1/vantage_vista/struct.VistaSpec.html) is the YAML-facing schema. Three generic parameters carry driver-specific extras at the table, column, and reference level (use [`NoExtras`](https://docs.rs/vantage-vista/0.4.1/vantage_vista/struct.NoExtras.html) when a driver has none). Sugar form `references: products` parses as a [`ReferenceSugar::Sugar`](https://docs.rs/vantage-vista/0.4.1/vantage_vista/enum.ReferenceSugar.html) and the full form deserialises a `ReferenceSpec`.
+- [`VistaFactory`](https://docs.rs/vantage-vista/0.4.1/vantage_vista/trait.VistaFactory.html) gains three associated `Extras` types and a new `build_from_spec` method. The default `from_yaml` parses with `serde_yaml_ng` and dispatches — drivers only need to implement `build_from_spec`.
+- New [`flags`](https://docs.rs/vantage-vista/0.4.1/vantage_vista/flags/index.html) module: `ID`, `TITLE`, `SEARCHABLE`, `MANDATORY`, `HIDDEN`. The vocabulary is open `Vec<String>`; these constants name the values vista's own accessors understand.
+- **Breaking**: `Column::hidden: bool` is replaced by `Column::flags: Vec<String>`. Use `Column::with_flag`, `is_hidden`, `is_id`, `is_title` instead. `VistaMetadata::with_title_columns` is gone — title columns are derived from the `title` flag at runtime via `Vista::get_title_columns()`. Driver factories that translated `ColumnFlag::Hidden` need to call `with_flag(flags::HIDDEN)` instead of `Column::hidden()`.
+
 ## 0.4.0 — 2026-05-03
 
 First release — incubating. New crate housing `Vista`, the universal,

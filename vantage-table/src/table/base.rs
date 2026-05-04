@@ -127,6 +127,29 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             .and_then(|name| self.columns.get(name))
     }
 
+    /// Mark an already-added column as the id field.
+    ///
+    /// Use this when the id column has been added via [`Self::add_column`]
+    /// (so its type and aliases were chosen explicitly) and you only need
+    /// to flag it. [`Self::with_id_column`] is the typed shortcut that
+    /// creates the column for you.
+    pub fn set_id_field(&mut self, name: impl Into<String>) {
+        self.id_field = Some(name.into());
+    }
+
+    /// Mark an already-added column as a display title.
+    ///
+    /// Companion to [`Self::set_id_field`] for spec-driven construction.
+    pub fn add_title_field(&mut self, name: impl Into<String>) {
+        let name = name.into();
+        if !self.title_fields.contains(&name) {
+            self.title_fields.push(name.clone());
+        }
+        if self.title_field.is_none() {
+            self.title_field = Some(name);
+        }
+    }
+
     /// Get the current pagination configuration, if set
     pub fn pagination(&self) -> Option<&Pagination> {
         self.pagination.as_ref()

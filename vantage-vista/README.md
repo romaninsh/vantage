@@ -48,14 +48,14 @@ use vantage_dataset::ReadableValueSet;
 
 async fn render(vista: &Vista) -> VantageResult<()> {
     for col in vista.get_column_names() {
-        if vista.get_column(col).unwrap().hidden { continue; }
+        if vista.get_column(col).unwrap().is_hidden() { continue; }
         print!("{}\t", col);
     }
     println!();
 
     for (_id, row) in vista.list_values().await? {
         for col in vista.get_column_names() {
-            if vista.get_column(col).unwrap().hidden { continue; }
+            if vista.get_column(col).unwrap().is_hidden() { continue; }
             print!("{:?}\t", row.get(col));
         }
         println!();

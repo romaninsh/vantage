@@ -7,12 +7,14 @@ use crate::{column::Column, reference::Reference};
 /// Driver factories produce one of these by inspecting a typed
 /// `Table<DriverSource, E>`; the universal YAML loader produces one by
 /// parsing config. End-user code typically doesn't construct this directly.
+///
+/// Title columns are derived from column flags at runtime — see
+/// `Vista::get_title_columns`.
 #[derive(Debug, Clone, Default)]
 pub struct VistaMetadata {
     pub columns: IndexMap<String, Column>,
     pub references: IndexMap<String, Reference>,
     pub id_column: Option<String>,
-    pub title_columns: Vec<String>,
 }
 
 impl VistaMetadata {
@@ -32,14 +34,6 @@ impl VistaMetadata {
 
     pub fn with_id_column(mut self, name: impl Into<String>) -> Self {
         self.id_column = Some(name.into());
-        self
-    }
-
-    pub fn with_title_columns(
-        mut self,
-        names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Self {
-        self.title_columns = names.into_iter().map(Into::into).collect();
         self
     }
 }
