@@ -38,6 +38,7 @@ impl Csv {
         self.base_dir.join(format!("{}.csv", table_name))
     }
 
+    #[cfg(feature = "vista")]
     pub(crate) fn base_dir(&self) -> &std::path::Path {
         &self.base_dir
     }
