@@ -71,8 +71,10 @@ impl CsvVistaFactory {
         let mut table = Table::<Csv, EmptyEntity>::new(stem, csv);
 
         for (name, col_spec) in &spec.columns {
-            let column = build_column(name, col_spec)?;
-            table.add_column(column);
+            table.add_column(build_column(name, col_spec)?);
+            if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
+                table.add_title_field(name);
+            }
         }
 
         if !table.columns().contains_key(&id_column) {
@@ -82,11 +84,6 @@ impl CsvVistaFactory {
             ));
         }
         table.set_id_field(&id_column);
-        for (name, col_spec) in &spec.columns {
-            if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
-                table.add_title_field(name);
-            }
-        }
 
         Ok(table)
     }

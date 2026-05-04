@@ -10,7 +10,7 @@ repository = "https://github.com/romaninsh/vantage"
 doctest = false
 
 [dependencies]
-vantage-core = { version = "0.4", path = "../vantage-core" }
+vantage-core = { version = "0.4.1", path = "../vantage-core" }
 vantage-types = { version = "0.4", path = "../vantage-types" }
 vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
 ciborium = { version = "0.2", features = ["std"] }

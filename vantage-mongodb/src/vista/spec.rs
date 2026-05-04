@@ -1,6 +1,7 @@
 //! YAML-facing types for the MongoDB Vista driver.
 
 use serde::{Deserialize, Serialize};
+use vantage_core::{Result, error};
 use vantage_vista::{NoExtras, VistaSpec};
 
 /// Table-level `mongo:` block in YAML. All fields optional — when the block
@@ -46,16 +47,35 @@ pub struct MongoColumnBlock {
 
 impl MongoColumnBlock {
     /// Resolve the BSON path for this column. `nested_path` (split on `.`)
-    /// wins; otherwise `field`; otherwise an empty path so the caller can fall
-    /// back to the spec column name.
-    pub fn resolved_path(&self) -> Option<Vec<String>> {
+    /// wins; otherwise `field`; otherwise `Ok(None)` so the caller falls back
+    /// to the spec column name.
+    ///
+    /// Validates that neither `nested_path` nor `field` is empty, and that
+    /// `nested_path` contains no empty segments (e.g. `""`, `".a"`, `"a..b"`).
+    /// `column_name` is woven into the error so the caller can locate the bad
+    /// entry in YAML without re-walking the spec.
+    pub fn resolved_path(&self, column_name: &str) -> Result<Option<Vec<String>>> {
         if let Some(p) = &self.nested_path {
-            return Some(p.split('.').map(str::to_string).collect());
+            let segments: Vec<String> = p.split('.').map(str::to_string).collect();
+            if segments.iter().any(String::is_empty) {
+                return Err(error!(
+                    "nested_path must not be empty or contain empty segments",
+                    column = column_name.to_string(),
+                    nested_path = p.clone()
+                ));
+            }
+            return Ok(Some(segments));
         }
         if let Some(f) = &self.field {
-            return Some(vec![f.clone()]);
+            if f.is_empty() {
+                return Err(error!(
+                    "field must not be empty",
+                    column = column_name.to_string()
+                ));
+            }
+            return Ok(Some(vec![f.clone()]));
         }
-        None
+        Ok(None)
     }
 }
 
@@ -118,5 +138,71 @@ columns:
 "#;
         let spec: MongoVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
         assert!(spec.driver.mongo.is_none());
+    }
+
+    #[test]
+    fn resolved_path_rejects_empty_nested_path() {
+        let block = MongoColumnBlock {
+            field: None,
+            nested_path: Some(String::new()),
+        };
+        let err = block
+            .resolved_path("city")
+            .expect_err("empty nested_path must error");
+        let msg = err.to_string();
+        assert!(msg.contains("nested_path"), "error: {msg}");
+        assert!(msg.contains("city"), "error: {msg}");
+    }
+
+    #[test]
+    fn resolved_path_rejects_nested_path_with_empty_segments() {
+        for bad in ["a..b", ".a", "a.", "."] {
+            let block = MongoColumnBlock {
+                field: None,
+                nested_path: Some(bad.to_string()),
+            };
+            assert!(
+                block.resolved_path("city").is_err(),
+                "path `{bad}` should have errored"
+            );
+        }
+    }
+
+    #[test]
+    fn resolved_path_rejects_empty_field() {
+        let block = MongoColumnBlock {
+            field: Some(String::new()),
+            nested_path: None,
+        };
+        let err = block
+            .resolved_path("name")
+            .expect_err("empty field must error");
+        let msg = err.to_string();
+        assert!(msg.contains("field"), "error: {msg}");
+        assert!(msg.contains("name"), "error: {msg}");
+    }
+
+    #[test]
+    fn resolved_path_accepts_valid_nested_and_field() {
+        let block = MongoColumnBlock {
+            field: None,
+            nested_path: Some("address.city".into()),
+        };
+        assert_eq!(
+            block.resolved_path("city").unwrap(),
+            Some(vec!["address".into(), "city".into()])
+        );
+
+        let block = MongoColumnBlock {
+            field: Some("fullName".into()),
+            nested_path: None,
+        };
+        assert_eq!(
+            block.resolved_path("full_name").unwrap(),
+            Some(vec!["fullName".into()])
+        );
+
+        let block = MongoColumnBlock::default();
+        assert_eq!(block.resolved_path("anything").unwrap(), None);
     }
 }

@@ -36,13 +36,26 @@ impl MongoVistaFactory {
     where
         E: Entity<AnyMongoType> + 'static,
     {
-        let metadata = metadata_from_table(&table);
-        let column_paths = paths_from_table_columns(&table);
         let name = table.table_name().to_string();
         let any_table = table.into_entity::<EmptyEntity>();
+        let column_paths = paths_from_table_columns(&any_table);
+        Ok(self.wrap_with_paths(any_table, column_paths, name))
+    }
 
+    /// Single source-construction site shared by `from_table` and
+    /// `build_from_spec`. The two entry points only differ in *where the
+    /// path map comes from* (table aliases vs. spec `nested_path`); keeping
+    /// the capability set and `Vista::new` call here means a future capability
+    /// flip is a one-line edit.
+    fn wrap_with_paths(
+        &self,
+        table: Table<MongoDB, EmptyEntity>,
+        column_paths: IndexMap<String, Vec<String>>,
+        name: String,
+    ) -> Vista {
+        let metadata = metadata_from_table(&table);
         let source = MongoVistaSource::new(
-            any_table,
+            table,
             VistaCapabilities {
                 can_count: true,
                 can_insert: true,
@@ -52,24 +65,26 @@ impl MongoVistaFactory {
             },
             column_paths,
         );
-        Ok(Vista::new(name, Box::new(source), metadata))
+        Vista::new(name, Box::new(source), metadata)
     }
 
     /// Compute the spec column → BSON path map for a `MongoVistaSpec`.
-    /// Pulled out so `build_from_spec` can hand both the table and the paths
-    /// to the source in one shot.
-    pub(crate) fn paths_from_spec(&self, spec: &MongoVistaSpec) -> IndexMap<String, Vec<String>> {
+    /// Validates each column's `mongo` block.
+    pub(crate) fn paths_from_spec(
+        &self,
+        spec: &MongoVistaSpec,
+    ) -> Result<IndexMap<String, Vec<String>>> {
         let mut paths = IndexMap::new();
         for (name, col_spec) in &spec.columns {
-            let path = col_spec
-                .driver
-                .mongo
-                .as_ref()
-                .and_then(|b| b.resolved_path())
-                .unwrap_or_else(|| vec![name.clone()]);
+            let path = match col_spec.driver.mongo.as_ref() {
+                Some(block) => block
+                    .resolved_path(name)?
+                    .unwrap_or_else(|| vec![name.clone()]),
+                None => vec![name.clone()],
+            };
             paths.insert(name.clone(), path);
         }
-        paths
+        Ok(paths)
     }
 
     /// Build a `Table<MongoDB, EmptyEntity>` from a spec.
@@ -84,8 +99,10 @@ impl MongoVistaFactory {
         let mut table = Table::<MongoDB, EmptyEntity>::new(collection, self.mongo.clone());
 
         for (name, col_spec) in &spec.columns {
-            let column = build_column(name, col_spec)?;
-            table.add_column(column);
+            table.add_column(build_column(name, col_spec)?);
+            if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
+                table.add_title_field(name);
+            }
         }
 
         let id_column = resolve_id_column(spec);
@@ -96,11 +113,6 @@ impl MongoVistaFactory {
             ));
         }
         table.set_id_field(&id_column);
-        for (name, col_spec) in &spec.columns {
-            if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
-                table.add_title_field(name);
-            }
-        }
 
         Ok(table)
     }
@@ -209,27 +221,8 @@ impl VistaFactory for MongoVistaFactory {
     type ReferenceExtras = NoExtras;
 
     fn build_from_spec(&self, spec: MongoVistaSpec) -> Result<Vista> {
-        let vista_name = spec.name.clone();
-        let column_paths = self.paths_from_spec(&spec);
+        let column_paths = self.paths_from_spec(&spec)?;
         let table = self.table_from_spec(&spec)?;
-
-        // Mirror `from_table` — we can't call it here because we need to
-        // override the column_paths with the spec-derived map (which knows
-        // about nested_path) rather than the alias-derived one.
-        let metadata = metadata_from_table(&table);
-        let source = MongoVistaSource::new(
-            table,
-            VistaCapabilities {
-                can_count: true,
-                can_insert: true,
-                can_update: true,
-                can_delete: true,
-                ..VistaCapabilities::default()
-            },
-            column_paths,
-        );
-        let mut vista = Vista::new(spec.name.clone(), Box::new(source), metadata);
-        vista.set_name(vista_name);
-        Ok(vista)
+        Ok(self.wrap_with_paths(table, column_paths, spec.name))
     }
 }

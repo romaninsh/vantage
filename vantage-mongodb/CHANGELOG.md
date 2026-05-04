@@ -8,6 +8,7 @@ New opt-in [`vista`](https://docs.rs/vantage-mongodb/0.4.5/vantage_mongodb/struc
 - YAML `mongo:` block carries `collection`. Per-column `mongo: { field }` renames a single BSON key, `mongo: { nested_path: address.city }` projects out of nested sub-documents — reads walk the path, writes rebuild sibling sub-docs, filters use dot-notation.
 - BSON ↔ CBOR bridge in `vista::cbor`. Lossy paths (`ObjectId`, `DateTime`, `Decimal128`, `Regex`) collapse to their string representation; documented in module docs.
 - Capabilities: `can_count`, `can_insert`, `can_update`, `can_delete` all true. `can_subscribe` deferred to change-streams work.
+- YAML validation: empty `nested_path: ""` and empty segments (`a..b`, `.a`, `a.`) now error at spec load with the offending column named, so the mistake doesn't surface later as a malformed BSON filter.
 - Off by default; non-vista users still don't depend on `vantage-vista`.
 
 ## 0.4.4 — 2026-04-25
