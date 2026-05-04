@@ -99,11 +99,7 @@ impl Vista {
     ///
     /// Returns `Err` if the field is unknown to the driver or the value cannot
     /// be translated into the driver's condition vocabulary.
-    pub fn add_condition_eq(
-        &mut self,
-        field: impl Into<String>,
-        value: CborValue,
-    ) -> Result<()> {
+    pub fn add_condition_eq(&mut self, field: impl Into<String>, value: CborValue) -> Result<()> {
         self.source.add_eq_condition(&field.into(), &value)
     }
 

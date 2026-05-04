@@ -273,10 +273,7 @@ mod tests {
     #[test]
     fn walk_bson_path_missing_segment_yields_none() {
         let mut outer = IndexMap::new();
-        outer.insert(
-            "address".to_string(),
-            Bson::Document(Document::new()),
-        );
+        outer.insert("address".to_string(), Bson::Document(Document::new()));
 
         let value = walk_bson_path(&outer, &["address".to_string(), "city".to_string()]);
         assert_eq!(value, None);

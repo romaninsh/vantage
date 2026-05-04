@@ -170,10 +170,7 @@ mod tests {
     fn cbor_map_becomes_bson_document() {
         let cbor = CborValue::Map(vec![
             (CborValue::Text("k".into()), CborValue::Bool(true)),
-            (
-                CborValue::Text("n".into()),
-                CborValue::Integer(7i64.into()),
-            ),
+            (CborValue::Text("n".into()), CborValue::Integer(7i64.into())),
         ]);
         let Bson::Document(doc) = cbor_to_bson(&cbor) else {
             panic!("expected doc");

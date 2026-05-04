@@ -181,10 +181,7 @@ mongo:
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 1);
     let (_, row) = rows.into_iter().next().unwrap();
-    assert_eq!(
-        row.get("name"),
-        Some(&CborValue::Text("Marty".to_string()))
-    );
+    assert_eq!(row.get("name"), Some(&CborValue::Text("Marty".to_string())));
     assert_eq!(row.get("is_paying_client"), Some(&CborValue::Bool(true)));
 
     teardown(&db, &name).await;
@@ -210,7 +207,10 @@ async fn vista_writes_round_trip_via_cbor() -> TestResult {
 
     let fetched = vista.get_value(&id).await?.expect("inserted");
     assert_eq!(fetched.get("name"), Some(&CborValue::Text("Pie".into())));
-    assert_eq!(fetched.get("price"), Some(&CborValue::Integer(99i64.into())));
+    assert_eq!(
+        fetched.get("price"),
+        Some(&CborValue::Integer(99i64.into()))
+    );
 
     vista.delete(&id).await?;
     assert!(vista.get_value(&id).await?.is_none());
