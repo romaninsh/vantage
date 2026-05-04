@@ -58,7 +58,7 @@ Out:
 - [ ] YAML `hooks:` block parser; compile to Rhai AST at construction
       time, store on Vista
 - [ ] `Vista::with_hook(...)` for Rust-side registration
-- [ ] Hook execution wired into VistaSource CRUD calls (probably in
+- [ ] Hook execution wired into TableShell CRUD calls (probably in
       `vantage-vista` not the driver — driver delegates)
 - [ ] Integration test with a Rhai validation hook
 - [ ] Document Rhai context API in `HOOKS.md` next to this plan

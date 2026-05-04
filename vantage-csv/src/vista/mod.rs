@@ -10,7 +10,7 @@ pub mod source;
 pub mod spec;
 
 pub use factory::CsvVistaFactory;
-pub use source::CsvVistaSource;
+pub use source::CsvTableShell;
 pub use spec::{CsvBlock, CsvColumnBlock, CsvColumnExtras, CsvTableExtras, CsvVistaSpec};
 
 use crate::csv::Csv;

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.7 — 2026-05-04
+
+- `CsvVistaSource` is now [`CsvTableShell`](https://docs.rs/vantage-csv/0.4.7/vantage_csv/struct.CsvTableShell.html), tracking the [`vantage-vista 0.4.3`](https://docs.rs/vantage-vista/0.4.3/vantage_vista/trait.TableShell.html) trait rename. The factory's surface is unchanged — most users go through `csv.vista_factory().from_table(...)` or `from_yaml(...)` and never name the source struct.
+
 ## 0.4.6 — 2026-05-04
 
 - `add_condition_eq` filtering is now translated into an `Expression<AnyCsvType>` and pushed onto the wrapped `Table` instead of evaluated on Vista's side. Same surface, but consistent with the new condition-delegation contract.

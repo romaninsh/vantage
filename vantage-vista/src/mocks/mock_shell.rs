@@ -1,4 +1,4 @@
-//! In-memory `VistaSource` for tests and examples.
+//! In-memory `TableShell` for tests and examples.
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
@@ -7,17 +7,17 @@ use std::sync::{Arc, Mutex};
 use vantage_core::Result;
 use vantage_types::Record;
 
-use crate::{capabilities::VistaCapabilities, source::VistaSource, vista::Vista};
+use crate::{capabilities::VistaCapabilities, source::TableShell, vista::Vista};
 
 #[derive(Clone)]
-pub struct MockVistaSource {
+pub struct MockShell {
     data: Arc<Mutex<IndexMap<String, Record<CborValue>>>>,
     next_auto_id: Arc<Mutex<i64>>,
     filters: Arc<Mutex<Vec<(String, CborValue)>>>,
     capabilities: VistaCapabilities,
 }
 
-impl MockVistaSource {
+impl MockShell {
     pub fn new() -> Self {
         Self {
             data: Arc::new(Mutex::new(IndexMap::new())),
@@ -60,14 +60,14 @@ impl MockVistaSource {
     }
 }
 
-impl Default for MockVistaSource {
+impl Default for MockShell {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[async_trait]
-impl VistaSource for MockVistaSource {
+impl TableShell for MockShell {
     async fn list_vista_values(
         &self,
         _vista: &Vista,
@@ -207,7 +207,7 @@ mod tests {
         r
     }
 
-    fn build_user_vista(source: MockVistaSource) -> Vista {
+    fn build_user_vista(source: MockShell) -> Vista {
         let metadata = VistaMetadata::new()
             .with_column(Column::new("id", "String").with_flag("id"))
             .with_column(Column::new("name", "String").with_flag("title"))
@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn metadata_accessors_round_trip() {
-        let vista = build_user_vista(MockVistaSource::new());
+        let vista = build_user_vista(MockShell::new());
 
         assert_eq!(vista.name(), "users");
         assert_eq!(vista.get_id_column(), Some("id"));
@@ -249,7 +249,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_values_returns_seeded_rows() {
-        let source = MockVistaSource::new()
+        let source = MockShell::new()
             .with_record(
                 "1",
                 record(&[("id", cbor_text("1")), ("name", cbor_text("Alice"))]),
@@ -273,7 +273,7 @@ mod tests {
 
     #[tokio::test]
     async fn add_condition_eq_filters_list_and_count() {
-        let source = MockVistaSource::new()
+        let source = MockShell::new()
             .with_record(
                 "1",
                 record(&[
@@ -309,7 +309,7 @@ mod tests {
 
     #[tokio::test]
     async fn writable_value_set_round_trip() {
-        let vista = build_user_vista(MockVistaSource::new());
+        let vista = build_user_vista(MockShell::new());
 
         // insert_value with explicit id
         let inserted = vista
@@ -381,7 +381,7 @@ mod tests {
 
     #[tokio::test]
     async fn insertable_value_set_assigns_ids() {
-        let vista = build_user_vista(MockVistaSource::new());
+        let vista = build_user_vista(MockShell::new());
 
         // record without id → mock generates one
         let auto_id = vista

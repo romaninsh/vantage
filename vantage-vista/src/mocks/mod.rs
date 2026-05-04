@@ -1,3 +1,3 @@
-pub mod mock_vista_source;
+pub mod mock_shell;
 
-pub use mock_vista_source::MockVistaSource;
+pub use mock_shell::MockShell;

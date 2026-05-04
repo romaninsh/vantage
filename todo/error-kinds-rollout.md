@@ -27,7 +27,7 @@ For each callsite below, decide which kind fits and append the modifier:
 
 - **`Unimplemented`** — operation is intended to exist here but isn't built
   yet. Distinct from `Unsupported` — `Unsupported` says "never will";
-  `Unimplemented` says "not yet". The `VistaSource::default_error` helper
+  `Unimplemented` says "not yet". The `TableShell::default_error` helper
   already produces this kind when a capability flag is `true` but the
   trait method isn't overridden.
 
@@ -51,7 +51,7 @@ Caller asked for an operation the impl can't perform — by design.
 ## Unimplemented
 
 Driver advertised a capability without overriding the matching trait method,
-or scaffolding placeholders that will be filled in. `VistaSource::default_error`
+or scaffolding placeholders that will be filled in. `TableShell::default_error`
 already produces this kind for the capability case; nothing to migrate
 there. New scaffolding should use `.is_unimplemented()` directly.
 

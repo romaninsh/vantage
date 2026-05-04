@@ -1,12 +1,21 @@
 # Changelog
 
+## 0.4.3 — 2026-05-04
+
+Renames the driver-facing trait so its name describes what it actually is.
+
+- The trait formerly known as `VistaSource` is now [`TableShell`](https://docs.rs/vantage-vista/0.4.3/vantage_vista/trait.TableShell.html). It wraps a typed `Table<T, E>` and exposes it through the CBOR/`String` boundary — "shell" reads more accurately than "source", which already meant something else in `TableSource`.
+- The in-tree mock follows: `MockVistaSource` → [`MockShell`](https://docs.rs/vantage-vista/0.4.3/vantage_vista/mocks/struct.MockShell.html).
+- **Breaking** for anyone naming the trait directly. Existing in-tree drivers (`vantage-csv`, `vantage-mongodb`) move with the rename in lock-step; downstream drivers need a one-line change at their `impl` site and at every `Box<dyn VistaSource>`.
+- New driver-author guide at [Step 8: Vista Integration](https://romaninsh.github.io/vantage/new-persistence/step8-vista-integration.html) — distilled from the CSV and MongoDB rollouts, covering the factory split, the `column_paths` pattern for nested fields, the capability honesty contract, and the tests that catch the common mistakes.
+
 ## 0.4.2 — 2026-05-04
 
 Conditions now delegate to the driver instead of being stashed on `Vista`.
 
 - [`Vista::add_condition_eq`](https://docs.rs/vantage-vista/0.4.2/vantage_vista/struct.Vista.html#method.add_condition_eq) returns `Result<()>` and forwards to the source. The internal `eq_conditions` vec is gone — Vista carries no condition state.
-- New [`VistaSource::add_eq_condition`](https://docs.rs/vantage-vista/0.4.2/vantage_vista/trait.VistaSource.html#method.add_eq_condition) trait method (default impl returns `Unimplemented`). Drivers translate `(field, CborValue)` into their native condition type and push it onto the wrapped table — server-side push-down is automatic wherever the backend supports it.
-- **Breaking** for in-tree `VistaSource` implementors: `add_condition_eq` now returns `Result`, so callers need `?` (or `.unwrap()`) at every call site. `Vista::eq_conditions()` accessor removed.
+- New [`TableShell::add_eq_condition`](https://docs.rs/vantage-vista/0.4.2/vantage_vista/trait.TableShell.html#method.add_eq_condition) trait method (default impl returns `Unimplemented`). Drivers translate `(field, CborValue)` into their native condition type and push it onto the wrapped table — server-side push-down is automatic wherever the backend supports it.
+- **Breaking** for in-tree `TableShell` implementors: `add_condition_eq` now returns `Result`, so callers need `?` (or `.unwrap()`) at every call site. `Vista::eq_conditions()` accessor removed.
 - Requires `vantage-core 0.4.1` for the new `is_unimplemented` / `is_unsupported` annotators on default-impl errors.
 
 ## 0.4.1 — 2026-05-03
@@ -27,12 +36,12 @@ no YAML loader, no hooks; the trait surface and metadata structs land first
 so downstream stages can build against a stable API.
 
 - `Vista` — concrete struct that owns universal metadata (name, columns,
-  references, capabilities, current eq-conditions) plus a boxed `VistaSource`
+  references, capabilities, current eq-conditions) plus a boxed `TableShell`
   executor. Mutators: `add_column`, `add_reference`, `set_id_column`,
   `set_title_columns`, `add_condition_eq`. Purpose-bucketed accessors:
   `get_id_column`, `get_title_columns`, `get_column_names`, `get_column`,
   `get_references`, `get_reference`. Plus an inherent `get_count`.
-- `VistaSource` — async trait drivers implement to back a `Vista`. Methods
+- `TableShell` — async trait drivers implement to back a `Vista`. Methods
   named with the `_vista_` infix (`list_vista_values`, `get_vista_value`,
   `get_vista_some_value`, `stream_vista_values` (default impl wrapping
   `list`), `insert_vista_value`, `replace_vista_value`, `patch_vista_value`,
@@ -62,7 +71,7 @@ so downstream stages can build against a stable API.
   which now `pub use`s them. The seven existing call sites
   (`vantage-table` x3, `vantage-live` x2, `vantage-ui` adapter, the
   `vantage-expressions` prelude) compile unchanged.
-- `MockVistaSource` — in-memory `IndexMap<String, Record<CborValue>>` source
+- `MockShell` — in-memory `IndexMap<String, Record<CborValue>>` source
   for tests. Filters `list_vista_values` by `Vista::eq_conditions`,
   auto-generates sequential string ids on `insert_vista_return_id_value`.
 - 11 unit tests cover metadata accessors, the eq-condition list filter, and

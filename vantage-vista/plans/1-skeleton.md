@@ -13,8 +13,8 @@ Confirmed with the user:
 - [x] `Vista` struct fields — name, columns (`IndexMap<String, Column>`),
       references (`IndexMap<String, Reference>`), capabilities, id_column,
       title_columns, eq_conditions (`Vec<(String, CborValue)>`), source
-      (`Box<dyn VistaSource>`).
-- [x] `VistaSource` trait method list — async `list`, `get`, `insert`,
+      (`Box<dyn TableShell>`).
+- [x] `TableShell` trait method list — async `list`, `get`, `insert`,
       `replace`, `delete`, `count`; sync `capabilities`. No associated
       types, no `translate_condition`. `vantage_core::Result` everywhere.
 - [x] `VistaFactory` shape — single trait with `from_yaml` only;
@@ -33,7 +33,7 @@ Confirmed with the user:
 - [x] Cargo features and workspace placement — no features; member of
       the root workspace.
 - [x] Carrier types — methods take `&CborValue` for ids and
-      `&Record<CborValue>` for records. `VistaSource` does **not**
+      `&Record<CborValue>` for records. `TableShell` does **not**
       mirror `TableSource`; no `type Id` / `type Value` ceremony.
 
 ## Scope
@@ -42,7 +42,7 @@ In:
 
 - New `vantage-vista` crate at workspace root
 - `Vista` struct definition (no methods that touch the source yet)
-- `VistaSource` trait skeleton (async CRUD, condition translation,
+- `TableShell` trait skeleton (async CRUD, condition translation,
   capabilities)
 - `VistaFactory` trait skeleton (`from_yaml`, `from_table`)
 - `VistaCapabilities` struct
@@ -67,7 +67,7 @@ Out:
       `indexmap`, `async-trait`, `serde`, `thiserror`
 - [x] Define `Vista` struct (name, columns, references, capabilities,
       source — minimal fields)
-- [x] Define `VistaSource` trait — `list`, `get`, `insert`, `replace`,
+- [x] Define `TableShell` trait — `list`, `get`, `insert`, `replace`,
       `delete`, `count`, `capabilities` (no `translate_condition`; the
       Vista's eq-condition list is read directly by drivers)
 - [x] Define `VistaFactory` trait — `from_yaml` only on the trait;

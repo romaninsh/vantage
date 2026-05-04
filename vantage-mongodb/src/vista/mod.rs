@@ -16,7 +16,7 @@ pub mod spec;
 
 pub use cbor::{bson_to_cbor, cbor_to_bson};
 pub use factory::MongoVistaFactory;
-pub use source::MongoVistaSource;
+pub use source::MongoTableShell;
 pub use spec::{MongoBlock, MongoColumnBlock, MongoColumnExtras, MongoTableExtras, MongoVistaSpec};
 
 use crate::mongodb::MongoDB;

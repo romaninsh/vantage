@@ -10,4 +10,4 @@ pub mod vista;
 pub use crate::csv::Csv;
 pub use type_system::{AnyCsvType, CsvType, CsvTypeStringMarker, CsvTypeVariants, record_to_json};
 #[cfg(feature = "vista")]
-pub use vista::{CsvVistaFactory, CsvVistaSource};
+pub use vista::{CsvTableShell, CsvVistaFactory};

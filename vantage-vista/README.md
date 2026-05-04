@@ -111,8 +111,8 @@ unchanged.
 
 ## Status
 
-Incubating. Ships `Vista`, `VistaSource`, `VistaMetadata`, `VistaCapabilities`, `Column`,
-`Reference`, plus `MockVistaSource` for tests. Driver factories (SQLite, Mongo, AWS, …) and the YAML
+Incubating. Ships `Vista`, `TableShell`, `VistaMetadata`, `VistaCapabilities`, `Column`,
+`Reference`, plus `MockShell` for tests. Driver factories (SQLite, Mongo, AWS, …) and the YAML
 loader land in later crates.
 
 ## Integration

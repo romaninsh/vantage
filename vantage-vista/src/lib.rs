@@ -19,9 +19,9 @@ pub use column::Column;
 pub use factory::VistaFactory;
 pub use metadata::VistaMetadata;
 pub use reference::{Reference, ReferenceKind};
-pub use source::VistaSource;
+pub use source::TableShell;
 pub use spec::{ColumnSpec, NoExtras, ReferenceSpec, ReferenceSugar, VistaSpec};
 pub use vista::Vista;
 
-/// Convenience alias for the carrier type used at the `VistaSource` boundary.
+/// Convenience alias for the carrier type used at the `TableShell` boundary.
 pub type CborValue = ciborium::Value;

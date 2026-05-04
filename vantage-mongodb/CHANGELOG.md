@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.6 — 2026-05-04
+
+- `MongoVistaSource` is now [`MongoTableShell`](https://docs.rs/vantage-mongodb/0.4.6/vantage_mongodb/struct.MongoTableShell.html), tracking the [`vantage-vista 0.4.3`](https://docs.rs/vantage-vista/0.4.3/vantage_vista/trait.TableShell.html) trait rename. The factory's surface is unchanged — `MongoDB::vista_factory().from_table(...)` and `from_yaml(...)` both still produce a `Vista`.
+
 ## 0.4.5 — 2026-05-04
 
 New opt-in [`vista`](https://docs.rs/vantage-mongodb/0.4.5/vantage_mongodb/struct.MongoVistaFactory.html) feature: build a [`Vista`](https://docs.rs/vantage-vista/0.4.2/vantage_vista/struct.Vista.html) from a typed `Table<MongoDB, E>` or from YAML, with full read+write CRUD, server-side `eq` filtering, and nested-document column projection.

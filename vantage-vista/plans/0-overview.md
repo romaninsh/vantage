@@ -3,13 +3,13 @@
 `vantage-vista` is a crate housing `Vista`, the universal data handle that
 drivers, scripting, UI, and agents consume. Vista is a richer,
 schema-bearing, hook-aware first-class data model. It owns universal
-metadata and delegates everything else to a per-driver `VistaSource`.
+metadata and delegates everything else to a per-driver `TableShell`.
 
 ## Architecture in one paragraph
 
 `Vista` is a concrete struct (no consumer-facing trait surface). It owns
 universal metadata — name, columns, references, capabilities, id column —
-and a boxed `VistaSource` (the executor). `VistaSource` is the per-driver
+and a boxed `TableShell` (the executor). `TableShell` is the per-driver
 trait. Drivers expose a `vista_factory()` inherent method that produces an
 impl of `VistaFactory`, which constructs a Vista either from a typed
 `Table<T, E>` or from a YAML spec. Both construction paths converge on the
@@ -18,7 +18,7 @@ database-agnostic: the same code drives a Mongo Vista, a SQLite Vista, an
 AWS Vista, or a CSV Vista.
 
 `Vista` itself stores no condition state. `add_condition_eq(field, value)`
-delegates to `VistaSource::add_eq_condition`, which translates the
+delegates to `TableShell::add_eq_condition`, which translates the
 universal `(String, CborValue)` pair into the driver's native condition
 type (`bson::Document` for Mongo, `Expression<AnyCsvType>` for CSV) and
 mutates the wrapped `Table`'s condition list. Filtering happens
@@ -35,7 +35,7 @@ at runtime.
 vantage-vista/src/
 ├── lib.rs              re-exports
 ├── vista.rs            the Vista struct + accessors + condition delegation
-├── source.rs           VistaSource trait — the driver contract
+├── source.rs           TableShell trait — the driver contract
 ├── factory.rs          VistaFactory trait — YAML default impl + Extras assoc types
 ├── spec.rs             VistaSpec<T,C,R>, ColumnSpec<C>, ReferenceSpec<R>, NoExtras
 ├── column.rs           Vista's own column metadata + flag accessors
@@ -44,13 +44,13 @@ vantage-vista/src/
 ├── metadata.rs         VistaMetadata (builder for column/ref/id sets)
 ├── flags.rs            canonical flag string constants (ID, TITLE, …)
 ├── any_expression.rs   type-erased expression carrier (used by hooks, stage 6)
-├── impls/              ValueSet trait impls forwarding Vista → VistaSource
+├── impls/              ValueSet trait impls forwarding Vista → TableShell
 │   ├── readable_value_set.rs
 │   ├── writable_value_set.rs
 │   ├── insertable_value_set.rs
 │   └── value_set.rs
 └── mocks/
-    └── mock_vista_source.rs   in-memory source for tests
+    └── mock_shell.rs          in-memory shell for tests
 ```
 
 Driver crates each follow the same shape under `<driver>/src/vista/`:
@@ -60,7 +60,7 @@ vista/
 ├── mod.rs       re-exports + <Driver>::vista_factory() inherent impl
 ├── spec.rs      <Driver>TableExtras / <Driver>ColumnExtras / <Driver>VistaSpec
 ├── factory.rs   <Driver>VistaFactory + impl VistaFactory + spec→table helpers
-├── source.rs    <Driver>VistaSource + impl VistaSource
+├── source.rs    <Driver>TableShell + impl TableShell
 └── cbor.rs      native ↔ CBOR bridge (Mongo only so far; CSV reuses its own
                   AnyCsvType→CborValue impl)
 ```
@@ -89,7 +89,7 @@ The MongoDB rollout doubled as the place where two cross-cutting decisions
 got made. Both apply to every future driver:
 
 - **Conditions delegate to the source, never live on Vista.**
-  `Vista::add_condition_eq` calls into `VistaSource::add_eq_condition`,
+  `Vista::add_condition_eq` calls into `TableShell::add_eq_condition`,
   which mutates the wrapped `Table`. This means filters push down to the
   backend (Mongo `find` filter, SQL `WHERE`, future REST query params)
   instead of being applied in memory after the fetch. Vista carries no

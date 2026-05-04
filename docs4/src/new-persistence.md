@@ -19,7 +19,7 @@ eight; stop whenever your persistence has enough capability for your use case.
 | [5. Table & CRUD](./new-persistence/step5-table-crud.md)      | `TableSource`, entity tables, aggregates, writes              | `Table<DB, Entity>`, full CRUD, `ReadableDataSet`, `WritableDataSet` | **Required** for table support                 |
 | [6. Relationships](./new-persistence/step6-relationships.md)  | `with_one`, `with_many`, correlated subqueries                | Reference traversal, expression fields                               | Skip if you don't need cross-table queries     |
 | [7. Multi-Backend](./new-persistence/step7-multi-backend.md)  | `AnyTable::from_table()`, CLI example                         | Type-erased tables, generic UI/API code                              | Skip if you only use one persistence           |
-| [8. Vista](./new-persistence/step8-vista.md)                  | `<Driver>VistaFactory`, `<Driver>VistaSource`, YAML extras    | YAML-defined data handles consumed by UI / scripting / agents        | Skip if you don't need Vista support           |
+| [8. Vista](./new-persistence/step8-vista-integration.md)      | `<Driver>VistaFactory`, `<Driver>TableShell`, YAML extras     | YAML-defined data handles consumed by UI / scripting / agents        | Skip if you don't need Vista support           |
 
 ---
 

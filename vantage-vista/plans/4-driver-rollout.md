@@ -44,7 +44,7 @@ The driver-level file layout the in-tree drivers converged on:
 ├── mod.rs       re-exports + <Driver>::vista_factory() inherent impl
 ├── spec.rs      <Driver>TableExtras / <Driver>ColumnExtras / <Driver>VistaSpec
 ├── factory.rs   <Driver>VistaFactory + impl VistaFactory + spec→table helpers
-├── source.rs    <Driver>VistaSource + impl VistaSource
+├── source.rs    <Driver>TableShell + impl TableShell
 └── cbor.rs      native ↔ CBOR bridge (only when native value type ≠ JSON-shaped)
 ```
 
@@ -106,14 +106,14 @@ Out:
       stage 5). `add_eq_condition` builds `doc!{path: bson_value}` and
       pushes to `Table.add_condition` — server-side filter push-down via
       Mongo's existing `find` filter. Vista carries no condition state.
-- [x] `MongoVistaFactory` + `MongoVistaSource` (read + write).
+- [x] `MongoVistaFactory` + `MongoTableShell` (read + write).
 - [x] Driver extras: `mongo:` block with `collection` only.
       `read_preference` / `index_hints` deferred — they're knobs the
       universal layer doesn't surface yet, and adding empty fields now
       would be backwards-compat dead weight.
 - [x] Column extras: `mongo: { field }` for single-level rename and
       `mongo: { nested_path: address.city }` for nested-doc projection.
-      `column_paths: IndexMap<String, Vec<String>>` on `MongoVistaSource`
+      `column_paths: IndexMap<String, Vec<String>>` on `MongoTableShell`
       drives read/write/filter consistently.
 - [x] BSON ↔ CBOR bridge in `vista/cbor.rs` with unit tests covering
       scalar + nested round-trips (lossy paths flagged in module docs).
@@ -125,7 +125,7 @@ Out:
 ### vantage-surrealdb
 
 - [ ] Discuss: RecordId handling at the CBOR boundary
-- [ ] Implement `SurrealVistaFactory` + `SurrealVistaSource`
+- [ ] Implement `SurrealVistaFactory` + `SurrealTableShell`
 - [ ] Driver extras: `surreal:` block
 - [ ] Note: LIVE-query subscription deferred to stage 7
 - [ ] Integration test
@@ -137,7 +137,7 @@ Out:
 - [ ] Discuss: where the magic `array_key:service/target` table addressing
       moves (driver extras, not universal `table:`)
 - [ ] Discuss: `narrow_via` field — into driver extras for references
-- [ ] Implement `AwsVistaFactory` + `AwsVistaSource`
+- [ ] Implement `AwsVistaFactory` + `AwsTableShell`
 - [ ] Integration test
 
 ### vantage-rest
@@ -145,7 +145,7 @@ Out:
 - [ ] Discuss: which condition operators a REST source can express via
       query params; which must be rejected at construction time
 - [ ] Discuss: pagination (offset vs cursor) — per-table or per-driver?
-- [ ] Implement `RestVistaFactory` + `RestVistaSource` — CBOR-native end
+- [ ] Implement `RestVistaFactory` + `RestTableShell` — CBOR-native end
       to end (no `serde_json::Value` middleman)
 - [ ] Integration test
 
