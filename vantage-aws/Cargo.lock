@@ -1678,6 +1678,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_yaml_ng"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b4db627b98b36d4203a7b458cf3573730f2bb591b28871d916dfa9efabfd41f"
+dependencies = [
+ "indexmap",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
+]
+
+[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1989,7 +2002,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "63e71662fa4b2a2c3a26f570f037eb95bb1f85397f3cd8076caed2f026a6d100"
 dependencies = [
  "pin-project-lite",
+ "tracing-attributes",
  "tracing-core",
+]
+
+[[package]]
+name = "tracing-attributes"
+version = "0.1.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7490cfa5ec963746568740651ac6781f701c9c5ea257c58e057f3ba8cf69e8da"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -2038,6 +2063,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 
 [[package]]
+name = "unsafe-libyaml"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
+
+[[package]]
 name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2080,7 +2111,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2090,6 +2121,7 @@ dependencies = [
  "hex",
  "hmac",
  "indexmap",
+ "paste",
  "quick-xml",
  "reqwest",
  "serde",
@@ -2121,13 +2153,14 @@ dependencies = [
 
 [[package]]
 name = "vantage-core"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "atty",
  "indexmap",
  "owo-colors",
  "serde",
  "thiserror 1.0.69",
+ "tracing",
 ]
 
 [[package]]
@@ -2151,7 +2184,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-expressions"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "async-trait",
  "serde",
@@ -2159,6 +2192,7 @@ dependencies = [
  "thiserror 2.0.18",
  "vantage-core",
  "vantage-dataset",
+ "vantage-vista",
 ]
 
 [[package]]
@@ -2202,6 +2236,23 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "vantage-vista"
+version = "0.4.4"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "ciborium",
+ "futures-core",
+ "indexmap",
+ "serde",
+ "serde_yaml_ng",
+ "thiserror 2.0.18",
+ "vantage-core",
+ "vantage-dataset",
+ "vantage-types",
 ]
 
 [[package]]

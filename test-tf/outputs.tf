@@ -25,3 +25,11 @@ output "vpc_id" {
 output "subnet_ids" {
   value = aws_subnet.public[*].id
 }
+
+output "dynamodb_products_table" {
+  value = aws_dynamodb_table.products.name
+}
+
+output "dynamodb_orders_table" {
+  value = aws_dynamodb_table.orders.name
+}
