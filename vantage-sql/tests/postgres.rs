@@ -40,4 +40,7 @@ mod postgres {
     mod types_record;
     #[path = "1_types_round_trip.rs"]
     mod types_round_trip;
+    #[cfg(feature = "vista")]
+    #[path = "6_vista.rs"]
+    mod vista;
 }

@@ -6,6 +6,9 @@ pub(crate) mod row;
 pub mod statements;
 pub mod types;
 
+#[cfg(feature = "vista")]
+pub mod vista;
+
 use ciborium::Value as CborValue;
 use sqlx::postgres::PgPool;
 
