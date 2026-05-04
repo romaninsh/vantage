@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Step 4: Table &amp; CRUD - Vantage 0.4 Framework</title>
+        <title>Step 3: Operators - Vantage 0.4 Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-c3abb0cf.js";
+            window.path_to_searchindex_js = "../searchindex-a80dff17.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-f0872746.js"></script>
+        <script src="../toc-91be589d.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -175,298 +175,150 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="step-4-table-abstraction-and-entity-crud"><a class="header" href="#step-4-table-abstraction-and-entity-crud">Step 4: Table Abstraction and Entity CRUD</a></h1>
-<p>The same entities get used hundreds of times across a codebase — constructing a query from scratch
-every single time is tedious and error-prone. Vantage offers <code>Table&lt;&gt;</code> as an abstraction over your
-entity definitions: it knows the table name, the columns, their types, and the ID field, so it can
-build queries for you.</p>
-<p>To use your persistence backend as a table source, you need to implement the <code>TableSource</code> trait.
-Most of the heavy-lifting is done by the <code>vantage-table</code> crate — your job is to implement
-<code>TableSource</code> trait methods.</p>
-<h3 id="implement-tablesource-with-placeholder-methods"><a class="header" href="#implement-tablesource-with-placeholder-methods">Implement TableSource with placeholder methods</a></h3>
-<p>Start by adding the required dependencies:</p>
-<pre><code class="language-toml"># in your backend's Cargo.toml
-vantage-table = { path = "../vantage-table" }
-async-trait = "0.1"
-</code></pre>
-<p>Create a new test file (e.g. <code>tests/&lt;backend&gt;/4_table_def.rs</code>) that defines a table and populates
-its columns. The columns rely on the type system you built in Step 1.</p>
-<p>The <code>TableSource</code> implementation also declares several associated types:</p>
-<ul>
-<li><strong><code>Column</code></strong> — the <code>Column</code> type supplied by <code>vantage-table</code> is good enough for most backends.</li>
-<li><strong><code>AnyType</code></strong> and <strong><code>Value</code></strong> — your type-erased value type from Step 1 (e.g. <code>AnySqliteType</code>).</li>
-<li><strong><code>Id</code></strong> — use <code>String</code> for SQL databases, or a custom type if your IDs have special structure
-(e.g. SurrealDB’s <code>Thing</code> which encodes <code>table:id</code>). Whatever you pick must be covered by your
-type system.</li>
-</ul>
+                        <h1 id="step-2b-implement-operators"><a class="header" href="#step-2b-implement-operators">Step 2b: Implement Operators</a></h1>
+<p>Expressions let you build raw queries, but users shouldn’t have to write
+<code>sqlite_expr!("{} &gt; {}", (ident("price")), 100i64)</code> every time they want a condition. <strong>Operators</strong>
+give typed columns ergonomic methods like <code>.eq()</code>, <code>.gt()</code>, <code>.in_()</code> that produce your backend’s
+native condition type.</p>
+<p>This step covers how to implement a vendor-specific operation trait for your persistence.</p>
+<h3 id="vendor-specific-operation-traits"><a class="header" href="#vendor-specific-operation-traits">Vendor-specific operation traits</a></h3>
+<p>Each persistence defines its own operation trait that returns the backend’s condition type directly.
+The trait is blanket-implemented for all <code>Expressive&lt;T&gt;</code> where <code>T: Into&lt;AnyBackendType&gt;</code>, so typed
+columns get the methods for free.</p>
+<p>For SQL backends, a macro generates the trait:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>use async_trait::async_trait;
-use vantage_table::column::core::{Column, ColumnType};
-use vantage_table::traits::table_source::TableSource;
+</span>// In vantage-sql/src/sqlite/operation.rs
+define_sql_operation!(
+    SqliteOperation,
+    SqliteCondition,
+    crate::sqlite::types::AnySqliteType
+);
+<span class="boring">}</span></code></pre>
+<p>This produces:</p>
+<ul>
+<li>A trait <code>SqliteOperation&lt;T&gt;</code> with <code>.eq()</code>, <code>.gt()</code>, <code>.lt()</code>, <code>.ne()</code>, <code>.gte()</code>, <code>.lte()</code>,
+<code>.in_()</code>, <code>.in_list()</code>, <code>.cast()</code> — all returning <code>SqliteCondition</code></li>
+<li>A blanket impl for all <code>Expressive&lt;T&gt;</code> where <code>T: Into&lt;AnySqliteType&gt;</code></li>
+<li>An <code>Expressive&lt;AnySqliteType&gt;</code> impl for <code>SqliteCondition</code>, enabling chaining</li>
+</ul>
+<h3 id="how-it-works-internally"><a class="header" href="#how-it-works-internally">How it works internally</a></h3>
+<p>Each method builds an <code>Expression&lt;T&gt;</code> from the two operands, then converts it to the backend’s
+condition type via <code>From&lt;Expression&lt;T&gt;&gt;</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn gt(&amp;self, value: impl Expressive&lt;T&gt;) -&gt; SqliteCondition {
+    let expr: Expression&lt;T&gt; = Expression::new("{} &gt; {}", vec![
+        ExpressiveEnum::Nested(self.expr()),
+        ExpressiveEnum::Nested(value.expr()),
+    ]);
+    SqliteCondition::from(expr)  // maps T → AnySqliteType via Into
+}
+<span class="boring">}</span></code></pre>
+<p>The <code>From&lt;Expression&lt;F&gt;&gt; for SqliteCondition</code> impl (from Step 1’s <code>define_sql_condition!</code> macro)
+handles the type mapping — it calls <code>ExpressionMap::map()</code> to convert all <code>F</code> scalars into
+<code>AnySqliteType</code>.</p>
+<h3 id="chaining-across-type-boundaries"><a class="header" href="#chaining-across-type-boundaries">Chaining across type boundaries</a></h3>
+<p>Because <code>SqliteCondition</code> implements <code>Expressive&lt;AnySqliteType&gt;</code>, the blanket gives it
+<code>SqliteOperation&lt;AnySqliteType&gt;</code>. This enables:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let price = Column::&lt;i64&gt;::new("price");
+price.gt(10).eq(false)
+// =&gt; SqliteCondition wrapping: (price &gt; 10) = 0
+<span class="boring">}</span></code></pre>
+<p>The first operation (<code>.gt(10)</code>) enforces type safety — <code>10</code> must be <code>Expressive&lt;i64&gt;</code>. The second
+operation (<code>.eq(false)</code>) operates on <code>SqliteCondition</code> where <code>bool: Expressive&lt;AnySqliteType&gt;</code>, so
+any backend-compatible type is accepted.</p>
+<h3 id="implementing-for-a-non-sql-backend"><a class="header" href="#implementing-for-a-non-sql-backend">Implementing for a non-SQL backend</a></h3>
+<p>For backends that don’t use expression trees for conditions (like MongoDB), you implement the
+operation trait manually instead of using the macro. MongoDB produces BSON documents:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub trait MongoOperation&lt;T&gt;: Expressive&lt;T&gt; {
+    fn eq(&amp;self, value: impl Into&lt;AnyMongoType&gt;) -&gt; MongoCondition {
+        let field = self.expr().template.clone();
+        let bson_val = AnyMongoType::from(value).to_bson();
+        MongoCondition::Doc(doc! { field: { "$eq": bson_val } })
+    }
 
-#[async_trait]
-impl TableSource for SqliteDB {
-    type Column&lt;Type&gt; = Column&lt;Type&gt; where Type: ColumnType;
-    type AnyType = AnySqliteType;
-    type Value = AnySqliteType;
-    type Id = String;
+    fn gt(&amp;self, value: impl Into&lt;AnyMongoType&gt;) -&gt; MongoCondition {
+        let field = self.expr().template.clone();
+        let bson_val = AnyMongoType::from(value).to_bson();
+        MongoCondition::Doc(doc! { field: { "$gt": bson_val } })
+    }
     // ...
 }
+
+impl&lt;T, S: Expressive&lt;T&gt;&gt; MongoOperation&lt;T&gt; for S {}
 <span class="boring">}</span></code></pre>
-<p>Implement the following methods first — they’re all straightforward delegations:</p>
+<p>Key differences from SQL:</p>
 <ul>
-<li><strong>Column management</strong> — <code>create_column</code>, <code>to_any_column</code>, <code>convert_any_column</code>:</li>
+<li><strong>Values use <code>Into&lt;AnyMongoType&gt;</code></strong> not <code>Expressive&lt;T&gt;</code> — MongoDB doesn’t compose expression
+trees, it builds BSON documents from scalar values.</li>
+<li><strong>Field name extraction</strong> — <code>self.expr().template</code> gives the column name for simple columns.
+Complex expressions produce the template string as the field path.</li>
+<li><strong>Chaining</strong> — <code>MongoCondition</code> implements <code>Expressive&lt;AnyMongoType&gt;</code> for the blanket, but boolean
+chaining (<code>.eq(false)</code> = negate) is handled via dedicated methods like <code>.eq_bool(false)</code> since
+MongoDB negation uses <code>$not</code> wrappers.</li>
 </ul>
+<h3 id="avoiding-method-name-conflicts"><a class="header" href="#avoiding-method-name-conflicts">Avoiding method name conflicts</a></h3>
+<p>When multiple backend features are enabled, types like <code>Identifier</code> and <code>&amp;str</code> implement
+<code>Expressive&lt;T&gt;</code> for multiple backends. This causes ambiguity if the operation trait is generic.</p>
+<p>Each backend’s operation trait lives in its own module (e.g. <code>sqlite::operation::SqliteOperation</code>).
+Users import only the trait they need:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>    fn create_column&lt;Type: ColumnType&gt;(&amp;self, name: &amp;str) -&gt; Self::Column&lt;Type&gt; {
-        Column::new(name)
-    }
-
-    fn to_any_column&lt;Type: ColumnType&gt;(
-        &amp;self,
-        column: Self::Column&lt;Type&gt;,
-    ) -&gt; Self::Column&lt;Self::AnyType&gt; {
-        Column::from_column(column)
-    }
-
-    fn convert_any_column&lt;Type: ColumnType&gt;(
-        &amp;self,
-        any_column: Self::Column&lt;Self::AnyType&gt;,
-    ) -&gt; Option&lt;Self::Column&lt;Type&gt;&gt; {
-        Some(Column::from_column(any_column))
-    }
+</span>// In your prelude:
+pub use crate::sqlite::operation::SqliteOperation;
 <span class="boring">}</span></code></pre>
+<h3 id="condition-type-requirements"><a class="header" href="#condition-type-requirements">Condition type requirements</a></h3>
+<p>Your condition type must satisfy <code>TableSource::Condition</code> bounds — <code>Clone + Send + Sync + 'static</code>.
+It also needs:</p>
 <ul>
-<li><strong>Expression factory</strong> — <code>expr()</code>:</li>
+<li><code>From&lt;Expression&lt;F&gt;&gt;</code> for any <code>F: Into&lt;AnyType&gt;</code> — so typed column operations convert cleanly</li>
+<li><code>From&lt;Identifier&gt;</code> — so <code>ident("field")</code> works with <code>with_condition()</code></li>
+<li><code>Expressive&lt;AnyType&gt;</code> — so the condition can be chained with further operations</li>
+<li>Any backend-specific conversions (e.g. <code>From&lt;Document&gt;</code> for MongoDB)</li>
 </ul>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>    fn expr(
-        &amp;self,
-        template: impl Into&lt;String&gt;,
-        parameters: Vec&lt;ExpressiveEnum&lt;Self::Value&gt;&gt;,
-    ) -&gt; Expression&lt;Self::Value&gt; {
-        Expression::new(template, parameters)
-    }
-<span class="boring">}</span></code></pre>
-<p>Every other method — should start as <code>todo!()</code>. You’ll implement them incrementally in the following
-sections, driven by tests.</p>
-<h3 id="define-entity-tables"><a class="header" href="#define-entity-tables">Define entity tables</a></h3>
-<p>With <code>TableSource</code> in place, define your entity structs and table constructors. The pattern is the
-same across all backends — <code>#[entity(YourType)]</code> for the struct, plus a builder method that returns
-<code>Table&lt;YourDB, Entity&gt;</code>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use vantage_sql::sqlite::{SqliteType, SqliteDB, AnySqliteType};
-use vantage_table::table::Table;
-use vantage_types::entity;
-
-#[entity(SqliteType)]
-#[derive(Debug, Clone, PartialEq, Default)]
-struct Product {
-    name: String,
-    calories: i64,
-    price: i64,
-    bakery_id: String,
-    is_deleted: bool,
-    inventory_stock: i64,
-}
-
-impl Product {
-    fn sqlite_table(db: SqliteDB) -&gt; Table&lt;SqliteDB, Product&gt; {
-        Table::new("product", db)
-            .with_id_column("id")
-            .with_column_of::&lt;String&gt;("name")
-            .with_column_of::&lt;i64&gt;("calories")
-            .with_column_of::&lt;i64&gt;("price")
-            .with_column_of::&lt;String&gt;("bakery_id")
-            .with_column_of::&lt;bool&gt;("is_deleted")
-            .with_column_of::&lt;i64&gt;("inventory_stock")
-    }
-}
-<span class="boring">}</span></code></pre>
-<p>Note that the entity struct does <strong>not</strong> include the <code>id</code> field — that’s handled separately by
-<code>with_id_column()</code>, which registers the column and sets the table’s ID field. The remaining columns
-are added with <code>with_column_of::&lt;Type&gt;()</code>, which creates typed columns via your
-<code>TableSource::create_column</code> implementation.</p>
-<h3 id="verify-with-a-query-generation-test"><a class="header" href="#verify-with-a-query-generation-test">Verify with a query generation test</a></h3>
-<p>Your first test should build a table, then call <code>table.select()</code>. Just like the Step 3 tests, you
-can use <code>preview()</code> to check the rendered SQL, and later execute it against a real database:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[tokio::test]
-async fn test_product_select() {
-    let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
-    let table = Product::sqlite_table(db);
-    let select = table.select();
-    assert_eq!(
-        select.preview(),
-        "SELECT \"id\", \"name\", \"calories\", \"price\", \
-         \"bakery_id\", \"is_deleted\", \"inventory_stock\" FROM \"product\""
-    );
-}
-<span class="boring">}</span></code></pre>
-<p>This works because <code>table.select()</code> (provided by <code>vantage-table</code>) calls your
-<code>SelectableDataSource::select()</code> to get a fresh SELECT builder, then applies the table name via
-<code>set_source()</code> and adds each registered column via <code>add_field()</code>. None of the <code>todo!()</code> methods are
-hit — only the column and expression infrastructure you already implemented.</p>
-<h3 id="implement-the-read-methods"><a class="header" href="#implement-the-read-methods">Implement the read methods</a></h3>
-<p><code>Table&lt;T, E&gt;</code> implements two traits from <code>vantage-dataset</code> that provide read access:</p>
-<ul>
-<li>
-<p><strong><code>ReadableValueSet</code></strong> — returns raw <code>Record&lt;Value&gt;</code> (untyped storage values):</p>
-<ul>
-<li><code>list_values()</code> → all records as <code>IndexMap&lt;Id, Record&lt;Value&gt;&gt;</code></li>
-<li><code>get_value(id)</code> → <code>Option&lt;Record&lt;Value&gt;&gt;</code> — <code>None</code> if no record matches the id</li>
-<li><code>get_some_value()</code> → one arbitrary record (or <code>None</code> if empty)</li>
-</ul>
-</li>
-<li>
-<p><strong><code>ReadableDataSet&lt;E&gt;</code></strong> — returns deserialized entities (calls <code>E::try_from_record()</code> for you):</p>
-<ul>
-<li><code>list()</code> → all entities as <code>IndexMap&lt;Id, E&gt;</code></li>
-<li><code>get(id)</code> → <code>Option&lt;E&gt;</code> — <code>None</code> if no entity matches the id</li>
-<li><code>get_some()</code> → one arbitrary entity</li>
-</ul>
-</li>
-</ul>
-<p>Both traits delegate to three <code>TableSource</code> methods: <code>list_table_values</code>, <code>get_table_value</code>, and
-<code>get_table_some_value</code>. The pattern is the same for all three:</p>
+<p>For SQL backends, the <code>define_sql_condition!</code> macro generates all of these.</p>
+<h3 id="step-2b-checklist"><a class="header" href="#step-2b-checklist">Step 2b checklist</a></h3>
 <ol>
-<li>Get the id field name from <code>table.id_field()</code> (falls back to <code>"id"</code>)</li>
-<li>Build a SELECT using <code>table.select()</code> (which already applies columns, conditions, ordering)</li>
-<li>Execute via <code>self.execute(&amp;select.expr())</code></li>
-<li>Parse the result — split each row into an ID and a <code>Record</code></li>
+<li>
+<p><strong>Define your operation trait</strong> — either via <code>define_sql_operation!</code> (SQL) or manually
+(document-oriented backends).</p>
+</li>
+<li>
+<p><strong>Blanket-implement it</strong> for all <code>Expressive&lt;T&gt;</code> where <code>T</code> converts into your <code>AnyType</code>.</p>
+</li>
+<li>
+<p><strong>Implement <code>Expressive&lt;AnyType&gt;</code> for your condition type</strong> — enables chaining.</p>
+</li>
+<li>
+<p><strong>Export from your prelude</strong> — so users get the operation trait automatically.</p>
+</li>
+<li>
+<p><strong>Tests</strong> covering:</p>
+<ul>
+<li>Typed column operations: <code>Column::&lt;i64&gt;::new("price").gt(150)</code> → condition</li>
+<li>Boolean column: <code>Column::&lt;bool&gt;::new("active").eq(false)</code> → condition</li>
+<li>Chaining: <code>price.gt(10).eq(false)</code> compiles and produces correct output</li>
+<li>Cross-type rejection: <code>price.gt(false)</code> does NOT compile</li>
+<li>Same-type column comparison: <code>price.eq(price.clone())</code> works</li>
+<li>Condition usable with <code>table.add_condition()</code> and <code>select.with_condition()</code></li>
+</ul>
+</li>
 </ol>
-<p>For <code>get_table_value</code>, add a WHERE condition on the id field and return <code>Ok(None)</code> when the
-lookup misses — errors are reserved for actual connection or parse failures.
-For <code>get_table_some_value</code>, set <code>LIMIT 1</code> and return the first row (or <code>None</code> if empty).</p>
-<p>Write tests for both <code>ReadableValueSet</code> and <code>ReadableDataSet</code> in separate files — import the traits
-from <code>vantage_dataset</code> and call <code>list_values()</code>, <code>get_value()</code>, <code>get_some_value()</code>, <code>list()</code>,
-<code>get()</code>, <code>get_some()</code> against your pre-populated test database. Keep these tests condition-free —
-conditions get their own test file next.</p>
-<h3 id="error-handling"><a class="header" href="#error-handling">Error handling</a></h3>
-<p>All <code>TableSource</code> methods return <code>vantage_core::Result&lt;T&gt;</code> (an alias for <code>Result&lt;T, VantageError&gt;</code>).
-Use the <code>error!</code> macro from <code>vantage_core</code> to create errors with structured context:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use vantage_core::error;
-
-// Simple error message
-return Err(error!("expected array result"));
-
-// With key = value context (NOT format args — the macro uses a different syntax)
-return Err(error!("row missing id field", field = id_field_name));
-
-// For database-specific errors, convert them with map_err
-let rows = query.fetch_all(self.pool()).await
-    .map_err(|e| error!("SQLite query failed", details = e.to_string()))?;
-<span class="boring">}</span></code></pre>
-<p>The macro automatically captures file, line, and column. The <code>key = value</code> pairs are stored as
-structured context, not interpolated into the message string.</p>
-<p>To wrap external errors with additional context, use the <code>Context</code> trait:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use vantage_core::Context;
-
-// Wraps the original error as the "source" of a new VantageError
-let data = std::fs::read("config.json")
-    .context(error!("failed to load config"))?;
-<span class="boring">}</span></code></pre>
-<p>This chains errors — the original <code>io::Error</code> is preserved as the source, so <code>Display</code> renders both
-messages and the source chain is available via <code>std::error::Error::source()</code>.</p>
-<h3 id="operation-trait--condition-building"><a class="header" href="#operation-trait--condition-building">Operation trait — condition building</a></h3>
-<p>Each backend provides an operation trait (e.g. <code>SqliteOperation</code>) with <code>.eq()</code>, <code>.ne()</code>, <code>.gt()</code>,
-<code>.gte()</code>, <code>.lt()</code>, <code>.lte()</code>, and <code>.in_()</code> methods for building conditions. It has a <strong>blanket
-implementation</strong> for all <code>Expressive&lt;T&gt;</code> types, so your columns get these methods automatically — no
-explicit impl needed.</p>
-<p>All methods accept <code>impl Expressive&lt;YourAnyType&gt;</code>, so you can pass native Rust values (<code>false</code>,
-<code>42</code>, <code>"hello"</code>), other columns (<code>table["other_field"]</code>), or full expressions. This requires your
-scalar types to implement <code>Expressive&lt;YourAnyType&gt;</code> — the same impls you added in Step 1 for the
-vendor macro.</p>
-<h3 id="testing-conditions"><a class="header" href="#testing-conditions">Testing conditions</a></h3>
-<p><code>Table</code> carries conditions set via <code>add_condition()</code>, and <code>table.select()</code> applies them
-automatically as WHERE clauses. Test a few patterns:</p>
-<ul>
-<li><strong>Custom expression</strong> — pass columns as expression arguments via <code>table["field"]</code>:</li>
-</ul>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let mut table = Product::sqlite_table(db);
-table.add_condition(sqlite_expr!("{} &gt; {}", (table["price"]), 130));
-<span class="boring">}</span></code></pre>
-<ul>
-<li><strong>Multiple conditions</strong> — combined with AND, including field-to-field comparison:</li>
-</ul>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let mut table = Product::sqlite_table(db);
-table.add_condition(sqlite_expr!("{} &gt; {}", (table["price"]), 130));
-table.add_condition(sqlite_expr!("{} &gt; {}", (table["price"]), (table["calories"])));
-<span class="boring">}</span></code></pre>
-<ul>
-<li><strong>SqliteOperation::eq()</strong> — the idiomatic way:</li>
-</ul>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use vantage_sql::sqlite::operation::SqliteOperation;
-
-let mut table = Product::sqlite_table(db);
-table.add_condition(table["is_deleted"].eq(false));
-<span class="boring">}</span></code></pre>
-<h3 id="implement-aggregates"><a class="header" href="#implement-aggregates">Implement aggregates</a></h3>
-<p>Implement <code>get_table_count</code>, <code>get_table_sum</code>, <code>get_table_max</code>, and <code>get_table_min</code> in your
-<code>TableSource</code>. These build aggregate queries from <code>table.select()</code> and extract the scalar result.
-Once implemented, <code>Table</code> exposes shorter <code>get_count</code>, <code>get_sum</code>, <code>get_max</code>, <code>get_min</code> methods
-directly:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let table = Product::sqlite_table(db);
-assert_eq!(table.get_count().await.unwrap(), 5);
-assert_eq!(table.get_max(&amp;table["price"]).await.unwrap().try_get::&lt;i64&gt;().unwrap(), 299);
-<span class="boring">}</span></code></pre>
-<h3 id="implement-write-operations"><a class="header" href="#implement-write-operations">Implement write operations</a></h3>
-<p><code>Table</code> also implements <code>WritableDataSet</code> (insert, replace, patch, delete) and <code>InsertableDataSet</code>
-(insert with auto-generated ID). These delegate to six <code>TableSource</code> methods:</p>
-<ul>
-<li><strong><code>insert_table_value</code></strong> — INSERT with a known ID. Build an <code>SqliteInsert</code> with the id field and
-record fields, execute, then read back via <code>get_table_value</code>.</li>
-<li><strong><code>replace_table_value</code></strong> — full replacement. For SQLite, use <code>INSERT OR REPLACE INTO</code>.</li>
-<li><strong><code>patch_table_value</code></strong> — partial update. Build an <code>SqliteUpdate</code> with only the provided fields
-and a WHERE condition on the id field.</li>
-<li><strong><code>delete_table_value</code></strong> — DELETE with a WHERE condition on the id field.</li>
-<li><strong><code>delete_table_all_values</code></strong> — DELETE without conditions.</li>
-<li><strong><code>insert_table_return_id_value</code></strong> — INSERT without a known ID (auto-increment). Use
-<code>RETURNING "id"</code> to get the generated ID back from the database.</li>
-</ul>
-<p>Test both <code>WritableValueSet</code> (raw records, no entity) and <code>WritableDataSet</code> (typed entities) using
-in-memory SQLite:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// WritableValueSet — no entity needed
-let rec = record(&amp;[("name", "Gamma".into()), ("price", 30i64.into())]);
-table.insert_value(&amp;"c".to_string(), &amp;rec).await.unwrap();
-
-// WritableDataSet — typed entities
-let item = Item { name: "Gamma".into(), price: 30 };
-table.insert(&amp;"c".to_string(), &amp;item).await.unwrap();
-
-// InsertableDataSet — auto-generated ID
-let id = table.insert_return_id(&amp;item).await.unwrap();
-let fetched = table.get(id).await.unwrap();
-<span class="boring">}</span></code></pre>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../new-persistence/step3-query-builder.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../new-persistence/step2-expressions.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../new-persistence/step5-relationships.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../new-persistence/step4-query-builder.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -476,11 +328,11 @@ let fetched = table.get(id).await.unwrap();
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../new-persistence/step3-query-builder.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../new-persistence/step2-expressions.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../new-persistence/step5-relationships.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../new-persistence/step4-query-builder.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

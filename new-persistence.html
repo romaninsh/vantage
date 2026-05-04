@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-c3abb0cf.js";
+            window.path_to_searchindex_js = "searchindex-a80dff17.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-f0872746.js"></script>
+        <script src="toc-91be589d.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -176,17 +176,19 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="adding-a-new-persistence"><a class="header" href="#adding-a-new-persistence">Adding a New Persistence</a></h1>
-<p>So you want to connect Vantage to a new database? This guide walks through the process in six
-incremental steps — each one unlocks more framework features. You don’t have to implement all six;
-stop whenever your persistence has enough capability for your use case.</p>
+<p>So you want to connect Vantage to a new database? This guide walks through the process in eight
+incremental steps — each one unlocks more framework features. You don’t have to implement all
+eight; stop whenever your persistence has enough capability for your use case.</p>
 <ul>
 <li><a href="#overview">Overview</a></li>
 <li><a href="#step-1-type-system">Step 1: Type System</a></li>
 <li><a href="#step-2-expressions">Step 2: Expressions</a></li>
-<li><a href="#step-3-query-builder">Step 3: Query Builder</a></li>
-<li><a href="#step-4-table--crud">Step 4: Table &amp; CRUD</a></li>
-<li><a href="#step-5-relationships">Step 5: Relationships</a></li>
-<li><a href="#step-6-multi-backend-applications">Step 6: Multi-Backend Applications</a></li>
+<li><a href="#step-3-operators">Step 3: Operators</a></li>
+<li><a href="#step-4-query-builder">Step 4: Query Builder</a></li>
+<li><a href="#step-5-table--crud">Step 5: Table &amp; CRUD</a></li>
+<li><a href="#step-6-relationships">Step 6: Relationships</a></li>
+<li><a href="#step-7-multi-backend-applications">Step 7: Multi-Backend Applications</a></li>
+<li><a href="#step-8-vista">Step 8: Vista</a></li>
 </ul>
 <hr>
 <h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
@@ -198,10 +200,12 @@ stop whenever your persistence has enough capability for your use case.</p>
 <tbody>
 <tr><td><a href="./new-persistence/step1-types.html">1. Type System</a></td><td><code>vantage_type_system!</code> macro, <code>AnyType</code>, <code>Record</code> conversions</td><td>Type-safe values, struct ↔ record mapping</td><td><strong>Required</strong></td></tr>
 <tr><td><a href="./new-persistence/step2-expressions.html">2. Expressions</a></td><td>Vendor macro, <code>ExprDataSource</code></td><td>Execute raw queries, cross-database <code>defer()</code></td><td>Skip for simple read-only sources (CSV)</td></tr>
-<tr><td><a href="./new-persistence/step3-query-builder.html">3. Query Builder</a></td><td><code>Selectable</code>, <code>SelectableDataSource</code></td><td>Composable SELECT with conditions, ordering, limits</td><td>Skip if your persistence has no query language</td></tr>
-<tr><td><a href="./new-persistence/step4-table-crud.html">4. Table &amp; CRUD</a></td><td><code>TableSource</code>, entity tables, aggregates, writes</td><td><code>Table&lt;DB, Entity&gt;</code>, full CRUD, <code>ReadableDataSet</code>, <code>WritableDataSet</code></td><td><strong>Required</strong> for table support</td></tr>
-<tr><td><a href="./new-persistence/step5-relationships.html">5. Relationships</a></td><td><code>with_one</code>, <code>with_many</code>, correlated subqueries</td><td>Reference traversal, expression fields</td><td>Skip if you don’t need cross-table queries</td></tr>
-<tr><td><a href="./new-persistence/step6-multi-backend.html">6. Multi-Backend</a></td><td><code>AnyTable::from_table()</code>, CLI example</td><td>Type-erased tables, generic UI/API code</td><td>Skip if you only use one persistence</td></tr>
+<tr><td><a href="./new-persistence/step3-operators.html">3. Operators</a></td><td>Vendor operation trait, typed <code>.eq()</code>/<code>.gt()</code>/<code>.in_()</code></td><td>Ergonomic typed conditions instead of raw expression macros</td><td>Skip if you don’t expose typed columns</td></tr>
+<tr><td><a href="./new-persistence/step4-query-builder.html">4. Query Builder</a></td><td><code>Selectable</code>, <code>SelectableDataSource</code></td><td>Composable SELECT with conditions, ordering, limits</td><td>Skip if your persistence has no query language</td></tr>
+<tr><td><a href="./new-persistence/step5-table-crud.html">5. Table &amp; CRUD</a></td><td><code>TableSource</code>, entity tables, aggregates, writes</td><td><code>Table&lt;DB, Entity&gt;</code>, full CRUD, <code>ReadableDataSet</code>, <code>WritableDataSet</code></td><td><strong>Required</strong> for table support</td></tr>
+<tr><td><a href="./new-persistence/step6-relationships.html">6. Relationships</a></td><td><code>with_one</code>, <code>with_many</code>, correlated subqueries</td><td>Reference traversal, expression fields</td><td>Skip if you don’t need cross-table queries</td></tr>
+<tr><td><a href="./new-persistence/step7-multi-backend.html">7. Multi-Backend</a></td><td><code>AnyTable::from_table()</code>, CLI example</td><td>Type-erased tables, generic UI/API code</td><td>Skip if you only use one persistence</td></tr>
+<tr><td><a href="./new-persistence/step8-vista.html">8. Vista</a></td><td><code>&lt;Driver&gt;VistaFactory</code>, <code>&lt;Driver&gt;VistaSource</code>, YAML extras</td><td>YAML-defined data handles consumed by UI / scripting / agents</td><td>Skip if you don’t need Vista support</td></tr>
 </tbody>
 </table>
 </div>
@@ -224,33 +228,47 @@ parsing.</p>
 <code>TableSource</code> directly without an expression engine.</p>
 <p><strong><a href="./new-persistence/step2-expressions.html">Read Step 2 →</a></strong></p>
 <hr>
-<h2 id="step-3-query-builder"><a class="header" href="#step-3-query-builder">Step 3: Query Builder</a></h2>
+<h2 id="step-3-operators"><a class="header" href="#step-3-operators">Step 3: Operators</a></h2>
+<p>Build vendor-specific operation traits so typed columns get ergonomic <code>.eq()</code>/<code>.gt()</code>/<code>.in_()</code>
+methods that produce your backend’s native condition type. Blanket-implemented over all
+<code>Expressive&lt;T&gt;</code> so users don’t have to write raw expression macros for every condition.</p>
+<p>Skip this step if you don’t expose typed columns to end users.</p>
+<p><strong><a href="./new-persistence/step3-operators.html">Read Step 3 →</a></strong></p>
+<hr>
+<h2 id="step-4-query-builder"><a class="header" href="#step-4-query-builder">Step 4: Query Builder</a></h2>
 <p>Build a SELECT struct implementing the <code>Selectable</code> trait — fields, conditions, ordering, limits,
 aggregates. Wire it up through <code>SelectableDataSource</code> so the rest of Vantage can create and execute
 queries through a standard interface.</p>
 <p>Skip this step if your persistence doesn’t have a query language. MongoDB, for instance, skips
 <code>Selectable</code> and uses native BSON pipelines instead.</p>
-<p><strong><a href="./new-persistence/step3-query-builder.html">Read Step 3 →</a></strong></p>
+<p><strong><a href="./new-persistence/step4-query-builder.html">Read Step 4 →</a></strong></p>
 <hr>
-<h2 id="step-4-table--crud"><a class="header" href="#step-4-table--crud">Step 4: Table &amp; CRUD</a></h2>
+<h2 id="step-5-table--crud"><a class="header" href="#step-5-table--crud">Step 5: Table &amp; CRUD</a></h2>
 <p>Implement <code>TableSource</code> to give Vantage full table abstraction — columns, conditions, ordering,
 pagination, entity CRUD, and aggregates. This is where <code>Table&lt;DB, Entity&gt;</code> comes alive and
 auto-implements <code>ReadableDataSet</code>, <code>WritableDataSet</code>, and <code>ActiveEntitySet</code>.</p>
 <p>Start with <code>todo!()</code> for every method and implement them incrementally, driven by tests.</p>
-<p><strong><a href="./new-persistence/step4-table-crud.html">Read Step 4 →</a></strong></p>
+<p><strong><a href="./new-persistence/step5-table-crud.html">Read Step 5 →</a></strong></p>
 <hr>
-<h2 id="step-5-relationships"><a class="header" href="#step-5-relationships">Step 5: Relationships</a></h2>
+<h2 id="step-6-relationships"><a class="header" href="#step-6-relationships">Step 6: Relationships</a></h2>
 <p>Declare <code>with_one</code> and <code>with_many</code> relationships on tables and traverse them with <code>get_ref_as</code>.
 Implement <code>column_table_values_expr</code> for subquery-based traversal and optionally
 <code>related_correlated_condition</code> for correlated subqueries (expression fields like computed counts).</p>
 <p>Skip this step if your persistence is flat (no foreign keys or cross-collection references).</p>
-<p><strong><a href="./new-persistence/step5-relationships.html">Read Step 5 →</a></strong></p>
+<p><strong><a href="./new-persistence/step6-relationships.html">Read Step 6 →</a></strong></p>
 <hr>
-<h2 id="step-6-multi-backend-applications"><a class="header" href="#step-6-multi-backend-applications">Step 6: Multi-Backend Applications</a></h2>
+<h2 id="step-7-multi-backend-applications"><a class="header" href="#step-7-multi-backend-applications">Step 7: Multi-Backend Applications</a></h2>
 <p>Wrap your tables with <code>AnyTable::from_table()</code> to erase the backend type. This enables generic UI,
 CLI, and API code that works identically across SurrealDB, SQLite, CSV, MongoDB, or your new
 persistence — all through a uniform <code>serde_json::Value</code>-based interface.</p>
-<p><strong><a href="./new-persistence/step6-multi-backend.html">Read Step 6 →</a></strong></p>
+<p><strong><a href="./new-persistence/step7-multi-backend.html">Read Step 7 →</a></strong></p>
+<hr>
+<h2 id="step-8-vista"><a class="header" href="#step-8-vista">Step 8: Vista</a></h2>
+<p>Wrap your typed <code>Table&lt;Driver, E&gt;</code> as a <code>Vista</code> — the universal, schema-bearing handle that UI,
+scripting, and agents consume through a CBOR / <code>String</code> boundary. Adds YAML schema loading and
+condition delegation so callers don’t need a Rust entity struct.</p>
+<p>Skip this step if your driver is only consumed from typed Rust code.</p>
+<p><strong><a href="./new-persistence/step8-vista.html">Read Step 8 →</a></strong></p>
 
                     </main>
 

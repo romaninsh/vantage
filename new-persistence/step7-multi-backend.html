@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Step 5: Relationships - Vantage 0.4 Framework</title>
+        <title>Step 7: Multi-Backend - Vantage 0.4 Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-c3abb0cf.js";
+            window.path_to_searchindex_js = "../searchindex-a80dff17.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-f0872746.js"></script>
+        <script src="../toc-91be589d.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -175,60 +175,69 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="step-5-relationships"><a class="header" href="#step-5-relationships">Step 5: Relationships</a></h1>
-<p>Tables can declare relationships using <code>with_one</code> and <code>with_many</code>, then traverse them at runtime
-with <code>get_ref_as</code>. The relationship system is provided by <code>vantage-table</code> — your backend just needs
-<code>column_table_values_expr</code> implemented to make it work.</p>
-<p>Implement <code>column_table_values_expr</code> — it builds a subquery for a single column respecting current
-conditions. For SQL backends this is a <code>SELECT "col" FROM "table" WHERE ...</code> expression.</p>
-<p>Define relationships when constructing tables — <code>with_one</code> for foreign-key-to-parent, <code>with_many</code>
-for parent-to-children. Then traverse:</p>
+                        <h1 id="step-6-multi-backend-applications"><a class="header" href="#step-6-multi-backend-applications">Step 6: Multi-Backend Applications</a></h1>
+<p>At this point your backend works — you can define tables, query data, and traverse relationships.
+But a real application typically has a <em>model crate</em> that defines entities once and offers table
+constructors for each backend. That’s <code>bakery_model3</code> in the Vantage repo. The final piece is
+<code>AnyTable</code>, which lets you treat tables from different backends uniformly.</p>
+<h3 id="anytable-the-type-erased-wrapper"><a class="header" href="#anytable-the-type-erased-wrapper">AnyTable: the type-erased wrapper</a></h3>
+<p><code>AnyTable</code> erases the backend and entity types behind a uniform <code>serde_json::Value</code>-based interface.
+This is what makes it possible to write generic UI, CLI, or API code that doesn’t care which
+database is behind it.</p>
+<p>There are two ways to create one:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>let mut clients = client_table(db);
-clients.add_condition(sqlite_expr!("{} = {}", (clients["is_paying_client"]), true));
+</span>// 1. If your backend already uses serde_json::Value (rare):
+let any = AnyTable::new(my_table);
 
-let orders = clients.get_ref_as::&lt;SqliteDB, ClientOrder&gt;("orders").unwrap();
+// 2. For backends with custom value types (the common case):
+let any = AnyTable::from_table(Product::sqlite_table(db));
+<span class="boring">}</span></code></pre>
+<p><code>from_table</code> works as long as your <code>AnyType</code> implements <code>Into&lt;serde_json::Value&gt;</code> and
+<code>From&lt;serde_json::Value&gt;</code>. The <code>vantage_type_system!</code> macro generates the <code>Into</code> conversion
+automatically, and after Step 1 your backend should have the <code>From</code> direction covered too.</p>
+<h3 id="building-a-multi-source-cli"><a class="header" href="#building-a-multi-source-cli">Building a multi-source CLI</a></h3>
+<p>The CLI example in <code>bakery_model3/examples/cli.rs</code> shows the pattern. A <code>build_table</code> function
+matches on the user’s chosen source, calls the right entity constructor, and wraps it with
+<code>AnyTable::from_table()</code>. Once you have an <code>AnyTable</code>, all commands are backend-agnostic —
+<code>list_values()</code>, <code>get_count()</code>, <code>get_some_value()</code>, <code>insert_value()</code>, and <code>delete()</code> all work
+identically regardless of which database is behind it.</p>
+<p>Because the values flow through as <code>serde_json::Value</code>, the CLI renderer can inspect types at
+runtime — booleans like <code>is_deleted</code> display as <code>true</code>/<code>false</code> with color highlighting, numbers stay
+numeric, and nulls render cleanly. Your type system work in Step 1 ensures these values arrive with
+the right JSON type rather than everything being a string.</p>
+<p>Try it out:</p>
+<pre><code class="language-bash"># List products from CSV
+cargo run --example cli -- csv product list
 
-// The generated query includes the subquery:
-// SELECT ... FROM "client_order"
-//   WHERE client_id IN (SELECT "id" FROM "client" WHERE is_paying_client = 1)
-assert_eq!(orders.list().await.unwrap().len(), 3);
-<span class="boring">}</span></code></pre>
-<p><code>with_expression</code> adds computed fields to a table using correlated subqueries. It pairs with
-<code>get_subquery_as</code> which produces <code>target.fk = source.id</code> conditions (vs <code>get_ref_as</code> which uses
-<code>IN (subquery)</code>).</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>.with_many("orders", "client_id", Order::sqlite_table)
-.with_expression("order_count", |t| {
-    t.get_subquery_as::&lt;Order&gt;("orders").unwrap().get_count_query()
-})
-// Generates: (SELECT COUNT(*) FROM "client_order"
-//   WHERE "client_order"."client_id" = "client"."id") AS "order_count"
-<span class="boring">}</span></code></pre>
-<p><strong>What to implement:</strong> override <code>related_correlated_condition</code> in your <code>TableSource</code> to produce
-table-qualified equality. Default panics — backends without correlated subquery support (CSV) simply
-can’t use this feature.</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>fn related_correlated_condition(&amp;self, target_table: &amp;str, target_field: &amp;str,
-    source_table: &amp;str, source_column: &amp;str) -&gt; Self::Condition {
-    sqlite_expr!("{} = {}", (ident(target_field).dot_of(target_table)),
-        (ident(source_column).dot_of(source_table)))
-}
-<span class="boring">}</span></code></pre>
-<p>Requires <code>SelectableDataSource</code> (Step 3) since aggregate query builders use <code>table.select()</code>.</p>
+# Same thing from SQLite
+cargo run --example cli -- sqlite product list
+
+# Count bakeries in SurrealDB
+cargo run --example cli -- surreal bakery count
+
+# Get a single product record
+cargo run --example cli -- sqlite product get
+
+# Insert a new record
+cargo run --example cli -- surreal bakery add myid '{"name":"Test","profit_margin":10}'
+
+# Delete a record
+cargo run --example cli -- surreal bakery delete myid
+</code></pre>
+<p>That’s the payoff of implementing a proper type system and <code>TableSource</code> — one line of
+<code>AnyTable::from_table()</code> bridges the gap between your backend’s native types and a uniform
+JSON-based interface.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../new-persistence/step4-table-crud.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../new-persistence/step6-relationships.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../new-persistence/step6-multi-backend.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../new-persistence/step8-vista.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -238,11 +247,11 @@ can’t use this feature.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../new-persistence/step4-table-crud.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../new-persistence/step6-relationships.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../new-persistence/step6-multi-backend.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../new-persistence/step8-vista.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

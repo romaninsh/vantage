@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Step 3: Query Builder - Vantage 0.4 Framework</title>
+        <title>Step 8: Vista - Vantage 0.4 Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-c3abb0cf.js";
+            window.path_to_searchindex_js = "../searchindex-a80dff17.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-f0872746.js"></script>
+        <script src="../toc-91be589d.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -175,165 +175,167 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="step-3-statement-builders-and-selectabledatasource"><a class="header" href="#step-3-statement-builders-and-selectabledatasource">Step 3: Statement Builders and SelectableDataSource</a></h1>
-<p>In practice, nobody writes raw expressions for every query. This step adds the <code>Selectable</code> trait
-implementation for your SELECT builder and wires it up through <code>SelectableDataSource</code> so the rest of
-vantage can create and execute queries through a standard interface.</p>
-<h3 id="implement-selectable-for-your-select-builder"><a class="header" href="#implement-selectable-for-your-select-builder">Implement Selectable for your SELECT builder</a></h3>
-<p>The <code>Selectable&lt;T&gt;</code> trait is the standard interface for building SELECT queries across all vantage
-backends. Your SELECT struct needs to implement it. The trait has two kinds of methods:</p>
-<p><strong>Mutating methods</strong> you must implement — <code>set_source</code>, <code>add_field</code>, <code>add_where_condition</code>,
-<code>add_order_by</code>, <code>add_group_by</code>, <code>set_limit</code>, <code>set_distinct</code>, the <code>clear_*</code> methods, the <code>has_*</code>
-methods, <code>as_count</code>, and <code>as_sum</code>.</p>
-<p><strong>Builder methods</strong> you get for free — <code>with_source</code>, <code>with_field</code>, <code>with_condition</code>, <code>with_order</code>,
-<code>with_expression</code>, <code>with_limit</code>. These are default implementations that call the mutating methods
-and return <code>self</code>.</p>
-<p>This means your builder code is just the struct definition and <code>new()</code>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>pub struct SqliteSelect {
-    pub fields: Vec&lt;Expr&gt;,
-    pub from: Vec&lt;Expr&gt;,
-    pub where_conditions: Vec&lt;Expr&gt;,
-    pub order_by: Vec&lt;(Expr, bool)&gt;,
-    pub group_by: Vec&lt;Expr&gt;,
-    pub distinct: bool,
-    pub limit: Option&lt;i64&gt;,
-    pub skip: Option&lt;i64&gt;,
-}
-
-impl SqliteSelect {
-    pub fn new() -&gt; Self { /* initialize empty */ }
-}
-<span class="boring">}</span></code></pre>
-<p>The <code>Selectable</code> impl goes in its own file (e.g., <code>statements/select/impls/selectable.rs</code>) and the
-builder methods come from the trait:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let select = SqliteSelect::new()
-    .with_source("product")
-    .with_field("name")
-    .with_field("price")
-    .with_condition(sqlite_expr!("\"is_deleted\" = {}", false))
-    .with_order(sqlite_expr!("\"price\""), false)
-    .with_limit(Some(10), None);
-<span class="boring">}</span></code></pre>
-<p>The <code>as_count()</code> and <code>as_sum()</code> methods should clone the current query, replace the fields with
-<code>COUNT(*)</code> or <code>SUM(column)</code>, drop the ORDER BY (unnecessary for aggregates), and render:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let count_expr = select.as_count();  // SELECT COUNT(*) FROM product WHERE ...
-let sum_expr = select.as_sum(sqlite_expr!("\"price\""));  // SELECT SUM("price") FROM ...
-<span class="boring">}</span></code></pre>
-<h3 id="implement-selectabledatasource"><a class="header" href="#implement-selectabledatasource">Implement SelectableDataSource</a></h3>
-<p>This trait connects the SELECT builder to execution. It tells vantage “this database can create
-SELECT queries and run them”:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>impl SelectableDataSource&lt;AnySqliteType&gt; for SqliteDB {
-    type Select = SqliteSelect;
-
-    fn select(&amp;self) -&gt; Self::Select {
-        SqliteSelect::new()
-    }
-
-    async fn execute_select(&amp;self, select: &amp;Self::Select) -&gt; Result&lt;Vec&lt;AnySqliteType&gt;&gt; {
-        // delegate to ExprDataSource::execute()
-    }
-}
-<span class="boring">}</span></code></pre>
-<h3 id="live-tests"><a class="header" href="#live-tests">Live tests</a></h3>
-<p>Up to now, most tests used in-memory databases created in <code>setup()</code>. For Step 3, start running tests
-against a real pre-populated database. This catches issues that in-memory tests miss — schema
-mismatches, type affinity surprises, data edge cases.</p>
-<p>Set up a test database with known data (we use a bakery schema translated from SurrealDB’s test
-fixture), and write tests that query it through the <code>Selectable</code> interface:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let db = SqliteDB::connect("sqlite:../target/bakery.sqlite?mode=ro").await?;
-
-let select = SqliteSelect::new()
-    .with_source("product")
-    .with_condition(sqlite_expr!("\"price\" &gt; {}", 200i64))
-    .with_order(sqlite_expr!("\"price\""), false);
-
-let record: Record&lt;AnySqliteType&gt; = db.associate(select.expr()).get().await?;
-let product = Product::from_record(record)?;
-assert_eq!(product.name, "Enchantment Under the Sea Pie");
-<span class="boring">}</span></code></pre>
-<h3 id="implementing-complex-queries"><a class="header" href="#implementing-complex-queries">Implementing complex queries</a></h3>
-<p>The <code>Selectable</code> interface gives you the bare bones — fields, conditions, ordering, limits,
-aggregates. Your database can do much more: JOINs, subqueries, CTEs, window functions, HAVING,
-UNION, JSON operators, CASE expressions.</p>
-<p>The best way to build this out is incrementally, driven by real queries:</p>
-<ol>
-<li>
-<p><strong>Create a test database scaffold</strong> with enough tables and data to exercise complex features.
-Foreign keys, self-referential hierarchies, many-to-many junctions, JSON columns, generated
-columns — the more variety, the better. (See <code>scripts/sqlite/db/v3.sql</code> for an example.)</p>
-</li>
-<li>
-<p><strong>Write the queries first</strong> in raw SQL, as comments in your test file. Start with queries you
-know work against your scaffold. Each query should target specific features (JOINs, GROUP BY +
-HAVING, window functions, etc.).</p>
-</li>
-<li>
-<p><strong>Implement one query at a time.</strong> For each query:</p>
+                        <h1 id="step-8-add-vista-support-to-your-driver"><a class="header" href="#step-8-add-vista-support-to-your-driver">Step 8: Add Vista Support to Your Driver</a></h1>
+<p><code>Vista</code> is the universal, schema-bearing handle that scripting, UI, and agent
+code consume. Your driver already exposes a typed <code>Table&lt;T, E&gt;</code> (Steps 1–7);
+adding Vista means wrapping that table so callers can drive it through a
+CBOR/<code>String</code> boundary without knowing which backend is behind it.</p>
+<p>This is a <em>thin</em> layer. Most of the work is decisions, not code.</p>
+<h3 id="before-you-start"><a class="header" href="#before-you-start">Before you start</a></h3>
+<p>Vista support sits on top of everything Steps 1–7 deliver — there is nothing
+new to learn about your backend’s protocol here. Confirm you have:</p>
 <ul>
-<li>Read the SQL and identify which builder methods are missing</li>
-<li>Add the methods to your SELECT struct (e.g., <code>add_join</code>, <code>add_having</code>, <code>with_cte</code>)</li>
-<li>Write a render test that checks the generated SQL matches</li>
-<li>Write a live test that executes against the scaffold and verifies results</li>
+<li><input disabled="" type="checkbox"> Working <code>TableSource</code> impl (Step 5) — Vista delegates all CRUD to it.</li>
+<li><input disabled="" type="checkbox"> Native value type with <code>From&lt;&amp;Bson|&amp;Value&gt;</code>/<code>Into&lt;CborValue&gt;</code> story
+(Step 1) — the source layer translates at this boundary.</li>
+<li><input disabled="" type="checkbox"> An id type that round-trips to <code>String</code> (Step 5). If it doesn’t yet,
+add <code>FromStr</code> and <code>Display</code> impls before going further.</li>
+<li><input disabled="" type="checkbox"> A <code>vista</code> cargo feature gating the new module so non-Vista users don’t
+pull in <code>vantage-vista</code>.</li>
 </ul>
-</li>
-</ol>
-<p>This approach has two advantages. First, you don’t over-design — you only add features you actually
-need. Second, every new feature ships with a test that proves it works against a real database, not
-just string comparison.</p>
-<p>When your queries outgrow what the select struct offers directly, extract <strong>primitives</strong> and
-<strong>nested structs</strong> rather than bloating the builder. For example, <code>Identifier</code> (in
-<code>vantage-sql/src/primitives/</code>) handles qualified column names (<code>"u"."name"</code>) and aliases — it
-implements <code>Expressive&lt;T&gt;</code> so it plugs straight into expressions. Similarly, <code>SqliteSelectJoin</code>
-lives inside the select module and renders its own <code>INNER JOIN ... ON ...</code> clause. The select struct
-just holds a <code>Vec&lt;SqliteSelectJoin&gt;</code> and calls <code>render()</code> on each one. This pattern — small struct
-with <code>Expressive</code> impl, composed into the builder — scales to CASE, CTE, window specs, and anything
-else without the select struct growing unbounded.</p>
-<h3 id="other-statements"><a class="header" href="#other-statements">Other statements</a></h3>
-<p><code>Selectable</code> only covers SELECT. INSERT, UPDATE, and DELETE don’t need a trait at this stage — they
-just need to implement <code>Expressive&lt;AnySqliteType&gt;</code> so they can be passed to
-<code>ExprDataSource::execute()</code>. The statement builders from earlier steps still work, they just need
-their expression type migrated from <code>JsonValue</code> to <code>AnySqliteType</code> to flow directly into
-<code>execute()</code>.</p>
-<h3 id="step-3-conclusion"><a class="header" href="#step-3-conclusion">Step 3 conclusion</a></h3>
-<p>At this point you should have:</p>
-<ol>
-<li>
-<p><strong><code>Selectable&lt;AnyType&gt;</code> impl</strong> for your SELECT builder — all standard methods implemented,
-builder pattern provided by trait defaults.</p>
-</li>
-<li>
-<p><strong><code>SelectableDataSource&lt;AnyType&gt;</code> impl</strong> for your DB struct — <code>select()</code> and <code>execute_select()</code>.</p>
-</li>
-<li>
-<p><strong>Tests</strong> in <code>tests/&lt;backend&gt;/3_*.rs</code> covering:</p>
+<h3 id="pick-your-yaml-vocabulary"><a class="header" href="#pick-your-yaml-vocabulary">Pick your YAML vocabulary</a></h3>
+<p>Driver-specific YAML lives under a top-level key named after your driver
+(<code>mongo:</code>, <code>csv:</code>, <code>sqlite:</code>, …). Keep the universal vocabulary —
+<code>name</code>, <code>columns</code>, <code>flags</code>, <code>references</code>, <code>id_column</code> — for things every
+backend understands. Push backend quirks (collection name, file path,
+auth profile) into your block.</p>
+<p>The strict rule: any struct you deserialize for your block sets
+<code>#[serde(deny_unknown_fields)]</code>. Typos in YAML must be loud, not silent.</p>
 <ul>
-<li>SQL rendering via <code>preview()</code> — fields, conditions, ordering, limits, distinct, group by</li>
-<li><code>as_count()</code> and <code>as_sum()</code> render correctly</li>
-<li>Live execution against a test database — SELECT, COUNT, SUM, ORDER+LIMIT</li>
-<li>Entity deserialization from live query results</li>
+<li><input disabled="" type="checkbox"> Define <code>&lt;Driver&gt;TableExtras</code> with one field per top-level YAML knob,
+under <code>#[serde(deny_unknown_fields)]</code>.</li>
+<li><input disabled="" type="checkbox"> Define <code>&lt;Driver&gt;ColumnExtras</code> for per-column quirks (BSON aliases,
+nested paths, type hints your backend cares about).</li>
+<li><input disabled="" type="checkbox"> Reuse <code>NoExtras</code> for <code>ReferenceExtras</code> until you have a concrete need
+(Step 5 reference handling, stage 5 conditions).</li>
+<li><input disabled="" type="checkbox"> Make every field inside the block <code>Option&lt;T&gt;</code> with <code>#[serde(default)]</code>
+so the block can be omitted entirely when the spec name is enough.</li>
+<li><input disabled="" type="checkbox"> Type-alias <code>&lt;Driver&gt;VistaSpec = VistaSpec&lt;TableExtras, ColumnExtras, NoExtras&gt;</code>
+so callers see one short name.</li>
 </ul>
-</li>
-</ol>
+<h3 id="decide-your-capability-surface"><a class="header" href="#decide-your-capability-surface">Decide your capability surface</a></h3>
+<p><code>VistaCapabilities</code> is <em>the</em> contract. Lying here is worse than not
+implementing — a <code>true</code> flag with no override is reported as
+<code>Unimplemented</code>, while a <code>false</code> flag with no override is reported as
+<code>Unsupported</code>. Both are loud, but they tell the operator different things.</p>
+<p>Default policy: <strong>only set a flag to <code>true</code> if the matching trait method
+is overridden and works</strong>. Read-only stores set <code>can_count: true</code> and stop
+there. Don’t pre-flag <code>can_subscribe</code> for “later” — flip it on the day
+LIVE-query / change-streams actually land.</p>
+<ul>
+<li><input disabled="" type="checkbox"> List the operations your backend natively supports (read, write,
+count, subscribe, invalidate).</li>
+<li><input disabled="" type="checkbox"> For each, decide: implement now, or accept the default <code>Unsupported</code>
+error. Skip rather than stub.</li>
+<li><input disabled="" type="checkbox"> Pick <code>PaginateKind</code> honestly (<code>None</code>/<code>Offset</code>/<code>Cursor</code>). Cursor-only
+backends should not advertise offset.</li>
+<li><input disabled="" type="checkbox"> Document non-obvious gaps in the driver’s README — <code>can_update: true</code>
+with no support for partial patches, for instance.</li>
+</ul>
+<h3 id="implement-the-value-bridge"><a class="header" href="#implement-the-value-bridge">Implement the value bridge</a></h3>
+<p>Your source converts between the native value type and CBOR at the
+<code>VistaSource</code> boundary. Callers see <code>CborValue</code>; the wrapped table sees
+your native type.</p>
+<ul>
+<li><input disabled="" type="checkbox"> Write <code>native_to_cbor(&amp;NativeValue) -&gt; CborValue</code> — exhaustive match
+on all variants, lossy paths flagged in module docs.</li>
+<li><input disabled="" type="checkbox"> Write <code>cbor_to_native(&amp;CborValue) -&gt; NativeValue</code> — handle CBOR <code>Tag</code>
+by unwrapping (drop the tag). Integers wider than your native type
+should stringify rather than silently truncate.</li>
+<li><input disabled="" type="checkbox"> Cover scalars + nested map + nested array in unit tests; one
+round-trip test catches most regressions.</li>
+<li><input disabled="" type="checkbox"> Don’t expose the bridge as <code>pub</code> outside the vista module unless a
+specific caller needs it — keeps the surface small.</li>
+</ul>
+<h3 id="implement-the-source"><a class="header" href="#implement-the-source">Implement the source</a></h3>
+<p>The source is a struct that owns one <code>Table&lt;Driver, EmptyEntity&gt;</code> plus the
+capability set, plus any per-column metadata you need (nested paths,
+aliases). Methods translate at the boundary and delegate everything else
+to the table.</p>
+<ul>
+<li><input disabled="" type="checkbox"> Struct holds: typed <code>Table&lt;Driver, EmptyEntity&gt;</code>, <code>VistaCapabilities</code>,
+and a <code>column_paths: IndexMap&lt;String, Vec&lt;String&gt;&gt;</code> if your backend
+supports nested fields.</li>
+<li><input disabled="" type="checkbox"> <code>impl VistaSource</code> — implement only the methods your capability set
+claims; let the others fall through to the default <code>Unsupported</code>
+error.</li>
+<li><input disabled="" type="checkbox"> <code>add_eq_condition</code> translates <code>(field, CborValue)</code> into your native
+condition type and pushes it onto the wrapped table via
+<code>table.add_condition(...)</code>. <strong>Never store conditions on Vista or in
+the source struct itself.</strong></li>
+<li><input disabled="" type="checkbox"> Path-aware reads: when <code>column_paths</code> is non-empty, walk the path
+for each spec column instead of returning top-level keys verbatim.</li>
+<li><input disabled="" type="checkbox"> Path-aware writes: rebuild nested sub-documents from sibling
+columns sharing a prefix.</li>
+</ul>
+<h3 id="implement-the-factory"><a class="header" href="#implement-the-factory">Implement the factory</a></h3>
+<p>The factory is the construction surface. It exposes one inherent method
+per entry path and one trait impl for YAML.</p>
+<ul>
+<li><input disabled="" type="checkbox"> <code>&lt;Driver&gt;::vista_factory(&amp;self) -&gt; &lt;Driver&gt;VistaFactory</code> — inherent
+method on your data source so callers find it without imports.</li>
+<li><input disabled="" type="checkbox"> <code>from_table&lt;E&gt;(Table&lt;Driver, E&gt;) -&gt; Result&lt;Vista&gt;</code> — typed entry
+point. Collapse to <code>EmptyEntity</code>, harvest column metadata, hand off
+to the source.</li>
+<li><input disabled="" type="checkbox"> <code>impl VistaFactory</code> with the <code>Extras</code> associated types and a
+<code>build_from_spec</code> that builds a <code>Table&lt;Driver, EmptyEntity&gt;</code> from
+the spec, then wraps it via the same code path as <code>from_table</code>.
+One construction path, one reading path.</li>
+<li><input disabled="" type="checkbox"> Override the vista’s display name with <code>spec.name</code> (since the
+spec name often differs from the underlying collection/file/table).</li>
+<li><input disabled="" type="checkbox"> Resolve the id column in this order: <code>spec.id_column</code> → first
+column with the <code>id</code> flag → backend default (e.g. <code>"_id"</code> for Mongo,
+<code>"id"</code> for most SQL).</li>
+</ul>
+<h3 id="test-the-integration"><a class="header" href="#test-the-integration">Test the integration</a></h3>
+<p>Ship two layers: cheap unit tests for the bridge + spec parsing (no
+backend needed), and gated integration tests against a real instance.</p>
+<ul>
+<li><input disabled="" type="checkbox"> Unit-test the value bridge — round-trip every variant, including
+lossy ones (assert the documented lossy form).</li>
+<li><input disabled="" type="checkbox"> Unit-test YAML parsing — minimal spec, unknown-field rejection,
+missing optional block.</li>
+<li><input disabled="" type="checkbox"> Integration: typed <code>from_table</code> round-trip — insert via table,
+list via vista, assert CBOR shapes.</li>
+<li><input disabled="" type="checkbox"> Integration: spec round-trip — <code>from_yaml</code>, list, filter via
+<code>add_condition_eq</code>, write via vista, read back.</li>
+<li><input disabled="" type="checkbox"> Capability honesty test — <code>vista.capabilities()</code> matches what the
+source actually overrides.</li>
+<li><input disabled="" type="checkbox"> Use <code>Result&lt;(), Box&lt;dyn Error&gt;&gt;</code> as the test return type and <code>?</code>
+everywhere. Avoid <code>.unwrap()</code> in test bodies — error context is
+worth more than a panic.</li>
+</ul>
+<h3 id="known-sharp-edges"><a class="header" href="#known-sharp-edges">Known sharp edges</a></h3>
+<p>A few things bite every driver. They’re worth flagging up front rather
+than discovering during review.</p>
+<ul>
+<li><input disabled="" type="checkbox"> <strong>Id translation is the most common bug.</strong> Round-trip your native
+id through <code>String</code> and back; assert that <code>vista.get_value(&amp;id)</code>
+finds what <code>vista.list_values()</code> returned the id for.</li>
+<li><input disabled="" type="checkbox"> <strong>Aliases at the table level may not survive.</strong> Some drivers’
+<code>TableSource</code> impls ignore column aliases when materializing
+records. Audit your read path before relying on aliases for
+renames; the safer bet is to handle renames in the vista source
+via <code>column_paths</code>.</li>
+<li><input disabled="" type="checkbox"> <strong>Don’t filter in memory.</strong> If your backend can push the filter
+down (SQL <code>WHERE</code>, Mongo filter doc, REST query param), do that —
+that’s the entire reason <code>add_eq_condition</code> mutates the underlying
+table instead of stashing state on Vista.</li>
+<li><input disabled="" type="checkbox"> <strong>Conditions stay driver-typed for now.</strong> Universal/portable
+conditions land in a later stage; until then, only translate <code>eq</code>,
+and reject the rest at construction with a clear message.</li>
+<li><input disabled="" type="checkbox"> <strong>Capability flags are cheap to flip later.</strong> Start narrow.</li>
+</ul>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../new-persistence/step2b-operators.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../new-persistence/step7-multi-backend.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../new-persistence/step4-table-crud.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../type-system.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -343,11 +345,11 @@ builder pattern provided by trait defaults.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../new-persistence/step2b-operators.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../new-persistence/step7-multi-backend.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../new-persistence/step4-table-crud.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../type-system.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

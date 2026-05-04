@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Step 6: Multi-Backend - Vantage 0.4 Framework</title>
+        <title>Step 5: Table &amp; CRUD - Vantage 0.4 Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-c3abb0cf.js";
+            window.path_to_searchindex_js = "../searchindex-a80dff17.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-f0872746.js"></script>
+        <script src="../toc-91be589d.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -175,69 +175,298 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="step-6-multi-backend-applications"><a class="header" href="#step-6-multi-backend-applications">Step 6: Multi-Backend Applications</a></h1>
-<p>At this point your backend works — you can define tables, query data, and traverse relationships.
-But a real application typically has a <em>model crate</em> that defines entities once and offers table
-constructors for each backend. That’s <code>bakery_model3</code> in the Vantage repo. The final piece is
-<code>AnyTable</code>, which lets you treat tables from different backends uniformly.</p>
-<h3 id="anytable-the-type-erased-wrapper"><a class="header" href="#anytable-the-type-erased-wrapper">AnyTable: the type-erased wrapper</a></h3>
-<p><code>AnyTable</code> erases the backend and entity types behind a uniform <code>serde_json::Value</code>-based interface.
-This is what makes it possible to write generic UI, CLI, or API code that doesn’t care which
-database is behind it.</p>
-<p>There are two ways to create one:</p>
+                        <h1 id="step-4-table-abstraction-and-entity-crud"><a class="header" href="#step-4-table-abstraction-and-entity-crud">Step 4: Table Abstraction and Entity CRUD</a></h1>
+<p>The same entities get used hundreds of times across a codebase — constructing a query from scratch
+every single time is tedious and error-prone. Vantage offers <code>Table&lt;&gt;</code> as an abstraction over your
+entity definitions: it knows the table name, the columns, their types, and the ID field, so it can
+build queries for you.</p>
+<p>To use your persistence backend as a table source, you need to implement the <code>TableSource</code> trait.
+Most of the heavy-lifting is done by the <code>vantage-table</code> crate — your job is to implement
+<code>TableSource</code> trait methods.</p>
+<h3 id="implement-tablesource-with-placeholder-methods"><a class="header" href="#implement-tablesource-with-placeholder-methods">Implement TableSource with placeholder methods</a></h3>
+<p>Start by adding the required dependencies:</p>
+<pre><code class="language-toml"># in your backend's Cargo.toml
+vantage-table = { path = "../vantage-table" }
+async-trait = "0.1"
+</code></pre>
+<p>Create a new test file (e.g. <code>tests/&lt;backend&gt;/4_table_def.rs</code>) that defines a table and populates
+its columns. The columns rely on the type system you built in Step 1.</p>
+<p>The <code>TableSource</code> implementation also declares several associated types:</p>
+<ul>
+<li><strong><code>Column</code></strong> — the <code>Column</code> type supplied by <code>vantage-table</code> is good enough for most backends.</li>
+<li><strong><code>AnyType</code></strong> and <strong><code>Value</code></strong> — your type-erased value type from Step 1 (e.g. <code>AnySqliteType</code>).</li>
+<li><strong><code>Id</code></strong> — use <code>String</code> for SQL databases, or a custom type if your IDs have special structure
+(e.g. SurrealDB’s <code>Thing</code> which encodes <code>table:id</code>). Whatever you pick must be covered by your
+type system.</li>
+</ul>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>// 1. If your backend already uses serde_json::Value (rare):
-let any = AnyTable::new(my_table);
+</span>use async_trait::async_trait;
+use vantage_table::column::core::{Column, ColumnType};
+use vantage_table::traits::table_source::TableSource;
 
-// 2. For backends with custom value types (the common case):
-let any = AnyTable::from_table(Product::sqlite_table(db));
+#[async_trait]
+impl TableSource for SqliteDB {
+    type Column&lt;Type&gt; = Column&lt;Type&gt; where Type: ColumnType;
+    type AnyType = AnySqliteType;
+    type Value = AnySqliteType;
+    type Id = String;
+    // ...
+}
 <span class="boring">}</span></code></pre>
-<p><code>from_table</code> works as long as your <code>AnyType</code> implements <code>Into&lt;serde_json::Value&gt;</code> and
-<code>From&lt;serde_json::Value&gt;</code>. The <code>vantage_type_system!</code> macro generates the <code>Into</code> conversion
-automatically, and after Step 1 your backend should have the <code>From</code> direction covered too.</p>
-<h3 id="building-a-multi-source-cli"><a class="header" href="#building-a-multi-source-cli">Building a multi-source CLI</a></h3>
-<p>The CLI example in <code>bakery_model3/examples/cli.rs</code> shows the pattern. A <code>build_table</code> function
-matches on the user’s chosen source, calls the right entity constructor, and wraps it with
-<code>AnyTable::from_table()</code>. Once you have an <code>AnyTable</code>, all commands are backend-agnostic —
-<code>list_values()</code>, <code>get_count()</code>, <code>get_some_value()</code>, <code>insert_value()</code>, and <code>delete()</code> all work
-identically regardless of which database is behind it.</p>
-<p>Because the values flow through as <code>serde_json::Value</code>, the CLI renderer can inspect types at
-runtime — booleans like <code>is_deleted</code> display as <code>true</code>/<code>false</code> with color highlighting, numbers stay
-numeric, and nulls render cleanly. Your type system work in Step 1 ensures these values arrive with
-the right JSON type rather than everything being a string.</p>
-<p>Try it out:</p>
-<pre><code class="language-bash"># List products from CSV
-cargo run --example cli -- csv product list
+<p>Implement the following methods first — they’re all straightforward delegations:</p>
+<ul>
+<li><strong>Column management</strong> — <code>create_column</code>, <code>to_any_column</code>, <code>convert_any_column</code>:</li>
+</ul>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>    fn create_column&lt;Type: ColumnType&gt;(&amp;self, name: &amp;str) -&gt; Self::Column&lt;Type&gt; {
+        Column::new(name)
+    }
 
-# Same thing from SQLite
-cargo run --example cli -- sqlite product list
+    fn to_any_column&lt;Type: ColumnType&gt;(
+        &amp;self,
+        column: Self::Column&lt;Type&gt;,
+    ) -&gt; Self::Column&lt;Self::AnyType&gt; {
+        Column::from_column(column)
+    }
 
-# Count bakeries in SurrealDB
-cargo run --example cli -- surreal bakery count
+    fn convert_any_column&lt;Type: ColumnType&gt;(
+        &amp;self,
+        any_column: Self::Column&lt;Self::AnyType&gt;,
+    ) -&gt; Option&lt;Self::Column&lt;Type&gt;&gt; {
+        Some(Column::from_column(any_column))
+    }
+<span class="boring">}</span></code></pre>
+<ul>
+<li><strong>Expression factory</strong> — <code>expr()</code>:</li>
+</ul>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>    fn expr(
+        &amp;self,
+        template: impl Into&lt;String&gt;,
+        parameters: Vec&lt;ExpressiveEnum&lt;Self::Value&gt;&gt;,
+    ) -&gt; Expression&lt;Self::Value&gt; {
+        Expression::new(template, parameters)
+    }
+<span class="boring">}</span></code></pre>
+<p>Every other method — should start as <code>todo!()</code>. You’ll implement them incrementally in the following
+sections, driven by tests.</p>
+<h3 id="define-entity-tables"><a class="header" href="#define-entity-tables">Define entity tables</a></h3>
+<p>With <code>TableSource</code> in place, define your entity structs and table constructors. The pattern is the
+same across all backends — <code>#[entity(YourType)]</code> for the struct, plus a builder method that returns
+<code>Table&lt;YourDB, Entity&gt;</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_sql::sqlite::{SqliteType, SqliteDB, AnySqliteType};
+use vantage_table::table::Table;
+use vantage_types::entity;
 
-# Get a single product record
-cargo run --example cli -- sqlite product get
+#[entity(SqliteType)]
+#[derive(Debug, Clone, PartialEq, Default)]
+struct Product {
+    name: String,
+    calories: i64,
+    price: i64,
+    bakery_id: String,
+    is_deleted: bool,
+    inventory_stock: i64,
+}
 
-# Insert a new record
-cargo run --example cli -- surreal bakery add myid '{"name":"Test","profit_margin":10}'
+impl Product {
+    fn sqlite_table(db: SqliteDB) -&gt; Table&lt;SqliteDB, Product&gt; {
+        Table::new("product", db)
+            .with_id_column("id")
+            .with_column_of::&lt;String&gt;("name")
+            .with_column_of::&lt;i64&gt;("calories")
+            .with_column_of::&lt;i64&gt;("price")
+            .with_column_of::&lt;String&gt;("bakery_id")
+            .with_column_of::&lt;bool&gt;("is_deleted")
+            .with_column_of::&lt;i64&gt;("inventory_stock")
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Note that the entity struct does <strong>not</strong> include the <code>id</code> field — that’s handled separately by
+<code>with_id_column()</code>, which registers the column and sets the table’s ID field. The remaining columns
+are added with <code>with_column_of::&lt;Type&gt;()</code>, which creates typed columns via your
+<code>TableSource::create_column</code> implementation.</p>
+<h3 id="verify-with-a-query-generation-test"><a class="header" href="#verify-with-a-query-generation-test">Verify with a query generation test</a></h3>
+<p>Your first test should build a table, then call <code>table.select()</code>. Just like the Step 3 tests, you
+can use <code>preview()</code> to check the rendered SQL, and later execute it against a real database:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[tokio::test]
+async fn test_product_select() {
+    let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
+    let table = Product::sqlite_table(db);
+    let select = table.select();
+    assert_eq!(
+        select.preview(),
+        "SELECT \"id\", \"name\", \"calories\", \"price\", \
+         \"bakery_id\", \"is_deleted\", \"inventory_stock\" FROM \"product\""
+    );
+}
+<span class="boring">}</span></code></pre>
+<p>This works because <code>table.select()</code> (provided by <code>vantage-table</code>) calls your
+<code>SelectableDataSource::select()</code> to get a fresh SELECT builder, then applies the table name via
+<code>set_source()</code> and adds each registered column via <code>add_field()</code>. None of the <code>todo!()</code> methods are
+hit — only the column and expression infrastructure you already implemented.</p>
+<h3 id="implement-the-read-methods"><a class="header" href="#implement-the-read-methods">Implement the read methods</a></h3>
+<p><code>Table&lt;T, E&gt;</code> implements two traits from <code>vantage-dataset</code> that provide read access:</p>
+<ul>
+<li>
+<p><strong><code>ReadableValueSet</code></strong> — returns raw <code>Record&lt;Value&gt;</code> (untyped storage values):</p>
+<ul>
+<li><code>list_values()</code> → all records as <code>IndexMap&lt;Id, Record&lt;Value&gt;&gt;</code></li>
+<li><code>get_value(id)</code> → <code>Option&lt;Record&lt;Value&gt;&gt;</code> — <code>None</code> if no record matches the id</li>
+<li><code>get_some_value()</code> → one arbitrary record (or <code>None</code> if empty)</li>
+</ul>
+</li>
+<li>
+<p><strong><code>ReadableDataSet&lt;E&gt;</code></strong> — returns deserialized entities (calls <code>E::try_from_record()</code> for you):</p>
+<ul>
+<li><code>list()</code> → all entities as <code>IndexMap&lt;Id, E&gt;</code></li>
+<li><code>get(id)</code> → <code>Option&lt;E&gt;</code> — <code>None</code> if no entity matches the id</li>
+<li><code>get_some()</code> → one arbitrary entity</li>
+</ul>
+</li>
+</ul>
+<p>Both traits delegate to three <code>TableSource</code> methods: <code>list_table_values</code>, <code>get_table_value</code>, and
+<code>get_table_some_value</code>. The pattern is the same for all three:</p>
+<ol>
+<li>Get the id field name from <code>table.id_field()</code> (falls back to <code>"id"</code>)</li>
+<li>Build a SELECT using <code>table.select()</code> (which already applies columns, conditions, ordering)</li>
+<li>Execute via <code>self.execute(&amp;select.expr())</code></li>
+<li>Parse the result — split each row into an ID and a <code>Record</code></li>
+</ol>
+<p>For <code>get_table_value</code>, add a WHERE condition on the id field and return <code>Ok(None)</code> when the
+lookup misses — errors are reserved for actual connection or parse failures.
+For <code>get_table_some_value</code>, set <code>LIMIT 1</code> and return the first row (or <code>None</code> if empty).</p>
+<p>Write tests for both <code>ReadableValueSet</code> and <code>ReadableDataSet</code> in separate files — import the traits
+from <code>vantage_dataset</code> and call <code>list_values()</code>, <code>get_value()</code>, <code>get_some_value()</code>, <code>list()</code>,
+<code>get()</code>, <code>get_some()</code> against your pre-populated test database. Keep these tests condition-free —
+conditions get their own test file next.</p>
+<h3 id="error-handling"><a class="header" href="#error-handling">Error handling</a></h3>
+<p>All <code>TableSource</code> methods return <code>vantage_core::Result&lt;T&gt;</code> (an alias for <code>Result&lt;T, VantageError&gt;</code>).
+Use the <code>error!</code> macro from <code>vantage_core</code> to create errors with structured context:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_core::error;
 
-# Delete a record
-cargo run --example cli -- surreal bakery delete myid
-</code></pre>
-<p>That’s the payoff of implementing a proper type system and <code>TableSource</code> — one line of
-<code>AnyTable::from_table()</code> bridges the gap between your backend’s native types and a uniform
-JSON-based interface.</p>
+// Simple error message
+return Err(error!("expected array result"));
+
+// With key = value context (NOT format args — the macro uses a different syntax)
+return Err(error!("row missing id field", field = id_field_name));
+
+// For database-specific errors, convert them with map_err
+let rows = query.fetch_all(self.pool()).await
+    .map_err(|e| error!("SQLite query failed", details = e.to_string()))?;
+<span class="boring">}</span></code></pre>
+<p>The macro automatically captures file, line, and column. The <code>key = value</code> pairs are stored as
+structured context, not interpolated into the message string.</p>
+<p>To wrap external errors with additional context, use the <code>Context</code> trait:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_core::Context;
+
+// Wraps the original error as the "source" of a new VantageError
+let data = std::fs::read("config.json")
+    .context(error!("failed to load config"))?;
+<span class="boring">}</span></code></pre>
+<p>This chains errors — the original <code>io::Error</code> is preserved as the source, so <code>Display</code> renders both
+messages and the source chain is available via <code>std::error::Error::source()</code>.</p>
+<h3 id="operation-trait--condition-building"><a class="header" href="#operation-trait--condition-building">Operation trait — condition building</a></h3>
+<p>Each backend provides an operation trait (e.g. <code>SqliteOperation</code>) with <code>.eq()</code>, <code>.ne()</code>, <code>.gt()</code>,
+<code>.gte()</code>, <code>.lt()</code>, <code>.lte()</code>, and <code>.in_()</code> methods for building conditions. It has a <strong>blanket
+implementation</strong> for all <code>Expressive&lt;T&gt;</code> types, so your columns get these methods automatically — no
+explicit impl needed.</p>
+<p>All methods accept <code>impl Expressive&lt;YourAnyType&gt;</code>, so you can pass native Rust values (<code>false</code>,
+<code>42</code>, <code>"hello"</code>), other columns (<code>table["other_field"]</code>), or full expressions. This requires your
+scalar types to implement <code>Expressive&lt;YourAnyType&gt;</code> — the same impls you added in Step 1 for the
+vendor macro.</p>
+<h3 id="testing-conditions"><a class="header" href="#testing-conditions">Testing conditions</a></h3>
+<p><code>Table</code> carries conditions set via <code>add_condition()</code>, and <code>table.select()</code> applies them
+automatically as WHERE clauses. Test a few patterns:</p>
+<ul>
+<li><strong>Custom expression</strong> — pass columns as expression arguments via <code>table["field"]</code>:</li>
+</ul>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut table = Product::sqlite_table(db);
+table.add_condition(sqlite_expr!("{} &gt; {}", (table["price"]), 130));
+<span class="boring">}</span></code></pre>
+<ul>
+<li><strong>Multiple conditions</strong> — combined with AND, including field-to-field comparison:</li>
+</ul>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut table = Product::sqlite_table(db);
+table.add_condition(sqlite_expr!("{} &gt; {}", (table["price"]), 130));
+table.add_condition(sqlite_expr!("{} &gt; {}", (table["price"]), (table["calories"])));
+<span class="boring">}</span></code></pre>
+<ul>
+<li><strong>SqliteOperation::eq()</strong> — the idiomatic way:</li>
+</ul>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_sql::sqlite::operation::SqliteOperation;
+
+let mut table = Product::sqlite_table(db);
+table.add_condition(table["is_deleted"].eq(false));
+<span class="boring">}</span></code></pre>
+<h3 id="implement-aggregates"><a class="header" href="#implement-aggregates">Implement aggregates</a></h3>
+<p>Implement <code>get_table_count</code>, <code>get_table_sum</code>, <code>get_table_max</code>, and <code>get_table_min</code> in your
+<code>TableSource</code>. These build aggregate queries from <code>table.select()</code> and extract the scalar result.
+Once implemented, <code>Table</code> exposes shorter <code>get_count</code>, <code>get_sum</code>, <code>get_max</code>, <code>get_min</code> methods
+directly:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let table = Product::sqlite_table(db);
+assert_eq!(table.get_count().await.unwrap(), 5);
+assert_eq!(table.get_max(&amp;table["price"]).await.unwrap().try_get::&lt;i64&gt;().unwrap(), 299);
+<span class="boring">}</span></code></pre>
+<h3 id="implement-write-operations"><a class="header" href="#implement-write-operations">Implement write operations</a></h3>
+<p><code>Table</code> also implements <code>WritableDataSet</code> (insert, replace, patch, delete) and <code>InsertableDataSet</code>
+(insert with auto-generated ID). These delegate to six <code>TableSource</code> methods:</p>
+<ul>
+<li><strong><code>insert_table_value</code></strong> — INSERT with a known ID. Build an <code>SqliteInsert</code> with the id field and
+record fields, execute, then read back via <code>get_table_value</code>.</li>
+<li><strong><code>replace_table_value</code></strong> — full replacement. For SQLite, use <code>INSERT OR REPLACE INTO</code>.</li>
+<li><strong><code>patch_table_value</code></strong> — partial update. Build an <code>SqliteUpdate</code> with only the provided fields
+and a WHERE condition on the id field.</li>
+<li><strong><code>delete_table_value</code></strong> — DELETE with a WHERE condition on the id field.</li>
+<li><strong><code>delete_table_all_values</code></strong> — DELETE without conditions.</li>
+<li><strong><code>insert_table_return_id_value</code></strong> — INSERT without a known ID (auto-increment). Use
+<code>RETURNING "id"</code> to get the generated ID back from the database.</li>
+</ul>
+<p>Test both <code>WritableValueSet</code> (raw records, no entity) and <code>WritableDataSet</code> (typed entities) using
+in-memory SQLite:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// WritableValueSet — no entity needed
+let rec = record(&amp;[("name", "Gamma".into()), ("price", 30i64.into())]);
+table.insert_value(&amp;"c".to_string(), &amp;rec).await.unwrap();
+
+// WritableDataSet — typed entities
+let item = Item { name: "Gamma".into(), price: 30 };
+table.insert(&amp;"c".to_string(), &amp;item).await.unwrap();
+
+// InsertableDataSet — auto-generated ID
+let id = table.insert_return_id(&amp;item).await.unwrap();
+let fetched = table.get(id).await.unwrap();
+<span class="boring">}</span></code></pre>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../new-persistence/step5-relationships.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../new-persistence/step4-query-builder.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../type-system.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../new-persistence/step6-relationships.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -247,11 +476,11 @@ JSON-based interface.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../new-persistence/step5-relationships.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../new-persistence/step4-query-builder.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../type-system.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../new-persistence/step6-relationships.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

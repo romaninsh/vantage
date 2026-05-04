@@ -37,10 +37,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-c3abb0cf.js";
+            window.path_to_searchindex_js = "searchindex-a80dff17.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-f0872746.js"></script>
+        <script src="toc-91be589d.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -419,8 +419,8 @@ any <code>Result</code> with a standard error type.</p>
 <p><a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a> is the query builder for SQLite.
 Other persistences have their own —
 <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/postgres/statements/select/struct.PostgresSelect.html"><code>PostgresSelect</code></a>,
-<a href="https://docs.rs/vantage_mongodb/0.4.4/vantage_mongodb/select/struct.MongoSelect.html"><code>MongoSelect</code></a> — and they all implement the
-<a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a> trait, so the interface is identical apart from
+<a href="https://docs.rs/vantage_mongodb/0.4.5/vantage_mongodb/select/struct.MongoSelect.html"><code>MongoSelect</code></a> — and they all implement the
+<a href="https://docs.rs/vantage_expressions/0.4.3/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a> trait, so the interface is identical apart from
 vendor-specific extensions. None of them need a database connection — they’re just structs that
 accumulate query parts. You build them with a chain of <code>.with_*()</code> calls:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -473,9 +473,9 @@ you’re building a query conditionally in a loop.</p>
 </span>let result = db.execute(&amp;select.expr()).await?;
 println!("{:?}", result);
 <span class="boring">}</span></code></pre>
-<p>Two steps here: <code>.expr()</code> turns the builder into an <a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a>
+<p>Two steps here: <code>.expr()</code> turns the builder into an <a href="https://docs.rs/vantage_expressions/0.4.3/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a>
 — Vantage’s internal representation that keeps parameters separate from the SQL template. Then
-<a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/traits/datasource/trait.ExprDataSource.html#tymethod.execute"><code>db.execute()</code></a> sends it to the database.</p>
+<a href="https://docs.rs/vantage_expressions/0.4.3/vantage_expressions/traits/datasource/trait.ExprDataSource.html#tymethod.execute"><code>db.execute()</code></a> sends it to the database.</p>
 <p>The result is <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> — a type-tagged wrapper around whatever came back. The <code>Debug</code> output
 isn’t pretty, but you should see all 6 product rows in there.</p>
 <div id="admonition-when-does-vantage-hit-the-database" class="admonition admonish-tip" role="note" aria-labelledby="admonition-when-does-vantage-hit-the-database-title">
@@ -511,13 +511,13 @@ let select = SqliteSelect::new()
 println!("{}", select.preview());
 // SELECT "name", "price" FROM "product" WHERE "is_deleted" = 0
 <span class="boring">}</span></code></pre>
-<p><code>sqlite_expr!</code> creates an <a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a> — a SQL template with
+<p><code>sqlite_expr!</code> creates an <a href="https://docs.rs/vantage_expressions/0.4.3/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a> — a SQL template with
 typed, bound parameters. That <code>{}</code> is <strong>not</strong> Rust’s <code>format!</code>: the value <code>false</code> is stored
 separately and bound through sqlx’s parameterized query interface at execution time — no injection
 risk, ever. The preview shows it inline for readability.</p>
 <p>In SQL persistences, a condition is just an expression. When you pass it to <code>.with_condition()</code>,
 it’s nested inside the select’s own expression tree. At execution time the whole tree is
-<a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/expression/flatten/struct.ExpressionFlattener.html">flattened</a> into a single template + parameter list that
+<a href="https://docs.rs/vantage_expressions/0.4.3/vantage_expressions/expression/flatten/struct.ExpressionFlattener.html">flattened</a> into a single template + parameter list that
 the database driver can bind safely.</p>
 <p>Run it — you should see 5 rows, with “Discontinued Cake” filtered out.</p>
 <div id="admonition-types-and-persistence-rendering" class="admonition admonish-info" role="note" aria-labelledby="admonition-types-and-persistence-rendering-title">
@@ -542,7 +542,7 @@ See <a href="#persistence-aligned-type-system">Persistence-aligned Type System</
 
 <h2 id="typed-columns-and-operators"><a class="header" href="#typed-columns-and-operators">Typed columns and operators</a></h2>
 <p>Writing <code>\"is_deleted\"</code> in a raw expression works, but there’s a cleaner way.
-<a href="https://docs.rs/vantage_table/0.4.5/vantage_table/column/core/struct.Column.html"><code>Column&lt;T&gt;</code></a> creates a typed column reference, then chain an
+<a href="https://docs.rs/vantage_table/0.4.8/vantage_table/column/core/struct.Column.html"><code>Column&lt;T&gt;</code></a> creates a typed column reference, then chain an
 <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a> like <code>.eq()</code> to build the
 condition:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -640,7 +640,7 @@ eligible to be parameters of expressions.</p>
 
 <hr>
 <h2 id="working-with-any-types"><a class="header" href="#working-with-any-types">Working with Any-types</a></h2>
-<p><a href="https://docs.rs/vantage_types/0.4.1/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a> is an ordered map (<code>IndexMap&lt;String, V&gt;</code>) — one record per row,
+<p><a href="https://docs.rs/vantage_types/0.4.2/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a> is an ordered map (<code>IndexMap&lt;String, V&gt;</code>) — one record per row,
 with column names as keys. It lives in the <code>vantage-types</code> crate, so add that dependency and import
 its prelude:</p>
 <pre><code class="language-sh">cargo add vantage-types --features serde
@@ -710,7 +710,7 @@ println!("{:?}", price_cbor);
 <hr>
 <h2 id="mapping-rows-to-structs"><a class="header" href="#mapping-rows-to-structs">Mapping rows to structs</a></h2>
 <p>Calling <code>.try_get::&lt;T&gt;()</code> on every field gets tedious. The <code>#[entity]</code> macro generates
-<a href="https://docs.rs/vantage_types/0.4.1/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord&lt;AnySqliteType&gt;</code></a> for your struct, so conversion
+<a href="https://docs.rs/vantage_types/0.4.2/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord&lt;AnySqliteType&gt;</code></a> for your struct, so conversion
 happens in one call with no type information lost:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -823,13 +823,13 @@ async fn run() -&gt; VantageResult&lt;()&gt; {
 <tr><th>Concept</th><th>What it does</th><th>More info</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a></td><td>Builds SELECT queries via builder pattern</td><td><a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a></td></tr>
-<tr><td><a href="https://docs.rs/vantage_table/0.4.5/vantage_table/column/core/struct.Column.html"><code>Column</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
+<tr><td><a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a></td><td>Builds SELECT queries via builder pattern</td><td><a href="https://docs.rs/vantage_expressions/0.4.3/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a></td></tr>
+<tr><td><a href="https://docs.rs/vantage_table/0.4.8/vantage_table/column/core/struct.Column.html"><code>Column</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
 <tr><td><a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a></td><td>Ext trait giving <code>.eq()</code>, <code>.gt()</code>, etc. → <code>SqliteCondition</code></td><td></td></tr>
-<tr><td><code>sqlite_expr!</code></td><td>Creates expressions with typed, bound parameters</td><td><a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a></td></tr>
-<tr><td><code>db.execute()</code></td><td>Runs an expression, returns <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a></td><td><a href="https://docs.rs/vantage_expressions/0.4.2/vantage_expressions/traits/datasource/trait.ExprDataSource.html"><code>ExprDataSource</code></a></td></tr>
-<tr><td><a href="https://docs.rs/vantage_types/0.4.1/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a></td><td>Ordered map of column names to values — row-level access</td><td><code>.try_get::&lt;T&gt;()</code></td></tr>
-<tr><td><code>#[entity(SqliteType)]</code></td><td>Generates lossless record-to-struct conversion</td><td><a href="https://docs.rs/vantage_types/0.4.1/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord</code></a></td></tr>
+<tr><td><code>sqlite_expr!</code></td><td>Creates expressions with typed, bound parameters</td><td><a href="https://docs.rs/vantage_expressions/0.4.3/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a></td></tr>
+<tr><td><code>db.execute()</code></td><td>Runs an expression, returns <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a></td><td><a href="https://docs.rs/vantage_expressions/0.4.3/vantage_expressions/traits/datasource/trait.ExprDataSource.html"><code>ExprDataSource</code></a></td></tr>
+<tr><td><a href="https://docs.rs/vantage_types/0.4.2/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a></td><td>Ordered map of column names to values — row-level access</td><td><code>.try_get::&lt;T&gt;()</code></td></tr>
+<tr><td><code>#[entity(SqliteType)]</code></td><td>Generates lossless record-to-struct conversion</td><td><a href="https://docs.rs/vantage_types/0.4.2/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord</code></a></td></tr>
 </tbody>
 </table>
 </div>
@@ -913,7 +913,7 @@ important differences:</p>
 </tbody>
 </table>
 </div>
-<p>A <a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html"><code>Table</code></a> is typically defined in its own file alongside the entity.
+<p>A <a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html"><code>Table</code></a> is typically defined in its own file alongside the entity.
 Create <code>src/product.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -1038,7 +1038,7 @@ side effects.</p>
 <p><code>Table&lt;SqliteDB, Product&gt;</code> is great when you know the types at compile time. But what if you want to
 write a function that lists <em>any</em> table — products, orders, customers — without knowing the entity
 type?</p>
-<p><a href="https://docs.rs/vantage_table/0.4.5/vantage_table/any/struct.AnyTable.html"><code>AnyTable</code></a> wraps a concrete table and erases its type parameters.
+<p><a href="https://docs.rs/vantage_table/0.4.8/vantage_table/any/struct.AnyTable.html"><code>AnyTable</code></a> wraps a concrete table and erases its type parameters.
 Values come back as <code>Record&lt;serde_json::Value&gt;</code> instead of typed entities. You can iterate columns
 by name and build a generic display:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -1577,7 +1577,7 @@ chapter we <strong>migrate</strong> them to MongoDB. That migration is a change 
 and routes don’t know the difference.</li>
 </ul>
 <p>The handler functions are each written <strong>once</strong> and mounted against any
-<a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html"><code>Table&lt;Backend, Entity&gt;</code></a> the router has on hand — one <code>list</code>, one
+<a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html"><code>Table&lt;Backend, Entity&gt;</code></a> the router has on hand — one <code>list</code>, one
 <code>get</code>, one <code>post</code>, one <code>patch</code>, one <code>delete</code>, parameterised over the backend and entity types.
 Adding another entity is a route registration, not a new handler.</p>
 <hr>
@@ -1592,7 +1592,7 @@ the existing <code>serde</code> to encode response bodies as JSON.</p>
 a computed <code>category</code> field. Both were assembled from subqueries — great for display, but they don’t
 round-trip cleanly through a <code>POST</code> body because the JSON would try to write columns that don’t
 exist. For a writable API we replace the computed fields with the plain FK column that sits under
-them. (See <a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html#method.with_expression"><code>with_expression</code></a> for the chapter-2
+them. (See <a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html#method.with_expression"><code>with_expression</code></a> for the chapter-2
 computed-field setup we’re walking away from here.)</p>
 <p><code>src/category.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -1737,12 +1737,12 @@ callers get a shared reference. Most table operations
 <a href="https://docs.rs/vantage_dataset/0.4.2/vantage_dataset/traits/dataset/trait.WritableDataSet.html#tymethod.insert"><code>insert</code></a>,
 <a href="https://docs.rs/vantage_dataset/0.4.2/vantage_dataset/traits/dataset/trait.WritableDataSet.html#tymethod.replace"><code>replace</code></a>,
 <a href="https://docs.rs/vantage_dataset/0.4.2/vantage_dataset/traits/valueset/trait.WritableValueSet.html#tymethod.delete"><code>delete</code></a>,
-<a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>) take <code>&amp;self</code>, so they work on the
+<a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>) take <code>&amp;self</code>, so they work on the
 reference without any clone.</li>
 <li><strong><code>static CACHE: OnceLock&lt;...&gt;</code> lives inside the function.</strong> A function-local static is still a
 program-wide single instance — Rust allows this and it keeps the cache private to the table that
 owns it.</li>
-<li><strong>The <a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> callback is a closure: <code>|db| Product::table(db).clone()</code>.</strong> The framework still hands us a db and expects an owned
+<li><strong>The <a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> callback is a closure: <code>|db| Product::table(db).clone()</code>.</strong> The framework still hands us a db and expects an owned
 <code>Table&lt;SqliteDB, Product&gt;</code> back, so we call the cached accessor and clone the reference. On the
 first call this triggers Product’s cache to build; every subsequent call just clones a pre-built
 definition.</li>
@@ -1781,7 +1781,7 @@ it’s a copy of the shape (columns, conditions, relationships), and it’s chea
 
 <hr>
 <h2 id="products-of-a-category"><a class="header" href="#products-of-a-category">Products of a category</a></h2>
-<p>The <a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> relationship we kept from chapter 2 lets
+<p>The <a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> relationship we kept from chapter 2 lets
 us serve a nested route — <code>/categories/{id}/products</code>. Before writing the handler, give the
 relationship a proper name with an extension trait on <code>Table&lt;SqliteDB, Category&gt;</code>. Add this to
 <code>src/category.rs</code>:</p>
@@ -1821,13 +1821,13 @@ async fn list_category_products(Path(id): Path&lt;i64&gt;) -&gt; Json&lt;Vec&lt;
 <span class="boring">}</span></code></pre>
 <p>Three things going on:</p>
 <ul>
-<li><strong><code>Category::table(db()).clone()</code></strong> — we need an owned <a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html"><code>Table</code></a> to
-chain <a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html#method.with_condition"><code>with_condition</code></a> onto, so we clone the cached
+<li><strong><code>Category::table(db()).clone()</code></strong> — we need an owned <a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html"><code>Table</code></a> to
+chain <a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html#method.with_condition"><code>with_condition</code></a> onto, so we clone the cached
 definition. The clone copies the shape (columns, conditions, relationships), not any rows.</li>
 <li><strong><code>with_condition(id_col.eq(id))</code></strong> — narrows the category table to one row: the one we’re asking
 for. Nothing hits the database yet.</li>
 <li><strong><code>ref_products()</code></strong> — traverses the <code>with_many</code> relationship we registered on Category in
-chapter 2, via <a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>. The returned table is
+chapter 2, via <a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>. The returned table is
 <code>Table&lt;SqliteDB, Product&gt;</code>, already scoped to products whose <code>category_id</code> matches the narrowed
 category set. Chapter 2 walked through what the emitted SQL looks like; it’s the same here.</li>
 </ul>
@@ -2074,7 +2074,7 @@ dropped and the client sees an empty reply, with no status code and no body to e
 <li>Everything else returns <strong>500</strong> but with a structured JSON body, not silence.</li>
 </ul>
 <p>Axum already gives us the middle one for free — it rejects malformed <code>Json&lt;E&gt;</code> bodies with 400.
-The other two come down to converting <a href="https://docs.rs/vantage_core/0.4.0/vantage_core/util/error/struct.VantageError.html"><code>VantageError</code></a> into an HTTP
+The other two come down to converting <a href="https://docs.rs/vantage_core/0.4.1/vantage_core/util/error/struct.VantageError.html"><code>VantageError</code></a> into an HTTP
 response. Add an <code>ApiError</code> type to <code>main.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -2263,11 +2263,11 @@ table with whatever the caller asked for, and lists:</p>
 <span class="boring">}</span></code></pre>
 <p>Two things happen:</p>
 <ul>
-<li><strong><a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html#method.set_pagination"><code>set_pagination</code></a><code>(Some(</code><a href="https://docs.rs/vantage_table/0.4.5/vantage_table/pagination/struct.Pagination.html#method.new"><code>Pagination::new</code></a><code>(page, per_page)))</code></strong>
+<li><strong><a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html#method.set_pagination"><code>set_pagination</code></a><code>(Some(</code><a href="https://docs.rs/vantage_table/0.4.8/vantage_table/pagination/struct.Pagination.html#method.new"><code>Pagination::new</code></a><code>(page, per_page)))</code></strong>
 takes a page number and a page size. Vantage applies these as <code>LIMIT … OFFSET …</code> on the SELECT.
 Missing params fall back to the defaults (page 1, 50 per page) — and if neither is supplied we
 don’t touch pagination at all, so the unfiltered list still hits the whole set.</li>
-<li><strong><a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html#method.add_search"><code>add_search</code></a><code>(term)</code></strong> is the <code>.with_search</code> we used
+<li><strong><a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html#method.add_search"><code>add_search</code></a><code>(term)</code></strong> is the <code>.with_search</code> we used
 in chapter 2 to add a LIKE filter across all columns. Both end up as extra <code>WHERE</code> clauses on the
 query that vantage already compiles for us.</li>
 </ul>
@@ -2343,7 +2343,7 @@ already knows how to render a 400.</p>
 databases is a change to the model, not to the routes, handlers, or business logic. Now we
 cash the check. <code>/categories</code>, <code>/categories/{id}</code>, and <code>/categories/{cat_id}/products</code> keep
 their exact URL shape, response bodies, and behaviour — but the data lives in
-<a href="https://docs.rs/vantage_mongodb/0.4.4/vantage_mongodb/mongodb/struct.MongoDB.html"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>.</p>
+<a href="https://docs.rs/vantage_mongodb/0.4.5/vantage_mongodb/mongodb/struct.MongoDB.html"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>.</p>
 <p>Start Mongo — Docker is the easiest way:</p>
 <pre><code class="language-sh">docker run -d --name mongo-learn -p 27017:27017 mongo:7
 </code></pre>
@@ -2454,7 +2454,7 @@ URL’s <code>cat_id</code> string directly:</p>
 })
 <span class="boring">}</span></code></pre>
 <p><code>.eq(&amp;str)</code> works here because <code>vantage-mongodb</code>’s <code>From&lt;&amp;str&gt;</code> for
-<a href="https://docs.rs/vantage_mongodb/0.4.4/vantage_mongodb/types/struct.AnyMongoType.html"><code>AnyMongoType</code></a> auto-promotes 24-character hex strings to
+<a href="https://docs.rs/vantage_mongodb/0.4.5/vantage_mongodb/types/struct.AnyMongoType.html"><code>AnyMongoType</code></a> auto-promotes 24-character hex strings to
 <code>ObjectId</code> and leaves everything else as <code>String</code>. The comparison fires with the right BSON type
 whichever <code>_id</code> convention the collection uses.</p>
 <h3 id="mainrs"><a class="header" href="#mainrs">main.rs</a></h3>
@@ -3960,17 +3960,19 @@ clean, each boundary stays enforced, and each team works independently.</p>
 
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="adding-a-new-persistence"><a class="header" href="#adding-a-new-persistence">Adding a New Persistence</a></h1>
-<p>So you want to connect Vantage to a new database? This guide walks through the process in six
-incremental steps — each one unlocks more framework features. You don’t have to implement all six;
-stop whenever your persistence has enough capability for your use case.</p>
+<p>So you want to connect Vantage to a new database? This guide walks through the process in eight
+incremental steps — each one unlocks more framework features. You don’t have to implement all
+eight; stop whenever your persistence has enough capability for your use case.</p>
 <ul>
 <li><a href="#overview">Overview</a></li>
 <li><a href="#step-1-type-system">Step 1: Type System</a></li>
 <li><a href="#step-2-expressions">Step 2: Expressions</a></li>
-<li><a href="#step-3-query-builder">Step 3: Query Builder</a></li>
-<li><a href="#step-4-table--crud">Step 4: Table &amp; CRUD</a></li>
-<li><a href="#step-5-relationships">Step 5: Relationships</a></li>
-<li><a href="#step-6-multi-backend-applications">Step 6: Multi-Backend Applications</a></li>
+<li><a href="#step-3-operators">Step 3: Operators</a></li>
+<li><a href="#step-4-query-builder">Step 4: Query Builder</a></li>
+<li><a href="#step-5-table--crud">Step 5: Table &amp; CRUD</a></li>
+<li><a href="#step-6-relationships">Step 6: Relationships</a></li>
+<li><a href="#step-7-multi-backend-applications">Step 7: Multi-Backend Applications</a></li>
+<li><a href="#step-8-vista">Step 8: Vista</a></li>
 </ul>
 <hr>
 <h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
@@ -3982,10 +3984,12 @@ stop whenever your persistence has enough capability for your use case.</p>
 <tbody>
 <tr><td><a href="#step-1-define-your-type-system">1. Type System</a></td><td><code>vantage_type_system!</code> macro, <code>AnyType</code>, <code>Record</code> conversions</td><td>Type-safe values, struct ↔ record mapping</td><td><strong>Required</strong></td></tr>
 <tr><td><a href="#step-2-make-expressions-work">2. Expressions</a></td><td>Vendor macro, <code>ExprDataSource</code></td><td>Execute raw queries, cross-database <code>defer()</code></td><td>Skip for simple read-only sources (CSV)</td></tr>
-<tr><td><a href="#step-3-statement-builders-and-selectabledatasource">3. Query Builder</a></td><td><code>Selectable</code>, <code>SelectableDataSource</code></td><td>Composable SELECT with conditions, ordering, limits</td><td>Skip if your persistence has no query language</td></tr>
-<tr><td><a href="#step-4-table-abstraction-and-entity-crud">4. Table &amp; CRUD</a></td><td><code>TableSource</code>, entity tables, aggregates, writes</td><td><code>Table&lt;DB, Entity&gt;</code>, full CRUD, <code>ReadableDataSet</code>, <code>WritableDataSet</code></td><td><strong>Required</strong> for table support</td></tr>
-<tr><td><a href="#step-5-relationships-1">5. Relationships</a></td><td><code>with_one</code>, <code>with_many</code>, correlated subqueries</td><td>Reference traversal, expression fields</td><td>Skip if you don’t need cross-table queries</td></tr>
-<tr><td><a href="#step-6-multi-backend-applications-1">6. Multi-Backend</a></td><td><code>AnyTable::from_table()</code>, CLI example</td><td>Type-erased tables, generic UI/API code</td><td>Skip if you only use one persistence</td></tr>
+<tr><td><a href="#step-2b-implement-operators">3. Operators</a></td><td>Vendor operation trait, typed <code>.eq()</code>/<code>.gt()</code>/<code>.in_()</code></td><td>Ergonomic typed conditions instead of raw expression macros</td><td>Skip if you don’t expose typed columns</td></tr>
+<tr><td><a href="#step-3-statement-builders-and-selectabledatasource">4. Query Builder</a></td><td><code>Selectable</code>, <code>SelectableDataSource</code></td><td>Composable SELECT with conditions, ordering, limits</td><td>Skip if your persistence has no query language</td></tr>
+<tr><td><a href="#step-4-table-abstraction-and-entity-crud">5. Table &amp; CRUD</a></td><td><code>TableSource</code>, entity tables, aggregates, writes</td><td><code>Table&lt;DB, Entity&gt;</code>, full CRUD, <code>ReadableDataSet</code>, <code>WritableDataSet</code></td><td><strong>Required</strong> for table support</td></tr>
+<tr><td><a href="#step-5-relationships">6. Relationships</a></td><td><code>with_one</code>, <code>with_many</code>, correlated subqueries</td><td>Reference traversal, expression fields</td><td>Skip if you don’t need cross-table queries</td></tr>
+<tr><td><a href="#step-6-multi-backend-applications">7. Multi-Backend</a></td><td><code>AnyTable::from_table()</code>, CLI example</td><td>Type-erased tables, generic UI/API code</td><td>Skip if you only use one persistence</td></tr>
+<tr><td><a href="#step-8-add-vista-support-to-your-driver">8. Vista</a></td><td><code>&lt;Driver&gt;VistaFactory</code>, <code>&lt;Driver&gt;VistaSource</code>, YAML extras</td><td>YAML-defined data handles consumed by UI / scripting / agents</td><td>Skip if you don’t need Vista support</td></tr>
 </tbody>
 </table>
 </div>
@@ -4008,33 +4012,47 @@ parsing.</p>
 <code>TableSource</code> directly without an expression engine.</p>
 <p><strong><a href="#step-2-make-expressions-work">Read Step 2 →</a></strong></p>
 <hr>
-<h2 id="step-3-query-builder"><a class="header" href="#step-3-query-builder">Step 3: Query Builder</a></h2>
+<h2 id="step-3-operators"><a class="header" href="#step-3-operators">Step 3: Operators</a></h2>
+<p>Build vendor-specific operation traits so typed columns get ergonomic <code>.eq()</code>/<code>.gt()</code>/<code>.in_()</code>
+methods that produce your backend’s native condition type. Blanket-implemented over all
+<code>Expressive&lt;T&gt;</code> so users don’t have to write raw expression macros for every condition.</p>
+<p>Skip this step if you don’t expose typed columns to end users.</p>
+<p><strong><a href="#step-2b-implement-operators">Read Step 3 →</a></strong></p>
+<hr>
+<h2 id="step-4-query-builder"><a class="header" href="#step-4-query-builder">Step 4: Query Builder</a></h2>
 <p>Build a SELECT struct implementing the <code>Selectable</code> trait — fields, conditions, ordering, limits,
 aggregates. Wire it up through <code>SelectableDataSource</code> so the rest of Vantage can create and execute
 queries through a standard interface.</p>
 <p>Skip this step if your persistence doesn’t have a query language. MongoDB, for instance, skips
 <code>Selectable</code> and uses native BSON pipelines instead.</p>
-<p><strong><a href="#step-3-statement-builders-and-selectabledatasource">Read Step 3 →</a></strong></p>
+<p><strong><a href="#step-3-statement-builders-and-selectabledatasource">Read Step 4 →</a></strong></p>
 <hr>
-<h2 id="step-4-table--crud"><a class="header" href="#step-4-table--crud">Step 4: Table &amp; CRUD</a></h2>
+<h2 id="step-5-table--crud"><a class="header" href="#step-5-table--crud">Step 5: Table &amp; CRUD</a></h2>
 <p>Implement <code>TableSource</code> to give Vantage full table abstraction — columns, conditions, ordering,
 pagination, entity CRUD, and aggregates. This is where <code>Table&lt;DB, Entity&gt;</code> comes alive and
 auto-implements <code>ReadableDataSet</code>, <code>WritableDataSet</code>, and <code>ActiveEntitySet</code>.</p>
 <p>Start with <code>todo!()</code> for every method and implement them incrementally, driven by tests.</p>
-<p><strong><a href="#step-4-table-abstraction-and-entity-crud">Read Step 4 →</a></strong></p>
+<p><strong><a href="#step-4-table-abstraction-and-entity-crud">Read Step 5 →</a></strong></p>
 <hr>
-<h2 id="step-5-relationships"><a class="header" href="#step-5-relationships">Step 5: Relationships</a></h2>
+<h2 id="step-6-relationships"><a class="header" href="#step-6-relationships">Step 6: Relationships</a></h2>
 <p>Declare <code>with_one</code> and <code>with_many</code> relationships on tables and traverse them with <code>get_ref_as</code>.
 Implement <code>column_table_values_expr</code> for subquery-based traversal and optionally
 <code>related_correlated_condition</code> for correlated subqueries (expression fields like computed counts).</p>
 <p>Skip this step if your persistence is flat (no foreign keys or cross-collection references).</p>
-<p><strong><a href="#step-5-relationships-1">Read Step 5 →</a></strong></p>
+<p><strong><a href="#step-5-relationships">Read Step 6 →</a></strong></p>
 <hr>
-<h2 id="step-6-multi-backend-applications"><a class="header" href="#step-6-multi-backend-applications">Step 6: Multi-Backend Applications</a></h2>
+<h2 id="step-7-multi-backend-applications"><a class="header" href="#step-7-multi-backend-applications">Step 7: Multi-Backend Applications</a></h2>
 <p>Wrap your tables with <code>AnyTable::from_table()</code> to erase the backend type. This enables generic UI,
 CLI, and API code that works identically across SurrealDB, SQLite, CSV, MongoDB, or your new
 persistence — all through a uniform <code>serde_json::Value</code>-based interface.</p>
-<p><strong><a href="#step-6-multi-backend-applications-1">Read Step 6 →</a></strong></p>
+<p><strong><a href="#step-6-multi-backend-applications">Read Step 7 →</a></strong></p>
+<hr>
+<h2 id="step-8-vista"><a class="header" href="#step-8-vista">Step 8: Vista</a></h2>
+<p>Wrap your typed <code>Table&lt;Driver, E&gt;</code> as a <code>Vista</code> — the universal, schema-bearing handle that UI,
+scripting, and agents consume through a CBOR / <code>String</code> boundary. Adds YAML schema loading and
+condition delegation so callers don’t need a Rust entity struct.</p>
+<p>Skip this step if your driver is only consumed from typed Rust code.</p>
+<p><strong><a href="#step-8-add-vista-support-to-your-driver">Read Step 8 →</a></strong></p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="step-1-define-your-type-system"><a class="header" href="#step-1-define-your-type-system">Step 1: Define Your Type System</a></h1>
 <p>Every database has its own idea of what types exist. SQLite has 5 storage classes (NULL, INTEGER,
@@ -5056,7 +5074,7 @@ let id = table.insert_return_id(&amp;item).await.unwrap();
 let fetched = table.get(id).await.unwrap();
 <span class="boring">}</span></code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="step-5-relationships-1"><a class="header" href="#step-5-relationships-1">Step 5: Relationships</a></h1>
+<h1 id="step-5-relationships"><a class="header" href="#step-5-relationships">Step 5: Relationships</a></h1>
 <p>Tables can declare relationships using <code>with_one</code> and <code>with_many</code>, then traverse them at runtime
 with <code>get_ref_as</code>. The relationship system is provided by <code>vantage-table</code> — your backend just needs
 <code>column_table_values_expr</code> implemented to make it work.</p>
@@ -5101,7 +5119,7 @@ can’t use this feature.</p>
 <span class="boring">}</span></code></pre>
 <p>Requires <code>SelectableDataSource</code> (Step 3) since aggregate query builders use <code>table.select()</code>.</p>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="step-6-multi-backend-applications-1"><a class="header" href="#step-6-multi-backend-applications-1">Step 6: Multi-Backend Applications</a></h1>
+<h1 id="step-6-multi-backend-applications"><a class="header" href="#step-6-multi-backend-applications">Step 6: Multi-Backend Applications</a></h1>
 <p>At this point your backend works — you can define tables, query data, and traverse relationships.
 But a real application typically has a <em>model crate</em> that defines entities once and offers table
 constructors for each backend. That’s <code>bakery_model3</code> in the Vantage repo. The final piece is
@@ -5154,6 +5172,158 @@ cargo run --example cli -- surreal bakery delete myid
 <p>That’s the payoff of implementing a proper type system and <code>TableSource</code> — one line of
 <code>AnyTable::from_table()</code> bridges the gap between your backend’s native types and a uniform
 JSON-based interface.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="step-8-add-vista-support-to-your-driver"><a class="header" href="#step-8-add-vista-support-to-your-driver">Step 8: Add Vista Support to Your Driver</a></h1>
+<p><code>Vista</code> is the universal, schema-bearing handle that scripting, UI, and agent
+code consume. Your driver already exposes a typed <code>Table&lt;T, E&gt;</code> (Steps 1–7);
+adding Vista means wrapping that table so callers can drive it through a
+CBOR/<code>String</code> boundary without knowing which backend is behind it.</p>
+<p>This is a <em>thin</em> layer. Most of the work is decisions, not code.</p>
+<h3 id="before-you-start"><a class="header" href="#before-you-start">Before you start</a></h3>
+<p>Vista support sits on top of everything Steps 1–7 deliver — there is nothing
+new to learn about your backend’s protocol here. Confirm you have:</p>
+<ul>
+<li><input disabled="" type="checkbox"> Working <code>TableSource</code> impl (Step 5) — Vista delegates all CRUD to it.</li>
+<li><input disabled="" type="checkbox"> Native value type with <code>From&lt;&amp;Bson|&amp;Value&gt;</code>/<code>Into&lt;CborValue&gt;</code> story
+(Step 1) — the source layer translates at this boundary.</li>
+<li><input disabled="" type="checkbox"> An id type that round-trips to <code>String</code> (Step 5). If it doesn’t yet,
+add <code>FromStr</code> and <code>Display</code> impls before going further.</li>
+<li><input disabled="" type="checkbox"> A <code>vista</code> cargo feature gating the new module so non-Vista users don’t
+pull in <code>vantage-vista</code>.</li>
+</ul>
+<h3 id="pick-your-yaml-vocabulary"><a class="header" href="#pick-your-yaml-vocabulary">Pick your YAML vocabulary</a></h3>
+<p>Driver-specific YAML lives under a top-level key named after your driver
+(<code>mongo:</code>, <code>csv:</code>, <code>sqlite:</code>, …). Keep the universal vocabulary —
+<code>name</code>, <code>columns</code>, <code>flags</code>, <code>references</code>, <code>id_column</code> — for things every
+backend understands. Push backend quirks (collection name, file path,
+auth profile) into your block.</p>
+<p>The strict rule: any struct you deserialize for your block sets
+<code>#[serde(deny_unknown_fields)]</code>. Typos in YAML must be loud, not silent.</p>
+<ul>
+<li><input disabled="" type="checkbox"> Define <code>&lt;Driver&gt;TableExtras</code> with one field per top-level YAML knob,
+under <code>#[serde(deny_unknown_fields)]</code>.</li>
+<li><input disabled="" type="checkbox"> Define <code>&lt;Driver&gt;ColumnExtras</code> for per-column quirks (BSON aliases,
+nested paths, type hints your backend cares about).</li>
+<li><input disabled="" type="checkbox"> Reuse <code>NoExtras</code> for <code>ReferenceExtras</code> until you have a concrete need
+(Step 5 reference handling, stage 5 conditions).</li>
+<li><input disabled="" type="checkbox"> Make every field inside the block <code>Option&lt;T&gt;</code> with <code>#[serde(default)]</code>
+so the block can be omitted entirely when the spec name is enough.</li>
+<li><input disabled="" type="checkbox"> Type-alias <code>&lt;Driver&gt;VistaSpec = VistaSpec&lt;TableExtras, ColumnExtras, NoExtras&gt;</code>
+so callers see one short name.</li>
+</ul>
+<h3 id="decide-your-capability-surface"><a class="header" href="#decide-your-capability-surface">Decide your capability surface</a></h3>
+<p><code>VistaCapabilities</code> is <em>the</em> contract. Lying here is worse than not
+implementing — a <code>true</code> flag with no override is reported as
+<code>Unimplemented</code>, while a <code>false</code> flag with no override is reported as
+<code>Unsupported</code>. Both are loud, but they tell the operator different things.</p>
+<p>Default policy: <strong>only set a flag to <code>true</code> if the matching trait method
+is overridden and works</strong>. Read-only stores set <code>can_count: true</code> and stop
+there. Don’t pre-flag <code>can_subscribe</code> for “later” — flip it on the day
+LIVE-query / change-streams actually land.</p>
+<ul>
+<li><input disabled="" type="checkbox"> List the operations your backend natively supports (read, write,
+count, subscribe, invalidate).</li>
+<li><input disabled="" type="checkbox"> For each, decide: implement now, or accept the default <code>Unsupported</code>
+error. Skip rather than stub.</li>
+<li><input disabled="" type="checkbox"> Pick <code>PaginateKind</code> honestly (<code>None</code>/<code>Offset</code>/<code>Cursor</code>). Cursor-only
+backends should not advertise offset.</li>
+<li><input disabled="" type="checkbox"> Document non-obvious gaps in the driver’s README — <code>can_update: true</code>
+with no support for partial patches, for instance.</li>
+</ul>
+<h3 id="implement-the-value-bridge"><a class="header" href="#implement-the-value-bridge">Implement the value bridge</a></h3>
+<p>Your source converts between the native value type and CBOR at the
+<code>VistaSource</code> boundary. Callers see <code>CborValue</code>; the wrapped table sees
+your native type.</p>
+<ul>
+<li><input disabled="" type="checkbox"> Write <code>native_to_cbor(&amp;NativeValue) -&gt; CborValue</code> — exhaustive match
+on all variants, lossy paths flagged in module docs.</li>
+<li><input disabled="" type="checkbox"> Write <code>cbor_to_native(&amp;CborValue) -&gt; NativeValue</code> — handle CBOR <code>Tag</code>
+by unwrapping (drop the tag). Integers wider than your native type
+should stringify rather than silently truncate.</li>
+<li><input disabled="" type="checkbox"> Cover scalars + nested map + nested array in unit tests; one
+round-trip test catches most regressions.</li>
+<li><input disabled="" type="checkbox"> Don’t expose the bridge as <code>pub</code> outside the vista module unless a
+specific caller needs it — keeps the surface small.</li>
+</ul>
+<h3 id="implement-the-source"><a class="header" href="#implement-the-source">Implement the source</a></h3>
+<p>The source is a struct that owns one <code>Table&lt;Driver, EmptyEntity&gt;</code> plus the
+capability set, plus any per-column metadata you need (nested paths,
+aliases). Methods translate at the boundary and delegate everything else
+to the table.</p>
+<ul>
+<li><input disabled="" type="checkbox"> Struct holds: typed <code>Table&lt;Driver, EmptyEntity&gt;</code>, <code>VistaCapabilities</code>,
+and a <code>column_paths: IndexMap&lt;String, Vec&lt;String&gt;&gt;</code> if your backend
+supports nested fields.</li>
+<li><input disabled="" type="checkbox"> <code>impl VistaSource</code> — implement only the methods your capability set
+claims; let the others fall through to the default <code>Unsupported</code>
+error.</li>
+<li><input disabled="" type="checkbox"> <code>add_eq_condition</code> translates <code>(field, CborValue)</code> into your native
+condition type and pushes it onto the wrapped table via
+<code>table.add_condition(...)</code>. <strong>Never store conditions on Vista or in
+the source struct itself.</strong></li>
+<li><input disabled="" type="checkbox"> Path-aware reads: when <code>column_paths</code> is non-empty, walk the path
+for each spec column instead of returning top-level keys verbatim.</li>
+<li><input disabled="" type="checkbox"> Path-aware writes: rebuild nested sub-documents from sibling
+columns sharing a prefix.</li>
+</ul>
+<h3 id="implement-the-factory"><a class="header" href="#implement-the-factory">Implement the factory</a></h3>
+<p>The factory is the construction surface. It exposes one inherent method
+per entry path and one trait impl for YAML.</p>
+<ul>
+<li><input disabled="" type="checkbox"> <code>&lt;Driver&gt;::vista_factory(&amp;self) -&gt; &lt;Driver&gt;VistaFactory</code> — inherent
+method on your data source so callers find it without imports.</li>
+<li><input disabled="" type="checkbox"> <code>from_table&lt;E&gt;(Table&lt;Driver, E&gt;) -&gt; Result&lt;Vista&gt;</code> — typed entry
+point. Collapse to <code>EmptyEntity</code>, harvest column metadata, hand off
+to the source.</li>
+<li><input disabled="" type="checkbox"> <code>impl VistaFactory</code> with the <code>Extras</code> associated types and a
+<code>build_from_spec</code> that builds a <code>Table&lt;Driver, EmptyEntity&gt;</code> from
+the spec, then wraps it via the same code path as <code>from_table</code>.
+One construction path, one reading path.</li>
+<li><input disabled="" type="checkbox"> Override the vista’s display name with <code>spec.name</code> (since the
+spec name often differs from the underlying collection/file/table).</li>
+<li><input disabled="" type="checkbox"> Resolve the id column in this order: <code>spec.id_column</code> → first
+column with the <code>id</code> flag → backend default (e.g. <code>"_id"</code> for Mongo,
+<code>"id"</code> for most SQL).</li>
+</ul>
+<h3 id="test-the-integration"><a class="header" href="#test-the-integration">Test the integration</a></h3>
+<p>Ship two layers: cheap unit tests for the bridge + spec parsing (no
+backend needed), and gated integration tests against a real instance.</p>
+<ul>
+<li><input disabled="" type="checkbox"> Unit-test the value bridge — round-trip every variant, including
+lossy ones (assert the documented lossy form).</li>
+<li><input disabled="" type="checkbox"> Unit-test YAML parsing — minimal spec, unknown-field rejection,
+missing optional block.</li>
+<li><input disabled="" type="checkbox"> Integration: typed <code>from_table</code> round-trip — insert via table,
+list via vista, assert CBOR shapes.</li>
+<li><input disabled="" type="checkbox"> Integration: spec round-trip — <code>from_yaml</code>, list, filter via
+<code>add_condition_eq</code>, write via vista, read back.</li>
+<li><input disabled="" type="checkbox"> Capability honesty test — <code>vista.capabilities()</code> matches what the
+source actually overrides.</li>
+<li><input disabled="" type="checkbox"> Use <code>Result&lt;(), Box&lt;dyn Error&gt;&gt;</code> as the test return type and <code>?</code>
+everywhere. Avoid <code>.unwrap()</code> in test bodies — error context is
+worth more than a panic.</li>
+</ul>
+<h3 id="known-sharp-edges"><a class="header" href="#known-sharp-edges">Known sharp edges</a></h3>
+<p>A few things bite every driver. They’re worth flagging up front rather
+than discovering during review.</p>
+<ul>
+<li><input disabled="" type="checkbox"> <strong>Id translation is the most common bug.</strong> Round-trip your native
+id through <code>String</code> and back; assert that <code>vista.get_value(&amp;id)</code>
+finds what <code>vista.list_values()</code> returned the id for.</li>
+<li><input disabled="" type="checkbox"> <strong>Aliases at the table level may not survive.</strong> Some drivers’
+<code>TableSource</code> impls ignore column aliases when materializing
+records. Audit your read path before relying on aliases for
+renames; the safer bet is to handle renames in the vista source
+via <code>column_paths</code>.</li>
+<li><input disabled="" type="checkbox"> <strong>Don’t filter in memory.</strong> If your backend can push the filter
+down (SQL <code>WHERE</code>, Mongo filter doc, REST query param), do that —
+that’s the entire reason <code>add_eq_condition</code> mutates the underlying
+table instead of stashing state on Vista.</li>
+<li><input disabled="" type="checkbox"> <strong>Conditions stay driver-typed for now.</strong> Universal/portable
+conditions land in a later stage; until then, only translate <code>eq</code>,
+and reject the rest at construction with a clear message.</li>
+<li><input disabled="" type="checkbox"> <strong>Capability flags are cheap to flip later.</strong> Start narrow.</li>
+</ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="persistence-aligned-type-system"><a class="header" href="#persistence-aligned-type-system">Persistence-aligned Type System</a></h1>
 <p>Every Vantage persistence defines its own type trait — <code>SqliteType</code>, <code>PostgresType</code>, <code>SurrealType</code>,

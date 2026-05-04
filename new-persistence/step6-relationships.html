@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Adding Custom Types - Vantage 0.4 Framework</title>
+        <title>Step 6: Relationships - Vantage 0.4 Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,29 +175,60 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="adding-custom-types"><a class="header" href="#adding-custom-types">Adding Custom Types</a></h1>
-<p>You can teach Vantage to store any Rust type by implementing the persistence type trait. Here’s the
-pattern, using an <code>Animal</code> enum that maps to a text column across every backend:</p>
-<ol>
-<li><strong>Define your type</strong> — a plain Rust enum (or struct).</li>
-<li><strong>Implement the persistence trait</strong> — <code>SqliteType</code>, <code>PostgresType</code>, etc. Each impl says how to
-convert to/from the storage format (CBOR for SQL backends, BSON for MongoDB).</li>
-<li><strong>Use it in expressions</strong> — once the trait is implemented, <code>sqlite_expr!("species = {}", animal)</code>
-just works.</li>
-</ol>
-<p>A single type can implement traits for multiple backends, so the same <code>Animal</code> enum works with
-SQLite, Postgres, SurrealDB, MongoDB, and CSV — each with its own serialization logic.</p>
-<!-- TODO: full walkthrough with code, inspired by bakery_model3/src/animal.rs -->
+                        <h1 id="step-5-relationships"><a class="header" href="#step-5-relationships">Step 5: Relationships</a></h1>
+<p>Tables can declare relationships using <code>with_one</code> and <code>with_many</code>, then traverse them at runtime
+with <code>get_ref_as</code>. The relationship system is provided by <code>vantage-table</code> — your backend just needs
+<code>column_table_values_expr</code> implemented to make it work.</p>
+<p>Implement <code>column_table_values_expr</code> — it builds a subquery for a single column respecting current
+conditions. For SQL backends this is a <code>SELECT "col" FROM "table" WHERE ...</code> expression.</p>
+<p>Define relationships when constructing tables — <code>with_one</code> for foreign-key-to-parent, <code>with_many</code>
+for parent-to-children. Then traverse:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut clients = client_table(db);
+clients.add_condition(sqlite_expr!("{} = {}", (clients["is_paying_client"]), true));
+
+let orders = clients.get_ref_as::&lt;SqliteDB, ClientOrder&gt;("orders").unwrap();
+
+// The generated query includes the subquery:
+// SELECT ... FROM "client_order"
+//   WHERE client_id IN (SELECT "id" FROM "client" WHERE is_paying_client = 1)
+assert_eq!(orders.list().await.unwrap().len(), 3);
+<span class="boring">}</span></code></pre>
+<p><code>with_expression</code> adds computed fields to a table using correlated subqueries. It pairs with
+<code>get_subquery_as</code> which produces <code>target.fk = source.id</code> conditions (vs <code>get_ref_as</code> which uses
+<code>IN (subquery)</code>).</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>.with_many("orders", "client_id", Order::sqlite_table)
+.with_expression("order_count", |t| {
+    t.get_subquery_as::&lt;Order&gt;("orders").unwrap().get_count_query()
+})
+// Generates: (SELECT COUNT(*) FROM "client_order"
+//   WHERE "client_order"."client_id" = "client"."id") AS "order_count"
+<span class="boring">}</span></code></pre>
+<p><strong>What to implement:</strong> override <code>related_correlated_condition</code> in your <code>TableSource</code> to produce
+table-qualified equality. Default panics — backends without correlated subquery support (CSV) simply
+can’t use this feature.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn related_correlated_condition(&amp;self, target_table: &amp;str, target_field: &amp;str,
+    source_table: &amp;str, source_column: &amp;str) -&gt; Self::Condition {
+    sqlite_expr!("{} = {}", (ident(target_field).dot_of(target_table)),
+        (ident(source_column).dot_of(source_table)))
+}
+<span class="boring">}</span></code></pre>
+<p>Requires <code>SelectableDataSource</code> (Step 3) since aggregate query builders use <code>table.select()</code>.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../type-system.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../new-persistence/step5-table-crud.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../sql.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../new-persistence/step7-multi-backend.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -207,11 +238,11 @@ SQLite, Postgres, SurrealDB, MongoDB, and CSV — each with its own serializatio
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../type-system.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../new-persistence/step5-table-crud.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../sql.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../new-persistence/step7-multi-backend.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

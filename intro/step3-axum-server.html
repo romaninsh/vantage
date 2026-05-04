@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-c3abb0cf.js";
+            window.path_to_searchindex_js = "../searchindex-a80dff17.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-f0872746.js"></script>
+        <script src="../toc-91be589d.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -199,7 +199,7 @@ chapter we <strong>migrate</strong> them to MongoDB. That migration is a change 
 and routes don’t know the difference.</li>
 </ul>
 <p>The handler functions are each written <strong>once</strong> and mounted against any
-<a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html"><code>Table&lt;Backend, Entity&gt;</code></a> the router has on hand — one <code>list</code>, one
+<a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html"><code>Table&lt;Backend, Entity&gt;</code></a> the router has on hand — one <code>list</code>, one
 <code>get</code>, one <code>post</code>, one <code>patch</code>, one <code>delete</code>, parameterised over the backend and entity types.
 Adding another entity is a route registration, not a new handler.</p>
 <hr>
@@ -214,7 +214,7 @@ the existing <code>serde</code> to encode response bodies as JSON.</p>
 a computed <code>category</code> field. Both were assembled from subqueries — great for display, but they don’t
 round-trip cleanly through a <code>POST</code> body because the JSON would try to write columns that don’t
 exist. For a writable API we replace the computed fields with the plain FK column that sits under
-them. (See <a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html#method.with_expression"><code>with_expression</code></a> for the chapter-2
+them. (See <a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html#method.with_expression"><code>with_expression</code></a> for the chapter-2
 computed-field setup we’re walking away from here.)</p>
 <p><code>src/category.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -359,12 +359,12 @@ callers get a shared reference. Most table operations
 <a href="https://docs.rs/vantage_dataset/0.4.2/vantage_dataset/traits/dataset/trait.WritableDataSet.html#tymethod.insert"><code>insert</code></a>,
 <a href="https://docs.rs/vantage_dataset/0.4.2/vantage_dataset/traits/dataset/trait.WritableDataSet.html#tymethod.replace"><code>replace</code></a>,
 <a href="https://docs.rs/vantage_dataset/0.4.2/vantage_dataset/traits/valueset/trait.WritableValueSet.html#tymethod.delete"><code>delete</code></a>,
-<a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>) take <code>&amp;self</code>, so they work on the
+<a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>) take <code>&amp;self</code>, so they work on the
 reference without any clone.</li>
 <li><strong><code>static CACHE: OnceLock&lt;...&gt;</code> lives inside the function.</strong> A function-local static is still a
 program-wide single instance — Rust allows this and it keeps the cache private to the table that
 owns it.</li>
-<li><strong>The <a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> callback is a closure: <code>|db| Product::table(db).clone()</code>.</strong> The framework still hands us a db and expects an owned
+<li><strong>The <a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> callback is a closure: <code>|db| Product::table(db).clone()</code>.</strong> The framework still hands us a db and expects an owned
 <code>Table&lt;SqliteDB, Product&gt;</code> back, so we call the cached accessor and clone the reference. On the
 first call this triggers Product’s cache to build; every subsequent call just clones a pre-built
 definition.</li>
@@ -403,7 +403,7 @@ it’s a copy of the shape (columns, conditions, relationships), and it’s chea
 
 <hr>
 <h2 id="products-of-a-category"><a class="header" href="#products-of-a-category">Products of a category</a></h2>
-<p>The <a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> relationship we kept from chapter 2 lets
+<p>The <a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> relationship we kept from chapter 2 lets
 us serve a nested route — <code>/categories/{id}/products</code>. Before writing the handler, give the
 relationship a proper name with an extension trait on <code>Table&lt;SqliteDB, Category&gt;</code>. Add this to
 <code>src/category.rs</code>:</p>
@@ -443,13 +443,13 @@ async fn list_category_products(Path(id): Path&lt;i64&gt;) -&gt; Json&lt;Vec&lt;
 <span class="boring">}</span></code></pre>
 <p>Three things going on:</p>
 <ul>
-<li><strong><code>Category::table(db()).clone()</code></strong> — we need an owned <a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html"><code>Table</code></a> to
-chain <a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html#method.with_condition"><code>with_condition</code></a> onto, so we clone the cached
+<li><strong><code>Category::table(db()).clone()</code></strong> — we need an owned <a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html"><code>Table</code></a> to
+chain <a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html#method.with_condition"><code>with_condition</code></a> onto, so we clone the cached
 definition. The clone copies the shape (columns, conditions, relationships), not any rows.</li>
 <li><strong><code>with_condition(id_col.eq(id))</code></strong> — narrows the category table to one row: the one we’re asking
 for. Nothing hits the database yet.</li>
 <li><strong><code>ref_products()</code></strong> — traverses the <code>with_many</code> relationship we registered on Category in
-chapter 2, via <a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>. The returned table is
+chapter 2, via <a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>. The returned table is
 <code>Table&lt;SqliteDB, Product&gt;</code>, already scoped to products whose <code>category_id</code> matches the narrowed
 category set. Chapter 2 walked through what the emitted SQL looks like; it’s the same here.</li>
 </ul>
@@ -696,7 +696,7 @@ dropped and the client sees an empty reply, with no status code and no body to e
 <li>Everything else returns <strong>500</strong> but with a structured JSON body, not silence.</li>
 </ul>
 <p>Axum already gives us the middle one for free — it rejects malformed <code>Json&lt;E&gt;</code> bodies with 400.
-The other two come down to converting <a href="https://docs.rs/vantage_core/0.4.0/vantage_core/util/error/struct.VantageError.html"><code>VantageError</code></a> into an HTTP
+The other two come down to converting <a href="https://docs.rs/vantage_core/0.4.1/vantage_core/util/error/struct.VantageError.html"><code>VantageError</code></a> into an HTTP
 response. Add an <code>ApiError</code> type to <code>main.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -885,11 +885,11 @@ table with whatever the caller asked for, and lists:</p>
 <span class="boring">}</span></code></pre>
 <p>Two things happen:</p>
 <ul>
-<li><strong><a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html#method.set_pagination"><code>set_pagination</code></a><code>(Some(</code><a href="https://docs.rs/vantage_table/0.4.5/vantage_table/pagination/struct.Pagination.html#method.new"><code>Pagination::new</code></a><code>(page, per_page)))</code></strong>
+<li><strong><a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html#method.set_pagination"><code>set_pagination</code></a><code>(Some(</code><a href="https://docs.rs/vantage_table/0.4.8/vantage_table/pagination/struct.Pagination.html#method.new"><code>Pagination::new</code></a><code>(page, per_page)))</code></strong>
 takes a page number and a page size. Vantage applies these as <code>LIMIT … OFFSET …</code> on the SELECT.
 Missing params fall back to the defaults (page 1, 50 per page) — and if neither is supplied we
 don’t touch pagination at all, so the unfiltered list still hits the whole set.</li>
-<li><strong><a href="https://docs.rs/vantage_table/0.4.5/vantage_table/table/base/struct.Table.html#method.add_search"><code>add_search</code></a><code>(term)</code></strong> is the <code>.with_search</code> we used
+<li><strong><a href="https://docs.rs/vantage_table/0.4.8/vantage_table/table/base/struct.Table.html#method.add_search"><code>add_search</code></a><code>(term)</code></strong> is the <code>.with_search</code> we used
 in chapter 2 to add a LIKE filter across all columns. Both end up as extra <code>WHERE</code> clauses on the
 query that vantage already compiles for us.</li>
 </ul>
@@ -965,7 +965,7 @@ already knows how to render a 400.</p>
 databases is a change to the model, not to the routes, handlers, or business logic. Now we
 cash the check. <code>/categories</code>, <code>/categories/{id}</code>, and <code>/categories/{cat_id}/products</code> keep
 their exact URL shape, response bodies, and behaviour — but the data lives in
-<a href="https://docs.rs/vantage_mongodb/0.4.4/vantage_mongodb/mongodb/struct.MongoDB.html"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>.</p>
+<a href="https://docs.rs/vantage_mongodb/0.4.5/vantage_mongodb/mongodb/struct.MongoDB.html"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage_sql/0.4.3/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>.</p>
 <p>Start Mongo — Docker is the easiest way:</p>
 <pre><code class="language-sh">docker run -d --name mongo-learn -p 27017:27017 mongo:7
 </code></pre>
@@ -1076,7 +1076,7 @@ URL’s <code>cat_id</code> string directly:</p>
 })
 <span class="boring">}</span></code></pre>
 <p><code>.eq(&amp;str)</code> works here because <code>vantage-mongodb</code>’s <code>From&lt;&amp;str&gt;</code> for
-<a href="https://docs.rs/vantage_mongodb/0.4.4/vantage_mongodb/types/struct.AnyMongoType.html"><code>AnyMongoType</code></a> auto-promotes 24-character hex strings to
+<a href="https://docs.rs/vantage_mongodb/0.4.5/vantage_mongodb/types/struct.AnyMongoType.html"><code>AnyMongoType</code></a> auto-promotes 24-character hex strings to
 <code>ObjectId</code> and leaves everything else as <code>String</code>. The comparison fires with the right BSON type
 whichever <code>_id</code> convention the collection uses.</p>
 <h3 id="mainrs"><a class="header" href="#mainrs">main.rs</a></h3>
