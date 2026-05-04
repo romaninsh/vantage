@@ -33,6 +33,7 @@ pub(crate) fn spawn(mut rx: mpsc::Receiver<WriteOp>) -> JoinHandle<()> {
                     }
                     if let Err(e) = writer.flush().await {
                         warn!(target: "vantage_log_writer", path = %path.display(), error = %e, "flush failed");
+                        handles.remove(&path);
                     }
                 }
             }
