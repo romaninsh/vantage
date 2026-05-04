@@ -13,6 +13,7 @@ members = [
     "vantage-dataset",
     "vantage-table",
     "vantage-csv",
+    "vantage-log-writer",
     "vantage-api-client",
     "vantage-api-pool",
     "vantage-cli-util",
