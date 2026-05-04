@@ -1,6 +1,6 @@
 [package]
 name = "vantage-mongodb"
-version = "0.4.6"
+version = "0.4.7"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "MongoDB persistence backend for Vantage framework"
@@ -16,7 +16,7 @@ vantage-types = { version = "0.4", path = "../vantage-types" }
 vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
 vantage-table = { version = "0.4.4", path = "../vantage-table" }
 vantage-dataset = { version = "0.4.2", path = "../vantage-dataset" }
-vantage-vista = { version = "0.4.3", path = "../vantage-vista", optional = true }
+vantage-vista = { version = "0.4.4", path = "../vantage-vista", optional = true }
 
 bson = "2"
 ciborium = { version = "0.2", features = ["std"] }
@@ -33,4 +33,4 @@ futures-util = "0.3"
 tokio = { version = "1", features = ["full"] }
 pretty_assertions = "1"
 serde_yaml_ng = "0.10"
-vantage-vista = { version = "0.4.3", path = "../vantage-vista" }
+vantage-vista = { version = "0.4.4", path = "../vantage-vista" }

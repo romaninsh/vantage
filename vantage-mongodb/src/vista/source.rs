@@ -253,6 +253,10 @@ impl TableShell for MongoTableShell {
     fn capabilities(&self) -> &VistaCapabilities {
         &self.capabilities
     }
+
+    fn driver_name(&self) -> &'static str {
+        "mongodb"
+    }
 }
 
 #[cfg(test)]

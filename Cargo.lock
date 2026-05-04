@@ -273,6 +273,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "bakery_model4"
+version = "0.1.0"
+dependencies = [
+ "ciborium",
+ "clap",
+ "serde_json",
+ "tokio",
+ "vantage-cli-util",
+ "vantage-core",
+ "vantage-dataset",
+ "vantage-sql",
+ "vantage-table",
+ "vantage-types",
+ "vantage-vista",
+]
+
+[[package]]
 name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4008,7 +4025,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-csv"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4104,7 +4121,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-mongodb"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "async-trait",
  "bson",
@@ -4252,7 +4269,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "async-stream",
  "async-trait",

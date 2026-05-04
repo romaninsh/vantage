@@ -8,9 +8,10 @@ use std::error::Error;
 
 use ciborium::Value as CborValue;
 use vantage_dataset::prelude::*;
-use vantage_sql::sqlite::SqliteDB;
+use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
+use vantage_sql::sqlite_expr;
 use vantage_table::table::Table;
-use vantage_types::{EmptyEntity, Record};
+use vantage_types::{EmptyEntity, Record, entity};
 use vantage_vista::VistaFactory;
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
@@ -160,6 +161,44 @@ async fn vista_writes_round_trip_via_cbor() -> TestResult {
 
     vista.delete(&"d".to_string()).await?;
     assert!(vista.get_value(&"d".to_string()).await?.is_none());
+    Ok(())
+}
+
+/// Regression: `with_expression` survives `from_table`. Before the shell was
+/// generic over `E`, the factory called `into_entity::<EmptyEntity>` which
+/// reset the expressions map, silently dropping any computed columns.
+#[tokio::test]
+async fn vista_preserves_with_expression_columns() -> TestResult {
+    let db = setup().await;
+
+    #[entity(SqliteType)]
+    #[derive(Debug, Clone, PartialEq, Default)]
+    struct Product {
+        name: String,
+        price: i64,
+    }
+
+    let table = Table::<SqliteDB, Product>::new("product", db.clone())
+        .with_id_column("id")
+        .with_column_of::<String>("name")
+        .with_column_of::<i64>("price")
+        .with_column_of::<bool>("is_deleted")
+        .with_expression("price_doubled", |_| sqlite_expr!("\"price\" * 2"));
+
+    let vista = db.vista_factory().from_table(table)?;
+
+    let rows = vista.list_values().await?;
+    let alpha = rows.get("a").expect("row a");
+    assert_eq!(
+        alpha.get("price_doubled"),
+        Some(&CborValue::Integer(20i64.into())),
+        "computed column should appear in vista output"
+    );
+    let gamma = rows.get("c").expect("row c");
+    assert_eq!(
+        gamma.get("price_doubled"),
+        Some(&CborValue::Integer(60i64.into()))
+    );
     Ok(())
 }
 

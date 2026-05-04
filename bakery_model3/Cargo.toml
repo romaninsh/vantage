@@ -11,8 +11,8 @@ vantage-vista = { path = "../vantage-vista" }
 vantage-expressions = { path = "../vantage-expressions" }
 vantage-dataset = { path = "../vantage-dataset" }
 vantage-types = { path = "../vantage-types" }
-vantage-sql = { path = "../vantage-sql", features = ["sqlite", "postgres"] }
-vantage-mongodb = { path = "../vantage-mongodb" }
+vantage-sql = { path = "../vantage-sql", features = ["sqlite", "postgres", "vista"] }
+vantage-mongodb = { path = "../vantage-mongodb", features = ["vista"] }
 vantage-surrealdb = { path = "../vantage-surrealdb" }
 surreal-client = { path = "../surreal-client", features = ["decimal"] }
 bson = "2"

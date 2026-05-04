@@ -1,358 +1,206 @@
-use bakery_model4::{
-    connect_surrealdb_with_debug, get_table, vantage_config::EmptyEntity,
-    vantage_config::VantageConfig,
-};
-use clap::{Arg, Command};
-use serde_json::Value;
-use vantage_core::{error, util::error::Context, Result};
+//! Vista-driven CLI for the YAML-defined bakery_model4 schema.
+//!
+//! Usage: db4 <entity> [command ...]
+//!
+//! Entities: bakery, client, product, order
+//!
+//! Commands:
+//!   list              List all records as a table
+//!   get               Show first record in detail
+//!   count             Count records
+//!   add <id> <json>   Insert a record
+//!   delete <id>       Delete a record by ID
+//!   caps              Show what this source supports
 
-use vantage_surrealdb::prelude::*;
-use vantage_table::{prelude::WritableValueSet, TableLike};
+use bakery_model4::{connect_sqlite, entity_names, vista};
+use clap::{Arg, Command};
+use vantage_cli_util::render_records;
+use vantage_dataset::prelude::*;
+use vantage_vista::Vista;
 
 #[tokio::main]
 async fn main() {
     if let Err(e) = run().await {
-        use std::process::Termination;
-        e.report();
+        eprintln!("Error: {}", e);
         std::process::exit(1);
     }
 }
 
-async fn run() -> Result<()> {
-    // Load config from YAML
-    let config = VantageConfig::from_file("bakery_model4/config.yaml")
-        .context("Failed to load config.yaml")?;
-
-    let app = Command::new("db")
-        .about("Database management utility for Bakery (Dynamic)")
-        .arg(
-            Arg::new("debug")
-                .long("debug")
-                .help("Enable debug mode to show SQL queries")
-                .action(clap::ArgAction::SetTrue)
-                .global(true),
-        )
+async fn run() -> vantage_core::Result<()> {
+    let app = Command::new("db4")
+        .about("Vista-driven CLI for the YAML-defined bakery_model4 (SQLite)")
         .arg(
             Arg::new("entity")
-                .help("Entity name (e.g., client, product, bakery, order)")
+                .help("Entity name (bakery, client, product, order)")
                 .required(false),
         )
         .arg(
             Arg::new("commands")
-                .help("Commands like: list, get, field=value, etc.")
+                .help("Commands: list, get, count, add <id> <json>, delete <id>, caps")
                 .num_args(0..)
                 .trailing_var_arg(true),
         );
 
     let matches = app.get_matches();
 
-    // Check for debug flag
-    let debug = matches.get_flag("debug");
-
-    // Connect to database
-    let db = connect_surrealdb_with_debug(debug)
-        .await
-        .context("Failed to connect to SurrealDB")?;
-
-    if let Some(entity_name) = matches.get_one::<String>("entity") {
-        let commands: Vec<String> = matches
-            .get_many::<String>("commands")
-            .unwrap_or_default()
-            .cloned()
-            .collect();
-
-        let table = get_table(&config, entity_name, db)
-            .with_context(|| error!("Failed to get table", entity_name = entity_name))?;
-
-        handle_commands(table, commands)
-            .await
-            .with_context(|| error!("Failed to handle commands", entity_name = entity_name))?;
-    } else {
-        // Show available entities
-        if let Some(entities) = &config.tables {
-            let entity_names: Vec<String> = entities.keys().cloned().collect();
-            println!("Available entities: {}", entity_names.join(", "));
+    let entity_name = match matches.get_one::<String>("entity") {
+        Some(name) => name.clone(),
+        None => {
+            println!("Available entities: {}", entity_names().join(", "));
+            print_usage();
+            return Ok(());
         }
-        println!("Use 'db <entity> <command>' to interact with data");
-        println!("Example: db client list");
-        println!("         db client name=Marty list");
-        println!("         db bakery add \"foo\" \"{{\\\"name\\\":\\\"My Bakery\\\"}}\"");
-        println!("         db bakery delete \"foo\"");
-        println!("Run 'db --help' for more information");
-    }
+    };
 
-    Ok(())
+    let commands: Vec<String> = matches
+        .get_many::<String>("commands")
+        .unwrap_or_default()
+        .cloned()
+        .collect();
+
+    let db = connect_sqlite().await?;
+    let vista = vista(db, &entity_name)?;
+
+    handle_commands(vista, commands).await
 }
 
-fn handle_commands(
-    mut table: vantage_table::Table<bakery_model4::vantage_surrealdb::SurrealDB, EmptyEntity>,
-    commands: Vec<String>,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>> {
-    Box::pin(async move {
-        let mut i = 0;
-        while i < commands.len() {
-            let command = &commands[i];
-            i += 1;
-            if command.contains('=') {
-                let parts: Vec<&str> = command.splitn(2, '=').collect();
-                if parts.len() == 2 {
-                    let field = parts[0];
-                    let value_str = parts[1];
-
-                    // Get column type and parse value accordingly
-                    if let Some(column) = table.get_column(field) {
-                        let col_type = column.get_type();
-
-                        match col_type {
-                            "bool" => {
-                                let bool_val = matches!(
-                                    value_str.to_lowercase().as_str(),
-                                    "true" | "1" | "on" | "yes"
-                                );
-                                table.add_condition(table[field].eq(bool_val));
-                            }
-                            "int" => match value_str.parse::<i64>() {
-                                Ok(int_val) => {
-                                    table.add_condition(table[field].eq(int_val));
-                                }
-                                Err(_) => {
-                                    println!("❌ Invalid integer value: {}", value_str);
-                                    continue;
-                                }
-                            },
-                            "float" => match value_str.parse::<f64>() {
-                                Ok(float_val) => {
-                                    table.add_condition(table[field].eq(float_val));
-                                }
-                                Err(_) => {
-                                    println!("❌ Invalid float value: {}", value_str);
-                                    continue;
-                                }
-                            },
-                            _ => {
-                                table.add_condition(table[field].eq(value_str.to_string()));
-                            }
-                        }
-                    } else {
-                        println!("❌ Column '{}' not found", field);
-                        continue;
-                    }
-                } else {
-                    println!("❌ Invalid condition format. Use: field=value");
-                }
-                continue;
-            }
-
-            match command.as_str() {
-                "list" => {
-                    let values = table.get_values().await.context("Failed to get records")?;
-                    let record_count = values.len();
-                    let columns = table.columns();
-                    let display_columns: Vec<(&String, &dyn vantage_table::ColumnLike)> = columns
-                        .iter()
-                        .take(5)
-                        .map(|(k, v)| (k, v as &dyn vantage_table::ColumnLike))
-                        .collect();
-
-                    let mut table_data = Vec::new();
-
-                    for value in values {
-                        let mut row = Vec::new();
-
-                        for (col_name, column) in &display_columns {
-                            let expected_type = column.get_type();
-
-                            if let Some(v) = value.get(col_name.as_str()) {
-                                let (field_value, has_mismatch) = match v {
-                                    Value::String(s) => {
-                                        let mismatch =
-                                            expected_type != "string" && expected_type != "any";
-                                        (s.clone(), mismatch)
-                                    }
-                                    Value::Number(n) => {
-                                        let mismatch = expected_type != "int"
-                                            && expected_type != "float"
-                                            && expected_type != "any";
-                                        (n.to_string(), mismatch)
-                                    }
-                                    Value::Bool(b) => {
-                                        let mismatch =
-                                            expected_type != "bool" && expected_type != "any";
-                                        (b.to_string(), mismatch)
-                                    }
-                                    Value::Null => ("None".to_string(), false),
-                                    _ => (format!("{:?}", v), expected_type != "any"),
-                                };
-                                row.push((field_value, has_mismatch));
-                            } else {
-                                row.push(("None".to_string(), false));
-                            }
-                        }
-                        table_data.push(row);
-                    }
-
-                    if !table_data.is_empty() {
-                        let headers: Vec<String> = display_columns
-                            .iter()
-                            .map(|(name, _)| (*name).clone())
-                            .collect();
-                        print_table_with_colors(headers, table_data);
-                    }
-                    println!("Found {} records", record_count);
-                }
-                "get" => {
-                    let values = table.get_values().await.context("Failed to get values")?;
-                    match values.first() {
-                        Some(record) => println!(
-                            "{}",
-                            serde_json::to_string_pretty(record)
-                                .context("Failed to serialize record")?
-                        ),
-                        None => println!("No record found"),
-                    }
-                }
-                "ref" => {
-                    // Next command should be the reference name
-                    if i >= commands.len() {
-                        // Show available references
-                        let refs = table.references();
-                        if refs.is_empty() {
-                            println!("No references defined on this table");
-                        } else {
-                            println!("Available references:");
-                            for ref_name in refs {
-                                println!("  - {}", ref_name);
-                            }
-                            println!();
-                            println!("Usage: <entity> field=value ref <reference> <command>");
-                            println!("Example: bakery name=\"Broken Bakery\" ref products list");
-                        }
-                        break;
-                    }
-
-                    let ref_name = &commands[i];
-                    i += 1;
-
-                    // Collect remaining commands for the referenced table
-                    let remaining_commands: Vec<String> = commands[i..].to_vec();
-
-                    // Get the referenced table using AnyTable
-                    match table.get_ref(ref_name) {
-                        Ok(any_table) => {
-                            println!("→ Following reference: {}", ref_name);
-
-                            if !remaining_commands.is_empty() {
-                                // Downcast to concrete type and recursively handle commands
-                                let ref_table = any_table
-                                .downcast::<bakery_model4::vantage_surrealdb::SurrealDB, EmptyEntity>()
-                                .with_context(|| error!("Failed to downcast reference", reference = ref_name))?;
-
-                                handle_commands(ref_table, remaining_commands).await?;
-                            }
-                        }
-                        Err(e) => {
-                            println!("❌ Reference '{}' not found: {}", ref_name, e);
-                        }
-                    }
-                    break; // Exit loop after handling ref
-                }
-                "add" => {
-                    // Next two args should be: id and json_data
-                    if i + 1 >= commands.len() {
-                        println!("❌ Usage: add <id> <json_data>");
-                        println!("Example: add \"foo\" \"{{name:'My Bakery'}}\"");
-                        break;
-                    }
-
-                    let id = &commands[i];
-                    i += 1;
-                    let json_str = &commands[i];
-                    i += 1;
-
-                    // Parse JSON string
-                    let record: Value = serde_json::from_str(json_str)
-                        .with_context(|| error!("Failed to parse JSON", json = json_str))?;
-
-                    // Insert using AnyTable's insert_id_value
-                    table
-                        .insert_value(id, record)
-                        .await
-                        .with_context(|| error!("Failed to insert record", id = id))?;
-
-                    println!("✓ Added record with id: {}", id);
-                }
-                "delete" => {
-                    // Next arg should be the id
-                    if i >= commands.len() {
-                        println!("❌ Usage: delete <id>");
-                        println!("Example: delete \"foo\"");
-                        break;
-                    }
-
-                    let id = &commands[i];
-                    i += 1;
-
-                    // Delete using AnyTable's delete_id
-                    table
-                        .delete(id)
-                        .await
-                        .with_context(|| error!("Failed to delete record", id = id))?;
-
-                    println!("✓ Deleted record with id: {}", id);
-                }
-                _ => {
-                    println!("Unknown command: {}", command);
-                    println!(
-                        "Available commands: list, get, add, delete, ref <reference> <command>"
-                    );
-                }
-            }
-        }
-
-        Ok(())
-    })
-}
-
-fn print_table_with_colors(headers: Vec<String>, rows: Vec<Vec<(String, bool)>>) {
-    // Calculate column widths based on actual text content
-    let mut col_widths = vec![0; headers.len()];
-    for (i, header) in headers.iter().enumerate() {
-        col_widths[i] = header.len();
-    }
-    for row in &rows {
-        for (i, (cell, _)) in row.iter().enumerate() {
-            col_widths[i] = col_widths[i].max(cell.len());
-        }
-    }
-
-    // Print headers
-    for (i, header) in headers.iter().enumerate() {
-        if i > 0 {
-            print!(" ");
-        }
-        print!("{:<width$}", header, width = col_widths[i]);
-    }
+fn print_usage() {
     println!();
+    println!("Usage: db4 <entity> <command>");
+    println!();
+    println!("Commands:");
+    println!("  list              List all records");
+    println!("  get               Get first record (detailed)");
+    println!("  count             Count records");
+    println!("  add <id> <json>   Insert a record");
+    println!("  delete <id>       Delete a record by ID");
+    println!("  caps              Show what this source supports");
+    println!();
+    println!("Examples:");
+    println!("  db4 bakery list");
+    println!("  db4 product count");
+    println!(r#"  db4 bakery add my_bakery '{{"name":"Test","profit_margin":10}}'"#);
+}
 
-    let total_width: usize = col_widths.iter().sum::<usize>() + col_widths.len() - 1;
-    println!("{}", "-".repeat(total_width));
+fn print_capabilities(vista: &Vista) {
+    let c = vista.capabilities();
+    println!(
+        "Capabilities for '{}' (driver: {}):",
+        vista.name(),
+        vista.driver()
+    );
+    println!("  list/get      yes (always)");
+    println!("  count         {}", yes_no(c.can_count));
+    println!("  add (insert)  {}", yes_no(c.can_insert));
+    println!("  update        {}", yes_no(c.can_update));
+    println!("  delete        {}", yes_no(c.can_delete));
+    println!("  subscribe     {}", yes_no(c.can_subscribe));
+    println!("  invalidate    {}", yes_no(c.can_invalidate));
+    println!("  pagination    {:?}", c.paginate_kind);
+}
 
-    // Print rows with color coding
-    for row in &rows {
-        for (i, (cell, has_mismatch)) in row.iter().enumerate() {
-            if i > 0 {
-                print!(" ");
+fn yes_no(flag: bool) -> &'static str {
+    if flag { "yes" } else { "no" }
+}
+
+async fn handle_commands(vista: Vista, commands: Vec<String>) -> vantage_core::Result<()> {
+    if commands.is_empty() {
+        println!("No command. Try: list, get, count, add, delete, caps");
+        return Ok(());
+    }
+
+    let mut i = 0;
+    while i < commands.len() {
+        let cmd = &commands[i];
+        i += 1;
+
+        match cmd.as_str() {
+            "list" => {
+                let records = vista.list_values().await?;
+                render_records(&records, None);
             }
-            if *has_mismatch {
-                print!(
-                    "\x1b[48;5;224m{:<width$}\x1b[0m",
-                    cell,
-                    width = col_widths[i]
-                );
-            } else {
-                print!("{:<width$}", cell, width = col_widths[i]);
+            "get" => match vista.get_some_value().await? {
+                Some((id, record)) => {
+                    println!("id: {}", id);
+                    for (k, v) in record.iter() {
+                        println!("  {}: {}", k, serde_json::to_string(v).unwrap_or_default());
+                    }
+                }
+                None => println!("No records found"),
+            },
+            "count" => {
+                if !vista.capabilities().can_count {
+                    println!(
+                        "'{}' does not support counting — skipping (try 'list' instead).",
+                        vista.name()
+                    );
+                    continue;
+                }
+                let count = vista.get_count().await?;
+                println!("{} records", count);
+            }
+            "add" => {
+                if i + 1 >= commands.len() {
+                    println!("Usage: add <id> <json>");
+                    break;
+                }
+                let id = commands[i].clone();
+                i += 1;
+                let json_str = &commands[i];
+                i += 1;
+
+                if !vista.capabilities().can_insert {
+                    println!(
+                        "'{}' is read-only — insert is not supported by this source.",
+                        vista.name()
+                    );
+                    continue;
+                }
+
+                let json_val: serde_json::Value =
+                    serde_json::from_str(json_str).map_err(|e: serde_json::Error| {
+                        vantage_core::error!("Invalid JSON", details = e.to_string())
+                    })?;
+
+                if !json_val.is_object() {
+                    println!("Error: JSON must be an object, e.g. '{{\"name\":\"value\"}}'");
+                    break;
+                }
+
+                let cbor_val = ciborium::Value::serialized(&json_val).map_err(|e| {
+                    vantage_core::error!("Invalid JSON for CBOR", details = e.to_string())
+                })?;
+                let record = vantage_types::Record::from(cbor_val);
+                vista.insert_value(&id, &record).await?;
+                println!("Inserted: {}", id);
+            }
+            "delete" => {
+                if i >= commands.len() {
+                    println!("Usage: delete <id>");
+                    break;
+                }
+                let id = commands[i].clone();
+                i += 1;
+
+                if !vista.capabilities().can_delete {
+                    println!(
+                        "'{}' is read-only — delete is not supported by this source.",
+                        vista.name()
+                    );
+                    continue;
+                }
+
+                vista.delete(&id).await?;
+                println!("Deleted: {}", id);
+            }
+            "caps" => {
+                print_capabilities(&vista);
+            }
+            other => {
+                println!("Unknown command: {}", other);
+                println!("Available: list, get, count, add <id> <json>, delete <id>, caps");
             }
         }
-        println!();
     }
+    Ok(())
 }

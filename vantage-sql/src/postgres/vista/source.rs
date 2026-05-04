@@ -1,5 +1,7 @@
-//! `PostgresTableShell` — owns the typed `Table<PostgresDB, EmptyEntity>` and
-//! exposes it through the `TableShell` boundary.
+//! `PostgresTableShell` — owns the typed `Table<PostgresDB, E>` and exposes
+//! it through the `TableShell` boundary. The shell is generic in `E` so that
+//! `with_expression` closures (parameterized over `E`) survive the wrap;
+//! `Vista` erases `E` once at the `Box<dyn TableShell>` boundary.
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
@@ -7,23 +9,26 @@ use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_table::table::Table;
-use vantage_types::{EmptyEntity, Record};
+use vantage_types::{EmptyEntity, Entity, Record};
 use vantage_vista::{TableShell, Vista, VistaCapabilities};
 
 use crate::postgres::PostgresDB;
 use crate::postgres::operation::PostgresOperation;
 use crate::postgres::types::AnyPostgresType;
 
-pub struct PostgresTableShell {
-    pub(crate) table: Table<PostgresDB, EmptyEntity>,
+pub struct PostgresTableShell<E = EmptyEntity>
+where
+    E: Entity<AnyPostgresType>,
+{
+    pub(crate) table: Table<PostgresDB, E>,
     pub(crate) capabilities: VistaCapabilities,
 }
 
-impl PostgresTableShell {
-    pub(crate) fn new(
-        table: Table<PostgresDB, EmptyEntity>,
-        capabilities: VistaCapabilities,
-    ) -> Self {
+impl<E> PostgresTableShell<E>
+where
+    E: Entity<AnyPostgresType>,
+{
+    pub(crate) fn new(table: Table<PostgresDB, E>, capabilities: VistaCapabilities) -> Self {
         Self {
             table,
             capabilities,
@@ -46,7 +51,10 @@ fn to_native_record(record: &Record<CborValue>) -> Record<AnyPostgresType> {
 }
 
 #[async_trait]
-impl TableShell for PostgresTableShell {
+impl<E> TableShell for PostgresTableShell<E>
+where
+    E: Entity<AnyPostgresType> + 'static,
+{
     async fn list_vista_values(
         &self,
         _vista: &Vista,
@@ -154,5 +162,9 @@ impl TableShell for PostgresTableShell {
 
     fn capabilities(&self) -> &VistaCapabilities {
         &self.capabilities
+    }
+
+    fn driver_name(&self) -> &'static str {
+        "postgres"
     }
 }

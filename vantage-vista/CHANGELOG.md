@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.4 — 2026-05-04
+
+- New [`Vista::driver()`](https://docs.rs/vantage-vista/0.4.4/vantage_vista/struct.Vista.html#method.driver) returns a short label for the backing driver (`"csv"`, `"sqlite"`, `"postgres"`, `"mysql"`, `"mongodb"`) — handy for diagnostics and CLI output.
+- New [`TableShell::driver_name`](https://docs.rs/vantage-vista/0.4.4/vantage_vista/trait.TableShell.html#method.driver_name) trait method (default `"unknown"`) drives the above; in-tree drivers all override.
+
 ## 0.4.3 — 2026-05-04
 
 Renames the driver-facing trait so its name describes what it actually is.

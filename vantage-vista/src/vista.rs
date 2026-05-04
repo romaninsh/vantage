@@ -55,6 +55,12 @@ impl Vista {
         &self.capabilities
     }
 
+    /// Short human label for the underlying driver (e.g. `"csv"`, `"sqlite"`,
+    /// `"postgres"`, `"mongodb"`).
+    pub fn driver(&self) -> &'static str {
+        self.source.driver_name()
+    }
+
     pub(crate) fn source(&self) -> &dyn TableShell {
         self.source.as_ref()
     }

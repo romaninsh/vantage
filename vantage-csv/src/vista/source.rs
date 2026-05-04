@@ -90,4 +90,8 @@ impl TableShell for CsvTableShell {
     fn capabilities(&self) -> &VistaCapabilities {
         &self.capabilities
     }
+
+    fn driver_name(&self) -> &'static str {
+        "csv"
+    }
 }

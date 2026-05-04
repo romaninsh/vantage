@@ -27,20 +27,23 @@ impl SqliteVistaFactory {
     }
 
     /// Wrap a typed table as a Vista. Column metadata is harvested from the
-    /// table; CRUD goes through `Table`'s reading path.
+    /// table; CRUD goes through `Table`'s reading path. The original entity
+    /// type is preserved so `with_expression` closures remain typecheckable.
     pub fn from_table<E>(&self, table: Table<SqliteDB, E>) -> Result<Vista>
     where
         E: Entity<AnySqliteType> + 'static,
     {
         let name = table.table_name().to_string();
-        let any_table = table.into_entity::<EmptyEntity>();
-        Ok(self.wrap(any_table, name))
+        Ok(self.wrap(table, name))
     }
 
     /// Single source-construction site shared by `from_table` and
     /// `build_from_spec`. Keeps the capability set and `Vista::new` call in
     /// one place so a future capability flip is a one-line edit.
-    fn wrap(&self, table: Table<SqliteDB, EmptyEntity>, name: String) -> Vista {
+    fn wrap<E>(&self, table: Table<SqliteDB, E>, name: String) -> Vista
+    where
+        E: Entity<AnySqliteType> + 'static,
+    {
         let metadata = metadata_from_table(&table);
         let source = SqliteTableShell::new(
             table,

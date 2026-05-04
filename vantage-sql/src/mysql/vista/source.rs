@@ -1,5 +1,7 @@
-//! `MysqlTableShell` — owns the typed `Table<MysqlDB, EmptyEntity>` and
-//! exposes it through the `TableShell` boundary.
+//! `MysqlTableShell` — owns the typed `Table<MysqlDB, E>` and exposes it
+//! through the `TableShell` boundary. The shell is generic in `E` so that
+//! `with_expression` closures (parameterized over `E`) survive the wrap;
+//! `Vista` erases `E` once at the `Box<dyn TableShell>` boundary.
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
@@ -7,20 +9,26 @@ use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_table::table::Table;
-use vantage_types::{EmptyEntity, Record};
+use vantage_types::{EmptyEntity, Entity, Record};
 use vantage_vista::{TableShell, Vista, VistaCapabilities};
 
 use crate::mysql::MysqlDB;
 use crate::mysql::operation::MysqlOperation;
 use crate::mysql::types::AnyMysqlType;
 
-pub struct MysqlTableShell {
-    pub(crate) table: Table<MysqlDB, EmptyEntity>,
+pub struct MysqlTableShell<E = EmptyEntity>
+where
+    E: Entity<AnyMysqlType>,
+{
+    pub(crate) table: Table<MysqlDB, E>,
     pub(crate) capabilities: VistaCapabilities,
 }
 
-impl MysqlTableShell {
-    pub(crate) fn new(table: Table<MysqlDB, EmptyEntity>, capabilities: VistaCapabilities) -> Self {
+impl<E> MysqlTableShell<E>
+where
+    E: Entity<AnyMysqlType>,
+{
+    pub(crate) fn new(table: Table<MysqlDB, E>, capabilities: VistaCapabilities) -> Self {
         Self {
             table,
             capabilities,
@@ -43,7 +51,10 @@ fn to_native_record(record: &Record<CborValue>) -> Record<AnyMysqlType> {
 }
 
 #[async_trait]
-impl TableShell for MysqlTableShell {
+impl<E> TableShell for MysqlTableShell<E>
+where
+    E: Entity<AnyMysqlType> + 'static,
+{
     async fn list_vista_values(
         &self,
         _vista: &Vista,
@@ -151,5 +162,9 @@ impl TableShell for MysqlTableShell {
 
     fn capabilities(&self) -> &VistaCapabilities {
         &self.capabilities
+    }
+
+    fn driver_name(&self) -> &'static str {
+        "mysql"
     }
 }

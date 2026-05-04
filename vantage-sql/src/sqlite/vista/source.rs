@@ -1,5 +1,7 @@
-//! `SqliteTableShell` — owns the typed `Table<SqliteDB, EmptyEntity>` and
-//! exposes it through the `TableShell` boundary.
+//! `SqliteTableShell` — owns the typed `Table<SqliteDB, E>` and exposes it
+//! through the `TableShell` boundary. The shell is generic in `E` so that
+//! `with_expression` closures (parameterized over `E`) survive the wrap;
+//! `Vista` erases `E` once at the `Box<dyn TableShell>` boundary.
 //!
 //! `AnySqliteType` already wraps `ciborium::Value`, so the boundary is a
 //! straight unwrap/rewrap. `add_eq_condition` builds a typed
@@ -12,23 +14,26 @@ use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_table::table::Table;
-use vantage_types::{EmptyEntity, Record};
+use vantage_types::{EmptyEntity, Entity, Record};
 use vantage_vista::{TableShell, Vista, VistaCapabilities};
 
 use crate::sqlite::SqliteDB;
 use crate::sqlite::operation::SqliteOperation;
 use crate::sqlite::types::AnySqliteType;
 
-pub struct SqliteTableShell {
-    pub(crate) table: Table<SqliteDB, EmptyEntity>,
+pub struct SqliteTableShell<E = EmptyEntity>
+where
+    E: Entity<AnySqliteType>,
+{
+    pub(crate) table: Table<SqliteDB, E>,
     pub(crate) capabilities: VistaCapabilities,
 }
 
-impl SqliteTableShell {
-    pub(crate) fn new(
-        table: Table<SqliteDB, EmptyEntity>,
-        capabilities: VistaCapabilities,
-    ) -> Self {
+impl<E> SqliteTableShell<E>
+where
+    E: Entity<AnySqliteType>,
+{
+    pub(crate) fn new(table: Table<SqliteDB, E>, capabilities: VistaCapabilities) -> Self {
         Self {
             table,
             capabilities,
@@ -51,7 +56,10 @@ fn to_native_record(record: &Record<CborValue>) -> Record<AnySqliteType> {
 }
 
 #[async_trait]
-impl TableShell for SqliteTableShell {
+impl<E> TableShell for SqliteTableShell<E>
+where
+    E: Entity<AnySqliteType> + 'static,
+{
     async fn list_vista_values(
         &self,
         _vista: &Vista,
@@ -159,5 +167,9 @@ impl TableShell for SqliteTableShell {
 
     fn capabilities(&self) -> &VistaCapabilities {
         &self.capabilities
+    }
+
+    fn driver_name(&self) -> &'static str {
+        "sqlite"
     }
 }

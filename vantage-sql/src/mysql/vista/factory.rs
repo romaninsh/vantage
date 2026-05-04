@@ -31,11 +31,13 @@ impl MysqlVistaFactory {
         E: Entity<AnyMysqlType> + 'static,
     {
         let name = table.table_name().to_string();
-        let any_table = table.into_entity::<EmptyEntity>();
-        Ok(self.wrap(any_table, name))
+        Ok(self.wrap(table, name))
     }
 
-    fn wrap(&self, table: Table<MysqlDB, EmptyEntity>, name: String) -> Vista {
+    fn wrap<E>(&self, table: Table<MysqlDB, E>, name: String) -> Vista
+    where
+        E: Entity<AnyMysqlType> + 'static,
+    {
         let metadata = metadata_from_table(&table);
         let source = MysqlTableShell::new(
             table,

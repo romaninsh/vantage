@@ -1,0 +1,24 @@
+name: product
+columns:
+  id:
+    type: string
+    flags: [id]
+  name:
+    type: string
+    flags: [title, searchable]
+  calories:
+    type: int
+  price:
+    type: int
+  bakery_id:
+    type: string
+    references: bakery
+  is_deleted:
+    type: bool
+    flags: [hidden]
+  inventory_stock:
+    type: int
+  sticker:
+    type: string
+sqlite:
+  table: product

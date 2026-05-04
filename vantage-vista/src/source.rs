@@ -149,6 +149,15 @@ pub trait TableShell: Send + Sync + 'static {
         .is_unimplemented())
     }
 
+    // ---- Identity ----------------------------------------------------------
+
+    /// Short human label for the underlying driver (e.g. `"csv"`, `"sqlite"`,
+    /// `"postgres"`, `"mongodb"`). Used for diagnostics and CLI output.
+    /// Drivers should override; the default is a placeholder.
+    fn driver_name(&self) -> &'static str {
+        "unknown"
+    }
+
     // ---- Capability advertisement -----------------------------------------
 
     fn capabilities(&self) -> &VistaCapabilities;

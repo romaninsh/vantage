@@ -180,6 +180,10 @@ impl TableShell for MockShell {
         &self.capabilities
     }
 
+    fn driver_name(&self) -> &'static str {
+        "mock"
+    }
+
     fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
         self.filters
             .lock()

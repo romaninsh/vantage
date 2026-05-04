@@ -121,13 +121,13 @@ jobs:
       - name: bakery_model3 smoke test
         if: matrix.backend == 'sqlite' || matrix.backend == 'postgres'
         run: |
-          cargo run -p bakery_model3 --example cli -- ${{ matrix.backend }} bakery list
-          cargo run -p bakery_model3 --example cli -- ${{ matrix.backend }} product count
-          cargo run -p bakery_model3 --example cli -- ${{ matrix.backend }} client list
+          cargo run -p bakery_model3 --example cli-vista -- ${{ matrix.backend }} bakery list
+          cargo run -p bakery_model3 --example cli-vista -- ${{ matrix.backend }} product count
+          cargo run -p bakery_model3 --example cli-vista -- ${{ matrix.backend }} client list
 
       - name: bakery_model3 CSV smoke test
         if: matrix.backend == 'sqlite'
         run: |
-          cargo run -p bakery_model3 --example cli -- csv bakery list
-          cargo run -p bakery_model3 --example cli -- csv product count
-          cargo run -p bakery_model3 --example cli -- csv client list
+          cargo run -p bakery_model3 --example cli-vista -- csv bakery list
+          cargo run -p bakery_model3 --example cli-vista -- csv product count
+          cargo run -p bakery_model3 --example cli-vista -- csv client list
