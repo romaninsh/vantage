@@ -12,7 +12,7 @@ use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::{Vista, VistaCapabilities, TableShell};
+use vantage_vista::{TableShell, Vista, VistaCapabilities};
 
 use crate::csv::Csv;
 use crate::operation::CsvOperation;
