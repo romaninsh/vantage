@@ -1,5 +1,5 @@
-//! `CsvVistaSource` — owns the typed `Table<Csv, EmptyEntity>` and exposes it
-//! through the `VistaSource` boundary.
+//! `CsvTableShell` — owns the typed `Table<Csv, EmptyEntity>` and exposes it
+//! through the `TableShell` boundary.
 //!
 //! `add_eq_condition` translates `(field, CborValue)` into an
 //! `Expression<AnyCsvType>` and pushes it onto the wrapped table; the table's
@@ -12,18 +12,18 @@ use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::{Vista, VistaCapabilities, VistaSource};
+use vantage_vista::{Vista, VistaCapabilities, TableShell};
 
 use crate::csv::Csv;
 use crate::operation::CsvOperation;
 use crate::type_system::AnyCsvType;
 
-pub struct CsvVistaSource {
+pub struct CsvTableShell {
     pub(crate) table: Table<Csv, EmptyEntity>,
     pub(crate) capabilities: VistaCapabilities,
 }
 
-impl CsvVistaSource {
+impl CsvTableShell {
     pub(crate) fn new(table: Table<Csv, EmptyEntity>, capabilities: VistaCapabilities) -> Self {
         Self {
             table,
@@ -45,7 +45,7 @@ fn csv_record_to_cbor(record: Record<AnyCsvType>) -> Record<CborValue> {
 }
 
 #[async_trait]
-impl VistaSource for CsvVistaSource {
+impl TableShell for CsvTableShell {
     async fn list_vista_values(
         &self,
         _vista: &Vista,

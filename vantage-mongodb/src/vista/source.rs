@@ -1,5 +1,5 @@
-//! `MongoVistaSource` — owns the typed `Table<MongoDB, EmptyEntity>` and
-//! exposes it through the `VistaSource` boundary.
+//! `MongoTableShell` — owns the typed `Table<MongoDB, EmptyEntity>` and
+//! exposes it through the `TableShell` boundary.
 //!
 //! Each spec column carries a BSON path (`column_paths`) which the source uses
 //! to walk nested documents on read, reconstruct nested documents on write,
@@ -17,14 +17,14 @@ use vantage_core::Result;
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::{Vista, VistaCapabilities, VistaSource};
+use vantage_vista::{TableShell, Vista, VistaCapabilities};
 
 use crate::id::MongoId;
 use crate::mongodb::MongoDB;
 use crate::types::AnyMongoType;
 use crate::vista::cbor::{bson_to_cbor, cbor_to_bson};
 
-pub struct MongoVistaSource {
+pub struct MongoTableShell {
     pub(crate) table: Table<MongoDB, EmptyEntity>,
     pub(crate) capabilities: VistaCapabilities,
     /// spec column name → BSON path (e.g. `"city"` → `["address", "city"]`).
@@ -32,7 +32,7 @@ pub struct MongoVistaSource {
     pub(crate) column_paths: IndexMap<String, Vec<String>>,
 }
 
-impl MongoVistaSource {
+impl MongoTableShell {
     pub(crate) fn new(
         table: Table<MongoDB, EmptyEntity>,
         capabilities: VistaCapabilities,
@@ -155,7 +155,7 @@ fn insert_at_path(doc: &mut Document, path: &[String], value: Bson) {
 }
 
 #[async_trait]
-impl VistaSource for MongoVistaSource {
+impl TableShell for MongoTableShell {
     async fn list_vista_values(
         &self,
         _vista: &Vista,

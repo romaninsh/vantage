@@ -14,7 +14,7 @@ moved up:
 
 - `Vista::add_condition_eq(field, CborValue) -> Result<()>` — universal
   entry point; delegates to the source.
-- `VistaSource::add_eq_condition(&mut self, field, value)` — driver
+- `TableShell::add_eq_condition(&mut self, field, value)` — driver
   contract; default impl returns `Unimplemented`. CSV translates to
   `Expression<AnyCsvType>`; Mongo translates to `bson::Document` and
   honours `column_paths` for nested fields (dot notation server-side).
@@ -60,7 +60,7 @@ In:
 - Per-column condition policy (runtime metadata)
 - `Vista::add_condition(field, op, value) -> Result<ConditionHandle>`
 - `Vista::remove_condition(handle)`
-- Driver-side `VistaSource::add_condition(field, op, value)` extending
+- Driver-side `TableShell::add_condition(field, op, value)` extending
   the existing `add_eq_condition` baseline; in-tree drivers translate
   to their native condition type
 - Default type-driven policy in `Column`
@@ -86,7 +86,7 @@ Out:
       override
 - [ ] Add `Vista::add_condition` / `remove_condition` with handle;
       reroute `add_condition_eq` to call through it
-- [ ] Add `VistaSource::add_condition` trait method (default
+- [ ] Add `TableShell::add_condition` trait method (default
       `Unimplemented`); update CSV + Mongo to override
 - [ ] Implement remaining drivers' eq + full operator translations:
       sqlite/surreal/aws/rest (coordinate with stage 4 driver rollout)

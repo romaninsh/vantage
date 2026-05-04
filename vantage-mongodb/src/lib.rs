@@ -20,4 +20,4 @@ pub use mongodb::MongoDB;
 pub use select::MongoSelect;
 pub use types::{AnyMongoType, MongoType, MongoTypeVariants};
 #[cfg(feature = "vista")]
-pub use vista::{MongoVistaFactory, MongoVistaSource};
+pub use vista::{MongoTableShell, MongoVistaFactory};

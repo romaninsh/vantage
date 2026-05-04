@@ -19,7 +19,7 @@ Confirmed with the user:
       `title_fields()`, `table_name()`); no additions required.
 - [x] CBOR translation lives in the driver — vantage-csv already had
       `From<AnyCsvType> for ciborium::Value` for the `AnyTable` path,
-      and vista reuses it at the `VistaSource` boundary.
+      and vista reuses it at the `TableShell` boundary.
 - [x] vantage-vista is opt-in via a `vista` cargo feature on
       vantage-csv; the existing TableSource path is unaffected.
 
@@ -47,7 +47,7 @@ Out:
 - [x] In `vantage-csv`: `pub fn vista_factory(&self) -> CsvVistaFactory`
       (gated behind the `vista` feature)
 - [x] Implement `VistaFactory::from_table` for `CsvVistaFactory`
-- [x] Implement `VistaSource` for `CsvVistaSource` — read path
+- [x] Implement `TableShell` for `CsvTableShell` — read path
       (`list`, `get`, `get_some`, `count`) returns CBOR; writes return
       "CSV is a read-only data source"
 - [x] CBOR translation: reused existing `From<AnyCsvType>` impls at

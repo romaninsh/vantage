@@ -27,7 +27,7 @@ use crate::{capabilities::VistaCapabilities, vista::Vista};
 /// it through unchanged.
 #[async_trait]
 #[allow(clippy::ptr_arg)]
-pub trait VistaSource: Send + Sync + 'static {
+pub trait TableShell: Send + Sync + 'static {
     // ---- ReadableValueSet delegates ----------------------------------------
 
     async fn list_vista_values(&self, vista: &Vista)

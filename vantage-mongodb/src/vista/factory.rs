@@ -17,7 +17,7 @@ use vantage_vista::{
 
 use crate::mongodb::MongoDB;
 use crate::types::AnyMongoType;
-use crate::vista::source::MongoVistaSource;
+use crate::vista::source::MongoTableShell;
 use crate::vista::spec::{MongoColumnExtras, MongoTableExtras, MongoVistaSpec};
 
 pub struct MongoVistaFactory {
@@ -54,7 +54,7 @@ impl MongoVistaFactory {
         name: String,
     ) -> Vista {
         let metadata = metadata_from_table(&table);
-        let source = MongoVistaSource::new(
+        let source = MongoTableShell::new(
             table,
             VistaCapabilities {
                 can_count: true,

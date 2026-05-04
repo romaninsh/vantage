@@ -15,7 +15,7 @@ use vantage_vista::{
 
 use crate::csv::Csv;
 use crate::type_system::AnyCsvType;
-use crate::vista::source::CsvVistaSource;
+use crate::vista::source::CsvTableShell;
 use crate::vista::spec::{CsvColumnExtras, CsvTableExtras, CsvVistaSpec};
 
 pub struct CsvVistaFactory {
@@ -37,7 +37,7 @@ impl CsvVistaFactory {
         let name = table.table_name().to_string();
         let any_table = table.into_entity::<EmptyEntity>();
 
-        let source = CsvVistaSource::new(
+        let source = CsvTableShell::new(
             any_table,
             VistaCapabilities {
                 can_count: true,

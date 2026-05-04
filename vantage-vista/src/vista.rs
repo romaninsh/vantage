@@ -4,7 +4,7 @@ use vantage_core::Result;
 
 use crate::{
     capabilities::VistaCapabilities, column::Column, metadata::VistaMetadata, reference::Reference,
-    source::VistaSource,
+    source::TableShell,
 };
 
 /// Universal, schema-bearing data handle.
@@ -21,13 +21,13 @@ pub struct Vista {
     pub(crate) references: IndexMap<String, Reference>,
     pub(crate) capabilities: VistaCapabilities,
     pub(crate) id_column: Option<String>,
-    pub(crate) source: Box<dyn VistaSource>,
+    pub(crate) source: Box<dyn TableShell>,
 }
 
 impl Vista {
     pub fn new(
         name: impl Into<String>,
-        source: Box<dyn VistaSource>,
+        source: Box<dyn TableShell>,
         metadata: VistaMetadata,
     ) -> Self {
         let capabilities = source.capabilities().clone();
@@ -55,7 +55,7 @@ impl Vista {
         &self.capabilities
     }
 
-    pub(crate) fn source(&self) -> &dyn VistaSource {
+    pub(crate) fn source(&self) -> &dyn TableShell {
         self.source.as_ref()
     }
 
