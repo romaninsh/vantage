@@ -3,6 +3,7 @@
 #![cfg(feature = "vista")]
 
 use ciborium::Value as CborValue;
+use vantage_core::Result;
 use vantage_csv::Csv;
 use vantage_dataset::prelude::ReadableValueSet;
 use vantage_vista::VistaFactory;
@@ -17,11 +18,11 @@ fn load_yaml(name: &str) -> String {
 }
 
 #[tokio::test]
-async fn yaml_loads_client_vista_and_lists_rows() {
+async fn yaml_loads_client_vista_and_lists_rows() -> Result<()> {
     let csv = Csv::new(data_dir());
     let yaml = load_yaml("client.vista.yaml");
 
-    let vista = csv.vista_factory().from_yaml(&yaml).expect("load yaml");
+    let vista = csv.vista_factory().from_yaml(&yaml)?;
 
     assert_eq!(vista.name(), "client");
     assert_eq!(vista.get_id_column(), Some("id"));
@@ -29,7 +30,7 @@ async fn yaml_loads_client_vista_and_lists_rows() {
     assert!(vista.get_column("contact_details").unwrap().is_hidden());
     assert!(!vista.get_column("name").unwrap().is_hidden());
 
-    let rows = vista.list_values().await.unwrap();
+    let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 3);
 
     let marty = &rows["marty"];
@@ -38,24 +39,26 @@ async fn yaml_loads_client_vista_and_lists_rows() {
         Some(&CborValue::Text("Marty McFly".to_string()))
     );
     assert_eq!(marty.get("is_paying_client"), Some(&CborValue::Bool(true)));
+    Ok(())
 }
 
 #[tokio::test]
-async fn yaml_eq_condition_filters_typed_column() {
+async fn yaml_eq_condition_filters_typed_column() -> Result<()> {
     let csv = Csv::new(data_dir());
     let yaml = load_yaml("client.vista.yaml");
 
-    let mut vista = csv.vista_factory().from_yaml(&yaml).unwrap();
-    vista.add_condition_eq("is_paying_client", CborValue::Bool(true));
+    let mut vista = csv.vista_factory().from_yaml(&yaml)?;
+    vista.add_condition_eq("is_paying_client", CborValue::Bool(true))?;
 
-    let rows = vista.list_values().await.unwrap();
+    let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 2);
     assert!(rows.contains_key("marty"));
     assert!(rows.contains_key("doc"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn yaml_csv_source_renames_record_keys_and_filters() {
+async fn yaml_csv_source_renames_record_keys_and_filters() -> Result<()> {
     // The CSV file has a column header `is_paying_client`; the spec exposes
     // it as `is_active` via a `csv.source` override. Listing must surface the
     // spec name, and filtering must match against the spec name too.
@@ -77,9 +80,9 @@ columns:
 csv:
   path: client.csv
 "#;
-    let mut vista = csv.vista_factory().from_yaml(yaml).expect("load yaml");
+    let mut vista = csv.vista_factory().from_yaml(yaml)?;
 
-    let rows = vista.list_values().await.unwrap();
+    let rows = vista.list_values().await?;
     let marty = &rows["marty"];
     assert_eq!(
         marty.get("full_name"),
@@ -93,12 +96,13 @@ csv:
     assert_eq!(marty.get("is_active"), Some(&CborValue::Bool(true)));
 
     // Filtering must match spec names, not raw CSV headers.
-    vista.add_condition_eq("is_active", CborValue::Bool(true));
-    let filtered = vista.list_values().await.unwrap();
+    vista.add_condition_eq("is_active", CborValue::Bool(true))?;
+    let filtered = vista.list_values().await?;
     assert_eq!(filtered.len(), 2);
     assert!(filtered.contains_key("marty"));
     assert!(filtered.contains_key("doc"));
     assert!(!filtered.contains_key("biff"));
+    Ok(())
 }
 
 #[test]

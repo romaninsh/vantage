@@ -3995,7 +3995,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-core"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "atty",
@@ -4008,7 +4008,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-csv"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4104,7 +4104,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-mongodb"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "async-trait",
  "bson",
@@ -4116,12 +4116,14 @@ dependencies = [
  "pretty_assertions",
  "serde",
  "serde_json",
+ "serde_yaml_ng",
  "tokio",
  "vantage-core",
  "vantage-dataset",
  "vantage-expressions",
  "vantage-table",
  "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]
@@ -4248,7 +4250,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "async-stream",
  "async-trait",

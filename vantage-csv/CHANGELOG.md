@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.6 — 2026-05-04
+
+- `add_condition_eq` filtering is now translated into an `Expression<AnyCsvType>` and pushed onto the wrapped `Table` instead of evaluated on Vista's side. Same surface, but consistent with the new condition-delegation contract.
+- Internal: the `vista` module is now a directory (`vista/{mod,factory,source,spec}.rs`) for parity with the other drivers — `pub use` surface unchanged.
+- Bumps minimum [`vantage-vista`](https://docs.rs/vantage-vista/0.4.2/) requirement to 0.4.2 (`add_eq_condition` trait method).
+
 ## 0.4.5 — 2026-05-03
 
 - [`CsvVistaFactory::from_yaml`](https://docs.rs/vantage-csv/0.4.5/vantage_csv/struct.CsvVistaFactory.html#method.from_yaml) now works: parse a `*.vista.yaml` describing columns, flags, and a `csv: { path }` block, get back a `Vista`. Per-column `csv: { source: <header> }` overrides the source header when it differs from the spec name.

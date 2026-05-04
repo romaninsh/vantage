@@ -1,19 +1,16 @@
 # Vantage Vista
 
 `Vista` takes a typed table — the kind you define in your model layer like
-`bakery_model3::Product::sqlite_table()` or
-`vantage_aws::models::ecs::clusters_table()` — and wraps it behind a
-uniform handle that generic code can drive.
+`bakery_model3::Product::sqlite_table()` or `vantage_aws::models::ecs::clusters_table()` — and wraps
+it behind a uniform handle that generic code can drive.
 
-Vantage's `Table<T, E>` is typed end-to-end, which is what business logic
-wants. Anything generic — CLI, desktop UI, config-driven dashboard —
-can't consume that without giving up the erasure it needs. Vista is the
-bridge.
+Vantage's `Table<T, E>` is typed end-to-end, which is what business logic wants. Anything generic —
+CLI, desktop UI, config-driven dashboard — can't consume that without giving up the erasure it
+needs. Vista is the bridge.
 
 ## Build a Vista
 
-Define the table once, in the model layer. Then wrap it with the matching
-driver factory:
+Define the table once, in the model layer. Then wrap it with the matching driver factory:
 
 ```rust,ignore
 use bakery_model3::Product;
@@ -23,10 +20,9 @@ let factory = SqliteVistaFactory::new(db.clone());
 let products: Vista = factory.from_table(Product::sqlite_table(db));
 ```
 
-`from_table` consumes the typed table and produces a `Vista` that knows its
-columns, references, id field, and the backend's capabilities. The schema
-is locked from there — `Vista` has no `add_column`. Conditions can still
-be added; that's narrowing the data set, not the schema.
+`from_table` consumes the typed table and produces a `Vista` that knows its columns, references, id
+field, and the backend's capabilities. The schema is locked from there — `Vista` has no
+`add_column`. Conditions can still be added; that's narrowing the data set, not the schema.
 
 ## Or skip the model crate
 
@@ -36,8 +32,8 @@ No Rust entity for the table? Hand the factory a YAML schema instead:
 let products: Vista = factory.from_yaml(include_str!("products.yaml"))?;
 ```
 
-Same `Vista`. Useful for CLIs that talk to arbitrary databases at runtime,
-or admin tools that load schemas from configuration.
+Same `Vista`. Useful for CLIs that talk to arbitrary databases at runtime, or admin tools that load
+schemas from configuration.
 
 ## Drive it
 
@@ -70,8 +66,8 @@ Swap SQLite for Mongo, AWS, or CSV — `render` doesn't change.
 
 ## Obey what the backend can do
 
-Drivers advertise capabilities so generic UIs render the right controls
-instead of guessing and erroring at runtime:
+Drivers advertise capabilities so generic UIs render the right controls instead of guessing and
+erroring at runtime:
 
 ```rust,ignore
 let caps = vista.capabilities();
@@ -85,43 +81,39 @@ match caps.paginate_kind {
 }
 ```
 
-A read-only AWS API and a writable SQLite table look the same shape from
-outside; the capability flags tell the UI which buttons to draw.
+A read-only AWS API and a writable SQLite table look the same shape from outside; the capability
+flags tell the UI which buttons to draw.
 
 ## Narrow with conditions
 
 Exact-equality only at this stage:
 
 ```rust,ignore
-products.add_condition_eq("category", CborValue::Text("pastries".into()));
+products.add_condition_eq("category", CborValue::Text("pastries".into()))?;
 
 let pastries = products.list_values().await?;   // honours the filter
 let count    = products.get_count().await?;     // also honours it
 ```
 
-A conditioned Vista is a narrowed view of the data set, not a query
-result — same mental model as `Table::with_condition`. Richer conditions
-arrive later without breaking this surface.
+A conditioned Vista is a narrowed view of the data set, not a query result — same mental model as
+`Table::with_condition`. Richer conditions arrive later without breaking this surface.
 
 ## CRUD over CBOR
 
-Vista's wire type is `ciborium::Value`, regardless of what the backend
-stores natively. CSV strings, MongoDB BSON, SurrealDB CBOR records, AWS
-JSON-1.1 blobs — drivers translate to and from CBOR at the boundary.
-That's what lets one `render` work over all of them. Ids are `String` for
-the same reason: Mongo `ObjectId`, Surreal `Thing`, composite keys all
-stringify in the driver.
+Vista's wire type is `ciborium::Value`, regardless of what the backend stores natively. CSV strings,
+MongoDB BSON, SurrealDB CBOR records, AWS JSON-1.1 blobs — drivers translate to and from CBOR at the
+boundary. That's what lets one `render` work over all of them. Ids are `String` for the same reason:
+Mongo `ObjectId`, Surreal `Thing`, composite keys all stringify in the driver.
 
-Vista implements `ValueSet`, `ReadableValueSet`, `WritableValueSet`, and
-`InsertableValueSet` — the same trait family `Table<T, E>` does, so code
-written against those traits works against a `Vista` unchanged.
+Vista implements `ValueSet`, `ReadableValueSet`, `WritableValueSet`, and `InsertableValueSet` — the
+same trait family `Table<T, E>` does, so code written against those traits works against a `Vista`
+unchanged.
 
 ## Status
 
-Incubating. Ships `Vista`, `VistaSource`, `VistaMetadata`,
-`VistaCapabilities`, `Column`, `Reference`, plus `MockVistaSource` for
-tests. Driver factories (SQLite, Mongo, AWS, …) and the YAML loader land
-in later crates.
+Incubating. Ships `Vista`, `VistaSource`, `VistaMetadata`, `VistaCapabilities`, `Column`,
+`Reference`, plus `MockVistaSource` for tests. Driver factories (SQLite, Mongo, AWS, …) and the YAML
+loader land in later crates.
 
 ## Integration
 
