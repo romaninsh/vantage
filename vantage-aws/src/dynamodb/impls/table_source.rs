@@ -339,16 +339,26 @@ impl TableSource for DynamoDB {
 
         for item in items {
             let pairs = json_to_item_map(item)?;
-            let id_av = pairs
+            let av = pairs
                 .iter()
                 .find(|(k, _)| k == &id_field)
-                .map(|(_, v)| v.clone());
-            if let Some(av) = id_av
-                && let Some(id) = DynamoId::from_attr(&av)
-            {
-                let key = key_for_id(&id_field, &id)?;
-                transport::delete_item(self.aws(), table.table_name(), key).await?;
-            }
+                .map(|(_, v)| v.clone())
+                .ok_or_else(|| {
+                    error!(
+                        "DynamoDB scan item missing id field — refusing partial delete",
+                        id_field = id_field.clone()
+                    )
+                })?;
+            let id = DynamoId::from_attr(&av).ok_or_else(|| {
+                error!(
+                    "DynamoDB partition key has unsupported AttributeValue type — \
+                     v0 DynamoId only handles S/N. Refusing partial delete.",
+                    id_field = id_field.clone(),
+                    got = format!("{:?}", av)
+                )
+            })?;
+            let key = key_for_id(&id_field, &id)?;
+            transport::delete_item(self.aws(), table.table_name(), key).await?;
         }
         Ok(())
     }
