@@ -135,6 +135,23 @@ impl AwsAccount {
         }
     }
 
+    /// Return a copy with the region overridden. Useful when credentials
+    /// come from `~/.aws/credentials` but the target region differs from
+    /// the profile default (e.g. a test fixture provisioned in a fixed
+    /// region regardless of the developer's local config).
+    pub fn with_region(self, region: impl Into<String>) -> Self {
+        let inner = &self.inner;
+        Self {
+            inner: std::sync::Arc::new(Inner {
+                access_key: inner.access_key.clone(),
+                secret_key: inner.secret_key.clone(),
+                session_token: inner.session_token.clone(),
+                region: region.into(),
+                http: inner.http.clone(),
+            }),
+        }
+    }
+
     pub(crate) fn region(&self) -> &str {
         &self.inner.region
     }

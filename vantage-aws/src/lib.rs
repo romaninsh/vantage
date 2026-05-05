@@ -59,6 +59,7 @@ mod restjson;
 mod restxml;
 mod sign;
 
+pub mod dynamodb;
 pub mod models;
 pub mod types;
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.5 — 2026-05-04
+
+A typed DynamoDB persistence backend — sibling to the existing list-API surface in `models::dynamodb`. Items have a typed `AttributeValue` representation, native key/filter expressions, and full CRUD semantics, none of which fold cleanly into the `AwsAccount`-as-`TableSource` shape — so DynamoDB lives as its own [`vantage_aws::dynamodb`](https://docs.rs/vantage-aws/0.4.5/vantage_aws/dynamodb/) module with its own `TableSource` impl.
+
+- New [`DynamoDB`](https://docs.rs/vantage-aws/0.4.5/vantage_aws/dynamodb/struct.DynamoDB.html) data source: cheap to clone, wraps an existing `AwsAccount` for credentials and signing.
+- New [`AttributeValue`](https://docs.rs/vantage-aws/0.4.5/vantage_aws/dynamodb/enum.AttributeValue.html) typed enum mirrors the wire shape (`S`, `N`, `B`, `BOOL`, `NULL`, `L`, `M`, `SS`, `NS`, `BS`); a `vantage_type_system!` invocation produces the matching `DynamoType` trait, `AnyDynamoType` value, and variants enum, with per-type impls for `String`, `i32`, `i64`, `f64`, `bool`, `Vec<u8>`, and `Option<T>`.
+- Read/write path covers `Scan` (list / count / sample), `GetItem` (point read), `PutItem` (insert and replace), and `DeleteItem`. `delete_table_all_values` walks the scan and deletes per-item — no native bulk delete.
+- New [`DynamoCondition`](https://docs.rs/vantage-aws/0.4.5/vantage_aws/dynamodb/enum.DynamoCondition.html) carries a rendered expression plus its `ExpressionAttributeNames` / `ExpressionAttributeValues` maps; v0 ships `eq` only, with `gt` / `between` / `in_` / `begins_with` landing alongside Scan/Query filter execution.
+- New [`DynamoId`](https://docs.rs/vantage-aws/0.4.5/vantage_aws/dynamodb/struct.DynamoId.html) primary-key type — partition-key-only and string-form in v0; composite (partition + sort) keys are next.
+- New `AwsAccount::with_region(region)` returns a copy with the region overridden — useful when credentials come from `~/.aws/credentials` but the target region differs from the profile default (e.g. a test fixture provisioned in a fixed region regardless of the developer's local config).
+- Added `paste` dependency (used by the `vantage_type_system!` macro expansion).
+- Live integration tests against a real DynamoDB account (`tests/dynamodb_live.rs`); auto-skip when AWS credentials aren't configured. The accompanying `test-tf/dynamodb.tf` provisions two `PAY_PER_REQUEST` tables (`<name>-products`, `<name>-orders`) for exercising the round-trip.
+- Aggregations (`sum` / `min` / `max`), `patch` (UpdateItem), key-generation insert, relationship traversal, and binary `B` / `BS` wire codec are stubbed — they error loudly so callers can't accidentally rely on them.
+
 ## 0.4.4 — 2026-05-02
 
 Three more AWS wire protocols and three more model trees — S3, Lambda, DynamoDB — wired into the same `Factory` / `from_arn` surface as the IAM/ECS/CloudWatch models. ([#216](https://github.com/romaninsh/vantage/pull/216))

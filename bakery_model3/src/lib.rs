@@ -1,3 +1,5 @@
+pub use vantage_aws::AwsAccount;
+pub use vantage_aws::dynamodb::{AnyDynamoType, DynamoDB, DynamoType};
 pub use vantage_csv::{AnyCsvType, Csv, CsvType};
 pub use vantage_mongodb::{AnyMongoType, MongoDB, MongoType};
 pub use vantage_sql::postgres::{AnyPostgresType, PostgresDB, PostgresType};

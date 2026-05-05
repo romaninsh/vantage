@@ -1,3 +1,4 @@
+use vantage_aws::dynamodb::{AnyDynamoType, DynamoDB};
 use vantage_csv::{AnyCsvType, Csv};
 use vantage_mongodb::{AnyMongoType, MongoDB};
 #[allow(unused_imports)]
@@ -12,7 +13,7 @@ use vantage_types::entity;
 
 use crate::Client;
 
-#[entity(CsvType, SurrealType, SqliteType, PostgresType, MongoType)]
+#[entity(CsvType, SurrealType, SqliteType, PostgresType, MongoType, DynamoType)]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Order {
     pub client_id: Option<String>,
@@ -61,5 +62,16 @@ impl Order {
             .with_column_of::<String>("client_id")
             .with_column_of::<bool>("is_deleted")
             .with_one("client", "client_id", Client::mongo_table)
+    }
+
+    pub fn dynamo_table(db: DynamoDB) -> Table<DynamoDB, Order> {
+        // `vantage-demo-order` is the single-partition-key table.
+        // The composite-key `vantage-demo-orders` is reserved for
+        // future composite-key work.
+        Table::new("vantage-demo-order", db)
+            .with_id_column("id")
+            .with_column_of::<String>("client_id")
+            .with_column_of::<bool>("is_deleted")
+            .with_one("client", "client_id", Client::dynamo_table)
     }
 }
