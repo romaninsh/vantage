@@ -9,6 +9,8 @@
 //! is partition-only in v0). Sort-key tables work for Scan/Put/Delete
 //! when the caller hands in items containing both keys.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use indexmap::IndexMap;
 use serde_json::{Map as JsonMap, Value as JsonValue};
@@ -27,7 +29,7 @@ use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
 use crate::dynamodb::DynamoDB;
-use crate::dynamodb::condition::DynamoCondition;
+use crate::dynamodb::condition::{DynamoCondition, ValueListFuture, resolve_conditions};
 use crate::dynamodb::id::DynamoId;
 use crate::dynamodb::transport;
 use crate::dynamodb::types::{AnyDynamoType, AttributeValue};
@@ -134,7 +136,15 @@ impl TableSource for DynamoDB {
     where
         E: Entity<Self::Value>,
     {
-        let resp = transport::scan(self.aws(), table.table_name(), None, false).await?;
+        let filter = resolve_conditions(table.conditions()).await?;
+        let resp = transport::scan(
+            self.aws(),
+            table.table_name(),
+            None,
+            false,
+            Some(&filter),
+        )
+        .await?;
         let items = resp
             .get("Items")
             .and_then(|v| v.as_array())
@@ -178,7 +188,15 @@ impl TableSource for DynamoDB {
     where
         E: Entity<Self::Value>,
     {
-        let resp = transport::scan(self.aws(), table.table_name(), Some(1), false).await?;
+        let filter = resolve_conditions(table.conditions()).await?;
+        let resp = transport::scan(
+            self.aws(),
+            table.table_name(),
+            Some(1),
+            false,
+            Some(&filter),
+        )
+        .await?;
         let items = resp
             .get("Items")
             .and_then(|v| v.as_array())
@@ -195,7 +213,15 @@ impl TableSource for DynamoDB {
     where
         E: Entity<Self::Value>,
     {
-        let resp = transport::scan(self.aws(), table.table_name(), None, true).await?;
+        let filter = resolve_conditions(table.conditions()).await?;
+        let resp = transport::scan(
+            self.aws(),
+            table.table_name(),
+            None,
+            true,
+            Some(&filter),
+        )
+        .await?;
         let count = resp
             .get("Count")
             .and_then(|v| v.as_i64())
@@ -315,7 +341,15 @@ impl TableSource for DynamoDB {
         E: Entity<Self::Value>,
     {
         let id_field = id_field_name(table);
-        let resp = transport::scan(self.aws(), table.table_name(), None, false).await?;
+        let filter = resolve_conditions(table.conditions()).await?;
+        let resp = transport::scan(
+            self.aws(),
+            table.table_name(),
+            None,
+            false,
+            Some(&filter),
+        )
+        .await?;
         let items = resp
             .get("Items")
             .and_then(|v| v.as_array())
@@ -352,17 +386,33 @@ impl TableSource for DynamoDB {
 
     fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(
         &self,
-        _target_field: &str,
-        _source_table: &Table<Self, SourceE>,
-        _source_column: &str,
+        target_field: &str,
+        source_table: &Table<Self, SourceE>,
+        source_column: &str,
     ) -> Self::Condition
     where
         Self: Sized,
     {
-        // Stub: no relationship traversal in v0. Returning a benign
-        // placeholder lets compile-time wiring exist; runtime use is
-        // gated by callers not constructing relationships yet.
-        DynamoCondition::eq("__related__", AttributeValue::Null)
+        let db = self.clone();
+        let source = source_table.clone();
+        let col = source_column.to_string();
+        let field = target_field.to_string();
+
+        let values: super::super::condition::ValueListFn = Arc::new(move || -> ValueListFuture {
+            let db = db.clone();
+            let source = source.clone();
+            let col = col.clone();
+            Box::pin(async move {
+                let records = db.list_table_values(&source).await?;
+                let values: Vec<AttributeValue> = records
+                    .values()
+                    .filter_map(|r| r.get(&col).map(|v| v.value().clone()))
+                    .collect();
+                Ok(values)
+            })
+        });
+
+        DynamoCondition::In { field, values }
     }
 
     fn column_table_values_expr<'a, E, Type: ColumnType>(

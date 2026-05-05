@@ -1,3 +1,4 @@
+use vantage_aws::dynamodb::{AnyDynamoType, DynamoDB};
 use vantage_csv::{AnyCsvType, Csv};
 use vantage_mongodb::{AnyMongoType, MongoDB};
 #[allow(unused_imports)]
@@ -11,7 +12,7 @@ use vantage_types::entity;
 
 use crate::{Bakery, Order};
 
-#[entity(CsvType, SurrealType, SqliteType, PostgresType, MongoType)]
+#[entity(CsvType, SurrealType, SqliteType, PostgresType, MongoType, DynamoType)]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Client {
     pub name: String,
@@ -90,5 +91,17 @@ impl Client {
             .with_column_of::<String>("bakery_id")
             .with_one("bakery", "bakery_id", Bakery::mongo_table)
             .with_many("orders", "client_id", Order::mongo_table)
+    }
+
+    pub fn dynamo_table(db: DynamoDB) -> Table<DynamoDB, Client> {
+        Table::new("vantage-demo-client", db)
+            .with_id_column("id")
+            .with_column_of::<String>("name")
+            .with_column_of::<String>("email")
+            .with_column_of::<String>("contact_details")
+            .with_column_of::<bool>("is_paying_client")
+            .with_column_of::<String>("bakery_id")
+            .with_one("bakery", "bakery_id", Bakery::dynamo_table)
+            .with_many("orders", "client_id", Order::dynamo_table)
     }
 }

@@ -1,3 +1,4 @@
+use vantage_aws::dynamodb::{AnyDynamoType, DynamoDB};
 use vantage_csv::{AnyCsvType, Csv};
 use vantage_mongodb::{AnyMongoType, MongoDB};
 #[allow(unused_imports)]
@@ -9,7 +10,7 @@ use vantage_surrealdb::types::AnySurrealType;
 use vantage_table::table::Table;
 use vantage_types::entity;
 
-#[entity(CsvType, SurrealType, SqliteType, PostgresType, MongoType)]
+#[entity(CsvType, SurrealType, SqliteType, PostgresType, MongoType, DynamoType)]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Bakery {
     pub name: String,
@@ -50,5 +51,13 @@ impl Bakery {
             .with_id_column("_id")
             .with_column_of::<String>("name")
             .with_column_of::<i64>("profit_margin")
+    }
+
+    pub fn dynamo_table(db: DynamoDB) -> Table<DynamoDB, Bakery> {
+        Table::new("vantage-demo-bakery", db)
+            .with_id_column("id")
+            .with_column_of::<String>("name")
+            .with_column_of::<i64>("profit_margin")
+            .with_many("products", "bakery_id", crate::Product::dynamo_table)
     }
 }

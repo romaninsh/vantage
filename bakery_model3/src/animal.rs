@@ -1,4 +1,6 @@
 use bson::Bson;
+use vantage_aws::dynamodb::types::{AttributeValue, DynamoTypeSMarker};
+use vantage_aws::dynamodb::DynamoType;
 use vantage_csv::{CsvType, type_system::CsvTypeAnimalMarker};
 use vantage_mongodb::MongoType;
 use vantage_mongodb::types::MongoTypeStringMarker;
@@ -125,6 +127,21 @@ impl MongoType for Animal {
     fn from_bson(value: Bson) -> Option<Self> {
         match value {
             Bson::String(s) => s.parse().ok(),
+            _ => None,
+        }
+    }
+}
+
+impl DynamoType for Animal {
+    type Target = DynamoTypeSMarker;
+
+    fn to_attr(&self) -> AttributeValue {
+        AttributeValue::S(self.as_str().to_string())
+    }
+
+    fn from_attr(value: AttributeValue) -> Option<Self> {
+        match value {
+            AttributeValue::S(s) => s.parse().ok(),
             _ => None,
         }
     }

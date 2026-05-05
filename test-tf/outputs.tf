@@ -33,3 +33,15 @@ output "dynamodb_products_table" {
 output "dynamodb_orders_table" {
   value = aws_dynamodb_table.orders.name
 }
+
+output "dynamodb_bakery_table" {
+  value = aws_dynamodb_table.bakery.name
+}
+
+output "dynamodb_client_table" {
+  value = aws_dynamodb_table.client.name
+}
+
+output "dynamodb_order_flat_table" {
+  value = aws_dynamodb_table.order_flat.name
+}

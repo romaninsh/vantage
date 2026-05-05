@@ -35,3 +35,46 @@ resource "aws_dynamodb_table" "orders" {
 
   tags = { Name = var.name }
 }
+
+// Single-partition-key tables consumed by `bakery_model3::*::dynamo_table`.
+// `Order` here is the flat single-key form; the composite-key table above
+// stays around for future composite-key work.
+
+resource "aws_dynamodb_table" "bakery" {
+  name         = "${var.name}-bakery"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+
+  tags = { Name = var.name }
+}
+
+resource "aws_dynamodb_table" "client" {
+  name         = "${var.name}-client"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+
+  tags = { Name = var.name }
+}
+
+resource "aws_dynamodb_table" "order_flat" {
+  name         = "${var.name}-order"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+
+  tags = { Name = var.name }
+}

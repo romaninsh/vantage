@@ -9,6 +9,8 @@ use serde_json::{Map as JsonMap, Value as JsonValue, json};
 use vantage_core::Result;
 
 use crate::account::AwsAccount;
+use crate::dynamodb::condition::ResolvedFilter;
+use crate::dynamodb::wire::attr_to_json;
 use crate::json1::json_aws_call;
 
 const SERVICE: &str = "dynamodb";
@@ -25,6 +27,7 @@ pub(crate) async fn scan(
     table: &str,
     limit: Option<i64>,
     select_count: bool,
+    filter: Option<&ResolvedFilter>,
 ) -> Result<JsonValue> {
     let mut body = json!({ "TableName": table });
     if let Some(n) = limit {
@@ -32,6 +35,25 @@ pub(crate) async fn scan(
     }
     if select_count {
         body["Select"] = json!("COUNT");
+    }
+    if let Some(f) = filter
+        && !f.is_empty()
+    {
+        body["FilterExpression"] = json!(f.expression);
+        if !f.names.is_empty() {
+            let mut names = JsonMap::new();
+            for (k, v) in &f.names {
+                names.insert(k.clone(), JsonValue::String(v.clone()));
+            }
+            body["ExpressionAttributeNames"] = JsonValue::Object(names);
+        }
+        if !f.values.is_empty() {
+            let mut values = JsonMap::new();
+            for (k, v) in &f.values {
+                values.insert(k.clone(), attr_to_json(v)?);
+            }
+            body["ExpressionAttributeValues"] = JsonValue::Object(values);
+        }
     }
     call(aws, "Scan", body).await
 }
