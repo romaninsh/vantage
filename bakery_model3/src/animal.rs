@@ -1,6 +1,6 @@
 use bson::Bson;
-use vantage_aws::dynamodb::types::{AttributeValue, DynamoTypeSMarker};
 use vantage_aws::dynamodb::DynamoType;
+use vantage_aws::dynamodb::types::{AttributeValue, DynamoTypeSMarker};
 use vantage_csv::{CsvType, type_system::CsvTypeAnimalMarker};
 use vantage_mongodb::MongoType;
 use vantage_mongodb::types::MongoTypeStringMarker;

@@ -137,14 +137,8 @@ impl TableSource for DynamoDB {
         E: Entity<Self::Value>,
     {
         let filter = resolve_conditions(table.conditions()).await?;
-        let resp = transport::scan(
-            self.aws(),
-            table.table_name(),
-            None,
-            false,
-            Some(&filter),
-        )
-        .await?;
+        let resp =
+            transport::scan(self.aws(), table.table_name(), None, false, Some(&filter)).await?;
         let items = resp
             .get("Items")
             .and_then(|v| v.as_array())
@@ -214,14 +208,8 @@ impl TableSource for DynamoDB {
         E: Entity<Self::Value>,
     {
         let filter = resolve_conditions(table.conditions()).await?;
-        let resp = transport::scan(
-            self.aws(),
-            table.table_name(),
-            None,
-            true,
-            Some(&filter),
-        )
-        .await?;
+        let resp =
+            transport::scan(self.aws(), table.table_name(), None, true, Some(&filter)).await?;
         let count = resp
             .get("Count")
             .and_then(|v| v.as_i64())
@@ -342,14 +330,8 @@ impl TableSource for DynamoDB {
     {
         let id_field = id_field_name(table);
         let filter = resolve_conditions(table.conditions()).await?;
-        let resp = transport::scan(
-            self.aws(),
-            table.table_name(),
-            None,
-            false,
-            Some(&filter),
-        )
-        .await?;
+        let resp =
+            transport::scan(self.aws(), table.table_name(), None, false, Some(&filter)).await?;
         let items = resp
             .get("Items")
             .and_then(|v| v.as_array())

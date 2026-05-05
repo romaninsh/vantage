@@ -223,7 +223,9 @@ fn attr_to_plain_json(av: AttributeValue) -> serde_json::Value {
                     .map(J::Number)
             })
             .unwrap_or(J::String(n)),
-        AttributeValue::B(b) => J::Array(b.into_iter().map(|byte| J::Number(byte.into())).collect()),
+        AttributeValue::B(b) => {
+            J::Array(b.into_iter().map(|byte| J::Number(byte.into())).collect())
+        }
         AttributeValue::Bool(b) => J::Bool(b),
         AttributeValue::Null => J::Null,
         AttributeValue::L(items) => J::Array(items.into_iter().map(attr_to_plain_json).collect()),

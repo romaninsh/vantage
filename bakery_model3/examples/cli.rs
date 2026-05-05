@@ -66,7 +66,10 @@ async fn run() -> vantage_core::Result<()> {
 
     let matches = app.get_matches();
     let debug = matches.get_flag("debug");
-    let backend = matches.get_one::<String>("backend").cloned().unwrap_or_else(|| "surreal".into());
+    let backend = matches
+        .get_one::<String>("backend")
+        .cloned()
+        .unwrap_or_else(|| "surreal".into());
 
     let entity_name = match matches.get_one::<String>("entity") {
         Some(name) => name.clone(),
@@ -250,9 +253,7 @@ async fn handle_commands(
             }
             other => {
                 println!("Unknown command: {}", other);
-                println!(
-                    "Available: list, get, count, add <id> <json>, delete <id>, ref <name>"
-                );
+                println!("Available: list, get, count, add <id> <json>, delete <id>, ref <name>");
             }
         }
     }

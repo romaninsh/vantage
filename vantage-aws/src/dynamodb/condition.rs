@@ -58,9 +58,10 @@ impl std::fmt::Debug for DynamoCondition {
                 .field("names", names)
                 .field("values", values)
                 .finish(),
-            Self::In { field, .. } => {
-                f.debug_struct("In").field("field", field).finish_non_exhaustive()
-            }
+            Self::In { field, .. } => f
+                .debug_struct("In")
+                .field("field", field)
+                .finish_non_exhaustive(),
             Self::And(conds) => f.debug_tuple("And").field(conds).finish(),
         }
     }
@@ -156,18 +157,15 @@ fn resolve_one<'a>(
                     // source set means "match nothing" — emit a
                     // tautologically-false fragment.
                     let name_ph = state.fresh_name(field.clone());
-                    return Ok(Some(format!("attribute_not_exists({}) AND attribute_exists({})", name_ph, name_ph)));
+                    return Ok(Some(format!(
+                        "attribute_not_exists({}) AND attribute_exists({})",
+                        name_ph, name_ph
+                    )));
                 }
                 let name_ph = state.fresh_name(field.clone());
-                let value_phs: Vec<String> = resolved
-                    .into_iter()
-                    .map(|v| state.fresh_value(v))
-                    .collect();
-                Ok(Some(format!(
-                    "{} IN ({})",
-                    name_ph,
-                    value_phs.join(", ")
-                )))
+                let value_phs: Vec<String> =
+                    resolved.into_iter().map(|v| state.fresh_value(v)).collect();
+                Ok(Some(format!("{} IN ({})", name_ph, value_phs.join(", "))))
             }
             DynamoCondition::And(children) => {
                 let mut parts = Vec::new();
