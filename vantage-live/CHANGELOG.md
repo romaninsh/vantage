@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.6 — 2026-05-09
+
+- Pins `vantage-types` to `>= 0.4.2` so cargo can't resolve back to the pre-`RichText` trait shape.
+
 ## 0.4.5 — 2026-05-03
 
 - The write-queue worker and live-event consumer wrap their spawned futures with `tracing::Instrument::in_current_span()` so the caller's span follows the future across the `tokio::spawn` boundary. With a tracing layer installed (e.g. `sentry-tracing`, `tracing-opentelemetry`), worker errors and panics stitch into the same trace as the originating write request rather than appearing as orphans.

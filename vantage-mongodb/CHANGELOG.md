@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.8 — 2026-05-09
+
+- Pins `vantage-types` to `>= 0.4.2` for consistency with the other backends after the `TerminalRender → RichText` migration.
+
 ## 0.4.7 — 2026-05-04
 
 - Implements [`TableShell::driver_name`](https://docs.rs/vantage-vista/0.4.4/vantage_vista/trait.TableShell.html#method.driver_name) — `Vista::driver()` reports `"mongodb"` for collections wrapped through `MongoDB::vista_factory()`.

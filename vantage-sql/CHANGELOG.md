@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.5 — 2026-05-09
+
+- Pins `vantage-types` to `>= 0.4.2`. The `RichText`-returning `TerminalRender` impls landed in 0.4.4 alongside `vantage-types 0.4.2`; without an explicit floor, cargo could resolve `vantage-types` to 0.4.0/0.4.1 and fail to compile against the old trait shape.
+
 ## 0.4.4 — 2026-05-04
 
 - New optional `vista` feature wires SQLite, Postgres, and MySQL into [`vantage-vista`](https://docs.rs/vantage-vista). Call `db.vista_factory().from_table(table)` to expose any typed `Table<…>` as a `Vista`, or load a YAML spec via `build_from_spec` for config-driven setups.
