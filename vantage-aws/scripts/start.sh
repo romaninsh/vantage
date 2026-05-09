@@ -8,7 +8,7 @@ IMAGE="amazon/dynamodb-local:latest"
 
 # Check if Docker is running
 if ! docker info > /dev/null 2>&1; then
-    echo "Error: Docker is not running. Please start Docker and try again."
+    echo "Error: Docker is not running. Please start Docker and try again." >&2
     exit 1
 fi
 

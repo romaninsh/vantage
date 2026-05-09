@@ -5,7 +5,7 @@
 set -e
 
 # Optional .env for overriding endpoint / credentials. Mirrors surrealdb.
-if [ -f .env ]; then
+if [[ -f .env ]]; then
     source .env
 fi
 
