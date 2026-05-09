@@ -138,8 +138,8 @@ impl RestApi {
         // When `no_pagination` is set the API doesn't accept page/limit
         // query params (and may treat them as strict filters that
         // return empty), so we leave them off.
-        if !self.no_pagination {
-            if let Some(p) = pagination {
+        if !self.no_pagination
+            && let Some(p) = pagination {
                 let page_value = if self.pagination.skip_based {
                     p.skip().to_string()
                 } else {
@@ -148,7 +148,6 @@ impl RestApi {
                 params.push((self.pagination.page.clone(), page_value));
                 params.push((self.pagination.limit.clone(), p.limit().to_string()));
             }
-        }
 
         // Conditions: each `eq` becomes `?field=value`. Multiple
         // conditions AND together (JSON Server semantics).
@@ -196,13 +195,11 @@ impl RestApi {
         // perpetual grid would never mark itself exhausted. Short-
         // circuit page > 1 to empty so the grid sees the chunk shrink
         // and stops asking for more.
-        if self.no_pagination {
-            if let Some(p) = pagination {
-                if p.get_page() > 1 {
+        if self.no_pagination
+            && let Some(p) = pagination
+                && p.get_page() > 1 {
                     return Ok(IndexMap::new());
                 }
-            }
-        }
 
         let url = format!(
             "{}{}",
