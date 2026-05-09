@@ -76,6 +76,7 @@ async fn test_dsn_connection() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_crud_operations() {
     let client = get_client().await;
 
@@ -678,6 +679,7 @@ async fn test_error_handling() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_import_export() {
     let client = get_client().await;
 

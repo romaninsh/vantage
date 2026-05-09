@@ -109,12 +109,10 @@ impl Engine for MockSurrealEngine {
         Ok(self.find_response(method, &params))
     }
 
-    async fn send_message_cbor(&mut self, _method: &str, _params: CborValue) -> Result<CborValue> {
-        todo!("CBOR not supported in mock engine")
-    }
-
-    fn supports_cbor(&self) -> bool {
-        false
+    async fn send_message_cbor(&mut self, method: &str, params: CborValue) -> Result<CborValue> {
+        let json_params = crate::cbor_convert::cbor_to_json(params);
+        let response = self.find_response(method, &json_params);
+        Ok(crate::cbor_convert::json_to_cbor(response))
     }
 }
 
