@@ -41,7 +41,7 @@ pub struct LogStream {
 /// ```
 pub fn streams_table(aws: AwsAccount) -> Table<AwsAccount, LogStream> {
     Table::new(
-        "json1/logStreams:logs/Logs_20140328.DescribeLogStreams",
+        "json1/logStreams@nextToken:logs/Logs_20140328.DescribeLogStreams",
         aws,
     )
     .with_id_column("logStreamName")

@@ -39,7 +39,10 @@ pub struct LogGroup {
 /// # Ok(()) }
 /// ```
 pub fn groups_table(aws: AwsAccount) -> Table<AwsAccount, LogGroup> {
-    Table::new("json1/logGroups:logs/Logs_20140328.DescribeLogGroups", aws)
+    Table::new(
+        "json1/logGroups@nextToken:logs/Logs_20140328.DescribeLogGroups",
+        aws,
+    )
         .with_id_column("logGroupName")
         .with_column_of::<i64>("creationTime")
         .with_title_column_of::<i64>("storedBytes")

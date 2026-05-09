@@ -21,7 +21,7 @@ pub struct Task {
 /// `STOPPED`), `launchType`, `containerInstance`.
 pub fn tasks_table(aws: AwsAccount) -> Table<AwsAccount, Task> {
     Table::new(
-        "json1/taskArns:ecs/AmazonEC2ContainerServiceV20141113.ListTasks",
+        "json1/taskArns@nextToken:ecs/AmazonEC2ContainerServiceV20141113.ListTasks",
         aws,
     )
     .with_id_column("taskArn")

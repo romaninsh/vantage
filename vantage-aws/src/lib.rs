@@ -26,7 +26,11 @@
 //! services and protocols freely.
 //!
 //! Conditions on the table fold into the request body. v0 is
-//! read-only, first-page only — pagination and writes arrive later.
+//! read-only; writes arrive later. The CloudWatch Logs and ECS list
+//! endpoints auto-paginate through `nextToken` until exhausted; cap
+//! the walk via [`AwsAccount::with_max_pages`] if you need to. Other
+//! protocols (Query/IAM, REST-XML/S3, REST-JSON/Lambda) are still
+//! single-page — they'll need their own walk implementations.
 //!
 //! Ready-made models live under [`models`] if you want to skip the
 //! table-name dance and start querying.

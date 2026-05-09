@@ -28,6 +28,10 @@ struct Inner {
     /// DynamoDB Local, LocalStack, or a custom endpoint. Picked up from
     /// `AWS_ENDPOINT_URL` automatically by every constructor below.
     endpoint: Option<String>,
+    /// Cap on how many pages auto-paginating list operations will fetch.
+    /// `None` walks until AWS stops returning a continuation token.
+    /// See [`AwsAccount::with_max_pages`].
+    max_pages: Option<usize>,
     http: reqwest::Client,
 }
 
@@ -45,6 +49,7 @@ impl AwsAccount {
                 session_token: None,
                 region: region.into(),
                 endpoint: env_endpoint(),
+                max_pages: None,
                 http: reqwest::Client::new(),
             }),
         }
@@ -68,6 +73,7 @@ impl AwsAccount {
                 session_token,
                 region,
                 endpoint: env_endpoint(),
+                max_pages: None,
                 http: reqwest::Client::new(),
             }),
         })
@@ -111,6 +117,7 @@ impl AwsAccount {
                     session_token: creds.get("aws_session_token").cloned(),
                     region,
                     endpoint: env_endpoint(),
+                    max_pages: None,
                     http: reqwest::Client::new(),
                 }),
             });
@@ -127,6 +134,7 @@ impl AwsAccount {
                 session_token: token,
                 region,
                 endpoint: env_endpoint(),
+                max_pages: None,
                 http: reqwest::Client::new(),
             }),
         })
@@ -155,6 +163,7 @@ impl AwsAccount {
                 session_token: inner.session_token.clone(),
                 region: region.into(),
                 endpoint: inner.endpoint.clone(),
+                max_pages: inner.max_pages,
                 http: inner.http.clone(),
             }),
         }
@@ -174,9 +183,39 @@ impl AwsAccount {
                 session_token: inner.session_token.clone(),
                 region: inner.region.clone(),
                 endpoint: Some(endpoint.into()),
+                max_pages: inner.max_pages,
                 http: inner.http.clone(),
             }),
         }
+    }
+
+    /// Cap how many pages of results any single auto-paginating list
+    /// operation will fetch from this account. `None` (the default)
+    /// walks until AWS stops returning a continuation token. Pages
+    /// past the cap are silently dropped — callers see a truncated
+    /// result. Useful as a safety belt for accounts with many
+    /// thousands of streams / functions / etc., or for content-bearing
+    /// reads where "all of it" isn't what you want.
+    ///
+    /// Has no effect on operations that don't auto-paginate (only the
+    /// CloudWatch Logs and ECS list endpoints do today).
+    pub fn with_max_pages(self, n: usize) -> Self {
+        let inner = &self.inner;
+        Self {
+            inner: std::sync::Arc::new(Inner {
+                access_key: inner.access_key.clone(),
+                secret_key: inner.secret_key.clone(),
+                session_token: inner.session_token.clone(),
+                region: inner.region.clone(),
+                endpoint: inner.endpoint.clone(),
+                max_pages: Some(n),
+                http: inner.http.clone(),
+            }),
+        }
+    }
+
+    pub(crate) fn max_pages(&self) -> Option<usize> {
+        self.inner.max_pages
     }
 
     pub(crate) fn region(&self) -> &str {
