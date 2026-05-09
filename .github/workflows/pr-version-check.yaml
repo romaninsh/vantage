@@ -1,0 +1,115 @@
+name: PR version check
+
+on:
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find changed crates and verify version + changelog
+        id: check
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          base_sha=$(git rev-parse "origin/${BASE_REF}")
+          mapfile -t changed_files < <(git diff --name-only "${base_sha}"...HEAD)
+
+          # Map each changed file to the nearest ancestor dir with a publishable Cargo.toml.
+          declare -A crate_set=()
+          for f in "${changed_files[@]}"; do
+            dir=$(dirname "$f")
+            while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
+              if [ -f "$dir/Cargo.toml" ] && grep -q '^\[package\]' "$dir/Cargo.toml"; then
+                # Skip crates explicitly opted out of publishing.
+                if grep -qE '^publish\s*=\s*false' "$dir/Cargo.toml"; then
+                  break
+                fi
+                crate_set[$dir]=1
+                break
+              fi
+              dir=$(dirname "$dir")
+            done
+          done
+
+          if [ ${#crate_set[@]} -eq 0 ]; then
+            echo "No publishable-crate changes — skipping version checks."
+            echo "labels=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          fail=0
+          labels=()
+          for crate in "${!crate_set[@]}"; do
+            name=$(awk -F'"' '/^name = "/ {print $2; exit}' "$crate/Cargo.toml")
+            new_ver=$(awk -F'"' '/^version = "/ {print $2; exit}' "$crate/Cargo.toml")
+            old_ver=$(git show "${base_sha}:${crate}/Cargo.toml" 2>/dev/null \
+                       | awk -F'"' '/^version = "/ {print $2; exit}' || true)
+
+            echo "::group::${name} (${crate})"
+            echo "  base version: ${old_ver:-<new crate>}"
+            echo "  head version: ${new_ver}"
+
+            if [ -n "${old_ver}" ] && [ "${old_ver}" = "${new_ver}" ]; then
+              echo "::error file=${crate}/Cargo.toml::${name} has changes but version is still ${new_ver} — bump it (patch is fine)."
+              fail=1
+              echo "::endgroup::"
+              continue
+            fi
+
+            if [ ! -f "${crate}/CHANGELOG.md" ]; then
+              echo "::error file=${crate}::${name} is missing CHANGELOG.md."
+              fail=1
+              echo "::endgroup::"
+              continue
+            fi
+
+            if ! grep -qE "^## ${new_ver}( |\$)" "${crate}/CHANGELOG.md"; then
+              echo "::error file=${crate}/CHANGELOG.md::${name} CHANGELOG.md has no entry for ${new_ver} (need a '## ${new_ver}' heading)."
+              fail=1
+              echo "::endgroup::"
+              continue
+            fi
+
+            echo "  ok — will publish ${name} ${new_ver} on merge"
+            labels+=("release:${name}")
+            echo "::endgroup::"
+          done
+
+          {
+            echo "labels<<EOF"
+            printf '%s\n' "${labels[@]}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ $fail -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Sync release labels on PR
+        if: always() && steps.check.outputs.labels != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          NEW_LABELS: ${{ steps.check.outputs.labels }}
+        run: |
+          set -euo pipefail
+          # Drop any stale release:* labels first so the PR reflects the current diff.
+          existing=$(gh pr view "$PR" --json labels --jq '.labels[].name' | grep '^release:' || true)
+          for l in $existing; do
+            gh pr edit "$PR" --remove-label "$l" >/dev/null || true
+          done
+          for l in $NEW_LABELS; do
+            gh label create "$l" --color "0e8a16" --description "Crate release on merge" 2>/dev/null || true
+            gh pr edit "$PR" --add-label "$l" >/dev/null
+          done
