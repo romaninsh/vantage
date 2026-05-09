@@ -52,9 +52,10 @@ pub struct WsCborEngine {
 
 impl WsCborEngine {
     pub async fn from_connection(connect: &SurrealConnection) -> Result<Self> {
-        let base_url = connect.url.as_ref().ok_or_else(|| {
-            SurrealError::Connection("URL is required to connect".to_string())
-        })?;
+        let base_url = connect
+            .url
+            .as_ref()
+            .ok_or_else(|| SurrealError::Connection("URL is required to connect".to_string()))?;
 
         let mut ws_url = if let Some(rest) = base_url.strip_prefix("cbor://") {
             format!("ws://{}", rest)

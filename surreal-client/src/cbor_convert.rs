@@ -38,7 +38,9 @@ pub(crate) fn cbor_to_json(value: CborValue) -> Value {
         CborValue::Null => Value::Null,
         CborValue::Bool(b) => Value::Bool(b),
         CborValue::Integer(i) => integer_to_json(i),
-        CborValue::Float(f) => Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null),
+        CborValue::Float(f) => Number::from_f64(f)
+            .map(Value::Number)
+            .unwrap_or(Value::Null),
         CborValue::Text(s) => Value::String(s),
         CborValue::Bytes(b) => Value::String(BASE64.encode(b)),
         CborValue::Array(arr) => Value::Array(arr.into_iter().map(cbor_to_json).collect()),
@@ -88,7 +90,9 @@ fn integer_to_json(i: Integer) -> Value {
         return Value::Number(v.into());
     }
     let raw: i128 = i.into();
-    Number::from_f64(raw as f64).map(Value::Number).unwrap_or(Value::Null)
+    Number::from_f64(raw as f64)
+        .map(Value::Number)
+        .unwrap_or(Value::Null)
 }
 
 #[cfg(test)]
