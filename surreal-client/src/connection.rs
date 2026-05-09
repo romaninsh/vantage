@@ -1,8 +1,8 @@
 //! Connection builder for SurrealDB with authentication and engine creation
 
-use crate::{DebugEngine, Engine, Result, SurrealClient, SurrealError, WsCborEngine, WsEngine};
+use crate::{DebugEngine, Engine, Result, SurrealClient, SurrealError, WsCborEngine};
 
-use serde_json::{Value, json};
+use serde_json::Value;
 use url::Url;
 
 /// Connection builder for SurrealDB
@@ -201,62 +201,7 @@ impl SurrealConnection {
     //     self
     // }
 
-    pub async fn init_ws_engine(&self, engine: &mut dyn Engine) -> Result<()> {
-        match self.auth.as_ref().ok_or(SurrealError::Connection(
-            "Attempted to connect without auth".to_string(),
-        ))? {
-            AuthParams::Root { username, password } => {
-                engine
-                    .send_message(
-                        "signin",
-                        json!([{
-                            "user": username,
-                            "pass": password
-                        }]),
-                    )
-                    .await?;
-            }
-            AuthParams::Namespace { username, password } => {
-                engine
-                    .send_message("signin", json!([{
-                        "user": username,
-                        "pass": password,
-                        "NS": self.namespace.clone().ok_or(SurrealError::Connection("Namespace is required for namespace auth".to_string())
-                    )?}]))
-                    .await?;
-            }
-            AuthParams::Database { username, password } => {
-                engine
-                    .send_message("signin", json!([{
-                        "user": username,
-                        "pass": password,
-                        "NS": self.namespace.clone().ok_or( SurrealError::Connection("Namespace is required for namespace auth".to_string()) )?,
-                        "DB": self.database.clone().ok_or(
-                        SurrealError::Connection("Database is required for database auth".to_string())
-                    )?}]))
-                    .await?;
-            }
-            _ => {
-                return Err(SurrealError::Connection(
-                    "Unsupported authentication method for WebSocket".to_string(),
-                ));
-            }
-        }
-
-        // After authentication, set namespace and database
-        if let Some(namespace) = &self.namespace {
-            engine
-                .send_message(
-                    "use",
-                    json!([namespace, self.database.as_ref().unwrap_or(&String::new())]),
-                )
-                .await?;
-        }
-
-        Ok(())
-    }
-
-    pub async fn init_cbor_engine(&self, engine: &mut crate::WsCborEngine) -> Result<()> {
+    pub(crate) async fn init_engine(&self, engine: &mut crate::WsCborEngine) -> Result<()> {
         use ciborium::Value as CborValue;
 
         match self.auth.as_ref().ok_or(SurrealError::Connection(
@@ -321,12 +266,11 @@ impl SurrealConnection {
             }
             _ => {
                 return Err(SurrealError::Connection(
-                    "Unsupported authentication method for CBOR WebSocket".to_string(),
+                    "Unsupported authentication method".to_string(),
                 ));
             }
         }
 
-        // After authentication, set namespace and database
         if let Some(namespace) = &self.namespace {
             let use_params = CborValue::Array(vec![
                 CborValue::Text(namespace.clone()),
@@ -348,192 +292,21 @@ impl SurrealConnection {
             .map_err(|e| SurrealError::Connection(format!("Invalid URL: {}", e)))?;
 
         let mut engine: Box<dyn Engine> = match url.scheme() {
-            "ws" | "wss" => Box::new(WsEngine::from_connection(&self).await?),
-            "cbor" => {
-                let mut cbor_engine = WsCborEngine::from_connection(&self).await?;
-                self.init_cbor_engine(&mut cbor_engine).await?;
-                Box::new(cbor_engine)
-            }
-            // "http" | "https" => Box::new(HttpEngine::new(url_str)?),
+            "ws" | "wss" | "cbor" => Box::new(WsCborEngine::from_connection(&self).await?),
             _ => {
                 return Err(SurrealError::Protocol(
-                    "Unsupported protocol. Use ws://, wss://, cbor://, http://, or https://"
-                        .to_string(),
+                    "Unsupported protocol. Use ws://, wss://, or cbor://".to_string(),
                 ));
             }
         };
 
-        // Wrap with debug engine if debug mode is enabled
         if self.debug {
             engine = DebugEngine::wrap(engine);
         }
 
-        // Connect to the database
-        // engine.connect().await?;
         let client = SurrealClient::new(engine, self.namespace, self.database);
         Ok(client.with_debug(self.debug))
     }
-
-    /*
-        // Set namespace and database if provided
-        if self.namespace.is_some() || self.database.is_some() {
-            let message = crate::surreal_client::RpcMessage::new("use")
-                .with_id(1)
-                .with_params(vec![
-                    self.namespace
-                        .clone()
-                        .map(Value::String)
-                        .unwrap_or(Value::Null),
-                    self.database
-                        .clone()
-                        .map(Value::String)
-                        .unwrap_or(Value::Null),
-                ]);
-
-            engine.rpc(message).await?;
-
-            // For HTTP engines, update the namespace/database in the engine
-            if let Some(http_engine) = engine.as_any_mut().downcast_mut::<HttpEngine>() {
-                http_engine.set_namespace_database(self.namespace.clone(), self.database.clone());
-            }
-        }
-
-        // Authenticate if credentials provided
-        if let Some(auth) = &self.auth {
-            match auth {
-                AuthParams::Root { username, password } => {
-                    let message = crate::surreal_client::RpcMessage::new("signin")
-                        .with_id(2)
-                        .with_params(vec![Value::Object({
-                            let mut map = serde_json::Map::new();
-                            map.insert("user".to_string(), Value::String(username.clone()));
-                            map.insert("pass".to_string(), Value::String(password.clone()));
-                            map
-                        })]);
-
-                    let response = engine.rpc(message).await?;
-
-                    // For HTTP engines, set the token if we got one
-                    if let Value::String(token) = response {
-                        if let Some(http_engine) = engine.as_any_mut().downcast_mut::<HttpEngine>()
-                        {
-                            http_engine.set_token(Some(token));
-                        }
-                    }
-                }
-                AuthParams::Namespace { username, password } => {
-                    let message = crate::surreal_client::RpcMessage::new("signin")
-                        .with_id(2)
-                        .with_params(vec![Value::Object({
-                            let mut map = serde_json::Map::new();
-                            map.insert(
-                                "NS".to_string(),
-                                self.namespace
-                                    .clone()
-                                    .map(Value::String)
-                                    .unwrap_or(Value::Null),
-                            );
-                            map.insert("user".to_string(), Value::String(username.clone()));
-                            map.insert("pass".to_string(), Value::String(password.clone()));
-                            map
-                        })]);
-
-                    let response = engine.rpc(message).await?;
-
-                    if let Value::String(token) = response {
-                        if let Some(http_engine) = engine.as_any_mut().downcast_mut::<HttpEngine>()
-                        {
-                            http_engine.set_token(Some(token));
-                        }
-                    }
-                }
-                AuthParams::Database { username, password } => {
-                    let message = crate::surreal_client::RpcMessage::new("signin")
-                        .with_id(2)
-                        .with_params(vec![Value::Object({
-                            let mut map = serde_json::Map::new();
-                            map.insert(
-                                "NS".to_string(),
-                                self.namespace
-                                    .clone()
-                                    .map(Value::String)
-                                    .unwrap_or(Value::Null),
-                            );
-                            map.insert(
-                                "DB".to_string(),
-                                self.database
-                                    .clone()
-                                    .map(Value::String)
-                                    .unwrap_or(Value::Null),
-                            );
-                            map.insert("user".to_string(), Value::String(username.clone()));
-                            map.insert("pass".to_string(), Value::String(password.clone()));
-                            map
-                        })]);
-
-                    let response = engine.rpc(message).await?;
-
-                    if let Value::String(token) = response {
-                        if let Some(http_engine) = engine.as_any_mut().downcast_mut::<HttpEngine>()
-                        {
-                            http_engine.set_token(Some(token));
-                        }
-                    }
-                }
-                AuthParams::Scope {
-                    namespace,
-                    database,
-                    scope,
-                    params,
-                } => {
-                    let mut auth_params = if let Value::Object(map) = params {
-                        map.clone()
-                    } else {
-                        serde_json::Map::new()
-                    };
-
-                    auth_params.insert("NS".to_string(), Value::String(namespace.clone()));
-                    auth_params.insert("DB".to_string(), Value::String(database.clone()));
-                    auth_params.insert("SC".to_string(), Value::String(scope.clone()));
-
-                    let message = crate::surreal_client::RpcMessage::new("signin")
-                        .with_id(2)
-                        .with_params(vec![Value::Object(auth_params)]);
-
-                    let response = engine.rpc(message).await?;
-
-                    if let Value::String(token) = response {
-                        if let Some(http_engine) = engine.as_any_mut().downcast_mut::<HttpEngine>()
-                        {
-                            http_engine.set_token(Some(token));
-                        }
-                    }
-                }
-                AuthParams::Token(token) => {
-                    let message = crate::surreal_client::RpcMessage::new("authenticate")
-                        .with_id(2)
-                        .with_params(vec![Value::String(token.clone())]);
-
-                    engine.rpc(message).await?;
-
-                    if let Some(http_engine) = engine.as_any_mut().downcast_mut::<HttpEngine>() {
-                        http_engine.set_token(Some(token.clone()));
-                    }
-                }
-            }
-        }
-
-        // Check version if enabled
-        if self.version_check {
-            let message = crate::surreal_client::RpcMessage::new("version").with_id(3);
-            let _version = engine.rpc(message).await?;
-            // TODO: Add actual version compatibility check
-        }
-
-        // Create the immutable client
-        Ok(SurrealClient::new(engine, self.namespace, self.database))
-    }
-    */
 }
 
 #[cfg(test)]

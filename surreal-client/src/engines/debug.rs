@@ -61,10 +61,6 @@ impl Engine for DebugEngine {
         println!("✅ CBOR Response: {:?}", response);
         Ok(response)
     }
-
-    fn supports_cbor(&self) -> bool {
-        self.inner.supports_cbor()
-    }
 }
 
 #[cfg(test)]

@@ -1,22 +1,21 @@
 # Surreal Client
 
-A comprehensive SurrealDB client library for Rust with support for both HTTP and WebSocket connections.
+A SurrealDB client library for Rust speaking native CBOR over WebSocket.
+
+`ws://`, `wss://`, and `cbor://` URLs all route through the same CBOR engine — `ws://` is the canonical scheme, `cbor://` is accepted as an alias for backward compatibility.
 
 ## Features
 
-- **CBOR Websocket engine**: Communicates with SurrealDB over CBOR WS, no JSON (unless you need)
-- **Native types support**: Implementation for native types at binary level (like Decimal or Geometry)
-- **Type protocol and type-erasing**: Store and retrieve native rust types through type-erased interface
-- **Immutable Client Design**: Thread-safe, cloneable client with unique sessions
-- **Builder Pattern Connection**: Intuitive connection configuration
-- **Debug mode support**: Outputs requests/responses - for debugging
-- **Multiple Authentication Methods**: Root, namespace, database, scope, and JWT token auth
-- **Full CRUD Operations**: Create, read, update, delete with type safety
-- **Query Interface**: Execute raw SurrealQL with parameter binding (supporting all Surreal types natively)
-- **Session Management**: Variables and state management per client
-- **Relation Support**: Create and query record relationships
-- **Transaction Support**: Execute multi-statement transactions
-- **Import/Export**: Database backup and restore (HTTP only)
+- **CBOR WebSocket engine**: Native CBOR wire format. Preserves SurrealDB types (Datetime, Duration, RecordId, Bytes, Decimal) that JSON cannot carry faithfully.
+- **JSON convenience methods**: `create`/`select`/`update`/`merge`/`patch`/`delete`/`query` accept and return `serde_json::Value`, transcoded to/from CBOR on the wire. Use `query_cbor` when fidelity matters.
+- **Immutable Client Design**: Thread-safe, cloneable client with unique sessions.
+- **Builder Pattern Connection**: Intuitive connection configuration.
+- **Debug mode support**: Outputs requests/responses for debugging.
+- **Multiple Authentication Methods**: Root, namespace, database, scope, and JWT token auth.
+- **Query Interface**: Execute raw SurrealQL with parameter binding.
+- **Session Management**: Variables and state management per client.
+- **Relation Support**: Create and query record relationships.
+- **Transaction Support**: Execute multi-statement transactions.
 
 ## Quick Start
 

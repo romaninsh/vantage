@@ -9,9 +9,6 @@ pub enum SurrealError {
     #[error("Authentication error: {0}")]
     Auth(String),
 
-    #[error("RPC error: {0}")]
-    Rpc(String),
-
     #[error("Serialization error: {0}")]
     Serialization(String),
 

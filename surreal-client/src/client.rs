@@ -5,60 +5,6 @@ use serde_json::{Value, json};
 
 use crate::{Engine, RecordId, RecordRange, Result, SessionState, SurrealError, Table};
 
-// TODO: Step 1 - Define core data structures and traits ✅ COMPLETED
-// - Create Engine trait for HTTP/WebSocket abstraction ✅
-// - Define RpcMessage struct for method calls ✅
-// - Define connection parameters and auth structures ✅
-// - Create error types for different failure modes ✅
-
-// TODO: Step 2 - Implement HTTP engine ✅ COMPLETED
-// - Create HttpEngine struct with reqwest client ✅
-// - Implement basic HTTP connectivity (connect, status, health) ✅
-// - Add JSON content negotiation ✅
-// - Handle authentication headers and session management ✅
-
-// TODO: Step 3 - Implement WebSocket engine ✅ COMPLETED
-// - Create WsEngine struct with tokio-tungstenite client ✅
-// - Implement WebSocket connectivity and message handling ✅
-// - Add real-time subscription support ✅
-// - Handle authentication for WebSocket connections ✅
-
-// TODO: Step 4 - Create unified SurrealClient interface ✅ COMPLETED
-// - Combine HTTP and WebSocket engines under single client ✅
-// - Add automatic engine selection based on URL scheme ✅
-// - Implement all SurrealDB methods with proper error handling ✅
-// - Add session state management and authentication ✅
-
-// TODO: Step 5 - Add comprehensive testing ✅ COMPLETED
-// - Create unit tests for individual components ✅
-// - Add integration tests with real SurrealDB instances ✅
-// - Test both HTTP and WebSocket engines ✅
-// - Verify error handling and edge cases ✅
-
-// TODO: Step 6 - Performance optimizations ✅ COMPLETED
-// - Add connection pooling for HTTP engine ✅
-// - Optimize JSON serialization/deserialization ✅
-// - Add request/response caching where appropriate ✅
-// - Implement proper resource cleanup ✅
-
-// TODO: Step 7 - Documentation and examples ✅ COMPLETED
-// - Add comprehensive rustdoc comments ✅
-// - Create usage examples for common scenarios ✅
-// - Document configuration options and best practices ✅
-// - Add troubleshooting guide ✅
-
-// TODO: Step 8 - Advanced features ✅ COMPLETED
-// - Add live query support for WebSocket connections ✅
-// - Implement batch operations and transactions ✅
-// - Add database import/export functionality ✅
-// - Support for machine learning model operations ✅
-
-// TODO: Step 9 - Security enhancements ✅ COMPLETED
-// - Implement proper authentication token handling ✅
-// - Add TLS/SSL verification for secure connections ✅
-// - Support for JWT token refresh ✅
-// - Add timeout configuration and handling ✅
-
 pub struct SurrealClient {
     engine: Arc<tokio::sync::Mutex<Box<dyn Engine>>>,
     session: SessionState,
@@ -105,12 +51,6 @@ impl SurrealClient {
     /// Check if debug mode is enabled
     pub fn is_debug(&self) -> bool {
         self.debug
-    }
-
-    /// Check if this client supports native CBOR
-    pub async fn supports_cbor(&self) -> bool {
-        let engine = self.engine.lock().await;
-        engine.supports_cbor()
     }
 
     /// Set a parameter for the session

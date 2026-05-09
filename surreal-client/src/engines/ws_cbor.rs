@@ -1,8 +1,9 @@
 //! WebSocket CBOR Engine for SurrealDB
 //!
-//! This engine provides native CBOR support for SurrealDB WebSocket connections,
-//! eliminating JSON/CBOR conversion overhead and preserving native CBOR types
-//! like datetime and duration with proper precision.
+//! Connects with the `cbor` WebSocket subprotocol and exchanges CBOR-encoded
+//! binary frames. Preserves native types (datetime, duration, recordid, bytes)
+//! that JSON cannot carry. Accepts `ws://`, `wss://`, or `cbor://` URLs;
+//! `cbor://` is treated as `ws://`.
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
@@ -36,40 +37,38 @@ struct RouterRequest {
 
 type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
-/// WebSocket engine using native CBOR protocol for SurrealDB communication.
+/// WebSocket engine using native CBOR for SurrealDB.
 ///
-/// This engine connects to SurrealDB using the "cbor" WebSocket subprotocol,
-/// which allows sending and receiving data in native CBOR format without
-/// JSON conversion overhead. It preserves type fidelity for complex types
-/// like datetime and duration through CBOR tags.
+/// Connects with `Sec-WebSocket-Protocol: cbor` and sends/receives binary
+/// CBOR frames. Authentication and `use ns/db` are performed during
+/// `from_connection` so the returned engine is ready to issue queries.
 pub struct WsCborEngine {
-    /// WebSocket sink for sending messages
     sink: Arc<Mutex<SplitSink<WsStream, Message>>>,
-    /// WebSocket stream for receiving messages
     stream: Arc<Mutex<SplitStream<WsStream>>>,
-    /// Message ID counter for request/response correlation
     msg_id: AtomicU64,
-    /// Pending requests awaiting responses
     pending_requests: Arc<Mutex<HashMap<String, oneshot::Sender<CborValue>>>>,
-    /// Handle for the message processing task
     task_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl WsCborEngine {
-    /// Create a new CBOR WebSocket engine from a connection configuration
     pub async fn from_connection(connect: &SurrealConnection) -> Result<Self> {
-        let base_url = connect.url.as_ref().unwrap();
+        let base_url = connect.url.as_ref().ok_or_else(|| {
+            SurrealError::Connection("URL is required to connect".to_string())
+        })?;
 
-        let ws_url = if base_url.ends_with("/rpc") {
-            base_url.clone()
+        let mut ws_url = if let Some(rest) = base_url.strip_prefix("cbor://") {
+            format!("ws://{}", rest)
         } else {
-            format!("{}/rpc", base_url)
+            base_url.clone()
         };
+        if !ws_url.ends_with("/rpc") {
+            if ws_url.ends_with('/') {
+                ws_url.push_str("rpc");
+            } else {
+                ws_url.push_str("/rpc");
+            }
+        }
 
-        // Convert cbor:// to ws://
-        let ws_url = ws_url.replace("cbor://", "ws://");
-
-        // Create WebSocket request with CBOR protocol
         let mut request = ws_url
             .as_str()
             .into_client_request()
@@ -95,10 +94,12 @@ impl WsCborEngine {
 
         let task_handle = engine.handle_messages();
         engine.task_handle = Some(task_handle);
+
+        connect.init_engine(&mut engine).await?;
+
         Ok(engine)
     }
 
-    /// Start the message handling loop for incoming WebSocket messages
     fn handle_messages(&self) -> tokio::task::JoinHandle<()> {
         let stream = Arc::clone(&self.stream);
         let pending_requests = Arc::clone(&self.pending_requests);
@@ -128,7 +129,6 @@ impl WsCborEngine {
                             // Parse CBOR response: {id, result} or {id, error}
                             match ciborium::from_reader(binary.as_ref()) {
                                 Ok(cbor_response) => {
-                                    // Handle map format: {id: "0", result: "..."}
                                     if let CborValue::Map(map) = cbor_response {
                                         let mut id_str = None;
                                         let mut result = None;
@@ -189,19 +189,6 @@ impl WsCborEngine {
 
 #[async_trait]
 impl Engine for WsCborEngine {
-    /// JSON interface is not supported - use send_message_cbor instead
-    async fn send_message(
-        &mut self,
-        _method: &str,
-        _params: serde_json::Value,
-    ) -> Result<serde_json::Value> {
-        todo!("JSON interface not supported in CBOR engine - use send_message_cbor instead")
-    }
-
-    /// Send a message using native CBOR format
-    ///
-    /// This method sends requests to SurrealDB using the native CBOR protocol,
-    /// preserving type information and avoiding JSON conversion overhead.
     async fn send_message_cbor(&mut self, method: &str, params: CborValue) -> Result<CborValue> {
         let (tx, rx) = oneshot::channel();
         let id = self.msg_id.fetch_add(1, SeqCst).to_string();
@@ -211,14 +198,12 @@ impl Engine for WsCborEngine {
             pending.insert(id.clone(), tx);
         }
 
-        // Create RouterRequest like official SDK
         let request = RouterRequest {
             id: id.clone(),
             method: method.to_string(),
             params: Some(params),
         };
 
-        // Convert to CBOR map format: {id, method, params}
         let mut request_map = vec![
             (
                 CborValue::Text("id".to_string()),
@@ -236,7 +221,6 @@ impl Engine for WsCborEngine {
 
         let rpc_message = CborValue::Map(request_map);
 
-        // Encode as CBOR
         let mut payload = Vec::new();
         ciborium::into_writer(&rpc_message, &mut payload)
             .map_err(|e| SurrealError::Protocol(format!("CBOR encoding failed: {}", e)))?;
@@ -248,18 +232,15 @@ impl Engine for WsCborEngine {
                 .map_err(|e| SurrealError::Connection(format!("WS send failed: {}", e)))?;
         }
 
-        // Wait for response
         let response = rx
             .await
             .map_err(|_| SurrealError::Protocol("Response channel closed".to_string()))?;
 
-        // Check for error in CBOR response
         if let CborValue::Map(map) = &response {
             for (key, value) in map {
                 if let CborValue::Text(k) = key
                     && k == "error"
                 {
-                    // Try to parse structured server error
                     if let CborValue::Map(error_map) = value {
                         let mut code = -1;
                         let mut message = String::new();
@@ -287,17 +268,12 @@ impl Engine for WsCborEngine {
                         }
                     }
 
-                    // Fallback to generic protocol error
                     return Err(SurrealError::Protocol(format!("Server error: {:?}", value)));
                 }
             }
         }
 
         Ok(response)
-    }
-
-    fn supports_cbor(&self) -> bool {
-        true
     }
 }
 
