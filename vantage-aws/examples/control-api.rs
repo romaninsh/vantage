@@ -314,19 +314,46 @@ impl ModelFactory for ControlApiFactory {
     fn for_name(&self, name: &str) -> Option<(AnyTable, Mode)> {
         let db = self.0.clone();
         let (table, mode): (AnyTable, Mode) = match name {
-            "product" => (AnyTable::from_table(Product::dynamo_table(db)), Mode::Single),
+            "product" => (
+                AnyTable::from_table(Product::dynamo_table(db)),
+                Mode::Single,
+            ),
             "products" => (AnyTable::from_table(Product::dynamo_table(db)), Mode::List),
-            "version" => (AnyTable::from_table(Version::dynamo_table(db)), Mode::Single),
+            "version" => (
+                AnyTable::from_table(Version::dynamo_table(db)),
+                Mode::Single,
+            ),
             "versions" => (AnyTable::from_table(Version::dynamo_table(db)), Mode::List),
-            "deployment" => (AnyTable::from_table(Deployment::dynamo_table(db)), Mode::Single),
-            "deployments" => (AnyTable::from_table(Deployment::dynamo_table(db)), Mode::List),
-            "environment" => (AnyTable::from_table(Environment::dynamo_table(db)), Mode::Single),
-            "environments" => (AnyTable::from_table(Environment::dynamo_table(db)), Mode::List),
+            "deployment" => (
+                AnyTable::from_table(Deployment::dynamo_table(db)),
+                Mode::Single,
+            ),
+            "deployments" => (
+                AnyTable::from_table(Deployment::dynamo_table(db)),
+                Mode::List,
+            ),
+            "environment" => (
+                AnyTable::from_table(Environment::dynamo_table(db)),
+                Mode::Single,
+            ),
+            "environments" => (
+                AnyTable::from_table(Environment::dynamo_table(db)),
+                Mode::List,
+            ),
             "team" => (AnyTable::from_table(Team::dynamo_table(db)), Mode::Single),
             "teams" => (AnyTable::from_table(Team::dynamo_table(db)), Mode::List),
-            "subscription" => (AnyTable::from_table(Subscription::dynamo_table(db)), Mode::Single),
-            "subscriptions" => (AnyTable::from_table(Subscription::dynamo_table(db)), Mode::List),
-            "dataport" => (AnyTable::from_table(DataPort::dynamo_table(db)), Mode::Single),
+            "subscription" => (
+                AnyTable::from_table(Subscription::dynamo_table(db)),
+                Mode::Single,
+            ),
+            "subscriptions" => (
+                AnyTable::from_table(Subscription::dynamo_table(db)),
+                Mode::List,
+            ),
+            "dataport" => (
+                AnyTable::from_table(DataPort::dynamo_table(db)),
+                Mode::Single,
+            ),
             "dataports" => (AnyTable::from_table(DataPort::dynamo_table(db)), Mode::List),
             _ => return None,
         };
@@ -403,15 +430,15 @@ impl Renderer for CborRenderer {
         for (id, rec) in records {
             let mut row = vec![id.clone()];
             for c in &columns {
-                row.push(
-                    rec.get(c)
-                        .map(cbor_short)
-                        .unwrap_or_default(),
-                );
+                row.push(rec.get(c).map(cbor_short).unwrap_or_default());
             }
             println!("{}", row.join("\t"));
         }
-        println!("\n({} record{})", records.len(), if records.len() == 1 { "" } else { "s" });
+        println!(
+            "\n({} record{})",
+            records.len(),
+            if records.len() == 1 { "" } else { "s" }
+        );
     }
 
     fn render_record(
@@ -475,9 +502,8 @@ fn cbor_to_json_string(v: &CborValue) -> String {
     let json: serde_json::Value =
         match ciborium::de::from_reader(buf.as_slice()).and_then(|val: CborValue| {
             // re-serialize via serde_json's bridge
-            serde_json::to_value(&val).map_err(|_| {
-                ciborium::de::Error::Semantic(None, "json conversion failed".into())
-            })
+            serde_json::to_value(&val)
+                .map_err(|_| ciborium::de::Error::Semantic(None, "json conversion failed".into()))
         }) {
             Ok(j) => j,
             Err(_) => return format!("{v:?}"),

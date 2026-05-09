@@ -94,7 +94,10 @@ impl TableSource for DynamoDB {
     }
 
     fn eq_condition(field: &str, value: &str) -> vantage_core::Result<Self::Condition> {
-        Ok(DynamoCondition::eq(field, AttributeValue::S(value.to_string())))
+        Ok(DynamoCondition::eq(
+            field,
+            AttributeValue::S(value.to_string()),
+        ))
     }
 
     fn to_any_column<Type: ColumnType>(
@@ -187,29 +190,21 @@ impl TableSource for DynamoDB {
         E: Entity<Self::Value>,
     {
         let filter = resolve_conditions(table.conditions()).await?;
-        // DynamoDB applies FilterExpression *after* Limit, so Scan(Limit=1)
-        // with a filter usually returns zero items even when matches exist
-        // further down the partition. Drop the Limit when a filter is set
-        // and let `transport::scan` paginate; we still only consume the
-        // first match below.
-        let scan_limit = if filter.is_empty() { Some(1) } else { None };
-        let resp = transport::scan(
-            self.aws(),
-            table.table_name(),
-            scan_limit,
-            false,
-            Some(&filter),
-        )
-        .await?;
-        let items = resp
-            .get("Items")
-            .and_then(|v| v.as_array())
-            .ok_or_else(|| error!("DynamoDB Scan response missing Items array"))?;
-        let Some(item) = items.first() else {
+        // DynamoDB applies FilterExpression *after* Limit, so a naive
+        // Scan(Limit=1) with a filter routinely returns zero even when
+        // matches exist. Page through with a moderate per-page chunk and
+        // break on the first match — bounds memory and round-trips while
+        // still walking the table when the filter is selective. Without a
+        // filter, page_limit=1 short-circuits after a single round-trip.
+        let page_limit = if filter.is_empty() { 1 } else { 100 };
+        let item =
+            transport::scan_first_match(self.aws(), table.table_name(), page_limit, Some(&filter))
+                .await?;
+        let Some(item) = item else {
             return Ok(None);
         };
         let id_field = id_field_name(table);
-        let (id, record) = item_to_record(&id_field, item)?;
+        let (id, record) = item_to_record(&id_field, &item)?;
         Ok(Some((id, record)))
     }
 

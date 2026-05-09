@@ -90,7 +90,8 @@ impl AwsAccount {
         // 1. Static credentials in `~/.aws/credentials [profile]`.
         let creds_path = home_dir.join(".aws/credentials");
         if let Ok(creds_text) = std::fs::read_to_string(&creds_path)
-            && let Some(creds) = parse_profile(&creds_text, profile, /* config_style = */ false)
+            && let Some(creds) =
+                parse_profile(&creds_text, profile, /* config_style = */ false)
             && let (Some(ak), Some(sk)) = (
                 creds.get("aws_access_key_id"),
                 creds.get("aws_secret_access_key"),
@@ -107,25 +108,19 @@ impl AwsAccount {
             });
         }
 
-        // 2. SSO or assume-role profile: shell out to the AWS CLI's
-        //    canonical export. Requires `aws sso login` to have run
-        //    recently for SSO profiles.
-        if let Some((ak, sk, token)) = export_credentials_via_aws_cli(profile)? {
-            return Ok(Self {
-                inner: Arc::new(Inner {
-                    access_key: ak,
-                    secret_key: sk,
-                    session_token: Some(token),
-                    region,
-                    http: reqwest::Client::new(),
-                }),
-            });
-        }
-
-        Err(error!(
-            "AWS profile not resolvable — no static creds in ~/.aws/credentials and `aws configure export-credentials` returned nothing",
-            profile = profile
-        ))
+        // 2. SSO, assume-role, or `credential_process` profile: shell
+        //    out to the AWS CLI's canonical export. Requires
+        //    `aws sso login` to have run recently for SSO profiles.
+        let (ak, sk, token) = export_credentials_via_aws_cli(profile)?;
+        Ok(Self {
+            inner: Arc::new(Inner {
+                access_key: ak,
+                secret_key: sk,
+                session_token: token,
+                region,
+                http: reqwest::Client::new(),
+            }),
+        })
     }
 
     /// Try [`from_env`](Self::from_env), fall back to
@@ -260,15 +255,16 @@ fn resolve_region_for(home_dir: &std::path::Path, profile: &str) -> Result<Strin
 }
 
 /// Shell out to `aws configure export-credentials --profile X --format env`
-/// to materialise creds for SSO and assume-role profiles. The CLI prints
-/// `export AWS_ACCESS_KEY_ID=...` / `export AWS_SECRET_ACCESS_KEY=...` /
-/// `export AWS_SESSION_TOKEN=...` lines to stdout; we parse just those
-/// three. Returns `Ok(None)` when the CLI isn't installed (so the caller
-/// can choose a clearer error), and `Err(...)` for an explicit CLI failure
-/// (e.g. expired SSO token — caller surfaces stderr).
-fn export_credentials_via_aws_cli(
-    profile: &str,
-) -> Result<Option<(String, String, String)>> {
+/// to materialise creds for SSO, assume-role, and `credential_process`
+/// profiles. The CLI prints `export AWS_ACCESS_KEY_ID=...` /
+/// `export AWS_SECRET_ACCESS_KEY=...` / (optionally)
+/// `export AWS_SESSION_TOKEN=...` lines to stdout. The session token is
+/// absent for `credential_process` returning permanent IAM creds, so it's
+/// optional in the return shape. Every failure path — CLI not installed,
+/// CLI exit non-zero, output missing access/secret — surfaces as `Err`
+/// with a specific message rather than collapsing into a generic
+/// "profile not resolvable".
+fn export_credentials_via_aws_cli(profile: &str) -> Result<(String, String, Option<String>)> {
     let output = match std::process::Command::new("aws")
         .args([
             "configure",
@@ -281,7 +277,12 @@ fn export_credentials_via_aws_cli(
         .output()
     {
         Ok(o) => o,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(error!(
+                "AWS CLI not installed — needed to materialise SSO, assume-role, or credential_process credentials. Install via mise or your package manager.",
+                profile = profile
+            ));
+        }
         Err(e) => return Err(error!(format!("failed to spawn `aws`: {e}"))),
     };
     if !output.status.success() {
@@ -309,9 +310,12 @@ fn export_credentials_via_aws_cli(
             }
         }
     }
-    match (access_key, secret_key, session_token) {
-        (Some(ak), Some(sk), Some(token)) => Ok(Some((ak, sk, token))),
-        _ => Ok(None),
+    match (access_key, secret_key) {
+        (Some(ak), Some(sk)) => Ok((ak, sk, session_token)),
+        _ => Err(error!(
+            "`aws configure export-credentials` returned no usable credentials (missing AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY)",
+            profile = profile
+        )),
     }
 }
 

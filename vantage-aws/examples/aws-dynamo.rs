@@ -33,7 +33,10 @@ use vantage_table::traits::table_like::TableLike;
 use vantage_types::EmptyEntity;
 
 #[derive(Parser)]
-#[command(name = "aws-dynamo", about = "List DynamoDB tables and dump their contents")]
+#[command(
+    name = "aws-dynamo",
+    about = "List DynamoDB tables and dump their contents"
+)]
 struct Cli {
     /// Override the AWS region (sets AWS_REGION before credential load).
     #[arg(long)]
@@ -108,8 +111,7 @@ async fn main() -> Result<()> {
 }
 
 async fn scan_table(db: &DynamoDB, name: &str, id_field: &str, sample: usize) {
-    let table: Table<DynamoDB, EmptyEntity> =
-        Table::new(name, db.clone()).with_id_column(id_field);
+    let table: Table<DynamoDB, EmptyEntity> = Table::new(name, db.clone()).with_id_column(id_field);
 
     println!("=== {} (id={}) ===", name, id_field);
     match table.list_values().await {
