@@ -1,0 +1,77 @@
+name: Publish on merge
+
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: publish
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Detect crates whose version changed
+        id: detect
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+          # Skip the empty-before case (initial push, branch create, force-push to a new sha that has no parent on main).
+          if [ "${BEFORE}" = "0000000000000000000000000000000000000000" ] || [ -z "${BEFORE}" ]; then
+            echo "No before-sha — skipping."
+            echo "crates=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          mapfile -t toml_changes < <(git diff --name-only "${BEFORE}" "${AFTER}" -- '**/Cargo.toml' | sort -u)
+
+          crates=()
+          for f in "${toml_changes[@]}"; do
+            dir=$(dirname "$f")
+            [ "$dir" = "." ] && continue
+            grep -q '^\[package\]' "$f" || continue
+            grep -qE '^publish\s*=\s*false' "$f" && continue
+            new_ver=$(awk -F'"' '/^version = "/ {print $2; exit}' "$f")
+            old_ver=$(git show "${BEFORE}:$f" 2>/dev/null \
+                       | awk -F'"' '/^version = "/ {print $2; exit}' || true)
+            if [ -n "${new_ver}" ] && [ "${new_ver}" != "${old_ver}" ]; then
+              crates+=("$dir")
+            fi
+          done
+
+          if [ ${#crates[@]} -eq 0 ]; then
+            echo "No version bumps in this push."
+            echo "crates=" >> "$GITHUB_OUTPUT"
+          else
+            printf 'Will publish: %s\n' "${crates[@]}"
+            {
+              echo "crates<<EOF"
+              printf '%s\n' "${crates[@]}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: cargo login
+        if: steps.detect.outputs.crates != ''
+        run: cargo login "${{ secrets.CRATES_IO_API_TOKEN }}"
+
+      - name: Publish each bumped crate
+        if: steps.detect.outputs.crates != ''
+        env:
+          CRATES: ${{ steps.detect.outputs.crates }}
+        run: |
+          set -euo pipefail
+          for crate in $CRATES; do
+            echo "::group::Publishing $crate"
+            (cd "$crate" && cargo publish --no-verify)
+            echo "::endgroup::"
+          done
