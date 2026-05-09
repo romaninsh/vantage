@@ -139,15 +139,16 @@ impl RestApi {
         // query params (and may treat them as strict filters that
         // return empty), so we leave them off.
         if !self.no_pagination
-            && let Some(p) = pagination {
-                let page_value = if self.pagination.skip_based {
-                    p.skip().to_string()
-                } else {
-                    p.get_page().to_string()
-                };
-                params.push((self.pagination.page.clone(), page_value));
-                params.push((self.pagination.limit.clone(), p.limit().to_string()));
-            }
+            && let Some(p) = pagination
+        {
+            let page_value = if self.pagination.skip_based {
+                p.skip().to_string()
+            } else {
+                p.get_page().to_string()
+            };
+            params.push((self.pagination.page.clone(), page_value));
+            params.push((self.pagination.limit.clone(), p.limit().to_string()));
+        }
 
         // Conditions: each `eq` becomes `?field=value`. Multiple
         // conditions AND together (JSON Server semantics).
@@ -197,9 +198,10 @@ impl RestApi {
         // and stops asking for more.
         if self.no_pagination
             && let Some(p) = pagination
-                && p.get_page() > 1 {
-                    return Ok(IndexMap::new());
-                }
+            && p.get_page() > 1
+        {
+            return Ok(IndexMap::new());
+        }
 
         let url = format!(
             "{}{}",
