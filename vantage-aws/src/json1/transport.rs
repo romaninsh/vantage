@@ -47,8 +47,7 @@ pub(crate) async fn json_aws_call(
              or set AWS_REGION before calling AwsAccount::from_env"
         ));
     }
-    let host = format!("{service}.{region}.amazonaws.com");
-    let url = format!("https://{host}/");
+    let (url, host) = account.endpoint_for(service);
 
     let body_bytes = serde_json::to_vec(body)
         .map_err(|e| error!("Failed to serialise JSON-1.1 request body", detail = e))?;

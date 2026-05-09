@@ -56,5 +56,5 @@ name = "aws-dynamo"
 path = "examples/aws-dynamo.rs"
 
 [[example]]
-name = "control-api"
-path = "examples/control-api.rs"
+name = "dynamo-single-table"
+path = "examples/dynamo-single-table.rs"

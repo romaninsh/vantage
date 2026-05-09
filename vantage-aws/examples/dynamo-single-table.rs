@@ -1,5 +1,5 @@
-//! `control-api` — model-driven CLI over the `ddb-odieplat-mercplat-dev-api`
-//! single-table design.
+//! `dynamo-single-table` — model-driven CLI over a DynamoDB single-table
+//! design.
 //!
 //! Same shape as the `aws-cli` example, but instead of multiple physical AWS
 //! services it speaks to one DynamoDB table that stores **7 logical entities**
@@ -22,12 +22,12 @@
 //! Examples:
 //!
 //! ```sh
-//! export AWS_PROFILE=251736013895_ECPAdmin   # SSO profile; auto-resolved
-//! control-api products
-//! control-api product id="PRODUCT#381c041d-6f36-40fb-8ecd-bd3c0a3f8397"
-//! control-api product[0] :versions
-//! control-api product[0] :deployments[0]
-//! control-api subscriptions
+//! export AWS_PROFILE=my-profile   # SSO profile; auto-resolved if set
+//! dynamo-single-table products
+//! dynamo-single-table product id="PRODUCT#381c041d-6f36-40fb-8ecd-bd3c0a3f8397"
+//! dynamo-single-table product[0] :versions
+//! dynamo-single-table product[0] :deployments[0]
+//! dynamo-single-table subscriptions
 //! ```
 //!
 //! v0 caveat: `DynamoId` is partition-key-only, so `list_values` keys items
@@ -50,7 +50,7 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_like::TableLike;
 use vantage_types::{Record, entity};
 
-const TABLE: &str = "ddb-odieplat-mercplat-dev-api";
+const TABLE: &str = "vantage-demo-single-table";
 
 // ── Entity types ─────────────────────────────────────────────────────────
 //
@@ -204,7 +204,12 @@ impl Version {
             .with_column_of::<Option<bool>>("is_active")
             .with_column_of::<Option<bool>>("is_decommissioned")
             .with_column_of::<Option<String>>("created_at")
-            .with_one("product", "PK", Product::dynamo_table);
+            .with_one("product", "PK", Product::dynamo_table)
+            // Joins on Version's id (SK = "VERSION#<v>") vs Deployment's
+            // `version_sk` attribute, which we denormalise onto each
+            // deployment item for exactly this purpose. See README-DYNAMODB.md
+            // for the cross-product collapse caveat — the join is single-field.
+            .with_many("deployments", "version_sk", Deployment::dynamo_table);
         t.add_condition(DynamoCondition::begins_with("SK", "VERSION#"));
         t
     }
@@ -218,11 +223,21 @@ impl Deployment {
             .with_column_of::<Option<String>>("PK")
             .with_column_of::<Option<String>>("environment_id")
             .with_column_of::<Option<String>>("version_id")
+            // Denormalised join key for `Version :deployments`. Carries the
+            // same string as the version row's SK ("VERSION#<v>"), so the
+            // single-field IN-condition produced by `with_many` matches.
+            .with_column_of::<Option<String>>("version_sk")
             .with_column_of::<Option<String>>("deployment_status")
             .with_column_of::<Option<bool>>("is_active")
             .with_column_of::<Option<bool>>("is_superseded")
             .with_column_of::<Option<String>>("created_at")
             .with_one("product", "PK", Product::dynamo_table);
+        // Both Deployment and Environment have SKs starting with `ENV#`
+        // (Environment is `ENV#<name>#<uuid>`, Deployment is
+        // `ENV#<env>#VERSION#<v>#DEPLOYMENT#<id>`), so we also pin the
+        // partition to the per-product space — Environments live under
+        // `PK = METADATA`.
+        t.add_condition(DynamoCondition::begins_with("PK", "PRODUCT#"));
         t.add_condition(DynamoCondition::begins_with("SK", "ENV#"));
         t
     }
@@ -513,15 +528,16 @@ fn cbor_to_json_string(v: &CborValue) -> String {
 
 #[derive(Parser)]
 #[command(
-    name = "control-api",
-    about = "Model-driven CLI over the ddb-odieplat-mercplat-dev-api single-table design",
+    name = "dynamo-single-table",
+    about = "Model-driven CLI over a DynamoDB single-table design",
     long_about = "Walks the seven logical entities (product, version, deployment, environment, team, subscription, dataport) \
                   that share one DynamoDB table. First arg is a model name (singular drops into single-record mode, plural lists). \
-                  Chain field=value filters, [N] indices, and :relation traversals after that."
+                  Chain field=value filters, [N] indices, and :relation traversals after that. \
+                  Set AWS_ENDPOINT_URL=http://localhost:8000 to point at a local DynamoDB container."
 )]
 struct Cli {
     /// Override the AWS region (sets AWS_REGION before credential load).
-    #[arg(long, global = true, default_value = "eu-west-1")]
+    #[arg(long, global = true, default_value = "eu-west-2")]
     region: String,
 
     /// Positional tokens: model, filters, indices, traversals.
@@ -541,7 +557,7 @@ async fn main() -> Result<()> {
 
     if cli.args.is_empty() {
         eprintln!(
-            "usage: control-api [--region REGION] <model> [field=value ...] [[N]] [:relation ...]"
+            "usage: dynamo-single-table [--region REGION] <model> [field=value ...] [[N]] [:relation ...]"
         );
         eprintln!("\nKnown models:");
         for n in KNOWN_MODELS {

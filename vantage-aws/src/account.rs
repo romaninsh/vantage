@@ -23,6 +23,11 @@ struct Inner {
     secret_key: String,
     session_token: Option<String>,
     region: String,
+    /// Override for the AWS service endpoint URL. Defaults to
+    /// `https://{service}.{region}.amazonaws.com/`. Set when pointing at
+    /// DynamoDB Local, LocalStack, or a custom endpoint. Picked up from
+    /// `AWS_ENDPOINT_URL` automatically by every constructor below.
+    endpoint: Option<String>,
     http: reqwest::Client,
 }
 
@@ -39,6 +44,7 @@ impl AwsAccount {
                 secret_key: secret_key.into(),
                 session_token: None,
                 region: region.into(),
+                endpoint: env_endpoint(),
                 http: reqwest::Client::new(),
             }),
         }
@@ -61,6 +67,7 @@ impl AwsAccount {
                 secret_key,
                 session_token,
                 region,
+                endpoint: env_endpoint(),
                 http: reqwest::Client::new(),
             }),
         })
@@ -103,6 +110,7 @@ impl AwsAccount {
                     secret_key: sk.clone(),
                     session_token: creds.get("aws_session_token").cloned(),
                     region,
+                    endpoint: env_endpoint(),
                     http: reqwest::Client::new(),
                 }),
             });
@@ -118,6 +126,7 @@ impl AwsAccount {
                 secret_key: sk,
                 session_token: token,
                 region,
+                endpoint: env_endpoint(),
                 http: reqwest::Client::new(),
             }),
         })
@@ -145,6 +154,26 @@ impl AwsAccount {
                 secret_key: inner.secret_key.clone(),
                 session_token: inner.session_token.clone(),
                 region: region.into(),
+                endpoint: inner.endpoint.clone(),
+                http: inner.http.clone(),
+            }),
+        }
+    }
+
+    /// Return a copy pointing at a custom service endpoint URL (e.g.
+    /// `http://localhost:8000` for DynamoDB Local, or a LocalStack URL).
+    /// SigV4 still applies — the host derived from the URL is folded
+    /// into the canonical request, so the local server must accept the
+    /// signature (DynamoDB Local does, with any access/secret values).
+    pub fn with_endpoint(self, endpoint: impl Into<String>) -> Self {
+        let inner = &self.inner;
+        Self {
+            inner: std::sync::Arc::new(Inner {
+                access_key: inner.access_key.clone(),
+                secret_key: inner.secret_key.clone(),
+                session_token: inner.session_token.clone(),
+                region: inner.region.clone(),
+                endpoint: Some(endpoint.into()),
                 http: inner.http.clone(),
             }),
         }
@@ -169,12 +198,35 @@ impl AwsAccount {
     pub(crate) fn http(&self) -> &reqwest::Client {
         &self.inner.http
     }
+
+    /// Resolve the endpoint URL and `Host` header for a request to
+    /// `service`. Returns `(url, host)` — the URL ends in `/`, the host
+    /// is what goes into the SigV4 canonical request and the wire
+    /// `Host` header.
+    pub(crate) fn endpoint_for(&self, service: &str) -> (String, String) {
+        match self.inner.endpoint.as_deref() {
+            Some(ep) => {
+                let trimmed = ep.trim_end_matches('/');
+                let host = trimmed
+                    .split_once("://")
+                    .map(|(_, rest)| rest)
+                    .unwrap_or(trimmed)
+                    .to_string();
+                (format!("{trimmed}/"), host)
+            }
+            None => {
+                let host = format!("{service}.{}.amazonaws.com", self.inner.region);
+                (format!("https://{host}/"), host)
+            }
+        }
+    }
 }
 
 impl std::fmt::Debug for AwsAccount {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AwsAccount")
             .field("region", &self.inner.region)
+            .field("endpoint", &self.inner.endpoint)
             .field("access_key", &"<redacted>")
             .field("secret_key", &"<redacted>")
             .field(
@@ -187,6 +239,15 @@ impl std::fmt::Debug for AwsAccount {
 
 fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
+}
+
+/// Picks `AWS_ENDPOINT_URL` out of the environment so every constructor
+/// honours it without forcing callers to chain `.with_endpoint(...)`. The
+/// AWS CLI uses the same env var for the same purpose.
+fn env_endpoint() -> Option<String> {
+    std::env::var("AWS_ENDPOINT_URL")
+        .ok()
+        .filter(|s| !s.is_empty())
 }
 
 /// Pull a named profile's key=value pairs out of an AWS-style INI file.
