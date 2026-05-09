@@ -35,8 +35,8 @@ pub fn events_table(aws: AwsAccount) -> Table<AwsAccount, LogEvent> {
         "json1/events@nextToken:logs/Logs_20140328.FilterLogEvents",
         aws,
     )
-        .with_id_column("eventId")
-        .with_title_column_of::<String>("logStreamName")
-        .with_title_column_of::<i64>("timestamp")
-        .with_column_of::<String>("message")
+    .with_id_column("eventId")
+    .with_title_column_of::<String>("logStreamName")
+    .with_title_column_of::<i64>("timestamp")
+    .with_column_of::<String>("message")
 }

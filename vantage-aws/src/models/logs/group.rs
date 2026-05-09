@@ -43,11 +43,11 @@ pub fn groups_table(aws: AwsAccount) -> Table<AwsAccount, LogGroup> {
         "json1/logGroups@nextToken:logs/Logs_20140328.DescribeLogGroups",
         aws,
     )
-        .with_id_column("logGroupName")
-        .with_column_of::<i64>("creationTime")
-        .with_title_column_of::<i64>("storedBytes")
-        .with_many("events", "logGroupName", events_table)
-        .with_many("streams", "logGroupName", streams_table)
+    .with_id_column("logGroupName")
+    .with_column_of::<i64>("creationTime")
+    .with_title_column_of::<i64>("storedBytes")
+    .with_many("events", "logGroupName", events_table)
+    .with_many("streams", "logGroupName", streams_table)
 }
 
 impl LogGroup {

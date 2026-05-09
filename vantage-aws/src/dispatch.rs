@@ -309,10 +309,9 @@ mod tests {
 
     #[test]
     fn parses_cursor_suffix() {
-        let op = parse_table_name(
-            "json1/logStreams@nextToken:logs/Logs_20140328.DescribeLogStreams",
-        )
-        .unwrap();
+        let op =
+            parse_table_name("json1/logStreams@nextToken:logs/Logs_20140328.DescribeLogStreams")
+                .unwrap();
         assert_eq!(op.array_key, "logStreams");
         assert_eq!(op.cursor, Some("nextToken"));
     }
