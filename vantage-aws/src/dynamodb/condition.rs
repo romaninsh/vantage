@@ -81,6 +81,20 @@ impl DynamoCondition {
             values,
         }
     }
+
+    /// Build a `begins_with(field, prefix)` condition. Used for sort-key
+    /// prefix filtering in single-table designs.
+    pub fn begins_with(field: impl Into<String>, prefix: impl Into<String>) -> Self {
+        let mut names = IndexMap::new();
+        let mut values = IndexMap::new();
+        names.insert("#f".to_string(), field.into());
+        values.insert(":v".to_string(), AttributeValue::S(prefix.into()));
+        Self::Expr {
+            expression: "begins_with(#f, :v)".to_string(),
+            names,
+            values,
+        }
+    }
 }
 
 /// Resolved condition pieces ready to fold into a Scan/Query request.

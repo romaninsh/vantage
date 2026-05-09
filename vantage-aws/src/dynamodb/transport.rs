@@ -74,6 +74,44 @@ pub(crate) async fn scan(
     })
 }
 
+/// Walk a Scan page-by-page and return the first item that survives the
+/// (optional) filter. Used by `find_some`: DynamoDB applies
+/// `FilterExpression` *after* `Limit`, so naive `Scan(Limit=1)` with a
+/// filter routinely returns zero items even when matches exist further
+/// down the partition. `page_limit` caps each page's *raw* (pre-filter)
+/// item count so we don't accumulate the whole table in memory while
+/// still letting an early-positioned match return cheaply. With no
+/// filter, callers should pass `page_limit = 1` — the loop terminates
+/// after a single round-trip.
+pub(crate) async fn scan_first_match(
+    aws: &AwsAccount,
+    table: &str,
+    page_limit: i64,
+    filter: Option<&ResolvedFilter>,
+) -> Result<Option<JsonValue>> {
+    let mut start_key: Option<JsonValue> = None;
+    loop {
+        let resp = scan_page(
+            aws,
+            table,
+            Some(page_limit),
+            false,
+            filter,
+            start_key.as_ref(),
+        )
+        .await?;
+        if let Some(arr) = resp.get("Items").and_then(|v| v.as_array())
+            && let Some(first) = arr.first()
+        {
+            return Ok(Some(first.clone()));
+        }
+        match resp.get("LastEvaluatedKey").cloned() {
+            Some(k) if !k.is_null() => start_key = Some(k),
+            _ => return Ok(None),
+        }
+    }
+}
+
 async fn scan_page(
     aws: &AwsAccount,
     table: &str,
