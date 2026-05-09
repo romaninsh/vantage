@@ -31,9 +31,12 @@ pub struct LogEvent {
 /// # Ok(()) }
 /// ```
 pub fn events_table(aws: AwsAccount) -> Table<AwsAccount, LogEvent> {
-    Table::new("json1/events:logs/Logs_20140328.FilterLogEvents", aws)
-        .with_id_column("eventId")
-        .with_title_column_of::<String>("logStreamName")
-        .with_title_column_of::<i64>("timestamp")
-        .with_column_of::<String>("message")
+    Table::new(
+        "json1/events@nextToken:logs/Logs_20140328.FilterLogEvents",
+        aws,
+    )
+    .with_id_column("eventId")
+    .with_title_column_of::<String>("logStreamName")
+    .with_title_column_of::<i64>("timestamp")
+    .with_column_of::<String>("message")
 }

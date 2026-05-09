@@ -47,6 +47,21 @@ pub(crate) struct OperationDescriptor<'a> {
     pub array_key: &'a str,
     pub service: &'a str,
     pub target: &'a str,
+    /// Continuation-token field name. Same string is used for both the
+    /// request body field and the response body field — every CloudWatch
+    /// Logs and ECS list API uses `nextToken` symmetrically. Encoded in
+    /// the table name as `@<name>` after the array key:
+    ///
+    /// ```text
+    /// json1/logStreams@nextToken:logs/Logs_20140328.DescribeLogStreams
+    /// ```
+    ///
+    /// `None` means single-page (current behaviour). Other AWS protocols
+    /// (Query, RestXml, RestJson) and asymmetric cursors (KMS's
+    /// `Marker`/`NextMarker`, `GetLogEvents`'s forward/backward tokens)
+    /// don't use this field — they'll need a richer descriptor when
+    /// auto-pagination expands beyond json1.
+    pub cursor: Option<&'a str>,
 }
 
 impl AwsAccount {
@@ -61,6 +76,19 @@ impl AwsAccount {
     ) -> Result<JsonValue> {
         let op = parse_table_name(table_name)?;
         let resolved = self.resolve_conditions(conditions).await?;
+
+        // Auto-paginate when the descriptor carries a cursor name.
+        // Scoped to JSON-1.1 / 1.0 because that's where every paginated
+        // op uses the same field name in both directions and where the
+        // response array sits at a known top-level key. Other protocols
+        // need their own walk implementations (different cursor naming,
+        // `IsTruncated` flags, XML wrapping) — they stay single-page.
+        if let Some(cursor) = op.cursor
+            && matches!(op.protocol, Protocol::Json1 | Protocol::Json10)
+        {
+            return self.walk_json_pages(&op, &resolved, cursor).await;
+        }
+
         match op.protocol {
             Protocol::Json1 => json1::execute(self, &op, &resolved).await,
             Protocol::Json10 => json10::execute(self, &op, &resolved).await,
@@ -68,6 +96,63 @@ impl AwsAccount {
             Protocol::RestXml => restxml::execute(self, &op, &resolved).await,
             Protocol::RestJson => restjson::execute(self, &op, &resolved).await,
         }
+    }
+
+    /// Walk a JSON-1.x paginated list operation by re-issuing the same
+    /// request with the response's continuation token folded into the
+    /// next request's body, until the token is gone (or
+    /// [`AwsAccount::max_pages`] is hit). Items from each page are
+    /// concatenated under the descriptor's `array_key`; non-array
+    /// top-level fields are taken from the last page (none of the
+    /// supported ops carry meaningful per-page metadata, so this is
+    /// fine for now — see top-of-file note).
+    async fn walk_json_pages(
+        &self,
+        op: &OperationDescriptor<'_>,
+        resolved: &[AwsCondition],
+        cursor_field: &str,
+    ) -> Result<JsonValue> {
+        let max_pages = self.max_pages();
+        let mut conds: Vec<AwsCondition> = resolved.to_vec();
+
+        let mut accumulated: Vec<JsonValue> = Vec::new();
+        let mut pages: usize = 0;
+
+        let mut merged = loop {
+            let resp = match op.protocol {
+                Protocol::Json1 => json1::execute(self, op, &conds).await?,
+                Protocol::Json10 => json10::execute(self, op, &conds).await?,
+                _ => unreachable!("walk_json_pages is gated on Json1/Json10"),
+            };
+            pages += 1;
+
+            if let Some(arr) = lookup_path(&resp, op.array_key).and_then(|v| v.as_array()) {
+                accumulated.extend(arr.iter().cloned());
+            }
+
+            let next_cursor = resp
+                .get(cursor_field)
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+
+            match next_cursor {
+                Some(token) if max_pages.is_none_or(|cap| pages < cap) => {
+                    // Replace any prior cursor condition before re-issuing.
+                    conds.retain(|c| c.field() != cursor_field);
+                    conds.push(AwsCondition::eq(cursor_field.to_string(), token));
+                }
+                _ => break resp,
+            }
+        };
+
+        // Replace the array under `array_key` with the concatenated
+        // results. `array_key` is always a single segment for the json1
+        // ops we walk (no dotted paths in the supported descriptors).
+        if let Some(obj) = merged.as_object_mut() {
+            obj.insert(op.array_key.to_string(), JsonValue::Array(accumulated));
+        }
+        Ok(merged)
     }
 
     /// Pull records out of a successful response. Each protocol owns
@@ -156,8 +241,16 @@ pub(crate) fn parse_table_name(name: &str) -> Result<OperationDescriptor<'_>> {
             ));
         }
     };
-    let (array_key, rest) = rest.split_once(':').ok_or_else(bad)?;
+    let (array_key_raw, rest) = rest.split_once(':').ok_or_else(bad)?;
     let (service, target) = rest.split_once('/').ok_or_else(bad)?;
+
+    // Optional `@cursor` suffix on the array key opts the operation
+    // into auto-pagination — see [`OperationDescriptor::cursor`].
+    let (array_key, cursor) = match array_key_raw.split_once('@') {
+        Some((key, cursor)) if !cursor.is_empty() => (key, Some(cursor)),
+        Some(_) => return Err(bad()),
+        None => (array_key_raw, None),
+    };
 
     if array_key.is_empty() || service.is_empty() || target.is_empty() {
         return Err(bad());
@@ -168,6 +261,7 @@ pub(crate) fn parse_table_name(name: &str) -> Result<OperationDescriptor<'_>> {
         array_key,
         service,
         target,
+        cursor,
     })
 }
 
@@ -200,6 +294,7 @@ mod tests {
         assert_eq!(op.array_key, "logGroups");
         assert_eq!(op.service, "logs");
         assert_eq!(op.target, "Logs_20140328.DescribeLogGroups");
+        assert_eq!(op.cursor, None);
     }
 
     #[test]
@@ -209,6 +304,23 @@ mod tests {
         assert_eq!(op.array_key, "Users");
         assert_eq!(op.service, "iam");
         assert_eq!(op.target, "2010-05-08.ListUsers");
+        assert_eq!(op.cursor, None);
+    }
+
+    #[test]
+    fn parses_cursor_suffix() {
+        let op =
+            parse_table_name("json1/logStreams@nextToken:logs/Logs_20140328.DescribeLogStreams")
+                .unwrap();
+        assert_eq!(op.array_key, "logStreams");
+        assert_eq!(op.cursor, Some("nextToken"));
+    }
+
+    #[test]
+    fn rejects_empty_cursor_suffix() {
+        let err = parse_table_name("json1/logStreams@:logs/Logs_20140328.DescribeLogStreams")
+            .unwrap_err();
+        assert!(format!("{err}").contains("must be \""));
     }
 
     #[test]

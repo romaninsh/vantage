@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.6 — 2026-05-09
+
+Auto-pagination for the JSON-1.x list endpoints — CloudWatch Logs and ECS now walk through `nextToken` until exhausted, so calls like `streams_table(aws).get().await` return every stream in a busy log group instead of just the first page.
+
+- Opt in per-table by appending `@<cursor>` to the `array_key` in the table-name DSL: `json1/logStreams@nextToken:logs/Logs_20140328.DescribeLogStreams`. The bundled `models::ecs` and `models::logs` factories switched over — no caller change needed.
+- New [`AwsAccount::with_max_pages(n)`](https://docs.rs/vantage-aws/0.4.6/vantage_aws/struct.AwsAccount.html#method.with_max_pages) caps the walk for accounts with thousands of resources, or for content-bearing reads where "all of it" isn't what you want. Default is unbounded.
+- Other protocols (Query/IAM, REST-XML/S3, REST-JSON/Lambda) and asymmetric cursors (KMS's `Marker`/`NextMarker`, `GetLogEvents`'s forward/backward tokens) are still single-page — they need their own walk implementations.
+
 ## 0.4.5 — 2026-05-04
 
 A typed DynamoDB persistence backend — sibling to the existing list-API surface in `models::dynamodb`. Items have a typed `AttributeValue` representation, native key/filter expressions, and full CRUD semantics, none of which fold cleanly into the `AwsAccount`-as-`TableSource` shape — so DynamoDB lives as its own [`vantage_aws::dynamodb`](https://docs.rs/vantage-aws/0.4.5/vantage_aws/dynamodb/) module with its own `TableSource` impl.
