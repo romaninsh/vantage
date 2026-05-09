@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.9 — 2026-05-09
+
+- Pins `vantage-types` to `>= 0.4.2`. The `AnyCsvType` `TerminalRender` impl returns `RichText` and needs the trait shape from `vantage-types 0.4.2`.
+
 ## 0.4.8 — 2026-05-04
 
 - Implements [`TableShell::driver_name`](https://docs.rs/vantage-vista/0.4.4/vantage_vista/trait.TableShell.html#method.driver_name) — `Vista::driver()` reports `"csv"` for tables wrapped through `csv.vista_factory()`.

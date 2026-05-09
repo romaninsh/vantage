@@ -1,6 +1,6 @@
 [package]
 name = "vantage-sql"
-version = "0.4.4"
+version = "0.4.5"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -18,7 +18,7 @@ vista = ["dep:vantage-vista"]
 
 [dependencies]
 vantage-core = { version = "0.4", path = "../vantage-core" }
-vantage-types = { version = "0.4", path = "../vantage-types", features = ["serde"] }
+vantage-types = { version = "0.4.2", path = "../vantage-types", features = ["serde"] }
 vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
 paste = "1.0"
 

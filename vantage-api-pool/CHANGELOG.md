@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3 — 2026-05-09
+
+- Pins `vantage-types` to `>= 0.4.2`.
+
 ## 0.1.2 — 2026-05-03
 
 - HTTP worker pool, request/response matcher, and all paginator variants now wrap their spawned futures with `tracing::Instrument::in_current_span()` so the caller's span follows the future across the `tokio::spawn` boundary. Any tracing layer the consumer installs sees background-task events as descendants of the originating request.
