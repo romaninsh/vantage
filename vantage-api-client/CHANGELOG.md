@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.3 — 2026-05-09
+
+Opt-in [`RestApiBuilder::no_pagination()`](https://docs.rs/vantage-api-client/0.1.3/vantage_api_client/struct.RestApiBuilder.html#method.no_pagination) for APIs that don't paginate. ([#230](https://github.com/romaninsh/vantage/pull/230))
+
+```rust
+let api = RestApi::builder(base_url).no_pagination().build();
+```
+
+FastAPI / Pydantic services often treat unknown query params as strict filters and silently return empty rows, so adding `_page=1&_limit=50` makes the response empty. Setting this stops vantage from sending those params, and a perpetual grid asking for page > 1 short-circuits to an empty result so it actually marks itself exhausted instead of looping. Default behaviour is unchanged.
+
 ## 0.1.2 — 2026-04-26
 
 `RestApi::builder` now configures response shape and pagination convention, so the same client works against APIs with different conventions:

@@ -1,12 +1,23 @@
 # Changelog
 
-## 0.4.6 — 2026-05-09
+## 0.4.7 — 2026-05-09
 
-Auto-pagination for the JSON-1.x list endpoints — CloudWatch Logs and ECS now walk through `nextToken` until exhausted, so calls like `streams_table(aws).get().await` return every stream in a busy log group instead of just the first page.
+Auto-pagination for the JSON-1.x list endpoints — CloudWatch Logs and ECS now walk through `nextToken` until exhausted, so calls like `streams_table(aws).get().await` return every stream in a busy log group instead of just the first page. Behaviour-level breaking: anything that relied on first-page-only as an implicit cap should switch to `with_max_pages(1)`. ([#231](https://github.com/romaninsh/vantage/pull/231))
 
 - Opt in per-table by appending `@<cursor>` to the `array_key` in the table-name DSL: `json1/logStreams@nextToken:logs/Logs_20140328.DescribeLogStreams`. The bundled `models::ecs` and `models::logs` factories switched over — no caller change needed.
-- New [`AwsAccount::with_max_pages(n)`](https://docs.rs/vantage-aws/0.4.6/vantage_aws/struct.AwsAccount.html#method.with_max_pages) caps the walk for accounts with thousands of resources, or for content-bearing reads where "all of it" isn't what you want. Default is unbounded.
+- New [`AwsAccount::with_max_pages(n)`](https://docs.rs/vantage-aws/0.4.7/vantage_aws/struct.AwsAccount.html#method.with_max_pages) caps the walk for accounts with thousands of resources, or for content-bearing reads where "all of it" isn't what you want. Default is unbounded; pages past the cap are silently dropped, so a caller can lean on it as a safety belt without changing error-handling.
 - Other protocols (Query/IAM, REST-XML/S3, REST-JSON/Lambda) and asymmetric cursors (KMS's `Marker`/`NextMarker`, `GetLogEvents`'s forward/backward tokens) are still single-page — they need their own walk implementations.
+
+## 0.4.6 — 2026-05-09
+
+`AwsAccount` finally respects `AWS_PROFILE` and SSO; DynamoDB picks up `begins_with` plus a fix for `find_some` with filters. ([#230](https://github.com/romaninsh/vantage/pull/230))
+
+- `AwsAccount::from_credentials_file()` reads `AWS_PROFILE` (default `"default"`) instead of always taking `[default]`. For profiles whose creds don't live in `~/.aws/credentials` it shells out to `aws configure export-credentials --format env`, which is the AWS CLI's stable handover format and knows how to materialise SSO tokens, assumed-role chains, and `credential_process` output. So `AWS_PROFILE=<sso-profile> cargo run` works as long as `aws sso login` is current. New [`AwsAccount::from_profile(name)`](https://docs.rs/vantage-aws/0.4.6/vantage_aws/struct.AwsAccount.html#method.from_profile) lets you pick a profile without touching env vars. The README's "no AWS_PROFILE / SSO / assume-role" v0 caveat is now stale.
+- `mise.toml` pins `aws` as a tool dep because of the shell-out — install it via `mise install` if you don't already have it.
+- New [`DynamoCondition::begins_with(field, prefix)`](https://docs.rs/vantage-aws/0.4.6/vantage_aws/dynamodb/enum.DynamoCondition.html#variant.BeginsWith) for sort-key prefix filtering — needed for any single-table design that scopes entities by `SK` prefix.
+- Bug: `find_some` was passing `Limit=1` even when a filter was set. DynamoDB applies `FilterExpression` *after* `Limit`, so `Scan(Limit=1)` with a filter routinely returned zero items even when matches existed further down the partition. Fixed by dropping the limit when a filter is present and letting `transport::scan` paginate; the first match is still consumed.
+- New `vantage-aws/examples/dynamo-single-table.rs` — a worked CLI over one DynamoDB table holding seven logical entities (`product`, `version`, `deployment`, `environment`, `team`, `subscription`, `dataport`) distinguished by `PK` / `SK` prefix conventions. Drives the same `model_cli` runner as `aws-cli`. `vantage-aws/examples/aws-dynamo.rs` is a smaller list-and-scan walker for any DynamoDB account.
+- `DynamoId` is partition-key-only in v0, so listing per-product entities globally collapses entries into the same `IndexMap` key. Traversing through a parent (`product[N] :versions`) narrows scope and the collapse stops mattering. Composite-key `DynamoId` is next.
 
 ## 0.4.5 — 2026-05-04
 
