@@ -50,3 +50,11 @@ clap = { version = "4", features = ["derive"] }
 [[example]]
 name = "aws-cli"
 path = "examples/aws-cli.rs"
+
+[[example]]
+name = "aws-dynamo"
+path = "examples/aws-dynamo.rs"
+
+[[example]]
+name = "control-api"
+path = "examples/control-api.rs"

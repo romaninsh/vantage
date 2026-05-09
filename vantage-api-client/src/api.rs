@@ -87,6 +87,13 @@ pub struct RestApi {
     pub(crate) auth_header: Option<String>,
     response_shape: ResponseShape,
     pagination: PaginationParams,
+    /// When true, no `_page`/`_limit` query params are appended and
+    /// list endpoints are assumed to return the full result set in
+    /// one shot. Caller-side requests for page > 1 short-circuit to
+    /// an empty result so a perpetual-grid stops paging after the
+    /// first chunk. Useful for FastAPI/Pydantic services that treat
+    /// unknown query params as strict filters.
+    no_pagination: bool,
 }
 
 impl RestApi {
@@ -128,14 +135,19 @@ impl RestApi {
         let mut params: Vec<(String, String)> = Vec::new();
 
         // Pagination first — matches the order users see in the URL bar.
-        if let Some(p) = pagination {
-            let page_value = if self.pagination.skip_based {
-                p.skip().to_string()
-            } else {
-                p.get_page().to_string()
-            };
-            params.push((self.pagination.page.clone(), page_value));
-            params.push((self.pagination.limit.clone(), p.limit().to_string()));
+        // When `no_pagination` is set the API doesn't accept page/limit
+        // query params (and may treat them as strict filters that
+        // return empty), so we leave them off.
+        if !self.no_pagination {
+            if let Some(p) = pagination {
+                let page_value = if self.pagination.skip_based {
+                    p.skip().to_string()
+                } else {
+                    p.get_page().to_string()
+                };
+                params.push((self.pagination.page.clone(), page_value));
+                params.push((self.pagination.limit.clone(), p.limit().to_string()));
+            }
         }
 
         // Conditions: each `eq` becomes `?field=value`. Multiple
@@ -179,6 +191,19 @@ impl RestApi {
         pagination: Option<&Pagination>,
         conditions: impl IntoIterator<Item = &'a Expression<Value>>,
     ) -> Result<IndexMap<String, Record<serde_json::Value>>> {
+        // Non-paginating endpoints return the whole list on page 1; a
+        // page-2 fetch would just re-deliver the same rows and the
+        // perpetual grid would never mark itself exhausted. Short-
+        // circuit page > 1 to empty so the grid sees the chunk shrink
+        // and stops asking for more.
+        if self.no_pagination {
+            if let Some(p) = pagination {
+                if p.get_page() > 1 {
+                    return Ok(IndexMap::new());
+                }
+            }
+        }
+
         let url = format!(
             "{}{}",
             self.endpoint_url(table_name),
@@ -291,6 +316,7 @@ pub struct RestApiBuilder {
     auth_header: Option<String>,
     response_shape: ResponseShape,
     pagination: PaginationParams,
+    no_pagination: bool,
 }
 
 impl RestApiBuilder {
@@ -300,6 +326,7 @@ impl RestApiBuilder {
             auth_header: None,
             response_shape: ResponseShape::default(),
             pagination: PaginationParams::default(),
+            no_pagination: false,
         }
     }
 
@@ -323,6 +350,16 @@ impl RestApiBuilder {
         self
     }
 
+    /// Disable pagination entirely — no `_page`/`_limit` query
+    /// params are appended, and a request for page > 1 is short-
+    /// circuited to an empty result. Use this for APIs that don't
+    /// paginate (return the full list every call) or that treat
+    /// unknown query params as strict filters.
+    pub fn no_pagination(mut self) -> Self {
+        self.no_pagination = true;
+        self
+    }
+
     pub fn build(self) -> RestApi {
         RestApi {
             base_url: self.base_url,
@@ -330,6 +367,7 @@ impl RestApiBuilder {
             auth_header: self.auth_header,
             response_shape: self.response_shape,
             pagination: self.pagination,
+            no_pagination: self.no_pagination,
         }
     }
 }

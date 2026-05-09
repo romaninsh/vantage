@@ -93,6 +93,10 @@ impl TableSource for DynamoDB {
         Column::new(name)
     }
 
+    fn eq_condition(field: &str, value: &str) -> vantage_core::Result<Self::Condition> {
+        Ok(DynamoCondition::eq(field, AttributeValue::S(value.to_string())))
+    }
+
     fn to_any_column<Type: ColumnType>(
         &self,
         column: Self::Column<Type>,
@@ -183,10 +187,16 @@ impl TableSource for DynamoDB {
         E: Entity<Self::Value>,
     {
         let filter = resolve_conditions(table.conditions()).await?;
+        // DynamoDB applies FilterExpression *after* Limit, so Scan(Limit=1)
+        // with a filter usually returns zero items even when matches exist
+        // further down the partition. Drop the Limit when a filter is set
+        // and let `transport::scan` paginate; we still only consume the
+        // first match below.
+        let scan_limit = if filter.is_empty() { Some(1) } else { None };
         let resp = transport::scan(
             self.aws(),
             table.table_name(),
-            Some(1),
+            scan_limit,
             false,
             Some(&filter),
         )
