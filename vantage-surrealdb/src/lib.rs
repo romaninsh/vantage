@@ -31,6 +31,9 @@ pub mod thing;
 // pub mod typed_expression;
 // pub mod variable;
 
+#[cfg(feature = "vista")]
+pub mod vista;
+
 // Re-export statement builders at crate root for convenience
 pub use statements::SurrealDelete;
 pub use statements::SurrealInsert;

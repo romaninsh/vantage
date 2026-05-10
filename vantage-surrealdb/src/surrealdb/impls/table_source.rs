@@ -177,9 +177,10 @@ impl TableSource for SurrealDB {
         let query = crate::surreal_expr!("SELECT * FROM ONLY {}", (id.clone()));
         let result = self.execute(&query).await?;
 
-        // `SELECT ... FROM ONLY` returns Null (in cbor) when no row matches.
+        // `SELECT ... FROM ONLY` returns NONE (Tag(6, _)) or plain Null when
+        // no row matches.
         let value = result.into_value();
-        if matches!(value, ciborium::Value::Null) {
+        if matches!(value, ciborium::Value::Null | ciborium::Value::Tag(6, _)) {
             return Ok(None);
         }
 

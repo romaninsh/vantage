@@ -4333,7 +4333,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "async-trait",
  "bakery_model3",
@@ -4348,6 +4348,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_path_to_error",
+ "serde_yaml_ng",
  "surreal-client",
  "thiserror 2.0.18",
  "tokio",
@@ -4357,6 +4358,7 @@ dependencies = [
  "vantage-expressions",
  "vantage-table",
  "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]
