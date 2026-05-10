@@ -2,6 +2,7 @@
 name = "bakery_model4"
 version = "0.1.0"
 edition = "2024"
+publish = false
 
 [dependencies]
 vantage-core = { path = "../vantage-core" }
