@@ -1,4 +1,4 @@
-//! Multi-backend CLI for browsing and managing bakery data.
+//! Multi-backend AnyTable CLI for browsing bakery data with reference traversal.
 //!
 //! Usage: db [--debug] [--backend surreal|dynamodb] <entity> [command ...]
 //!
@@ -11,6 +11,11 @@
 //!   add <id> <json>   Insert a record
 //!   delete <id>       Delete a record by ID
 //!   ref <name>        Traverse a relationship and list the target table
+//!
+//! For backends with a Vista driver (csv, sqlite, postgres, mongo, surreal),
+//! prefer the `cli-vista` example — it exposes a uniform Vista surface and
+//! advertises capabilities. This example sticks with `AnyTable` so it can
+//! demonstrate `ref` traversal, which Vista doesn't surface yet.
 
 use bakery_model3::*;
 use clap::{Arg, Command};

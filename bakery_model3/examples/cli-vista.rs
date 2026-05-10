@@ -2,7 +2,7 @@
 //!
 //! Usage: db-vista [--debug] <source> <entity> [command ...]
 //!
-//! Sources: csv, sqlite, postgres, mongo
+//! Sources: csv, sqlite, postgres, mongo, surreal
 //! Entities: bakery, client, product, order
 //!
 //! Commands:
@@ -14,6 +14,7 @@
 
 use bakery_model3::*;
 use clap::{Arg, Command};
+use surreal_client::SurrealConnection;
 use vantage_cli_util::render_records;
 use vantage_csv::Csv;
 use vantage_dataset::prelude::*;
@@ -161,9 +162,35 @@ async fn build_vista(source: &str, entity_name: &str) -> vantage_core::Result<Op
             };
             Ok(Some(vista))
         }
+        "surreal" => {
+            let dsn = std::env::var("SURREALDB_URL")
+                .unwrap_or_else(|_| "cbor://root:root@localhost:8000/bakery/v2".to_string());
+            let client = SurrealConnection::dsn(&dsn)
+                .map_err(|e| {
+                    vantage_core::error!("Invalid SurrealDB DSN", details = e.to_string())
+                })?
+                .connect()
+                .await
+                .map_err(|e| {
+                    vantage_core::error!("Failed to connect to SurrealDB", details = e.to_string())
+                })?;
+            let db = SurrealDB::new(client);
+            let factory = db.vista_factory();
+            let vista = match entity_name {
+                "bakery" => factory.from_table(Bakery::surreal_table(db))?,
+                "client" => factory.from_table(Client::surreal_table(db))?,
+                "product" => factory.from_table(Product::surreal_table(db))?,
+                "order" => factory.from_table(Order::surreal_table(db))?,
+                _ => {
+                    println!("Unknown entity: {}", entity_name);
+                    return Ok(None);
+                }
+            };
+            Ok(Some(vista))
+        }
         _ => {
             println!(
-                "Unknown source: {}. Use: csv, sqlite, postgres, mongo",
+                "Unknown source: {}. Use: csv, sqlite, postgres, mongo, surreal",
                 source
             );
             Ok(None)
@@ -175,7 +202,7 @@ fn print_usage() {
     println!();
     println!("Usage: db-vista [--debug] <source> <entity> <command>");
     println!();
-    println!("Sources: csv, sqlite, postgres, mongo");
+    println!("Sources: csv, sqlite, postgres, mongo, surreal");
     println!();
     println!("Commands:");
     println!("  list              List all records");
@@ -189,6 +216,7 @@ fn print_usage() {
     println!("  db-vista csv bakery list");
     println!("  db-vista sqlite product list");
     println!("  db-vista mongo bakery count");
+    println!("  db-vista surreal bakery list");
     println!(r#"  db-vista postgres bakery add myid '{{"name":"Test","profit_margin":10}}'"#);
     println!("  db-vista postgres bakery delete myid");
 }

@@ -12,6 +12,7 @@ autoexamples = false
 [features]
 default = ["decimal"]
 decimal = ["surreal-client/decimal", "rust_decimal"]
+vista = ["dep:vantage-vista"]
 
 [dependencies]
 async-trait = "0.1"
@@ -20,6 +21,7 @@ vantage-expressions = { version = "0.4", path = "../vantage-expressions", featur
 vantage-table = { version = "0.4.2", path = "../vantage-table" }
 vantage-dataset = { version = "0.4.1", path = "../vantage-dataset" }
 vantage-types = { version = "0.4.2", path = "../vantage-types", features = ["serde"] }
+vantage-vista = { version = "0.4.4", path = "../vantage-vista", optional = true }
 surreal-client = { version = "0.4", path = "../surreal-client" }
 
 ciborium = "0.2"
@@ -85,6 +87,8 @@ test = false
 
 [dev-dependencies]
 bakery_model3 = { path = "../bakery_model3" }
+serde_yaml_ng = "0.10"
+vantage-vista = { version = "0.4.4", path = "../vantage-vista" }
 
 [[example]]
 name = "expr"
