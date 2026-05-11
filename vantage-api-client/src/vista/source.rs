@@ -31,10 +31,7 @@ pub struct RestApiTableShell {
 }
 
 impl RestApiTableShell {
-    pub(crate) fn new(
-        table: Table<RestApi, EmptyEntity>,
-        capabilities: VistaCapabilities,
-    ) -> Self {
+    pub(crate) fn new(table: Table<RestApi, EmptyEntity>, capabilities: VistaCapabilities) -> Self {
         Self {
             table,
             capabilities,
@@ -51,7 +48,10 @@ fn cbor_to_json(v: CborValue) -> JsonValue {
 }
 
 fn json_record_to_cbor(record: Record<JsonValue>) -> Record<CborValue> {
-    record.into_iter().map(|(k, v)| (k, json_to_cbor(v))).collect()
+    record
+        .into_iter()
+        .map(|(k, v)| (k, json_to_cbor(v)))
+        .collect()
 }
 
 #[async_trait]

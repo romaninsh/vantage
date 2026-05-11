@@ -68,10 +68,7 @@ api:
         assert_eq!(spec.name, "comments");
         assert_eq!(spec.columns.len(), 3);
         assert_eq!(
-            spec.driver
-                .api
-                .as_ref()
-                .and_then(|m| m.endpoint.as_deref()),
+            spec.driver.api.as_ref().and_then(|m| m.endpoint.as_deref()),
             Some("comments")
         );
         assert_eq!(spec.columns["id"].col_type.as_deref(), Some("int"));
