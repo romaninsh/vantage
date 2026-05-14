@@ -70,7 +70,61 @@ jobs:
           CRATES: ${{ steps.detect.outputs.crates }}
         run: |
           set -euo pipefail
-          for crate in $CRATES; do
+          # Canonical topological publish order. `cargo publish` checks
+          # each crate's [dependencies] against crates.io at packaging
+          # time, so a downstream crate's bumped version must already be
+          # on the registry before its dependent publishes. Alphabetical
+          # iteration fails when api-client (depends on vista) runs
+          # before vista. New publishable crates must be appended here
+          # at the right layer; the unknown-crate tail is a safety net,
+          # not a substitute.
+          PUBLISH_ORDER=(
+            vantage-core
+            vantage-types
+            vantage-dataset
+            vantage-vista
+            vantage-expressions
+            vantage-table
+            vantage-cli-util
+            vantage-redb
+            vantage-api-pool
+            vantage-aws
+            vantage-api-client
+            vantage-csv
+            vantage-mongodb
+            vantage-sql
+            vantage-surrealdb
+            vantage-log-writer
+            vantage-live
+            vantage-config
+          )
+
+          # Project the bumped crates onto the canonical order. Anything
+          # not in the canonical list is appended at the end and logged
+          # — that's a signal to update PUBLISH_ORDER, not silently
+          # depend on alphabetical luck.
+          mapfile -t bumped < <(printf '%s\n' $CRATES | sort -u)
+          ordered=()
+          for canonical in "${PUBLISH_ORDER[@]}"; do
+            for c in "${bumped[@]}"; do
+              if [ "$c" = "$canonical" ]; then
+                ordered+=("$c")
+              fi
+            done
+          done
+          for c in "${bumped[@]}"; do
+            in_order=0
+            for o in "${ordered[@]}"; do
+              [ "$c" = "$o" ] && { in_order=1; break; }
+            done
+            if [ $in_order -eq 0 ]; then
+              echo "::warning::Crate '$c' is not in PUBLISH_ORDER — appending at end. Update the workflow."
+              ordered+=("$c")
+            fi
+          done
+
+          printf 'Publish order: %s\n' "${ordered[*]}"
+          for crate in "${ordered[@]}"; do
             echo "::group::Publishing $crate"
             (cd "$crate" && cargo publish --no-verify --allow-dirty)
             echo "::endgroup::"
