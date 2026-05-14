@@ -232,13 +232,9 @@ fn open_local_typed(path: &Path) -> Table<Redb, EmptyEntity> {
 
 // ── API master ────────────────────────────────────────────────────────────
 //
-// `RestApi::Value = serde_json::Value`, but `AnyTable` carries
-// `ciborium::Value`. There's no `Into<CborValue> + From<CborValue>` impl
-// for `serde_json::Value` (both are foreign types), so `from_table` rejects
-// `Table<RestApi, _>` directly. Wrap in a tiny adapter that implements
-// `TableLike<Value = CborValue, Id = String>` and converts on the fly via
-// serde round-trip. This is demo code — vantage-api-client could grow a
-// proper bridge as a follow-up.
+// `RestApi` now speaks `ciborium::Value` natively, so we can drop the
+// JSON↔CBOR adapter that used to live here and wrap the typed table
+// straight into `AnyTable::from_table`.
 
 fn open_api_master(resource: &str, filter: Option<&(String, String)>) -> AnyTable {
     use vantage_api_client::eq_condition;
@@ -253,19 +249,19 @@ fn open_api_master(resource: &str, filter: Option<&(String, String)>) -> AnyTabl
         // a string. JSON Server is type-permissive in URL params, so
         // this mostly works regardless, but `?completed=true` for a
         // boolean field is more conventional than `?completed="true"`.
-        let json_value = if let Ok(n) = value.parse::<i64>() {
-            serde_json::Value::Number(n.into())
+        let cbor_value: CborValue = if let Ok(n) = value.parse::<i64>() {
+            CborValue::Integer(n.into())
         } else if value == "true" {
-            serde_json::Value::Bool(true)
+            CborValue::Bool(true)
         } else if value == "false" {
-            serde_json::Value::Bool(false)
+            CborValue::Bool(false)
         } else {
-            serde_json::Value::String(value.clone())
+            CborValue::Text(value.clone())
         };
-        typed.add_condition(eq_condition(field, json_value));
+        typed.add_condition(eq_condition(field, cbor_value));
     }
 
-    AnyTable::from_table_like(api_master::JsonToCborAdapter::new(typed))
+    AnyTable::from_table(typed)
 }
 
 /// Build a cache key that varies with the filter. With no filter,
@@ -277,176 +273,6 @@ fn api_cache_key(resource: &str, filter: Option<&(String, String)>) -> String {
     match filter {
         Some((f, v)) => format!("{resource}?{f}={v}"),
         None => resource.to_string(),
-    }
-}
-
-mod api_master {
-    use async_trait::async_trait;
-    use ciborium::Value as CborValue;
-    use indexmap::IndexMap;
-    use vantage_api_client::RestApi;
-    use vantage_core::{Result, error};
-    use vantage_dataset::traits::{ReadableValueSet, ValueSet, WritableValueSet};
-    use vantage_expressions::AnyExpression;
-    use vantage_table::conditions::ConditionHandle;
-    use vantage_table::pagination::Pagination;
-    use vantage_table::table::Table;
-    use vantage_table::traits::table_like::TableLike;
-    use vantage_types::{EmptyEntity, Record};
-
-    /// Demo-only TableLike adapter. Wraps `Table<RestApi, EmptyEntity>`
-    /// and converts each row's `serde_json::Value` fields to/from
-    /// `ciborium::Value` so the master fits AnyTable's CBOR-shaped slot.
-    #[derive(Clone)]
-    pub struct JsonToCborAdapter {
-        inner: Table<RestApi, EmptyEntity>,
-    }
-
-    impl JsonToCborAdapter {
-        pub fn new(inner: Table<RestApi, EmptyEntity>) -> Self {
-            Self { inner }
-        }
-    }
-
-    fn json_to_cbor(v: serde_json::Value) -> CborValue {
-        // serde round-trip — same lossy bits as elsewhere (NaN, binary
-        // → string), but JSONPlaceholder responses are vanilla JSON so
-        // this is fine.
-        ciborium::Value::serialized(&v).unwrap_or(CborValue::Null)
-    }
-
-    fn cbor_to_json(v: CborValue) -> serde_json::Value {
-        serde_json::to_value(v).unwrap_or(serde_json::Value::Null)
-    }
-
-    fn record_j2c(r: Record<serde_json::Value>) -> Record<CborValue> {
-        r.into_iter().map(|(k, v)| (k, json_to_cbor(v))).collect()
-    }
-
-    fn record_c2j(r: Record<CborValue>) -> Record<serde_json::Value> {
-        r.into_iter().map(|(k, v)| (k, cbor_to_json(v))).collect()
-    }
-
-    impl ValueSet for JsonToCborAdapter {
-        type Id = String;
-        type Value = CborValue;
-    }
-
-    #[async_trait]
-    impl ReadableValueSet for JsonToCborAdapter {
-        async fn list_values(&self) -> Result<IndexMap<String, Record<CborValue>>> {
-            let rows = self.inner.list_values().await?;
-            Ok(rows.into_iter().map(|(k, v)| (k, record_j2c(v))).collect())
-        }
-
-        async fn get_value(&self, id: &String) -> Result<Option<Record<CborValue>>> {
-            Ok(self.inner.get_value(id).await?.map(record_j2c))
-        }
-
-        async fn get_some_value(&self) -> Result<Option<(String, Record<CborValue>)>> {
-            Ok(self
-                .inner
-                .get_some_value()
-                .await?
-                .map(|(k, v)| (k, record_j2c(v))))
-        }
-    }
-
-    #[async_trait]
-    impl WritableValueSet for JsonToCborAdapter {
-        async fn insert_value(
-            &self,
-            id: &String,
-            record: &Record<CborValue>,
-        ) -> Result<Record<CborValue>> {
-            // Round-trip through inner write path so existing semantics
-            // (read-only error) propagate naturally.
-            let json_record = record_c2j(record.clone());
-            let result = self.inner.insert_value(id, &json_record).await?;
-            Ok(record_j2c(result))
-        }
-
-        async fn replace_value(
-            &self,
-            id: &String,
-            record: &Record<CborValue>,
-        ) -> Result<Record<CborValue>> {
-            let json_record = record_c2j(record.clone());
-            let result = self.inner.replace_value(id, &json_record).await?;
-            Ok(record_j2c(result))
-        }
-
-        async fn patch_value(
-            &self,
-            id: &String,
-            partial: &Record<CborValue>,
-        ) -> Result<Record<CborValue>> {
-            let json_partial = record_c2j(partial.clone());
-            let result = self.inner.patch_value(id, &json_partial).await?;
-            Ok(record_j2c(result))
-        }
-
-        async fn delete(&self, id: &String) -> Result<()> {
-            self.inner.delete(id).await
-        }
-
-        async fn delete_all(&self) -> Result<()> {
-            self.inner.delete_all().await
-        }
-    }
-
-    #[async_trait]
-    impl TableLike for JsonToCborAdapter {
-        fn table_name(&self) -> &str {
-            self.inner.table_name()
-        }
-        fn table_alias(&self) -> &str {
-            self.inner.table_alias()
-        }
-        fn column_names(&self) -> Vec<String> {
-            self.inner.column_names()
-        }
-        fn add_condition(
-            &mut self,
-            _condition: Box<dyn std::any::Any + Send + Sync>,
-        ) -> Result<()> {
-            Err(error!(
-                "JsonToCborAdapter (demo): condition pushdown not implemented"
-            ))
-        }
-        fn temp_add_condition(&mut self, _c: AnyExpression) -> Result<ConditionHandle> {
-            Err(error!(
-                "JsonToCborAdapter (demo): temp_add_condition not implemented"
-            ))
-        }
-        fn temp_remove_condition(&mut self, _h: ConditionHandle) -> Result<()> {
-            Err(error!(
-                "JsonToCborAdapter (demo): temp_remove_condition not implemented"
-            ))
-        }
-        fn search_expression(&self, _: &str) -> Result<AnyExpression> {
-            Err(error!(
-                "JsonToCborAdapter (demo): search_expression not implemented"
-            ))
-        }
-        fn clone_box(&self) -> Box<dyn TableLike<Value = CborValue, Id = String>> {
-            Box::new(self.clone())
-        }
-        fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
-            self
-        }
-        fn as_any_ref(&self) -> &dyn std::any::Any {
-            self
-        }
-        fn set_pagination(&mut self, p: Option<Pagination>) {
-            self.inner.set_pagination(p);
-        }
-        fn get_pagination(&self) -> Option<&Pagination> {
-            self.inner.get_pagination()
-        }
-        async fn get_count(&self) -> Result<i64> {
-            self.inner.get_count().await
-        }
     }
 }
 

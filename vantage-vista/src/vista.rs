@@ -114,4 +114,18 @@ impl Vista {
     pub async fn get_count(&self) -> Result<i64> {
         self.source.get_vista_count(self).await
     }
+
+    // ---- references --------------------------------------------------------
+
+    /// Traverse a named reference and return the related `Vista`.
+    ///
+    /// The driver does the work: it consults its wrapped typed table's
+    /// reference machinery (set up via `with_one` / `with_many`),
+    /// applies the join condition, and wraps the resulting table in a
+    /// new `Vista` so callers stay on the universal surface. Returns
+    /// `Err` for drivers that don't implement references and for
+    /// unknown relation names.
+    pub fn get_ref(&self, relation: &str) -> Result<Vista> {
+        self.source.get_ref(relation)
+    }
 }
