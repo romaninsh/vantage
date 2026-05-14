@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.8 — 2026-05-14
+
+- JSON-1.x `execute` now follows `nextToken` pagination directly (capped at 50 pages) — CloudWatch's `FilterLogEvents` and friends can return `events: []` plus a token while the log group is still being scanned, so a one-shot call would drop matches. Pages are merged under the operation's `array_key` and handed to `parse_records` as one synthesised response. Existing single-page protocols are unaffected. See [`vantage_aws::json1`](https://docs.rs/vantage-aws/0.4.8/vantage_aws/json1/index.html).
+- New [`vantage-aws/TODO.md`](https://github.com/romaninsh/vantage/blob/main/vantage-aws/TODO.md) documents the composite-key `get_value` gap on DynamoDB single-table designs (UI sheets on HASH+RANGE tables hit `ValidationException` today) along with the proposed `DynamoId` widening and condition-merge fix.
+
 ## 0.4.7 — 2026-05-09
 
 Auto-pagination for the JSON-1.x list endpoints — CloudWatch Logs and ECS now walk through `nextToken` until exhausted, so calls like `streams_table(aws).get().await` return every stream in a busy log group instead of just the first page. Behaviour-level breaking: anything that relied on first-page-only as an implicit cap should switch to `with_max_pages(1)`. ([#231](https://github.com/romaninsh/vantage/pull/231))

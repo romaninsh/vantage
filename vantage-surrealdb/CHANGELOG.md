@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.6 — 2026-05-14
+
+- Drop the `arbitrary_precision` feature flag from the `serde_json` dependency. It enabled a global mode that wraps numbers as `{"$serde_json::private::Number": "..."}` objects, which broke ad-hoc JSON inspection and forced every consumer of vantage-surrealdb's `serde_json::Value` outputs to opt into the same flag. `preserve_order` and `raw_value` are retained.
+
 ## 0.4.5 — 2026-05-10
 
 New opt-in [`vista`](https://docs.rs/vantage-surrealdb/0.4.5/vantage_surrealdb/vista/struct.SurrealVistaFactory.html) feature: build a [`Vista`](https://docs.rs/vantage-vista/0.4.4/vantage_vista/struct.Vista.html) from a typed `Table<SurrealDB, E>` or from YAML, with full read+write CRUD and server-side `eq` push-down.
