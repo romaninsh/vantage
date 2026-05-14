@@ -30,13 +30,69 @@ pub(crate) use transport::{json_aws_call, json1_call};
 /// Build the JSON-1.1 request body and post it. `target` is used
 /// verbatim as the `X-Amz-Target` header; `service` is both the SigV4
 /// service name and the URL hostname segment.
+///
+/// Follows `nextToken` pagination — CloudWatch's `FilterLogEvents`
+/// can hand back `events: []` plus a `nextToken` while it's still
+/// scanning the log group, so a single call isn't enough. We loop
+/// until the response has no `nextToken` (or empty), accumulating
+/// `op.array_key` entries from each page into one synthesised
+/// response that `parse_records` can fold as if it came back in one
+/// shot.
+///
+/// Cap at [`MAX_PAGES`] to avoid runaway loops if AWS keeps issuing
+/// tokens — that case shouldn't happen, but the safety belt is cheap.
 pub(crate) async fn execute(
     account: &AwsAccount,
     op: &OperationDescriptor<'_>,
     resolved: &[AwsCondition],
 ) -> Result<JsonValue> {
-    let body = build_json1_body(resolved)?;
-    json1_call(account, op.service, op.target, &JsonValue::Object(body)).await
+    const MAX_PAGES: usize = 50;
+    let base_body = build_json1_body(resolved)?;
+
+    let mut merged_array: Vec<JsonValue> = Vec::new();
+    let mut last_resp: Option<JsonValue> = None;
+    let mut next_token: Option<String> = None;
+
+    for page in 0..MAX_PAGES {
+        let mut body = base_body.clone();
+        if let Some(token) = &next_token {
+            body.insert("nextToken".to_string(), JsonValue::String(token.clone()));
+        }
+        let resp = json1_call(account, op.service, op.target, &JsonValue::Object(body)).await?;
+
+        if let Some(arr) = lookup_path(&resp, op.array_key).and_then(|v| v.as_array()) {
+            merged_array.extend(arr.iter().cloned());
+        }
+
+        let token = resp
+            .get("nextToken")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
+        last_resp = Some(resp);
+        match token {
+            Some(t) => next_token = Some(t),
+            None => break,
+        }
+        if page + 1 == MAX_PAGES {
+            eprintln!(
+                "vantage-aws: nextToken pagination hit max-page cap \
+                 ({MAX_PAGES} pages) for {}; truncating",
+                op.target
+            );
+        }
+    }
+
+    // Stitch the accumulated array back onto the last response so
+    // downstream `parse_records` reads the merged page set under
+    // `op.array_key`. The last response also carries any non-array
+    // metadata callers may want (search statistics, etc.).
+    let mut resp = last_resp.expect("loop ran at least once");
+    if let JsonValue::Object(ref mut map) = resp {
+        map.insert(op.array_key.to_string(), JsonValue::Array(merged_array));
+    }
+    Ok(resp)
 }
 
 /// Pull the configured array out of the response and build records
