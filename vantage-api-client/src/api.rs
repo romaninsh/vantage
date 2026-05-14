@@ -267,7 +267,11 @@ impl RestApi {
         }
         let conds: Vec<&Expression<CborValue>> = resolved.iter().collect();
         let (endpoint, consumed) = self.endpoint_url(table_name, &conds)?;
-        let url = format!("{}{}", endpoint, self.build_query_string(pagination, &conds, &consumed));
+        let url = format!(
+            "{}{}",
+            endpoint,
+            self.build_query_string(pagination, &conds, &consumed)
+        );
 
         let mut request = self.client.get(&url);
         if let Some(ref auth) = self.auth_header {

@@ -25,7 +25,7 @@
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use vantage_api_client::{RestApi, ResponseShape};
+use vantage_api_client::{ResponseShape, RestApi};
 use vantage_cli_util::vista_cli::{self, Mode, ModelFactory, Renderer};
 use vantage_table::table::Table;
 use vantage_types::Record;
@@ -170,9 +170,7 @@ impl ModelFactory for JsonPlaceholderFactory {
     }
 }
 
-const KNOWN_MODELS: &[&str] = &[
-    "user", "users", "album", "albums", "photo", "photos",
-];
+const KNOWN_MODELS: &[&str] = &["user", "users", "album", "albums", "photo", "photos"];
 
 struct CborRenderer;
 
@@ -284,9 +282,7 @@ fn cbor_short(v: &CborValue) -> String {
 async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() {
-        eprintln!(
-            "usage: jsonplaceholder <model> [field=value ...] [[N]] [:relation ...]"
-        );
+        eprintln!("usage: jsonplaceholder <model> [field=value ...] [[N]] [:relation ...]");
         eprintln!("\nKnown models:");
         for n in KNOWN_MODELS {
             eprintln!("  {n}");

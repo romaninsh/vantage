@@ -35,9 +35,7 @@ pub fn eq_condition(field: &str, value: impl Into<CborValue>) -> Expression<Cbor
 /// suitable for a URL query parameter. Returns `None` for anything
 /// that doesn't match — non-eq operators, compound values, nested
 /// column-on-column comparisons, deferred values, etc.
-pub(crate) fn condition_to_query_param(
-    cond: &Expression<CborValue>,
-) -> Option<(String, String)> {
+pub(crate) fn condition_to_query_param(cond: &Expression<CborValue>) -> Option<(String, String)> {
     if cond.template != "{} = {}" || cond.parameters.len() != 2 {
         return None;
     }

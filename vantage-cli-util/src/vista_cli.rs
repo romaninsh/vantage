@@ -258,8 +258,11 @@ pub async fn run<F: ModelFactory, R: Renderer>(
                 .get_some_value()
                 .await?
                 .ok_or_else(|| error!("No record found"))?;
-            let relations: Vec<String> =
-                vista.get_references().iter().map(|s| s.to_string()).collect();
+            let relations: Vec<String> = vista
+                .get_references()
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
             renderer.render_record(&vista, &id, &record, &relations);
         }
     }
