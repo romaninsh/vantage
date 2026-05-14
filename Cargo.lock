@@ -4091,7 +4091,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4333,7 +4333,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "async-trait",
  "bakery_model3",

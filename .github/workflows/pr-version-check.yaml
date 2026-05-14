@@ -25,6 +25,9 @@ jobs:
           base_sha=$(git rev-parse "origin/${BASE_REF}")
           mapfile -t changed_files < <(git diff --name-only "${base_sha}"...HEAD)
 
+          # Legacy crates that are not under version-check governance.
+          ignored_crates=("vantage")
+
           # Map each changed file to the nearest ancestor dir with a publishable Cargo.toml.
           declare -A crate_set=()
           for f in "${changed_files[@]}"; do
@@ -33,6 +36,14 @@ jobs:
               if [ -f "$dir/Cargo.toml" ] && grep -q '^\[package\]' "$dir/Cargo.toml"; then
                 # Skip crates explicitly opted out of publishing.
                 if grep -qE '^publish\s*=\s*false' "$dir/Cargo.toml"; then
+                  break
+                fi
+                # Skip crates on the legacy ignore list.
+                skip=0
+                for ig in "${ignored_crates[@]}"; do
+                  if [ "$dir" = "$ig" ]; then skip=1; break; fi
+                done
+                if [ $skip -eq 1 ]; then
                   break
                 fi
                 crate_set[$dir]=1
