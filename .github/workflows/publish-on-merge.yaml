@@ -72,6 +72,6 @@ jobs:
           set -euo pipefail
           for crate in $CRATES; do
             echo "::group::Publishing $crate"
-            (cd "$crate" && cargo publish --no-verify)
+            (cd "$crate" && cargo publish --no-verify --allow-dirty)
             echo "::endgroup::"
           done
