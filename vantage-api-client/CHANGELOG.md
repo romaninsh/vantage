@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.4 — 2026-05-14
+
+REST API now speaks [`ciborium::Value`](https://docs.rs/ciborium/) end-to-end and bridges into the universal [`Vista`](https://docs.rs/vantage-vista/0.4.5/vantage_vista/struct.Vista.html) surface.
+
+- **Breaking**: `RestApi::Value` is now `ciborium::Value` instead of `serde_json::Value`. `eq_condition(field, value)` accepts anything that implements `Into<CborValue>` — so `eq_condition("userId", 1i64)` and `eq_condition("name", "Alice")` work without a wrapper macro. Existing callers passing `json!(...)` need to switch to the matching CBOR variant. Records returned from `list_values` carry `Record<CborValue>` now, which means master tables wrap into `AnyTable::from_table` directly — no JSON↔CBOR adapter boilerplate at the call site.
+- URI templates in table names get substituted from eq-conditions at request time. Declare a child table as `Table::new("users/{userId}/albums", api)` and a parent's `id=1` condition lowers to `GET /users/1/albums`, with `userId` peeled out of the query string. Lets `with_many` / `with_one` traversal hit nested REST endpoints natively.
+- [`related_in_condition`](https://docs.rs/vantage-api-client/0.1.4/vantage_api_client/struct.RestApi.html) is implemented: `with_many` re-keys an existing eq-condition onto the child's FK field, and `with_one` resolves the parent record on demand through a deferred condition that's executed at fetch time. No more `unimplemented!()` panic for REST API references.
+- New [`vista_factory`](https://docs.rs/vantage-api-client/0.1.4/vantage_api_client/struct.RestApi.html#method.vista_factory) method returns a `RestApiVistaFactory` that wraps a typed `Table<RestApi, E>` as a `Vista`. Columns, id field, title fields, and references are harvested up front; the original entity stays attached for reference traversal.
+- New `examples/jsonplaceholder.rs` demo — model-driven CLI over <https://jsonplaceholder.typicode.com> using the new Vista bridge and the `vista_cli` runner from [`vantage-cli-util 0.4.2`](https://docs.rs/vantage-cli-util/0.4.2/vantage_cli_util/). Run `cargo run --example jsonplaceholder -- users id=1 :albums`.
+
 ## 0.1.3 — 2026-05-09
 
 Opt-in [`RestApiBuilder::no_pagination()`](https://docs.rs/vantage-api-client/0.1.3/vantage_api_client/struct.RestApiBuilder.html#method.no_pagination) for APIs that don't paginate. ([#230](https://github.com/romaninsh/vantage/pull/230))

@@ -1,7 +1,7 @@
 [package]
 edition = "2024"
 name = "vantage-api-client"
-version = "0.1.3"
+version = "0.1.4"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
 description = "Vantage extension for REST API backends"
@@ -19,7 +19,7 @@ vantage-dataset = { version = "0.4.1", path = "../vantage-dataset" }
 vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
 vantage-table = { version = "0.4.2", path = "../vantage-table" }
 vantage-types = { version = "0.4", path = "../vantage-types", features = ["serde"] }
-vantage-vista = { version = "0.4", path = "../vantage-vista" }
+vantage-vista = { version = "0.4.5", path = "../vantage-vista" }
 
 [dev-dependencies]
 anyhow = "1.0"

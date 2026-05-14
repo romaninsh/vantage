@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.2 — 2026-05-14
+
+- New [`vista_cli`](https://docs.rs/vantage-cli-util/0.4.2/vantage_cli_util/vista_cli/index.html) module — the [`Vista`](https://docs.rs/vantage-vista/0.4.5/vantage_vista/struct.Vista.html) equivalent of `model_cli`. Same token grammar (`<model> [field=value ...] [[N]] [:relation ...] [=col1,col2]`), same `ModelFactory` / `Renderer` traits, but drives a `Vista` end-to-end so traversal goes through [`Vista::get_ref`](https://docs.rs/vantage-vista/0.4.5/vantage_vista/struct.Vista.html#method.get_ref) and condition pushdown reaches the driver's native condition type. Use this when you've migrated a CLI to the universal Vista surface; `model_cli` stays as the `AnyTable`-flavoured path.
+- Pins `vantage-vista = "0.4.5"` for `Vista::get_ref` and `TableShell::get_ref`.
+
 ## 0.4.1 — 2026-04-30
 
 - New `model_cli` module — generic, model-driven CLI runner over any `AnyTable`. Argv shape: `<model | arn> [field=value ...] [[N]] [:relation [[N]] ...] [=col1,col2 ...]`. Singular vs plural model names drive list/single mode; `id=value` is sugar that resolves to the table's id field and forces single-record mode; `[N]` selects the Nth record and switches into single-record mode by adding `eq(id_field, that_id)`; `:relation` traverses a registered `with_many` / `with_one`; `=col1,col2` overrides the visible columns in list mode. Glued forms (`users[0]`, `:members[0]`, `name=foo[0]`, `=msg,timestamp[0]`) split into a base token plus an index selector.
