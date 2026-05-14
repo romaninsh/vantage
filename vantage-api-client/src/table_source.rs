@@ -1,8 +1,8 @@
 use async_trait::async_trait;
+use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use serde_json::Value;
 use vantage_core::error;
-use vantage_dataset::traits::Result;
+use vantage_dataset::traits::{ReadableValueSet, Result};
 use vantage_expressions::Expression;
 use vantage_expressions::traits::associated_expressions::AssociatedExpression;
 use vantage_expressions::traits::datasource::DataSource;
@@ -18,20 +18,20 @@ use vantage_expressions::traits::expressive::DeferredFn;
 use crate::RestApi;
 
 /// Extract the id field name from a table's column flags.
-fn id_field_name<E: Entity<Value>>(table: &Table<RestApi, E>) -> Option<String> {
+fn id_field_name<E: Entity<CborValue>>(table: &Table<RestApi, E>) -> Option<String> {
     table.id_field().map(|col| col.name().to_string())
 }
 
-impl ExprDataSource<Value> for RestApi {
-    async fn execute(&self, expr: &Expression<Value>) -> vantage_core::Result<Value> {
+impl ExprDataSource<CborValue> for RestApi {
+    async fn execute(&self, expr: &Expression<CborValue>) -> vantage_core::Result<CborValue> {
         if expr.parameters.is_empty() {
-            Ok(Value::String(expr.template.clone()))
+            Ok(CborValue::Text(expr.template.clone()))
         } else {
-            Ok(Value::Null)
+            Ok(CborValue::Null)
         }
     }
 
-    fn defer(&self, expr: Expression<Value>) -> DeferredFn<Value> {
+    fn defer(&self, expr: Expression<CborValue>) -> DeferredFn<CborValue> {
         let api = self.clone();
         DeferredFn::new(move || {
             let api = api.clone();
@@ -52,10 +52,19 @@ impl TableSource for RestApi {
         = Column<Type>
     where
         Type: ColumnType;
-    type AnyType = Value;
-    type Value = Value;
+    type AnyType = CborValue;
+    type Value = CborValue;
     type Id = String;
     type Condition = vantage_expressions::Expression<Self::Value>;
+
+    /// Build a stringy `field == value` eq-condition. Stringy callers
+    /// (the model-driven CLI) only have text on hand; values arrive as
+    /// `String` and become CBOR text scalars here. The peeling code
+    /// in `condition_to_query_param` renders all scalar variants the
+    /// same way so the URL still reads correctly.
+    fn eq_condition(field: &str, value: &str) -> Result<Self::Condition> {
+        Ok(crate::eq_condition(field, value.to_string()))
+    }
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
         Column::new(name)
@@ -269,16 +278,83 @@ impl TableSource for RestApi {
         Err(error!("REST API is a read-only data source"))
     }
 
+    /// Build a child condition for `with_many` / `with_one` traversal.
+    ///
+    /// REST APIs can't run subqueries, so this resolves on two paths:
+    ///
+    /// * **Sync peek** — if the parent already carries an eq-condition
+    ///   on `source_column`, we re-key its value onto `target_field`
+    ///   and we're done. Covers the common `with_many` case where
+    ///   `source_column` is the parent's id field (narrowed via
+    ///   `id=N` or `[N]`).
+    /// * **Deferred read** — otherwise (the `with_one` case, where
+    ///   `source_column` is a foreign-key field that lives in the
+    ///   parent's record, not its conditions), we wrap the resolution
+    ///   in a `DeferredFn` that fetches the parent at request time and
+    ///   pulls the field out of the row. `fetch_records` resolves
+    ///   deferreds before peeling conditions into query params.
     fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(
         &self,
-        _target_field: &str,
-        _source_table: &Table<Self, SourceE>,
-        _source_column: &str,
+        target_field: &str,
+        source_table: &Table<Self, SourceE>,
+        source_column: &str,
     ) -> Self::Condition
     where
         Self: Sized,
     {
-        unimplemented!("related_in_condition not yet supported for REST API")
+        for cond in source_table.conditions() {
+            if let Some((field, value)) = crate::condition_to_query_param(cond)
+                && field == source_column
+            {
+                let cbor_value: CborValue = if let Ok(i) = value.parse::<i64>() {
+                    CborValue::Integer(i.into())
+                } else if let Ok(f) = value.parse::<f64>() {
+                    CborValue::Float(f)
+                } else {
+                    CborValue::Text(value)
+                };
+                return crate::eq_condition(target_field, cbor_value);
+            }
+        }
+
+        // Deferred fallback. Clone the parent table into the closure
+        // so it stays valid past this stack frame; at fetch time we
+        // list its values, take the first, and pull `source_column`.
+        let parent = source_table.clone();
+        let column = source_column.to_string();
+        let parent_name = source_table.table_name().to_string();
+        let deferred = DeferredFn::new(move || {
+            let parent = parent.clone();
+            let column = column.clone();
+            let parent_name = parent_name.clone();
+            Box::pin(async move {
+                let records = parent.list_values().await?;
+                let value = records
+                    .values()
+                    .next()
+                    .and_then(|r| r.get(&column))
+                    .cloned()
+                    .ok_or_else(|| {
+                        error!(
+                            "Deferred FK resolve: parent yielded no row or column missing",
+                            table = parent_name,
+                            column = column
+                        )
+                    })?;
+                Ok(ExpressiveEnum::Scalar(value))
+            })
+        });
+
+        Expression::new(
+            "{} = {}",
+            vec![
+                ExpressiveEnum::Nested(Expression::new(target_field.to_string(), vec![])),
+                ExpressiveEnum::Nested(Expression::new(
+                    "{}",
+                    vec![ExpressiveEnum::Deferred(deferred)],
+                )),
+            ],
+        )
     }
 
     fn column_table_values_expr<'a, E, Type: ColumnType>(

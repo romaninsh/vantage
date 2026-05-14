@@ -1,8 +1,9 @@
+use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use serde_json::Value;
 use vantage_core::error;
 use vantage_dataset::traits::Result;
 use vantage_expressions::Expression;
+use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_table::pagination::Pagination;
 use vantage_types::Record;
 
@@ -117,20 +118,68 @@ impl RestApi {
         self
     }
 
-    /// Build the endpoint URL for a given table name. No query string.
-    fn endpoint_url(&self, table_name: &str) -> String {
-        format!("{}/{}", self.base_url, table_name)
+    /// Build the endpoint path for `table_name`, substituting any
+    /// `{placeholder}` segments from matching eq-conditions.
+    ///
+    /// Returns the absolute URL up to (but excluding) the query string,
+    /// alongside the indices of conditions consumed by the substitution
+    /// — those are dropped from the query string by `build_query_string`.
+    ///
+    /// Tables that don't use templates (no `{}` in the name) pass
+    /// through unchanged and consume no conditions.
+    fn endpoint_url(
+        &self,
+        table_name: &str,
+        conditions: &[&Expression<CborValue>],
+    ) -> Result<(String, Vec<usize>)> {
+        let mut consumed = Vec::new();
+        let mut path = String::with_capacity(table_name.len());
+        let mut rest = table_name;
+        while let Some(open) = rest.find('{') {
+            path.push_str(&rest[..open]);
+            let after = &rest[open + 1..];
+            let close = after.find('}').ok_or_else(|| {
+                error!(
+                    "Unclosed `{` in table name URI template",
+                    table_name = table_name
+                )
+            })?;
+            let placeholder = &after[..close];
+            let (idx, value) = conditions
+                .iter()
+                .enumerate()
+                .find_map(|(i, cond)| {
+                    if consumed.contains(&i) {
+                        return None;
+                    }
+                    let (field, value) = crate::condition_to_query_param(cond)?;
+                    (field == placeholder).then_some((i, value))
+                })
+                .ok_or_else(|| {
+                    error!(
+                        "No eq-condition provided for URI placeholder",
+                        placeholder = placeholder,
+                        table_name = table_name
+                    )
+                })?;
+            consumed.push(idx);
+            path.push_str(&urlencode(&value));
+            rest = &after[close + 1..];
+        }
+        path.push_str(rest);
+        Ok((format!("{}/{}", self.base_url, path), consumed))
     }
 
     /// Build the combined query-string from pagination + conditions.
-    /// Conditions that don't peel cleanly into eq pairs are skipped (we
-    /// could fail loudly here, but silently ignoring matches the v1
-    /// "best effort" stance — the caller still gets correct data, just
-    /// with less efficient filtering).
-    fn build_query_string<'a>(
+    /// `consumed` lists condition indices already baked into the URI
+    /// path; those don't appear in the query string. Conditions that
+    /// don't peel cleanly into eq pairs are skipped — same "best effort"
+    /// stance as before.
+    fn build_query_string(
         &self,
         pagination: Option<&Pagination>,
-        conditions: impl IntoIterator<Item = &'a Expression<Value>>,
+        conditions: &[&Expression<CborValue>],
+        consumed: &[usize],
     ) -> String {
         let mut params: Vec<(String, String)> = Vec::new();
 
@@ -152,7 +201,10 @@ impl RestApi {
 
         // Conditions: each `eq` becomes `?field=value`. Multiple
         // conditions AND together (JSON Server semantics).
-        for cond in conditions {
+        for (i, cond) in conditions.iter().enumerate() {
+            if consumed.contains(&i) {
+                continue;
+            }
             if let Some((field, value)) = crate::condition_to_query_param(cond) {
                 params.push((field, value));
             }
@@ -189,8 +241,8 @@ impl RestApi {
         table_name: &str,
         id_field: Option<&str>,
         pagination: Option<&Pagination>,
-        conditions: impl IntoIterator<Item = &'a Expression<Value>>,
-    ) -> Result<IndexMap<String, Record<serde_json::Value>>> {
+        conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
+    ) -> Result<IndexMap<String, Record<CborValue>>> {
         // Non-paginating endpoints return the whole list on page 1; a
         // page-2 fetch would just re-deliver the same rows and the
         // perpetual grid would never mark itself exhausted. Short-
@@ -203,10 +255,22 @@ impl RestApi {
             return Ok(IndexMap::new());
         }
 
+        // Conditions may carry `DeferredFn` values — typically from
+        // `related_in_condition` for `with_one`-style traversals where
+        // the FK lives in a parent record we haven't fetched yet.
+        // Resolve them once, up front, so the rest of the pipeline
+        // sees only sync, peelable scalars.
+        let raw: Vec<&Expression<CborValue>> = conditions.into_iter().collect();
+        let mut resolved: Vec<Expression<CborValue>> = Vec::with_capacity(raw.len());
+        for cond in raw {
+            resolved.push(resolve_deferreds(cond.clone()).await?);
+        }
+        let conds: Vec<&Expression<CborValue>> = resolved.iter().collect();
+        let (endpoint, consumed) = self.endpoint_url(table_name, &conds)?;
         let url = format!(
             "{}{}",
-            self.endpoint_url(table_name),
-            self.build_query_string(pagination, conditions)
+            endpoint,
+            self.build_query_string(pagination, &conds, &consumed)
         );
 
         let mut request = self.client.get(&url);
@@ -250,8 +314,20 @@ impl RestApi {
                 })
                 .unwrap_or_else(|| row_idx.to_string());
 
-            let record: Record<serde_json::Value> =
-                obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            // The HTTP body parses as JSON for free; convert to CBOR
+            // at this single boundary so the rest of the pipeline
+            // (Table, Vista, AnyTable) sees the universal carrier.
+            let mut record: Record<CborValue> = Record::new();
+            for (k, v) in obj {
+                let cbor = CborValue::serialized(v).map_err(|e| {
+                    error!(
+                        "JSON → CBOR conversion failed",
+                        field = k.clone(),
+                        detail = e.to_string()
+                    )
+                })?;
+                record.insert(k.clone(), cbor);
+            }
 
             records.insert(id, record);
         }
@@ -262,6 +338,33 @@ impl RestApi {
 
 fn urlencode(s: &str) -> String {
     urlencoding::encode(s).into_owned()
+}
+
+/// Walk an `Expression`'s parameter tree and force any `Deferred`
+/// branches to their resolved form. Used at the `fetch_records`
+/// boundary so the URL builder only sees sync scalars.
+///
+/// Recursion lives on the heap (boxed) because the future's body
+/// contains another `async` call of the same shape — Rust can't size
+/// a directly-recursive `async fn` without indirection.
+fn resolve_deferreds(
+    mut expr: Expression<CborValue>,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Expression<CborValue>>> + Send>> {
+    Box::pin(async move {
+        for param in expr.parameters.iter_mut() {
+            match param {
+                ExpressiveEnum::Deferred(deferred) => {
+                    *param = deferred.call().await?;
+                }
+                ExpressiveEnum::Nested(inner) => {
+                    let resolved = resolve_deferreds(inner.clone()).await?;
+                    *inner = resolved;
+                }
+                ExpressiveEnum::Scalar(_) => {}
+            }
+        }
+        Ok(expr)
+    })
 }
 
 impl RestApi {

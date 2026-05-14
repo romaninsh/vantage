@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.7 — 2026-05-14
+
+- `live_demo` drops the in-example `JsonToCborAdapter` and wraps `Table<RestApi, _>` straight through `AnyTable::from_table`, now that [`vantage-api-client`](https://docs.rs/vantage-api-client) speaks `ciborium::Value` natively.
+- Pins `vantage-api-client = "0.1.4"` for the new value type.
+
 ## 0.4.6 — 2026-05-09
 
 - Pins `vantage-types` to `>= 0.4.2` so cargo can't resolve back to the pre-`RichText` trait shape.

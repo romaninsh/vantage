@@ -149,6 +149,25 @@ pub trait TableShell: Send + Sync + 'static {
         .is_unimplemented())
     }
 
+    // ---- References --------------------------------------------------------
+
+    /// Resolve a named relation and return the related table as a new
+    /// `Vista`. The default impl returns `Unimplemented` so existing
+    /// drivers compile until they opt in; drivers that wrap a typed
+    /// `Table<T, E>` can delegate to `Table::get_ref`.
+    fn get_ref(&self, relation: &str) -> Result<Vista> {
+        Err(error!(
+            format!(
+                "get_ref not implemented for '{}'",
+                std::any::type_name::<Self>()
+            ),
+            method = "get_ref",
+            relation = relation,
+            source_type = std::any::type_name::<Self>()
+        )
+        .is_unimplemented())
+    }
+
     // ---- Identity ----------------------------------------------------------
 
     /// Short human label for the underlying driver (e.g. `"csv"`, `"sqlite"`,

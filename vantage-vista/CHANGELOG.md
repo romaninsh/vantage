@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.5 — 2026-05-14
+
+- New [`Vista::get_ref`](https://docs.rs/vantage-vista/0.4.5/vantage_vista/struct.Vista.html#method.get_ref) traverses a named reference and returns the related `Vista`. The driver does the work — it consults its wrapped typed table's `with_one` / `with_many` registry, applies the join condition, and wraps the result back into a `Vista` so callers stay on the universal surface.
+- New [`TableShell::get_ref`](https://docs.rs/vantage-vista/0.4.5/vantage_vista/trait.TableShell.html#method.get_ref) trait method (default returns `Unimplemented`) — drivers wrapping a typed `Table<T, E>` can delegate to `Table::get_ref` and the rest is automatic. The first driver opting in is [`vantage-api-client 0.1.4`](https://docs.rs/vantage-api-client/0.1.4/).
+
 ## 0.4.4 — 2026-05-04
 
 - New [`Vista::driver()`](https://docs.rs/vantage-vista/0.4.4/vantage_vista/struct.Vista.html#method.driver) returns a short label for the backing driver (`"csv"`, `"sqlite"`, `"postgres"`, `"mysql"`, `"mongodb"`) — handy for diagnostics and CLI output.
