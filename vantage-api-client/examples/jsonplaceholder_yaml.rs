@@ -23,7 +23,7 @@ use std::sync::Arc;
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_api_client::{RestApi, RestApiVistaFactory, ResponseShape};
+use vantage_api_client::{ResponseShape, RestApi, RestApiVistaFactory};
 use vantage_cli_util::vista_cli::{self, Mode, ModelFactory, Renderer};
 use vantage_types::Record;
 use vantage_vista::Vista;
@@ -67,9 +67,7 @@ impl ModelFactory for JsonPlaceholderFactory {
     }
 }
 
-const KNOWN_MODELS: &[&str] = &[
-    "user", "users", "album", "albums", "photo", "photos",
-];
+const KNOWN_MODELS: &[&str] = &["user", "users", "album", "albums", "photo", "photos"];
 
 struct CborRenderer;
 
@@ -89,7 +87,13 @@ impl Renderer for CborRenderer {
 
         let columns: Vec<String> = if let Some(cols) = column_override {
             cols.iter()
-                .map(|c| if c == "id" { id_field.clone() } else { c.clone() })
+                .map(|c| {
+                    if c == "id" {
+                        id_field.clone()
+                    } else {
+                        c.clone()
+                    }
+                })
                 .collect()
         } else if !title_fields.is_empty() {
             title_fields
@@ -173,9 +177,7 @@ fn cbor_short(v: &CborValue) -> String {
 async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() {
-        eprintln!(
-            "usage: jsonplaceholder_yaml <model> [field=value ...] [[N]] [:relation ...]"
-        );
+        eprintln!("usage: jsonplaceholder_yaml <model> [field=value ...] [[N]] [:relation ...]");
         eprintln!("\nKnown models:");
         for n in KNOWN_MODELS {
             eprintln!("  {n}");

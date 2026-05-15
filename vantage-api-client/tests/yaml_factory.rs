@@ -3,7 +3,7 @@
 //! Network-driven behaviour (URI template substitution, deferred FK
 //! resolution) is exercised by `examples/jsonplaceholder_yaml.rs`.
 
-use vantage_api_client::{RestApi, ResponseShape, RestApiVistaFactory, RestApiVistaSpec};
+use vantage_api_client::{ResponseShape, RestApi, RestApiVistaFactory, RestApiVistaSpec};
 use vantage_vista::{ReferenceKind, VistaFactory};
 
 fn factory() -> RestApiVistaFactory {
@@ -102,10 +102,7 @@ references:
     assert_eq!(vista.name(), "users");
     assert_eq!(vista.get_id_column(), Some("id"));
     assert_eq!(vista.get_title_columns(), vec!["name"]);
-    assert_eq!(
-        vista.get_column_names(),
-        vec!["id", "name", "email"]
-    );
+    assert_eq!(vista.get_column_names(), vec!["id", "name", "email"]);
     assert_eq!(vista.get_references(), vec!["albums"]);
     let albums = vista.get_reference("albums").unwrap();
     assert_eq!(albums.target, "albums");
@@ -142,10 +139,7 @@ columns:
         Err(e) => e,
     };
     let msg = err.to_string();
-    assert!(
-        msg.contains("Unknown YAML column type"),
-        "got: {msg}"
-    );
+    assert!(msg.contains("Unknown YAML column type"), "got: {msg}");
 }
 
 #[test]

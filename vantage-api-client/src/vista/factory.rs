@@ -68,10 +68,7 @@ impl RestApiVistaFactory {
                 detail = e.to_string()
             )
         })?;
-        self.specs
-            .write()
-            .unwrap()
-            .insert(spec.name.clone(), spec);
+        self.specs.write().unwrap().insert(spec.name.clone(), spec);
         Ok(())
     }
 
@@ -85,12 +82,7 @@ impl RestApiVistaFactory {
             .unwrap()
             .get(name)
             .cloned()
-            .ok_or_else(|| {
-                error!(
-                    "No registered spec for model name",
-                    name = name.to_string()
-                )
-            })?;
+            .ok_or_else(|| error!("No registered spec for model name", name = name.to_string()))?;
         self.build_from_spec(spec)
     }
 
@@ -210,10 +202,7 @@ impl RestApiVistaFactory {
     /// Lower a `RestApiVistaSpec` into a typed `Table<RestApi,
     /// EmptyEntity>`. Endpoint defaults to `spec.name` when the
     /// `api.endpoint` block is absent.
-    fn table_from_spec(
-        &self,
-        spec: &RestApiVistaSpec,
-    ) -> Result<Table<RestApi, EmptyEntity>> {
+    fn table_from_spec(&self, spec: &RestApiVistaSpec) -> Result<Table<RestApi, EmptyEntity>> {
         let endpoint = spec
             .driver
             .api
@@ -284,9 +273,7 @@ fn column_for_type(name: &str, ty: &str) -> Result<TableColumn<CborValue>> {
             TableColumn::from_column(TableColumn::<f64>::new(name))
         }
         "bool" | "boolean" => TableColumn::from_column(TableColumn::<bool>::new(name)),
-        "string" | "text" | "str" => {
-            TableColumn::from_column(TableColumn::<String>::new(name))
-        }
+        "string" | "text" | "str" => TableColumn::from_column(TableColumn::<String>::new(name)),
         "json" | "any" => TableColumn::from_column(TableColumn::<CborValue>::new(name)),
         other => {
             return Err(error!(

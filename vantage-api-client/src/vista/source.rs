@@ -164,10 +164,7 @@ impl TableShell for RestApiTableShell {
         self.table.add_condition(Box::new(condition))
     }
 
-    fn add_raw_condition(
-        &mut self,
-        condition: Box<dyn std::any::Any + Send + Sync>,
-    ) -> Result<()> {
+    fn add_raw_condition(&mut self, condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()> {
         self.table.add_condition(condition)
     }
 

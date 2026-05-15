@@ -120,10 +120,7 @@ impl Vista {
     /// YAML-driven relation factories that need to inject deferred
     /// FK eq-conditions (i.e. conditions whose value is resolved at
     /// fetch time by reading a parent record).
-    pub fn add_raw_condition<C: Send + Sync + 'static>(
-        &mut self,
-        condition: C,
-    ) -> Result<()> {
+    pub fn add_raw_condition<C: Send + Sync + 'static>(&mut self, condition: C) -> Result<()> {
         self.source.add_raw_condition(Box::new(condition))
     }
 
