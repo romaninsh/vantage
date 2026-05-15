@@ -115,6 +115,18 @@ impl Vista {
         self.source.get_vista_count(self).await
     }
 
+    /// Push a driver-native condition into the wrapped table. The
+    /// boxed value must match the driver's `T::Condition`. Used by
+    /// YAML-driven relation factories that need to inject deferred
+    /// FK eq-conditions (i.e. conditions whose value is resolved at
+    /// fetch time by reading a parent record).
+    pub fn add_raw_condition<C: Send + Sync + 'static>(
+        &mut self,
+        condition: C,
+    ) -> Result<()> {
+        self.source.add_raw_condition(Box::new(condition))
+    }
+
     // ---- references --------------------------------------------------------
 
     /// Traverse a named reference and return the related `Vista`.
