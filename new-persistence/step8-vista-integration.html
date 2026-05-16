@@ -36,7 +36,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-ddb5229b.js";
+            window.path_to_searchindex_js = "../searchindex-c8e0a8a7.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-99e15bc2.js"></script>
@@ -411,6 +411,29 @@ signed 64-bit type (<code>i128</code>, big BigInts) should stringify rather than
 ↔ CBOR conversion gets called from places that should be going through <code>Vista</code> instead.</p>
 </li>
 </ul>
+<h3 id="optional-overrides"><a class="header" href="#optional-overrides">Optional overrides</a></h3>
+<p><code>TableShell</code> ships defaults for several methods beyond the read/write quartet the example above
+overrides. The defaults are honest — each either returns the right error kind or falls back to a
+slow-but-correct path — but most drivers can do better:</p>
+<ul>
+<li><strong><code>get_vista_count</code></strong> defaults to <code>list_vista_values(...).await?.len()</code>. Override with the
+backend’s native count path: <code>SELECT COUNT(*)</code> for SQL, <code>count_documents</code> for Mongo, whatever
+yours gives you for free. The default is fine for testing; it stops being fine the first time
+someone calls <code>vista.get_count()</code> on a 50M-row table.</li>
+<li><strong><code>stream_vista_values</code></strong> defaults to materialising the full result via <code>list_vista_values</code> and
+yielding from the resulting map. Cursor-based backends — Mongo find cursors, paginated REST
+endpoints — should override to stream lazily. Same reasoning as the count override: the default
+works, it just doesn’t scale.</li>
+<li><strong><code>insert_vista_return_id_value</code></strong> defaults to <code>Unsupported</code>. Override when the backend generates
+the id server-side (Mongo’s <code>ObjectId::new()</code>, Postgres’ <code>RETURNING id</code>, a REST POST returning a
+<code>Location</code> header), and advertise <code>can_insert: true</code> to match.</li>
+<li><strong><code>driver_name</code></strong> defaults to <code>"unknown"</code>. Override it unconditionally; a one-line
+<code>fn driver_name(&amp;self) -&gt; &amp;'static str { "yourdriver" }</code> lights up <code>Vista::driver()</code> for CLI
+output and diagnostics, and there’s no reason not to.</li>
+</ul>
+<p>The defaults exist for cases where the override would be a no-op or a net pessimisation. Otherwise:
+override. Leaving <code>get_vista_count</code> defaulted on a real table is the same shape of bug as not
+pushing down conditions — it works, but it works the wrong way.</p>
 <h3 id="capabilities--the-honesty-contract"><a class="header" href="#capabilities--the-honesty-contract">Capabilities — the honesty contract</a></h3>
 <p><code>VistaCapabilities</code> is six booleans plus a <code>PaginateKind</code>. They’re the contract a generic UI relies
 on to decide which buttons to draw:</p>
@@ -477,6 +500,49 @@ common denominator that drivers translate up from.</p>
 argument, or a YAML field, or a Rhai script. CBOR is the carrier; the driver decides how to project
 it onto its native type. CSV’s <code>From&lt;CborValue&gt; for AnyCsvType</code> and Mongo’s <code>cbor_to_bson</code> are the
 two halves of that translation in the in-tree drivers.</p>
+<h3 id="references-delegate-too"><a class="header" href="#references-delegate-too">References delegate too</a></h3>
+<p><code>Vista::get_ref(relation)</code> is the eq-condition delegation one rung up: same principle, same
+Vista-stores-nothing rule. The call lands on <code>TableShell::get_ref</code>, which forwards through to the
+wrapped <code>Table</code>’s <code>with_one</code>/<code>with_many</code>/<code>with_foreign</code> machinery and re-wraps the result as a
+fresh <code>Vista</code>. Vista itself holds reference <em>metadata</em> (the YAML-friendly
+<code>Reference { name, target, kind, foreign_key }</code> struct) but no live traversal state.</p>
+<p>The default trait impl returns <code>Unimplemented</code>. This is the most-forgotten override on the trait,
+because the underlying <code>Table&lt;T, E&gt;</code> you handed to the factory already supports traversal —
+nothing rewires it into the Vista surface unless you write the glue:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn get_ref(&amp;self, relation: &amp;str) -&gt; Result&lt;Vista&gt; {
+    let any_table = self.table.get_ref(relation)?;       // typed Table's refs → AnyTable
+    Ok(vista_from_any_table(any_table))                  // re-wrap as Vista
+}
+<span class="boring">}</span></code></pre>
+<p>Two notes worth dwelling on:</p>
+<ul>
+<li>The result is <em>another</em> <code>Vista</code>, not the inner table. Consumers stay on the universal surface;
+<code>client.get_ref("orders").get_ref("items")</code> works without falling out of Vista at any hop —
+including across backends, when the resulting table came in via <code>with_foreign</code> from a different
+driver entirely.</li>
+<li>The re-wrap helper belongs in your driver crate as a free function (no factory state needed),
+because every driver has the same Vista construction code already; exposing it from the shell
+keeps the trait method short and avoids storing an <code>Arc&lt;Factory&gt;</code> back-pointer.</li>
+</ul>
+<h4 id="cross-backend-references-add_raw_condition"><a class="header" href="#cross-backend-references-add_raw_condition">Cross-backend references: <code>add_raw_condition</code></a></h4>
+<p><code>Table::with_foreign</code> accepts a closure that builds an <code>AnyTable</code> from any backend, and the
+resulting reference is <em>foreign</em> — the source can’t resolve it on its own, because the join
+condition has to fire in the <em>target</em> backend’s vocabulary, not this one. The YAML factory layer
+constructs a deferred <code>Fn</code>-condition outside the value-set surface and pushes it through
+<code>TableShell::add_raw_condition</code>, which takes a <code>Box&lt;dyn Any&gt;</code> and downcasts to the driver’s
+native condition type.</p>
+<p>REST is the in-tree driver showing how to wire this — and it’s what lets a Postgres-backed
+<code>client</code> table reference a REST-backed <code>orders</code> endpoint inside one YAML inventory. If you’re not
+planning to participate in cross-driver YAML schemas, leave the default in place; the
+advertise-what-you-mean rule applies here the same as everywhere else.</p>
+<h4 id="what-if-my-backend-doesnt-traverse"><a class="header" href="#what-if-my-backend-doesnt-traverse">What if my backend doesn’t traverse?</a></h4>
+<p>LogWriter is the worked example: an insert-only sink has no references, doesn’t read its own
+writes, and forwarding <code>get_ref</code> makes no sense. Leave the default. The error message includes
+the driver type name and the relation name, so the caller sees “get_ref not implemented for
+<code>LogWriterTableShell</code>” — accurate, unsurprising, consistent with everything else returning
+<code>Unimplemented</code> from this trait.</p>
 <h3 id="nested-fields-the-column_paths-pattern"><a class="header" href="#nested-fields-the-column_paths-pattern">Nested fields: the <code>column_paths</code> pattern</a></h3>
 <p>The MongoDB rollout surfaced a problem that any document-shaped backend will hit eventually: how do
 you let a column called <code>city</code> in the spec map to <code>address.city</code> in the underlying document?</p>
@@ -602,6 +668,12 @@ non-hex inputs is the kind of asymmetry that hides until production.</p>
 ignores them, which is why MongoDB’s vista layer routes single-level renames through
 <code>column_paths</code> instead. Audit your read path before relying on aliases for column renames; if the
 table layer doesn’t honour them, do the renaming in the vista source.</p>
+<p><strong><code>get_ref</code> is the easiest method to forget.</strong> The default returns <code>Unimplemented</code> even though
+the typed <code>Table&lt;T, E&gt;</code> you wrapped has full <code>with_one</code>/<code>with_many</code> support sitting right there.
+Forwarding is three lines (see “References delegate too” above), but a test file that never
+traverses won’t catch the missing override — and <code>Vista::get_ref</code> is exactly the entry point
+YAML-driven UIs and CLIs reach for first. Add a reference-traversal smoke test to every driver’s
+<code>tests/N_vista.rs</code>.</p>
 <p><strong>Cursor-only backends should not advertise offset.</strong> <code>PaginateKind</code> is a UI hint as much as a
 declaration; getting it wrong means the UI offers an offset slider that never works. If the
 backend is genuinely cursor-only (DynamoDB, many REST APIs), say so, and let consumers reject the
@@ -637,6 +709,11 @@ flagged it <code>true</code> in week one and has been shipping <code>Unimplement
 <li>Read methods translate native ids → <code>String</code> and native values → <code>CborValue</code> at the boundary.</li>
 <li>Write methods (where supported) translate the other way.</li>
 <li><code>add_eq_condition</code> pushes a native condition onto the wrapped <code>Table</code>.</li>
+<li><code>get_ref</code> forwards reference traversal through the wrapped <code>Table</code> and re-wraps the result as
+a fresh <code>Vista</code>. <code>add_raw_condition</code> is also overridden if the driver participates in
+cross-backend YAML references.</li>
+<li><code>driver_name</code> returns a stable short label; <code>get_vista_count</code> and <code>stream_vista_values</code> are
+overridden where the backend has a native fast path.</li>
 <li><code>capabilities()</code> returns a <code>VistaCapabilities</code> whose <code>true</code> flags exactly match the methods
 you actually overrode.</li>
 </ul>
