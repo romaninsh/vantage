@@ -67,34 +67,30 @@ jobs:
             old_ver=$(git show "${base_sha}:${crate}/Cargo.toml" 2>/dev/null \
                        | awk -F'"' '/^version = "/ {print $2; exit}' || true)
 
-            echo "::group::${name} (${crate})"
+            echo "── ${name} (${crate}) ──"
             echo "  base version: ${old_ver:-<new crate>}"
             echo "  head version: ${new_ver}"
 
             if [ -n "${old_ver}" ] && [ "${old_ver}" = "${new_ver}" ]; then
               echo "::error file=${crate}/Cargo.toml::${name} has changes but version is still ${new_ver} — bump it (patch is fine)."
               fail=1
-              echo "::endgroup::"
               continue
             fi
 
             if [ ! -f "${crate}/CHANGELOG.md" ]; then
               echo "::error file=${crate}::${name} is missing CHANGELOG.md."
               fail=1
-              echo "::endgroup::"
               continue
             fi
 
             if ! grep -qE "^## ${new_ver}( |\$)" "${crate}/CHANGELOG.md"; then
               echo "::error file=${crate}/CHANGELOG.md::${name} CHANGELOG.md has no entry for ${new_ver} (need a '## ${new_ver}' heading)."
               fail=1
-              echo "::endgroup::"
               continue
             fi
 
             echo "  ok — will publish ${name} ${new_ver} on merge"
             labels+=("release:${name}")
-            echo "::endgroup::"
           done
 
           {
