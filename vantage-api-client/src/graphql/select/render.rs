@@ -53,13 +53,15 @@ impl GraphqlSelect {
                     FilterDialect::Hasura => "where",
                     FilterDialect::Generic => "find",
                 });
-            args.push(format!("{}: {}", arg_name, json_to_graphql_value(&combined)));
+            args.push(format!(
+                "{}: {}",
+                arg_name,
+                json_to_graphql_value(&combined)
+            ));
         }
 
         // ── Order (Hasura only for now) ──────────────────────────
-        if !self.sort.is_empty()
-            && matches!(self.dialect, FilterDialect::Hasura)
-        {
+        if !self.sort.is_empty() && matches!(self.dialect, FilterDialect::Hasura) {
             let entries: Vec<String> = self
                 .sort
                 .iter()
@@ -113,12 +115,21 @@ impl GraphqlSelect {
     pub fn preview(&self) -> String {
         let root = self.root_field.as_deref().unwrap_or("?");
         let count = self.conditions.len();
-        let limit = self.limit.map(|l| format!(", limit: {}", l)).unwrap_or_default();
-        let skip = self.skip.map(|s| format!(", offset: {}", s)).unwrap_or_default();
+        let limit = self
+            .limit
+            .map(|l| format!(", limit: {}", l))
+            .unwrap_or_default();
+        let skip = self
+            .skip
+            .map(|s| format!(", offset: {}", s))
+            .unwrap_or_default();
         let where_part = if count > 0 {
             format!("(<{} conditions>{}{})", count, limit, skip)
         } else if !limit.is_empty() || !skip.is_empty() {
-            format!("({})", &format!("{}{}", limit, skip).trim_start_matches(", "))
+            format!(
+                "({})",
+                &format!("{}{}", limit, skip).trim_start_matches(", ")
+            )
         } else {
             String::new()
         };
@@ -175,7 +186,11 @@ fn render_inline_subselection<'a>(
                     FilterDialect::Hasura => "where",
                     FilterDialect::Generic => "find",
                 });
-            args.push(format!("{}: {}", arg_name, json_to_graphql_value(&rendered)));
+            args.push(format!(
+                "{}: {}",
+                arg_name,
+                json_to_graphql_value(&rendered)
+            ));
         }
         if let Some(limit) = child.limit {
             args.push(format!("limit: {}", limit));
@@ -289,10 +304,7 @@ mod tests {
             .render()
             .await
             .unwrap();
-        assert_eq!(
-            q.query,
-            "query { users(where: {age: {_gt: 30}}) { id } }"
-        );
+        assert_eq!(q.query, "query { users(where: {age: {_gt: 30}}) { id } }");
     }
 
     #[tokio::test]
@@ -330,9 +342,7 @@ mod tests {
 
     #[tokio::test]
     async fn renders_sub_selection() {
-        let rocket = GraphqlSelect::new()
-            .with_field("id")
-            .with_field("name");
+        let rocket = GraphqlSelect::new().with_field("id").with_field("name");
         let q = GraphqlSelect::new()
             .with_root_field("launches")
             .with_field("id")

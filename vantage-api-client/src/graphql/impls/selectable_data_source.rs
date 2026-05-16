@@ -35,12 +35,11 @@ impl SelectableDataSource<AnyGraphqlType, GraphqlCondition> for GraphqlApi {
         }
     }
 
-    async fn execute_select(
-        &self,
-        select: &Self::Select,
-    ) -> Result<Vec<AnyGraphqlType>> {
+    async fn execute_select(&self, select: &Self::Select) -> Result<Vec<AnyGraphqlType>> {
         let rendered = select.render().await?;
-        let data = self.post_graphql(&rendered.query, &rendered.variables).await?;
+        let data = self
+            .post_graphql(&rendered.query, &rendered.variables)
+            .await?;
 
         // GraphQL responses nest the rows under the root field name:
         //   { "data": { "launches": [ {...}, {...} ] } }
@@ -50,9 +49,12 @@ impl SelectableDataSource<AnyGraphqlType, GraphqlCondition> for GraphqlApi {
             .as_deref()
             .ok_or_else(|| error!("GraphqlSelect has no root_field set"))?;
 
-        let rows = data
-            .get(root)
-            .ok_or_else(|| error!("GraphQL response missing expected root field", field = root.to_string()))?;
+        let rows = data.get(root).ok_or_else(|| {
+            error!(
+                "GraphQL response missing expected root field",
+                field = root.to_string()
+            )
+        })?;
 
         match rows {
             Value::Array(arr) => Ok(arr

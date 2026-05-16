@@ -1,6 +1,9 @@
 //! AnyGraphqlType extras: untyped constructor, From impls, Expressive impls.
 
-use super::{AnyGraphqlType, GraphqlType, GraphqlTypeArrayMarker, GraphqlTypeJsonMarker, GraphqlTypeNullMarker, GraphqlTypeObjectMarker};
+use super::{
+    AnyGraphqlType, GraphqlType, GraphqlTypeArrayMarker, GraphqlTypeJsonMarker,
+    GraphqlTypeNullMarker, GraphqlTypeObjectMarker,
+};
 use serde_json::Value;
 use vantage_core::VantageError;
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};

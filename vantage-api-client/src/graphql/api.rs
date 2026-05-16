@@ -75,10 +75,13 @@ impl GraphqlApi {
             req = req.header("Authorization", auth);
         }
 
-        let response = req
-            .send()
-            .await
-            .map_err(|e| error!("GraphQL request failed", endpoint = self.endpoint.clone(), detail = e.to_string()))?;
+        let response = req.send().await.map_err(|e| {
+            error!(
+                "GraphQL request failed",
+                endpoint = self.endpoint.clone(),
+                detail = e.to_string()
+            )
+        })?;
 
         if !response.status().is_success() {
             return Err(error!(
@@ -88,10 +91,12 @@ impl GraphqlApi {
             ));
         }
 
-        let mut envelope: Value = response
-            .json()
-            .await
-            .map_err(|e| error!("Failed to parse GraphQL response as JSON", detail = e.to_string()))?;
+        let mut envelope: Value = response.json().await.map_err(|e| {
+            error!(
+                "Failed to parse GraphQL response as JSON",
+                detail = e.to_string()
+            )
+        })?;
 
         // GraphQL servers return `{ "data": …, "errors": [...] }`. Surface
         // any errors as a Vantage error and otherwise hand back `data`.

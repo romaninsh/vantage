@@ -101,7 +101,11 @@ impl ModelFactory for SpaceXFactory {
         // singular ("launch") and plural ("launches") as the same list
         // — the vista_cli runner handles the field=value narrowing.
         let key = singular_to_plural(name)?;
-        let mode = if name.ends_with('s') { Mode::List } else { Mode::Single };
+        let mode = if name.ends_with('s') {
+            Mode::List
+        } else {
+            Mode::Single
+        };
         self.vista_for(key).map(|v| (v, mode))
     }
 }
@@ -125,16 +129,26 @@ fn singular_to_plural(name: &str) -> Option<&'static str> {
 }
 
 const KNOWN_MODELS: &[&str] = &[
-    "launch", "launches",
-    "rocket", "rockets",
-    "capsule", "capsules",
-    "core", "cores",
-    "ship", "ships",
-    "payload", "payloads",
-    "mission", "missions",
-    "dragon", "dragons",
-    "landpad", "landpads",
-    "launchpad", "launchpads",
+    "launch",
+    "launches",
+    "rocket",
+    "rockets",
+    "capsule",
+    "capsules",
+    "core",
+    "cores",
+    "ship",
+    "ships",
+    "payload",
+    "payloads",
+    "mission",
+    "missions",
+    "dragon",
+    "dragons",
+    "landpad",
+    "landpads",
+    "launchpad",
+    "launchpads",
 ];
 
 // ── Renderer ─────────────────────────────────────────────────────────────
@@ -161,7 +175,13 @@ impl Renderer for CborRenderer {
 
         let columns: Vec<String> = if let Some(cols) = column_override {
             cols.iter()
-                .map(|c| if c == "id" { id_field.clone() } else { c.clone() })
+                .map(|c| {
+                    if c == "id" {
+                        id_field.clone()
+                    } else {
+                        c.clone()
+                    }
+                })
                 .collect()
         } else if !title_fields.is_empty() {
             title_fields

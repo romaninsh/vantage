@@ -22,9 +22,7 @@ use crate::graphql::api::GraphqlApi;
 use crate::graphql::condition::FilterDialect;
 use crate::graphql::types::AnyGraphqlType;
 use crate::graphql::vista::source::GraphqlApiTableShell;
-use crate::graphql::vista::spec::{
-    GraphqlApiVistaSpec, GraphqlColumnExtras, GraphqlTableExtras,
-};
+use crate::graphql::vista::spec::{GraphqlApiVistaSpec, GraphqlColumnExtras, GraphqlTableExtras};
 
 pub struct GraphqlApiVistaFactory {
     api: GraphqlApi,
@@ -262,8 +260,8 @@ mod tests {
     #[test]
     fn factory_capabilities_advertise_count_only() {
         let api = GraphqlApi::new("https://api.test/graphql");
-        let table: Table<GraphqlApi, EmptyEntity> = Table::new("launches", api.clone())
-            .with_id_column("id");
+        let table: Table<GraphqlApi, EmptyEntity> =
+            Table::new("launches", api.clone()).with_id_column("id");
         let vista = api.vista_factory().from_table(table).unwrap();
         assert!(vista.capabilities().can_count);
         // Writes are stubbed at the TableSource layer so the shell
@@ -364,7 +362,10 @@ columns:
 "#;
         let spec: GraphqlApiVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
         let api = GraphqlApi::new("https://api.test/graphql");
-        expect_err(api.vista_factory().build_from_spec(spec), "Unknown YAML column type");
+        expect_err(
+            api.vista_factory().build_from_spec(spec),
+            "Unknown YAML column type",
+        );
     }
 
     #[test]
@@ -379,7 +380,10 @@ columns:
 "#;
         let spec: GraphqlApiVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
         let api = GraphqlApi::new("https://api.test/graphql");
-        expect_err(api.vista_factory().build_from_spec(spec), "id column not present");
+        expect_err(
+            api.vista_factory().build_from_spec(spec),
+            "id column not present",
+        );
     }
 
     #[test]
@@ -395,6 +399,9 @@ graphql:
 "#;
         let spec: GraphqlApiVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
         let api = GraphqlApi::new("https://api.test/graphql");
-        expect_err(api.vista_factory().build_from_spec(spec), "Unknown filter dialect");
+        expect_err(
+            api.vista_factory().build_from_spec(spec),
+            "Unknown filter dialect",
+        );
     }
 }

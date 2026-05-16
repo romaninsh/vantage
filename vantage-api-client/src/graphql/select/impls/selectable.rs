@@ -113,7 +113,13 @@ impl Selectable<AnyGraphqlType, GraphqlCondition> for GraphqlSelect {
     }
 
     fn as_count(&self) -> Expression<AnyGraphqlType> {
-        Expression::new(format!("{}_aggregate {{ aggregate {{ count }} }}", self.root_field.clone().unwrap_or_default()), vec![])
+        Expression::new(
+            format!(
+                "{}_aggregate {{ aggregate {{ count }} }}",
+                self.root_field.clone().unwrap_or_default()
+            ),
+            vec![],
+        )
     }
 
     fn as_sum(&self, column: impl Expressive<AnyGraphqlType>) -> Expression<AnyGraphqlType> {

@@ -23,7 +23,6 @@ pub use operation::GraphqlOperation;
 pub use select::{GraphqlSelect, render::RenderedQuery};
 pub use types::{AnyGraphqlType, GraphqlType, GraphqlTypeVariants};
 pub use vista::{
-    GraphqlApiTableShell, GraphqlApiVistaFactory, GraphqlApiVistaSpec,
+    GraphqlApiTableShell, GraphqlApiVistaFactory, GraphqlApiVistaSpec, NoGraphqlExtras,
     spec::{GraphqlBlock, GraphqlColumnBlock, GraphqlColumnExtras, GraphqlTableExtras},
-    NoGraphqlExtras,
 };

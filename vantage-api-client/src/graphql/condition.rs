@@ -150,7 +150,11 @@ impl GraphqlCondition {
         Box::pin(async move {
             match self {
                 Self::Field(fc) => render_field(fc, dialect),
-                Self::DeferredField { field, op, value_fn } => {
+                Self::DeferredField {
+                    field,
+                    op,
+                    value_fn,
+                } => {
                     let resolved = value_fn.call().await?;
                     let value = match resolved {
                         ExpressiveEnum::Scalar(v) => v.into_value(),
@@ -231,7 +235,10 @@ fn render_field(fc: &FieldCondition, dialect: FilterDialect) -> Result<Value> {
         FilterDialect::Hasura => {
             let mut inner = Map::new();
             let key = fc.op.hasura_key().ok_or_else(|| {
-                error!("Operator not supported in Hasura dialect", op = format!("{:?}", fc.op))
+                error!(
+                    "Operator not supported in Hasura dialect",
+                    op = format!("{:?}", fc.op)
+                )
             })?;
             // Hasura's `_is_null` op takes a Bool; map IsNull → true, IsNotNull → false.
             let value = match fc.op {
@@ -379,7 +386,11 @@ mod tests {
 
     #[tokio::test]
     async fn hasura_renders_is_null_with_bool_arg() {
-        let c = GraphqlCondition::Field(FieldCondition::new("deleted_at", GraphqlOp::IsNull, Value::Null));
+        let c = GraphqlCondition::Field(FieldCondition::new(
+            "deleted_at",
+            GraphqlOp::IsNull,
+            Value::Null,
+        ));
         let r = c.render(FilterDialect::Hasura).await.unwrap();
         assert_eq!(r, json!({ "deleted_at": { "_is_null": true } }));
     }

@@ -23,8 +23,8 @@ pub use graphql::{
     GraphqlSelect, GraphqlTableExtras, GraphqlType, GraphqlTypeVariants, NoGraphqlExtras,
     RenderedQuery,
 };
+pub(crate) use rest::condition_to_query_param;
 pub use rest::{
     AnyTableShell, NoApiExtras, PaginationParams, ResponseShape, RestApi, RestApiBuilder,
     RestApiTableShell, RestApiVistaFactory, RestApiVistaSpec, eq_condition,
 };
-pub(crate) use rest::condition_to_query_param;

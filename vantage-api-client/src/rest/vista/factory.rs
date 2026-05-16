@@ -13,9 +13,9 @@ use vantage_vista::{
     VistaFactory, VistaMetadata, flags as vista_flags,
 };
 
-use crate::RestApi;
 use super::source::RestApiTableShell;
 use super::spec::{NoApiExtras, RestApiVistaSpec};
+use crate::RestApi;
 
 pub struct RestApiVistaFactory {
     api: RestApi,

@@ -92,10 +92,7 @@ fn select_from_table<E: Entity<AnyGraphqlType>>(table: &Table<GraphqlApi, E>) ->
 /// stringified from whatever JSON shape the server returned — most
 /// schemas use `String` or numeric ids, both of which we coerce to
 /// `String` since that's our `Id` type.
-fn row_to_record(
-    row: &Value,
-    id_field: Option<&str>,
-) -> Result<(String, Record<AnyGraphqlType>)> {
+fn row_to_record(row: &Value, id_field: Option<&str>) -> Result<(String, Record<AnyGraphqlType>)> {
     let obj = row
         .as_object()
         .ok_or_else(|| error!("Expected JSON object for row", got = format!("{:?}", row)))?;
@@ -106,10 +103,7 @@ fn row_to_record(
             .map(value_to_string)
             .ok_or_else(|| error!("Row missing id field", field = field.to_string()))?,
         // No id field declared — fall back to "id" then to a stringified row index later.
-        None => obj
-            .get("id")
-            .map(value_to_string)
-            .unwrap_or_default(),
+        None => obj.get("id").map(value_to_string).unwrap_or_default(),
     };
 
     let mut fields: IndexMap<String, AnyGraphqlType> = IndexMap::new();
@@ -211,12 +205,17 @@ impl TableSource for GraphqlApi {
     {
         let select = select_from_table(table);
         let rendered = select.render().await?;
-        let data = self.post_graphql(&rendered.query, &rendered.variables).await?;
+        let data = self
+            .post_graphql(&rendered.query, &rendered.variables)
+            .await?;
 
         let root = table.table_name();
-        let rows = data
-            .get(root)
-            .ok_or_else(|| error!("GraphQL response missing root field", field = root.to_string()))?;
+        let rows = data.get(root).ok_or_else(|| {
+            error!(
+                "GraphQL response missing root field",
+                field = root.to_string()
+            )
+        })?;
 
         let arr = match rows {
             Value::Array(a) => a.clone(),
@@ -258,15 +257,22 @@ impl TableSource for GraphqlApi {
             .map(|c| c.name().to_string())
             .unwrap_or_else(|| "id".to_string());
         let mut select = select_from_table(table);
-        select.conditions.push(Column::<AnyGraphqlType>::new(&id_name).eq(id.as_str()));
+        select
+            .conditions
+            .push(Column::<AnyGraphqlType>::new(&id_name).eq(id.as_str()));
         select.limit = Some(1);
 
         let rendered = select.render().await?;
-        let data = self.post_graphql(&rendered.query, &rendered.variables).await?;
+        let data = self
+            .post_graphql(&rendered.query, &rendered.variables)
+            .await?;
         let root = table.table_name();
-        let rows = data
-            .get(root)
-            .ok_or_else(|| error!("GraphQL response missing root field", field = root.to_string()))?;
+        let rows = data.get(root).ok_or_else(|| {
+            error!(
+                "GraphQL response missing root field",
+                field = root.to_string()
+            )
+        })?;
 
         let arr = match rows {
             Value::Array(a) => a.clone(),
@@ -358,7 +364,9 @@ impl TableSource for GraphqlApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(error!("GraphQL mutations not implemented; depends on schema"))
+        Err(error!(
+            "GraphQL mutations not implemented; depends on schema"
+        ))
     }
 
     async fn replace_table_value<E>(
@@ -371,7 +379,9 @@ impl TableSource for GraphqlApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(error!("GraphQL mutations not implemented; depends on schema"))
+        Err(error!(
+            "GraphQL mutations not implemented; depends on schema"
+        ))
     }
 
     async fn patch_table_value<E>(
@@ -384,7 +394,9 @@ impl TableSource for GraphqlApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(error!("GraphQL mutations not implemented; depends on schema"))
+        Err(error!(
+            "GraphQL mutations not implemented; depends on schema"
+        ))
     }
 
     async fn delete_table_value<E>(&self, _table: &Table<Self, E>, _id: &Self::Id) -> Result<()>
@@ -392,7 +404,9 @@ impl TableSource for GraphqlApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(error!("GraphQL mutations not implemented; depends on schema"))
+        Err(error!(
+            "GraphQL mutations not implemented; depends on schema"
+        ))
     }
 
     async fn delete_table_all_values<E>(&self, _table: &Table<Self, E>) -> Result<()>
@@ -400,7 +414,9 @@ impl TableSource for GraphqlApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(error!("GraphQL mutations not implemented; depends on schema"))
+        Err(error!(
+            "GraphQL mutations not implemented; depends on schema"
+        ))
     }
 
     async fn insert_table_return_id_value<E>(
@@ -412,7 +428,9 @@ impl TableSource for GraphqlApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(error!("GraphQL mutations not implemented; depends on schema"))
+        Err(error!(
+            "GraphQL mutations not implemented; depends on schema"
+        ))
     }
 
     /// Build a child condition for `with_many` / `with_one` traversal.
@@ -686,7 +704,9 @@ mod tests {
             op: GraphqlOp::Eq,
             value_fn: DeferredFn::new(|| {
                 Box::pin(async {
-                    Ok(ExpressiveEnum::Scalar(AnyGraphqlType::new("abc-123".to_string())))
+                    Ok(ExpressiveEnum::Scalar(AnyGraphqlType::new(
+                        "abc-123".to_string(),
+                    )))
                 })
             }),
         };
@@ -701,9 +721,7 @@ mod tests {
             field: "launch_id".into(),
             op: GraphqlOp::Eq,
             value_fn: DeferredFn::new(|| {
-                Box::pin(async {
-                    Ok(ExpressiveEnum::Scalar(AnyGraphqlType::new(7i64)))
-                })
+                Box::pin(async { Ok(ExpressiveEnum::Scalar(AnyGraphqlType::new(7i64))) })
             }),
         };
         let r = cond.render(FilterDialect::Generic).await.unwrap();

@@ -44,7 +44,9 @@ impl GraphqlType for f64 {
     type Target = GraphqlTypeFloatMarker;
 
     fn to_json(&self) -> Value {
-        serde_json::Number::from_f64(*self).map(Value::Number).unwrap_or(Value::Null)
+        serde_json::Number::from_f64(*self)
+            .map(Value::Number)
+            .unwrap_or(Value::Null)
     }
 
     fn from_json(value: Value) -> Option<Self> {

@@ -51,7 +51,11 @@ pub trait GraphqlOperation<T>: Expressive<T> {
     where
         Self: Sized,
     {
-        GraphqlCondition::Field(FieldCondition::new(field_name(self), GraphqlOp::Eq, to_json(value)))
+        GraphqlCondition::Field(FieldCondition::new(
+            field_name(self),
+            GraphqlOp::Eq,
+            to_json(value),
+        ))
     }
 
     /// `field != value`
@@ -59,7 +63,11 @@ pub trait GraphqlOperation<T>: Expressive<T> {
     where
         Self: Sized,
     {
-        GraphqlCondition::Field(FieldCondition::new(field_name(self), GraphqlOp::Ne, to_json(value)))
+        GraphqlCondition::Field(FieldCondition::new(
+            field_name(self),
+            GraphqlOp::Ne,
+            to_json(value),
+        ))
     }
 
     /// `field > value`
@@ -67,7 +75,11 @@ pub trait GraphqlOperation<T>: Expressive<T> {
     where
         Self: Sized,
     {
-        GraphqlCondition::Field(FieldCondition::new(field_name(self), GraphqlOp::Gt, to_json(value)))
+        GraphqlCondition::Field(FieldCondition::new(
+            field_name(self),
+            GraphqlOp::Gt,
+            to_json(value),
+        ))
     }
 
     /// `field >= value`
@@ -75,7 +87,11 @@ pub trait GraphqlOperation<T>: Expressive<T> {
     where
         Self: Sized,
     {
-        GraphqlCondition::Field(FieldCondition::new(field_name(self), GraphqlOp::Gte, to_json(value)))
+        GraphqlCondition::Field(FieldCondition::new(
+            field_name(self),
+            GraphqlOp::Gte,
+            to_json(value),
+        ))
     }
 
     /// `field < value`
@@ -83,7 +99,11 @@ pub trait GraphqlOperation<T>: Expressive<T> {
     where
         Self: Sized,
     {
-        GraphqlCondition::Field(FieldCondition::new(field_name(self), GraphqlOp::Lt, to_json(value)))
+        GraphqlCondition::Field(FieldCondition::new(
+            field_name(self),
+            GraphqlOp::Lt,
+            to_json(value),
+        ))
     }
 
     /// `field <= value`
@@ -91,7 +111,11 @@ pub trait GraphqlOperation<T>: Expressive<T> {
     where
         Self: Sized,
     {
-        GraphqlCondition::Field(FieldCondition::new(field_name(self), GraphqlOp::Lte, to_json(value)))
+        GraphqlCondition::Field(FieldCondition::new(
+            field_name(self),
+            GraphqlOp::Lte,
+            to_json(value),
+        ))
     }
 
     /// `field IN [values...]`
@@ -151,7 +175,11 @@ pub trait GraphqlOperation<T>: Expressive<T> {
     where
         Self: Sized,
     {
-        GraphqlCondition::Field(FieldCondition::new(field_name(self), GraphqlOp::IsNull, Value::Null))
+        GraphqlCondition::Field(FieldCondition::new(
+            field_name(self),
+            GraphqlOp::IsNull,
+            Value::Null,
+        ))
     }
 
     /// `field IS NOT NULL`
@@ -159,7 +187,11 @@ pub trait GraphqlOperation<T>: Expressive<T> {
     where
         Self: Sized,
     {
-        GraphqlCondition::Field(FieldCondition::new(field_name(self), GraphqlOp::IsNotNull, Value::Null))
+        GraphqlCondition::Field(FieldCondition::new(
+            field_name(self),
+            GraphqlOp::IsNotNull,
+            Value::Null,
+        ))
     }
 }
 
