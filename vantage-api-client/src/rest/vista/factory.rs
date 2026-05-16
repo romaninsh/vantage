@@ -172,7 +172,6 @@ impl VistaFactory for RestApiVistaFactory {
                     kind: match ref_spec.kind {
                         ReferenceKind::HasOne => YamlReferenceKind::HasOne,
                         ReferenceKind::HasMany => YamlReferenceKind::HasMany,
-                        ReferenceKind::HasForeign => YamlReferenceKind::HasMany,
                     },
                     foreign_key: ref_spec
                         .foreign_key

@@ -5,12 +5,12 @@
 use std::fmt::Display;
 use std::{any::Any, marker::PhantomData, sync::Arc};
 
-use vantage_core::Result;
-use vantage_types::Entity;
+use vantage_core::{Result, error};
+use vantage_types::{EmptyEntity, Entity, Record};
 
 use crate::{
     any::AnyTable,
-    references::Reference,
+    references::{Cardinality, Reference},
     table::Table,
     traits::{column_like::ColumnLike, table_source::TableSource},
 };
@@ -78,6 +78,38 @@ where
             .downcast_ref::<T>()
             .expect("data source type mismatch in HasMany::build_target");
         Box::new((self.build_target)(ds.clone()))
+    }
+
+    fn cardinality(&self) -> Cardinality {
+        Cardinality::Many
+    }
+
+    fn resolve_from_row(
+        &self,
+        data_source: &dyn Any,
+        source_id_field: &str,
+        source_row: &dyn Any,
+    ) -> Result<Box<dyn Any>> {
+        let ds = data_source
+            .downcast_ref::<T>()
+            .ok_or_else(|| error!("data source type mismatch in HasMany::resolve_from_row"))?;
+        let row = source_row
+            .downcast_ref::<Record<T::Value>>()
+            .ok_or_else(|| error!("source row type mismatch in HasMany::resolve_from_row"))?;
+
+        let mut target = (self.build_target)(ds.clone());
+        let (src_col, tgt_col) = self.columns(source_id_field, "");
+        let join_value = row.get(&src_col).cloned().ok_or_else(|| {
+            error!(
+                "source row missing id field",
+                field = src_col.as_str()
+            )
+        })?;
+
+        let condition = ds.eq_value_condition(&tgt_col, join_value)?;
+        target.add_condition(condition);
+
+        Ok(Box::new(target.into_entity::<EmptyEntity>()))
     }
 
     fn resolve_as_any(&self, source_table: &dyn Any) -> Result<AnyTable> {

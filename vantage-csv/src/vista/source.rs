@@ -87,6 +87,35 @@ impl TableShell for CsvTableShell {
         Ok(())
     }
 
+    fn get_ref(&self, _vista: &Vista, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
+        let native_row: Record<AnyCsvType> = row
+            .iter()
+            .map(|(k, v)| (k.clone(), AnyCsvType::from(v.clone())))
+            .collect();
+        let target = self
+            .table
+            .get_ref_from_row::<EmptyEntity>(relation, &native_row)?;
+        let factory = crate::vista::factory::CsvVistaFactory::new(
+            self.table.data_source().clone(),
+        );
+        factory.from_table(target)
+    }
+
+    fn get_ref_kinds(&self) -> Vec<(String, vantage_vista::ReferenceKind)> {
+        use vantage_table::references::Cardinality;
+        self.table
+            .ref_kinds()
+            .into_iter()
+            .map(|(name, c)| {
+                let kind = match c {
+                    Cardinality::One => vantage_vista::ReferenceKind::HasOne,
+                    Cardinality::Many => vantage_vista::ReferenceKind::HasMany,
+                };
+                (name, kind)
+            })
+            .collect()
+    }
+
     fn capabilities(&self) -> &VistaCapabilities {
         &self.capabilities
     }

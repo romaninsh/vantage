@@ -37,6 +37,8 @@ impl Bakery {
             .with_id_column("id")
             .with_column_of::<String>("name")
             .with_column_of::<i64>("profit_margin")
+            .with_many("clients", "bakery_id", crate::Client::sqlite_table)
+            .with_many("products", "bakery_id", crate::Product::sqlite_table)
     }
 
     pub fn postgres_table(db: PostgresDB) -> Table<PostgresDB, Bakery> {

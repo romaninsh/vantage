@@ -5,11 +5,11 @@ use std::sync::Arc;
 
 use vantage_core::{Result, error};
 use vantage_expressions::Expression;
-use vantage_types::Entity;
+use vantage_types::{EmptyEntity, Entity, Record};
 
 use crate::{
     any::AnyTable,
-    references::{HasForeign, HasMany, HasOne, Reference},
+    references::{HasMany, HasOne, Reference},
     table::Table,
     traits::{column_like::ColumnLike, table_source::TableSource},
 };
@@ -55,29 +55,6 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         self
     }
 
-    /// Define a cross-persistence reference.
-    ///
-    /// The closure receives this table and returns an `AnyTable` from any backend
-    /// with deferred conditions attached.
-    ///
-    /// ```rust,ignore
-    /// .with_foreign("mongo_orders", "Table<MongoDB, Order>", |clients| {
-    ///     let mut orders = Order::mongo_table(mongo_db.clone());
-    ///     // attach deferred condition ...
-    ///     Ok(AnyTable::from_table(orders))
-    /// })
-    /// ```
-    pub fn with_foreign(
-        mut self,
-        relation: &str,
-        target_type: &'static str,
-        resolve: impl Fn(&Table<T, E>) -> Result<AnyTable> + Send + Sync + 'static,
-    ) -> Self {
-        let reference = HasForeign::<T, E>::new(target_type, resolve);
-        self.add_ref(relation, Box::new(reference));
-        self
-    }
-
     pub(crate) fn add_ref(&mut self, relation: &str, reference: Box<dyn Reference>) {
         if self.refs.is_none() {
             self.refs = Some(IndexMap::new());
@@ -95,27 +72,70 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
             .unwrap_or_default()
     }
 
-    /// Check if a reference is cross-persistence (foreign).
-    pub fn is_foreign_ref(&self, relation: &str) -> Result<bool> {
+    /// Narrow the table to a single row by id.
+    ///
+    /// Pairs with `get_some_value` for the "I only know an id" workflow.
+    /// The actual condition construction goes through
+    /// `TableSource::eq_value_condition`, so backends that don't yet
+    /// implement that path return an error here.
+    pub fn with_id(mut self, id: impl Into<T::Value>) -> Result<Self> {
+        let id_name = self
+            .id_field()
+            .ok_or_else(|| error!("id field not set on table"))?
+            .name()
+            .to_string();
+        let condition = self.data_source().eq_value_condition(&id_name, id.into())?;
+        self.add_condition(condition);
+        Ok(self)
+    }
+
+    /// Traverse a same-persistence reference using a known source row as the
+    /// join origin.
+    ///
+    /// Reads the join field value out of `row`, builds the target table via
+    /// the reference's stored factory, and applies one eq-condition that
+    /// selects the related rows. No subquery, no deferred fetch — `row`
+    /// already carries the value.
+    ///
+    /// `HasOne` reads from its stored foreign-key column; `HasMany` reads
+    /// from the source's id field (looked up here and forwarded into the
+    /// reference). The returned table preserves columns, refs, and
+    /// expressions from the reference's factory; only the entity type
+    /// changes if `E2` differs from the factory's output.
+    pub fn get_ref_from_row<E2: Entity<T::Value> + 'static>(
+        &self,
+        relation: &str,
+        row: &Record<T::Value>,
+    ) -> Result<Table<T, E2>> {
         let (reference, _) = self.lookup_ref(relation)?;
-        Ok(reference.is_foreign())
+        let source_id = self
+            .id_field()
+            .map(|c| c.name().to_string())
+            .unwrap_or_else(|| "id".to_string());
+
+        let target_dyn = reference.resolve_from_row(
+            self.data_source() as &dyn std::any::Any,
+            &source_id,
+            row as &dyn std::any::Any,
+        )?;
+
+        let target_empty: Table<T, EmptyEntity> = *target_dyn
+            .downcast::<Table<T, EmptyEntity>>()
+            .map_err(|_| error!("Failed to downcast target table to Table<T, EmptyEntity>"))?;
+
+        Ok(target_empty.into_entity::<E2>())
     }
 
     /// Get a same-backend related table with automatic downcasting.
     ///
-    /// For foreign references, use `get_ref()` instead.
+    /// Legacy AnyTable-flavoured path; slated for deletion in Stage 9 alongside
+    /// `AnyTable`. New code should prefer [`get_ref_from_row`] (typed) or
+    /// `Vista::get_ref` (erased).
     pub fn get_ref_as<E2: Entity<T::Value> + 'static>(
         &self,
         relation: &str,
     ) -> Result<Table<T, E2>> {
         let (reference, relation_str) = self.lookup_ref(relation)?;
-
-        if reference.is_foreign() {
-            return Err(error!(
-                "Cannot use get_ref_as for foreign references, use get_ref instead",
-                relation = relation_str.as_str()
-            ));
-        }
 
         // 1. Build target
         let source_id = self
@@ -150,7 +170,9 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         Ok(target)
     }
 
-    /// Get a related table as AnyTable — works for both same-backend and foreign refs.
+    /// Get a related table as AnyTable.
+    ///
+    /// Legacy AnyTable-flavoured path; slated for deletion in Stage 9.
     pub fn get_ref(&self, relation: &str) -> Result<AnyTable> {
         let (reference, _) = self.lookup_ref(relation)?;
         reference.resolve_as_any(self as &dyn std::any::Any)
@@ -166,13 +188,6 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         relation: &str,
     ) -> Result<Table<T, E2>> {
         let (reference, relation_str) = self.lookup_ref(relation)?;
-
-        if reference.is_foreign() {
-            return Err(error!(
-                "Cannot use get_subquery_as for foreign references",
-                relation = relation_str.as_str()
-            ));
-        }
 
         // 1. Build target
         let source_id = self
@@ -248,5 +263,23 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         })?;
 
         Ok((reference.as_ref(), relation_str))
+    }
+
+    /// Look up cardinality for a registered relation.
+    pub fn ref_cardinality(&self, relation: &str) -> Result<crate::references::Cardinality> {
+        let (reference, _) = self.lookup_ref(relation)?;
+        Ok(reference.cardinality())
+    }
+
+    /// List all registered relations with their cardinality.
+    pub fn ref_kinds(&self) -> Vec<(String, crate::references::Cardinality)> {
+        self.refs
+            .as_ref()
+            .map(|refs| {
+                refs.iter()
+                    .map(|(name, r)| (name.clone(), r.cardinality()))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 }

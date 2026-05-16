@@ -45,6 +45,23 @@ pub trait TableSource: DataSource + Clone + 'static {
         ))
     }
 
+    /// Build a `field == value` condition with a typed `Self::Value`.
+    ///
+    /// Sibling of [`eq_condition`] for the case where the caller already
+    /// has a native-typed value in hand (e.g. `Reference::resolve_from_row`
+    /// pulling a join value out of a `Record<Self::Value>`). Avoids going
+    /// through string serialization and avoids the `Expression → T::Condition`
+    /// coercion that some document backends only support via a panic stub.
+    ///
+    /// Backends that participate in row-based reference traversal override;
+    /// the default returns an error so existing impls compile.
+    fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
+        let _ = (field, value);
+        Err(vantage_core::error!(
+            "eq_value_condition not implemented for this TableSource"
+        ))
+    }
+
     /// Create a new column with the given name
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type>;
 

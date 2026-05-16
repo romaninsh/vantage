@@ -23,7 +23,7 @@ use crate::condition::MongoCondition;
 use crate::id::MongoId;
 use crate::mongodb::MongoDB;
 use crate::select::MongoSelect;
-use crate::types::AnyMongoType;
+use crate::types::{AnyMongoType, MongoType};
 
 /// Convert a bson::Document into a Record<AnyMongoType>, optionally extracting the _id.
 fn doc_to_record(doc: bson::Document) -> (Option<MongoId>, Record<AnyMongoType>) {
@@ -80,6 +80,14 @@ impl TableSource for MongoDB {
     type Value = AnyMongoType;
     type Id = MongoId;
     type Condition = MongoCondition;
+
+    fn eq_value_condition(
+        &self,
+        field: &str,
+        value: Self::Value,
+    ) -> Result<Self::Condition> {
+        Ok(MongoCondition::Doc(doc! { field: value.to_bson() }))
+    }
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
         Column::new(name)

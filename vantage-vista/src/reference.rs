@@ -24,11 +24,15 @@ impl Reference {
     }
 }
 
+/// Cardinality of a relation. Cross-persistence-ness is no longer
+/// encoded here — it's determined at resolution time by whether the
+/// target Vista lives in the same driver or a different one (the
+/// inventory loader knows). YAML specs that previously used
+/// `kind: has_foreign` migrate to `kind: has_one` or `kind: has_many`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReferenceKind {
     #[default]
     HasOne,
     HasMany,
-    HasForeign,
 }
