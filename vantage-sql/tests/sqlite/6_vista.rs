@@ -216,3 +216,116 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
     assert!(!caps.can_subscribe);
     Ok(())
 }
+
+async fn setup_clients_orders() -> SqliteDB {
+    let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
+    sqlx::query("CREATE TABLE client (id TEXT PRIMARY KEY, name TEXT NOT NULL)")
+        .execute(db.pool())
+        .await
+        .unwrap();
+    sqlx::query(
+        "CREATE TABLE orders (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, total INTEGER NOT NULL)",
+    )
+    .execute(db.pool())
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO client VALUES ('alice','Alice'),('bob','Bob')")
+        .execute(db.pool())
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO orders VALUES ('o1','alice',10),('o2','alice',20),('o3','bob',30)")
+        .execute(db.pool())
+        .await
+        .unwrap();
+    db
+}
+
+fn orders_table(db: SqliteDB) -> Table<SqliteDB, EmptyEntity> {
+    Table::<SqliteDB, EmptyEntity>::new("orders", db)
+        .with_id_column("id")
+        .with_column_of::<String>("client_id")
+        .with_column_of::<i64>("total")
+}
+
+fn clients_table(db: SqliteDB) -> Table<SqliteDB, EmptyEntity> {
+    let db_clone = db.clone();
+    Table::<SqliteDB, EmptyEntity>::new("client", db)
+        .with_id_column("id")
+        .with_column_of::<String>("name")
+        .with_many("orders", "client_id", move |_| {
+            orders_table(db_clone.clone())
+        })
+}
+
+#[tokio::test]
+async fn vista_get_ref_has_many_via_row() -> TestResult {
+    let db = setup_clients_orders().await;
+    let mut clients = db.vista_factory().from_table(clients_table(db.clone()))?;
+
+    let (id, alice) = clients
+        .with_id(CborValue::Text("alice".into()))?
+        .get_some_value()
+        .await?
+        .expect("alice exists");
+    assert_eq!(id, "alice");
+    assert_eq!(
+        alice.get("name"),
+        Some(&CborValue::Text("Alice".to_string()))
+    );
+
+    let alice_orders = clients.get_ref("orders", &alice)?;
+    let rows = alice_orders.list_values().await?;
+    assert_eq!(rows.len(), 2, "alice has 2 orders");
+    assert!(rows.contains_key("o1"));
+    assert!(rows.contains_key("o2"));
+    assert!(!rows.contains_key("o3"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_list_references_surfaces_cardinality() -> TestResult {
+    let db = setup_clients_orders().await;
+    let clients = db.vista_factory().from_table(clients_table(db))?;
+
+    let refs = clients.list_references();
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0].0, "orders");
+    assert_eq!(refs[0].1, vantage_vista::ReferenceKind::HasMany);
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_with_foreign_lazy_no_eager_invocation() -> TestResult {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let db = setup_clients_orders().await;
+    let mut clients = db.vista_factory().from_table(clients_table(db.clone()))?;
+
+    let fired = Arc::new(AtomicBool::new(false));
+    let fired_clone = fired.clone();
+    let db_for_closure = db.clone();
+    clients.with_foreign(
+        "external",
+        vantage_vista::ReferenceKind::HasMany,
+        move |_row| {
+            fired_clone.store(true, Ordering::SeqCst);
+            db_for_closure
+                .vista_factory()
+                .from_table(orders_table(db_for_closure.clone()))
+        },
+    );
+    assert!(
+        !fired.load(Ordering::SeqCst),
+        "with_foreign must not invoke the closure at registration"
+    );
+
+    // Verify list_references picks it up with the declared cardinality.
+    let refs = clients.list_references();
+    assert!(
+        refs.iter().any(
+            |(name, kind)| name == "external" && *kind == vantage_vista::ReferenceKind::HasMany
+        )
+    );
+    Ok(())
+}

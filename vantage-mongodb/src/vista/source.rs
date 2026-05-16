@@ -250,6 +250,23 @@ impl TableShell for MongoTableShell {
         Ok(())
     }
 
+    fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
+        let native_row: Record<AnyMongoType> = row
+            .iter()
+            .map(|(k, v)| (k.clone(), AnyMongoType::from(v.clone())))
+            .collect();
+        let target = self
+            .table
+            .get_ref_from_row::<EmptyEntity>(relation, &native_row)?;
+        let factory =
+            crate::vista::factory::MongoVistaFactory::new(self.table.data_source().clone());
+        factory.from_table(target)
+    }
+
+    fn get_ref_kinds(&self) -> Vec<(String, vantage_vista::ReferenceKind)> {
+        self.table.ref_kinds()
+    }
+
     fn capabilities(&self) -> &VistaCapabilities {
         &self.capabilities
     }

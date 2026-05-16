@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.6 — 2026-05-16
+
+- All three SQL `*TableShell`s implement [`TableShell::get_ref`](https://docs.rs/vantage-vista/0.4.7/vantage_vista/trait.TableShell.html#method.get_ref) and `get_ref_kinds`: row-based reference traversal at the Vista layer. Each shell converts the CBOR parent row into the driver's `Any*Type` map, calls `Reference::resolve_from_row` on the wrapped typed table, and re-wraps the result via the driver's own `VistaFactory`.
+- `eq_value_condition` implemented on `SqliteDB`, `PostgresDB`, `MysqlDB` via their respective `*Operation::eq` traits, returning the driver's native condition type.
+- Integration tests in `tests/sqlite/6_vista.rs` exercise the new path end-to-end against in-memory SQLite: same-driver `has_many` traversal, `Vista::list_references` cardinality, and the `Vista::with_foreign` lazy-closure invariant.
+- Pins `vantage-vista = "0.4.7"`, `vantage-table = "0.4.10"`.
+
 ## 0.4.5 — 2026-05-09
 
 - Pins `vantage-types` to `>= 0.4.2`. The `RichText`-returning `TerminalRender` impls landed in 0.4.4 alongside `vantage-types 0.4.2`; without an explicit floor, cargo could resolve `vantage-types` to 0.4.0/0.4.1 and fail to compile against the old trait shape.

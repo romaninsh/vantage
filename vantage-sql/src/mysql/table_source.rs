@@ -82,6 +82,11 @@ impl TableSource for MysqlDB {
     type Id = String;
     type Condition = crate::condition::MysqlCondition;
 
+    fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
+        let column: Column<AnyMysqlType> = Column::new(field);
+        Ok(MysqlOperation::eq(&column, value))
+    }
+
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
         Column::new(name)
     }

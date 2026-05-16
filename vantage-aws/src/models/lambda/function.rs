@@ -1,13 +1,6 @@
-use ciborium::Value as CborValue;
 use serde::{Deserialize, Serialize};
-use vantage_expressions::Expression;
-use vantage_expressions::expr_any;
-use vantage_expressions::traits::expressive::{DeferredFn, ExpressiveEnum};
-use vantage_table::any::AnyTable;
 use vantage_table::table::Table;
-use vantage_table::traits::table_source::TableSource;
 
-use crate::condition::AwsCondition;
 use crate::types::{Arn, AwsDateTime};
 use crate::{AwsAccount, eq};
 
@@ -52,8 +45,12 @@ pub struct Function {
 /// Relations:
 ///   - `aliases` → `ListAliases` for this function
 ///   - `versions` → `ListVersionsByFunction` for this function
-///   - `log_group` → CloudWatch Logs group at `/aws/lambda/<name>`
-///     (cross-service into [`crate::models::logs`])
+///
+/// Cross-service traversal to CloudWatch Logs is available via the
+/// inherent [`Function::ref_log_group`] helper; the typed `with_foreign`
+/// machinery it previously used was removed in the Vista get_ref rollout,
+/// and `log_group` will reappear as a [`vantage_vista::Vista::with_foreign`]
+/// registration once AWS gains a Vista factory.
 ///
 /// ```no_run
 /// # use vantage_aws::AwsAccount;
@@ -78,54 +75,6 @@ pub fn functions_table(aws: AwsAccount) -> Table<AwsAccount, Function> {
         .with_column_of::<String>("PackageType")
         .with_many("aliases", "FunctionName", aliases_table)
         .with_many("versions", "FunctionName", versions_table)
-        .with_foreign(
-            "log_group",
-            std::any::type_name::<Table<AwsAccount, LogGroup>>(),
-            log_group_relation,
-        )
-}
-
-/// Build the `:log_group` traversal target for a Lambda function.
-///
-/// Standard `with_many` would project `FunctionName` straight into the
-/// log-group filter, which doesn't match — log groups carry the
-/// derived name `/aws/lambda/<FunctionName>`. So we splice that prefix
-/// in here: a deferred expression runs the source query, pulls
-/// `FunctionName` from each row, and prefixes it before handing it to
-/// `logGroupNamePrefix` for AWS-side narrowing. The single-value
-/// constraint that all `Deferred` conditions live under still applies
-/// — multi-row sources error at execute time, same as any other
-/// traversal.
-fn log_group_relation(functions: &Table<AwsAccount, Function>) -> vantage_core::Result<AnyTable> {
-    let aws = functions.data_source().clone();
-    let mut groups = log_groups_table(aws.clone());
-
-    let table = functions.clone();
-    let aws_for_fn = aws.clone();
-    let inner: DeferredFn<CborValue> = DeferredFn::new(move || {
-        let aws = aws_for_fn.clone();
-        let table = table.clone();
-        Box::pin(async move {
-            let records = aws.list_table_values(&table).await?;
-            let names: Vec<CborValue> = records
-                .values()
-                .filter_map(|r| match r.get("FunctionName") {
-                    Some(CborValue::Text(s)) => Some(CborValue::Text(format!("/aws/lambda/{s}"))),
-                    _ => None,
-                })
-                .collect();
-            Ok(ExpressiveEnum::Scalar(CborValue::Array(names)))
-        })
-    });
-
-    let source: Expression<CborValue> = expr_any!("{}", { inner });
-
-    groups.add_condition(AwsCondition::Deferred {
-        field: "logGroupNamePrefix".to_string(),
-        source,
-    });
-
-    Ok(AnyTable::from_table(groups))
 }
 
 impl Function {

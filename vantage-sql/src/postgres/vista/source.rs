@@ -160,6 +160,21 @@ where
         Ok(())
     }
 
+    fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
+        let native_row = to_native_record(row);
+        let target = self
+            .table
+            .get_ref_from_row::<EmptyEntity>(relation, &native_row)?;
+        let factory = crate::postgres::vista::factory::PostgresVistaFactory::new(
+            self.table.data_source().clone(),
+        );
+        factory.from_table(target)
+    }
+
+    fn get_ref_kinds(&self) -> Vec<(String, vantage_vista::ReferenceKind)> {
+        self.table.ref_kinds()
+    }
+
     fn capabilities(&self) -> &VistaCapabilities {
         &self.capabilities
     }

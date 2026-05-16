@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.9 — 2026-05-16
+
+- Lambda's `Function` table drops the `with_foreign("log_group", …)` declaration: the typed-Table `with_foreign` mechanism is removed in `vantage-table 0.4.10` (cross-persistence refs move to the Vista layer). The inherent `Function::ref_log_group(aws)` helper still returns a `Table<AwsAccount, LogGroup>` for direct typed use; the universal-Vista form returns once `vantage-aws` gains a Vista factory.
+- Pins `vantage-table = "0.4.10"`.
+
 ## 0.4.8 — 2026-05-14
 
 - JSON-1.x `execute` now follows `nextToken` pagination directly (capped at 50 pages) — CloudWatch's `FilterLogEvents` and friends can return `events: []` plus a token while the log group is still being scanned, so a one-shot call would drop matches. Pages are merged under the operation's `array_key` and handed to `parse_records` as one synthesised response. Existing single-page protocols are unaffected. See [`vantage_aws::json1`](https://docs.rs/vantage-aws/0.4.8/vantage_aws/json1/index.html).

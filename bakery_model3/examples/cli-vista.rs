@@ -1,28 +1,35 @@
-//! Vista-driven multi-source CLI for browsing and managing bakery data.
+//! Vista-driven multi-source CLI for browsing bakery data.
 //!
-//! Usage: db-vista [--debug] <source> <entity> [command ...]
+//! Usage: db-vista <source> <model> [field=value] [[N]] [:relation] [=col1,col2]
 //!
 //! Sources: csv, sqlite, postgres, mongo, surreal
-//! Entities: bakery, client, product, order
+//! Models : bakery, client, product, order (singular = single record, plural = list)
 //!
-//! Commands:
-//!   list              List all records as a table
-//!   get               Show first record in detail
-//!   count             Count records
-//!   add <id> <json>   Insert a record
-//!   delete <id>       Delete a record by ID
+//! Token grammar matches [`vantage_cli_util::vista_cli`]:
+//!   - `<model>`         pick a model (plural = list view, singular = single)
+//!   - `id=<value>`      narrow to one record
+//!   - `<field>=<value>` add an eq-filter
+//!   - `[N]`             pick the N-th row from a list (forces single mode)
+//!   - `:<relation>`     traverse a relation using the current row
+//!   - `=col1,col2`      override displayed columns
+//!
+//! Examples:
+//!   db-vista csv bakery
+//!   db-vista sqlite client id=marty
+//!   db-vista sqlite bakery[0] :clients                   # forward (HasMany)
+//!   db-vista sqlite client id=marty :bakery              # reverse (HasOne)
+//!   db-vista sqlite bakery[0] :clients[0] :bakery        # round-trip
+//!   db-vista sqlite bakery[0] :clients[0] :orders        # double-hop
 
 use bakery_model3::*;
-use clap::{Arg, Command};
+use ciborium::Value as CborValue;
+use indexmap::IndexMap;
 use surreal_client::SurrealConnection;
-use vantage_cli_util::render_records;
+use vantage_cli_util::vista_cli::{self, Mode, ModelFactory, Renderer};
+use vantage_cli_util::{render_records, render_records_columns};
 use vantage_csv::Csv;
-use vantage_dataset::prelude::*;
+use vantage_types::Record;
 use vantage_vista::Vista;
-
-fn model_names() -> Vec<&'static str> {
-    vec!["bakery", "client", "product", "order"]
-}
 
 #[tokio::main]
 async fn main() {
@@ -33,75 +40,26 @@ async fn main() {
 }
 
 async fn run() -> vantage_core::Result<()> {
-    let app = Command::new("db-vista")
-        .about("Vista-driven CLI for the bakery dataset")
-        .arg(
-            Arg::new("debug")
-                .long("debug")
-                .help("Enable debug mode (show queries)")
-                .action(clap::ArgAction::SetTrue)
-                .global(true),
-        )
-        .arg(
-            Arg::new("source")
-                .help("Data source: csv, sqlite, postgres, mongo")
-                .required(true),
-        )
-        .arg(
-            Arg::new("entity")
-                .help("Entity name (bakery, client, product, order)")
-                .required(false),
-        )
-        .arg(
-            Arg::new("commands")
-                .help("Commands: list, get, count, add <id> <json>, delete <id>")
-                .num_args(0..)
-                .trailing_var_arg(true),
-        );
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.is_empty() {
+        print_usage();
+        return Ok(());
+    }
+    let source = args[0].clone();
+    let rest: Vec<String> = args.into_iter().skip(1).collect();
 
-    let matches = app.get_matches();
-    let _debug = matches.get_flag("debug");
-    let source = matches.get_one::<String>("source").unwrap();
+    if rest.is_empty() {
+        print_usage();
+        return Ok(());
+    }
 
-    let entity_name = match matches.get_one::<String>("entity") {
-        Some(name) => name.clone(),
-        None => {
-            println!("Available entities: {}", model_names().join(", "));
-            print_usage();
-            return Ok(());
-        }
-    };
-
-    let commands: Vec<String> = matches
-        .get_many::<String>("commands")
-        .unwrap_or_default()
-        .cloned()
-        .collect();
-
-    let vista = match build_vista(source, &entity_name).await? {
-        Some(v) => v,
-        None => return Ok(()),
-    };
-
-    handle_commands(vista, commands).await
-}
-
-async fn build_vista(source: &str, entity_name: &str) -> vantage_core::Result<Option<Vista>> {
-    match source {
+    let renderer = TableRenderer;
+    match source.as_str() {
         "csv" => {
-            let csv = Csv::new("bakery_model3/data");
-            let factory = csv.vista_factory();
-            let vista = match entity_name {
-                "bakery" => factory.from_table(Bakery::csv_table(csv))?,
-                "client" => factory.from_table(Client::csv_table(csv))?,
-                "product" => factory.from_table(Product::csv_table(csv))?,
-                "order" => factory.from_table(Order::csv_table(csv))?,
-                _ => {
-                    println!("Unknown entity: {}", entity_name);
-                    return Ok(None);
-                }
+            let factory = CsvFactory {
+                csv: Csv::new("bakery_model3/data"),
             };
-            Ok(Some(vista))
+            vista_cli::run(&factory, &renderer, &rest).await
         }
         "sqlite" => {
             let db = SqliteDB::connect("sqlite:target/bakery.sqlite")
@@ -109,18 +67,7 @@ async fn build_vista(source: &str, entity_name: &str) -> vantage_core::Result<Op
                 .map_err(|e| {
                     vantage_core::error!("Failed to connect to SQLite", details = e.to_string())
                 })?;
-            let factory = db.vista_factory();
-            let vista = match entity_name {
-                "bakery" => factory.from_table(Bakery::sqlite_table(db))?,
-                "client" => factory.from_table(Client::sqlite_table(db))?,
-                "product" => factory.from_table(Product::sqlite_table(db))?,
-                "order" => factory.from_table(Order::sqlite_table(db))?,
-                _ => {
-                    println!("Unknown entity: {}", entity_name);
-                    return Ok(None);
-                }
-            };
-            Ok(Some(vista))
+            vista_cli::run(&SqliteFactory { db }, &renderer, &rest).await
         }
         "postgres" => {
             let url = std::env::var("POSTGRES_URL").unwrap_or_else(|_| {
@@ -129,18 +76,7 @@ async fn build_vista(source: &str, entity_name: &str) -> vantage_core::Result<Op
             let db = PostgresDB::connect(&url).await.map_err(|e| {
                 vantage_core::error!("Failed to connect to PostgreSQL", details = e.to_string())
             })?;
-            let factory = db.vista_factory();
-            let vista = match entity_name {
-                "bakery" => factory.from_table(Bakery::postgres_table(db))?,
-                "client" => factory.from_table(Client::postgres_table(db))?,
-                "product" => factory.from_table(Product::postgres_table(db))?,
-                "order" => factory.from_table(Order::postgres_table(db))?,
-                _ => {
-                    println!("Unknown entity: {}", entity_name);
-                    return Ok(None);
-                }
-            };
-            Ok(Some(vista))
+            vista_cli::run(&PostgresFactory { db }, &renderer, &rest).await
         }
         "mongo" => {
             let url = std::env::var("MONGODB_URL")
@@ -149,18 +85,7 @@ async fn build_vista(source: &str, entity_name: &str) -> vantage_core::Result<Op
             let db = MongoDB::connect(&url, &db_name).await.map_err(|e| {
                 vantage_core::error!("Failed to connect to MongoDB", details = e.to_string())
             })?;
-            let factory = db.vista_factory();
-            let vista = match entity_name {
-                "bakery" => factory.from_table(Bakery::mongo_table(db))?,
-                "client" => factory.from_table(Client::mongo_table(db))?,
-                "product" => factory.from_table(Product::mongo_table(db))?,
-                "order" => factory.from_table(Order::mongo_table(db))?,
-                _ => {
-                    println!("Unknown entity: {}", entity_name);
-                    return Ok(None);
-                }
-            };
-            Ok(Some(vista))
+            vista_cli::run(&MongoFactory { db }, &renderer, &rest).await
         }
         "surreal" => {
             let dsn = std::env::var("SURREALDB_URL")
@@ -175,171 +100,224 @@ async fn build_vista(source: &str, entity_name: &str) -> vantage_core::Result<Op
                     vantage_core::error!("Failed to connect to SurrealDB", details = e.to_string())
                 })?;
             let db = SurrealDB::new(client);
-            let factory = db.vista_factory();
-            let vista = match entity_name {
-                "bakery" => factory.from_table(Bakery::surreal_table(db))?,
-                "client" => factory.from_table(Client::surreal_table(db))?,
-                "product" => factory.from_table(Product::surreal_table(db))?,
-                "order" => factory.from_table(Order::surreal_table(db))?,
-                _ => {
-                    println!("Unknown entity: {}", entity_name);
-                    return Ok(None);
-                }
-            };
-            Ok(Some(vista))
+            vista_cli::run(&SurrealFactory { db }, &renderer, &rest).await
         }
-        _ => {
-            println!(
-                "Unknown source: {}. Use: csv, sqlite, postgres, mongo, surreal",
-                source
-            );
-            Ok(None)
-        }
+        other => Err(vantage_core::error!(format!(
+            "Unknown source `{other}` — use csv, sqlite, postgres, mongo, or surreal"
+        ))),
     }
 }
 
 fn print_usage() {
-    println!();
-    println!("Usage: db-vista [--debug] <source> <entity> <command>");
+    println!("Usage: db-vista <source> <model> [field=value] [[N]] [:relation] [=col1,col2]");
     println!();
     println!("Sources: csv, sqlite, postgres, mongo, surreal");
-    println!();
-    println!("Commands:");
-    println!("  list              List all records");
-    println!("  get               Get first record (detailed)");
-    println!("  count             Count records");
-    println!("  add <id> <json>   Insert a record");
-    println!("  delete <id>       Delete a record by ID");
-    println!("  caps              Show what this source supports");
+    println!("Models : bakery, client, product, order");
     println!();
     println!("Examples:");
-    println!("  db-vista csv bakery list");
-    println!("  db-vista sqlite product list");
-    println!("  db-vista mongo bakery count");
-    println!("  db-vista surreal bakery list");
-    println!(r#"  db-vista postgres bakery add myid '{{"name":"Test","profit_margin":10}}'"#);
-    println!("  db-vista postgres bakery delete myid");
+    println!("  db-vista csv bakery");
+    println!("  db-vista sqlite client id=marty");
+    println!("  db-vista sqlite bakery[0] :clients");
+    println!("  db-vista sqlite client id=marty :bakery");
+    println!("  db-vista sqlite bakery[0] :clients[0] :bakery       # round-trip");
+    println!("  db-vista sqlite bakery[0] :clients[0] :orders       # double-hop");
 }
 
-fn print_capabilities(vista: &Vista) {
-    let c = vista.capabilities();
-    println!(
-        "Capabilities for '{}' (driver: {}):",
-        vista.name(),
-        vista.driver()
-    );
-    println!("  list/get      yes (always)");
-    println!("  count         {}", yes_no(c.can_count));
-    println!("  add (insert)  {}", yes_no(c.can_insert));
-    println!("  update        {}", yes_no(c.can_update));
-    println!("  delete        {}", yes_no(c.can_delete));
-    println!("  subscribe     {}", yes_no(c.can_subscribe));
-    println!("  invalidate    {}", yes_no(c.can_invalidate));
-    println!("  pagination    {:?}", c.paginate_kind);
+// ── Per-source factories ─────────────────────────────────────────────────
+
+fn mode_for(name: &str) -> Option<Mode> {
+    match name {
+        // Singular = pick first record; plural = list view. Either spelling
+        // works so users can type whichever fits the sentence.
+        "bakery" | "client" | "product" | "order" => Some(Mode::Single),
+        "bakeries" | "clients" | "products" | "orders" => Some(Mode::List),
+        _ => None,
+    }
 }
 
-fn yes_no(flag: bool) -> &'static str {
-    if flag { "yes" } else { "no" }
+struct CsvFactory {
+    csv: Csv,
 }
 
-async fn handle_commands(vista: Vista, commands: Vec<String>) -> vantage_core::Result<()> {
-    if commands.is_empty() {
-        println!("No command. Try: list, get, count, add, delete, caps");
-        return Ok(());
+impl ModelFactory for CsvFactory {
+    fn for_name(&self, name: &str) -> Option<(Vista, Mode)> {
+        let mode = mode_for(name)?;
+        let csv = self.csv.clone();
+        let factory = csv.vista_factory();
+        let vista = match name {
+            "bakery" | "bakeries" => factory.from_table(Bakery::csv_table(csv)).ok()?,
+            "client" | "clients" => factory.from_table(Client::csv_table(csv)).ok()?,
+            "product" | "products" => factory.from_table(Product::csv_table(csv)).ok()?,
+            "order" | "orders" => factory.from_table(Order::csv_table(csv)).ok()?,
+            _ => return None,
+        };
+        Some((vista, mode))
+    }
+}
+
+struct SqliteFactory {
+    db: SqliteDB,
+}
+
+impl ModelFactory for SqliteFactory {
+    fn for_name(&self, name: &str) -> Option<(Vista, Mode)> {
+        let mode = mode_for(name)?;
+        let db = self.db.clone();
+        let factory = db.vista_factory();
+        let vista = match name {
+            "bakery" | "bakeries" => factory.from_table(Bakery::sqlite_table(db)).ok()?,
+            "client" | "clients" => factory.from_table(Client::sqlite_table(db)).ok()?,
+            "product" | "products" => factory.from_table(Product::sqlite_table(db)).ok()?,
+            "order" | "orders" => factory.from_table(Order::sqlite_table(db)).ok()?,
+            _ => return None,
+        };
+        Some((vista, mode))
+    }
+}
+
+struct PostgresFactory {
+    db: PostgresDB,
+}
+
+impl ModelFactory for PostgresFactory {
+    fn for_name(&self, name: &str) -> Option<(Vista, Mode)> {
+        let mode = mode_for(name)?;
+        let db = self.db.clone();
+        let factory = db.vista_factory();
+        let vista = match name {
+            "bakery" | "bakeries" => factory.from_table(Bakery::postgres_table(db)).ok()?,
+            "client" | "clients" => factory.from_table(Client::postgres_table(db)).ok()?,
+            "product" | "products" => factory.from_table(Product::postgres_table(db)).ok()?,
+            "order" | "orders" => factory.from_table(Order::postgres_table(db)).ok()?,
+            _ => return None,
+        };
+        Some((vista, mode))
+    }
+}
+
+struct MongoFactory {
+    db: MongoDB,
+}
+
+impl ModelFactory for MongoFactory {
+    fn for_name(&self, name: &str) -> Option<(Vista, Mode)> {
+        let mode = mode_for(name)?;
+        let db = self.db.clone();
+        let factory = db.vista_factory();
+        let vista = match name {
+            "bakery" | "bakeries" => factory.from_table(Bakery::mongo_table(db)).ok()?,
+            "client" | "clients" => factory.from_table(Client::mongo_table(db)).ok()?,
+            "product" | "products" => factory.from_table(Product::mongo_table(db)).ok()?,
+            "order" | "orders" => factory.from_table(Order::mongo_table(db)).ok()?,
+            _ => return None,
+        };
+        Some((vista, mode))
+    }
+}
+
+struct SurrealFactory {
+    db: SurrealDB,
+}
+
+impl ModelFactory for SurrealFactory {
+    fn for_name(&self, name: &str) -> Option<(Vista, Mode)> {
+        let mode = mode_for(name)?;
+        let db = self.db.clone();
+        let factory = db.vista_factory();
+        let vista = match name {
+            "bakery" | "bakeries" => factory.from_table(Bakery::surreal_table(db)).ok()?,
+            "client" | "clients" => factory.from_table(Client::surreal_table(db)).ok()?,
+            "product" | "products" => factory.from_table(Product::surreal_table(db)).ok()?,
+            "order" | "orders" => factory.from_table(Order::surreal_table(db)).ok()?,
+            _ => return None,
+        };
+        Some((vista, mode))
+    }
+}
+
+// ── Renderer ─────────────────────────────────────────────────────────────
+
+struct TableRenderer;
+
+impl Renderer for TableRenderer {
+    fn render_list(
+        &self,
+        vista: &Vista,
+        records: &IndexMap<String, Record<CborValue>>,
+        column_override: Option<&[String]>,
+    ) {
+        if let Some(cols) = column_override {
+            render_records_columns(records, cols, &vista.source_column_types());
+        } else {
+            render_records(records, vista.get_id_column());
+        }
+        let n = records.len();
+        println!("({n} record{})", if n == 1 { "" } else { "s" });
     }
 
-    let mut i = 0;
-    while i < commands.len() {
-        let cmd = &commands[i];
-        i += 1;
-
-        match cmd.as_str() {
-            "list" => {
-                let records = vista.list_values().await?;
-                render_records(&records, None);
+    fn render_record(
+        &self,
+        vista: &Vista,
+        id: &str,
+        record: &Record<CborValue>,
+        _relations: &[String],
+    ) {
+        let id_field = vista.get_id_column().unwrap_or("id");
+        println!("{}: {}", id_field, id);
+        let title_fields: Vec<&str> = vista.get_title_columns();
+        for tf in &title_fields {
+            if *tf == id_field {
+                continue;
             }
-            "get" => match vista.get_some_value().await? {
-                Some((id, record)) => {
-                    println!("id: {}", id);
-                    for (k, v) in record.iter() {
-                        println!("  {}: {}", k, serde_json::to_string(v).unwrap_or_default());
-                    }
-                }
-                None => println!("No records found"),
-            },
-            "count" => {
-                if !vista.capabilities().can_count {
-                    println!(
-                        "'{}' does not support counting — skipping (try 'list' instead).",
-                        vista.name()
-                    );
-                    continue;
-                }
-                let count = vista.get_count().await?;
-                println!("{} records", count);
+            if let Some(v) = record.get(*tf) {
+                println!("{}: {}", tf, scalar(v));
             }
-            "add" => {
-                if i + 1 >= commands.len() {
-                    println!("Usage: add <id> <json>");
-                    break;
-                }
-                let id = commands[i].clone();
-                i += 1;
-                let json_str = &commands[i];
-                i += 1;
-
-                if !vista.capabilities().can_insert {
-                    println!(
-                        "'{}' is read-only — insert is not supported by this source.",
-                        vista.name()
-                    );
-                    continue;
-                }
-
-                let json_val: serde_json::Value =
-                    serde_json::from_str(json_str).map_err(|e: serde_json::Error| {
-                        vantage_core::error!("Invalid JSON", details = e.to_string())
-                    })?;
-
-                if !json_val.is_object() {
-                    println!("Error: JSON must be an object, e.g. '{{\"name\":\"value\"}}'");
-                    break;
-                }
-
-                let cbor_val = ciborium::Value::serialized(&json_val).map_err(|e| {
-                    vantage_core::error!("Invalid JSON for CBOR", details = e.to_string())
-                })?;
-                let record = vantage_types::Record::from(cbor_val);
-                vista.insert_value(&id, &record).await?;
-                println!("Inserted: {}", id);
+        }
+        println!("--------");
+        for (k, v) in record.iter() {
+            if k == id_field || title_fields.iter().any(|t| t == k) {
+                continue;
             }
-            "delete" => {
-                if i >= commands.len() {
-                    println!("Usage: delete <id>");
-                    break;
-                }
-                let id = commands[i].clone();
-                i += 1;
-
-                if !vista.capabilities().can_delete {
-                    println!(
-                        "'{}' is read-only — delete is not supported by this source.",
-                        vista.name()
-                    );
-                    continue;
-                }
-
-                vista.delete(&id).await?;
-                println!("Deleted: {}", id);
-            }
-            "caps" => {
-                print_capabilities(&vista);
-            }
-            other => {
-                println!("Unknown command: {}", other);
-                println!("Available: list, get, count, add <id> <json>, delete <id>, caps");
+            println!("{}: {}", k, scalar(v));
+        }
+        // `list_references` combines foreign resolvers, YAML metadata, and
+        // shell-forwarded typed refs — the canonical view for a CLI menu.
+        let refs = vista.list_references();
+        if !refs.is_empty() {
+            println!();
+            println!("Relations:");
+            for (name, kind) in refs {
+                let marker = match kind {
+                    vantage_vista::ReferenceKind::HasOne => "→ one",
+                    vantage_vista::ReferenceKind::HasMany => "↠ many",
+                };
+                println!("  :{name}  {marker}");
             }
         }
     }
-    Ok(())
+}
+
+trait VistaColumnTypes {
+    fn source_column_types(&self) -> IndexMap<String, &'static str>;
+}
+
+impl VistaColumnTypes for Vista {
+    fn source_column_types(&self) -> IndexMap<String, &'static str> {
+        // Column metadata isn't directly exposed for typing; fall back to
+        // an empty map so the renderer uses defaults.
+        IndexMap::new()
+    }
+}
+
+fn scalar(v: &CborValue) -> String {
+    use ciborium::Value as C;
+    match v {
+        C::Text(s) => s.clone(),
+        C::Integer(i) => i128::from(*i).to_string(),
+        C::Float(f) => f.to_string(),
+        C::Bool(b) => b.to_string(),
+        C::Null => "—".to_string(),
+        C::Bytes(b) => format!("<{} bytes>", b.len()),
+        other => format!("{other:?}"),
+    }
 }

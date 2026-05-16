@@ -87,10 +87,12 @@ impl TableShell for GraphqlApiTableShell {
         self.table.add_condition_eq(field, &s)
     }
 
-    fn get_ref(&self, relation: &str) -> Result<Vista> {
-        // Reference traversal goes through the same `AnyTable::get_ref`
-        // pipeline that REST uses, so the resulting child Vista is
-        // already wrapped via the shared `AnyTableShell`.
+    fn get_ref(&self, relation: &str, _row: &Record<CborValue>) -> Result<Vista> {
+        // GraphQL still routes traversal through `AnyTable` because the
+        // shell holds an `AnyTable` (the CBOR adapter is what bridges
+        // `AnyGraphqlType` to `CborValue`). Cleaned up alongside the REST
+        // refactor in Stage 9; for now the `row` parameter is ignored and
+        // the legacy AnyTable-flavoured resolution runs.
         let any_table = self.table.get_ref(relation)?;
         AnyTableShell::into_vista(any_table)
     }

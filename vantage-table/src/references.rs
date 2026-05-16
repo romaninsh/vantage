@@ -1,12 +1,16 @@
 //! Table reference system for relationships between tables.
 //!
 //! The `Reference` trait describes a relationship (field names, target factory).
-//! Resolution (building conditions) happens in `Table::get_ref_as`.
+//! Same-persistence resolution happens in `Table::get_ref_from_row` via
+//! `Reference::resolve_from_row` — the join value is read out of a known source
+//! row and pushed as a plain eq-condition on the target.
 //!
-//! Three concrete types:
+//! Two concrete types:
 //! - `HasOne` — foreign key on source table (e.g. Client.bakery_id → Bakery)
 //! - `HasMany` — foreign key on target table (e.g. Bakery → Client.bakery_id)
-//! - `HasForeign` — cross-persistence reference with user-provided resolution
+//!
+//! Cross-persistence references live at the Vista layer (`Vista::with_foreign`),
+//! not here. Typed `Table<T, E>` is single-backend by construction.
 
 use std::any::Any;
 
@@ -14,11 +18,9 @@ use vantage_core::Result;
 
 use crate::any::AnyTable;
 
-pub mod foreign;
 pub mod many;
 pub mod one;
 
-pub use foreign::HasForeign;
 pub use many::HasMany;
 pub use one::HasOne;
 
@@ -30,15 +32,36 @@ pub trait Reference: Send + Sync {
     /// Produce a fresh target table (no conditions applied).
     fn build_target(&self, data_source: &dyn Any) -> Box<dyn Any>;
 
-    /// Whether this is a cross-persistence reference.
-    fn is_foreign(&self) -> bool {
-        false
-    }
+    /// Cardinality of this relation. `HasOne` if traversing yields at most
+    /// one record (the FK lives on the source); `HasMany` if it can yield
+    /// any number (the FK lives on the target). Surfaced by
+    /// `Vista::list_references` so CLIs / UIs can pick a record-card vs
+    /// list-grid renderer.
+    fn cardinality(&self) -> vantage_vista::ReferenceKind;
+
+    /// Resolve traversal using a known source row. Returns the target table
+    /// (entity type erased to `EmptyEntity`) wrapped in `Box<dyn Any>`, with
+    /// one eq-condition applied that selects the related rows.
+    ///
+    /// `data_source` is `&T` for the source's `TableSource`; `source_id_field`
+    /// is the name of the source table's id column (needed by `HasMany` to
+    /// pull the join value out of the row); `source_row` is `&Record<T::Value>`.
+    /// `HasOne` ignores `source_id_field` and reads its stored `foreign_key`
+    /// instead.
+    ///
+    /// Callers immediately downcast the result to `Table<T, EmptyEntity>`.
+    fn resolve_from_row(
+        &self,
+        data_source: &dyn Any,
+        source_id_field: &str,
+        source_row: &dyn Any,
+    ) -> Result<Box<dyn Any>>;
 
     /// Resolve this reference and return an AnyTable.
     ///
-    /// For same-backend: builds target, applies condition, wraps in AnyTable.
-    /// For foreign: returns the AnyTable from the user's closure.
+    /// Legacy path used by `Table::get_ref` / `get_ref_as` / `get_subquery_as`.
+    /// Slated for deletion in Stage 9 alongside `AnyTable`; new callers should
+    /// use `resolve_from_row` (typed) or `Vista::get_ref` (erased) instead.
     fn resolve_as_any(&self, source_table: &dyn Any) -> Result<AnyTable>;
 
     /// Type name of the target table (for error messages).

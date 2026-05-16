@@ -13,7 +13,7 @@ use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_types::Record;
-use vantage_vista::Vista;
+use vantage_vista::{ReferenceKind, Vista};
 
 /// Whether the current state is a list of records or a single record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -220,8 +220,33 @@ pub async fn run<F: ModelFactory, R: Renderer>(
                         "Cannot traverse `:{rel}` from list mode — narrow to a single record first (add a filter or `[N]`)"
                     )));
                 }
-                vista = vista.get_ref(&rel)?;
-                mode = Mode::List;
+                // Inspect the source vista's reference catalogue *before*
+                // traversal so we know whether the child should render as a
+                // single record (HasOne) or a list (HasMany). The catalogue
+                // combines foreign resolvers, YAML metadata, and the
+                // wrapped table's typed refs — see `Vista::list_references`.
+                let child_kind = vista
+                    .list_references()
+                    .into_iter()
+                    .find(|(name, _)| name == &rel)
+                    .map(|(_, k)| k);
+                // Row-based traversal needs the actual parent record on hand,
+                // so we fetch it from the narrowed vista before handing it to
+                // `get_ref`. `Mode::Single` guarantees a single row matches.
+                let (_id, parent_row) = vista.get_some_value().await?.ok_or_else(|| {
+                    error!(format!(
+                        "Cannot traverse `:{rel}` — narrowed vista has no matching record"
+                    ))
+                })?;
+                vista = vista.get_ref(&rel, &parent_row)?;
+                mode = match child_kind {
+                    Some(ReferenceKind::HasOne) => Mode::Single,
+                    // `HasMany` and unknown (e.g. relation missing from
+                    // `list_references` but accepted by the shell) both
+                    // render as list — list is the safe default since it
+                    // tolerates zero/one/many rows.
+                    _ => Mode::List,
+                };
                 // A new vista means the column override no longer
                 // applies — drop it so the child renders with its own
                 // default columns until a new override appears.

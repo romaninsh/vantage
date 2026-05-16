@@ -69,8 +69,9 @@ In:
 Out:
 
 - Nested AND/OR composition (v2)
-- Search-as-condition (separate concept, may share policy machinery
-  later)
+- Search across `SEARCHABLE` columns — moved to stage 5b
+  (`Vista::add_search`); shares the delegation pattern but not the
+  policy machinery
 - Hook-mediated condition rewriting (stage 6)
 - Re-engineering the already-shipped `add_eq_condition` — it stays as
   the public sugar for the common case, internally routed through the

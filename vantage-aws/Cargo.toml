@@ -1,6 +1,6 @@
 [package]
 name = "vantage-aws"
-version = "0.4.8"
+version = "0.4.9"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -14,7 +14,7 @@ readme = "README.md"
 vantage-core = { version = "0.4", path = "../vantage-core" }
 vantage-types = { version = "0.4", path = "../vantage-types", features = ["serde"] }
 vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
-vantage-table = { version = "0.4.8", path = "../vantage-table" }
+vantage-table = { version = "0.4.10", path = "../vantage-table" }
 vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
 
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

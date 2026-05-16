@@ -130,7 +130,10 @@ impl TableShell for AnyTableShell {
         self.table.add_condition_eq(field, &s)
     }
 
-    fn get_ref(&self, relation: &str) -> Result<Vista> {
+    fn get_ref(&self, relation: &str, _row: &Record<CborValue>) -> Result<Vista> {
+        // AnyTableShell is the legacy AnyTable wrapper kept alive until
+        // Stage 9; it ignores the new `row` parameter for now and falls
+        // back to the AnyTable-flavoured set-into-set resolution.
         let any_table = self.table.get_ref(relation)?;
         AnyTableShell::into_vista(any_table)
     }

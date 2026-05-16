@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.7 — 2026-05-16
+
+- `SurrealTableShell` implements [`TableShell::get_ref`](https://docs.rs/vantage-vista/0.4.7/vantage_vista/trait.TableShell.html#method.get_ref) and `get_ref_kinds`: row-based reference traversal at the Vista layer. The shell converts the CBOR parent row into `Record<AnySurrealType>`, calls `Reference::resolve_from_row` on the wrapped typed table, and re-wraps via `SurrealVistaFactory::from_table`.
+- `SurrealDB::eq_value_condition` implemented via `SurrealOperation::eq`.
+- Pins `vantage-vista = "0.4.7"`, `vantage-table = "0.4.10"`.
+
 ## 0.4.6 — 2026-05-14
 
 - Drop the `arbitrary_precision` feature flag from the `serde_json` dependency. It enabled a global mode that wraps numbers as `{"$serde_json::private::Number": "..."}` objects, which broke ad-hoc JSON inspection and forced every consumer of vantage-surrealdb's `serde_json::Value` outputs to opt into the same flag. `preserve_order` and `raw_value` are retained.

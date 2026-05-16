@@ -24,10 +24,14 @@ type (`bson::Document` for Mongo, `Expression<AnyCsvType>` for CSV) and
 mutates the wrapped `Table`'s condition list. Filtering happens
 server-side wherever the backend supports it.
 
-`Coop` is a separate crate (`vantage-coop`, stage 7) that wraps a factory
-and adds caching, write routing, and live-event invalidation. Coop is
-invisible to consumers — it only changes how the produced Vista behaves
-at runtime.
+`Coop` is a separate crate (`vantage-coop`, stage 7) that **wraps a
+Vista and fills in capabilities the inner driver doesn't natively
+provide**. If a driver can't paginate, Coop pages client-side; if a
+driver is read-only, Coop's `with_writes(handler)` routes writes
+through a user-supplied closure. Same mechanism layers in caching,
+search, sort, and live-event invalidation. The consumer holds a plain
+`Vista` — nothing in the API surface signals "this is wrapped", only
+runtime behaviour and the reported capability flags change.
 
 ## Crate layout
 
@@ -72,16 +76,20 @@ vista/
 | 1 | [Crate skeleton](1-skeleton.md) | Done |
 | 2 | [First driver integration (CSV)](2-first-driver.md) | Done |
 | 3 | [Universal YAML loader](3-yaml-loader.md) | Done |
-| 4 | [Driver rollout](4-driver-rollout.md) | In progress — CSV + MongoDB done; SurrealDB / AWS / REST remain |
+| 4 | [Driver rollout](4-driver-rollout.md) | Mostly done — CSV, MongoDB, SurrealDB, SQL (sqlite/postgres/mysql), REST, GraphQL, LogWriter shipped. AWS / Redb / api-pool remain; `TableShell::get_ref` override missing on all done drivers except REST/GraphQL. |
 | 5 | [Portable conditions](5-conditions.md) | Partial — driver-typed `eq` shipped; portable operator vocabulary still pending |
+| 5b | [Query controls (sort, paginate, search, aggregates)](5b-query-controls.md) | Not started |
 | 6 | [Hooks + Rhai](6-hooks.md) | Not started |
 | 7 | [vantage-coop crate](7-coop.md) | Not started |
 | 8 | [vantage-ui migration](8-ui-migration.md) | Not started |
 | 9 | [Decommission old types](9-decommission.md) | Not started |
 
 MVP = stages 1–4 plus the eq-condition delegation that landed alongside
-stage 4. Stages 5 (full operator vocabulary) onward are progressive
-enhancement.
+stage 4. Stages 5 (full operator vocabulary), 5b (sort/paginate/search/
+aggregates), 6 (hooks), and 7 (Coop) are progressive enhancement. 5b
+and 7 are deliberately paired: 5b adds the Vista API surface, 7 adds
+the client-side fallbacks for drivers that can't push those methods
+down.
 
 ## What landed alongside stage 4
 

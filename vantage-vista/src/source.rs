@@ -173,11 +173,16 @@ pub trait TableShell: Send + Sync + 'static {
 
     // ---- References --------------------------------------------------------
 
-    /// Resolve a named relation and return the related table as a new
-    /// `Vista`. The default impl returns `Unimplemented` so existing
-    /// drivers compile until they opt in; drivers that wrap a typed
-    /// `Table<T, E>` can delegate to `Table::get_ref`.
-    fn get_ref(&self, relation: &str) -> Result<Vista> {
+    /// Resolve a same-persistence relation using a known source row, returning
+    /// the related table as a new `Vista`.
+    ///
+    /// Drivers override by forwarding into the wrapped typed `Table`'s
+    /// `get_ref_from_row::<EmptyEntity>(relation, &native_row)` and then
+    /// wrapping the result back as a `Vista` through the driver's factory.
+    /// The default returns `Unimplemented`; cross-persistence refs are
+    /// handled at the `Vista` layer via `Vista::with_foreign` before this
+    /// trait method is reached.
+    fn get_ref(&self, relation: &str, _row: &Record<CborValue>) -> Result<Vista> {
         Err(error!(
             format!(
                 "get_ref not implemented for '{}'",
@@ -188,6 +193,16 @@ pub trait TableShell: Send + Sync + 'static {
             source_type = std::any::type_name::<Self>()
         )
         .is_unimplemented())
+    }
+
+    /// Names + cardinalities of the wrapped typed `Table`'s same-persistence
+    /// references. Default returns empty; drivers that wrap a typed `Table`
+    /// override to surface `Table::ref_kinds()` translated into
+    /// [`ReferenceKind`](crate::reference::ReferenceKind). Combined with
+    /// `Vista`'s own `with_foreign` registry by
+    /// [`Vista::list_references`](crate::Vista::list_references).
+    fn get_ref_kinds(&self) -> Vec<(String, crate::reference::ReferenceKind)> {
+        Vec::new()
     }
 
     // ---- Identity ----------------------------------------------------------

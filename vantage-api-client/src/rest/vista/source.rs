@@ -9,19 +9,14 @@
 //! YAML-declared references are carried separately (`yaml_refs`)
 //! because `Table::with_many` / `with_one` require compile-time-known
 //! build-target closures that YAML can't synthesise. At traversal
-//! time the shell consults the resolver (a factory-wide callback that
-//! maps model names to child Vistas) and threads a `DeferredFn`
-//! through the child so the parent's id resolves only when the child
-//! actually fetches.
-
-use std::sync::Arc;
+//! time the shell reads the join value out of the parent row supplied
+//! by `Vista::get_ref(relation, row)` and pushes a plain eq-condition
+//! on the resolver-built child Vista — no deferred fetch.
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
-use vantage_expressions::Expression;
-use vantage_expressions::traits::expressive::{DeferredFn, ExpressiveEnum};
 use vantage_table::traits::table_like::TableLike;
 use vantage_types::Record;
 use vantage_vista::{TableShell, Vista, VistaCapabilities};
@@ -75,54 +70,6 @@ impl RestApiTableShell {
         self.resolver = Some(resolver);
         self
     }
-
-    /// Construct the deferred FK condition for a YAML reference. The
-    /// returned `Expression` carries a `DeferredFn` that, when
-    /// resolved at child-fetch time, reads `source_column` out of the
-    /// parent's first record and emits it as a scalar — same shape
-    /// `condition_to_query_param` already peels for synchronous eq
-    /// conditions.
-    fn build_deferred_fk_condition(
-        parent_table: Box<dyn TableLike<Value = CborValue, Id = String>>,
-        source_column: String,
-        target_field: String,
-    ) -> Expression<CborValue> {
-        let parent_arc = Arc::new(parent_table);
-        let column = source_column;
-        let target_field_for_error = target_field.clone();
-        let deferred = DeferredFn::new(move || {
-            let parent = parent_arc.clone_box();
-            let column = column.clone();
-            let target = target_field_for_error.clone();
-            Box::pin(async move {
-                let records = parent.list_values().await?;
-                let value = records
-                    .values()
-                    .next()
-                    .and_then(|r| r.get(&column))
-                    .cloned()
-                    .ok_or_else(|| {
-                        error!(
-                            "YAML reference: parent yielded no row or column missing",
-                            source_column = column,
-                            target_field = target
-                        )
-                    })?;
-                Ok(ExpressiveEnum::Scalar(value))
-            })
-        });
-
-        Expression::new(
-            "{} = {}",
-            vec![
-                ExpressiveEnum::Nested(Expression::new(target_field, vec![])),
-                ExpressiveEnum::Nested(Expression::new(
-                    "{}",
-                    vec![ExpressiveEnum::Deferred(deferred)],
-                )),
-            ],
-        )
-    }
 }
 
 #[async_trait]
@@ -167,11 +114,11 @@ impl TableShell for RestApiTableShell {
         self.table.add_condition(condition)
     }
 
-    fn get_ref(&self, relation: &str) -> Result<Vista> {
-        // YAML-declared references first: the factory wired them via
-        // `yaml_refs` at build time. Resolve them through the
-        // model-resolver callback so cross-driver lookups (vantage-ui's
-        // inventory) work alongside same-driver ones.
+    fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
+        // YAML-declared references first. With row-based traversal we no
+        // longer need the deferred-fetch dance — the parent record is on
+        // hand, so we just read the join value out of `row` and push a
+        // plain eq-condition on the child.
         if let Some(yref) = self.yaml_refs.get(relation) {
             let resolver = self.resolver.as_ref().ok_or_else(|| {
                 error!(
@@ -185,9 +132,9 @@ impl TableShell for RestApiTableShell {
             let mut child = resolver(&yref.target)?;
 
             // For `has_many` the parent's id flows onto the child's FK
-            // column; for `has_one` the parent's FK column value
-            // becomes the child's id. The source column we read from
-            // the parent at fetch time differs accordingly.
+            // column; for `has_one` the parent's FK column value becomes
+            // the child's id. The field we read from `row` differs
+            // accordingly.
             let (source_column, target_field) = match yref.kind {
                 YamlReferenceKind::HasMany => {
                     let parent_id = self.table.id_field_name().ok_or_else(|| {
@@ -207,17 +154,23 @@ impl TableShell for RestApiTableShell {
                 }
             };
 
-            let parent_clone = self.table.clone_box();
-            let condition =
-                Self::build_deferred_fk_condition(parent_clone, source_column, target_field);
-            child.add_raw_condition(condition)?;
+            let join_value = row.get(&source_column).cloned().ok_or_else(|| {
+                error!(
+                    "YAML reference: parent row missing join field",
+                    relation = relation,
+                    source_column = source_column.as_str()
+                )
+            })?;
+
+            child.add_condition_eq(target_field, join_value)?;
 
             return Ok(child);
         }
 
-        // Fall through to the typed `Table` reference machinery —
-        // hand-coded `with_many` / `with_one` / `with_foreign`
-        // registrations in Rust callers go through this path.
+        // Fall through to the typed `Table` reference machinery for
+        // hand-coded `with_many` / `with_one` registrations. This still
+        // routes through AnyTable in this transition; cleaned up alongside
+        // the REST shell refactor that ships in Stage 9.
         let any_table = self.table.get_ref(relation)?;
         AnyTableShell::into_vista(any_table)
     }
