@@ -1,11 +1,17 @@
-mod api;
-mod operation;
-mod table_source;
-pub mod vista;
+//! Vantage adapters for HTTP-based API backends.
+//!
+//! Currently ships one protocol adapter:
+//!
+//! * [`rest`] — generic REST API client. Maps `Table<RestApi, E>` to
+//!   `GET {base_url}/{table_name}` with eq-conditions and pagination
+//!   peeled into the URL query string.
+//!
+//! A `graphql` sibling adapter is planned.
 
-pub use api::{PaginationParams, ResponseShape, RestApi, RestApiBuilder};
-pub(crate) use operation::condition_to_query_param;
-pub use operation::eq_condition;
-pub use vista::{
-    AnyTableShell, NoApiExtras, RestApiTableShell, RestApiVistaFactory, RestApiVistaSpec,
+pub mod rest;
+
+pub use rest::{
+    AnyTableShell, NoApiExtras, PaginationParams, ResponseShape, RestApi, RestApiBuilder,
+    RestApiTableShell, RestApiVistaFactory, RestApiVistaSpec, eq_condition,
 };
+pub(crate) use rest::condition_to_query_param;

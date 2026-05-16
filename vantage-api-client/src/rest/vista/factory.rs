@@ -14,8 +14,8 @@ use vantage_vista::{
 };
 
 use crate::RestApi;
-use crate::vista::source::RestApiTableShell;
-use crate::vista::spec::{NoApiExtras, RestApiVistaSpec};
+use super::source::RestApiTableShell;
+use super::spec::{NoApiExtras, RestApiVistaSpec};
 
 pub struct RestApiVistaFactory {
     api: RestApi,
