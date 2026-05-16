@@ -1,0 +1,28 @@
+# Hand-curated subset of the SpaceX GraphQL schema for `dragons`.
+# Dragon and Dragon 2 spacecraft variants.
+name: dragons
+id_column: id
+columns:
+  id:
+    type: string
+    flags: [id]
+  name:
+    type: string
+    flags: [title]
+  type:
+    type: string
+    flags: [title]
+  active:
+    type: bool
+  first_flight:
+    type: string
+  crew_capacity:
+    type: int
+  description:
+    type: string
+  wikipedia:
+    type: string
+graphql:
+  root_field: dragons
+  dialect: generic
+  filter_arg: find

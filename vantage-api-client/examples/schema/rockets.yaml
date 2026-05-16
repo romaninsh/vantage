@@ -1,0 +1,44 @@
+# Hand-curated subset of the SpaceX GraphQL schema for `rockets`.
+#
+# Caveat: unlike `launches` and `capsules`, the `rockets` root field
+# does NOT accept a `find` argument. Listings work (and we can paginate
+# them with limit/offset), but `rockets id=...` filtered lookups error
+# at the server. Singular-by-id lookups would need a separate root
+# field (`rocket(id: ID!)`), which the adapter could route to via a
+# future per-table override in the YAML schema.
+name: rockets
+id_column: id
+columns:
+  id:
+    type: string
+    flags: [id]
+  name:
+    type: string
+    flags: [title]
+  type:
+    type: string
+    flags: [title]   # two title columns — list view shows both
+  company:
+    type: string
+  country:
+    type: string
+  active:
+    type: bool
+  stages:
+    type: int
+  boosters:
+    type: int
+  cost_per_launch:
+    type: bigint
+  success_rate_pct:
+    type: int
+  first_flight:
+    type: date
+  description:
+    type: string
+  wikipedia:
+    type: string
+graphql:
+  root_field: rockets
+  dialect: generic
+  filter_arg: find
