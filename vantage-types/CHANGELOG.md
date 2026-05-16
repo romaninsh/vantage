@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.3 — 2026-05-16
+
+- Internal dependency version refresh; no public API changes.
+
 ## 0.4.2 — 2026-04-30
 
 Catches up the crates.io release with the additions that landed locally in [#214](https://github.com/romaninsh/vantage/pull/214) but never got their own version bump.

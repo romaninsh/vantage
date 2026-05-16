@@ -3382,7 +3382,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "surreal-client"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "async-trait",
  "base64",
@@ -4031,7 +4031,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vantage-api-client"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4057,7 +4057,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-pool"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -4122,7 +4122,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-core"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "anyhow",
  "atty",
@@ -4135,7 +4135,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-csv"
-version = "0.4.10"
+version = "0.4.11"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4156,7 +4156,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -4189,7 +4189,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-expressions"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4300,7 +4300,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4325,7 +4325,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "async-trait",
  "bakery_model3",
@@ -4355,7 +4355,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.4.10"
+version = "0.4.11"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -4379,7 +4379,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "ciborium",
  "csv",
@@ -4405,7 +4405,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "async-stream",
  "async-trait",

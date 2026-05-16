@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.11 — 2026-05-16
+
+- Internal dependency version refresh; no public API changes.
+
 ## 0.4.10 — 2026-05-16
 
 Row-based reference traversal lands at the typed layer; `HasForeign` retires.

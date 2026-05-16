@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.8 — 2026-05-16
+
+- Internal dependency version refresh; no public API changes.
+
 ## 0.1.7 — 2026-05-16
 
 - REST and GraphQL `TableShell::get_ref` impls updated for [`Vista::get_ref(relation, &row)`](https://docs.rs/vantage-vista/0.4.7/vantage_vista/struct.Vista.html#method.get_ref)'s row-based signature.
