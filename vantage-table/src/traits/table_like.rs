@@ -13,6 +13,12 @@ pub trait TableLike: ReadableValueSet + WritableValueSet + Send + Sync {
     fn table_alias(&self) -> &str;
     fn column_names(&self) -> Vec<String>;
 
+    /// Override the table name. Default is a no-op for backends that
+    /// don't honor it; the REST API driver overrides it to swap a
+    /// canonical endpoint for a per-reference URI template at
+    /// traversal time.
+    fn set_table_name(&mut self, _name: String) {}
+
     /// Name of the column flagged as the id field, if any.
     fn id_field_name(&self) -> Option<String> {
         None

@@ -15,9 +15,12 @@ pub mod source;
 pub mod spec;
 
 pub use any_shell::AnyTableShell;
-pub use factory::RestApiVistaFactory;
+pub use factory::{ModelResolver, RestApiVistaFactory};
 pub use source::RestApiTableShell;
-pub use spec::{NoApiExtras, RestApiVistaSpec};
+pub use spec::{
+    ApiColumnExtras, ApiReferenceExtras, ApiTableBlock, ApiTableExtras, NoApiExtras,
+    RestApiVistaSpec,
+};
 
 use crate::RestApi;
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.6 — 2026-05-15
+
+- New [`Vista::add_raw_condition<C>(condition: C)`](https://docs.rs/vantage-vista/0.4.6/vantage_vista/struct.Vista.html#method.add_raw_condition) and matching [`TableShell::add_raw_condition`](https://docs.rs/vantage-vista/0.4.6/vantage_vista/trait.TableShell.html#method.add_raw_condition) trait method (default returns `Unimplemented`). Drivers can downcast the boxed value to their own `T::Condition` and push it directly into the wrapped table. Used by YAML factories that need to inject deferred-FK eq conditions (where the value is read out of a parent record at fetch time), which the scalar `add_condition_eq` channel can't express.
+
 ## 0.4.5 — 2026-05-14
 
 - New [`Vista::get_ref`](https://docs.rs/vantage-vista/0.4.5/vantage_vista/struct.Vista.html#method.get_ref) traverses a named reference and returns the related `Vista`. The driver does the work — it consults its wrapped typed table's `with_one` / `with_many` registry, applies the join condition, and wraps the result back into a `Vista` so callers stay on the universal surface.

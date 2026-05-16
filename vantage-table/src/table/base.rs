@@ -91,6 +91,13 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         &self.table_name
     }
 
+    /// Override the table name. Used by REST API drivers to swap a
+    /// canonical resource path for a per-reference URI template at
+    /// traversal time.
+    pub fn set_table_name(&mut self, name: impl Into<String>) {
+        self.table_name = name.into();
+    }
+
     /// Get the underlying data source
     pub fn data_source(&self) -> &T {
         &self.data_source

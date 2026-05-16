@@ -1,0 +1,19 @@
+name: albums
+columns:
+  id:
+    type: int
+    flags: [id]
+  title:
+    type: string
+    flags: [title]
+  userId:
+    type: int
+references:
+  user:
+    table: users
+    kind: has_one
+    foreign_key: userId
+  photos:
+    table: photos
+    kind: has_many
+    foreign_key: albumId

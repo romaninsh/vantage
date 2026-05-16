@@ -72,17 +72,12 @@ pub struct Photo {
 
 // ── Table factories ──────────────────────────────────────────────────────
 //
-// Each model exposes two factories:
-//   * the top-level table — `users`, `albums`, `photos` — used when the
-//     entity is queried in its own right;
-//   * a URI-template variant — `users/{userId}/albums`,
-//     `albums/{albumId}/photos` — used as a `with_many` build target
-//     so traversing from a parent narrows directly to the nested
-//     endpoint.
-//
-// The condition produced by RestApi's `related_in_condition`
-// (`userId = <parent_id>`) is consumed by the template's `{userId}`
-// substitution at request time; nothing leaks into the query string.
+// One factory per entity. References are declared with `with_many` /
+// `with_one`; jsonplaceholder accepts query-string filtering on every
+// resource (`/albums?userId=1`, `/users?id=2`), which is what
+// `related_in_condition` produces by default — no URI templates
+// needed at this level. APIs that *require* path-based filtering can
+// opt into per-reference URI templates through the YAML factory.
 
 impl User {
     pub fn api_table(api: RestApi) -> Table<RestApi, User> {
@@ -93,42 +88,25 @@ impl User {
             .with_column_of::<Option<String>>("email")
             .with_column_of::<Option<String>>("phone")
             .with_column_of::<Option<String>>("website")
-            .with_many("albums", "userId", Album::api_table_for_user)
+            .with_many("albums", "userId", Album::api_table)
     }
 }
 
 impl Album {
     pub fn api_table(api: RestApi) -> Table<RestApi, Album> {
-        Self::columns(Table::new("albums", api))
-    }
-
-    /// Nested form used when traversing from a User. The `{userId}`
-    /// placeholder is resolved by `RestApi`'s template substitution at
-    /// request time from the eq-condition wired up by `with_many`.
-    pub fn api_table_for_user(api: RestApi) -> Table<RestApi, Album> {
-        Self::columns(Table::new("users/{userId}/albums", api))
-    }
-
-    fn columns(t: Table<RestApi, Album>) -> Table<RestApi, Album> {
-        t.with_id_column("id")
+        Table::new("albums", api)
+            .with_id_column("id")
             .with_title_column_of::<Option<String>>("title")
             .with_column_of::<Option<i64>>("userId")
             .with_one("user", "userId", User::api_table)
-            .with_many("photos", "albumId", Photo::api_table_for_album)
+            .with_many("photos", "albumId", Photo::api_table)
     }
 }
 
 impl Photo {
     pub fn api_table(api: RestApi) -> Table<RestApi, Photo> {
-        Self::columns(Table::new("photos", api))
-    }
-
-    pub fn api_table_for_album(api: RestApi) -> Table<RestApi, Photo> {
-        Self::columns(Table::new("albums/{albumId}/photos", api))
-    }
-
-    fn columns(t: Table<RestApi, Photo>) -> Table<RestApi, Photo> {
-        t.with_id_column("id")
+        Table::new("photos", api)
+            .with_id_column("id")
             .with_title_column_of::<Option<String>>("title")
             .with_column_of::<Option<i64>>("albumId")
             .with_column_of::<Option<String>>("url")

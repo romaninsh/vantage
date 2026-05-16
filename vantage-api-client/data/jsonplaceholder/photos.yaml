@@ -1,0 +1,19 @@
+name: photos
+columns:
+  id:
+    type: int
+    flags: [id]
+  title:
+    type: string
+    flags: [title]
+  albumId:
+    type: int
+  url:
+    type: string
+  thumbnailUrl:
+    type: string
+references:
+  album:
+    table: albums
+    kind: has_one
+    foreign_key: albumId
