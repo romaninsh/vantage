@@ -1,14 +1,19 @@
 //! Vantage adapters for HTTP-based API backends.
 //!
-//! Currently ships one protocol adapter:
+//! Two protocol adapters live side by side:
 //!
 //! * [`rest`] — generic REST API client. Maps `Table<RestApi, E>` to
 //!   `GET {base_url}/{table_name}` with eq-conditions and pagination
 //!   peeled into the URL query string.
+//! * [`graphql`] — GraphQL API client. Renders typed query documents
+//!   with inline filters + variable-typed pagination, supports both
+//!   Hasura and flat-argument (e.g. SpaceX) dialects, and bridges
+//!   into Vista via a YAML schema map.
 //!
-//! A `graphql` sibling adapter is planned.
+//! See [`prelude`] for a one-stop import.
 
 pub mod graphql;
+pub mod prelude;
 pub mod rest;
 
 pub use graphql::{

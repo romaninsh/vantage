@@ -94,9 +94,9 @@ mod tests {
 
     #[test]
     fn f64_round_trip() {
-        let v = AnyGraphqlType::new(3.14f64);
+        let v = AnyGraphqlType::new(2.5f64);
         assert_eq!(v.type_variant(), Some(GraphqlTypeVariants::Float));
-        assert_eq!(v.try_get::<f64>(), Some(3.14));
+        assert_eq!(v.try_get::<f64>(), Some(2.5));
     }
 
     #[test]

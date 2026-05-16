@@ -1,10 +1,10 @@
 [package]
 edition = "2024"
 name = "vantage-api-client"
-version = "0.1.4"
+version = "0.1.5"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
-description = "Vantage extension for REST API backends"
+description = "Vantage extension for REST and GraphQL HTTP API backends"
 
 [dependencies]
 async-trait = "0.1"

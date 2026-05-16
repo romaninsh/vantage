@@ -33,13 +33,11 @@ use crate::graphql::types::AnyGraphqlType;
 
 /// Build a `GraphqlSelect` from a table's current state.
 ///
-/// - `root_field`     ← `table.table_name()`
-/// - `fields`         ← `table.columns().keys()` (plus id field if not
-///                      already in the column set)
-/// - `conditions`     ← `table.conditions()`
-/// - `sort`           ← `table.orders()`, mapping the condition's first
-///                      `Field` to a column name (mirrors Mongo's posture)
-/// - `limit/skip`     ← `table.pagination()`
+/// - `root_field` ← `table.table_name()`
+/// - `fields` ← `table.columns().keys()` (plus id field if not in the column set)
+/// - `conditions` ← `table.conditions()`
+/// - `sort` ← `table.orders()`, mapping the condition's first `Field` to a column name (mirrors Mongo's posture)
+/// - `limit/skip` ← `table.pagination()`
 /// - `dialect` / `filter_arg_name` propagate from the API
 fn select_from_table<E: Entity<AnyGraphqlType>>(table: &Table<GraphqlApi, E>) -> GraphqlSelect {
     let api = table.data_source();

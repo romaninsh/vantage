@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.5 — 2026-05-16
+
+GraphQL joins REST inside `vantage-api-client`. The crate is now home to two protocol adapters, with a YAML-driven Vista bridge for each. The example wires the SpaceX public GraphQL API end-to-end.
+
+- **Breaking**: REST internals moved under `vantage_api_client::rest::*`. Crate-root re-exports (`RestApi`, `RestApiBuilder`, `ResponseShape`, `PaginationParams`, `eq_condition`, `AnyTableShell`, `RestApiTableShell`, `RestApiVistaFactory`, `RestApiVistaSpec`, `NoApiExtras`) are unchanged, so most consumers compile without edits. Code that imported through `vantage_api_client::vista::*` directly now lives at `vantage_api_client::rest::vista::*`.
+- **New**: [`GraphqlApi`](https://docs.rs/vantage-api-client/0.1.5/vantage_api_client/struct.GraphqlApi.html) — POST-based GraphQL data source. Renders typed query documents with inline filters and `$limit`/`$offset` variables. Two filter dialects ship out of the box: `Hasura` (`where: { field: { _eq: v } }`) and `Generic` (`(find: { field: v })`, for hand-rolled schemas like SpaceX).
+- **New**: [`GraphqlApiVistaFactory`](https://docs.rs/vantage-api-client/0.1.5/vantage_api_client/struct.GraphqlApiVistaFactory.html) — builds a Vista from either a typed `Table<GraphqlApi, E>` or a hand-maintained YAML schema (`build_from_spec`). The YAML carries per-table `graphql:` blocks for `root_field`, `dialect`, and `filter_arg` overrides; column types map to typed Vantage columns (`int`, `bigint`, `bool`, `float`, `string`, `datetime`, `date`, `time`, `uuid`, `json`).
+- **New**: typed condition operators via [`GraphqlOperation`](https://docs.rs/vantage-api-client/0.1.5/vantage_api_client/trait.GraphqlOperation.html) — `.eq()`, `.ne()`, `.gt()`/`.gte()`/`.lt()`/`.lte()`, `.in_()`, `.like()`/`.ilike()`, `.is_null()`/`.is_not_null()`. Blanket-implemented over `Expressive<T>` so typed columns get them for free.
+- **New**: relationship traversal via `with_many`/`with_one`. The adapter peels existing parent eq-conditions in-sync and falls back to async `DeferredField` resolution otherwise; both paths render dialect-correct (`_eq` for Hasura, flat for Generic).
+- **New**: [`AnyGraphqlType`](https://docs.rs/vantage-api-client/0.1.5/vantage_api_client/struct.AnyGraphqlType.html) — type-erased value wrapping `serde_json::Value` with a 15-variant scalar enum (`Null`, `Bool`, `Int`, `BigInt`, `Float`, `String`, `Id`, `DateTime`, `Date`, `Time`, `Uuid`, `Decimal`, `Json`, `Object`, `Array`). Built-in Rust impls cover `bool`, `i32`/`i64`/`f64`, `String`/`&str`, `chrono::DateTime<Utc>`/`NaiveDate`/`NaiveTime`, `uuid::Uuid`, `serde_json::Value`, `Vec<AnyGraphqlType>`, `IndexMap<String, AnyGraphqlType>`. Downstream crates can plug their own types onto existing variants, or call `vantage_type_system!` a second time for a fresh variant set (e.g. a `vantage-graphql-geo` extension).
+- **New**: `prelude` module for one-shot imports of both protocols. CBOR bridges round-trip cleanly through `AnyTable`, so a `Vec<AnyTable>` can mix REST and GraphQL tables.
+- **New example**: `examples/graphql_spacex.rs` — YAML-driven CLI over the public SpaceX GraphQL API. Schema files in `examples/schema/{launches,rockets,capsules}.yaml`. Run `cargo run --example graphql_spacex -- launches`. Endpoint overridable via `$SPACEX_ENDPOINT`.
+- Dependencies added: `chrono`, `uuid`, `paste` (runtime); `serde_yaml_ng` (dev only — for YAML test fixtures).
+
 ## 0.1.4 — 2026-05-14
 
 REST API now speaks [`ciborium::Value`](https://docs.rs/ciborium/) end-to-end and bridges into the universal [`Vista`](https://docs.rs/vantage-vista/0.4.5/vantage_vista/struct.Vista.html) surface.
