@@ -182,7 +182,7 @@ mod tests {
     #[tokio::test]
     async fn column_eq_renders_hasura() {
         let mission = Column::<String>::new("mission_name");
-        let cond = mission.eq("FalconSat".to_string());
+        let cond = mission.eq("FalconSat");
         let r = cond.render(FilterDialect::Hasura).await.unwrap();
         assert_eq!(r, json!({ "mission_name": { "_eq": "FalconSat" } }));
     }
@@ -190,7 +190,7 @@ mod tests {
     #[tokio::test]
     async fn column_eq_renders_generic() {
         let mission = Column::<String>::new("mission_name");
-        let cond = mission.eq("FalconSat".to_string());
+        let cond = mission.eq("FalconSat");
         let r = cond.render(FilterDialect::Generic).await.unwrap();
         assert_eq!(r, json!({ "mission_name": "FalconSat" }));
     }
@@ -206,7 +206,7 @@ mod tests {
     #[tokio::test]
     async fn column_in_renders_hasura_array() {
         let status = Column::<String>::new("status");
-        let cond = status.in_(vec!["active".to_string(), "pending".to_string()]);
+        let cond = status.in_(vec!["active", "pending"]);
         let r = cond.render(FilterDialect::Hasura).await.unwrap();
         assert_eq!(r, json!({ "status": { "_in": ["active", "pending"] } }));
     }

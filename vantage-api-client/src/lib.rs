@@ -13,8 +13,10 @@ pub mod rest;
 
 pub use graphql::{
     AnyGraphqlType, FieldCondition, FilterDialect, GraphqlApi, GraphqlApiBuilder,
-    GraphqlCondition, GraphqlOp, GraphqlOperation, GraphqlSelect, GraphqlType,
-    GraphqlTypeVariants, RenderedQuery,
+    GraphqlApiTableShell, GraphqlApiVistaFactory, GraphqlApiVistaSpec, GraphqlBlock,
+    GraphqlColumnBlock, GraphqlColumnExtras, GraphqlCondition, GraphqlOp, GraphqlOperation,
+    GraphqlSelect, GraphqlTableExtras, GraphqlType, GraphqlTypeVariants, NoGraphqlExtras,
+    RenderedQuery,
 };
 pub use rest::{
     AnyTableShell, NoApiExtras, PaginationParams, ResponseShape, RestApi, RestApiBuilder,

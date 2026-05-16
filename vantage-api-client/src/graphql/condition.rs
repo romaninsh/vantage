@@ -93,14 +93,24 @@ impl FieldCondition {
 #[derive(Clone)]
 pub enum GraphqlCondition {
     Field(FieldCondition),
+    /// Like [`Self::Field`] but the value is resolved at fetch time.
+    /// Used by relationship traversal — `with_many`/`with_one` builds
+    /// one of these when the parent's foreign-key value isn't known
+    /// until the parent is fetched. The deferred resolves to a scalar
+    /// (the FK value); render-time wraps it in the dialect's `_eq`-
+    /// equivalent and merges it into the filter.
+    DeferredField {
+        field: String,
+        op: GraphqlOp,
+        value_fn: DeferredFn<AnyGraphqlType>,
+    },
     And(Vec<GraphqlCondition>),
     Or(Vec<GraphqlCondition>),
     Not(Box<GraphqlCondition>),
-    /// Resolved at fetch time — used by relationship traversal where the
-    /// child's filter depends on a value not yet fetched (e.g. parent's
-    /// id). The resolved `AnyGraphqlType` must wrap a JSON object that
-    /// merges into the surrounding filter — same posture as
-    /// `MongoCondition::Deferred`.
+    /// Resolved at fetch time — produces a complete filter sub-object
+    /// that already matches the surrounding dialect. Use [`Self::DeferredField`]
+    /// instead unless you genuinely need to compute a non-`field op value`
+    /// shape dynamically.
     Deferred(DeferredFn<AnyGraphqlType>),
 }
 
@@ -108,6 +118,9 @@ impl std::fmt::Debug for GraphqlCondition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Field(fc) => write!(f, "Field({:?} {:?} {})", fc.field, fc.op, fc.value),
+            Self::DeferredField { field, op, .. } => {
+                write!(f, "DeferredField({:?} {:?} <pending>)", field, op)
+            }
             Self::And(parts) => f.debug_tuple("And").field(parts).finish(),
             Self::Or(parts) => f.debug_tuple("Or").field(parts).finish(),
             Self::Not(inner) => f.debug_tuple("Not").field(inner).finish(),
@@ -137,6 +150,20 @@ impl GraphqlCondition {
         Box::pin(async move {
             match self {
                 Self::Field(fc) => render_field(fc, dialect),
+                Self::DeferredField { field, op, value_fn } => {
+                    let resolved = value_fn.call().await?;
+                    let value = match resolved {
+                        ExpressiveEnum::Scalar(v) => v.into_value(),
+                        other => {
+                            return Err(error!(
+                                "DeferredField resolved to non-scalar",
+                                got = format!("{:?}", other)
+                            ));
+                        }
+                    };
+                    let fc = FieldCondition::new(field.clone(), op.clone(), value);
+                    render_field(&fc, dialect)
+                }
                 Self::And(parts) => {
                     let mut rendered = Vec::with_capacity(parts.len());
                     for p in parts {

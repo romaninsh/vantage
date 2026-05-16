@@ -28,5 +28,6 @@ vantage-vista = { version = "0.4.5", path = "../vantage-vista" }
 anyhow = "1.0"
 tokio = { version = "1.48", features = ["full"] }
 reqwest = { version = "0.12", features = ["json"] }
+serde_yaml_ng = "0.10"
 urlencoding = "2.1"
 vantage-cli-util = { path = "../vantage-cli-util" }

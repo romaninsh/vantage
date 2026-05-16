@@ -15,9 +15,15 @@ pub mod impls;
 pub mod operation;
 pub mod select;
 pub mod types;
+pub mod vista;
 
 pub use api::{GraphqlApi, GraphqlApiBuilder};
 pub use condition::{FieldCondition, FilterDialect, GraphqlCondition, GraphqlOp};
 pub use operation::GraphqlOperation;
 pub use select::{GraphqlSelect, render::RenderedQuery};
 pub use types::{AnyGraphqlType, GraphqlType, GraphqlTypeVariants};
+pub use vista::{
+    GraphqlApiTableShell, GraphqlApiVistaFactory, GraphqlApiVistaSpec,
+    spec::{GraphqlBlock, GraphqlColumnBlock, GraphqlColumnExtras, GraphqlTableExtras},
+    NoGraphqlExtras,
+};

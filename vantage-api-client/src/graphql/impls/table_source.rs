@@ -14,15 +14,20 @@ use async_trait::async_trait;
 use indexmap::IndexMap;
 use serde_json::Value;
 use vantage_core::error;
+use vantage_dataset::ReadableValueSet;
 use vantage_dataset::traits::Result;
-use vantage_expressions::{AssociatedExpression, Expression, Order, traits::expressive::ExpressiveEnum};
+use vantage_expressions::{
+    AssociatedExpression, DeferredFn, ExprDataSource, Expression, Order,
+    traits::expressive::ExpressiveEnum,
+};
 use vantage_table::column::core::{Column, ColumnType};
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
 use crate::graphql::api::GraphqlApi;
-use crate::graphql::condition::{FieldCondition, GraphqlCondition, GraphqlOp};
+use crate::graphql::condition::{GraphqlCondition, GraphqlOp};
+use crate::graphql::operation::GraphqlOperation;
 use crate::graphql::select::GraphqlSelect;
 use crate::graphql::types::AnyGraphqlType;
 
@@ -141,11 +146,7 @@ impl TableSource for GraphqlApi {
     /// Stringy `field == value` helper for callers that only have text
     /// on hand (CLI, generic UIs). The value lands as a JSON string.
     fn eq_condition(field: &str, value: &str) -> Result<Self::Condition> {
-        Ok(GraphqlCondition::Field(FieldCondition::new(
-            field,
-            GraphqlOp::Eq,
-            Value::String(value.to_string()),
-        )))
+        Ok(Column::<AnyGraphqlType>::new(field).eq(value))
     }
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
@@ -192,21 +193,11 @@ impl TableSource for GraphqlApi {
         let conditions: Vec<GraphqlCondition> = table
             .columns()
             .keys()
-            .map(|name| {
-                GraphqlCondition::Field(FieldCondition::new(
-                    name.clone(),
-                    GraphqlOp::ILike,
-                    Value::String(pattern.clone()),
-                ))
-            })
+            .map(|name| Column::<AnyGraphqlType>::new(name).ilike(pattern.clone()))
             .collect();
 
         match conditions.len() {
-            0 => GraphqlCondition::Field(FieldCondition::new(
-                "__never__",
-                GraphqlOp::Eq,
-                Value::Bool(false),
-            )),
+            0 => Column::<AnyGraphqlType>::new("__never__").eq(false),
             1 => conditions.into_iter().next().unwrap(),
             _ => GraphqlCondition::Or(conditions),
         }
@@ -269,11 +260,7 @@ impl TableSource for GraphqlApi {
             .map(|c| c.name().to_string())
             .unwrap_or_else(|| "id".to_string());
         let mut select = select_from_table(table);
-        select.conditions.push(GraphqlCondition::Field(FieldCondition::new(
-            id_name.clone(),
-            GraphqlOp::Eq,
-            Value::String(id.clone()),
-        )));
+        select.conditions.push(Column::<AnyGraphqlType>::new(&id_name).eq(id.as_str()));
         select.limit = Some(1);
 
         let rendered = select.render().await?;
@@ -430,29 +417,127 @@ impl TableSource for GraphqlApi {
         Err(error!("GraphQL mutations not implemented; depends on schema"))
     }
 
-    /// Phase 5 stub — Phase 6 replaces this with nested-selection logic.
+    /// Build a child condition for `with_many` / `with_one` traversal.
+    ///
+    /// Two paths, mirroring the REST adapter's posture:
+    ///
+    /// * **Sync peek** — if the parent already carries an eq-condition
+    ///   on `source_column` (the common `with_many` case where the
+    ///   source column is the parent's id field narrowed via
+    ///   `eq(<id>)`), re-key the value onto `target_field` immediately
+    ///   so the child filter is fully concrete.
+    /// * **Deferred fallback** — otherwise (the `with_one` case where
+    ///   `source_column` is a foreign-key field that lives in the
+    ///   parent's data, not its conditions), wrap resolution in a
+    ///   `DeferredField` that fetches the parent's first row at fetch
+    ///   time and pulls `source_column` out of it.
+    ///
+    /// Both paths render through `FilterDialect`, so Hasura schemas get
+    /// `{ target_field: { _eq: v } }` and Generic schemas get the flat
+    /// `{ target_field: v }` form.
+    ///
+    /// This is the two-round-trip option; nested-selection (single
+    /// round trip) is a future optimisation that requires going around
+    /// the `Table` trait surface and is tracked separately.
     fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(
         &self,
-        _target_field: &str,
-        _source_table: &Table<Self, SourceE>,
-        _source_column: &str,
+        target_field: &str,
+        source_table: &Table<Self, SourceE>,
+        source_column: &str,
     ) -> Self::Condition
     where
         Self: Sized,
     {
-        unimplemented!("related_in_condition is implemented in Phase 6 — nested selection set")
+        // Sync peek: look for an existing eq-condition on the parent
+        // whose field matches `source_column`. Re-key onto `target_field`
+        // via the operator trait so dialect rendering and value mapping
+        // stay in one place.
+        for cond in source_table.conditions() {
+            if let GraphqlCondition::Field(fc) = cond
+                && fc.field == source_column
+                && fc.op == GraphqlOp::Eq
+            {
+                return Column::<AnyGraphqlType>::new(target_field).eq(fc.value.clone());
+            }
+        }
+
+        // Deferred fallback: list the parent's rows at fetch time and
+        // pull `source_column` from the first row. Wrap as a
+        // `DeferredField` so the dialect-correct render path applies.
+        let parent = source_table.clone();
+        let column = source_column.to_string();
+        let parent_name = source_table.table_name().to_string();
+        let value_fn = DeferredFn::new(move || {
+            let parent = parent.clone();
+            let column = column.clone();
+            let parent_name = parent_name.clone();
+            Box::pin(async move {
+                let records = parent.list_values().await?;
+                let value = records
+                    .values()
+                    .next()
+                    .and_then(|r| r.get(&column))
+                    .cloned()
+                    .ok_or_else(|| {
+                        error!(
+                            "Deferred FK resolve: parent yielded no row or column missing",
+                            table = parent_name,
+                            column = column
+                        )
+                    })?;
+                Ok(ExpressiveEnum::Scalar(value))
+            })
+        });
+
+        GraphqlCondition::DeferredField {
+            field: target_field.to_string(),
+            op: GraphqlOp::Eq,
+            value_fn,
+        }
     }
 
+    /// Defer to a query that selects just `column`. Used by the
+    /// `Table::with_one` / `Table::with_many` plumbing when it wants a
+    /// list of values from another table (e.g. all FK ids).
+    ///
+    /// We implement the deferred path via the existing `list_table_values`
+    /// machinery — fetch all parent rows, extract the column. For Hasura
+    /// schemas this could be replaced with a proper sub-select; for
+    /// SpaceX-style generic schemas, list-and-extract is the only viable
+    /// path anyway.
     fn column_table_values_expr<'a, E, Type: ColumnType>(
         &'a self,
-        _table: &Table<Self, E>,
-        _column: &Self::Column<Type>,
+        table: &Table<Self, E>,
+        column: &Self::Column<Type>,
     ) -> AssociatedExpression<'a, Self, Self::Value, Vec<Type>>
     where
         E: Entity<Self::Value> + 'static,
         Self: Sized,
     {
-        unimplemented!("column_table_values_expr is implemented in Phase 6")
+        use vantage_expressions::expr_any;
+
+        let table_clone = table.clone();
+        let col = column.name().to_string();
+        let api = self.clone();
+
+        let inner = expr_any!("{}", {
+            DeferredFn::new(move || {
+                let api = api.clone();
+                let table = table_clone.clone();
+                let col = col.clone();
+                Box::pin(async move {
+                    let records = api.list_table_values(&table).await?;
+                    let values: Vec<AnyGraphqlType> = records
+                        .values()
+                        .filter_map(|r| r.get(&col).cloned())
+                        .collect();
+                    Ok(ExpressiveEnum::Scalar(AnyGraphqlType::new(values)))
+                })
+            })
+        });
+
+        let expr = expr_any!("{}", { self.defer(inner) });
+        AssociatedExpression::new(expr, self)
     }
 }
 
@@ -462,7 +547,7 @@ mod tests {
     use serde_json::json;
     use vantage_types::EmptyEntity;
 
-    use crate::graphql::condition::FilterDialect;
+    use crate::graphql::condition::{FieldCondition, FilterDialect};
 
     fn launches_table() -> Table<GraphqlApi, EmptyEntity> {
         let api = GraphqlApi::new("https://api.test/graphql");
@@ -555,5 +640,75 @@ mod tests {
         let row = json!({ "id": 42, "name": "x" });
         let (id, _rec) = row_to_record(&row, Some("id")).unwrap();
         assert_eq!(id, "42");
+    }
+
+    #[test]
+    fn related_in_condition_sync_peeks_parent_eq() {
+        let mut parent = launches_table();
+        // Parent narrowed to id=5; child should get its target field
+        // bound to 5 immediately (no deferred fetch).
+        parent.add_condition(GraphqlCondition::Field(FieldCondition::new(
+            "id",
+            GraphqlOp::Eq,
+            json!("5"),
+        )));
+        let api = parent.data_source().clone();
+        let cond = api.related_in_condition::<EmptyEntity>("launch_id", &parent, "id");
+        match cond {
+            GraphqlCondition::Field(fc) => {
+                assert_eq!(fc.field, "launch_id");
+                assert_eq!(fc.op, GraphqlOp::Eq);
+                assert_eq!(fc.value, json!("5"));
+            }
+            _ => panic!("expected sync Field, got {:?}", cond),
+        }
+    }
+
+    #[test]
+    fn related_in_condition_deferred_when_no_parent_eq() {
+        // Parent has no eq-condition on the source column, so the
+        // resolver must defer the lookup until fetch time.
+        let parent = launches_table();
+        let api = parent.data_source().clone();
+        let cond = api.related_in_condition::<EmptyEntity>("launch_id", &parent, "mission_id");
+        match cond {
+            GraphqlCondition::DeferredField { field, op, .. } => {
+                assert_eq!(field, "launch_id");
+                assert_eq!(op, GraphqlOp::Eq);
+            }
+            _ => panic!("expected DeferredField, got {:?}", cond),
+        }
+    }
+
+    #[tokio::test]
+    async fn deferred_field_renders_through_hasura_dialect() {
+        use vantage_expressions::DeferredFn;
+        let cond = GraphqlCondition::DeferredField {
+            field: "launch_id".into(),
+            op: GraphqlOp::Eq,
+            value_fn: DeferredFn::new(|| {
+                Box::pin(async {
+                    Ok(ExpressiveEnum::Scalar(AnyGraphqlType::new("abc-123".to_string())))
+                })
+            }),
+        };
+        let r = cond.render(FilterDialect::Hasura).await.unwrap();
+        assert_eq!(r, json!({ "launch_id": { "_eq": "abc-123" } }));
+    }
+
+    #[tokio::test]
+    async fn deferred_field_renders_through_generic_dialect() {
+        use vantage_expressions::DeferredFn;
+        let cond = GraphqlCondition::DeferredField {
+            field: "launch_id".into(),
+            op: GraphqlOp::Eq,
+            value_fn: DeferredFn::new(|| {
+                Box::pin(async {
+                    Ok(ExpressiveEnum::Scalar(AnyGraphqlType::new(7i64)))
+                })
+            }),
+        };
+        let r = cond.render(FilterDialect::Generic).await.unwrap();
+        assert_eq!(r, json!({ "launch_id": 7 }));
     }
 }
