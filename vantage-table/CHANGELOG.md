@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.9 — 2026-05-15
+
+- New [`TableLike::set_table_name(String)`](https://docs.rs/vantage-table/0.4.9/vantage_table/traits/table_like/trait.TableLike.html#method.set_table_name) trait method (default no-op) and matching inherent [`Table::set_table_name`](https://docs.rs/vantage-table/0.4.9/vantage_table/struct.Table.html#method.set_table_name). `AnyTable` forwards. Lets drivers that use the `table_name` field as a request-shape (REST API endpoints, URI templates) swap it at reference-traversal time without rebuilding the table.
+
 ## 0.4.8 — 2026-04-30
 
 - `TableLike` gains five reflection / mutation methods so type-erased callers (the new model-driven CLI in `vantage-cli-util`, anything else holding an `AnyTable`) can reach metadata that previously only existed on the typed side. All have default impls so existing implementors compile unchanged.

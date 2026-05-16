@@ -27,6 +27,10 @@ where
         self.table_name()
     }
 
+    fn set_table_name(&mut self, name: String) {
+        Table::<T, E>::set_table_name(self, name);
+    }
+
     fn column_names(&self) -> Vec<String> {
         self.columns.keys().cloned().collect()
     }

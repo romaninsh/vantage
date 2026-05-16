@@ -4046,7 +4046,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vantage-api-client"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4055,6 +4055,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "serde_yaml_ng",
  "tokio",
  "urlencoding",
  "vantage-cli-util",
@@ -4366,7 +4367,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.4.8"
+version = "0.4.9"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -4415,7 +4416,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "async-stream",
  "async-trait",

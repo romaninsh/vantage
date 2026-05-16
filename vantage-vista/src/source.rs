@@ -149,6 +149,28 @@ pub trait TableShell: Send + Sync + 'static {
         .is_unimplemented())
     }
 
+    /// Push a driver-native condition into the wrapped table. The
+    /// caller boxes the condition as `dyn Any` and the driver
+    /// downcasts to its own `T::Condition`. Used by YAML-driven
+    /// relation traversal, where the factory constructs a
+    /// `DeferredFn`-bearing condition outside the value-set surface
+    /// (which only accepts scalar eq) and pushes it through this
+    /// channel. Default is `Unimplemented`.
+    fn add_raw_condition(
+        &mut self,
+        _condition: Box<dyn std::any::Any + Send + Sync>,
+    ) -> Result<()> {
+        Err(error!(
+            format!(
+                "add_raw_condition not implemented for '{}'",
+                std::any::type_name::<Self>()
+            ),
+            method = "add_raw_condition",
+            source_type = std::any::type_name::<Self>()
+        )
+        .is_unimplemented())
+    }
+
     // ---- References --------------------------------------------------------
 
     /// Resolve a named relation and return the related table as a new

@@ -249,6 +249,10 @@ impl TableLike for AnyTable {
         self.inner.table_name()
     }
 
+    fn set_table_name(&mut self, name: String) {
+        self.inner.set_table_name(name);
+    }
+
     fn table_alias(&self) -> &str {
         self.inner.table_alias()
     }
@@ -510,6 +514,10 @@ where
 {
     fn table_name(&self) -> &str {
         self.inner.table_name()
+    }
+
+    fn set_table_name(&mut self, name: String) {
+        self.inner.set_table_name(name);
     }
 
     fn table_alias(&self) -> &str {

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.5 — 2026-05-15
+
+YAML-driven model definitions: describe a REST resource in YAML, accumulate a registry, and traverse references — including across models defined in separate YAML files — without writing Rust factory closures.
+
+- [`RestApiVistaFactory::register_yaml(&str)`](https://docs.rs/vantage-api-client/0.1.5/vantage_api_client/struct.RestApiVistaFactory.html#method.register_yaml) parses a `RestApiVistaSpec` and stashes it under `spec.name`. [`build(name)`](https://docs.rs/vantage-api-client/0.1.5/vantage_api_client/struct.RestApiVistaFactory.html#method.build) materialises a `Vista` on demand; references resolve through the same registry so a parent's `:relation` traversal finds the child's spec without further wiring.
+- New table-level `api` block carries `endpoint: parent/{parentId}/child` for APIs that require path-based filtering. Defaults to `spec.name` when absent — declaring `name: users` is enough for a plain `/users` resource.
+- [`RestApiVistaFactory::with_model_resolver(Arc<dyn Fn(&str) -> Result<Vista>>)`](https://docs.rs/vantage-api-client/0.1.5/vantage_api_client/struct.RestApiVistaFactory.html#method.with_model_resolver) installs a callback that overrides the internal registry — for cross-driver setups (e.g. a UI shell whose inventory layer routes some models through SQL and others through REST) the resolver decides which factory builds each name.
+- Cross-cutting public types: [`ApiTableExtras`](https://docs.rs/vantage-api-client/0.1.5/vantage_api_client/struct.ApiTableExtras.html), [`ApiTableBlock`](https://docs.rs/vantage-api-client/0.1.5/vantage_api_client/struct.ApiTableBlock.html), `ApiColumnExtras`, `ApiReferenceExtras`, and [`ModelResolver`](https://docs.rs/vantage-api-client/0.1.5/vantage_api_client/type.ModelResolver.html). `NoApiExtras` stays as a legacy alias.
+- New `examples/jsonplaceholder_yaml.rs` — same demo as `jsonplaceholder` with all three models in `data/jsonplaceholder/*.yaml`. Run `cargo run --example jsonplaceholder_yaml -- users id=1 :albums :photos`.
+
 ## 0.1.4 — 2026-05-14
 
 REST API now speaks [`ciborium::Value`](https://docs.rs/ciborium/) end-to-end and bridges into the universal [`Vista`](https://docs.rs/vantage-vista/0.4.5/vantage_vista/struct.Vista.html) surface.

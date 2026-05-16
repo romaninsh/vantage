@@ -1,0 +1,21 @@
+name: users
+columns:
+  id:
+    type: int
+    flags: [id]
+  name:
+    type: string
+    flags: [title]
+  username:
+    type: string
+  email:
+    type: string
+  phone:
+    type: string
+  website:
+    type: string
+references:
+  albums:
+    table: albums
+    kind: has_many
+    foreign_key: userId
