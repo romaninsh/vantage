@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.7 — 2026-05-16
+
+Row-based reference traversal arrives at the universal surface, replacing the AnyTable-bridged path.
+
+- **Breaking**: [`Vista::get_ref`](https://docs.rs/vantage-vista/0.4.7/vantage_vista/struct.Vista.html#method.get_ref) signature is now `(relation, &Record<CborValue>)` — pass in the parent row, get back a child Vista narrowed by one eq-condition. Drops the subquery-based path and the deferred-fetch dance. [`TableShell::get_ref`](https://docs.rs/vantage-vista/0.4.7/vantage_vista/trait.TableShell.html#method.get_ref) gets the matching signature; the unused `vista: &Vista` parameter was dropped — shells holding a typed `Table` don't consult Vista metadata to traverse.
+- New [`Vista::with_foreign(name, kind, closure)`](https://docs.rs/vantage-vista/0.4.7/vantage_vista/struct.Vista.html#method.with_foreign) — cross-persistence reference declaration at the Vista layer. The closure is *stored, never invoked* at registration so mutually-referencing Vistas don't recurse at construction; it fires lazily on `get_ref`. `kind: ReferenceKind` records cardinality so consumers can render record-card vs list-grid.
+- New [`Vista::with_id(id)`](https://docs.rs/vantage-vista/0.4.7/vantage_vista/struct.Vista.html#method.with_id) convenience — narrow by id, pair with `get_some_value` for the "I only know an id" workflow.
+- New [`Vista::list_references()`](https://docs.rs/vantage-vista/0.4.7/vantage_vista/struct.Vista.html#method.list_references) returns `Vec<(name, ReferenceKind)>`. Combines foreign resolvers, YAML metadata, and the wrapped table's typed refs surfaced via the new [`TableShell::get_ref_kinds`](https://docs.rs/vantage-vista/0.4.7/vantage_vista/trait.TableShell.html#method.get_ref_kinds).
+- **Breaking**: `ReferenceKind::HasForeign` is removed — the enum is `HasOne | HasMany`. Cross-persistence-ness is no longer encoded in the kind; it's determined at resolution time by whether the target Vista lives in the same driver or a different one (the inventory loader knows). YAML files using `kind: has_foreign` migrate to `kind: has_one` or `kind: has_many` depending on cardinality.
+- Step 8 of the Vista integration guide gets a new "References delegate too" section plus an Optional-overrides walkthrough — `docs4/src/new-persistence/step8-vista-integration.md`.
+
 ## 0.4.6 — 2026-05-15
 
 - New [`Vista::add_raw_condition<C>(condition: C)`](https://docs.rs/vantage-vista/0.4.6/vantage_vista/struct.Vista.html#method.add_raw_condition) and matching [`TableShell::add_raw_condition`](https://docs.rs/vantage-vista/0.4.6/vantage_vista/trait.TableShell.html#method.add_raw_condition) trait method (default returns `Unimplemented`). Drivers can downcast the boxed value to their own `T::Condition` and push it directly into the wrapped table. Used by YAML factories that need to inject deferred-FK eq conditions (where the value is read out of a parent record at fetch time), which the scalar `add_condition_eq` channel can't express.

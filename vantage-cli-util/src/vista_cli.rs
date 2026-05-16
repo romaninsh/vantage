@@ -233,14 +233,11 @@ pub async fn run<F: ModelFactory, R: Renderer>(
                 // Row-based traversal needs the actual parent record on hand,
                 // so we fetch it from the narrowed vista before handing it to
                 // `get_ref`. `Mode::Single` guarantees a single row matches.
-                let (_id, parent_row) = vista
-                    .get_some_value()
-                    .await?
-                    .ok_or_else(|| {
-                        error!(format!(
-                            "Cannot traverse `:{rel}` — narrowed vista has no matching record"
-                        ))
-                    })?;
+                let (_id, parent_row) = vista.get_some_value().await?.ok_or_else(|| {
+                    error!(format!(
+                        "Cannot traverse `:{rel}` — narrowed vista has no matching record"
+                    ))
+                })?;
                 vista = vista.get_ref(&rel, &parent_row)?;
                 mode = match child_kind {
                     Some(ReferenceKind::HasOne) => Mode::Single,

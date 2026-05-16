@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.7 — 2026-05-16
+
+- REST and GraphQL `TableShell::get_ref` impls updated for [`Vista::get_ref(relation, &row)`](https://docs.rs/vantage-vista/0.4.7/vantage_vista/struct.Vista.html#method.get_ref)'s row-based signature.
+- REST's YAML-driven traversal drops the `DeferredFn`-based parent-fetch dance: with the parent row passed in, the shell reads the join field directly and pushes a plain eq-condition on the resolver-built child Vista. The `with_model_resolver` callback survives for cross-driver inventory routing.
+- The YAML factory's `ReferenceKind::HasForeign → HasMany` workaround is gone now that `ReferenceKind` is two-variant; declared cardinality flows straight through to the child Vista.
+- Pins `vantage-vista = "0.4.7"`, `vantage-table = "0.4.10"`.
+
 ## 0.1.6 — 2026-05-16
 
 GraphQL joins REST inside `vantage-api-client`. The crate is now home to two protocol adapters, with a YAML-driven Vista bridge for each. The example wires the SpaceX public GraphQL API end-to-end.

@@ -260,6 +260,6 @@ impl Vista {
         if let Some(fref) = self.foreign_resolvers.get(relation) {
             return (fref.resolver)(row);
         }
-        self.source.get_ref(self, relation, row)
+        self.source.get_ref(relation, row)
     }
 }

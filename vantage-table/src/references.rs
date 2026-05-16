@@ -35,6 +35,15 @@ pub enum Cardinality {
     Many,
 }
 
+impl From<Cardinality> for vantage_vista::ReferenceKind {
+    fn from(c: Cardinality) -> Self {
+        match c {
+            Cardinality::One => Self::HasOne,
+            Cardinality::Many => Self::HasMany,
+        }
+    }
+}
+
 /// Describes a relationship between two tables.
 pub trait Reference: Send + Sync {
     /// Given source and target id field names, return (source_column, target_column).

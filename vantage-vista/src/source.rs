@@ -182,7 +182,7 @@ pub trait TableShell: Send + Sync + 'static {
     /// The default returns `Unimplemented`; cross-persistence refs are
     /// handled at the `Vista` layer via `Vista::with_foreign` before this
     /// trait method is reached.
-    fn get_ref(&self, _vista: &Vista, relation: &str, _row: &Record<CborValue>) -> Result<Vista> {
+    fn get_ref(&self, relation: &str, _row: &Record<CborValue>) -> Result<Vista> {
         Err(error!(
             format!(
                 "get_ref not implemented for '{}'",

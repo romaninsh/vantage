@@ -119,9 +119,10 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
             row as &dyn std::any::Any,
         )?;
 
-        let target_empty: Table<T, EmptyEntity> = *target_dyn
-            .downcast::<Table<T, EmptyEntity>>()
-            .map_err(|_| error!("Failed to downcast target table to Table<T, EmptyEntity>"))?;
+        let target_empty: Table<T, EmptyEntity> =
+            *target_dyn
+                .downcast::<Table<T, EmptyEntity>>()
+                .map_err(|_| error!("Failed to downcast target table to Table<T, EmptyEntity>"))?;
 
         Ok(target_empty.into_entity::<E2>())
     }

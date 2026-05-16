@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.10 — 2026-05-16
+
+Row-based reference traversal lands at the typed layer; `HasForeign` retires.
+
+- New [`Table::get_ref_from_row<E2>(relation, &row)`](https://docs.rs/vantage-table/0.4.10/vantage_table/struct.Table.html#method.get_ref_from_row) — reads the join field out of a known parent record and returns `Table<T, E2>` narrowed by one eq-condition. No subquery, no deferred fetch.
+- New [`Table::with_id(id)`](https://docs.rs/vantage-table/0.4.10/vantage_table/struct.Table.html#method.with_id) convenience — pairs with `get_some_value` for the "I only know an id" workflow.
+- New [`Reference::resolve_from_row`](https://docs.rs/vantage-table/0.4.10/vantage_table/references/trait.Reference.html#tymethod.resolve_from_row) and [`Reference::cardinality`](https://docs.rs/vantage-table/0.4.10/vantage_table/references/trait.Reference.html#tymethod.cardinality) trait methods, with new `Cardinality::{One, Many}` enum. `HasOne` / `HasMany` implement both; the row-based path lives here and is called by the typed `get_ref_from_row` and by every Vista shell.
+- New [`TableSource::eq_value_condition(&self, field, value)`](https://docs.rs/vantage-table/0.4.10/vantage_table/traits/table_source/trait.TableSource.html#method.eq_value_condition) — typed-value sibling of `eq_condition`. Default errors; backends that participate in row-based traversal override.
+- New `Table::ref_kinds()` and `Table::ref_cardinality(relation)` for inspecting registered references with cardinality.
+- New `impl From<Cardinality> for vantage_vista::ReferenceKind` lets driver shells write `c.into()` instead of hand-coding the `One → HasOne` / `Many → HasMany` match. Adds `vantage-vista` as a direct dep (was already transitive via `vantage-expressions`).
+- **Breaking**: `HasForeign`, `Table::with_foreign`, `Table::is_foreign_ref`, and `Reference::is_foreign` are removed. Cross-persistence refs now live at the Vista layer ([`Vista::with_foreign`](https://docs.rs/vantage-vista/0.4.7/vantage_vista/struct.Vista.html#method.with_foreign)) — `vantage-table` stays single-backend by construction. The one in-tree caller (`vantage-aws` Lambda's `log_group`) migrated to a Vista-side registration; out-of-tree callers move their closure to `Vista::with_foreign` at the factory site.
+- Legacy `Table::get_ref` / `get_ref_as` / `get_subquery_as` and `Reference::resolve_as_any` / `build_target` stay for now — slated for deletion in Stage 9 alongside `AnyTable`.
+
 ## 0.4.9 — 2026-05-15
 
 - New [`TableLike::set_table_name(String)`](https://docs.rs/vantage-table/0.4.9/vantage_table/traits/table_like/trait.TableLike.html#method.set_table_name) trait method (default no-op) and matching inherent [`Table::set_table_name`](https://docs.rs/vantage-table/0.4.9/vantage_table/struct.Table.html#method.set_table_name). `AnyTable` forwards. Lets drivers that use the `table_name` field as a request-shape (REST API endpoints, URI templates) swap it at reference-traversal time without rebuilding the table.

@@ -81,11 +81,7 @@ impl TableSource for MongoDB {
     type Id = MongoId;
     type Condition = MongoCondition;
 
-    fn eq_value_condition(
-        &self,
-        field: &str,
-        value: Self::Value,
-    ) -> Result<Self::Condition> {
+    fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
         Ok(MongoCondition::Doc(doc! { field: value.to_bson() }))
     }
 

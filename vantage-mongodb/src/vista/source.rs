@@ -250,7 +250,7 @@ impl TableShell for MongoTableShell {
         Ok(())
     }
 
-    fn get_ref(&self, _vista: &Vista, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
+    fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
         let native_row: Record<AnyMongoType> = row
             .iter()
             .map(|(k, v)| (k.clone(), AnyMongoType::from(v.clone())))
@@ -258,22 +258,16 @@ impl TableShell for MongoTableShell {
         let target = self
             .table
             .get_ref_from_row::<EmptyEntity>(relation, &native_row)?;
-        let factory = crate::vista::factory::MongoVistaFactory::new(self.table.data_source().clone());
+        let factory =
+            crate::vista::factory::MongoVistaFactory::new(self.table.data_source().clone());
         factory.from_table(target)
     }
 
     fn get_ref_kinds(&self) -> Vec<(String, vantage_vista::ReferenceKind)> {
-        use vantage_table::references::Cardinality;
         self.table
             .ref_kinds()
             .into_iter()
-            .map(|(name, c)| {
-                let kind = match c {
-                    Cardinality::One => vantage_vista::ReferenceKind::HasOne,
-                    Cardinality::Many => vantage_vista::ReferenceKind::HasMany,
-                };
-                (name, kind)
-            })
+            .map(|(name, c)| (name, c.into()))
             .collect()
     }
 

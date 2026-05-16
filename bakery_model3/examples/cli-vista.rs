@@ -91,7 +91,9 @@ async fn run() -> vantage_core::Result<()> {
             let dsn = std::env::var("SURREALDB_URL")
                 .unwrap_or_else(|_| "cbor://root:root@localhost:8000/bakery/v2".to_string());
             let client = SurrealConnection::dsn(&dsn)
-                .map_err(|e| vantage_core::error!("Invalid SurrealDB DSN", details = e.to_string()))?
+                .map_err(|e| {
+                    vantage_core::error!("Invalid SurrealDB DSN", details = e.to_string())
+                })?
                 .connect()
                 .await
                 .map_err(|e| {

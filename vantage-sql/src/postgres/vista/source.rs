@@ -160,7 +160,7 @@ where
         Ok(())
     }
 
-    fn get_ref(&self, _vista: &Vista, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
+    fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
         let native_row = to_native_record(row);
         let target = self
             .table
@@ -172,17 +172,10 @@ where
     }
 
     fn get_ref_kinds(&self) -> Vec<(String, vantage_vista::ReferenceKind)> {
-        use vantage_table::references::Cardinality;
         self.table
             .ref_kinds()
             .into_iter()
-            .map(|(name, c)| {
-                let kind = match c {
-                    Cardinality::One => vantage_vista::ReferenceKind::HasOne,
-                    Cardinality::Many => vantage_vista::ReferenceKind::HasMany,
-                };
-                (name, kind)
-            })
+            .map(|(name, c)| (name, c.into()))
             .collect()
     }
 

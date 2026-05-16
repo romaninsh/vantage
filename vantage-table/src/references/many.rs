@@ -99,12 +99,10 @@ where
 
         let mut target = (self.build_target)(ds.clone());
         let (src_col, tgt_col) = self.columns(source_id_field, "");
-        let join_value = row.get(&src_col).cloned().ok_or_else(|| {
-            error!(
-                "source row missing id field",
-                field = src_col.as_str()
-            )
-        })?;
+        let join_value = row
+            .get(&src_col)
+            .cloned()
+            .ok_or_else(|| error!("source row missing id field", field = src_col.as_str()))?;
 
         let condition = ds.eq_value_condition(&tgt_col, join_value)?;
         target.add_condition(condition);

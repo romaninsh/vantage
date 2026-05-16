@@ -87,7 +87,7 @@ impl TableShell for GraphqlApiTableShell {
         self.table.add_condition_eq(field, &s)
     }
 
-    fn get_ref(&self, _vista: &Vista, relation: &str, _row: &Record<CborValue>) -> Result<Vista> {
+    fn get_ref(&self, relation: &str, _row: &Record<CborValue>) -> Result<Vista> {
         // GraphQL still routes traversal through `AnyTable` because the
         // shell holds an `AnyTable` (the CBOR adapter is what bridges
         // `AnyGraphqlType` to `CborValue`). Cleaned up alongside the REST

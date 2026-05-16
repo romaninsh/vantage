@@ -233,12 +233,10 @@ async fn setup_clients_orders() -> SqliteDB {
         .execute(db.pool())
         .await
         .unwrap();
-    sqlx::query(
-        "INSERT INTO orders VALUES ('o1','alice',10),('o2','alice',20),('o3','bob',30)",
-    )
-    .execute(db.pool())
-    .await
-    .unwrap();
+    sqlx::query("INSERT INTO orders VALUES ('o1','alice',10),('o2','alice',20),('o3','bob',30)")
+        .execute(db.pool())
+        .await
+        .unwrap();
     db
 }
 
@@ -254,7 +252,9 @@ fn clients_table(db: SqliteDB) -> Table<SqliteDB, EmptyEntity> {
     Table::<SqliteDB, EmptyEntity>::new("client", db)
         .with_id_column("id")
         .with_column_of::<String>("name")
-        .with_many("orders", "client_id", move |_| orders_table(db_clone.clone()))
+        .with_many("orders", "client_id", move |_| {
+            orders_table(db_clone.clone())
+        })
 }
 
 #[tokio::test]
@@ -323,8 +323,9 @@ async fn vista_with_foreign_lazy_no_eager_invocation() -> TestResult {
     // Verify list_references picks it up with the declared cardinality.
     let refs = clients.list_references();
     assert!(
-        refs.iter()
-            .any(|(name, kind)| name == "external" && *kind == vantage_vista::ReferenceKind::HasMany)
+        refs.iter().any(
+            |(name, kind)| name == "external" && *kind == vantage_vista::ReferenceKind::HasMany
+        )
     );
     Ok(())
 }

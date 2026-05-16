@@ -70,7 +70,6 @@ impl RestApiTableShell {
         self.resolver = Some(resolver);
         self
     }
-
 }
 
 #[async_trait]
@@ -115,7 +114,7 @@ impl TableShell for RestApiTableShell {
         self.table.add_condition(condition)
     }
 
-    fn get_ref(&self, _vista: &Vista, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
+    fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
         // YAML-declared references first. With row-based traversal we no
         // longer need the deferred-fetch dance — the parent record is on
         // hand, so we just read the join value out of `row` and push a

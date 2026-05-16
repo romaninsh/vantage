@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.3 — 2026-05-16
+
+- `vista_cli::run` updated for [`Vista::get_ref`](https://docs.rs/vantage-vista/0.4.7/vantage_vista/struct.Vista.html#method.get_ref)'s row-based signature: when a `:relation` token appears in `Mode::Single`, the runner now fetches the parent record via `get_some_value` and passes it to `get_ref(relation, &row)` instead of relying on conditions to project the join.
+- After traversal the runner consults [`Vista::list_references`](https://docs.rs/vantage-vista/0.4.7/vantage_vista/struct.Vista.html#method.list_references) and picks the render mode from the relation's declared cardinality — `HasOne` flips into `Mode::Single` (record card), `HasMany` stays `Mode::List` (grid). `:client` and `:bakery` render as cards; `:clients`, `:orders`, `:products` stay as tables.
+- Pins `vantage-vista = "0.4.7"`.
+
 ## 0.4.2 — 2026-05-14
 
 - New [`vista_cli`](https://docs.rs/vantage-cli-util/0.4.2/vantage_cli_util/vista_cli/index.html) module — the [`Vista`](https://docs.rs/vantage-vista/0.4.5/vantage_vista/struct.Vista.html) equivalent of `model_cli`. Same token grammar (`<model> [field=value ...] [[N]] [:relation ...] [=col1,col2]`), same `ModelFactory` / `Renderer` traits, but drives a `Vista` end-to-end so traversal goes through [`Vista::get_ref`](https://docs.rs/vantage-vista/0.4.5/vantage_vista/struct.Vista.html#method.get_ref) and condition pushdown reaches the driver's native condition type. Use this when you've migrated a CLI to the universal Vista surface; `model_cli` stays as the `AnyTable`-flavoured path.

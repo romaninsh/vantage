@@ -83,11 +83,7 @@ impl TableSource for SurrealDB {
     type Id = Thing;
     type Condition = vantage_expressions::Expression<Self::Value>;
 
-    fn eq_value_condition(
-        &self,
-        field: &str,
-        value: Self::Value,
-    ) -> Result<Self::Condition> {
+    fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
         let column: Column<AnySurrealType> = Column::new(field);
         Ok(SurrealOperation::eq(&column, value))
     }

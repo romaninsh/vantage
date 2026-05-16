@@ -75,11 +75,7 @@ impl TableSource for SqliteDB {
     type Id = String;
     type Condition = crate::condition::SqliteCondition;
 
-    fn eq_value_condition(
-        &self,
-        field: &str,
-        value: Self::Value,
-    ) -> Result<Self::Condition> {
+    fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
         let column: Column<AnySqliteType> = Column::new(field);
         Ok(SqliteOperation::eq(&column, value))
     }
