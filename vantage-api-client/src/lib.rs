@@ -8,8 +8,10 @@
 //!
 //! A `graphql` sibling adapter is planned.
 
+pub mod graphql;
 pub mod rest;
 
+pub use graphql::{AnyGraphqlType, GraphqlType, GraphqlTypeVariants};
 pub use rest::{
     AnyTableShell, NoApiExtras, PaginationParams, ResponseShape, RestApi, RestApiBuilder,
     RestApiTableShell, RestApiVistaFactory, RestApiVistaSpec, eq_condition,
