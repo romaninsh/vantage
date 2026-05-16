@@ -130,7 +130,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
     /// Get a same-backend related table with automatic downcasting.
     ///
     /// Legacy AnyTable-flavoured path; slated for deletion in Stage 9 alongside
-    /// `AnyTable`. New code should prefer [`get_ref_from_row`] (typed) or
+    /// `AnyTable`. New code should prefer [`Table::get_ref_from_row`] (typed) or
     /// `Vista::get_ref` (erased).
     pub fn get_ref_as<E2: Entity<T::Value> + 'static>(
         &self,
@@ -267,13 +267,13 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
     }
 
     /// Look up cardinality for a registered relation.
-    pub fn ref_cardinality(&self, relation: &str) -> Result<crate::references::Cardinality> {
+    pub fn ref_cardinality(&self, relation: &str) -> Result<vantage_vista::ReferenceKind> {
         let (reference, _) = self.lookup_ref(relation)?;
         Ok(reference.cardinality())
     }
 
     /// List all registered relations with their cardinality.
-    pub fn ref_kinds(&self) -> Vec<(String, crate::references::Cardinality)> {
+    pub fn ref_kinds(&self) -> Vec<(String, vantage_vista::ReferenceKind)> {
         self.refs
             .as_ref()
             .map(|refs| {

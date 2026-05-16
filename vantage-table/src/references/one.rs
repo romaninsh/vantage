@@ -10,7 +10,7 @@ use vantage_types::{EmptyEntity, Entity, Record};
 
 use crate::{
     any::AnyTable,
-    references::{Cardinality, Reference},
+    references::Reference,
     table::Table,
     traits::{column_like::ColumnLike, table_source::TableSource},
 };
@@ -80,8 +80,8 @@ where
         Box::new((self.build_target)(ds.clone()))
     }
 
-    fn cardinality(&self) -> Cardinality {
-        Cardinality::One
+    fn cardinality(&self) -> vantage_vista::ReferenceKind {
+        vantage_vista::ReferenceKind::HasOne
     }
 
     fn resolve_from_row(

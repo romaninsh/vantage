@@ -46,6 +46,8 @@ impl Bakery {
             .with_id_column("id")
             .with_column_of::<String>("name")
             .with_column_of::<i64>("profit_margin")
+            .with_many("clients", "bakery_id", crate::Client::postgres_table)
+            .with_many("products", "bakery_id", crate::Product::postgres_table)
     }
 
     pub fn mongo_table(db: MongoDB) -> Table<MongoDB, Bakery> {
@@ -53,6 +55,8 @@ impl Bakery {
             .with_id_column("_id")
             .with_column_of::<String>("name")
             .with_column_of::<i64>("profit_margin")
+            .with_many("clients", "bakery_id", crate::Client::mongo_table)
+            .with_many("products", "bakery_id", crate::Product::mongo_table)
     }
 
     pub fn dynamo_table(db: DynamoDB) -> Table<DynamoDB, Bakery> {

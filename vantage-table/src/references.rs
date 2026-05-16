@@ -24,26 +24,6 @@ pub mod one;
 pub use many::HasMany;
 pub use one::HasOne;
 
-/// Whether traversing a relation yields one record or a collection.
-///
-/// CLIs and UIs render the two differently — record card vs list grid —
-/// and `Vista::list_references` surfaces this to callers without
-/// requiring them to introspect the underlying `Reference` impl type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Cardinality {
-    One,
-    Many,
-}
-
-impl From<Cardinality> for vantage_vista::ReferenceKind {
-    fn from(c: Cardinality) -> Self {
-        match c {
-            Cardinality::One => Self::HasOne,
-            Cardinality::Many => Self::HasMany,
-        }
-    }
-}
-
 /// Describes a relationship between two tables.
 pub trait Reference: Send + Sync {
     /// Given source and target id field names, return (source_column, target_column).
@@ -52,8 +32,12 @@ pub trait Reference: Send + Sync {
     /// Produce a fresh target table (no conditions applied).
     fn build_target(&self, data_source: &dyn Any) -> Box<dyn Any>;
 
-    /// Cardinality of this relation — `One` for `HasOne`, `Many` for `HasMany`.
-    fn cardinality(&self) -> Cardinality;
+    /// Cardinality of this relation. `HasOne` if traversing yields at most
+    /// one record (the FK lives on the source); `HasMany` if it can yield
+    /// any number (the FK lives on the target). Surfaced by
+    /// `Vista::list_references` so CLIs / UIs can pick a record-card vs
+    /// list-grid renderer.
+    fn cardinality(&self) -> vantage_vista::ReferenceKind;
 
     /// Resolve traversal using a known source row. Returns the target table
     /// (entity type erased to `EmptyEntity`) wrapped in `Box<dyn Any>`, with

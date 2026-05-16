@@ -47,7 +47,7 @@ pub trait TableSource: DataSource + Clone + 'static {
 
     /// Build a `field == value` condition with a typed `Self::Value`.
     ///
-    /// Sibling of [`eq_condition`] for the case where the caller already
+    /// Sibling of [`TableSource::eq_condition`] for the case where the caller already
     /// has a native-typed value in hand (e.g. `Reference::resolve_from_row`
     /// pulling a join value out of a `Record<Self::Value>`). Avoids going
     /// through string serialization and avoids the `Expression → T::Condition`

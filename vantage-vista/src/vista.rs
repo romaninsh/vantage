@@ -247,9 +247,8 @@ impl Vista {
     /// 1. Cross-persistence resolvers registered via
     ///    [`with_foreign`](Self::with_foreign).
     /// 2. Same-persistence refs forwarded through
-    ///    [`TableShell::get_ref`](crate::source::TableShell::get_ref), which
-    ///    consults the wrapped typed `Table`'s `with_one` / `with_many`
-    ///    registrations.
+    ///    [`TableShell::get_ref`], which consults the wrapped typed `Table`'s
+    ///    `with_one` / `with_many` registrations.
     ///
     /// The `row` must come from this Vista (typically via
     /// [`get_value`](vantage_dataset::traits::ReadableValueSet::get_value)

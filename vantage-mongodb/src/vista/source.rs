@@ -264,11 +264,7 @@ impl TableShell for MongoTableShell {
     }
 
     fn get_ref_kinds(&self) -> Vec<(String, vantage_vista::ReferenceKind)> {
-        self.table
-            .ref_kinds()
-            .into_iter()
-            .map(|(name, c)| (name, c.into()))
-            .collect()
+        self.table.ref_kinds()
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
