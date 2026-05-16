@@ -106,6 +106,67 @@
   consider lifting the trait into a lower-level crate so backends can implement it without
   taking vantage-live as a dep.
 
+# GraphQL adapter (vantage-api-client, 2026-05)
+
+- [ ] **Nested-selection adapter mode** — the GraphQL adapter's
+      `with_one`/`with_many` currently does two HTTP POSTs (parent
+      fetch + child fetch via `DeferredField`). Real GraphQL schemas
+      (SpaceX, Hasura with relationships, Postgraphile, etc.) expose
+      cross-entity links as *nested* fields on the parent: `launch.rocket`
+      is a `LaunchRocket` object inline in the launch response, not a
+      flat `rocket_id` you can re-fetch. The right tool is rendering
+      sub-selections in a single query document:
+      `launches { id mission_name rocket { id name } }` — one round trip.
+      The pieces are mostly already there: `GraphqlSelect::sub_selections`
+      is plumbed and `render_inline_subselection` already handles
+      filter/limit/skip on a child. What's missing is the wiring path —
+      a YAML `references:` block (or a per-table Rust setter) that
+      makes `Table::with_one("rocket", ...)` register a sub-selection
+      on the parent's `GraphqlSelect` rather than going through
+      `related_in_condition`. This unblocks the SpaceX example's
+      `launch :rocket :ships` traversal and matches the way most
+      GraphQL clients are written. ~1–2 days including YAML schema
+      extension, factory wiring, and an end-to-end test against the
+      SpaceX endpoint at `https://spacex-api.fly.dev/graphql`.
+- [ ] **Per-table `singular_root_field` override** — some GraphQL
+      schemas use a different root field for singular-by-id than for
+      lists. SpaceX: `launches(find: ...)` for lists, `launch(id: ID!)`
+      for by-id. Today `get_table_value` always appends an `id`
+      condition to the list root, which fails when the list filter
+      doesn't accept id (e.g. SpaceX's `rockets` field has no `find`
+      argument at all) or when the listing uses different id semantics
+      (`launches(find:{id:"1"})` matches MongoDB ObjectId, not the
+      flight number shown in listings). Add an optional
+      `singular_root_field: rocket` to the `graphql:` YAML block; when
+      set, route singular lookups through that root field with
+      `(id: $id)` instead of filtering the list field. Small change
+      to `select_from_table` / `get_table_value` plus YAML plumbing.
+      ~half a day.
+- [ ] **Mutations from schema map** — `insert`/`update`/`delete` on
+      `GraphqlApi::TableSource` all return "not implemented; depends on
+      schema". Hasura, Postgraphile, and hand-rolled schemas each name
+      their mutation fields differently (`insert_users_one`,
+      `userCreate`, `createUser`). Add per-table mutation field names to
+      the YAML schema (`insert_field: insert_launch`, `update_field`,
+      `delete_field`) and wire them through the existing `TableSource`
+      methods. Test against a Hasura demo endpoint — community SpaceX
+      mirrors are read-only.
+- [ ] **Factor `CborRenderer` into `vantage-cli-util`** — the
+      `vista_cli::Renderer` impl currently lives copy-pasted in four
+      example files: `vantage-api-client/examples/{jsonplaceholder,
+      jsonplaceholder_yaml,graphql_spacex}.rs` and
+      `vantage-aws/examples/dynamo-single-table.rs`. The struct itself
+      (~113 lines: title-column fallback, three-column default,
+      CBOR-aware scalar stringification) plus the `cbor_short` helper
+      (~23 lines) are identical across all four. PR #243's SonarCloud
+      gate flagged this at 11.6% new-code duplication. Move them
+      behind a `pub struct DefaultRenderer` in `vantage-cli-util` so
+      each example shrinks to a `vista_cli::run(&factory,
+      &DefaultRenderer, &args)` call. Patch bump to vantage-cli-util,
+      patch bumps to vantage-api-client and vantage-aws if their
+      example deps now require the new feature. ~30 min including the
+      four call-site rewrites.
+
 # CI/CD
 
 - [ ] **Automate crate publishing in CI** — add a workflow that publishes crates to crates.io

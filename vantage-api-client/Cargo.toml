@@ -27,7 +27,7 @@ vantage-vista = { version = "0.4.7", path = "../vantage-vista" }
 
 [dev-dependencies]
 anyhow = "1.0"
-tokio = { version = "1.48", features = ["full"] }
+tokio = { version = "1.52", features = ["full"] }
 reqwest = { version = "0.12", features = ["json"] }
 urlencoding = "2.1"
 vantage-cli-util = { path = "../vantage-cli-util" }

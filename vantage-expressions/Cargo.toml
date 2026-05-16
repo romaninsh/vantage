@@ -12,13 +12,13 @@ repository = "https://github.com/romaninsh/vantage"
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"], optional = true }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0.145"
-thiserror = "2.0.17"
+serde_json = "1.0.149"
+thiserror = "2.0.18"
 vantage-core = { version = "0.4", path = "../vantage-core" }
 vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
 vantage-vista = { version = "0.4", path = "../vantage-vista" }
 
 [dev-dependencies]
-tokio = { version = "1.48", features = ["full"] }
+tokio = { version = "1.52", features = ["full"] }
 tokio-test = "0.4"
 chrono = { version = "0.4", features = ["serde"] }

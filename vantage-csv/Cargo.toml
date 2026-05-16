@@ -28,7 +28,7 @@ vantage-types = { version = "0.4.2", path = "../vantage-types", features = ["ser
 vantage-vista = { version = "0.4.7", path = "../vantage-vista", optional = true }
 
 [dev-dependencies]
-tokio = { version = "1.48", features = ["full"] }
+tokio = { version = "1.52", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml_ng = "0.10"
 vantage-vista = { version = "0.4.7", path = "../vantage-vista" }
