@@ -10,8 +10,12 @@
 //! flows through the `GraphqlType` system declared in `types`.
 
 pub mod api;
+pub mod condition;
 pub mod impls;
+pub mod operation;
 pub mod types;
 
 pub use api::{GraphqlApi, GraphqlApiBuilder};
+pub use condition::{FieldCondition, FilterDialect, GraphqlCondition, GraphqlOp};
+pub use operation::GraphqlOperation;
 pub use types::{AnyGraphqlType, GraphqlType, GraphqlTypeVariants};
