@@ -13,13 +13,21 @@ use serde::Serialize;
 use serde_json::Value;
 use vantage_core::{Result, error};
 
+use crate::graphql::condition::FilterDialect;
+
 /// GraphQL HTTP data source. Cheap to clone — the inner `reqwest::Client`
 /// is `Arc`-wrapped.
+///
+/// `dialect` and `filter_arg_name` drive how the `TableSource` impl
+/// renders filter arguments — Hasura's `where:` vs SpaceX-style `find:`,
+/// etc. Both default to the dialect's natural choice (Generic + `find`).
 #[derive(Clone, Debug)]
 pub struct GraphqlApi {
     endpoint: String,
     client: reqwest::Client,
     auth_header: Option<String>,
+    pub(crate) dialect: FilterDialect,
+    pub(crate) filter_arg_name: Option<String>,
 }
 
 impl GraphqlApi {
@@ -38,6 +46,12 @@ impl GraphqlApi {
     /// Endpoint URL the client posts to.
     pub fn endpoint(&self) -> &str {
         &self.endpoint
+    }
+
+    /// Filter dialect — controls how `where:` / `find:` arguments are
+    /// rendered. Defaults to [`FilterDialect::Generic`].
+    pub fn dialect(&self) -> FilterDialect {
+        self.dialect
     }
 
     /// Send a query document with variables. Returns the `data` payload
@@ -106,6 +120,8 @@ pub struct GraphqlApiBuilder {
     endpoint: String,
     client: Option<reqwest::Client>,
     auth_header: Option<String>,
+    dialect: FilterDialect,
+    filter_arg_name: Option<String>,
 }
 
 impl GraphqlApiBuilder {
@@ -114,6 +130,8 @@ impl GraphqlApiBuilder {
             endpoint,
             client: None,
             auth_header: None,
+            dialect: FilterDialect::Generic,
+            filter_arg_name: None,
         }
     }
 
@@ -130,11 +148,27 @@ impl GraphqlApiBuilder {
         self
     }
 
+    /// Pick the filter dialect used to render conditions on tables.
+    /// Defaults to [`FilterDialect::Generic`] — flat-arg schemas like SpaceX.
+    pub fn dialect(mut self, dialect: FilterDialect) -> Self {
+        self.dialect = dialect;
+        self
+    }
+
+    /// Override the filter argument name. Defaults match the dialect:
+    /// `"where"` for Hasura, `"find"` for Generic.
+    pub fn filter_arg_name(mut self, name: impl Into<String>) -> Self {
+        self.filter_arg_name = Some(name.into());
+        self
+    }
+
     pub fn build(self) -> GraphqlApi {
         GraphqlApi {
             endpoint: self.endpoint,
             client: self.client.unwrap_or_default(),
             auth_header: self.auth_header,
+            dialect: self.dialect,
+            filter_arg_name: self.filter_arg_name,
         }
     }
 }
