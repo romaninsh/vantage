@@ -11,7 +11,7 @@
 pub mod graphql;
 pub mod rest;
 
-pub use graphql::{AnyGraphqlType, GraphqlType, GraphqlTypeVariants};
+pub use graphql::{AnyGraphqlType, GraphqlApi, GraphqlApiBuilder, GraphqlType, GraphqlTypeVariants};
 pub use rest::{
     AnyTableShell, NoApiExtras, PaginationParams, ResponseShape, RestApi, RestApiBuilder,
     RestApiTableShell, RestApiVistaFactory, RestApiVistaSpec, eq_condition,
