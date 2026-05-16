@@ -1,0 +1,25 @@
+# Hand-curated subset of the SpaceX GraphQL schema for `landpads`.
+# Landing pads: ground and drone-ship platforms.
+name: landpads
+id_column: id
+columns:
+  id:
+    type: string
+    flags: [id]
+  full_name:
+    type: string
+    flags: [title]
+  landing_type:
+    type: string
+  status:
+    type: string
+  attempted_landings:
+    type: string  # SpaceX returns these counts as strings on landpads
+  successful_landings:
+    type: string
+  wikipedia:
+    type: string
+graphql:
+  root_field: landpads
+  dialect: generic
+  filter_arg: find

@@ -1,0 +1,24 @@
+# Hand-curated subset of the SpaceX GraphQL schema for `launchpads`.
+name: launchpads
+id_column: id
+columns:
+  id:
+    type: string
+    flags: [id]
+  name:
+    type: string
+    flags: [title]
+  status:
+    type: string
+  attempted_launches:
+    type: int
+  successful_launches:
+    type: int
+  details:
+    type: string
+  wikipedia:
+    type: string
+graphql:
+  root_field: launchpads
+  dialect: generic
+  filter_arg: find

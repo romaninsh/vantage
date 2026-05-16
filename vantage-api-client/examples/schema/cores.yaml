@@ -1,0 +1,31 @@
+# Hand-curated subset of the SpaceX GraphQL schema for `cores`.
+# Cores are the reusable Falcon 9 / Heavy first-stage boosters.
+name: cores
+id_column: id
+columns:
+  id:
+    type: string
+    flags: [id]
+  status:
+    type: string
+    flags: [title]
+  block:
+    type: int
+  reuse_count:
+    type: int
+  rtls_attempts:
+    type: int
+  rtls_landings:
+    type: int
+  asds_attempts:
+    type: int
+  asds_landings:
+    type: int
+  water_landing:
+    type: bool
+  original_launch:
+    type: datetime
+graphql:
+  root_field: cores
+  dialect: generic
+  filter_arg: find

@@ -1,0 +1,23 @@
+# Hand-curated subset of the SpaceX GraphQL schema for `capsules`.
+name: capsules
+id_column: id
+columns:
+  id:
+    type: string
+    flags: [id]
+  status:
+    type: string
+    flags: [title]
+  type:
+    type: string
+    flags: [title]
+  reuse_count:
+    type: int
+  landings:
+    type: int
+  original_launch:
+    type: datetime
+graphql:
+  root_field: capsules
+  dialect: generic
+  filter_arg: find

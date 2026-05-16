@@ -1,0 +1,29 @@
+# Hand-curated subset of the SpaceX GraphQL schema for `launches`.
+# Full SDL: https://studio.apollographql.com/public/SpaceX-pxxbxen/variant/current/schema/sdl
+name: launches
+id_column: id
+columns:
+  id:
+    type: string
+    flags: [id]
+  mission_name:
+    type: string
+    flags: [title]
+  launch_year:
+    type: string  # SpaceX returns this as a string, not an int
+  launch_date_utc:
+    type: datetime
+  launch_success:
+    type: bool
+  upcoming:
+    type: bool
+  is_tentative:
+    type: bool
+  mission_id:
+    type: string
+  details:
+    type: string
+graphql:
+  root_field: launches
+  dialect: generic
+  filter_arg: find

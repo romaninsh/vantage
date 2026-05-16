@@ -20,9 +20,9 @@ use vantage_vista::{
     VistaFactory, VistaMetadata, flags as vista_flags,
 };
 
+use super::source::{RestApiTableShell, YamlReference, YamlReferenceKind};
+use super::spec::{ApiColumnExtras, ApiReferenceExtras, ApiTableExtras, RestApiVistaSpec};
 use crate::RestApi;
-use crate::vista::source::{RestApiTableShell, YamlReference, YamlReferenceKind};
-use crate::vista::spec::{ApiColumnExtras, ApiReferenceExtras, ApiTableExtras, RestApiVistaSpec};
 
 /// Callback that maps a model name to its `Vista`. The factory uses
 /// it at relation-traversal time so cross-driver lookups (vantage-ui's

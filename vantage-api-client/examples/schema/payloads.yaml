@@ -1,0 +1,26 @@
+# Hand-curated subset of the SpaceX GraphQL schema for `payloads`.
+name: payloads
+id_column: id
+columns:
+  id:
+    type: string
+    flags: [id]
+  payload_type:
+    type: string
+    flags: [title]
+  nationality:
+    type: string
+  manufacturer:
+    type: string
+  customers:
+    type: string
+  orbit:
+    type: string
+  payload_mass_kg:
+    type: float
+  reused:
+    type: bool
+graphql:
+  root_field: payloads
+  dialect: generic
+  filter_arg: find

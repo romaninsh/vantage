@@ -1,0 +1,32 @@
+# Hand-curated subset of the SpaceX GraphQL schema for `ships`.
+# Recovery and support vessels (drone ships, fairing catchers, etc).
+name: ships
+id_column: id
+columns:
+  id:
+    type: string
+    flags: [id]
+  name:
+    type: string
+    flags: [title]
+  type:
+    type: string
+    flags: [title]
+  home_port:
+    type: string
+  active:
+    type: bool
+  year_built:
+    type: int
+  model:
+    type: string
+  successful_landings:
+    type: int
+  attempted_landings:
+    type: int
+  url:
+    type: string
+graphql:
+  root_field: ships
+  dialect: generic
+  filter_arg: find

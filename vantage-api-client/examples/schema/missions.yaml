@@ -1,0 +1,25 @@
+# Hand-curated subset of the SpaceX GraphQL schema for `missions`.
+# Missions group launches by customer/program (e.g. "Iridium NEXT").
+name: missions
+id_column: id
+columns:
+  id:
+    type: string
+    flags: [id]
+  name:
+    type: string
+    flags: [title]
+  manufacturers:
+    type: string
+  description:
+    type: string
+  twitter:
+    type: string
+  website:
+    type: string
+  wikipedia:
+    type: string
+graphql:
+  root_field: missions
+  dialect: generic
+  filter_arg: find

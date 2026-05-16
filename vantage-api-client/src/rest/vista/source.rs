@@ -26,9 +26,8 @@ use vantage_table::traits::table_like::TableLike;
 use vantage_types::Record;
 use vantage_vista::{TableShell, Vista, VistaCapabilities};
 
-use crate::vista::factory::ModelResolver;
-
 use super::any_shell::AnyTableShell;
+use super::factory::ModelResolver;
 
 /// A single YAML-declared reference attached to a parent shell at
 /// build time. Carries the foreign-key wiring; the URL form is

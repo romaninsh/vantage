@@ -1,20 +1,23 @@
 [package]
 edition = "2024"
 name = "vantage-api-client"
-version = "0.1.5"
+version = "0.1.6"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
-description = "Vantage extension for REST API backends"
+description = "Vantage extension for REST and GraphQL HTTP API backends"
 
 [dependencies]
 async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
 ciborium = "0.2"
 indexmap = { version = "2", features = ["serde"] }
+paste = "1"
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml_ng = "0.10"
 urlencoding = "2.1"
+uuid = { version = "1", features = ["serde"] }
 vantage-core = { version = "0.4", path = "../vantage-core" }
 vantage-dataset = { version = "0.4.1", path = "../vantage-dataset" }
 vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
