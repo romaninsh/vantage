@@ -61,8 +61,8 @@ impl GraphqlApiVistaFactory {
 
     /// Build a `Table<GraphqlApi, EmptyEntity>` from a YAML spec. Per-table
     /// dialect / filter-arg / root-field overrides land on the table's
-    /// `GraphqlApi` clone; column types are resolved through
-    /// [`column_for_type`].
+    /// `GraphqlApi` clone; column types are resolved through the internal
+    /// `column_for_type` helper.
     pub fn table_from_spec(
         &self,
         spec: &GraphqlApiVistaSpec,
