@@ -14,6 +14,7 @@ use vantage_vista::Vista;
 
 use crate::lens::{CacheTable, Lens};
 use crate::ops::{ChangeEvent, WriteOp};
+use crate::scenery::TableSceneryBuilder;
 
 use ciborium::Value as CborValue;
 use vantage_types::Record;
@@ -81,6 +82,13 @@ impl Dio {
     /// observe cross-Dio reactions.
     pub fn subscribe_events(&self) -> broadcast::Receiver<DioEvent> {
         self.inner.event_bus.subscribe()
+    }
+
+    /// Start a [`TableScenery`](crate::scenery::TableScenery) builder
+    /// for this Dio. Chainable; call `.open().await` to spawn the
+    /// reactive view.
+    pub fn table_scenery(&self) -> TableSceneryBuilder {
+        TableSceneryBuilder::new(self.inner.clone())
     }
 
     /// Produce a fresh facade [`Vista`] backed by this Dio. Each call

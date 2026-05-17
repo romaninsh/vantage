@@ -5,5 +5,5 @@ pub mod value;
 
 pub use enriched_record::{EnrichedRecord, RowStatus};
 pub use record::{RecordScenery, RecordStatus};
-pub use table::{SortDir, TableScenery};
+pub use table::{SortDir, TableScenery, TableSceneryBuilder};
 pub use value::{ValueScenery, ValueStatus};

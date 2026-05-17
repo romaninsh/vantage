@@ -1,6 +1,6 @@
 # Stage 5 — TableScenery
 
-Status: **Not started**
+Status: **Done (v1 — eager load, no prefetch/hot-tier/push-down — see module doc)**
 
 Implement the first reactive surface: `TableScenery`. A Scenery
 subscribes to a Dio's event bus, maintains an in-memory row vector

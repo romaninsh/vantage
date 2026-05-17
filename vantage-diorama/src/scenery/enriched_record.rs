@@ -16,6 +16,19 @@ pub struct EnrichedRecord {
     pub fetched_at: Option<SystemTime>,
 }
 
+impl EnrichedRecord {
+    /// Wrap a freshly-loaded cache row. Status is `Fresh`, no dirty
+    /// fields, `fetched_at = now`.
+    pub fn fresh(record: Record<CborValue>) -> Self {
+        Self {
+            record,
+            status: RowStatus::Fresh,
+            dirty_fields: None,
+            fetched_at: Some(SystemTime::now()),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum RowStatus {
     Fresh,

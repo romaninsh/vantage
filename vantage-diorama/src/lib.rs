@@ -18,6 +18,6 @@ pub use lens::{
 };
 pub use ops::{ChangeEvent, QueryDescriptor, WriteOp};
 pub use scenery::{
-    EnrichedRecord, RecordScenery, RecordStatus, RowStatus, SortDir, TableScenery, ValueScenery,
-    ValueStatus,
+    EnrichedRecord, RecordScenery, RecordStatus, RowStatus, SortDir, TableScenery,
+    TableSceneryBuilder, ValueScenery, ValueStatus,
 };
