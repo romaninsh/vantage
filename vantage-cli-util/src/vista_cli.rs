@@ -378,9 +378,7 @@ pub async fn run<F: ModelFactory, R: Renderer>(
         }
         Mode::Single => {
             if flags.page.is_some() {
-                return Err(error!(
-                    "`--page` is only valid for list-mode queries"
-                ));
+                return Err(error!("`--page` is only valid for list-mode queries"));
             }
             let (id, record) = vista
                 .get_some_value()

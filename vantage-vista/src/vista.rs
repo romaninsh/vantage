@@ -226,10 +226,7 @@ impl Vista {
     /// driver does not advertise `can_fetch_page`; cursor-only drivers
     /// (DynamoDB, most token-paginated REST APIs) only support
     /// [`fetch_next`](Self::fetch_next) instead.
-    pub async fn fetch_page(
-        &self,
-        page: usize,
-    ) -> Result<Vec<(String, Record<CborValue>)>> {
+    pub async fn fetch_page(&self, page: usize) -> Result<Vec<(String, Record<CborValue>)>> {
         self.source.fetch_page(self, page).await
     }
 

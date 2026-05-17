@@ -327,7 +327,11 @@ async fn vista_add_search_uses_string_contains() -> TestResult {
 
     vista.add_search("amma")?;
     let rows = vista.list_values().await?;
-    assert_eq!(rows.len(), 1, "only Gamma contains 'amma' (case-insensitive)");
+    assert_eq!(
+        rows.len(),
+        1,
+        "only Gamma contains 'amma' (case-insensitive)"
+    );
 
     vista.add_search("alpha")?;
     let rows = vista.list_values().await?;

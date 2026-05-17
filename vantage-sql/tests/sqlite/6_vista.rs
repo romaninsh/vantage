@@ -392,7 +392,11 @@ async fn vista_add_search_filters_results_with_replace_semantics() -> TestResult
     vista.add_search("amma")?;
     let rows = vista.list_values().await?;
     let ids: Vec<&String> = rows.keys().collect();
-    assert_eq!(ids, ["c"], "search 'amma' must match only row c after replace");
+    assert_eq!(
+        ids,
+        ["c"],
+        "search 'amma' must match only row c after replace"
+    );
 
     // clear → all rows back
     vista.clear_search()?;

@@ -296,8 +296,9 @@ where
 
         let page: i64 = match token {
             None => 1,
-            Some(CborValue::Integer(n)) => i64::try_from(n)
-                .map_err(|_| error!("fetch_next token out of i64 range"))?,
+            Some(CborValue::Integer(n)) => {
+                i64::try_from(n).map_err(|_| error!("fetch_next token out of i64 range"))?
+            }
             Some(_) => return Err(error!("invalid fetch_next token type for surrealdb driver")),
         };
         if page < 1 {
