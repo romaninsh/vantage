@@ -4106,13 +4106,15 @@ dependencies = [
 
 [[package]]
 name = "vantage-cli-util"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "async-trait",
  "ciborium",
  "comfy-table",
  "indexmap",
  "owo-colors",
+ "serde_json",
+ "tokio",
  "vantage-core",
  "vantage-dataset",
  "vantage-table",

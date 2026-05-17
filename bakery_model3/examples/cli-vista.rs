@@ -1,31 +1,30 @@
 //! Vista-driven multi-source CLI for browsing bakery data.
 //!
-//! Usage: db-vista <source> <model> [field=value] [[N]] [:relation] [=col1,col2]
+//! Usage:
+//!   db-vista [--format=<fmt>] <source> <model> [token …]
 //!
 //! Sources: csv, sqlite, postgres, mongo, surreal
-//! Models : bakery, client, product, order (singular = single record, plural = list)
+//! Models : bakery, client, product, order (singular = single, plural = list)
+//! Formats: table (default), json, ndjson, cbor-diag
 //!
-//! Token grammar matches [`vantage_cli_util::vista_cli`]:
-//!   - `<model>`         pick a model (plural = list view, singular = single)
-//!   - `id=<value>`      narrow to one record
-//!   - `<field>=<value>` add an eq-filter
-//!   - `[N]`             pick the N-th row from a list (forces single mode)
-//!   - `:<relation>`     traverse a relation using the current row
-//!   - `=col1,col2`      override displayed columns
+//! Token grammar matches [`vantage_cli_util::vista_cli`]; see that
+//! crate's docs for the full vocabulary (operators, sort+slice
+//! brackets, search, aggregates, locators, JSON-typed values).
 //!
 //! Examples:
 //!   db-vista csv bakery
 //!   db-vista sqlite client id=marty
 //!   db-vista sqlite bakery[0] :clients                   # forward (HasMany)
 //!   db-vista sqlite client id=marty :bakery              # reverse (HasOne)
-//!   db-vista sqlite bakery[0] :clients[0] :bakery        # round-trip
-//!   db-vista sqlite bakery[0] :clients[0] :orders        # double-hop
+//!   db-vista --format=cbor-diag csv clients              # lossless for golden tests
+//!   db-vista --format=json csv 'clients[+name:0]'        # sort then narrow
 
 use bakery_model3::*;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use surreal_client::SurrealConnection;
-use vantage_cli_util::vista_cli::{self, Mode, ModelFactory, Renderer};
+use vantage_cli_util::output::{self, OutputFormat};
+use vantage_cli_util::vista_cli::{self, AggregateOp, Mode, ModelFactory, Renderer};
 use vantage_cli_util::{render_records, render_records_columns};
 use vantage_csv::Csv;
 use vantage_types::Record;
@@ -40,20 +39,41 @@ async fn main() {
 }
 
 async fn run() -> vantage_core::Result<()> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.is_empty() {
+    let raw: Vec<String> = std::env::args().skip(1).collect();
+    if raw.is_empty() {
         print_usage();
         return Ok(());
     }
-    let source = args[0].clone();
-    let rest: Vec<String> = args.into_iter().skip(1).collect();
+
+    // Strip out any `--format=<fmt>` flag (position-agnostic). Everything
+    // else is treated as a positional and forwarded.
+    let mut format = OutputFormat::Table;
+    let mut positional: Vec<String> = Vec::with_capacity(raw.len());
+    for arg in raw {
+        if let Some(value) = arg.strip_prefix("--format=") {
+            format = OutputFormat::parse(value).ok_or_else(|| {
+                vantage_core::error!(format!(
+                    "Unknown --format `{value}` — pick table, json, ndjson, or cbor-diag"
+                ))
+            })?;
+        } else {
+            positional.push(arg);
+        }
+    }
+
+    if positional.is_empty() {
+        print_usage();
+        return Ok(());
+    }
+    let source = positional[0].clone();
+    let rest: Vec<String> = positional.into_iter().skip(1).collect();
 
     if rest.is_empty() {
         print_usage();
         return Ok(());
     }
 
-    let renderer = TableRenderer;
+    let renderer = MultiFormatRenderer { format };
     match source.as_str() {
         "csv" => {
             let factory = CsvFactory {
@@ -109,18 +129,18 @@ async fn run() -> vantage_core::Result<()> {
 }
 
 fn print_usage() {
-    println!("Usage: db-vista <source> <model> [field=value] [[N]] [:relation] [=col1,col2]");
+    println!("Usage: db-vista [--format=<fmt>] <source> <model> [token …]");
     println!();
     println!("Sources: csv, sqlite, postgres, mongo, surreal");
     println!("Models : bakery, client, product, order");
+    println!("Formats: table (default), json, ndjson, cbor-diag");
     println!();
     println!("Examples:");
     println!("  db-vista csv bakery");
     println!("  db-vista sqlite client id=marty");
     println!("  db-vista sqlite bakery[0] :clients");
-    println!("  db-vista sqlite client id=marty :bakery");
-    println!("  db-vista sqlite bakery[0] :clients[0] :bakery       # round-trip");
-    println!("  db-vista sqlite bakery[0] :clients[0] :orders       # double-hop");
+    println!("  db-vista --format=cbor-diag csv clients");
+    println!("  db-vista --format=json csv 'clients[+name:0]'");
 }
 
 // ── Per-source factories ─────────────────────────────────────────────────
@@ -237,22 +257,33 @@ impl ModelFactory for SurrealFactory {
 
 // ── Renderer ─────────────────────────────────────────────────────────────
 
-struct TableRenderer;
+/// Routes Vista CLI output through the format selected by `--format=…`.
+/// `Table` keeps the legacy comfy-table rendering for humans; the other
+/// formats delegate to [`vantage_cli_util::output`] which is used by
+/// driver-portable tests.
+struct MultiFormatRenderer {
+    format: OutputFormat,
+}
 
-impl Renderer for TableRenderer {
+impl Renderer for MultiFormatRenderer {
     fn render_list(
         &self,
         vista: &Vista,
         records: &IndexMap<String, Record<CborValue>>,
         column_override: Option<&[String]>,
     ) {
-        if let Some(cols) = column_override {
-            render_records_columns(records, cols, &vista.source_column_types());
-        } else {
-            render_records(records, vista.get_id_column());
+        match self.format {
+            OutputFormat::Table => {
+                if let Some(cols) = column_override {
+                    render_records_columns(records, cols, &vista.source_column_types());
+                } else {
+                    render_records(records, vista.get_id_column());
+                }
+                let n = records.len();
+                println!("({n} record{})", if n == 1 { "" } else { "s" });
+            }
+            _ => print!("{}", output::render_list(self.format, records)),
         }
-        let n = records.len();
-        println!("({n} record{})", if n == 1 { "" } else { "s" });
     }
 
     fn render_record(
@@ -262,37 +293,59 @@ impl Renderer for TableRenderer {
         record: &Record<CborValue>,
         _relations: &[String],
     ) {
-        let id_field = vista.get_id_column().unwrap_or("id");
-        println!("{}: {}", id_field, id);
-        let title_fields: Vec<&str> = vista.get_title_columns();
-        for tf in &title_fields {
-            if *tf == id_field {
-                continue;
-            }
-            if let Some(v) = record.get(*tf) {
-                println!("{}: {}", tf, scalar(v));
-            }
+        match self.format {
+            OutputFormat::Table => render_record_table(vista, id, record),
+            _ => print!("{}", output::render_record(self.format, id, record)),
         }
-        println!("--------");
-        for (k, v) in record.iter() {
-            if k == id_field || title_fields.iter().any(|t| t == k) {
-                continue;
-            }
-            println!("{}: {}", k, scalar(v));
+    }
+
+    fn render_scalar(
+        &self,
+        _vista: &Vista,
+        op: AggregateOp,
+        field: Option<&str>,
+        value: &CborValue,
+    ) {
+        let label = match field {
+            Some(f) => format!("{}({f})", op.name()),
+            None => format!("{}()", op.name()),
+        };
+        match self.format {
+            OutputFormat::Table => println!("{label} = {}", scalar(value)),
+            _ => print!("{}", output::render_scalar(self.format, &label, value)),
         }
-        // `list_references` combines foreign resolvers, YAML metadata, and
-        // shell-forwarded typed refs — the canonical view for a CLI menu.
-        let refs = vista.list_references();
-        if !refs.is_empty() {
-            println!();
-            println!("Relations:");
-            for (name, kind) in refs {
-                let marker = match kind {
-                    vantage_vista::ReferenceKind::HasOne => "→ one",
-                    vantage_vista::ReferenceKind::HasMany => "↠ many",
-                };
-                println!("  :{name}  {marker}");
-            }
+    }
+}
+
+fn render_record_table(vista: &Vista, id: &str, record: &Record<CborValue>) {
+    let id_field = vista.get_id_column().unwrap_or("id");
+    println!("{}: {}", id_field, id);
+    let title_fields: Vec<&str> = vista.get_title_columns();
+    for tf in &title_fields {
+        if *tf == id_field {
+            continue;
+        }
+        if let Some(v) = record.get(*tf) {
+            println!("{}: {}", tf, scalar(v));
+        }
+    }
+    println!("--------");
+    for (k, v) in record.iter() {
+        if k == id_field || title_fields.iter().any(|t| t == k) {
+            continue;
+        }
+        println!("{}: {}", k, scalar(v));
+    }
+    let refs = vista.list_references();
+    if !refs.is_empty() {
+        println!();
+        println!("Relations:");
+        for (name, kind) in refs {
+            let marker = match kind {
+                vantage_vista::ReferenceKind::HasOne => "→ one",
+                vantage_vista::ReferenceKind::HasMany => "↠ many",
+            };
+            println!("  :{name}  {marker}");
         }
     }
 }
