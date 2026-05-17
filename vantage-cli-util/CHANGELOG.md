@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.4 — 2026-05-17
+
+- [`vista_cli`](https://docs.rs/vantage-cli-util/0.4.4/vantage_cli_util/vista_cli/index.html) grows the full stage-5 vocabulary as a parser. Operator conditions (`field:lt=`, `:gt=`, `:like=`, `:in=`, `:null`, `:notnull`), combined sort+slice brackets (`[+name:0]`, `[5:15]`, `[-salary]`), search (`?keyword`), aggregates (`@sum:price`, `@count`), and JSON-typed values (`field=#42`, `field=#"42"`, `field=#[1,2,3]`) all parse cleanly today. `Op::Eq` and `[N]` narrow-to-single drive real `Vista` calls; the rest dispatches to a `Renderer::note_stub` hook until `Vista` itself grows the corresponding methods, so callers can wire UIs against the final shape now.
+- New [`output`](https://docs.rs/vantage-cli-util/0.4.4/vantage_cli_util/output/index.html) module: machine-readable formatters for `json`, `ndjson`, and `cbor-diag` (RFC 8949 §8 diagnostic notation). `cbor-diag` is the lossless format used for cross-driver golden tests; `json` is best-effort for `jq` pipelines.
+- `ModelFactory::for_arn` is now `for_locator` — universal resource locators (`arn:…`, `user:abc123`, `urn:…`) instead of AWS-only. The old `for_arn` keeps working via a default forward, so existing implementations compile unchanged.
+- `Renderer` gains `render_scalar` (for aggregate output) and `note_stub` (default no-op); existing implementors only need to add `render_scalar` when they exercise `@…` tokens.
+- Module split: `vista_cli.rs` becomes `vista_cli/{mod,token,parse,value,factory,run}.rs`. All public items are re-exported, so downstream `use vantage_cli_util::vista_cli::{Mode, ModelFactory, Renderer}` keeps working.
+
 ## 0.4.3 — 2026-05-16
 
 - `vista_cli::run` updated for [`Vista::get_ref`](https://docs.rs/vantage-vista/0.4.7/vantage_vista/struct.Vista.html#method.get_ref)'s row-based signature: when a `:relation` token appears in `Mode::Single`, the runner now fetches the parent record via `get_some_value` and passes it to `get_ref(relation, &row)` instead of relying on conditions to project the join.
