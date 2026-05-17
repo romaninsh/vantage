@@ -11,6 +11,7 @@ Stage 5 query primitives arrive at the universal surface — sort, quicksearch, 
 - **Breaking**: [`VistaCapabilities`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.VistaCapabilities.html) loses `paginate_kind: PaginateKind` and gains five flat booleans: `can_order`, `can_search`, `can_set_page_size`, `can_fetch_page`, `can_fetch_next`. The old enum collapsed the matrix; the new shape lets a driver advertise "yes I paginate but you can't pick the page size" or "yes random-access pages and forward cursor". The `PaginateKind` enum is removed from the public re-exports.
 - Matching `TableShell` trait methods (`set_page_size`, `fetch_page`, `fetch_next`, `add_search`, `clear_search`, `add_order`, `clear_orders`) — all default to the capability-honest error pair (`Unimplemented` when the flag is `true`, `Unsupported` when `false`).
 - `TableShell::default_error` no longer takes the `&Vista` parameter; drivers that override methods to fall back to it should drop the argument at the call site.
+- [`MockShell`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/mocks/struct.MockShell.html) implements `add_order` / `clear_orders` / `add_search` / `clear_search` end-to-end (single-column sort, case-insensitive substring search across text fields) and defaults `can_order` / `can_search` to `true`, so consumers can exercise the new vocabulary against the mock without standing up a real driver.
 
 ## 0.4.8 — 2026-05-16
 

@@ -1,15 +1,10 @@
 //! End-to-end test of the Vista CLI runner against an in-memory
-//! `MockShell` Vista. Verifies every new token shape lands in the
-//! correct branch:
-//! - Real Vista calls (eq filter, id alias, `[N]` narrow) actually
-//!   affect the result.
-//! - Stubbed paths (operator beyond eq, sort, slice, search,
-//!   aggregates) record a `note_stub` call so the test can assert the
-//!   dispatch reached them.
-//!
-//! When stage 5/5b lands and the stubs are replaced with real Vista
-//! calls, these tests should be updated to assert on behaviour instead
-//! of stub-name strings.
+//! `MockShell` Vista. Covers the paths wired to real `Vista` calls:
+//! eq filter, `id=` alias, `[N]` narrow, `[+col]` sort, `?keyword`
+//! search, locator dispatch, and the three output formats. Parser
+//! behaviour for the still-stubbed paths (non-`eq` operators,
+//! `[N:M]` range slicing, aggregates) is covered in `parse.rs` unit
+//! tests — no need to re-assert it here.
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
@@ -73,8 +68,13 @@ fn seeded_shell() -> MockShell {
 fn build_users_vista() -> Vista {
     let metadata = VistaMetadata::new()
         .with_column(Column::new("id", "String").with_flag("id"))
-        .with_column(Column::new("name", "String").with_flag("title"))
-        .with_column(Column::new("salary", "i64"))
+        .with_column(
+            Column::new("name", "String")
+                .with_flag("title")
+                .with_flag("orderable")
+                .with_flag("searchable"),
+        )
+        .with_column(Column::new("salary", "i64").with_flag("orderable"))
         .with_column(Column::new("vip_flag", "bool"))
         .with_id_column("id");
     Vista::new("users", Box::new(seeded_shell()), metadata)
@@ -129,9 +129,6 @@ impl Recorder {
     }
     fn records(&self) -> Vec<String> {
         self.records.lock().unwrap().clone()
-    }
-    fn scalars(&self) -> Vec<String> {
-        self.scalars.lock().unwrap().clone()
     }
 }
 
@@ -261,106 +258,64 @@ async fn index_narrows_to_single() {
 }
 
 #[tokio::test]
-async fn operator_lt_reaches_stub() {
-    let rec = Recorder::with_format(OutputFormat::CborDiag);
-    vista_cli::run(&TestFactory, &rec, &argv(&["users", "salary:lt=1000"]))
-        .await
-        .unwrap();
-
-    let stubs = rec.stubs();
-    assert_eq!(stubs.len(), 1);
-    assert!(stubs[0].starts_with("add_condition(\"salary\", lt"));
-    // Filter not applied yet — all three records still come back.
-    let lists = rec.lists();
-    assert_eq!(lists.len(), 1);
-    assert!(lists[0].contains("\"Bob\""));
-}
-
-#[tokio::test]
-async fn nullary_op_reaches_stub() {
-    let rec = Recorder::with_format(OutputFormat::CborDiag);
-    vista_cli::run(&TestFactory, &rec, &argv(&["users", "manager_id:null"]))
-        .await
-        .unwrap();
-
-    let stubs = rec.stubs();
-    assert_eq!(
-        stubs,
-        vec!["add_condition(\"manager_id\", null)".to_string()]
-    );
-}
-
-#[tokio::test]
-async fn sort_reaches_stub() {
+async fn sort_applies_via_add_order() {
     let rec = Recorder::with_format(OutputFormat::CborDiag);
     vista_cli::run(&TestFactory, &rec, &argv(&["users", "[+name]"]))
         .await
         .unwrap();
 
-    let stubs = rec.stubs();
-    assert_eq!(stubs.len(), 1);
-    assert!(stubs[0].starts_with("add_order(\"name\", Asc)"));
-}
-
-#[tokio::test]
-async fn slice_range_reaches_stub() {
-    let rec = Recorder::with_format(OutputFormat::CborDiag);
-    vista_cli::run(&TestFactory, &rec, &argv(&["users", "[0:2]"]))
-        .await
-        .unwrap();
-
-    let stubs = rec.stubs();
-    assert_eq!(stubs, vec!["set_pagination(0, Some(2))".to_string()]);
+    assert!(
+        rec.stubs().is_empty(),
+        "sort is wired to Vista::add_order, no stub expected: {:?}",
+        rec.stubs()
+    );
+    // MockShell honours add_order, so the rendered list comes back in
+    // name-ascending order: Alice, Bob, Carol.
+    let lists = rec.lists();
+    assert_eq!(lists.len(), 1);
+    let rendered = &lists[0];
+    let alice = rendered.find("Alice").expect("Alice present");
+    let bob = rendered.find("Bob").expect("Bob present");
+    let carol = rendered.find("Carol").expect("Carol present");
+    assert!(alice < bob && bob < carol, "got: {rendered}");
 }
 
 #[tokio::test]
 async fn sort_then_index_narrows_to_single() {
-    // [+name:0] — sort stub fires, then `apply_index` narrows to a row.
-    // With sort unwired the chosen row is just the first in seed order
-    // (id "1" = Alice), but the *narrowing* is the wired part being
-    // verified here.
+    // [+name:0] — sort, then `apply_index` narrows to the top row. With
+    // sort wired through `Vista::add_order`, "row 0" is the smallest
+    // by name-ascending, which is Alice (matches seed order here too).
     let rec = Recorder::with_format(OutputFormat::CborDiag);
     vista_cli::run(&TestFactory, &rec, &argv(&["users[+name:0]"]))
         .await
         .unwrap();
 
-    let stubs = rec.stubs();
-    assert_eq!(stubs, vec!["add_order(\"name\", Asc)".to_string()]);
+    assert!(rec.stubs().is_empty(), "stubs: {:?}", rec.stubs());
     let records = rec.records();
     assert_eq!(records.len(), 1);
-    // The first record in seed order is Alice. Once sort is wired,
-    // this will become "Alice" by name-ascending sort — same record
-    // here, but the assertion will need updating for fixtures whose
-    // seed order differs from alphabetical.
     assert!(records[0].contains("\"Alice\""));
 }
 
 #[tokio::test]
-async fn search_reaches_stub() {
+async fn search_applies_via_add_search() {
     let rec = Recorder::with_format(OutputFormat::CborDiag);
     vista_cli::run(&TestFactory, &rec, &argv(&["users", "?alice"]))
         .await
         .unwrap();
 
-    let stubs = rec.stubs();
-    assert_eq!(stubs, vec!["add_search(\"alice\")".to_string()]);
-}
-
-#[tokio::test]
-async fn aggregate_short_circuits_to_scalar() {
-    let rec = Recorder::with_format(OutputFormat::CborDiag);
-    vista_cli::run(&TestFactory, &rec, &argv(&["users", "@sum:salary"]))
-        .await
-        .unwrap();
-
-    let stubs = rec.stubs();
-    assert_eq!(stubs, vec!["sum(salary)".to_string()]);
-    assert!(rec.lists().is_empty());
-    assert!(rec.records().is_empty());
-    let scalars = rec.scalars();
-    assert_eq!(scalars.len(), 1);
-    // Stubbed value is null until vista.get_sum lands.
-    assert!(scalars[0].contains("null"));
+    assert!(
+        rec.stubs().is_empty(),
+        "search is wired to Vista::add_search, no stub expected: {:?}",
+        rec.stubs()
+    );
+    // MockShell honours add_search with case-insensitive substring
+    // matching across text fields — so "?alice" leaves only Alice.
+    let lists = rec.lists();
+    assert_eq!(lists.len(), 1);
+    let rendered = &lists[0];
+    assert!(rendered.contains("Alice"), "got: {rendered}");
+    assert!(!rendered.contains("Bob"), "got: {rendered}");
+    assert!(!rendered.contains("Carol"), "got: {rendered}");
 }
 
 #[tokio::test]

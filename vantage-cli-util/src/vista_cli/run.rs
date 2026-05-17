@@ -1,22 +1,22 @@
 //! Runner: walks the parsed token stream and drives the Vista.
 //!
-//! What's wired through to a real Vista call: `Op::Eq` conditions,
-//! `[N]` narrow-to-single, `:relation` traversal, column overrides.
-//! Everything else (operator vocabulary beyond `eq`, sort, pagination
-//! slicing, search, aggregates) is parsed and dispatched here but the
-//! actual Vista mutation is a `// TODO` placeholder — the
-//! corresponding APIs haven't landed in Vista yet. The `Renderer`'s
-//! `note_stub` hook reports each placeholder so tests can assert the
-//! dispatch reached the right branch.
+//! Wired through to real Vista calls: `Op::Eq` conditions, `[N]`
+//! narrow-to-single, `:relation` traversal, column overrides, sort
+//! (`[+col]` / `[-col]` → `Vista::add_order`), and search (`?keyword`
+//! → `Vista::add_search`). Still stubbed (the `Renderer::note_stub`
+//! hook reports the call name): operator vocabulary beyond `eq`,
+//! range slicing (`[N:M]`), and aggregates. Drivers without the
+//! matching `can_*` capability return `Unsupported` from the
+//! corresponding Vista method.
 
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_vista::{ReferenceKind, Vista};
+use vantage_vista::{ReferenceKind, SortDirection, Vista};
 
 use super::factory::{ModelFactory, Renderer};
 use super::parse::parse_token;
-use super::token::{AggregateOp, Mode, Op, Selector, Slice, Token};
+use super::token::{AggregateOp, Direction, Mode, Op, Selector, Slice, Token};
 
 /// Run a Vista-backed model-driven CLI.
 ///
@@ -133,8 +133,7 @@ pub async fn run<F: ModelFactory, R: Renderer>(
                 }
             }
             Token::Search(query) => {
-                // TODO: vista.add_search(&query) once stage 5b lands.
-                renderer.note_stub(&format!("add_search({query:?})"));
+                vista.add_search(query)?;
             }
             Token::Aggregate { op, field } => {
                 aggregate = Some((op, field));
@@ -177,10 +176,11 @@ pub async fn run<F: ModelFactory, R: Renderer>(
     Ok(())
 }
 
-/// Apply a `[…]` selector: sort then slice. Sort is currently stubbed
-/// (Vista lacks `add_order` until stage 5b); slice's `Index` variant
-/// uses the real narrow-to-single path; slice's `Range` variant is
-/// stubbed until `set_pagination` lands.
+/// Apply a `[…]` selector: sort then slice. Sort routes through
+/// `Vista::add_order`; slice's `Index` variant uses the real
+/// narrow-to-single path. Slice's `Range` variant is stubbed — Vista's
+/// pagination surface is page-based (`set_page_size` + `fetch_page`),
+/// so an arbitrary `[start:end]` offset doesn't map cleanly yet.
 async fn apply_selector<R: Renderer>(
     vista: Vista,
     mode: Mode,
@@ -191,8 +191,7 @@ async fn apply_selector<R: Renderer>(
     let mut mode = mode;
 
     if let Some((field, dir)) = &sel.sort {
-        // TODO: vista.add_order(field, *dir) once stage 5b lands.
-        renderer.note_stub(&format!("add_order({field:?}, {dir:?})"));
+        vista.add_order(field, sort_direction(*dir))?;
     }
     if let Some(slice) = sel.slice {
         match slice {
@@ -202,12 +201,20 @@ async fn apply_selector<R: Renderer>(
                 mode = m;
             }
             Slice::Range { start, end } => {
-                // TODO: vista.set_pagination(start, end) once stage 5b lands.
+                // TODO: vista.set_pagination(start, end) once Vista grows an
+                // offset-style range primitive — today's surface is page-based.
                 renderer.note_stub(&format!("set_pagination({start}, {end:?})"));
             }
         }
     }
     Ok((vista, mode))
+}
+
+fn sort_direction(dir: Direction) -> SortDirection {
+    match dir {
+        Direction::Asc => SortDirection::Ascending,
+        Direction::Desc => SortDirection::Descending,
+    }
 }
 
 async fn apply_selector_opt<R: Renderer>(

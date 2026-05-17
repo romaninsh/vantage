@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.5 — 2026-05-17
+
+- Wires the stage-5 vocabulary to real [`Vista`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html) calls now that the methods have landed:
+  - `?keyword` / `?"two words"` calls [`Vista::add_search`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.add_search).
+  - `[+col]` / `[-col]` (and the sort half of `[+col:N]`) calls [`Vista::add_order`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.add_order).
+- Drivers without the matching `can_*` capability surface `Unsupported` from the underlying Vista call — same error contract as `Op::Eq`.
+- Still stubbed (no Vista API yet): non-`eq` operator conditions (`:lt=`, `:gt=`, `:like=`, `:in=`, `:null`, `:notnull`), `[N:M]` range slicing (Vista's pagination is page-based, no offset-range primitive), and `@sum`/`@max`/`@min`/`@count` aggregates.
+- Pins `vantage-vista = "0.4.9"`.
+
 ## 0.4.4 — 2026-05-17
 
 - [`vista_cli`](https://docs.rs/vantage-cli-util/0.4.4/vantage_cli_util/vista_cli/index.html) grows the full stage-5 vocabulary as a parser. Operator conditions (`field:lt=`, `:gt=`, `:like=`, `:in=`, `:null`, `:notnull`), combined sort+slice brackets (`[+name:0]`, `[5:15]`, `[-salary]`), search (`?keyword`), aggregates (`@sum:price`, `@count`), and JSON-typed values (`field=#42`, `field=#"42"`, `field=#[1,2,3]`) all parse cleanly today. `Op::Eq` and `[N]` narrow-to-single drive real `Vista` calls; the rest dispatches to a `Renderer::note_stub` hook until `Vista` itself grows the corresponding methods, so callers can wire UIs against the final shape now.
