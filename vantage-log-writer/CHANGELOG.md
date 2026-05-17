@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 — 2026-05-15
+## 0.4.1 — 2026-05-15
 
 Compatibility with change in vantage-vista
 
