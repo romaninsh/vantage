@@ -4137,7 +4137,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-csv"
-version = "0.4.11"
+version = "0.4.12"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4233,7 +4233,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-log-writer"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "async-trait",
  "ciborium",
