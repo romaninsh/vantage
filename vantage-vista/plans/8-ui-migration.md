@@ -14,8 +14,8 @@ AWS-only condition asymmetry. vantage-ui's existing pain-point doc closes here.
       need to be re-exposed via Vista?
 - [ ] Driver registration shape in vantage-ui — `Box<dyn VistaFactory>` per datasource, or
       per-driver concrete factory?
-- [ ] Live-update wiring — does vantage-ui take Coop'd Vistas where it needs reactivity, plain
-      Vistas otherwise? Or always Coop'd?
+- [ ] Live-update wiring — does vantage-ui take Diorama-backed Vistas where it needs reactivity,
+      plain Vistas otherwise? Or always Diorama-backed?
 - [ ] Master/detail traversal — confirm portable conditions from stage 5 replace the AWS-only path
 - [ ] Storybook (`widget-storybook`) implications — does it need mock factories for fixtures?
 
@@ -32,7 +32,7 @@ In (vantage-ui-side changes):
 - Replace `is_api_backed: bool` with `vista.capabilities()` queries
 - Replace AWS-only master/detail condition path with portable conditions
 - Wire Rhai-defined hooks
-- Wire reactive grid through Coop where applicable
+- Wire reactive grid through a Diorama-backed Vista (via Scenery) where applicable
 
 Out:
 
@@ -41,8 +41,8 @@ Out:
 
 ## Plan
 
-- [ ] Discuss with user: migration strategy, driver registration shape, Coop-vs-plain split,
-      storybook impact
+- [ ] Discuss with user: migration strategy, driver registration shape, Diorama-vs-plain Vista
+      split, storybook impact
 - [ ] Add `vantage-vista` and per-driver crate deps to vantage-ui
 - [ ] Replace `build_sqlite_table` / `build_surreal_table` / `build_api_table` / `build_aws_table`
       with single dispatch over `Box<dyn VistaFactory>`
@@ -52,7 +52,8 @@ Out:
 - [ ] Replace `is_api_backed` with capability queries; pick grid mode from
       `vista.capabilities().paginate_kind`
 - [ ] Update master/detail traversal to use `vista.add_condition(...)` (universal path)
-- [ ] Wire Coop'd Vistas where reactive UI is wanted; plain Vistas otherwise
+- [ ] Wire Diorama-backed Vistas (and their Sceneries) where reactive UI is wanted; plain
+      Vistas otherwise
 - [ ] Update inventory YAML schema if needed; document migration of driver-specific extras blocks
 - [ ] Update `app/todo/anytable-portable-conditions.md` — close it
 - [ ] vantage-ui smoke test: load all bakery fixtures, render grids, master/detail traversal,
