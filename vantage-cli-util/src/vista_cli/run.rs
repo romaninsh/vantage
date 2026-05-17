@@ -35,47 +35,80 @@ pub async fn run<F: ModelFactory, R: Renderer>(
 
     let mut tokens: Vec<Token> = args.iter().map(|s| parse_token(s)).collect::<Result<_>>()?;
     let first = tokens.remove(0);
-    let mut column_override: Option<Vec<String>> = None;
-    let mut aggregate: Option<(AggregateOp, Option<String>)> = None;
-
-    let (mut vista, mut mode) = match first {
-        Token::ModelName(name, sel) => {
-            let (v, m) = factory
-                .for_name(&name)
-                .ok_or_else(|| error!(format!("Unknown model `{name}`")))?;
-            apply_selector_opt(v, m, sel, renderer).await?
-        }
-        Token::Locator(s) => {
-            let v = factory
-                .for_locator(&s)
-                .ok_or_else(|| error!(format!("Cannot resolve locator `{s}`")))?;
-            (v, Mode::Single)
-        }
-        Token::OpCondition { .. }
-        | Token::Relation(_, _)
-        | Token::Bracket(_)
-        | Token::Columns(_, _)
-        | Token::Search(_)
-        | Token::Aggregate { .. } => {
-            return Err(error!(format!(
-                "First argument must be a model name or locator, got `{}`",
-                args[0]
-            )));
-        }
-    };
+    let mut state = RunState::resolve_first(factory, renderer, first, &args[0]).await?;
 
     for token in tokens {
-        if aggregate.is_some() {
+        if state.aggregate.is_some() {
             return Err(error!(
                 "Aggregate token (`@op:field`) must be the last argument"
             ));
         }
-        match token {
-            Token::ModelName(_, _) | Token::Locator(_) => {
-                return Err(error!(
-                    "Model name or locator may only appear as the first argument"
-                ));
+        state.apply_token(renderer, token).await?;
+    }
+
+    if let Some((op, field)) = state.aggregate {
+        return render_aggregate(renderer, &state.vista, op, field);
+    }
+    render_final(renderer, &state.vista, state.mode, state.column_override.as_deref()).await
+}
+
+/// In-flight runner state — vista + mode + accumulated column override
+/// + pending aggregate. Kept in one struct so token application is a
+/// single `&mut self` call rather than a wad of locals threaded through
+/// every branch.
+struct RunState {
+    vista: Vista,
+    mode: Mode,
+    column_override: Option<Vec<String>>,
+    aggregate: Option<(AggregateOp, Option<String>)>,
+}
+
+impl RunState {
+    /// Consume the first token to obtain the initial Vista + mode.
+    async fn resolve_first<F: ModelFactory, R: Renderer>(
+        factory: &F,
+        renderer: &R,
+        first: Token,
+        first_arg: &str,
+    ) -> Result<Self> {
+        let (vista, mode) = match first {
+            Token::ModelName(name, sel) => {
+                let (mut v, m) = factory
+                    .for_name(&name)
+                    .ok_or_else(|| error!(format!("Unknown model `{name}`")))?;
+                let m = apply_selector_opt(&mut v, m, sel, renderer).await?;
+                (v, m)
             }
+            Token::Locator(s) => {
+                let v = factory
+                    .for_locator(&s)
+                    .ok_or_else(|| error!(format!("Cannot resolve locator `{s}`")))?;
+                (v, Mode::Single)
+            }
+            Token::OpCondition { .. }
+            | Token::Relation(_, _)
+            | Token::Bracket(_)
+            | Token::Columns(_, _)
+            | Token::Search(_)
+            | Token::Aggregate { .. } => {
+                return Err(error!(format!(
+                    "First argument must be a model name or locator, got `{first_arg}`"
+                )));
+            }
+        };
+        Ok(Self {
+            vista,
+            mode,
+            column_override: None,
+            aggregate: None,
+        })
+    }
+
+    async fn apply_token<R: Renderer>(&mut self, renderer: &R, token: Token) -> Result<()> {
+        match token {
+            Token::ModelName(_, _) | Token::Locator(_) => Err(error!(
+                "Model name or locator may only appear as the first argument"
+            )),
             Token::OpCondition {
                 field,
                 op,
@@ -84,83 +117,97 @@ pub async fn run<F: ModelFactory, R: Renderer>(
                 selector,
             } => {
                 if let Some(new_mode) =
-                    apply_condition(&mut vista, &field, op, value, value_raw, renderer)?
+                    apply_condition(&mut self.vista, &field, op, value, value_raw, renderer)?
                 {
-                    mode = new_mode;
+                    self.mode = new_mode;
                 }
-                if let Some(sel) = selector {
-                    let (v, m) = apply_selector(vista, mode, sel, renderer).await?;
-                    vista = v;
-                    mode = m;
-                }
+                self.mode = apply_selector_opt(&mut self.vista, self.mode, selector, renderer)
+                    .await?;
+                Ok(())
             }
-            Token::Relation(rel, sel) => {
-                if mode != Mode::Single {
-                    return Err(error!(format!(
-                        "Cannot traverse `:{rel}` from list mode — narrow to a single record first (add a filter or `[N]`)"
-                    )));
-                }
-                let child_kind = vista
-                    .list_references()
-                    .into_iter()
-                    .find(|(name, _)| name == &rel)
-                    .map(|(_, k)| k);
-                let (_id, parent_row) = vista.get_some_value().await?.ok_or_else(|| {
-                    error!(format!(
-                        "Cannot traverse `:{rel}` — narrowed vista has no matching record"
-                    ))
-                })?;
-                vista = vista.get_ref(&rel, &parent_row)?;
-                mode = match child_kind {
-                    Some(ReferenceKind::HasOne) => Mode::Single,
-                    _ => Mode::List,
-                };
-                column_override = None;
-                if let Some(sel) = sel {
-                    let (v, m) = apply_selector(vista, mode, sel, renderer).await?;
-                    vista = v;
-                    mode = m;
-                }
-            }
+            Token::Relation(rel, sel) => self.apply_relation(renderer, rel, sel).await,
             Token::Bracket(sel) => {
-                let (v, m) = apply_selector(vista, mode, sel, renderer).await?;
-                vista = v;
-                mode = m;
+                self.mode = apply_selector(&mut self.vista, self.mode, sel, renderer).await?;
+                Ok(())
             }
             Token::Columns(cols, sel) => {
-                column_override = Some(cols);
-                if let Some(sel) = sel {
-                    let (v, m) = apply_selector(vista, mode, sel, renderer).await?;
-                    vista = v;
-                    mode = m;
-                }
+                self.column_override = Some(cols);
+                self.mode = apply_selector_opt(&mut self.vista, self.mode, sel, renderer).await?;
+                Ok(())
             }
             Token::Search(query) => {
-                vista.add_search(query)?;
+                self.vista.add_search(query)?;
+                Ok(())
             }
             Token::Aggregate { op, field } => {
-                aggregate = Some((op, field));
+                self.aggregate = Some((op, field));
+                Ok(())
             }
         }
     }
 
-    if let Some((op, field)) = aggregate {
-        // TODO: vista.get_sum / get_max / get_min / get_count(field) once
-        // stage 5b lands. Stub returns null so the format renderers still
-        // produce something coherent.
-        renderer.note_stub(&format!(
-            "{}({})",
-            op.name(),
-            field.as_deref().unwrap_or("*")
-        ));
-        renderer.render_scalar(&vista, op, field.as_deref(), &CborValue::Null);
-        return Ok(());
+    async fn apply_relation<R: Renderer>(
+        &mut self,
+        renderer: &R,
+        rel: String,
+        sel: Option<Selector>,
+    ) -> Result<()> {
+        if self.mode != Mode::Single {
+            return Err(error!(format!(
+                "Cannot traverse `:{rel}` from list mode — narrow to a single record first (add a filter or `[N]`)"
+            )));
+        }
+        let child_kind = self
+            .vista
+            .list_references()
+            .into_iter()
+            .find(|(name, _)| name == &rel)
+            .map(|(_, k)| k);
+        let (_id, parent_row) = self.vista.get_some_value().await?.ok_or_else(|| {
+            error!(format!(
+                "Cannot traverse `:{rel}` — narrowed vista has no matching record"
+            ))
+        })?;
+        self.vista = self.vista.get_ref(&rel, &parent_row)?;
+        self.mode = match child_kind {
+            Some(ReferenceKind::HasOne) => Mode::Single,
+            _ => Mode::List,
+        };
+        // A new Vista deserves its own default columns.
+        self.column_override = None;
+        self.mode = apply_selector_opt(&mut self.vista, self.mode, sel, renderer).await?;
+        Ok(())
     }
+}
 
+/// Aggregates short-circuit normal list/single rendering with a single
+/// scalar. The underlying `Vista::get_sum` / `get_count` / etc. APIs
+/// haven't landed yet, so this still notes a stub and renders `Null`.
+fn render_aggregate<R: Renderer>(
+    renderer: &R,
+    vista: &Vista,
+    op: AggregateOp,
+    field: Option<String>,
+) -> Result<()> {
+    renderer.note_stub(&format!(
+        "{}({})",
+        op.name(),
+        field.as_deref().unwrap_or("*")
+    ));
+    renderer.render_scalar(vista, op, field.as_deref(), &CborValue::Null);
+    Ok(())
+}
+
+async fn render_final<R: Renderer>(
+    renderer: &R,
+    vista: &Vista,
+    mode: Mode,
+    column_override: Option<&[String]>,
+) -> Result<()> {
     match mode {
         Mode::List => {
             let records = vista.list_values().await?;
-            renderer.render_list(&vista, &records, column_override.as_deref());
+            renderer.render_list(vista, &records, column_override);
         }
         Mode::Single => {
             let (id, record) = vista
@@ -172,45 +219,38 @@ pub async fn run<F: ModelFactory, R: Renderer>(
                 .iter()
                 .map(|s| s.to_string())
                 .collect();
-            renderer.render_record(&vista, &id, &record, &relations);
+            renderer.render_record(vista, &id, &record, &relations);
         }
     }
-
     Ok(())
 }
 
-/// Apply a `[…]` selector: sort then slice. Sort routes through
-/// `Vista::add_order`; slice's `Index` variant uses the real
-/// narrow-to-single path. Slice's `Range` variant is stubbed — Vista's
-/// pagination surface is page-based (`set_page_size` + `fetch_page`),
-/// so an arbitrary `[start:end]` offset doesn't map cleanly yet.
+
+/// Apply a `[…]` selector to `vista` in place. Returns the new mode
+/// (single when a `[N]` index slice narrowed to one record, otherwise
+/// the incoming mode). Sort routes through `Vista::add_order`; slice's
+/// `Index` variant uses the real narrow-to-single path. Slice's `Range`
+/// variant is stubbed — Vista's pagination surface is page-based, so an
+/// arbitrary `[start:end]` offset doesn't map cleanly yet.
 async fn apply_selector<R: Renderer>(
-    vista: Vista,
+    vista: &mut Vista,
     mode: Mode,
     sel: Selector,
     renderer: &R,
-) -> Result<(Vista, Mode)> {
-    let mut vista = vista;
-    let mut mode = mode;
-
+) -> Result<Mode> {
     if let Some((field, dir)) = &sel.sort {
         vista.add_order(field, sort_direction(*dir))?;
     }
-    if let Some(slice) = sel.slice {
-        match slice {
-            Slice::Index(n) => {
-                let (v, m) = apply_index(vista, n).await?;
-                vista = v;
-                mode = m;
-            }
-            Slice::Range { start, end } => {
-                // TODO: vista.set_pagination(start, end) once Vista grows an
-                // offset-style range primitive — today's surface is page-based.
-                renderer.note_stub(&format!("set_pagination({start}, {end:?})"));
-            }
+    match sel.slice {
+        None => Ok(mode),
+        Some(Slice::Index(n)) => apply_index(vista, n).await,
+        Some(Slice::Range { start, end }) => {
+            // TODO: vista.set_pagination(start, end) once Vista grows an
+            // offset-style range primitive — today's surface is page-based.
+            renderer.note_stub(&format!("set_pagination({start}, {end:?})"));
+            Ok(mode)
         }
     }
-    Ok((vista, mode))
 }
 
 fn sort_direction(dir: Direction) -> SortDirection {
@@ -221,14 +261,14 @@ fn sort_direction(dir: Direction) -> SortDirection {
 }
 
 async fn apply_selector_opt<R: Renderer>(
-    vista: Vista,
+    vista: &mut Vista,
     mode: Mode,
     opt_sel: Option<Selector>,
     renderer: &R,
-) -> Result<(Vista, Mode)> {
+) -> Result<Mode> {
     match opt_sel {
         Some(sel) => apply_selector(vista, mode, sel, renderer).await,
-        None => Ok((vista, mode)),
+        None => Ok(mode),
     }
 }
 
@@ -290,9 +330,9 @@ fn apply_condition<R: Renderer>(
 }
 
 /// List the vista, take the Nth row, narrow the vista to that row by
-/// adding `eq(id_field, that_id)`. Returns the narrowed vista in
-/// single-record mode so subsequent traversals see one parent.
-async fn apply_index(mut vista: Vista, index: usize) -> Result<(Vista, Mode)> {
+/// adding `eq(id_field, that_id)`. Returns `Mode::Single` so subsequent
+/// traversals see one parent.
+async fn apply_index(vista: &mut Vista, index: usize) -> Result<Mode> {
     let records = vista.list_values().await?;
     let total = records.len();
     let (id, _record) = records.into_iter().nth(index).ok_or_else(|| {
@@ -306,7 +346,7 @@ async fn apply_index(mut vista: Vista, index: usize) -> Result<(Vista, Mode)> {
             vista.name()
         ))
     })?;
-    let coerced = super::value::coerce_for_column(&vista, &id_field, &id)?;
+    let coerced = super::value::coerce_for_column(vista, &id_field, &id)?;
     vista.add_condition_eq(&id_field, coerced)?;
-    Ok((vista, Mode::Single))
+    Ok(Mode::Single)
 }
