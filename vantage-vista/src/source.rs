@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use vantage_core::{Result, VantageError, error};
 use vantage_types::Record;
 
-use crate::{capabilities::VistaCapabilities, vista::Vista};
+use crate::{capabilities::VistaCapabilities, sort::SortDirection, vista::Vista};
 
 /// Per-driver executor for a `Vista`.
 ///
@@ -171,6 +171,23 @@ pub trait TableShell: Send + Sync + 'static {
         .is_unimplemented())
     }
 
+    // ---- Ordering ----------------------------------------------------------
+
+    /// Push a single ORDER BY clause onto the wrapped table.
+    ///
+    /// Vista's `add_order` is replace-semantics: the driver shell should clear
+    /// any previously-set order before pushing the new one. Default produces
+    /// `Unimplemented` (when `can_order: true`) or `Unsupported` (when
+    /// `can_order: false`).
+    fn add_order(&mut self, _field: &str, _dir: SortDirection) -> Result<()> {
+        Err(self.default_error_self("add_order", "can_order"))
+    }
+
+    /// Wipe every order clause. Default mirrors [`add_order`](Self::add_order).
+    fn clear_orders(&mut self) -> Result<()> {
+        Err(self.default_error_self("clear_orders", "can_order"))
+    }
+
     // ---- References --------------------------------------------------------
 
     /// Resolve a same-persistence relation using a known source row, returning
@@ -230,6 +247,11 @@ pub trait TableShell: Send + Sync + 'static {
             "can_delete" => caps.can_delete,
             "can_subscribe" => caps.can_subscribe,
             "can_invalidate" => caps.can_invalidate,
+            "can_order" => caps.can_order,
+            "can_search" => caps.can_search,
+            "can_set_page_size" => caps.can_set_page_size,
+            "can_fetch_page" => caps.can_fetch_page,
+            "can_fetch_next" => caps.can_fetch_next,
             _ => false,
         }
     }
@@ -243,6 +265,38 @@ pub trait TableShell: Send + Sync + 'static {
     ///
     /// Both kinds emit a `tracing::error!` at construction with `method`,
     /// `capability`, `source_type`, and `vista_name` as structured fields.
+    /// Mutator-friendly sibling of [`default_error`](Self::default_error)
+    /// that omits the `vista_name` diagnostic field. Used by trait methods
+    /// taking `&mut self` (e.g. `add_order`, `clear_orders`, future
+    /// `add_search` / `set_page_size`), where also borrowing `&Vista`
+    /// conflicts with the mutable borrow of `self.source`.
+    fn default_error_self(&self, method: &str, capability: &str) -> VantageError {
+        let source_type = std::any::type_name::<Self>();
+        if self.capability_flag(capability) {
+            error!(
+                format!(
+                    "'{}' is advertised as VistaCapability for '{}' but implementation for '{}' is missing",
+                    capability, source_type, method
+                ),
+                method = method,
+                capability = capability,
+                source_type = source_type
+            )
+            .is_unimplemented()
+        } else {
+            error!(
+                format!(
+                    "'{}' is not supported by '{}'; '{}' refused",
+                    capability, source_type, method
+                ),
+                method = method,
+                capability = capability,
+                source_type = source_type
+            )
+            .is_unsupported()
+        }
+    }
+
     fn default_error(&self, method: &str, capability: &str, vista: &Vista) -> VantageError {
         let source_type = std::any::type_name::<Self>();
         let vista_name = vista.name().to_string();

@@ -8,8 +8,10 @@ use vantage_types::Record;
 use crate::{
     capabilities::VistaCapabilities,
     column::Column,
+    flags,
     metadata::VistaMetadata,
     reference::{Reference, ReferenceKind},
+    sort::SortDirection,
     source::TableShell,
 };
 
@@ -207,6 +209,40 @@ impl Vista {
     /// fetch time by reading a parent record).
     pub fn add_raw_condition<C: Send + Sync + 'static>(&mut self, condition: C) -> Result<()> {
         self.source.add_raw_condition(Box::new(condition))
+    }
+
+    // ---- ordering ---------------------------------------------------------
+
+    /// Sort results by `column` in the given direction.
+    ///
+    /// **Replace semantics**: calling `add_order` again wipes the previous
+    /// order and pushes the new one. V1 supports a single sort column only;
+    /// multi-column sort can be added later without renaming.
+    ///
+    /// Returns `Unsupported` when the column is not flagged
+    /// [`ORDERABLE`](crate::flags::ORDERABLE) — drivers like DynamoDB only
+    /// flag their declared sort-key columns. Returns `Unsupported` from the
+    /// driver shell when the driver itself does not support ordering at all
+    /// (`capabilities().can_order == false`).
+    pub fn add_order(&mut self, column: &str, dir: SortDirection) -> Result<()> {
+        let col = self
+            .columns
+            .get(column)
+            .ok_or_else(|| error!("Unknown column for add_order", column = column))?;
+        if !col.has_flag(flags::ORDERABLE) {
+            return Err(error!(
+                format!("column '{}' is not orderable", column),
+                column = column
+            )
+            .is_unsupported());
+        }
+        self.source.add_order(column, dir)
+    }
+
+    /// Wipe every sort previously applied through `add_order`. Returns
+    /// `Unsupported` from the driver shell when ordering is unsupported.
+    pub fn clear_orders(&mut self) -> Result<()> {
+        self.source.clear_orders()
     }
 
     // ---- references --------------------------------------------------------

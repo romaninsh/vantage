@@ -76,7 +76,7 @@ vista/
 | 1 | [Crate skeleton](1-skeleton.md) | Done |
 | 2 | [First driver integration (CSV)](2-first-driver.md) | Done |
 | 3 | [Universal YAML loader](3-yaml-loader.md) | Done |
-| 4 | [Driver rollout](4-driver-rollout.md) | Mostly done — CSV, MongoDB, SurrealDB, SQL (sqlite/postgres/mysql), REST, GraphQL, LogWriter shipped. AWS / Redb / api-pool remain; `TableShell::get_ref` override missing on all done drivers except REST/GraphQL. |
+| 4 | [Driver rollout](4-driver-rollout.md) | Mostly done — CSV, MongoDB, SurrealDB, SQL (sqlite/postgres/mysql), REST, GraphQL, LogWriter shipped. Row-based `Vista::get_ref(relation, &row)` now lands on every same-driver shell. REST/GraphQL still route internally through `AnyTable` (Stage 9 cleanup). AWS / Redb / api-pool drivers remain. |
 | 5 | [Portable conditions](5-conditions.md) | Partial — driver-typed `eq` shipped; portable operator vocabulary still pending |
 | 5b | [Query controls (sort, paginate, search, aggregates)](5b-query-controls.md) | Not started |
 | 6 | [Hooks + Rhai](6-hooks.md) | Not started |

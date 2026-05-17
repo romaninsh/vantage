@@ -96,7 +96,11 @@ fn print_capabilities(vista: &Vista) {
     println!("  delete        {}", yes_no(c.can_delete));
     println!("  subscribe     {}", yes_no(c.can_subscribe));
     println!("  invalidate    {}", yes_no(c.can_invalidate));
-    println!("  pagination    {:?}", c.paginate_kind);
+    println!("  order         {}", yes_no(c.can_order));
+    println!("  search        {}", yes_no(c.can_search));
+    println!("  page-size     {}", yes_no(c.can_set_page_size));
+    println!("  fetch_page    {}", yes_no(c.can_fetch_page));
+    println!("  fetch_next    {}", yes_no(c.can_fetch_next));
 }
 
 fn yes_no(flag: bool) -> &'static str {

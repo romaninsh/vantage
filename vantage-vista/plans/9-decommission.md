@@ -27,6 +27,19 @@ Final cleanup pass; closes a long tail of TODO items deferred during the
 In:
 
 - Delete `vantage-table/src/any.rs` (the old type-erased wrapper)
+- Delete the legacy `Table::get_ref` / `get_ref_as` /
+  `get_subquery_as` and `Reference::resolve_as_any` / `build_target`
+  methods (still in `vantage-table 0.4.10` as the legacy `AnyTable`
+  path; kept one cycle as a transition window for out-of-tree
+  consumers). Row-based `resolve_from_row` is the replacement.
+- Retire REST and GraphQL adapters' internal `AnyTable` route — both
+  picked up the new row-based `TableShell::get_ref` signature, but
+  their typed-ref path still routes through `AnyTable` for one cycle.
+  Rewrite to call `Reference::resolve_from_row` directly.
+- Revisit `TableShell::add_raw_condition` — only REST overrides it
+  today; with `Vista::with_foreign` providing the cross-persistence
+  path, the trait method may be redundant. Decide whether to retire
+  or keep for REST-specific deferred-condition cases.
 - Delete the old `TableLike` trait family (or whatever trait the wrapper
   boxed) if no other consumer remains
 - Delete or shrink `vantage-live` (logic moved to vantage-coop)
@@ -47,10 +60,17 @@ Out:
 - [ ] Audit Vista coverage of all old-wrapper use cases; produce a
       checklist of "parity confirmed" / "parity gap" / "explicit
       non-goal"
+- [ ] Delete `Table::get_ref` / `get_ref_as` / `get_subquery_as` and
+      `Reference::resolve_as_any` / `build_target` from
+      `vantage-table` — superseded by row-based `resolve_from_row`
+- [ ] Rewrite REST `TableShell::get_ref` to route through
+      `Reference::resolve_from_row` instead of the `AnyTable` carrier
+- [ ] Same for GraphQL `TableShell::get_ref`
 - [ ] Delete `vantage-table/src/any.rs`
 - [ ] Delete or replace `vantage-table/src/traits/table_like.rs` (the
       old dyn-safe trait the wrapper boxed)
 - [ ] Delete legacy `AnyTable` trait at `vantage/src/sql/table.rs`
+- [ ] Decide fate of `TableShell::add_raw_condition` (and `Vista::add_raw_condition`)
 - [ ] Delete or shrink `vantage-live` crate
 - [ ] Restore `vantage-table/tests/table_like.rs` as Vista-flavoured
       tests

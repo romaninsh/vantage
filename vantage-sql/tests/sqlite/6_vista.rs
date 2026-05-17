@@ -329,3 +329,64 @@ async fn vista_with_foreign_lazy_no_eager_invocation() -> TestResult {
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn vista_add_order_ascending_descending_and_clear() -> TestResult {
+    use vantage_vista::SortDirection;
+
+    let db = setup().await;
+    let table = product_table(db.clone());
+    let mut vista = db.vista_factory().from_table(table)?;
+
+    // capability is advertised
+    assert!(vista.capabilities().can_order);
+
+    // sort ascending by price → a (10), b (20), c (30)
+    vista.add_order("price", SortDirection::Ascending)?;
+    let rows = vista.list_values().await?;
+    let ids: Vec<&String> = rows.keys().collect();
+    assert_eq!(ids, ["a", "b", "c"]);
+
+    // replace-semantics: switch to descending name → c (Gamma), b (Beta), a (Alpha)
+    vista.add_order("name", SortDirection::Descending)?;
+    let rows = vista.list_values().await?;
+    let ids: Vec<&String> = rows.keys().collect();
+    assert_eq!(ids, ["c", "b", "a"]);
+
+    // clear → back to insertion order
+    vista.clear_orders()?;
+    let rows = vista.list_values().await?;
+    let ids: Vec<&String> = rows.keys().collect();
+    assert_eq!(ids, ["a", "b", "c"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_add_order_rejects_unknown_column() -> TestResult {
+    use vantage_vista::SortDirection;
+
+    let db = setup().await;
+    let table = product_table(db.clone());
+    let mut vista = db.vista_factory().from_table(table)?;
+
+    let result = vista.add_order("not_a_column", SortDirection::Ascending);
+    assert!(result.is_err(), "unknown column must fail");
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_columns_advertise_orderable_flag() -> TestResult {
+    let db = setup().await;
+    let table = product_table(db.clone());
+    let vista = db.vista_factory().from_table(table)?;
+
+    for col_name in ["id", "name", "price", "is_deleted"] {
+        let col = vista.get_column(col_name).expect("column exists");
+        assert!(
+            col.has_flag(vantage_vista::flags::ORDERABLE),
+            "column '{}' must carry ORDERABLE flag for SQLite",
+            col_name
+        );
+    }
+    Ok(())
+}
