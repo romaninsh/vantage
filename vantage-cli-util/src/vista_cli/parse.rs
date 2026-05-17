@@ -47,7 +47,11 @@ fn parse_selector_sort(inner: &str) -> Result<(Option<(String, Direction)>, &str
     };
     let (field, rest) = take_field(rest);
     if field.is_empty() {
-        let sign = if matches!(dir, Direction::Asc) { "+" } else { "-" };
+        let sign = if matches!(dir, Direction::Asc) {
+            "+"
+        } else {
+            "-"
+        };
         return Err(error!(format!(
             "Bracket `[{sign}…]` needs a field name, got `[{inner}]`"
         )));

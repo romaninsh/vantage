@@ -49,7 +49,13 @@ pub async fn run<F: ModelFactory, R: Renderer>(
     if let Some((op, field)) = state.aggregate {
         return render_aggregate(renderer, &state.vista, op, field);
     }
-    render_final(renderer, &state.vista, state.mode, state.column_override.as_deref()).await
+    render_final(
+        renderer,
+        &state.vista,
+        state.mode,
+        state.column_override.as_deref(),
+    )
+    .await
 }
 
 /// In-flight runner state — vista + mode + accumulated column override
@@ -121,8 +127,8 @@ impl RunState {
                 {
                     self.mode = new_mode;
                 }
-                self.mode = apply_selector_opt(&mut self.vista, self.mode, selector, renderer)
-                    .await?;
+                self.mode =
+                    apply_selector_opt(&mut self.vista, self.mode, selector, renderer).await?;
                 Ok(())
             }
             Token::Relation(rel, sel) => self.apply_relation(renderer, rel, sel).await,
@@ -224,7 +230,6 @@ async fn render_final<R: Renderer>(
     }
     Ok(())
 }
-
 
 /// Apply a `[…]` selector to `vista` in place. Returns the new mode
 /// (single when a `[N]` index slice narrowed to one record, otherwise
