@@ -21,6 +21,7 @@ members = [
     "cbor-test",
     "vantage-types", "learn-1", "learn-2", "learn-3",
     "vantage-vista",
+    "vantage-diorama",
     "docs4",
 ]
 exclude = [

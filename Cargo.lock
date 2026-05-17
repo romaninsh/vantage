@@ -4177,6 +4177,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "vantage-diorama"
+version = "0.4.0"
+dependencies = [
+ "async-trait",
+ "ciborium",
+ "indexmap",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "vantage-core",
+ "vantage-dataset",
+ "vantage-table",
+ "vantage-types",
+ "vantage-vista",
+]
+
+[[package]]
 name = "vantage-docs"
 version = "0.0.0"
 dependencies = [
