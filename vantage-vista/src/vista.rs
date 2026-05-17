@@ -211,6 +211,63 @@ impl Vista {
         self.source.add_raw_condition(Box::new(condition))
     }
 
+    // ---- pagination -------------------------------------------------------
+
+    /// Declare how many records constitute one page. Some backends (notably
+    /// REST APIs with server-fixed page sizes) refuse this — check
+    /// `capabilities().can_set_page_size` before calling.
+    pub fn set_page_size(&mut self, size: usize) -> Result<()> {
+        self.source.set_page_size(size)
+    }
+
+    /// Fetch a specific page (1-based) using offset-style pagination. The
+    /// per-page count comes from the most recent
+    /// [`set_page_size`](Self::set_page_size). Returns `Unsupported` when the
+    /// driver does not advertise `can_fetch_page`; cursor-only drivers
+    /// (DynamoDB, most token-paginated REST APIs) only support
+    /// [`fetch_next`](Self::fetch_next) instead.
+    pub async fn fetch_page(
+        &self,
+        page: usize,
+    ) -> Result<Vec<(String, Record<CborValue>)>> {
+        self.source.fetch_page(self, page).await
+    }
+
+    /// Cursor-style chain fetch. Pass `None` on the first call; pass the
+    /// previous call's returned token on subsequent calls. Returned token is
+    /// `None` when the result set is exhausted.
+    ///
+    /// The token is **driver-private** — its shape is whatever the backend
+    /// uses (DynamoDB `LastEvaluatedKey`, REST `nextToken`, offset count,
+    /// …). Consumers treat it as opaque and round-trip it back unchanged.
+    /// Returns `Unsupported` when the driver does not advertise
+    /// `can_fetch_next`.
+    pub async fn fetch_next(
+        &self,
+        token: Option<CborValue>,
+    ) -> Result<(Vec<(String, Record<CborValue>)>, Option<CborValue>)> {
+        self.source.fetch_next(self, token).await
+    }
+
+    // ---- quicksearch -------------------------------------------------------
+
+    /// Apply a quicksearch filter. The driver decides which columns participate;
+    /// typically those carrying the [`SEARCHABLE`](crate::flags::SEARCHABLE)
+    /// flag.
+    ///
+    /// **Replace semantics**: calling `add_search` again drops the previous
+    /// search filter. Returns `Unsupported` when the driver does not advertise
+    /// `can_search`.
+    pub fn add_search(&mut self, text: impl Into<String>) -> Result<()> {
+        self.source.add_search(&text.into())
+    }
+
+    /// Drop any quicksearch filter previously applied. Returns `Unsupported`
+    /// from the driver shell when search is unsupported.
+    pub fn clear_search(&mut self) -> Result<()> {
+        self.source.clear_search()
+    }
+
     // ---- ordering ---------------------------------------------------------
 
     /// Sort results by `column` in the given direction.

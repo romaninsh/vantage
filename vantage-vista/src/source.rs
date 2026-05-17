@@ -171,6 +171,68 @@ pub trait TableShell: Send + Sync + 'static {
         .is_unimplemented())
     }
 
+    // ---- Pagination --------------------------------------------------------
+
+    /// Declare how many records constitute one page. Used by both
+    /// [`fetch_page`](Self::fetch_page) and [`fetch_next`](Self::fetch_next).
+    /// Default returns `default_error("set_page_size", "can_set_page_size")`.
+    fn set_page_size(&mut self, _size: usize) -> Result<()> {
+        Err(self.default_error("set_page_size", "can_set_page_size"))
+    }
+
+    /// Fetch a specific page (1-based) using offset-style pagination. The
+    /// per-page count comes from the most recent
+    /// [`set_page_size`](Self::set_page_size).
+    ///
+    /// Drivers without random-access pagination (DynamoDB, most token-paginated
+    /// REST APIs) leave the default in place, which produces `Unsupported`.
+    /// Callers should branch on `vista.capabilities().can_fetch_page` first.
+    async fn fetch_page(
+        &self,
+        _vista: &Vista,
+        _page: usize,
+    ) -> Result<Vec<(String, Record<CborValue>)>> {
+        Err(self.default_error("fetch_page", "can_fetch_page"))
+    }
+
+    /// Cursor-style chain fetch. Pass `None` on the first call; pass the
+    /// previous call's returned token on subsequent calls. Returned token is
+    /// `None` when the result set is exhausted.
+    ///
+    /// The token is **driver-private** — its shape is whatever the backend
+    /// finds convenient (DynamoDB `LastEvaluatedKey` as a CBOR map, REST
+    /// `nextToken` as `CborValue::Text`, offset-based as `CborValue::Integer`).
+    /// Consumers treat it as opaque and round-trip it back unchanged.
+    ///
+    /// Default returns `default_error("fetch_next", "can_fetch_next")`.
+    async fn fetch_next(
+        &self,
+        _vista: &Vista,
+        _token: Option<CborValue>,
+    ) -> Result<(Vec<(String, Record<CborValue>)>, Option<CborValue>)> {
+        Err(self.default_error("fetch_next", "can_fetch_next"))
+    }
+
+    // ---- Quicksearch -------------------------------------------------------
+
+    /// Apply a quicksearch filter — a single string the driver fans out across
+    /// the columns it considers searchable (typically those flagged
+    /// [`SEARCHABLE`](crate::flags::SEARCHABLE), but each driver decides).
+    ///
+    /// **Replace semantics**: calling `add_search` again wipes the previous
+    /// search filter before applying the new one. Default produces
+    /// `Unimplemented` (when `can_search: true`) or `Unsupported` (when
+    /// `can_search: false`).
+    fn add_search(&mut self, _text: &str) -> Result<()> {
+        Err(self.default_error("add_search", "can_search"))
+    }
+
+    /// Drop the search filter previously applied via
+    /// [`add_search`](Self::add_search). Default mirrors `add_search`.
+    fn clear_search(&mut self) -> Result<()> {
+        Err(self.default_error("clear_search", "can_search"))
+    }
+
     // ---- Ordering ----------------------------------------------------------
 
     /// Push a single ORDER BY clause onto the wrapped table.

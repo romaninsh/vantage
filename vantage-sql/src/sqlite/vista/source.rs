@@ -13,8 +13,11 @@ use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
+use vantage_table::conditions::ConditionHandle;
+use vantage_table::pagination::Pagination;
 use vantage_table::sorting::{OrderBy, SortDirection as TableSortDirection};
 use vantage_table::table::Table;
+use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Entity, Record};
 use vantage_vista::{SortDirection, TableShell, Vista, VistaCapabilities};
 
@@ -29,6 +32,13 @@ where
 {
     pub(crate) table: Table<SqliteDB, E>,
     pub(crate) capabilities: VistaCapabilities,
+    /// Handle for the active quicksearch condition (if any). Used by
+    /// `clear_search` and by `add_search`'s replace-semantics to remove the
+    /// previous search before pushing the new one.
+    pub(crate) current_search_handle: Option<ConditionHandle>,
+    /// Pages-per-fetch declared via `set_page_size`. `None` until the consumer
+    /// declares it; `fetch_page` errors with a clear message in that case.
+    pub(crate) page_size: Option<usize>,
 }
 
 impl<E> SqliteTableShell<E>
@@ -39,6 +49,8 @@ where
         Self {
             table,
             capabilities,
+            current_search_handle: None,
+            page_size: None,
         }
     }
 }
@@ -189,6 +201,98 @@ where
     fn clear_orders(&mut self) -> Result<()> {
         self.table.clear_orders();
         Ok(())
+    }
+
+    fn add_search(&mut self, text: &str) -> Result<()> {
+        // Replace-semantics: drop the previous search before pushing the new one.
+        if let Some(handle) = self.current_search_handle.take() {
+            let _ = self.table.temp_remove_condition(handle);
+        }
+        let condition = self
+            .table
+            .data_source()
+            .search_table_condition(&self.table, text);
+        self.current_search_handle = Some(self.table.temp_add_condition(condition));
+        Ok(())
+    }
+
+    fn clear_search(&mut self) -> Result<()> {
+        if let Some(handle) = self.current_search_handle.take() {
+            let _ = self.table.temp_remove_condition(handle);
+        }
+        Ok(())
+    }
+
+    fn set_page_size(&mut self, size: usize) -> Result<()> {
+        if size == 0 {
+            return Err(error!("page size must be > 0"));
+        }
+        self.page_size = Some(size);
+        Ok(())
+    }
+
+    async fn fetch_page(
+        &self,
+        _vista: &Vista,
+        page: usize,
+    ) -> Result<Vec<(String, Record<CborValue>)>> {
+        if page == 0 {
+            return Err(error!("page is 1-based; got 0"));
+        }
+        let size = self
+            .page_size
+            .ok_or_else(|| error!("set_page_size must be called before fetch_page"))?;
+
+        // Clone the wrapped table so we don't disturb the shell's own
+        // condition / order / search state with this call's pagination.
+        let mut page_table = self.table.clone();
+        page_table.set_pagination(Some(Pagination::new(page as i64, size as i64)));
+
+        let raw = page_table.list_values().await?;
+        Ok(raw
+            .into_iter()
+            .map(|(id, record)| (id, to_cbor_record(record)))
+            .collect())
+    }
+
+    async fn fetch_next(
+        &self,
+        _vista: &Vista,
+        token: Option<CborValue>,
+    ) -> Result<(Vec<(String, Record<CborValue>)>, Option<CborValue>)> {
+        let size = self
+            .page_size
+            .ok_or_else(|| error!("set_page_size must be called before fetch_next"))?;
+
+        // SQLite encodes its cursor as the 1-based page number for the next
+        // fetch. `None` ⇒ page 1; otherwise the previous call's returned
+        // integer.
+        let page: i64 = match token {
+            None => 1,
+            Some(CborValue::Integer(n)) => i64::try_from(n)
+                .map_err(|_| error!("fetch_next token out of i64 range"))?,
+            Some(_) => return Err(error!("invalid fetch_next token type for sqlite driver")),
+        };
+        if page < 1 {
+            return Err(error!("fetch_next token must be a 1-based page number"));
+        }
+
+        let mut page_table = self.table.clone();
+        page_table.set_pagination(Some(Pagination::new(page, size as i64)));
+        let raw = page_table.list_values().await?;
+        let records: Vec<(String, Record<CborValue>)> = raw
+            .into_iter()
+            .map(|(id, record)| (id, to_cbor_record(record)))
+            .collect();
+
+        // Exhausted whenever the page returned fewer rows than requested.
+        // (Including the empty case — the caller's last call.)
+        let next_token = if records.len() == size {
+            Some(CborValue::Integer((page + 1).into()))
+        } else {
+            None
+        };
+        Ok((records, next_token))
     }
 
     fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {

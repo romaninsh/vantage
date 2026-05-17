@@ -53,6 +53,10 @@ impl SqliteVistaFactory {
                 can_update: true,
                 can_delete: true,
                 can_order: true,
+                can_search: true,
+                can_set_page_size: true,
+                can_fetch_page: true,
+                can_fetch_next: true,
                 ..VistaCapabilities::default()
             },
         );

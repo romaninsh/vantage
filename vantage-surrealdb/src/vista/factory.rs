@@ -52,6 +52,11 @@ impl SurrealVistaFactory {
                 can_insert: true,
                 can_update: true,
                 can_delete: true,
+                can_order: true,
+                can_search: true,
+                can_set_page_size: true,
+                can_fetch_page: true,
+                can_fetch_next: true,
                 ..VistaCapabilities::default()
             },
         );
@@ -181,7 +186,9 @@ where
 {
     let mut metadata = VistaMetadata::new();
     for (name, col) in table.columns() {
-        let mut vc = VistaColumn::new(name.clone(), col.get_type().to_string());
+        // SurrealDB sorts on any field; flag every column ORDERABLE.
+        let mut vc = VistaColumn::new(name.clone(), col.get_type().to_string())
+            .with_flag(vista_flags::ORDERABLE);
         if col.flags().contains(&ColumnFlag::Hidden) {
             vc = vc.with_flag(vista_flags::HIDDEN);
         }

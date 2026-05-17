@@ -13,12 +13,17 @@ use async_trait::async_trait;
 use bson::{Bson, Document, doc};
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_core::Result;
+use vantage_core::{Result, error};
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
+use vantage_table::conditions::ConditionHandle;
+use vantage_table::pagination::Pagination;
+use vantage_table::sorting::{OrderBy, SortDirection as TableSortDirection};
 use vantage_table::table::Table;
+use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::{TableShell, Vista, VistaCapabilities};
+use vantage_vista::{SortDirection, TableShell, Vista, VistaCapabilities};
 
+use crate::condition::MongoCondition;
 use crate::id::MongoId;
 use crate::mongodb::MongoDB;
 use crate::types::AnyMongoType;
@@ -30,6 +35,10 @@ pub struct MongoTableShell {
     /// spec column name → BSON path (e.g. `"city"` → `["address", "city"]`).
     /// Empty map ⇒ identity passthrough (used by typed `from_table` paths).
     pub(crate) column_paths: IndexMap<String, Vec<String>>,
+    /// Handle for the active quicksearch condition (if any).
+    pub(crate) current_search_handle: Option<ConditionHandle>,
+    /// Page size declared via `set_page_size`.
+    pub(crate) page_size: Option<usize>,
 }
 
 impl MongoTableShell {
@@ -42,6 +51,8 @@ impl MongoTableShell {
             table,
             capabilities,
             column_paths,
+            current_search_handle: None,
+            page_size: None,
         }
     }
 
@@ -265,6 +276,117 @@ impl TableShell for MongoTableShell {
 
     fn get_ref_kinds(&self) -> Vec<(String, vantage_vista::ReferenceKind)> {
         self.table.ref_kinds()
+    }
+
+    fn add_order(&mut self, field: &str, dir: SortDirection) -> Result<()> {
+        if !self.table.columns().contains_key(field) {
+            return Err(error!("Unknown column for add_order", field = field));
+        }
+        self.table.clear_orders();
+        // MongoDB's `select_from_table` reads the field name from the first
+        // key of the OrderBy expression's BSON doc; the value is ignored,
+        // direction comes from the OrderBy::direction field.
+        let dotted = self.dotted_path(field);
+        let order = OrderBy {
+            expression: MongoCondition::Doc(doc! { dotted: 1 }),
+            direction: match dir {
+                SortDirection::Ascending => TableSortDirection::Ascending,
+                SortDirection::Descending => TableSortDirection::Descending,
+            },
+        };
+        self.table.add_order(order);
+        Ok(())
+    }
+
+    fn clear_orders(&mut self) -> Result<()> {
+        self.table.clear_orders();
+        Ok(())
+    }
+
+    fn add_search(&mut self, text: &str) -> Result<()> {
+        if let Some(handle) = self.current_search_handle.take() {
+            let _ = self.table.temp_remove_condition(handle);
+        }
+        let condition = self
+            .table
+            .data_source()
+            .search_table_condition(&self.table, text);
+        self.current_search_handle = Some(self.table.temp_add_condition(condition));
+        Ok(())
+    }
+
+    fn clear_search(&mut self) -> Result<()> {
+        if let Some(handle) = self.current_search_handle.take() {
+            let _ = self.table.temp_remove_condition(handle);
+        }
+        Ok(())
+    }
+
+    fn set_page_size(&mut self, size: usize) -> Result<()> {
+        if size == 0 {
+            return Err(error!("page size must be > 0"));
+        }
+        self.page_size = Some(size);
+        Ok(())
+    }
+
+    async fn fetch_page(
+        &self,
+        _vista: &Vista,
+        page: usize,
+    ) -> Result<Vec<(String, Record<CborValue>)>> {
+        if page == 0 {
+            return Err(error!("page is 1-based; got 0"));
+        }
+        let size = self
+            .page_size
+            .ok_or_else(|| error!("set_page_size must be called before fetch_page"))?;
+
+        let mut page_table = self.table.clone();
+        page_table.set_pagination(Some(Pagination::new(page as i64, size as i64)));
+        let raw = page_table.list_values().await?;
+        Ok(raw
+            .into_iter()
+            .map(|(id, record)| (id.to_string(), self.unflatten_to_cbor(record)))
+            .collect())
+    }
+
+    async fn fetch_next(
+        &self,
+        _vista: &Vista,
+        token: Option<CborValue>,
+    ) -> Result<(Vec<(String, Record<CborValue>)>, Option<CborValue>)> {
+        let size = self
+            .page_size
+            .ok_or_else(|| error!("set_page_size must be called before fetch_next"))?;
+
+        // MongoDB encodes its cursor as the 1-based page number, same shape as
+        // the SQLite driver. Real change-stream / find-cursor tokens are a
+        // future optimization (Stage 7 / Coop).
+        let page: i64 = match token {
+            None => 1,
+            Some(CborValue::Integer(n)) => i64::try_from(n)
+                .map_err(|_| error!("fetch_next token out of i64 range"))?,
+            Some(_) => return Err(error!("invalid fetch_next token type for mongodb driver")),
+        };
+        if page < 1 {
+            return Err(error!("fetch_next token must be a 1-based page number"));
+        }
+
+        let mut page_table = self.table.clone();
+        page_table.set_pagination(Some(Pagination::new(page, size as i64)));
+        let raw = page_table.list_values().await?;
+        let records: Vec<(String, Record<CborValue>)> = raw
+            .into_iter()
+            .map(|(id, record)| (id.to_string(), self.unflatten_to_cbor(record)))
+            .collect();
+
+        let next_token = if records.len() == size {
+            Some(CborValue::Integer((page + 1).into()))
+        } else {
+            None
+        };
+        Ok((records, next_token))
     }
 
     fn capabilities(&self) -> &VistaCapabilities {

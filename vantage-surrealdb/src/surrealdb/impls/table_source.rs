@@ -116,19 +116,31 @@ impl TableSource for SurrealDB {
 
     fn search_table_condition<E>(
         &self,
-        _table: &Table<Self, E>,
+        table: &Table<Self, E>,
         search_value: &str,
     ) -> Expression<Self::Value>
     where
         E: Entity<Self::Value>,
     {
-        // TODO: iterate searchable columns
-        Expression::new(
-            "SEARCH {}",
-            vec![ExpressiveEnum::Scalar(AnySurrealType::new(
-                search_value.to_string(),
-            ))],
-        )
+        // OR across all columns using SurrealDB's case-insensitive
+        // `string::contains` after lower-casing both sides.
+        let parts: Vec<Expression<AnySurrealType>> = table
+            .columns()
+            .values()
+            .map(|col| {
+                let needle = search_value.to_lowercase();
+                crate::surreal_expr!(
+                    "string::contains(string::lowercase(<string>{}), {})",
+                    (Identifier::new(col.name())),
+                    needle
+                )
+            })
+            .collect();
+        if parts.is_empty() {
+            crate::surreal_expr!("false")
+        } else {
+            Expression::from_vec(parts, " OR ")
+        }
     }
 
     async fn list_table_values<E>(
