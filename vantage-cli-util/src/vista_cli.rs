@@ -13,7 +13,7 @@ use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_types::Record;
-use vantage_vista::{ReferenceKind, Vista};
+use vantage_vista::{ReferenceKind, SortDirection, Vista};
 
 /// Whether the current state is a list of records or a single record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,15 +135,88 @@ fn parse_token(arg: &str) -> Result<Token> {
     Ok(Token::ModelName(name.to_string(), idx))
 }
 
+/// Stage 5 query primitives extracted from `--*` flags. Applied to the
+/// resolved Vista after positional tokens have been processed.
+#[derive(Debug, Default)]
+struct CliFlags {
+    search: Option<String>,
+    order_by: Option<(String, SortDirection)>,
+    page_size: Option<usize>,
+    page: Option<usize>,
+}
+
+/// Walk `args`, pull out `--search`, `--order-by`, `--page-size`,
+/// `--page` (each a `--flag VALUE` pair), and return the remaining
+/// positional args alongside the parsed flags. Unknown `--flag`s are
+/// rejected so typos surface early.
+fn extract_flags(args: &[String]) -> Result<(CliFlags, Vec<String>)> {
+    let mut flags = CliFlags::default();
+    let mut positional: Vec<String> = Vec::new();
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--search" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| error!("--search requires a value"))?;
+                flags.search = Some(value.clone());
+            }
+            "--order-by" => {
+                let spec = iter
+                    .next()
+                    .ok_or_else(|| error!("--order-by requires <col>[:asc|desc]"))?;
+                let (col, dir) = match spec.split_once(':') {
+                    Some((c, "asc")) => (c.to_string(), SortDirection::Ascending),
+                    Some((c, "desc")) => (c.to_string(), SortDirection::Descending),
+                    Some((_, other)) => {
+                        return Err(error!(format!(
+                            "--order-by direction must be `asc` or `desc`, got `{other}`"
+                        )));
+                    }
+                    None => (spec.clone(), SortDirection::Ascending),
+                };
+                flags.order_by = Some((col, dir));
+            }
+            "--page-size" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| error!("--page-size requires a number"))?;
+                let n: usize = value
+                    .parse()
+                    .map_err(|_| error!(format!("--page-size value `{value}` is not a number")))?;
+                flags.page_size = Some(n);
+            }
+            "--page" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| error!("--page requires a 1-based page number"))?;
+                let n: usize = value
+                    .parse()
+                    .map_err(|_| error!(format!("--page value `{value}` is not a number")))?;
+                flags.page = Some(n);
+            }
+            other if other.starts_with("--") => {
+                return Err(error!(format!("Unknown flag `{other}`")));
+            }
+            _ => positional.push(arg.clone()),
+        }
+    }
+    Ok((flags, positional))
+}
+
 /// Run a Vista-backed model-driven CLI.
 ///
 /// `args` is the list of positional arguments after any global flags
-/// have been stripped out.
+/// have been stripped out. Recognised inline flags:
+/// `--search <text>`, `--order-by <col>[:asc|desc]`, `--page-size <n>`,
+/// `--page <n>`. Each requires the matching `can_*` capability on the
+/// resolved Vista; otherwise the call surfaces an `Unsupported` error.
 pub async fn run<F: ModelFactory, R: Renderer>(
     factory: &F,
     renderer: &R,
     args: &[String],
 ) -> Result<()> {
+    let (flags, args) = extract_flags(args)?;
     if args.is_empty() {
         return Err(error!(
             "No model specified — pass a model name (e.g. `users`) or an ARN"
@@ -273,12 +346,42 @@ pub async fn run<F: ModelFactory, R: Renderer>(
         }
     }
 
+    // Apply Stage 5 query flags now that the vista is fully narrowed and
+    // its mode (list vs single) is decided. Search and order are no-ops in
+    // single mode but we still apply them so the underlying fetch reflects
+    // the user's intent if it later widens. set_page_size + page only make
+    // sense in list mode.
+    if let Some(text) = &flags.search {
+        vista.add_search(text.clone())?;
+    }
+    if let Some((col, dir)) = &flags.order_by {
+        vista.add_order(col, *dir)?;
+    }
+    if let Some(size) = flags.page_size {
+        vista.set_page_size(size)?;
+    }
+
     match mode {
         Mode::List => {
-            let records = vista.list_values().await?;
+            let records = if let Some(page) = flags.page {
+                // `--page N` invokes fetch_page; collect Vec back into the
+                // IndexMap shape the renderer accepts.
+                vista
+                    .fetch_page(page)
+                    .await?
+                    .into_iter()
+                    .collect::<IndexMap<_, _>>()
+            } else {
+                vista.list_values().await?
+            };
             renderer.render_list(&vista, &records, column_override.as_deref());
         }
         Mode::Single => {
+            if flags.page.is_some() {
+                return Err(error!(
+                    "`--page` is only valid for list-mode queries"
+                ));
+            }
             let (id, record) = vista
                 .get_some_value()
                 .await?
