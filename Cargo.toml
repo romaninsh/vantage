@@ -2,27 +2,34 @@
 members = [
     "vantage-core",
     "vantage-expressions",
-    "vantage-sql",
-    "vantage-surrealdb",
     "vantage-redb",
-    "vantage-mongodb",
     "vantage-live",
-    "bakery_model3",
-    "bakery_model4",
     "surreal-client",
     "vantage-dataset",
     "vantage-table",
     "vantage-csv",
-    "vantage-log-writer",
-    "vantage-api-client",
-    "vantage-api-pool",
-    "vantage-cli-util",
-    # "vantage-config",
     "cbor-test",
     "vantage-types", "learn-1", "learn-2", "learn-3",
     "vantage-vista",
     "vantage-diorama",
     "docs4",
+    # Excluded during the schema-on-source refactor (vantage-diorama/plans/1b-schema-on-source.md):
+    # - sql/surreal/mongo/log-writer have un-refactored `vista` modules. They
+    #   ship vista as an opt-in feature, but workspace feature unification
+    #   activates it via their own dev-deps; simplest to detach until ported.
+    # - api-client/api-pool/cli-util depend on the pre-refactor Vista shape
+    #   unconditionally.
+    # - bakery_model3/4 activate `vista` on every driver.
+    # "vantage-sql",
+    # "vantage-surrealdb",
+    # "vantage-mongodb",
+    # "vantage-log-writer",
+    # "vantage-api-client",
+    # "vantage-api-pool",
+    # "vantage-cli-util",
+    # "vantage-config",
+    # "bakery_model3",
+    # "bakery_model4",
 ]
 exclude = [
     "vantage",
@@ -32,5 +39,16 @@ exclude = [
     "example_*",
     "vantage-ui-adapters",
     "test-api-server",
+    # Excluded during the schema-on-source refactor (vantage-diorama/plans/1b-schema-on-source.md):
+    "vantage-sql",
+    "vantage-surrealdb",
+    "vantage-mongodb",
+    "vantage-log-writer",
+    "vantage-api-client",
+    "vantage-api-pool",
+    "vantage-cli-util",
+    "vantage-config",
+    "bakery_model3",
+    "bakery_model4",
 ]
 resolver = "2"

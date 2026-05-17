@@ -3,12 +3,24 @@ use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::Result;
 use vantage_types::Record;
-use vantage_vista::{TableShell, Vista, VistaCapabilities};
+use vantage_vista::{Column, Reference, TableShell, Vista, VistaCapabilities};
 
 use crate::dio::shell::DioShell;
 
 #[async_trait]
 impl TableShell for DioShell {
+    fn columns(&self) -> &IndexMap<String, Column> {
+        self.dio.master.source.columns()
+    }
+
+    fn references(&self) -> &IndexMap<String, Reference> {
+        self.dio.master.source.references()
+    }
+
+    fn id_column(&self) -> Option<&str> {
+        self.dio.master.source.id_column()
+    }
+
     async fn list_vista_values(
         &self,
         _vista: &Vista,

@@ -9,7 +9,6 @@ use crate::{
     capabilities::VistaCapabilities,
     column::Column,
     flags,
-    metadata::VistaMetadata,
     reference::{Reference, ReferenceKind},
     sort::SortDirection,
     source::TableShell,
@@ -40,35 +39,27 @@ impl std::fmt::Debug for ForeignRef {
 /// Universal, schema-bearing data handle.
 ///
 /// A `Vista` is produced by a driver factory from a typed `Table<T, E>` or
-/// from a YAML schema. Once built, its metadata is read-only — callers
-/// observe via accessors and may narrow the data set with `add_condition_eq`,
-/// which delegates to the underlying driver's native condition system. Vista
-/// itself stores no condition state.
-/// CRUD goes through the `ValueSet` trait family `Table<T, E>` also implements.
+/// from a YAML schema. The schema (columns, references, id column) lives
+/// on the wrapped [`TableShell`] — `Vista` is the user-facing surface that
+/// forwards both data and metadata queries to the shell.
+///
+/// Cross-persistence references (`with_foreign`) are the one exception:
+/// they're registered at the Vista layer because they need to capture
+/// other-backend factories outside the shell's scope.
 pub struct Vista {
     pub(crate) name: String,
-    pub(crate) columns: IndexMap<String, Column>,
-    pub(crate) references: IndexMap<String, Reference>,
     pub(crate) foreign_resolvers: IndexMap<String, ForeignRef>,
     pub(crate) capabilities: VistaCapabilities,
-    pub(crate) id_column: Option<String>,
-    pub(crate) source: Box<dyn TableShell>,
+    pub source: Box<dyn TableShell>,
 }
 
 impl Vista {
-    pub fn new(
-        name: impl Into<String>,
-        source: Box<dyn TableShell>,
-        metadata: VistaMetadata,
-    ) -> Self {
+    pub fn new(name: impl Into<String>, source: Box<dyn TableShell>) -> Self {
         let capabilities = source.capabilities().clone();
         Self {
             name: name.into(),
-            columns: metadata.columns,
-            references: metadata.references,
             foreign_resolvers: IndexMap::new(),
             capabilities,
-            id_column: metadata.id_column,
             source,
         }
     }
@@ -93,19 +84,19 @@ impl Vista {
         self.source.driver_name()
     }
 
-    pub(crate) fn source(&self) -> &dyn TableShell {
-        self.source.as_ref()
-    }
-
     // ---- metadata accessors -----------------------------------------------
+    //
+    // All schema accessors forward to the shell. Vista holds none of the
+    // schema state itself; the shell is the source of truth.
 
     pub fn get_id_column(&self) -> Option<&str> {
-        self.id_column.as_deref()
+        self.source.id_column()
     }
 
     /// Columns flagged `title` (in declaration order).
     pub fn get_title_columns(&self) -> Vec<&str> {
-        self.columns
+        self.source
+            .columns()
             .values()
             .filter(|c| c.is_title())
             .map(|c| c.name.as_str())
@@ -113,21 +104,20 @@ impl Vista {
     }
 
     pub fn get_column_names(&self) -> Vec<&str> {
-        self.columns.keys().map(String::as_str).collect()
+        self.source.columns().keys().map(String::as_str).collect()
     }
 
     pub fn get_column(&self, name: &str) -> Option<&Column> {
-        self.columns.get(name)
+        self.source.columns().get(name)
     }
 
     /// Names of references attached at the Vista layer — cross-persistence
-    /// resolvers from [`with_foreign`](Self::with_foreign) and YAML-loaded
-    /// metadata refs. For the *complete* picture including the wrapped
-    /// typed `Table`'s same-persistence refs (and their cardinality), use
+    /// resolvers from [`with_foreign`](Self::with_foreign) and shell-declared
+    /// references. For the *complete* picture with cardinality, use
     /// [`list_references`](Self::list_references) instead.
     pub fn get_references(&self) -> Vec<&str> {
         let mut out: Vec<&str> = self.foreign_resolvers.keys().map(String::as_str).collect();
-        for k in self.references.keys() {
+        for k in self.source.references().keys() {
             let s = k.as_str();
             if !out.contains(&s) {
                 out.push(s);
@@ -138,12 +128,10 @@ impl Vista {
 
     /// All references the Vista exposes, with their cardinality.
     ///
-    /// Combines three sources: cross-persistence resolvers attached via
-    /// [`with_foreign`](Self::with_foreign), YAML-declared `references`
-    /// metadata, and same-persistence refs surfaced by the driver shell
-    /// (forwarded from the wrapped typed `Table`'s `with_one` / `with_many`
-    /// registrations). Each is returned once, in the order
-    /// foreign → metadata → shell, with later duplicates ignored.
+    /// Combines two sources: cross-persistence resolvers attached via
+    /// [`with_foreign`](Self::with_foreign), and same-persistence
+    /// references declared by the wrapped shell. Each is returned once,
+    /// foreign first, with later duplicates ignored.
     pub fn list_references(&self) -> Vec<(String, ReferenceKind)> {
         let mut seen = std::collections::HashSet::new();
         let mut out = Vec::new();
@@ -152,21 +140,16 @@ impl Vista {
                 out.push((name.clone(), fref.kind));
             }
         }
-        for (name, r) in &self.references {
+        for (name, r) in self.source.references() {
             if seen.insert(name.clone()) {
                 out.push((name.clone(), r.kind));
-            }
-        }
-        for (name, kind) in self.source.get_ref_kinds() {
-            if seen.insert(name.clone()) {
-                out.push((name, kind));
             }
         }
         out
     }
 
     pub fn get_reference(&self, name: &str) -> Option<&Reference> {
-        self.references.get(name)
+        self.source.references().get(name)
     }
 
     // ---- conditions --------------------------------------------------------
@@ -280,7 +263,8 @@ impl Vista {
     /// (`capabilities().can_order == false`).
     pub fn add_order(&mut self, column: &str, dir: SortDirection) -> Result<()> {
         let col = self
-            .columns
+            .source
+            .columns()
             .get(column)
             .ok_or_else(|| error!("Unknown column for add_order", column = column))?;
         if !col.has_flag(flags::ORDERABLE) {

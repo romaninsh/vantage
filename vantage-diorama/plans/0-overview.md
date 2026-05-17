@@ -90,6 +90,7 @@ vantage-diorama/
 | Stage | File | Status |
 |---|---|---|
 | 1 | [Crate skeleton](1-skeleton.md) | Done |
+| 1b | [Schema-on-source refactor](1b-schema-on-source.md) | Done |
 | 2 | [CSV walkthrough (first end-to-end)](2-csv-walkthrough.md) | Not started |
 | 3 | [Write queue + refresh scheduler](3-write-and-refresh.md) | Not started |
 | 4 | [Event bus + on_event](4-event-bus.md) | Not started |

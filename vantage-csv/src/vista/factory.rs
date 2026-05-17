@@ -43,8 +43,9 @@ impl CsvVistaFactory {
                 can_count: true,
                 ..VistaCapabilities::default()
             },
+            metadata,
         );
-        Ok(Vista::new(name, Box::new(source), metadata))
+        Ok(Vista::new(name, Box::new(source)))
     }
 
     /// Build a `Table<Csv, EmptyEntity>` from a spec. Each column is added
