@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.3 — 2026-05-16
+
+- Internal dependency version refresh; no public API changes.
+
 ## 0.4.2 — 2026-05-09
 
 - `ws://` and `wss://` now route through the CBOR engine. `cbor://` remains as an alias.

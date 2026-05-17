@@ -12,8 +12,8 @@ vantage-dataset = { path = "../vantage-dataset" }
 vantage-vista = { path = "../vantage-vista" }
 vantage-sql = { path = "../vantage-sql", features = ["sqlite", "vista"] }
 serde_json = "1"
-tokio = { version = "1.48", features = ["full"] }
-clap = "4.5"
+tokio = { version = "1.52", features = ["full"] }
+clap = "4.6"
 
 [dev-dependencies]
 vantage-cli-util = { path = "../vantage-cli-util" }

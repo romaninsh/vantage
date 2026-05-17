@@ -1,6 +1,6 @@
 [package]
 name = "vantage-vista"
-version = "0.4.7"
+version = "0.4.8"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Universal, schema-bearing data handle for the Vantage data framework"
@@ -14,7 +14,7 @@ vantage-core = { version = "0.4.1", path = "../vantage-core" }
 vantage-types = { version = "0.4", path = "../vantage-types" }
 vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
 ciborium = { version = "0.2", features = ["std"] }
-indexmap = { version = "2.12", features = ["serde"] }
+indexmap = { version = "2.14", features = ["serde"] }
 async-stream = "0.3"
 async-trait = "0.1"
 futures-core = "0.3"
@@ -23,4 +23,4 @@ serde_yaml_ng = "0.10"
 thiserror = "2.0"
 
 [dev-dependencies]
-tokio = { version = "1.48", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.52", features = ["macros", "rt-multi-thread"] }

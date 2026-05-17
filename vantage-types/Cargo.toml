@@ -1,6 +1,6 @@
 [package]
 name = "vantage-types"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Type system and Record types for the Vantage data framework"
@@ -14,9 +14,9 @@ serde = ["dep:serde", "dep:serde_json", "vantage-types-entity/serde"]
 [dependencies]
 paste = "1.0"
 vantage-types-entity = { version = "0.4", path = "./entity" }
-indexmap = "2.0"
+indexmap = "2.14"
 serde = { version = "1.0", features = ["derive"], optional = true }
-serde_json = { version = "1.0.145", optional = true }
+serde_json = { version = "1.0.149", optional = true }
 ciborium = { version = "0.2", features = ["std"] }
 vantage-core = { version = "0.4", path = "../vantage-core" }
 
@@ -24,10 +24,10 @@ vantage-core = { version = "0.4", path = "../vantage-core" }
 ciborium = { version = "0.2", features = ["std"] }
 serde = { version = "1.0", features = ["derive"] }
 url = { version = "2.5", features = ["serde"] }
-serde_json = "1.0.145"
-rust_decimal = "1.0"
-csv = "1.1"
-tokio = { version = "1.0", features = ["rt", "macros"] }
+serde_json = "1.0.149"
+rust_decimal = "1.42"
+csv = "1.4"
+tokio = { version = "1.52", features = ["rt", "macros"] }
 
 [[example]]
 name = "test_serde_record"

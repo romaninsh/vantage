@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.11 — 2026-05-16
+
+- Internal dependency version refresh; no public API changes.
+
 ## 0.4.10 — 2026-05-16
 
 - `CsvTableShell` implements [`TableShell::get_ref`](https://docs.rs/vantage-vista/0.4.7/vantage_vista/trait.TableShell.html#method.get_ref) and `get_ref_kinds`: row-based reference traversal at the Vista layer. Builds the target table from `Reference::resolve_from_row`, re-wraps via `CsvVistaFactory::from_table`.

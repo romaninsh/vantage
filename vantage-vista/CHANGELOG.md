@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.8 — 2026-05-16
+
+- Internal dependency version refresh; no public API changes.
+
 ## 0.4.7 — 2026-05-16
 
 Row-based reference traversal arrives at the universal surface, replacing the AnyTable-bridged path.

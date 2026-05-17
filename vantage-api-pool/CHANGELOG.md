@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4 — 2026-05-16
+
+- Internal dependency version refresh; no public API changes.
+
 ## 0.1.3 — 2026-05-09
 
 - Pins `vantage-types` to `>= 0.4.2`.

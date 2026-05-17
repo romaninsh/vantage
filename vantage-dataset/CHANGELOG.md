@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.3 — 2026-05-16
+
+- Internal dependency version refresh; no public API changes.
+
 ## 0.4.2 — 2026-04-19
 
 - `Operation::is_null()` / `is_not_null()` on the generic trait — SQL backends render `{} IS NULL` / `{} IS NOT NULL`; Mongo gets `{ field: null }` / `{ field: { $ne: null } }`.

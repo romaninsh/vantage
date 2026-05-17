@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.4 — 2026-05-16
+
+- Internal dependency version refresh; no public API changes.
+
 ## 0.4.3 — 2026-05-03
 
 - `AnyExpression` and `ExpressionLike` moved to the new
