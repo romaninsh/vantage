@@ -13,8 +13,12 @@ ciborium = "0.2.2"
 comfy-table = { version = "7", features = ["custom_styling"] }
 indexmap = "2"
 owo-colors = "4"
+serde_json = "1"
 vantage-core = { version = "0.4", path = "../vantage-core" }
 vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
 vantage-table = { version = "0.4.8", path = "../vantage-table" }
 vantage-types = { version = "0.4", path = "../vantage-types" }
 vantage-vista = { version = "0.4.7", path = "../vantage-vista" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }

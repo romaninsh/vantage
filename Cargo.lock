@@ -4113,6 +4113,8 @@ dependencies = [
  "comfy-table",
  "indexmap",
  "owo-colors",
+ "serde_json",
+ "tokio",
  "vantage-core",
  "vantage-dataset",
  "vantage-table",
