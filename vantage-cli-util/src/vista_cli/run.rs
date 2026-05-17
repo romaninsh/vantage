@@ -80,9 +80,12 @@ pub async fn run<F: ModelFactory, R: Renderer>(
                 field,
                 op,
                 value,
+                value_raw,
                 selector,
             } => {
-                if let Some(new_mode) = apply_condition(&mut vista, &field, op, value, renderer)? {
+                if let Some(new_mode) =
+                    apply_condition(&mut vista, &field, op, value, value_raw, renderer)?
+                {
                     mode = new_mode;
                 }
                 if let Some(sel) = selector {
@@ -233,11 +236,19 @@ async fn apply_selector_opt<R: Renderer>(
 /// condition uses the `id=` alias (which forces single-record mode),
 /// `None` otherwise. Only `Op::Eq` is wired; all other ops note a stub
 /// and return without mutating the vista.
+///
+/// For `Op::Eq`, `value_raw` carries the original user text when the
+/// parser took the auto-detect path. Run-time coercion against the
+/// target column's declared type then wins, so `name=true` on a string
+/// column produces `Text("true")` rather than `Bool(true)`. When
+/// `value_raw` is `None` the user explicitly forced a type via
+/// `#literal` and `value` is honoured as-is.
 fn apply_condition<R: Renderer>(
     vista: &mut Vista,
     field: &str,
     op: Op,
     value: Option<CborValue>,
+    value_raw: Option<String>,
     renderer: &R,
 ) -> Result<Option<Mode>> {
     if op.is_nullary() {
@@ -259,7 +270,11 @@ fn apply_condition<R: Renderer>(
             } else {
                 field.to_string()
             };
-            vista.add_condition_eq(&resolved_field, v)?;
+            let coerced = match value_raw {
+                Some(raw) => super::value::coerce_for_column(vista, &resolved_field, &raw)?,
+                None => v,
+            };
+            vista.add_condition_eq(&resolved_field, coerced)?;
             Ok(if is_id_alias {
                 Some(Mode::Single)
             } else {
@@ -291,6 +306,7 @@ async fn apply_index(mut vista: Vista, index: usize) -> Result<(Vista, Mode)> {
             vista.name()
         ))
     })?;
-    vista.add_condition_eq(&id_field, super::value::auto_detect(&id))?;
+    let coerced = super::value::coerce_for_column(&vista, &id_field, &id)?;
+    vista.add_condition_eq(&id_field, coerced)?;
     Ok((vista, Mode::Single))
 }

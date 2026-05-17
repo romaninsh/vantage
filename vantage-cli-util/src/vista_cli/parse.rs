@@ -198,14 +198,24 @@ pub fn parse_token(arg: &str) -> Result<Token> {
         }
         let (field, op) = parse_field_and_op(field_part)?;
         let (value_str, sel) = split_value_and_bracket(value_part)?;
+        // Preserve the raw user text for the column-typed re-coercion
+        // path — only when the user *didn't* explicitly force a type via
+        // `#literal`. Op::In is also list-typed and skips re-coercion.
+        let is_typed_escape = value_str.starts_with('#');
         let value = match op {
             Op::In => CborValue::Array(parse_value_list(value_str)?),
             _ => parse_value(value_str)?,
+        };
+        let value_raw = match op {
+            Op::In => None,
+            _ if is_typed_escape => None,
+            _ => Some(value_str.to_string()),
         };
         return Ok(Token::OpCondition {
             field,
             op,
             value: Some(value),
+            value_raw,
             selector: sel,
         });
     }
@@ -224,6 +234,7 @@ pub fn parse_token(arg: &str) -> Result<Token> {
                 field: before.to_string(),
                 op,
                 value: None,
+                value_raw: None,
                 selector: None,
             });
         }

@@ -5,6 +5,7 @@
 - Wires the stage-5 vocabulary to real [`Vista`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html) calls now that the methods have landed:
   - `?keyword` / `?"two words"` calls [`Vista::add_search`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.add_search).
   - `[+col]` / `[-col]` (and the sort half of `[+col:N]`) calls [`Vista::add_order`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.add_order).
+- `field=value` is now coerced against the target column's declared type, not the value-shape heuristic. `name=true` on a `String` column produces `Text("true")`; `is_paying_client=true` on a `bool` column still produces `Bool(true)`. The `#literal` escape hatch still wins when the user wants to force a type. New [`vista_cli::coerce_for_column`](https://docs.rs/vantage-cli-util/0.4.5/vantage_cli_util/vista_cli/fn.coerce_for_column.html) exposes the same coercion for factory implementations that resolve locators to a typed id condition.
 - Drivers without the matching `can_*` capability surface `Unsupported` from the underlying Vista call — same error contract as `Op::Eq`.
 - Still stubbed (no Vista API yet): non-`eq` operator conditions (`:lt=`, `:gt=`, `:like=`, `:in=`, `:null`, `:notnull`), `[N:M]` range slicing (Vista's pagination is page-based, no offset-range primitive), and `@sum`/`@max`/`@min`/`@count` aggregates.
 - Pins `vantage-vista = "0.4.9"`.

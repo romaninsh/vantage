@@ -46,4 +46,4 @@ pub use factory::{ModelFactory, Renderer};
 pub use parse::{parse_selector, parse_token, split_bracket_suffix};
 pub use run::run;
 pub use token::{AggregateOp, Direction, Mode, Op, Selector, Slice, Token};
-pub use value::{auto_detect, json_to_cbor, parse_value, parse_value_list};
+pub use value::{auto_detect, coerce_for_column, json_to_cbor, parse_value, parse_value_list};

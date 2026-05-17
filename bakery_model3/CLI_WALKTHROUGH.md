@@ -75,8 +75,10 @@ sqlite clients is_paying_client=true
 2 records
 ```
 
-Biff drops out — he isn't a paying client. The string `"true"` is
-auto-detected as a boolean before reaching the driver.
+Biff drops out — he isn't a paying client. The string `"true"` was
+coerced to a boolean before reaching the driver because the
+`is_paying_client` column is declared `bool`. The column's declared type
+is what decides the conversion (see section 13).
 
 ## 4. Narrow by index — `[N]`
 
@@ -321,7 +323,79 @@ RFC 8949 §8 diagnostic notation. Lossless — `false` is a bool, `0` is an
 integer, strings are quoted. This is the format used for cross-driver
 golden tests, where every backend has to match byte-for-byte.
 
-## 13. Chains across relations
+## 13. How values are typed
+
+`field=value` looks like a single rule, but the value's CBOR type
+depends on the column's declared type — not on what the user typed.
+Same input, different result for different columns:
+
+```
+sqlite clients name=true
+```
+
+```
+No records.
+(0 records)
+```
+
+The `name` column is a string, so `true` is filtered as the literal text
+`"true"`. No client is named that, so nothing matches.
+
+```
+sqlite clients is_paying_client=true
+```
+
+```
+────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ID      NAME          EMAIL             CONTACT_DETAILS   IS_PAYING_CLIENT   BAKERY_ID     ORDER_COUNT
+════════════════════════════════════════════════════════════════════════════════════════════════════════
+ marty   Marty McFly   marty@gmail.com   555-1955          true               hill_valley   1
+ doc     Doc Brown     doc@brown.com     555-1885          true               hill_valley   2
+────────────────────────────────────────────────────────────────────────────────────────────────────────
+2 records
+```
+
+`is_paying_client` is a `bool` column, so the same `true` is sent as a
+boolean. Marty and Doc match.
+
+The runner checks the column type up-front and rejects mismatches before
+they reach the driver:
+
+```
+sqlite products calories=abc
+```
+
+```
+Error: `calories` is an integer column; value `abc` is not an integer
+```
+
+```
+sqlite clients is_paying_client=blah
+```
+
+```
+Error: `is_paying_client` is a bool column; value `blah` is neither `true` nor `false`
+```
+
+Same for `float` columns. Strings always pass through unchanged.
+
+If you ever need to override the inferred type — feed a literal string
+that looks like a number, force a bool, or send a heterogeneous array —
+prefix the value with `#` to parse it as a JSON literal:
+
+| Token | Sent value |
+|---|---|
+| `field=#true` | `Bool(true)` |
+| `field=#"42"` | `Text("42")` |
+| `field=#42` | `Integer(42)` |
+| `field=#null` | `Null` |
+| `field=#[1,2,3]` | `Array([1,2,3])` |
+
+The `#`-prefix wins unconditionally — column metadata isn't consulted.
+That's the escape hatch for the rare case where you want the value to
+be exactly the JSON literal you wrote.
+
+## 14. Chains across relations
 
 Sort and search apply to whatever Vista is currently in-flight — after a
 `:relation` traversal, that's the child Vista.
@@ -361,7 +435,7 @@ sqlite 'bakery[0]' :clients '?555' =name,contact_details
 All three contact strings contain `555`, so the search keeps them all —
 but only `name` and `contact_details` render.
 
-## 14. Sort-then-narrow, then traverse
+## 15. Sort-then-narrow, then traverse
 
 ```
 --format=json sqlite 'clients[+name:0]' :bakery
@@ -375,7 +449,7 @@ but only `name` and `contact_details` render.
 render as JSON." Tokens compose freely; the runner threads the in-flight
 Vista through each step.
 
-## 15. Putting it all together
+## 16. Putting it all together
 
 ```
 --format=cbor-diag sqlite 'bakery[0]' :products '[-price]'

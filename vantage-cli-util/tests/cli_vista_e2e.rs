@@ -31,15 +31,14 @@ fn record(pairs: &[(&str, CborValue)]) -> Record<CborValue> {
 }
 
 fn seeded_shell() -> MockShell {
-    // Ids are integers because MockShell does strict CBOR equality for
-    // filters and the CLI's value auto-detection turns `2` into
-    // `Integer(2)` (not `Text("2")`). Real backends coerce; the mock
-    // doesn't, so we line up here.
+    // Ids match the declared "String" column type so column-typed value
+    // coercion (`id=2` → Text("2")) lines up with what MockShell's strict
+    // CBOR-eq filter compares against.
     MockShell::new()
         .with_record(
             "1",
             record(&[
-                ("id", CborValue::Integer(1.into())),
+                ("id", cbor_text("1")),
                 ("name", cbor_text("Alice")),
                 ("salary", CborValue::Integer(900.into())),
                 ("vip_flag", CborValue::Bool(true)),
@@ -48,7 +47,7 @@ fn seeded_shell() -> MockShell {
         .with_record(
             "2",
             record(&[
-                ("id", CborValue::Integer(2.into())),
+                ("id", cbor_text("2")),
                 ("name", cbor_text("Bob")),
                 ("salary", CborValue::Integer(2500.into())),
                 ("vip_flag", CborValue::Bool(false)),
@@ -57,10 +56,22 @@ fn seeded_shell() -> MockShell {
         .with_record(
             "3",
             record(&[
-                ("id", CborValue::Integer(3.into())),
+                ("id", cbor_text("3")),
                 ("name", cbor_text("Carol")),
                 ("salary", CborValue::Integer(1500.into())),
                 ("vip_flag", CborValue::Bool(true)),
+            ]),
+        )
+        // A user whose name is literally the string "true" — proves that
+        // column-typed coercion keeps `name=true` as text. Without the
+        // coercion this row would never match `name=true`.
+        .with_record(
+            "4",
+            record(&[
+                ("id", cbor_text("4")),
+                ("name", cbor_text("true")),
+                ("salary", CborValue::Integer(0.into())),
+                ("vip_flag", CborValue::Bool(false)),
             ]),
         )
 }
@@ -96,11 +107,12 @@ impl ModelFactory for TestFactory {
     fn for_locator(&self, locator: &str) -> Option<Vista> {
         // Accept `user:<id>` (SurrealDB-style Thing) and narrow the
         // standard users vista to that id. Route through the same
-        // value coercion the CLI uses on `field=value` so ints stay
-        // ints — see [`vista_cli::auto_detect`].
+        // column-typed coercion the CLI uses on `field=value` so the
+        // value matches the id column's declared type.
         let id = locator.strip_prefix("user:")?;
         let mut v = build_users_vista();
-        v.add_condition_eq("id", vista_cli::auto_detect(id)).ok()?;
+        let coerced = vista_cli::coerce_for_column(&v, "id", id).ok()?;
+        v.add_condition_eq("id", coerced).ok()?;
         Some(v)
     }
 }
@@ -218,6 +230,35 @@ async fn eq_filter_narrows_results() {
     assert!(lists[0].contains("\"Alice\""));
     assert!(!lists[0].contains("\"Bob\""));
     assert!(lists[0].contains("\"Carol\""));
+}
+
+#[tokio::test]
+async fn eq_on_string_column_keeps_text_even_when_value_looks_like_bool() {
+    // Without column-typed coercion, `name=true` would auto-detect to
+    // `Bool(true)` and miss row id=4 (whose name is literally the string
+    // "true"). The runner consults the `name` column's declared type
+    // (`String`) and produces `Text("true")`, which matches.
+    let rec = Recorder::with_format(OutputFormat::CborDiag);
+    vista_cli::run(&TestFactory, &rec, &argv(&["users", "name=true"]))
+        .await
+        .unwrap();
+
+    let lists = rec.lists();
+    assert_eq!(lists.len(), 1);
+    let rendered = &lists[0];
+    // Only the row whose name is the text "true" comes back.
+    assert!(rendered.contains("\"4\""), "got: {rendered}");
+    assert!(!rendered.contains("\"Alice\""), "got: {rendered}");
+    assert!(!rendered.contains("\"Bob\""), "got: {rendered}");
+
+    // Sanity-check the other direction: bool column still gets a bool.
+    let rec2 = Recorder::with_format(OutputFormat::CborDiag);
+    vista_cli::run(&TestFactory, &rec2, &argv(&["users", "vip_flag=true"]))
+        .await
+        .unwrap();
+    let lists2 = rec2.lists();
+    assert!(lists2[0].contains("\"Alice\""), "got: {}", lists2[0]); // vip
+    assert!(!lists2[0].contains("\"Bob\""), "got: {}", lists2[0]); // not vip
 }
 
 #[tokio::test]
@@ -366,22 +407,22 @@ async fn cbor_diag_output_round_trips_record() {
     // the field ordering is stable.
     assert_eq!(
         records[0],
-        "\"1\": {\"id\": 1, \"name\": \"Alice\", \"salary\": 900, \"vip_flag\": true}\n"
+        "\"1\": {\"id\": \"1\", \"name\": \"Alice\", \"salary\": 900, \"vip_flag\": true}\n"
     );
 }
 
 #[tokio::test]
-async fn json_output_loses_int_but_keeps_bool() {
+async fn json_output_keeps_int_and_bool() {
     let rec = Recorder::with_format(OutputFormat::Json);
     vista_cli::run(&TestFactory, &rec, &argv(&["users", "id=1"]))
         .await
         .unwrap();
 
     let records = rec.records();
-    // JSON output: bool stays, int stays (fits in i64), strings quoted.
+    // JSON: bool, int (fits in i64), and string fields all serialise faithfully.
     assert_eq!(
         records[0],
-        "{\"1\":{\"id\":1,\"name\":\"Alice\",\"salary\":900,\"vip_flag\":true}}\n"
+        "{\"1\":{\"id\":\"1\",\"name\":\"Alice\",\"salary\":900,\"vip_flag\":true}}\n"
     );
 }
 
@@ -395,6 +436,6 @@ async fn ndjson_output_one_line_per_record() {
     let lists = rec.lists();
     assert_eq!(lists.len(), 1);
     let lines: Vec<&str> = lists[0].lines().collect();
-    assert_eq!(lines.len(), 3);
+    assert_eq!(lines.len(), 4);
     assert!(lines[0].starts_with("{\"_id\":\"1\","));
 }
