@@ -36,15 +36,44 @@ pub struct LensCallbacks {
     pub on_query: Option<DioQueryCallback>,
 }
 
-/// Helper: wrap a user closure into a `DioCallback`. Accepts any closure
-/// returning a future borrowing from `&Dio`.
+/// Wrap a user closure into a [`DioCallback`].
 ///
-/// Stage 1 ships the helper; later stages may add `on_start_fn`-style
-/// builder shortcuts that call this internally.
+/// The canonical user pattern is `move |dio| { let dio = dio.clone();
+/// async move { ... dio.cache().insert_values(...).await } }` —
+/// cloning the Dio inside the closure produces a `'static` future,
+/// which avoids the lifetime gymnastics of borrowing `&Dio` across an
+/// await.
 pub fn boxed_dio_callback<F, Fut>(f: F) -> DioCallback
 where
     F: for<'a> Fn(&'a Dio) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = Result<()>> + Send + 'static,
 {
     Box::new(move |dio| Box::pin(f(dio)))
+}
+
+/// Wrap a user closure into a [`DioWriteCallback`].
+pub fn boxed_dio_write_callback<F, Fut>(f: F) -> DioWriteCallback
+where
+    F: for<'a> Fn(&'a Dio, WriteOp) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<()>> + Send + 'static,
+{
+    Box::new(move |dio, op| Box::pin(f(dio, op)))
+}
+
+/// Wrap a user closure into a [`DioEventCallback`].
+pub fn boxed_dio_event_callback<F, Fut>(f: F) -> DioEventCallback
+where
+    F: for<'a> Fn(&'a Dio, ChangeEvent) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<()>> + Send + 'static,
+{
+    Box::new(move |dio, ev| Box::pin(f(dio, ev)))
+}
+
+/// Wrap a user closure into a [`DioQueryCallback`].
+pub fn boxed_dio_query_callback<F, Fut>(f: F) -> DioQueryCallback
+where
+    F: for<'a> Fn(&'a Dio, QueryDescriptor) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<()>> + Send + 'static,
+{
+    Box::new(move |dio, q| Box::pin(f(dio, q)))
 }

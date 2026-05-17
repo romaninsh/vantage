@@ -163,6 +163,14 @@ left a few items deferred (chosen over yak-shaving the test fixtures):
 - [ ] Table::join_table should preserve conditions on other_table
 - [ ] Table::join_table should resolve clashes in table aliases
 - [ ] Condition::or() shouldn't be limited to only two arguments
+- [ ] **Revisit `DioInner` event bus capacity (currently hard-coded 64)** —
+      `tokio::sync::broadcast` channel sized 64 in `vantage-diorama/src/lens/make_dio.rs`.
+      Lagging subscribers get `RecvError::Lagged` and have to refresh their state. That's
+      fine in principle (Sceneries are designed to recover by re-reading + bumping
+      generation), but the right ceiling depends on how chatty real workloads turn out to
+      be — a Scenery doing a tight read-loop while writes flood in could easily lag. Tune
+      after stage 5 (Sceneries) is in place and we can profile an actual workload. Options:
+      bump default to 1024, add a `LensDefaults::event_bus_capacity` knob, or both.
 
 # Someday maybe
 

@@ -1,6 +1,6 @@
 # Stage 2 — CSV walkthrough (first end-to-end)
 
-Status: **Not started**
+Status: **Done**
 
 Wire the skeleton end-to-end against the simplest possible Vista: CSV. Validate the Lens → Dio →
 Vista path with a single working callback (`on_start`). At the end of this stage, a CSV file loads
@@ -18,24 +18,24 @@ stage 2 — we exercise only the load-once flow. Nothing the driver does can mas
 
 ## Discussion phase
 
-- [ ] Cache backend: redb is the default. Stage 1 left `cache_source` generic on
+- [x] Cache backend: redb is the default. Stage 1 left `cache_source` generic on
       `Arc<dyn TableSource>`. Stage 2 wires the concrete `Redb::open(path)` factory behind a
       convenience builder method `lens.cache_at(path)`. Confirm: do we ship a `RedbSource` wrapper
       type in this crate, or reuse `vantage-redb`'s `Redb` directly? Lean: reuse
       `vantage-redb::Redb` — it already implements `TableSource`.
-- [ ] Cache namespace allocation: `master.name()` is the default table name within redb. Confirm.
+- [x] Cache namespace allocation: `master.name()` is the default table name within redb. Confirm.
       Override path: `make_dio_named(name,     vista)`.
-- [ ] How does `dio.cache()` work without callbacks? It's just the redb Vista with
+- [x] How does `dio.cache()` work without callbacks? It's just the redb Vista with
       `table = master.name()`. Confirm we can construct a Vista from `vantage-redb::Redb` against an
       arbitrary table name at runtime, not just at `from_table`/YAML time. May need a small
       `vantage-redb` extension.
-- [ ] `on_start_blocking = true` default: confirm `make_dio` awaits the callback before returning.
+- [x] `on_start_blocking = true` default: confirm `make_dio` awaits the callback before returning.
       Otherwise the first immediate `dio.vista().list_values()` reads an empty cache. (Users who
       don't want blocking can flip the default.)
-- [ ] `DioShell::list_vista_values` minimum impl: delegate to `cache.list_values()`. No `on_query`
+- [x] `DioShell::list_vista_values` minimum impl: delegate to `cache.list_values()`. No `on_query`
       fallback yet — if the cache is empty (because `on_start` is fire-and-forget), we just return
       empty. Confirm. On_query lands in stage 3.
-- [ ] `DioShell::insert_vista_value` and other writes return `Unsupported` for stage 2 — write queue
+- [x] `DioShell::insert_vista_value` and other writes return `Unsupported` for stage 2 — write queue
       lands in stage 3. Confirm the placeholder error message.
 
 ## Scope
@@ -66,15 +66,15 @@ Out:
 
 ## Plan
 
-- [ ] Discuss with user: cache namespace allocation, redb extension needs, blocking semantics, stub
+- [x] Discuss with user: cache namespace allocation, redb extension needs, blocking semantics, stub
       behavior for unsupported ops
-- [ ] Pull `vantage-redb` and `redb` (latest version) into the `vantage-diorama/Cargo.toml`
-- [ ] Add `lens.cache_at(path)` convenience method that constructs a `Redb` and stores it as
+- [x] Pull `vantage-redb` and `redb` (latest version) into the `vantage-diorama/Cargo.toml`
+- [x] Add `lens.cache_at(path)` convenience method that constructs a `Redb` and stores it as
       `Arc<dyn TableSource>`
-- [ ] Decide: does `vantage-redb` need a `Redb::open_table(name)` method that returns a `Vista`
+- [x] Decide: does `vantage-redb` need a `Redb::open_table(name)` method that returns a `Vista`
       against a dynamically-chosen table? If yes, add to `vantage-redb` (patch bump). If no,
       document why not.
-- [ ] Implement `make_dio`:
+- [x] Implement `make_dio`:
   - Allocate cache table name from `master.name()`
   - Construct cache Vista from `lens.cache_source` at that table
   - Construct `DioInner` with master + cache, empty channels
@@ -82,13 +82,13 @@ Out:
     - If `on_start_blocking`: `cb(&dio).await?`
     - Else: `tokio::spawn(cb)` and return immediately
   - Return `Dio { inner }`
-- [ ] Implement `DioShell::list_vista_values` — delegate to `self.dio.cache.list_values()`
-- [ ] Implement `DioShell::get_vista_value` — delegate to `self.dio.cache.get_value(id)`
-- [ ] Implement `DioShell::count_vista_values` — delegate to `self.dio.cache.count()`
-- [ ] Implement `DioShell::capabilities()` — read cache's capabilities, union with
+- [x] Implement `DioShell::list_vista_values` — delegate to `self.dio.cache.list_values()`
+- [x] Implement `DioShell::get_vista_value` — delegate to `self.dio.cache.get_value(id)`
+- [x] Implement `DioShell::count_vista_values` — delegate to `self.dio.cache.count()`
+- [x] Implement `DioShell::capabilities()` — read cache's capabilities, union with
       `can_count: true`, set writes false (stage 3 flips these when `on_write` registered)
-- [ ] Implement `Dio::master()`, `Dio::cache()` accessors returning `&Vista`
-- [ ] Write `vantage-diorama/tests/csv_walkthrough.rs`:
+- [x] Implement `Dio::master()`, `Dio::cache()` accessors returning `&Vista`
+- [x] Write `vantage-diorama/tests/csv_walkthrough.rs`:
   - Build a CSV Vista from a fixture file
   - Build a Lens with `cache_at("./test.redb")` and an `on_start` that copies all master rows into
     cache
@@ -96,9 +96,9 @@ Out:
   - `dio.vista().list_values()` returns the expected rows
   - `dio.vista().count()` returns the right number
   - Drop the lens, reopen — `dio.vista().list_values()` still returns rows from the persisted redb
-- [ ] Write `examples/csv_walkthrough.rs` — same shape, prints output; runs under
+- [x] Write `examples/csv_walkthrough.rs` — same shape, prints output; runs under
       `cargo run --example csv_walkthrough`
-- [ ] Document the example in `README_rust_dev.md` as the canonical "minimum useful Diorama"
+- [x] Document the example in `README_rust_dev.md` as the canonical "minimum useful Diorama"
 
 ## References
 

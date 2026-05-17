@@ -19,6 +19,12 @@ vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
 async-trait = "0.1"
 ciborium = { version = "0.2", features = ["std"] }
 indexmap = "2"
+redb = "2.6"
 thiserror = "2"
-tokio = { version = "1", features = ["sync"] }
+tokio = { version = "1", features = ["sync", "rt", "time"] }
 tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
+vantage-csv = { path = "../vantage-csv", features = ["vista"] }

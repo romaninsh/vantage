@@ -9,10 +9,14 @@ use std::sync::Arc;
 
 use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio::task::JoinHandle;
+use vantage_core::Result;
 use vantage_vista::Vista;
 
-use crate::lens::Lens;
-use crate::ops::WriteOp;
+use crate::lens::{CacheTable, Lens};
+use crate::ops::{ChangeEvent, WriteOp};
+
+use ciborium::Value as CborValue;
+use vantage_types::Record;
 
 pub use event_bus::DioEvent;
 pub use hot_tier::HotTier;
@@ -50,7 +54,7 @@ pub struct Dio {
 pub(crate) struct DioInner {
     pub(crate) lens: Arc<Lens>,
     pub(crate) master: Vista,
-    pub(crate) cache: Vista,
+    pub(crate) cache: Arc<dyn CacheTable>,
     pub(crate) cache_table_name: String,
     pub(crate) write_queue: mpsc::Sender<WriteOp>,
     pub(crate) event_bus: broadcast::Sender<DioEvent>,
@@ -64,7 +68,7 @@ impl Dio {
         &self.inner.master
     }
 
-    pub fn cache(&self) -> &Vista {
+    pub fn cache(&self) -> &Arc<dyn CacheTable> {
         &self.inner.cache
     }
 
@@ -75,7 +79,84 @@ impl Dio {
     /// Subscribe to the Dio's internal event bus. Sceneries call this
     /// in their `subscribe` impl; user callbacks may also call it to
     /// observe cross-Dio reactions.
-    pub fn subscribe(&self) -> broadcast::Receiver<DioEvent> {
+    pub fn subscribe_events(&self) -> broadcast::Receiver<DioEvent> {
         self.inner.event_bus.subscribe()
+    }
+
+    /// Produce a fresh facade [`Vista`] backed by this Dio. Each call
+    /// returns an independent Vista — callers can narrow with
+    /// [`Vista::add_condition_eq`] without affecting other consumers.
+    ///
+    /// The facade's schema mirrors `master` (forwarded through
+    /// [`DioShell`]'s [`TableShell::columns`] etc.) while reads route
+    /// through the cache and writes route through the Dio's queue.
+    pub fn vista(&self) -> Vista {
+        let name = self.inner.master.name().to_string();
+        let shell = DioShell::new(self.inner.clone());
+        Vista::new(name, Box::new(shell))
+    }
+
+    // ---- Event bus — user-callable surface ----------------------------------
+
+    /// Dispatch an upstream [`ChangeEvent`] through the lens's
+    /// `on_event` callback. Returns `Ok(())` immediately when no
+    /// `on_event` is registered.
+    ///
+    /// This is the entry point for live-stream forwarders: the user
+    /// `tokio::spawn`s a task that pumps events from a
+    /// `LiveStream`/`broadcast::Receiver`/channel into
+    /// `dio.handle_event(evt).await`. The callback decides how to
+    /// reconcile cache state and publish bus events (typically via
+    /// [`patched`](Self::patched) or [`invalidate_record`](Self::invalidate_record)).
+    pub async fn handle_event(&self, evt: ChangeEvent) -> Result<()> {
+        if let Some(cb) = self.inner.lens.callbacks.on_event.as_ref() {
+            cb(self, evt).await
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Publish [`DioEvent::RecordChanged`] on the bus. Doesn't touch
+    /// the cache — use [`patched`](Self::patched) when you also have
+    /// the new record value.
+    pub fn invalidate_record(&self, id: impl Into<String>) {
+        let _ = self.inner.event_bus.send(DioEvent::RecordChanged { id: id.into() });
+    }
+
+    /// Publish [`DioEvent::Invalidated`] on the bus. Sceneries respond
+    /// by re-reading their full state.
+    pub fn invalidate_all(&self) {
+        let _ = self.inner.event_bus.send(DioEvent::Invalidated);
+    }
+
+    /// Write `record` to the cache under `id` and publish
+    /// [`DioEvent::RecordChanged`]. The canonical "external system
+    /// told us about a row" pattern inside an `on_event` callback.
+    pub async fn patched(
+        &self,
+        id: impl Into<String>,
+        record: Record<CborValue>,
+    ) -> Result<()> {
+        let id = id.into();
+        self.inner.cache.insert_value(&id, &record).await?;
+        let _ = self.inner.event_bus.send(DioEvent::RecordChanged { id });
+        Ok(())
+    }
+
+    /// Fire the `on_refresh` callback synchronously. Errors propagate
+    /// to the caller (the scheduled refresh task only logs them).
+    ///
+    /// Returns `Ok(())` immediately when no `on_refresh` is registered.
+    pub async fn refresh(&self) -> Result<()> {
+        let _ = self.inner.event_bus.send(DioEvent::Refreshing);
+        let result = if let Some(cb) = self.inner.lens.callbacks.on_refresh.as_ref() {
+            cb(self).await
+        } else {
+            Ok(())
+        };
+        if result.is_ok() {
+            let _ = self.inner.event_bus.send(DioEvent::Invalidated);
+        }
+        result
     }
 }

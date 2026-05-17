@@ -1,6 +1,6 @@
 # Stage 4 — Event bus and live events
 
-Status: **Not started**
+Status: **Done** (LiveStream migration deferred to stage 10)
 
 Wire the broadcast event bus that Sceneries will subscribe to in stages
 5–7. Add the `on_event` callback so external live-stream sources

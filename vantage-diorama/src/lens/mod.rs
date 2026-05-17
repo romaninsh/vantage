@@ -2,16 +2,29 @@ pub mod build;
 pub mod cache_backend;
 pub mod callbacks;
 pub mod defaults;
+pub mod make_dio;
+pub mod redb_cache;
 
 use std::sync::Arc;
 
 use tokio::runtime::Handle;
 
-pub use cache_backend::CacheBackend;
+use std::future::Future;
+
+use vantage_core::Result;
+
+use crate::dio::Dio;
+use crate::error::LensBuildError;
+use crate::ops::{ChangeEvent, QueryDescriptor, WriteOp};
+
+pub use cache_backend::{CacheBackend, CacheTable};
 pub use callbacks::{
     DioCallback, DioEventCallback, DioQueryCallback, DioWriteCallback, LensCallbacks,
+    boxed_dio_callback, boxed_dio_event_callback, boxed_dio_query_callback,
+    boxed_dio_write_callback,
 };
 pub use defaults::LensDefaults;
+pub use redb_cache::{RedbCache, RedbCacheTable};
 
 /// Long-lived shared infrastructure for caching, callbacks, and refresh.
 ///
@@ -54,6 +67,7 @@ impl Lens {
 /// machinery lands in later stages.
 pub struct LensBuilder {
     pub(crate) cache_source: Option<Arc<dyn CacheBackend>>,
+    pub(crate) deferred_cache_error: Option<LensBuildError>,
     pub(crate) on_start: Option<DioCallback>,
     pub(crate) on_refresh: Option<DioCallback>,
     pub(crate) on_write: Option<DioWriteCallback>,
@@ -73,6 +87,7 @@ impl LensBuilder {
     pub fn new() -> Self {
         Self {
             cache_source: None,
+            deferred_cache_error: None,
             on_start: None,
             on_refresh: None,
             on_write: None,
@@ -90,35 +105,80 @@ impl LensBuilder {
         self
     }
 
-    /// Convenience: cache to a redb file at `path`. Wired in stage 2 once
-    /// the redb-backed `CacheBackend` impl lands.
-    pub fn cache_at(self, _path: impl Into<std::path::PathBuf>) -> Self {
-        // Stage 2: construct a redb-backed CacheBackend and call `cache_source`.
+    /// Convenience: cache to a redb file at `path`. Each Dio under the
+    /// resulting Lens claims a named table within that file. Errors
+    /// from opening redb propagate at [`build`](Self::build) time —
+    /// the constructor is fallible but stored eagerly so `.build()`
+    /// can decide what to do.
+    pub fn cache_at(self, path: impl Into<std::path::PathBuf>) -> Self {
+        let path = path.into();
+        match RedbCache::open(&path) {
+            Ok(cache) => self.cache_source(Arc::new(cache)),
+            Err(e) => Self {
+                deferred_cache_error: Some(LensBuildError::Other(e)),
+                ..self
+            },
+        }
+    }
+
+    /// Register the `on_start` callback. Fires once when a Dio is built
+    /// via [`Lens::make_dio`]; by default `make_dio` awaits it.
+    ///
+    /// The canonical shape is `|dio| { let dio = dio.clone(); async
+    /// move { ... } }` — cloning Dio inside the closure produces a
+    /// `'static` future without lifetime gymnastics.
+    pub fn on_start<F, Fut>(mut self, f: F) -> Self
+    where
+        F: for<'a> Fn(&'a Dio) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<()>> + Send + 'static,
+    {
+        self.on_start = Some(boxed_dio_callback(f));
         self
     }
 
-    pub fn on_start(mut self, cb: DioCallback) -> Self {
-        self.on_start = Some(cb);
+    /// Register the `on_refresh` callback. Fires on the configured
+    /// [`refresh_every`](Self::refresh_every) interval and on manual
+    /// `dio.refresh().await`.
+    pub fn on_refresh<F, Fut>(mut self, f: F) -> Self
+    where
+        F: for<'a> Fn(&'a Dio) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<()>> + Send + 'static,
+    {
+        self.on_refresh = Some(boxed_dio_callback(f));
         self
     }
 
-    pub fn on_refresh(mut self, cb: DioCallback) -> Self {
-        self.on_refresh = Some(cb);
+    /// Register the `on_write` callback. Fires for every WriteOp the
+    /// Dio's write queue receives. When not registered, the worker
+    /// applies the op directly to `dio.master()`.
+    pub fn on_write<F, Fut>(mut self, f: F) -> Self
+    where
+        F: for<'a> Fn(&'a Dio, WriteOp) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<()>> + Send + 'static,
+    {
+        self.on_write = Some(boxed_dio_write_callback(f));
         self
     }
 
-    pub fn on_write(mut self, cb: DioWriteCallback) -> Self {
-        self.on_write = Some(cb);
+    /// Register the `on_event` callback. Fires when an upstream
+    /// [`ChangeEvent`] arrives (e.g. from a SurrealDB LIVE stream).
+    pub fn on_event<F, Fut>(mut self, f: F) -> Self
+    where
+        F: for<'a> Fn(&'a Dio, ChangeEvent) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<()>> + Send + 'static,
+    {
+        self.on_event = Some(boxed_dio_event_callback(f));
         self
     }
 
-    pub fn on_event(mut self, cb: DioEventCallback) -> Self {
-        self.on_event = Some(cb);
-        self
-    }
-
-    pub fn on_query(mut self, cb: DioQueryCallback) -> Self {
-        self.on_query = Some(cb);
+    /// Register the `on_query` callback. Stage 5b will wire this up;
+    /// stage 3 only stores the registration.
+    pub fn on_query<F, Fut>(mut self, f: F) -> Self
+    where
+        F: for<'a> Fn(&'a Dio, QueryDescriptor) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<()>> + Send + 'static,
+    {
+        self.on_query = Some(boxed_dio_query_callback(f));
         self
     }
 

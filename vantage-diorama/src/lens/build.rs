@@ -13,6 +13,9 @@ impl LensBuilder {
     /// runtime wiring (refresh task spawning, callback dispatch) lands
     /// in stages 3+.
     pub fn build(self) -> Result<Lens, LensBuildError> {
+        if let Some(err) = self.deferred_cache_error {
+            return Err(err);
+        }
         let cache_source = self.cache_source.ok_or(LensBuildError::MissingCacheSource)?;
         let runtime = self
             .runtime

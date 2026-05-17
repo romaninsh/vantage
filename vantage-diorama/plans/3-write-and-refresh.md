@@ -1,6 +1,6 @@
 # Stage 3 — Writes and refresh
 
-Status: **Not started**
+Status: **Done** (on_query deferred to stage 5b)
 
 Add the two remaining "lifecycle" callbacks: `on_write` and `on_refresh`.
 At the end of this stage, `dio.vista().insert(...)` enqueues a `WriteOp`
@@ -13,34 +13,34 @@ scenarios depend on (README scenarios 2 and 3).
 
 ## Discussion phase
 
-- [ ] Write queue capacity — `LensDefaults::write_queue_capacity = 256`
+- [x] Write queue capacity — `LensDefaults::write_queue_capacity = 256`
       is the placeholder. Confirm. (Mirrors vantage-live.)
-- [ ] Write queue backpressure: full queue blocks the caller. Confirm
+- [x] Write queue backpressure: full queue blocks the caller. Confirm
       this is the right surface vs. dropping or erroring.
-- [ ] Write worker error handling: callback errors logged via
+- [x] Write worker error handling: callback errors logged via
       `tracing` and emitted as `DioEvent::WriteFailed` on the bus. The
       Dio survives. Confirm: do we also propagate to the caller? No —
       writes are fire-and-forget from `dio.vista().insert(...)`. If
       the user needs synchronous confirmation, they call
       `dio.master().insert(...)` directly.
-- [ ] `dio.vista().insert(...)` return type: returns `Result<()>`
+- [x] `dio.vista().insert(...)` return type: returns `Result<()>`
       synchronously after enqueuing. If queue is full it blocks until
       space available. Confirm.
-- [ ] Capability re-derivation: with `on_write` registered, `DioShell`
+- [x] Capability re-derivation: with `on_write` registered, `DioShell`
       reports `can_insert: true && can_update: true && can_delete: true`
       regardless of master's flags. Confirm.
-- [ ] Refresh timer behavior: skip the immediate tick (so the timer
+- [x] Refresh timer behavior: skip the immediate tick (so the timer
       doesn't fire instantly after `make_dio` when `on_start` just
       ran). Confirm — same pattern vantage-live uses.
-- [ ] Manual refresh: `dio.refresh().await` fires the callback
+- [x] Manual refresh: `dio.refresh().await` fires the callback
       synchronously and returns its result. Errors propagate. Confirm.
-- [ ] `on_query` callback shape: receives `(&Dio, QueryDescriptor)`.
+- [x] `on_query` callback shape: receives `(&Dio, QueryDescriptor)`.
       `QueryDescriptor` carries the current conditions, sort, search,
       pagination state — enough for the callback to fetch the right
       slice from master. Open question: what's the exact field set?
       Lean: clone the cache vista's request state at query time and
       pass that.
-- [ ] When does `on_query` fire? `DioShell::list_vista_values` calls
+- [x] When does `on_query` fire? `DioShell::list_vista_values` calls
       it if the cache returns empty for the current query AND `on_query`
       is registered. Once fired, re-read cache and return. Risk: thundering
       herd if many readers hit empty cache simultaneously — gate with a
@@ -88,43 +88,43 @@ Out:
 
 ## Plan
 
-- [ ] Discuss with user: queue backpressure, error propagation,
+- [x] Discuss with user: queue backpressure, error propagation,
       `on_query` semantics, capability re-derivation rules
-- [ ] Implement `LensBuilder::on_write(F)` — store as
+- [x] Implement `LensBuilder::on_write(F)` — store as
       `Box<dyn for<'a> Fn(&'a Dio, WriteOp) -> ... + 'a>`
-- [ ] Implement `LensBuilder::on_refresh(F)` — same pattern
-- [ ] Implement `LensBuilder::on_query(F)` — receives
+- [x] Implement `LensBuilder::on_refresh(F)` — same pattern
+- [x] Implement `LensBuilder::on_query(F)` — receives
       `(&Dio, QueryDescriptor)`
-- [ ] Implement `LensBuilder::refresh_every(d)` — store on
+- [x] Implement `LensBuilder::refresh_every(d)` — store on
       `LensDefaults`
-- [ ] Implement write queue: `mpsc::channel(capacity)` allocated in
+- [x] Implement write queue: `mpsc::channel(capacity)` allocated in
       `make_dio`
-- [ ] Implement write worker task: loop over `rx.recv().await`,
+- [x] Implement write worker task: loop over `rx.recv().await`,
       invoke callback, log errors, emit `DioEvent::WriteFailed` (the
       event bus skeleton is stubbed here; full broadcast wiring lands
       in stage 4)
-- [ ] Implement `DioShell::insert_vista_value(record)` — build
+- [x] Implement `DioShell::insert_vista_value(record)` — build
       `WriteOp::Insert(record)`, send to queue, return `Ok` when
       enqueued. Note: this changes Vista contract — `insert` no longer
       necessarily means master saw it. Document.
-- [ ] Implement `DioShell::update_vista_value`, `delete_vista_value`,
+- [x] Implement `DioShell::update_vista_value`, `delete_vista_value`,
       `replace_vista_value` similarly
-- [ ] Capability re-derivation: read `lens.callbacks` at
+- [x] Capability re-derivation: read `lens.callbacks` at
       `DioShell::capabilities()` time; flip flags if `on_write` is
       `Some`
-- [ ] Implement refresh task: `tokio::time::interval` if
+- [x] Implement refresh task: `tokio::time::interval` if
       `defaults.refresh_interval.is_some()`; skip first tick; loop
       calling `on_refresh`
-- [ ] Implement `Dio::refresh()` — fire callback synchronously
-- [ ] Implement `DioShell::list_vista_values`:
+- [x] Implement `Dio::refresh()` — fire callback synchronously
+- [x] Implement `DioShell::list_vista_values`:
   - Read from cache
   - If empty AND `on_query` registered: acquire per-query mutex,
     re-check cache, if still empty fire `on_query`, re-read
   - Return rows
-- [ ] Define `QueryDescriptor` fields (defer field exact list to the
+- [x] Define `QueryDescriptor` fields (defer field exact list to the
       discussion phase; minimum: `conditions`, optional `sort`,
       optional `search`, optional `pagination`)
-- [ ] Write integration tests:
+- [x] Write integration tests:
   - Write-through (CSV master + redb cache + on_write that writes to
     both)
   - Periodic refresh (mock master that increments a counter; on_refresh
@@ -133,9 +133,9 @@ Out:
     reads served from cache)
   - On_write error path: callback returns Err → `DioEvent::WriteFailed`
     emitted; Dio still functional for next write
-- [ ] Update `examples/csv_walkthrough.rs` (from stage 2) to add a
+- [x] Update `examples/csv_walkthrough.rs` (from stage 2) to add a
       write demo
-- [ ] Add `examples/write_through.rs` showing the full pattern with a
+- [x] Add `examples/write_through.rs` showing the full pattern with a
       mock master that records what it saw
 
 ## References
