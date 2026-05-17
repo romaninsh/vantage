@@ -60,11 +60,14 @@ pub fn coerce_for_column(vista: &Vista, field: &str, raw: &str) -> Result<CborVa
                 "`{field}` is a bool column; value `{other}` is neither `true` nor `false`"
             ))),
         },
-        ColumnKind::Int => raw.parse::<i64>().map(|i| CborValue::Integer(i.into())).map_err(|_| {
-            error!(format!(
-                "`{field}` is an integer column; value `{raw}` is not an integer"
-            ))
-        }),
+        ColumnKind::Int => raw
+            .parse::<i64>()
+            .map(|i| CborValue::Integer(i.into()))
+            .map_err(|_| {
+                error!(format!(
+                    "`{field}` is an integer column; value `{raw}` is not an integer"
+                ))
+            }),
         ColumnKind::Float => raw.parse::<f64>().map(CborValue::Float).map_err(|_| {
             error!(format!(
                 "`{field}` is a float column; value `{raw}` is not a number"
@@ -250,7 +253,10 @@ mod tests {
     #[test]
     fn column_kind_handles_module_paths() {
         // Rust's `type_name::<String>()` is `alloc::string::String`.
-        assert!(matches!(column_kind("alloc::string::String"), ColumnKind::Text));
+        assert!(matches!(
+            column_kind("alloc::string::String"),
+            ColumnKind::Text
+        ));
         // Bare aliases from YAML factories also classify correctly.
         assert!(matches!(column_kind("bool"), ColumnKind::Bool));
         assert!(matches!(column_kind("i64"), ColumnKind::Int));
@@ -258,7 +264,10 @@ mod tests {
         assert!(matches!(column_kind("string"), ColumnKind::Text));
         assert!(matches!(column_kind("text"), ColumnKind::Text));
         assert!(matches!(column_kind("integer"), ColumnKind::Int));
-        assert!(matches!(column_kind("custom::Wrapper"), ColumnKind::Unknown));
+        assert!(matches!(
+            column_kind("custom::Wrapper"),
+            ColumnKind::Unknown
+        ));
     }
 
     #[test]

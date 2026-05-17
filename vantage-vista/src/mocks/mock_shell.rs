@@ -257,9 +257,7 @@ fn cbor_cmp(a: Option<&CborValue>, b: Option<&CborValue>) -> std::cmp::Ordering 
         (_, None) => Ordering::Greater,
         (Some(lhs), Some(rhs)) => match (lhs, rhs) {
             (CborValue::Text(l), CborValue::Text(r)) => l.cmp(r),
-            (CborValue::Integer(l), CborValue::Integer(r)) => {
-                i128::from(*l).cmp(&i128::from(*r))
-            }
+            (CborValue::Integer(l), CborValue::Integer(r)) => i128::from(*l).cmp(&i128::from(*r)),
             (CborValue::Bool(l), CborValue::Bool(r)) => l.cmp(r),
             _ => format!("{lhs:?}").cmp(&format!("{rhs:?}")),
         },
