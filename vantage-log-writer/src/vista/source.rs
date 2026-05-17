@@ -41,28 +41,28 @@ fn cbor_record_to_json(record: &Record<CborValue>) -> Record<Value> {
 impl TableShell for LogWriterTableShell {
     async fn list_vista_values(
         &self,
-        vista: &Vista,
+        _vista: &Vista,
     ) -> Result<IndexMap<String, Record<CborValue>>> {
-        Err(self.default_error("list_vista_values", "can_count", vista))
+        Err(self.default_error("list_vista_values", "can_count"))
     }
 
     async fn get_vista_value(
         &self,
-        vista: &Vista,
+        _vista: &Vista,
         _id: &String,
     ) -> Result<Option<Record<CborValue>>> {
-        Err(self.default_error("get_vista_value", "can_count", vista))
+        Err(self.default_error("get_vista_value", "can_count"))
     }
 
     async fn get_vista_some_value(
         &self,
-        vista: &Vista,
+        _vista: &Vista,
     ) -> Result<Option<(String, Record<CborValue>)>> {
-        Err(self.default_error("get_vista_some_value", "can_count", vista))
+        Err(self.default_error("get_vista_some_value", "can_count"))
     }
 
-    async fn get_vista_count(&self, vista: &Vista) -> Result<i64> {
-        Err(self.default_error("get_vista_count", "can_count", vista))
+    async fn get_vista_count(&self, _vista: &Vista) -> Result<i64> {
+        Err(self.default_error("get_vista_count", "can_count"))
     }
 
     async fn insert_vista_return_id_value(

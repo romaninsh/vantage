@@ -78,47 +78,47 @@ pub trait TableShell: Send + Sync + 'static {
 
     async fn insert_vista_value(
         &self,
-        vista: &Vista,
+        _vista: &Vista,
         _id: &String,
         _record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        Err(self.default_error("insert_vista_value", "can_insert", vista))
+        Err(self.default_error("insert_vista_value", "can_insert"))
     }
 
     async fn replace_vista_value(
         &self,
-        vista: &Vista,
+        _vista: &Vista,
         _id: &String,
         _record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        Err(self.default_error("replace_vista_value", "can_update", vista))
+        Err(self.default_error("replace_vista_value", "can_update"))
     }
 
     async fn patch_vista_value(
         &self,
-        vista: &Vista,
+        _vista: &Vista,
         _id: &String,
         _partial: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        Err(self.default_error("patch_vista_value", "can_update", vista))
+        Err(self.default_error("patch_vista_value", "can_update"))
     }
 
-    async fn delete_vista_value(&self, vista: &Vista, _id: &String) -> Result<()> {
-        Err(self.default_error("delete_vista_value", "can_delete", vista))
+    async fn delete_vista_value(&self, _vista: &Vista, _id: &String) -> Result<()> {
+        Err(self.default_error("delete_vista_value", "can_delete"))
     }
 
-    async fn delete_vista_all_values(&self, vista: &Vista) -> Result<()> {
-        Err(self.default_error("delete_vista_all_values", "can_delete", vista))
+    async fn delete_vista_all_values(&self, _vista: &Vista) -> Result<()> {
+        Err(self.default_error("delete_vista_all_values", "can_delete"))
     }
 
     // ---- InsertableValueSet delegate ---------------------------------------
 
     async fn insert_vista_return_id_value(
         &self,
-        vista: &Vista,
+        _vista: &Vista,
         _record: &Record<CborValue>,
     ) -> Result<String> {
-        Err(self.default_error("insert_vista_return_id_value", "can_insert", vista))
+        Err(self.default_error("insert_vista_return_id_value", "can_insert"))
     }
 
     // ---- Aggregates --------------------------------------------------------
@@ -180,12 +180,12 @@ pub trait TableShell: Send + Sync + 'static {
     /// `Unimplemented` (when `can_order: true`) or `Unsupported` (when
     /// `can_order: false`).
     fn add_order(&mut self, _field: &str, _dir: SortDirection) -> Result<()> {
-        Err(self.default_error_self("add_order", "can_order"))
+        Err(self.default_error("add_order", "can_order"))
     }
 
     /// Wipe every order clause. Default mirrors [`add_order`](Self::add_order).
     fn clear_orders(&mut self) -> Result<()> {
-        Err(self.default_error_self("clear_orders", "can_order"))
+        Err(self.default_error("clear_orders", "can_order"))
     }
 
     // ---- References --------------------------------------------------------
@@ -265,12 +265,7 @@ pub trait TableShell: Send + Sync + 'static {
     ///
     /// Both kinds emit a `tracing::error!` at construction with `method`,
     /// `capability`, `source_type`, and `vista_name` as structured fields.
-    /// Mutator-friendly sibling of [`default_error`](Self::default_error)
-    /// that omits the `vista_name` diagnostic field. Used by trait methods
-    /// taking `&mut self` (e.g. `add_order`, `clear_orders`, future
-    /// `add_search` / `set_page_size`), where also borrowing `&Vista`
-    /// conflicts with the mutable borrow of `self.source`.
-    fn default_error_self(&self, method: &str, capability: &str) -> VantageError {
+    fn default_error(&self, method: &str, capability: &str) -> VantageError {
         let source_type = std::any::type_name::<Self>();
         if self.capability_flag(capability) {
             error!(
@@ -292,36 +287,6 @@ pub trait TableShell: Send + Sync + 'static {
                 method = method,
                 capability = capability,
                 source_type = source_type
-            )
-            .is_unsupported()
-        }
-    }
-
-    fn default_error(&self, method: &str, capability: &str, vista: &Vista) -> VantageError {
-        let source_type = std::any::type_name::<Self>();
-        let vista_name = vista.name().to_string();
-        if self.capability_flag(capability) {
-            error!(
-                format!(
-                    "'{}' is advertised as VistaCapability for '{}' but implementation for '{}' is missing",
-                    capability, source_type, method
-                ),
-                method = method,
-                capability = capability,
-                source_type = source_type,
-                vista_name = vista_name
-            )
-            .is_unimplemented()
-        } else {
-            error!(
-                format!(
-                    "'{}' is not supported by '{}'; '{}' refused",
-                    capability, source_type, method
-                ),
-                method = method,
-                capability = capability,
-                source_type = source_type,
-                vista_name = vista_name
             )
             .is_unsupported()
         }
