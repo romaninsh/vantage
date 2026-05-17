@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.12 — 2026-05-17
+
+- New [`Table::clear_orders`](https://docs.rs/vantage-table/0.4.12/vantage_table/struct.Table.html#method.clear_orders) drops every order clause — both permanent and temporary. Vista's [`add_order`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.add_order) is replace-semantics; this is the primitive its driver shells use to wipe state before pushing the new order.
+
 ## 0.4.11 — 2026-05-16
 
 - Internal dependency version refresh; no public API changes.

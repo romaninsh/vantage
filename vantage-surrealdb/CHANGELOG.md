@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.9 — 2026-05-17
+
+- `SurrealTableShell` ships the full Stage 5 query surface: [`add_order`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.add_order) on any column (every column gets the [`ORDERABLE`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/flags/constant.ORDERABLE.html) flag), [`add_search`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.add_search) via the existing `search_table_condition`, and offset-style pagination ([`set_page_size`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.set_page_size) + [`fetch_page`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.fetch_page) / [`fetch_next`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.fetch_next), encoding the cursor as a 1-based page number).
+- `SurrealDB::search_table_condition` now actually fans out across columns — OR of case-insensitive `string::contains(string::lowercase(<string>field), needle)` for every column, instead of the SEARCH-stub placeholder. Drives `Vista::add_search` end-to-end.
+- Capabilities updated: `can_order`, `can_search`, `can_set_page_size`, `can_fetch_page`, `can_fetch_next` all `true`. The retired `paginate_kind` flag is gone — drop it from any direct `VistaCapabilities` construction.
+- Pins `vantage-vista = "0.4.9"`, `vantage-table = "0.4.12"`.
+
 ## 0.4.8 — 2026-05-16
 
 - Internal dependency version refresh; no public API changes.

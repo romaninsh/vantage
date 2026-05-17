@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.4 — 2026-05-17
+
+- [`vista_cli::run`](https://docs.rs/vantage-cli-util/0.4.4/vantage_cli_util/vista_cli/fn.run.html) gains four inline flags exercising the Stage 5 query primitives that landed on [`Vista`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html):
+  - `--search <text>` calls `Vista::add_search`
+  - `--order-by <col>[:asc|desc]` calls `Vista::add_order` (direction defaults to `asc`)
+  - `--page-size <n>` calls `Vista::set_page_size`
+  - `--page <n>` switches the list-mode fetch from `list_values` to `fetch_page(n)`
+- Each requires the matching `can_*` capability on the resolved Vista; otherwise the call surfaces an `Unsupported` error from the driver. `--page` is rejected in single-record mode. Unknown `--flag`s error early.
+- Pins `vantage-vista = "0.4.9"`.
+
 ## 0.4.3 — 2026-05-16
 
 - `vista_cli::run` updated for [`Vista::get_ref`](https://docs.rs/vantage-vista/0.4.7/vantage_vista/struct.Vista.html#method.get_ref)'s row-based signature: when a `:relation` token appears in `Mode::Single`, the runner now fetches the parent record via `get_some_value` and passes it to `get_ref(relation, &row)` instead of relying on conditions to project the join.

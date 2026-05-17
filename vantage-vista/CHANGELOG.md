@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.9 — 2026-05-17
+
+Stage 5 query primitives arrive at the universal surface — sort, quicksearch, and pagination on every Vista.
+
+- New [`Vista::add_order(column, dir)`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.add_order) and [`Vista::clear_orders`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.clear_orders) push a single ORDER BY clause down to the driver. Replace-semantics: calling `add_order` again wipes the previous one. V1 is single-column; the signature stays for when multi-column lands. Columns must carry the new [`ORDERABLE`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/flags/constant.ORDERABLE.html) flag; otherwise the call surfaces `Unsupported` (DynamoDB-style sort-key-only backends use this).
+- New [`Vista::add_search(text)`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.add_search) and [`Vista::clear_search`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.clear_search) — one string fans out across the columns the driver considers searchable (typically those flagged [`SEARCHABLE`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/flags/constant.SEARCHABLE.html)). Also replace-semantics.
+- New pagination triple: [`Vista::set_page_size(n)`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.set_page_size), [`Vista::fetch_page(page)`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.fetch_page) (offset-style, 1-based), and [`Vista::fetch_next(token)`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.fetch_next) (cursor-style; opaque driver-private token). Drivers advertise which they support — DynamoDB and most token-paginated REST APIs only get `fetch_next`; SQL gets all three.
+- New [`SortDirection`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/enum.SortDirection.html) at the Vista boundary, mirroring `vantage-table`'s `SortDirection` without depending on it.
+- **Breaking**: [`VistaCapabilities`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.VistaCapabilities.html) loses `paginate_kind: PaginateKind` and gains five flat booleans: `can_order`, `can_search`, `can_set_page_size`, `can_fetch_page`, `can_fetch_next`. The old enum collapsed the matrix; the new shape lets a driver advertise "yes I paginate but you can't pick the page size" or "yes random-access pages and forward cursor". The `PaginateKind` enum is removed from the public re-exports.
+- Matching `TableShell` trait methods (`set_page_size`, `fetch_page`, `fetch_next`, `add_search`, `clear_search`, `add_order`, `clear_orders`) — all default to the capability-honest error pair (`Unimplemented` when the flag is `true`, `Unsupported` when `false`).
+- `TableShell::default_error` no longer takes the `&Vista` parameter; drivers that override methods to fall back to it should drop the argument at the call site.
+
 ## 0.4.8 — 2026-05-16
 
 - Internal dependency version refresh; no public API changes.
