@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.9 — 2026-05-18
+
+- Tracks [vantage-vista 0.4.9](https://docs.rs/vantage-vista/0.4.9/vantage_vista/)'s schema-on-source refactor. `RestApiTableShell`, `GraphqlApiTableShell`, and `AnyTableShell` now own their [`VistaMetadata`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.VistaMetadata.html) and implement the new `columns` / `references` / `id_column` shell methods. Factory call sites — `RestApi::vista_factory(...).from_yaml(...)`, `AnyTableShell::into_vista_with(...)` — are unchanged.
+- Pins `vantage-vista = "0.4.9"`.
+
 ## 0.1.8 — 2026-05-16
 
 - Internal dependency version refresh; no public API changes.

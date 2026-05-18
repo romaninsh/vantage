@@ -4,6 +4,7 @@
 
 - `MongoTableShell` ships the full Stage 5 query surface: [`add_order`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.add_order) on any column (MongoDB sorts on any field — every column gets the [`ORDERABLE`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/flags/constant.ORDERABLE.html) flag at construction), [`add_search`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.add_search) via the existing `search_table_condition`, and offset-style pagination ([`set_page_size`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.set_page_size) + [`fetch_page`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.fetch_page) / [`fetch_next`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.fetch_next), encoding the cursor as a 1-based page number).
 - Capabilities updated: `can_order`, `can_search`, `can_set_page_size`, `can_fetch_page`, `can_fetch_next` all `true`. The retired `paginate_kind` flag is gone — drop it from any direct `VistaCapabilities` construction.
+- Schema-on-source: shell owns its [`VistaMetadata`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.VistaMetadata.html) and implements the new `columns` / `references` / `id_column` methods directly.
 - Pins `vantage-vista = "0.4.9"`, `vantage-table = "0.4.12"`.
 
 ## 0.4.9 — 2026-05-16

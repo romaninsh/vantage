@@ -4031,7 +4031,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vantage-api-client"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4227,7 +4227,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-live"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4242,6 +4242,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "tracing-subscriber",
+ "vantage-api-client",
  "vantage-core",
  "vantage-dataset",
  "vantage-expressions",

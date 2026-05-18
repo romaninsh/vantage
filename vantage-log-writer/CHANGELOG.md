@@ -1,8 +1,9 @@
 # Changelog
 
-## 0.4.1 — 2026-05-15
+## 0.4.1 — 2026-05-18
 
-Compatibility with change in vantage-vista
+- Tracks [vantage-vista 0.4.9](https://docs.rs/vantage-vista/0.4.9/vantage_vista/)'s schema-on-source refactor. `LogWriterTableShell` now owns its [`VistaMetadata`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.VistaMetadata.html) and implements the new `columns` / `references` / `id_column` shell methods. `writer.vista_factory().from_table(...)` / `from_yaml(...)` surface unchanged.
+- Pins `vantage-vista = "0.4.9"`.
 
 ## 0.4.0 — 2026-05-04
 

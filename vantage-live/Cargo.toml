@@ -1,6 +1,6 @@
 [package]
 name = "vantage-live"
-version = "0.4.7"
+version = "0.4.8"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -9,9 +9,6 @@ documentation = "https://docs.rs/vantage-live"
 homepage = "https://romaninsh.github.io/vantage"
 repository = "https://github.com/romaninsh/vantage"
 readme = "README.md"
-# live_demo example pulls vantage-api-client, disabled during the
-# schema-on-source refactor (vantage-diorama/plans/1b-schema-on-source.md).
-autoexamples = false
 
 [dependencies]
 vantage-core = { version = "0.4", path = "../vantage-core" }
@@ -38,10 +35,8 @@ clap = { version = "4", features = ["derive"] }
 serde_json = "1"
 # vantage-redb only used in tests for the master fixture and the demo CLI.
 vantage-redb = { version = "0.4", path = "../vantage-redb" }
-# Disabled during the schema-on-source refactor (vantage-diorama/plans/1b-schema-on-source.md):
-# vantage-api-client depends on the pre-refactor Vista shape.
-# vantage-api-client = { version = "0.1.4", path = "../vantage-api-client" }
+vantage-api-client = { version = "0.1.4", path = "../vantage-api-client" }
 
-# [[example]]
-# name = "live_demo"
-# path = "examples/live_demo.rs"
+[[example]]
+name = "live_demo"
+path = "examples/live_demo.rs"
