@@ -1,6 +1,6 @@
 # Stage 7 — ValueScenery
 
-Status: **Not started**
+Status: **Done (v1 — local scan; integer Sum/Max/Min only)**
 
 Implement the single-value reactive surface. A `ValueScenery` exposes
 one `CborValue` (a count, a sum, a max, a single aggregate result, or

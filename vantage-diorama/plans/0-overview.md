@@ -95,8 +95,8 @@ vantage-diorama/
 | 3 | [Write queue + refresh scheduler](3-write-and-refresh.md) | Done (on_query deferred) |
 | 4 | [Event bus + on_event](4-event-bus.md) | Done (LiveStream deferred) |
 | 5 | [TableScenery](5-table-scenery.md) | Done (v1 — eager) |
-| 6 | [RecordScenery](6-record-scenery.md) | Not started |
-| 7 | [ValueScenery](7-value-scenery.md) | Not started |
+| 6 | [RecordScenery](6-record-scenery.md) | Done (v1 — cache-as-truth) |
+| 7 | [ValueScenery](7-value-scenery.md) | Done (v1 — local scan) |
 | 8 | [GPUI adapter](8-gpui-adapter.md) | Not started |
 | 9 | [Composition primitives](9-composition.md) | Not started |
 | 10 | [Decommission vantage-live](10-decommission-live.md) | Not started |

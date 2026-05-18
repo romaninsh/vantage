@@ -18,6 +18,7 @@ pub use lens::{
 };
 pub use ops::{ChangeEvent, QueryDescriptor, WriteOp};
 pub use scenery::{
-    EnrichedRecord, RecordScenery, RecordStatus, RowStatus, SortDir, TableScenery,
-    TableSceneryBuilder, ValueScenery, ValueStatus,
+    Aggregate, CustomAggregate, EnrichedRecord, RecordScenery, RecordStatus, RowStatus, SortDir,
+    TableScenery, TableSceneryBuilder, ValueScenery, ValueSceneryBuilder, ValueStatus,
+    boxed_custom_aggregate,
 };

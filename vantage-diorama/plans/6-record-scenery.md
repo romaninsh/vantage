@@ -1,6 +1,6 @@
 # Stage 6 — RecordScenery
 
-Status: **Not started**
+Status: **Done (v1 — cache-as-truth; no master fetch / PendingWrite / dirty_fields)**
 
 Implement the single-record reactive surface. A `RecordScenery` holds
 one `EnrichedRecord` (or `None` if not found), exposes status

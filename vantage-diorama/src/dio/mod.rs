@@ -14,7 +14,8 @@ use vantage_vista::Vista;
 
 use crate::lens::{CacheTable, Lens};
 use crate::ops::{ChangeEvent, WriteOp};
-use crate::scenery::TableSceneryBuilder;
+use crate::scenery::{RecordScenery, RecordStatus, TableSceneryBuilder, ValueSceneryBuilder};
+use crate::scenery::record::spawn_record_scenery;
 
 use ciborium::Value as CborValue;
 use vantage_types::Record;
@@ -89,6 +90,55 @@ impl Dio {
     /// reactive view.
     pub fn table_scenery(&self) -> TableSceneryBuilder {
         TableSceneryBuilder::new(self.inner.clone())
+    }
+
+    /// Open a reactive view onto a single record by id. Reads the
+    /// cache once at creation:
+    ///
+    /// - cache hit → `RecordStatus::Fresh`, record exposed
+    /// - cache miss → `RecordStatus::NotFound`, record = `None`
+    ///
+    /// No master fetch on miss (the cache is the source of truth in
+    /// v1). Use [`Dio::patched`](Self::patched) — from an `on_query`
+    /// callback or your own code — to seed the row.
+    pub async fn record_scenery(
+        &self,
+        id: impl Into<String>,
+    ) -> Result<Arc<dyn RecordScenery>> {
+        let id = id.into();
+        let (initial_record, initial_status) = match self.inner.cache.get_value(&id).await? {
+            Some(rec) => (Some(rec), RecordStatus::Fresh),
+            None => (None, RecordStatus::NotFound),
+        };
+        Ok(spawn_record_scenery(
+            &self.inner,
+            id,
+            initial_record,
+            initial_status,
+        ))
+    }
+
+    /// Open a reactive view onto a single record with the row already
+    /// in hand — the parent grid hands its current row off to the
+    /// detail view without a cache round-trip. Status is `Fresh`.
+    pub fn record_scenery_with(
+        &self,
+        id: impl Into<String>,
+        record: Record<CborValue>,
+    ) -> Arc<dyn RecordScenery> {
+        spawn_record_scenery(
+            &self.inner,
+            id.into(),
+            Some(record),
+            RecordStatus::Fresh,
+        )
+    }
+
+    /// Start a [`ValueScenery`](crate::scenery::ValueScenery) builder.
+    /// Chain `.count()` / `.sum(col)` / `.custom(closure)` /
+    /// `.aggregate(...)`, then `.open().await`.
+    pub fn value_scenery(&self) -> ValueSceneryBuilder {
+        ValueSceneryBuilder::new(self.inner.clone())
     }
 
     /// Produce a fresh facade [`Vista`] backed by this Dio. Each call
