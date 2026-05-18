@@ -30,7 +30,7 @@ tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "test-ut
 vantage-csv = { path = "../vantage-csv", features = ["vista"] }
 vantage-sql = { path = "../vantage-sql", features = ["sqlite", "vista"] }
 cucumber = { version = "0.21", default-features = false, features = ["macros"] }
-insta = { version = "1.41", features = ["yaml"] }
+insta = { version = "1.41", features = ["yaml", "filters"] }
 rstest = "0.23"
 futures = "0.3"
 

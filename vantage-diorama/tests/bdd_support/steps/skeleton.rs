@@ -47,13 +47,6 @@ async fn create_dio(w: &mut DioramaWorld) {
     w.dio = Some(dio);
 }
 
-#[then(regex = r"^the cache contains (\d+) rows?$")]
-async fn cache_contains_n(w: &mut DioramaWorld, n: u64) {
-    let dio = w.dio.as_ref().expect("dio not created");
-    let count = dio.cache().count().await.expect("cache count") as u64;
-    assert_eq!(count, n, "expected {n} cached rows, got {count}");
-}
-
 #[then(regex = r"^the master responds to list with (\d+) rows?$")]
 async fn master_list_count(w: &mut DioramaWorld, n: u64) {
     let dio = w.dio.as_ref().expect("dio not created");

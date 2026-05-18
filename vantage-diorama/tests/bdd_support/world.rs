@@ -9,7 +9,7 @@ use tempfile::TempDir;
 use tokio::sync::{Mutex, Notify, broadcast};
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_diorama::{Dio, DioEvent, Lens};
+use vantage_diorama::{ChangeEvent, Dio, DioEvent, Lens, TableScenery};
 use vantage_vista::Vista;
 
 use super::backend::BackendKind;
@@ -23,13 +23,26 @@ pub enum OnWriteMode {
     Error,
 }
 
+#[derive(Clone, Copy, Default, Debug)]
+pub enum OnEventMode {
+    #[default]
+    Unset,
+    /// Bump the spy counter and return Ok — used when the test only
+    /// cares that on_event fired.
+    Counter,
+    /// On `ChangeEvent::Updated { id, new: Some(rec) }`, forward to
+    /// `dio.patched(id, rec)` so the cache + bus reflect the upstream
+    /// change. Other variants are counted but otherwise ignored.
+    PatchedFromUpdate,
+}
+
 #[derive(Default, Debug)]
 pub struct LensBuilderState {
     pub refresh_every: Option<Duration>,
     pub on_start_load_master: bool,
     pub on_start_blocking: Option<bool>,
     pub on_write_mode: OnWriteMode,
-    pub register_on_event: bool,
+    pub on_event_mode: OnEventMode,
     pub register_on_refresh: bool,
     /// When present, the `on_start` closure awaits this Notify before
     /// running its body. Lets a test pin "make_dio is/isn't waiting on
@@ -61,6 +74,9 @@ pub struct DioramaWorld {
     /// Spawned `make_dio` future when a scenario needs to assert
     /// "pending" vs "complete" — see scenario 1.
     pub pending_dio: Option<tokio::task::JoinHandle<Result<Dio>>>,
+    /// Opened by the `the table scenery is opened` step; subsequent
+    /// generation assertions read from `scenery.subscribe()`.
+    pub scenery: Option<Arc<dyn TableScenery>>,
 }
 
 impl std::fmt::Debug for DioramaWorld {
@@ -93,6 +109,7 @@ impl DioramaWorld {
             on_start_gate: None,
             worker_handle: None,
             pending_dio: None,
+            scenery: None,
         }
     }
 
@@ -214,15 +231,32 @@ impl LensBuilderState {
             }
         }
 
-        if self.register_on_event {
-            let counter = spies.on_event.clone();
-            b = b.on_event(move |_dio, _evt| {
-                let counter = counter.clone();
-                async move {
-                    counter.fetch_add(1, Ordering::SeqCst);
-                    Ok(())
-                }
-            });
+        match self.on_event_mode {
+            OnEventMode::Unset => {}
+            OnEventMode::Counter => {
+                let counter = spies.on_event.clone();
+                b = b.on_event(move |_dio, _evt| {
+                    let counter = counter.clone();
+                    async move {
+                        counter.fetch_add(1, Ordering::SeqCst);
+                        Ok(())
+                    }
+                });
+            }
+            OnEventMode::PatchedFromUpdate => {
+                let counter = spies.on_event.clone();
+                b = b.on_event(move |dio, evt| {
+                    let counter = counter.clone();
+                    let dio = dio.clone();
+                    async move {
+                        counter.fetch_add(1, Ordering::SeqCst);
+                        if let ChangeEvent::Updated { id, new: Some(rec) } = evt {
+                            dio.patched(id, rec).await?;
+                        }
+                        Ok(())
+                    }
+                });
+            }
         }
 
         let lens = b.build().map_err(|e| vantage_core::error!(e.to_string()))?;
