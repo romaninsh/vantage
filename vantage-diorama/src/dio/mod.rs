@@ -85,6 +85,22 @@ impl Dio {
         self.inner.event_bus.subscribe()
     }
 
+    /// Take the per-Dio write worker's `JoinHandle` out of the inner
+    /// state. Returns `Some` on the first call, `None` afterwards.
+    ///
+    /// Once taken, the worker is no longer owned by the Dio — it keeps
+    /// running until the last `Sender` (held by `DioInner`) drops, at
+    /// which point the loop's `recv()` returns `None` and the task
+    /// completes. Callers can `await` the returned handle to observe
+    /// that clean shutdown.
+    ///
+    /// Intended for test harnesses asserting worker lifecycle; not part
+    /// of the standard surface.
+    #[doc(hidden)]
+    pub async fn take_write_worker_handle(&self) -> Option<JoinHandle<()>> {
+        self.inner.write_worker.lock().await.take()
+    }
+
     /// Start a [`TableScenery`](crate::scenery::TableScenery) builder
     /// for this Dio. Chainable; call `.open().await` to spawn the
     /// reactive view.
