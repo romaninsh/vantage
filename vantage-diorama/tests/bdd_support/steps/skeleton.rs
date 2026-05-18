@@ -58,5 +58,10 @@ async fn cache_contains_n(w: &mut DioramaWorld, n: u64) {
 async fn master_list_count(w: &mut DioramaWorld, n: u64) {
     let dio = w.dio.as_ref().expect("dio not created");
     let rows = dio.master().list_values().await.expect("list master");
-    assert_eq!(rows.len() as u64, n, "expected {n} master rows, got {}", rows.len());
+    assert_eq!(
+        rows.len() as u64,
+        n,
+        "expected {n} master rows, got {}",
+        rows.len()
+    );
 }
