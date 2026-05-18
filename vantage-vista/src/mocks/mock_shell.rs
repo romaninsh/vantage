@@ -7,13 +7,17 @@ use std::sync::{Arc, Mutex};
 use vantage_core::Result;
 use vantage_types::Record;
 
-use crate::{capabilities::VistaCapabilities, source::TableShell, vista::Vista};
+use crate::{
+    capabilities::VistaCapabilities, sort::SortDirection, source::TableShell, vista::Vista,
+};
 
 #[derive(Clone)]
 pub struct MockShell {
     data: Arc<Mutex<IndexMap<String, Record<CborValue>>>>,
     next_auto_id: Arc<Mutex<i64>>,
     filters: Arc<Mutex<Vec<(String, CborValue)>>>,
+    order: Arc<Mutex<Option<(String, SortDirection)>>>,
+    search: Arc<Mutex<Option<String>>>,
     capabilities: VistaCapabilities,
 }
 
@@ -23,11 +27,15 @@ impl MockShell {
             data: Arc::new(Mutex::new(IndexMap::new())),
             next_auto_id: Arc::new(Mutex::new(1)),
             filters: Arc::new(Mutex::new(Vec::new())),
+            order: Arc::new(Mutex::new(None)),
+            search: Arc::new(Mutex::new(None)),
             capabilities: VistaCapabilities {
                 can_count: true,
                 can_insert: true,
                 can_update: true,
                 can_delete: true,
+                can_order: true,
+                can_search: true,
                 ..VistaCapabilities::default()
             },
         }
@@ -52,6 +60,18 @@ impl MockShell {
             .all(|(field, expected)| record.get(field) == Some(expected))
     }
 
+    fn matches_search(&self, record: &Record<CborValue>) -> bool {
+        let guard = self.search.lock().unwrap();
+        let Some(needle) = guard.as_deref() else {
+            return true;
+        };
+        let needle_lc = needle.to_lowercase();
+        record.values().any(|v| match v {
+            CborValue::Text(s) => s.to_lowercase().contains(&needle_lc),
+            _ => false,
+        })
+    }
+
     fn next_auto_id(&self) -> String {
         let mut next = self.next_auto_id.lock().unwrap();
         let id = next.to_string();
@@ -73,11 +93,23 @@ impl TableShell for MockShell {
         _vista: &Vista,
     ) -> Result<IndexMap<String, Record<CborValue>>> {
         let data = self.data.lock().unwrap();
-        Ok(data
+        let mut rows: Vec<(String, Record<CborValue>)> = data
             .iter()
-            .filter(|(_, record)| self.matches_filters(record))
+            .filter(|(_, record)| self.matches_filters(record) && self.matches_search(record))
             .map(|(k, v)| (k.clone(), v.clone()))
-            .collect())
+            .collect();
+        if let Some((field, dir)) = self.order.lock().unwrap().clone() {
+            rows.sort_by(|a, b| {
+                let lhs = a.1.get(&field);
+                let rhs = b.1.get(&field);
+                let ord = cbor_cmp(lhs, rhs);
+                match dir {
+                    SortDirection::Ascending => ord,
+                    SortDirection::Descending => ord.reverse(),
+                }
+            });
+        }
+        Ok(rows.into_iter().collect())
     }
 
     async fn get_vista_value(
@@ -190,6 +222,45 @@ impl TableShell for MockShell {
             .unwrap()
             .push((field.to_string(), value.clone()));
         Ok(())
+    }
+
+    fn add_order(&mut self, field: &str, dir: SortDirection) -> Result<()> {
+        *self.order.lock().unwrap() = Some((field.to_string(), dir));
+        Ok(())
+    }
+
+    fn clear_orders(&mut self) -> Result<()> {
+        *self.order.lock().unwrap() = None;
+        Ok(())
+    }
+
+    fn add_search(&mut self, text: &str) -> Result<()> {
+        *self.search.lock().unwrap() = Some(text.to_string());
+        Ok(())
+    }
+
+    fn clear_search(&mut self) -> Result<()> {
+        *self.search.lock().unwrap() = None;
+        Ok(())
+    }
+}
+
+/// Total-order comparator for the CBOR scalars MockShell records carry.
+/// Falls back to lexical ordering of CBOR-as-text for mixed-or-unknown
+/// types, which keeps sort deterministic without claiming semantic
+/// equivalence between heterogeneous values.
+fn cbor_cmp(a: Option<&CborValue>, b: Option<&CborValue>) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    match (a, b) {
+        (None, None) => Ordering::Equal,
+        (None, _) => Ordering::Less,
+        (_, None) => Ordering::Greater,
+        (Some(lhs), Some(rhs)) => match (lhs, rhs) {
+            (CborValue::Text(l), CborValue::Text(r)) => l.cmp(r),
+            (CborValue::Integer(l), CborValue::Integer(r)) => i128::from(*l).cmp(&i128::from(*r)),
+            (CborValue::Bool(l), CborValue::Bool(r)) => l.cmp(r),
+            _ => format!("{lhs:?}").cmp(&format!("{rhs:?}")),
+        },
     }
 }
 

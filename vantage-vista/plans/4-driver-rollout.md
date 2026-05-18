@@ -1,9 +1,12 @@
 # Stage 4 — Driver rollout
 
 Status: **Mostly done** — CSV, MongoDB, SurrealDB, SQLite/Postgres/MySQL,
-REST, GraphQL, and LogWriter all ship Vista bridges. AWS (account-level
-+ DynamoDB), Redb, and the api-pool wrapper remain. A cross-cutting
-`TableShell::get_ref` gap applies to every driver except REST/GraphQL.
+REST, GraphQL, and LogWriter all ship Vista bridges. Row-based
+traversal (`Vista::get_ref(relation, &row)`) now lands on every
+same-driver shell that wraps a typed `Table`. AWS (account-level +
+DynamoDB), Redb, and the api-pool wrapper remain. REST and GraphQL pick
+up the new signature but still route the typed-ref path through
+`AnyTable` internally — Stage 9 cleanup.
 
 Roll out Vista support to remaining drivers. Each driver is its own
 sub-discussion — different backends have different gotchas and may
@@ -76,46 +79,51 @@ the default impl returns `Unimplemented`/`Unsupported` for, and every
 shipped driver except where noted leaves them defaulted. Each is a
 mechanical one-time fix per driver.
 
-### `TableShell::get_ref` — only REST + GraphQL override it
+### `TableShell::get_ref` — shipped on all same-driver shells
 
-`Vista::get_ref(relation)` calls into `TableShell::get_ref`, whose
-default returns `Unimplemented`. CSV, MongoDB, SurrealDB, all three SQL
-drivers, and LogWriter all fall through, even though the underlying
-typed `Table<T, E>` they wrap has full `get_ref` / `get_ref_as` support
-via the references registered on it.
+`Vista::get_ref(relation, &row)` lands on `TableShell::get_ref`, which
+now has overrides on every shell that wraps a typed `Table`: CSV,
+MongoDB, SurrealDB, SQLite, Postgres, MySQL, REST, and GraphQL. Each
+shell converts the CBOR parent row into its native value map, calls
+`Reference::resolve_from_row` (typed primitive on `vantage-table`),
+and re-wraps the resulting `Table<T, E2>` via the driver's
+`VistaFactory::from_table`. LogWriter keeps the default — write-only
+sink has no refs to traverse.
 
-```rust,ignore
-let client_vista = sqlite_factory.from_table(Client::sqlite_table(db));
-let orders = client_vista.get_ref("orders")?;   // ❌ Unimplemented today
-```
+The picked re-wrap option was a hybrid of #2 (free-function /
+construction code on the factory) and the new typed primitive
+`Table::get_ref_from_row<E2>(relation, &row)` on `vantage-table`. No
+`Arc<Factory>` back-pointer was needed.
 
-The shape of the fix is the same everywhere: call `TableLike::get_ref`
-on the wrapped typed table to obtain an `AnyTable`, then re-wrap it as
-a `Vista` via the same driver factory (column metadata + capability set
-already known). Doing this once per driver closes the biggest practical
-Vista gap.
+Two cleanups still owed (Stage 9):
 
-Open question: how does the re-wrap reach a `VistaFactory` from inside
-`TableShell::get_ref`? Three options:
+- REST and GraphQL pick up the new row-based signature but their
+  internal typed-ref path still goes through the legacy `AnyTable`
+  carrier (`Table::get_ref` / `get_ref_as` / `Reference::resolve_as_any`
+  in `vantage-table 0.4.10`). They get retired alongside `AnyTable`
+  itself.
+- Cross-backend `get_ref` (Postgres-rooted Vista hopping into a
+  Mongo-backed Vista via `Vista::with_foreign`) compiles and the
+  closure stays lazy at registration. Integration tests for it land
+  alongside the inventory-resolver work (see "Next chunk" below).
 
-1. Store an `Arc<Factory>` on the shell at construction. Cheap, but
-   each shell now holds a back-reference to its factory.
-2. Free-function `vista_from_any_table(any_table, capabilities)` on
-   the driver crate that doesn't need factory state. Simplest; matches
-   what REST does today.
-3. Stateless trait method on the factory keyed off the wrapped
-   table's metadata.
+### `TableShell::add_raw_condition` — shrinking surface
 
-Lean: option 2 — every driver already has the construction code; expose
-it as a free function and call it from the shell's `get_ref`.
+`HasForeign` retired in `vantage-table 0.4.10`. The struct, the
+`Table::with_foreign` method, and the `ReferenceKind::HasForeign`
+variant on the Vista side all went away. Cross-persistence references
+now live on `Vista` directly via
+`Vista::with_foreign(name, kind, closure)`, where the closure is
+**stored, never invoked** at registration — mutually-referencing Vistas
+no longer recurse at construction.
 
-### `TableShell::add_raw_condition` — only REST overrides it
-
-Used by YAML-driven cross-source reference traversal. The default
-returns `Unimplemented`, blocking YAML-defined references that need
-deferred FK conditions. REST is the only driver that overrides today;
-every other driver needs the override before YAML-driven traversal
-through their tables works.
+That collapses the role `add_raw_condition` was carrying. It still
+exists on `TableShell` and REST still overrides it, but the YAML cross-
+source reference path now resolves through `Vista::with_foreign` +
+`Reference::resolve_from_row` instead. The remaining cross-driver
+references in YAML (REST's `register_yaml` / `with_model_resolver`)
+route through that path. Whether `add_raw_condition` survives Stage 9
+is an open question — it may collapse into the legacy `AnyTable` route.
 
 ### `paginate_kind` — universally `None`
 
@@ -149,7 +157,9 @@ explicitly defers this to a later pass. Wiring belongs in Stage 7
       machinery does the filtering.
 - [x] Identity id (`String`) at the boundary; no translation needed.
 - [x] Tests in `tests/vista.rs` and `tests/vista_yaml.rs`.
-- [ ] **Cross-cutting**: implement `TableShell::get_ref`.
+- [x] **Cross-cutting**: row-based `TableShell::get_ref` shipped via
+      `Reference::resolve_from_row` + `eq_value_condition` on
+      `CsvTableSource`.
 
 #### vantage-mongodb — done
 
@@ -169,9 +179,11 @@ explicitly defers this to a later pass. Wiring belongs in Stage 7
       drives read/write/filter consistently.
 - [x] BSON ↔ CBOR bridge in `vista/cbor.rs` with unit tests.
 - [x] Integration tests in `tests/6_vista.rs`.
-- [ ] **Cross-cutting**: implement `TableShell::get_ref`.
-- [ ] **Cross-cutting**: implement `TableShell::add_raw_condition` for
-      cross-source YAML refs.
+- [x] **Cross-cutting**: row-based `TableShell::get_ref` shipped via
+      `eq_value_condition` on `MongoDBTableSource` (BSON doc-builder).
+- [ ] **Cross-cutting**: `TableShell::add_raw_condition` — role
+      shrunk after `HasForeign` retirement; revisit when REST's
+      cross-source YAML path lands on Vista-native `with_foreign`.
 
 #### vantage-surrealdb — done (0.4.5)
 
@@ -189,8 +201,11 @@ explicitly defers this to a later pass. Wiring belongs in Stage 7
 - [x] Capabilities: `can_count`, `can_insert`, `can_update`,
       `can_delete` all true.
 - [x] Integration tests in `tests/6_vista.rs`.
-- [ ] **Cross-cutting**: implement `TableShell::get_ref`.
-- [ ] **Cross-cutting**: implement `TableShell::add_raw_condition`.
+- [x] **Cross-cutting**: row-based `TableShell::get_ref` shipped via
+      `eq_value_condition` on `SurrealTableSource` (SurrealDB
+      `SurrealOperation::eq`).
+- [ ] **Cross-cutting**: `TableShell::add_raw_condition` — same status
+      as MongoDB above; pending Stage 9 review.
 - [ ] **Deferred**: `can_subscribe` + LIVE-query subscription — moves to
       Stage 7 (Coop's `with_live`).
 
@@ -209,9 +224,12 @@ Wasn't on the original Stage 4 list, landed together as one drop.
 - [x] `driver_name` reports `"sqlite"` / `"postgres"` / `"mysql"` for
       diagnostics.
 - [x] Integration tests in `tests/{sqlite,postgres,mysql}/6_vista.rs`.
-- [ ] **Cross-cutting**: implement `TableShell::get_ref` (all three).
-- [ ] **Cross-cutting**: implement `TableShell::add_raw_condition`
-      (all three).
+- [x] **Cross-cutting**: row-based `TableShell::get_ref` shipped on
+      all three via `eq_value_condition` on the per-driver
+      `TableSource`. End-to-end traversal coverage in
+      `vantage-sql/tests/sqlite/6_vista.rs`.
+- [ ] **Cross-cutting**: `TableShell::add_raw_condition` — same
+      status as MongoDB above; pending Stage 9 review.
 - [ ] **Cross-cutting**: once Stage 5b lands, advertise
       `paginate_kind: Offset`.
 
@@ -227,12 +245,16 @@ Wasn't on the original Stage 4 list, landed together as one drop.
       fetch time.
 - [x] YAML-driven model registration via `register_yaml` +
       `with_model_resolver` for cross-driver setups.
-- [x] **`TableShell::get_ref` is implemented** (unlike the other
-      drivers).
+- [x] **`TableShell::get_ref(relation, &row)` picked up the new
+      row-based signature**; same surface as every other driver.
 - [x] **`TableShell::add_raw_condition` is implemented** (the
       cross-source reference case is what motivated the trait method
       in the first place).
 - [x] `tests/yaml_factory.rs` exercises the YAML path.
+- [ ] **Stage 9 cleanup**: REST's typed-ref path still routes through
+      `AnyTable` internally even though the public Vista surface uses
+      `Reference::resolve_from_row`. Goes away alongside `AnyTable`
+      itself.
 - [ ] Capability honesty: REST is "read-only" via `can_count: true`
       only — `can_insert/update/delete` need a discussion on which
       verbs to wire to PUT/POST/PATCH/DELETE.
@@ -252,10 +274,13 @@ Wasn't on the original Stage 4 list; landed alongside the REST work.
       `.is_null()`/`.is_not_null()`).
 - [x] Relationship traversal via `with_many`/`with_one` with
       dialect-correct rendering.
-- [x] `TableShell::get_ref` implemented.
+- [x] `TableShell::get_ref(relation, &row)` picked up the new
+      row-based signature.
 - [x] `examples/graphql_spacex.rs` — YAML-driven CLI over the SpaceX
       public API.
 - [ ] Integration tests under `tests/` (currently only example coverage).
+- [ ] **Stage 9 cleanup**: like REST, the typed-ref path still goes
+      through `AnyTable` internally — retires alongside it.
 - [ ] **Cross-cutting**: implement `TableShell::add_raw_condition` if
       cross-source YAML refs targeting GraphQL endpoints are wanted.
 
@@ -334,6 +359,72 @@ primary backend.
 - [ ] If transparent: no Vista work needed; document the path in the
       crate README.
 - [ ] If not transparent: full factory + shell rollout.
+
+## What landed alongside Stage 4 (PR #244)
+
+Row-based reference traversal across Vista, replacing the
+AnyTable-bridged path that #240/#242 leaned on. The cross-cutting
+shape settled here applies to every future driver:
+
+- **`Vista::get_ref(relation, &row)`** — caller fetches the parent row
+  first (typically via `get_some_value`), then traverses. The join
+  field reads out of the known parent record; one eq-condition pushes
+  to the target. No subquery, no deferred fetch. Same code path for
+  SQL, document, and HTTP backends.
+- **`Vista::with_foreign(name, kind, closure)`** replaces the
+  retired `HasForeign`. Closure is stored, never invoked at
+  registration — mutually-referencing Vistas don't recurse at
+  construction. The `kind` argument records cardinality so
+  `list_references()` can render the right control downstream.
+- **`Vista::with_id(id)`** — convenience narrowing for the "I only
+  know an id" workflow. Pairs with `get_some_value` and `get_ref`.
+- **`Vista::list_references()`** — combines foreign resolvers,
+  YAML-declared refs, and the wrapped table's typed refs (surfaced
+  via the new `TableShell::get_ref_kinds`). Drives cardinality-aware
+  rendering in `vista_cli::run`.
+- **New typed primitives on `vantage-table`**:
+  `Table::get_ref_from_row<E2>`, `Table::with_id`,
+  `Reference::resolve_from_row`, `Reference::cardinality`,
+  `Cardinality::{One, Many}`,
+  `TableSource::eq_value_condition(field, value)`.
+- **`HasForeign` retired** from `vantage-table`. The one in-tree
+  caller (`vantage-aws` Lambda's `log_group`) migrated.
+- **YAML migration**: `kind: has_foreign` → `kind: has_one` or
+  `kind: has_many`. Cross-persistence-ness is now determined at
+  resolution time by whether the target Vista lives in the same
+  driver.
+- **`cli-vista` refactor**: bakery_model3's CLI is now built on
+  `vista_cli::run` — same pattern as `jsonplaceholder`. Cardinality
+  selects render mode automatically (record card for `HasOne`, table
+  for `HasMany`).
+
+Versions: `vantage-table` 0.4.10, `vantage-vista` 0.4.7,
+`vantage-cli-util` 0.4.3, `vantage-csv` 0.4.10,
+`vantage-mongodb` 0.4.9, `vantage-sql` 0.4.6,
+`vantage-surrealdb` 0.4.7, `vantage-api-client` 0.1.7,
+`vantage-aws` 0.4.9.
+
+## Next chunk
+
+The visible follow-up after PR #244 is the **inventory resolver +
+cross-backend integration tests** — the path that exercises a
+Postgres-rooted Vista hopping into a Mongo-backed Vista via
+`Vista::with_foreign`. Code compiles today and the closure stays
+lazy, but there's no integration test asserting that:
+
+- [ ] Same-driver `get_ref` over typed `Table` round-trips
+      (covered for SQLite; replicate for MongoDB / SurrealDB /
+      Postgres / MySQL / CSV in their respective
+      `tests/*_vista.rs`).
+- [ ] Cross-driver `get_ref` via `Vista::with_foreign` round-trips —
+      e.g. a Postgres `client` Vista with a Mongo `orders` Vista
+      target. Probably belongs in a new top-level
+      `vantage-vista/tests/cross_driver.rs` (or in `bakery_model3`
+      using its already-multi-backend fixture).
+- [ ] YAML inventory loader for cross-driver refs — the path
+      `register_yaml` + `with_model_resolver` already takes, but
+      with the row-based resolver under the hood. Document this in
+      `step8-vista-integration.md` once an end-to-end test lands.
 
 ## References
 

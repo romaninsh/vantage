@@ -40,6 +40,12 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self.order_by.values()
     }
 
+    /// Drop every order clause — both permanent and temporary. Used by `Vista`
+    /// to reset sort state under its replace-semantics `add_order`.
+    pub fn clear_orders(&mut self) {
+        self.order_by.clear();
+    }
+
     /// Add an order clause using the builder pattern
     pub fn with_order(mut self, order: OrderBy<T::Condition>) -> Self {
         self.add_order(order);

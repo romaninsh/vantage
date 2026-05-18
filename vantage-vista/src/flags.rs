@@ -8,5 +8,6 @@
 pub const ID: &str = "id";
 pub const TITLE: &str = "title";
 pub const SEARCHABLE: &str = "searchable";
+pub const ORDERABLE: &str = "orderable";
 pub const MANDATORY: &str = "mandatory";
 pub const HIDDEN: &str = "hidden";

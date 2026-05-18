@@ -267,3 +267,151 @@ async fn vista_unknown_field_eq_errors() -> TestResult {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn vista_add_order_filters_results_with_replace_semantics() -> TestResult {
+    use vantage_vista::SortDirection;
+
+    let (db, table_name) = setup().await;
+    seed_row(&db, &table_name, "beta", "Beta", 20, false).await?;
+    seed_row(&db, &table_name, "alpha", "Alpha", 10, false).await?;
+    seed_row(&db, &table_name, "gamma", "Gamma", 30, false).await?;
+
+    let table = product_table(db.clone(), &table_name);
+    let mut vista = db.vista_factory().from_table(table)?;
+    assert!(vista.capabilities().can_order);
+
+    vista.add_order("price", SortDirection::Ascending)?;
+    let rows = vista.list_values().await?;
+    let names: Vec<String> = rows
+        .values()
+        .map(|r| match r.get("name") {
+            Some(CborValue::Text(s)) => s.clone(),
+            _ => String::new(),
+        })
+        .collect();
+    assert_eq!(
+        names,
+        vec!["Alpha".to_string(), "Beta".into(), "Gamma".into()]
+    );
+
+    vista.add_order("name", SortDirection::Descending)?;
+    let rows = vista.list_values().await?;
+    let names: Vec<String> = rows
+        .values()
+        .map(|r| match r.get("name") {
+            Some(CborValue::Text(s)) => s.clone(),
+            _ => String::new(),
+        })
+        .collect();
+    assert_eq!(
+        names,
+        vec!["Gamma".to_string(), "Beta".into(), "Alpha".into()]
+    );
+
+    vista.clear_orders()?;
+    let _rows = vista.list_values().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_add_search_uses_string_contains() -> TestResult {
+    let (db, table_name) = setup().await;
+    seed_row(&db, &table_name, "alpha", "Alpha", 10, false).await?;
+    seed_row(&db, &table_name, "beta", "Beta", 20, false).await?;
+    seed_row(&db, &table_name, "gamma", "Gamma", 30, false).await?;
+
+    let table = product_table(db.clone(), &table_name);
+    let mut vista = db.vista_factory().from_table(table)?;
+    assert!(vista.capabilities().can_search);
+
+    vista.add_search("amma")?;
+    let rows = vista.list_values().await?;
+    assert_eq!(
+        rows.len(),
+        1,
+        "only Gamma contains 'amma' (case-insensitive)"
+    );
+
+    vista.add_search("alpha")?;
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 1);
+
+    vista.clear_search()?;
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 3);
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_fetch_page_offset_pagination() -> TestResult {
+    use vantage_vista::SortDirection;
+
+    let (db, table_name) = setup().await;
+    for (id, name) in [
+        ("a", "Apple"),
+        ("b", "Banana"),
+        ("c", "Cherry"),
+        ("d", "Date"),
+        ("e", "Elder"),
+    ] {
+        seed_row(&db, &table_name, id, name, 1, false).await?;
+    }
+
+    let table = product_table(db.clone(), &table_name);
+    let mut vista = db.vista_factory().from_table(table)?;
+    assert!(vista.capabilities().can_fetch_page);
+
+    vista.set_page_size(2)?;
+    vista.add_order("name", SortDirection::Ascending)?;
+
+    let p1 = vista.fetch_page(1).await?;
+    let names_p1: Vec<String> = p1
+        .iter()
+        .map(|(_, r)| match r.get("name") {
+            Some(CborValue::Text(s)) => s.clone(),
+            _ => String::new(),
+        })
+        .collect();
+    assert_eq!(names_p1, vec!["Apple".to_string(), "Banana".into()]);
+
+    let p2 = vista.fetch_page(2).await?;
+    let names_p2: Vec<String> = p2
+        .iter()
+        .map(|(_, r)| match r.get("name") {
+            Some(CborValue::Text(s)) => s.clone(),
+            _ => String::new(),
+        })
+        .collect();
+    assert_eq!(names_p2, vec!["Cherry".to_string(), "Date".into()]);
+
+    let p3 = vista.fetch_page(3).await?;
+    assert_eq!(p3.len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_fetch_next_chains_pages_until_exhausted() -> TestResult {
+    use vantage_vista::SortDirection;
+
+    let (db, table_name) = setup().await;
+    for (id, name) in [("a", "Apple"), ("b", "Banana"), ("c", "Cherry")] {
+        seed_row(&db, &table_name, id, name, 1, false).await?;
+    }
+
+    let table = product_table(db.clone(), &table_name);
+    let mut vista = db.vista_factory().from_table(table)?;
+    assert!(vista.capabilities().can_fetch_next);
+
+    vista.set_page_size(2)?;
+    vista.add_order("name", SortDirection::Ascending)?;
+
+    let (r1, tok1) = vista.fetch_next(None).await?;
+    assert_eq!(r1.len(), 2);
+    assert!(tok1.is_some());
+
+    let (r2, tok2) = vista.fetch_next(tok1).await?;
+    assert_eq!(r2.len(), 1);
+    assert!(tok2.is_none());
+    Ok(())
+}

@@ -4106,7 +4106,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cli-util"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4137,7 +4137,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-csv"
-version = "0.4.11"
+version = "0.4.12"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4233,7 +4233,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-log-writer"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4256,7 +4256,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-mongodb"
-version = "0.4.9"
+version = "0.4.10"
 dependencies = [
  "async-trait",
  "bson",
@@ -4302,7 +4302,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4327,7 +4327,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.4.8"
+version = "0.4.9"
 dependencies = [
  "async-trait",
  "bakery_model3",
@@ -4357,7 +4357,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.4.11"
+version = "0.4.12"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -4407,7 +4407,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.4.8"
+version = "0.4.9"
 dependencies = [
  "async-stream",
  "async-trait",

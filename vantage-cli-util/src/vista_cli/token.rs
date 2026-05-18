@@ -146,10 +146,16 @@ pub enum Token {
     Locator(String),
     /// `field=value`, `field:op=value`, `field:null`, `field:notnull`.
     /// `value` is `None` for nullary ops, otherwise the parsed CBOR.
+    /// `value_raw` is `Some(text)` when the parser took the auto-detect
+    /// path (no `#`-typed escape) and the raw user text should be
+    /// re-coerced against the target column's declared type at run time.
+    /// `None` when the user explicitly forced the type via `#literal` or
+    /// when the op is nullary.
     OpCondition {
         field: String,
         op: Op,
         value: Option<CborValue>,
+        value_raw: Option<String>,
         selector: Option<Selector>,
     },
     /// `:relation` — traverse a typed relation.

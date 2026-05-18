@@ -71,14 +71,14 @@ erroring at runtime:
 
 ```rust,ignore
 let caps = vista.capabilities();
-if caps.can_insert    { /* show "+ New" */ }
-if caps.can_subscribe { /* wire live updates */ }
-
-match caps.paginate_kind {
-    PaginateKind::None   => /* fetch everything */,
-    PaginateKind::Offset => /* limit/offset */,
-    PaginateKind::Cursor => /* opaque cursor */,
-}
+if caps.can_insert       { /* show "+ New" */ }
+if caps.can_subscribe    { /* wire live updates */ }
+if caps.can_order        { /* render column sort headers */ }
+if caps.can_search       { /* render the quicksearch box */ }
+if caps.can_set_page_size { /* expose page-size picker */ }
+if caps.can_fetch_page   { /* show random-access page selector */ }
+else if caps.can_fetch_next { /* show forward-only "Next" button */ }
+else                      { /* no pagination — fetch everything */ }
 ```
 
 A read-only AWS API and a writable SQLite table look the same shape from outside; the capability

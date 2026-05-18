@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.10 — 2026-05-17
+
+- `MongoTableShell` ships the full Stage 5 query surface: [`add_order`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.add_order) on any column (MongoDB sorts on any field — every column gets the [`ORDERABLE`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/flags/constant.ORDERABLE.html) flag at construction), [`add_search`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.add_search) via the existing `search_table_condition`, and offset-style pagination ([`set_page_size`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.set_page_size) + [`fetch_page`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.fetch_page) / [`fetch_next`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html#method.fetch_next), encoding the cursor as a 1-based page number).
+- Capabilities updated: `can_order`, `can_search`, `can_set_page_size`, `can_fetch_page`, `can_fetch_next` all `true`. The retired `paginate_kind` flag is gone — drop it from any direct `VistaCapabilities` construction.
+- Pins `vantage-vista = "0.4.9"`, `vantage-table = "0.4.12"`.
+
 ## 0.4.9 — 2026-05-16
 
 - `MongoTableShell` implements [`TableShell::get_ref`](https://docs.rs/vantage-vista/0.4.7/vantage_vista/trait.TableShell.html#method.get_ref) and `get_ref_kinds`: row-based reference traversal at the Vista layer. The shell converts the CBOR parent row into `Record<AnyMongoType>`, delegates to `Reference::resolve_from_row` on the wrapped typed table, and re-wraps via `MongoVistaFactory::from_table`.

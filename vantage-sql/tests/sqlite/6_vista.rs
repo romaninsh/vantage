@@ -329,3 +329,265 @@ async fn vista_with_foreign_lazy_no_eager_invocation() -> TestResult {
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn vista_add_order_ascending_descending_and_clear() -> TestResult {
+    use vantage_vista::SortDirection;
+
+    let db = setup().await;
+    let table = product_table(db.clone());
+    let mut vista = db.vista_factory().from_table(table)?;
+
+    // capability is advertised
+    assert!(vista.capabilities().can_order);
+
+    // sort ascending by price → a (10), b (20), c (30)
+    vista.add_order("price", SortDirection::Ascending)?;
+    let rows = vista.list_values().await?;
+    let ids: Vec<&String> = rows.keys().collect();
+    assert_eq!(ids, ["a", "b", "c"]);
+
+    // replace-semantics: switch to descending name → c (Gamma), b (Beta), a (Alpha)
+    vista.add_order("name", SortDirection::Descending)?;
+    let rows = vista.list_values().await?;
+    let ids: Vec<&String> = rows.keys().collect();
+    assert_eq!(ids, ["c", "b", "a"]);
+
+    // clear → back to insertion order
+    vista.clear_orders()?;
+    let rows = vista.list_values().await?;
+    let ids: Vec<&String> = rows.keys().collect();
+    assert_eq!(ids, ["a", "b", "c"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_add_order_rejects_unknown_column() -> TestResult {
+    use vantage_vista::SortDirection;
+
+    let db = setup().await;
+    let table = product_table(db.clone());
+    let mut vista = db.vista_factory().from_table(table)?;
+
+    let result = vista.add_order("not_a_column", SortDirection::Ascending);
+    assert!(result.is_err(), "unknown column must fail");
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_add_search_filters_results_with_replace_semantics() -> TestResult {
+    let db = setup().await;
+    let table = product_table(db.clone());
+    let mut vista = db.vista_factory().from_table(table)?;
+
+    assert!(vista.capabilities().can_search);
+
+    // search "alpha" → only row a (name = "Alpha")
+    vista.add_search("alpha")?;
+    let rows = vista.list_values().await?;
+    let ids: Vec<&String> = rows.keys().collect();
+    assert_eq!(ids, ["a"], "search 'alpha' must match only row a");
+
+    // replace-semantics: search "amma" → only row c (name = "Gamma")
+    vista.add_search("amma")?;
+    let rows = vista.list_values().await?;
+    let ids: Vec<&String> = rows.keys().collect();
+    assert_eq!(
+        ids,
+        ["c"],
+        "search 'amma' must match only row c after replace"
+    );
+
+    // clear → all rows back
+    vista.clear_search()?;
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 3, "clear_search must restore all rows");
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_clear_search_without_prior_search_is_noop() -> TestResult {
+    let db = setup().await;
+    let table = product_table(db.clone());
+    let mut vista = db.vista_factory().from_table(table)?;
+
+    // No prior search — clear should silently succeed.
+    vista.clear_search()?;
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 3);
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_fetch_page_offset_pagination() -> TestResult {
+    let db = setup().await;
+    let table = product_table(db.clone());
+    let mut vista = db.vista_factory().from_table(table)?;
+
+    assert!(vista.capabilities().can_set_page_size);
+    assert!(vista.capabilities().can_fetch_page);
+
+    vista.set_page_size(2)?;
+    vista.add_order("id", vantage_vista::SortDirection::Ascending)?;
+
+    let page1 = vista.fetch_page(1).await?;
+    let ids1: Vec<&String> = page1.iter().map(|(id, _)| id).collect();
+    assert_eq!(ids1, ["a", "b"], "page 1 should be the first two rows");
+
+    let page2 = vista.fetch_page(2).await?;
+    let ids2: Vec<&String> = page2.iter().map(|(id, _)| id).collect();
+    assert_eq!(ids2, ["c"], "page 2 should be the third row");
+
+    let page3 = vista.fetch_page(3).await?;
+    assert!(page3.is_empty(), "page 3 should be empty");
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_fetch_page_without_set_page_size_errors() -> TestResult {
+    let db = setup().await;
+    let table = product_table(db.clone());
+    let vista = db.vista_factory().from_table(table)?;
+
+    // No set_page_size — fetch_page must reject loudly.
+    let result = vista.fetch_page(1).await;
+    assert!(
+        result.is_err(),
+        "fetch_page without set_page_size must error"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_set_page_size_zero_errors() -> TestResult {
+    let db = setup().await;
+    let table = product_table(db.clone());
+    let mut vista = db.vista_factory().from_table(table)?;
+
+    assert!(vista.set_page_size(0).is_err(), "size 0 must reject");
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_fetch_page_honors_search_and_order() -> TestResult {
+    use vantage_vista::SortDirection;
+
+    let db = setup().await;
+    let table = product_table(db.clone());
+    let mut vista = db.vista_factory().from_table(table)?;
+
+    vista.set_page_size(10)?;
+    vista.add_order("name", SortDirection::Descending)?;
+    vista.add_search("a")?; // matches Alpha, Beta, Gamma (all contain 'a' case-insensitively)
+
+    let page = vista.fetch_page(1).await?;
+    let names: Vec<String> = page
+        .iter()
+        .map(|(_, rec)| match rec.get("name") {
+            Some(CborValue::Text(s)) => s.clone(),
+            _ => String::new(),
+        })
+        .collect();
+    assert_eq!(
+        names,
+        vec!["Gamma".to_string(), "Beta".to_string(), "Alpha".to_string()],
+        "page must honour both search and DESC order on name"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_fetch_next_chains_pages_until_exhausted() -> TestResult {
+    use vantage_vista::SortDirection;
+
+    let db = setup().await;
+    let table = product_table(db.clone());
+    let mut vista = db.vista_factory().from_table(table)?;
+
+    assert!(vista.capabilities().can_fetch_next);
+
+    vista.set_page_size(2)?;
+    vista.add_order("id", SortDirection::Ascending)?;
+
+    // First call — pass None.
+    let (rows1, tok1) = vista.fetch_next(None).await?;
+    let ids1: Vec<&String> = rows1.iter().map(|(id, _)| id).collect();
+    assert_eq!(ids1, ["a", "b"], "first page");
+    assert!(tok1.is_some(), "more pages available — token must be Some");
+
+    // Second call — last partial page, 1 row → exhaustion signaled.
+    let (rows2, tok2) = vista.fetch_next(tok1).await?;
+    let ids2: Vec<&String> = rows2.iter().map(|(id, _)| id).collect();
+    assert_eq!(ids2, ["c"], "last page");
+    assert!(tok2.is_none(), "partial last page must exhaust");
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_fetch_next_resets_when_passed_none() -> TestResult {
+    use vantage_vista::SortDirection;
+
+    let db = setup().await;
+    let table = product_table(db.clone());
+    let mut vista = db.vista_factory().from_table(table)?;
+
+    vista.set_page_size(2)?;
+    vista.add_order("id", SortDirection::Ascending)?;
+
+    // Walk to exhaustion.
+    let (_p1, tok1) = vista.fetch_next(None).await?;
+    let (_p2, tok2) = vista.fetch_next(tok1).await?;
+    assert!(tok2.is_none());
+
+    // Passing None again restarts.
+    let (p_restart, _) = vista.fetch_next(None).await?;
+    let ids: Vec<&String> = p_restart.iter().map(|(id, _)| id).collect();
+    assert_eq!(ids, ["a", "b"], "passing None restarts at page 1");
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_fetch_next_rejects_bad_token_type() -> TestResult {
+    let db = setup().await;
+    let table = product_table(db.clone());
+    let mut vista = db.vista_factory().from_table(table)?;
+
+    vista.set_page_size(2)?;
+
+    // SQLite expects CborValue::Integer; pass a Text and expect rejection.
+    let bad_token = Some(CborValue::Text("not a page number".into()));
+    let result = vista.fetch_next(bad_token).await;
+    assert!(result.is_err(), "non-Integer token must be rejected");
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_fetch_next_without_set_page_size_errors() -> TestResult {
+    let db = setup().await;
+    let table = product_table(db.clone());
+    let vista = db.vista_factory().from_table(table)?;
+
+    let result = vista.fetch_next(None).await;
+    assert!(
+        result.is_err(),
+        "fetch_next without set_page_size must error"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_columns_advertise_orderable_flag() -> TestResult {
+    let db = setup().await;
+    let table = product_table(db.clone());
+    let vista = db.vista_factory().from_table(table)?;
+
+    for col_name in ["id", "name", "price", "is_deleted"] {
+        let col = vista.get_column(col_name).expect("column exists");
+        assert!(
+            col.has_flag(vantage_vista::flags::ORDERABLE),
+            "column '{}' must carry ORDERABLE flag for SQLite",
+            col_name
+        );
+    }
+    Ok(())
+}

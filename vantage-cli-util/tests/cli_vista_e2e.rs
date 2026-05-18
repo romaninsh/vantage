@@ -1,15 +1,10 @@
 //! End-to-end test of the Vista CLI runner against an in-memory
-//! `MockShell` Vista. Verifies every new token shape lands in the
-//! correct branch:
-//! - Real Vista calls (eq filter, id alias, `[N]` narrow) actually
-//!   affect the result.
-//! - Stubbed paths (operator beyond eq, sort, slice, search,
-//!   aggregates) record a `note_stub` call so the test can assert the
-//!   dispatch reached them.
-//!
-//! When stage 5/5b lands and the stubs are replaced with real Vista
-//! calls, these tests should be updated to assert on behaviour instead
-//! of stub-name strings.
+//! `MockShell` Vista. Covers the paths wired to real `Vista` calls:
+//! eq filter, `id=` alias, `[N]` narrow, `[+col]` sort, `?keyword`
+//! search, locator dispatch, and the three output formats. Parser
+//! behaviour for the still-stubbed paths (non-`eq` operators,
+//! `[N:M]` range slicing, aggregates) is covered in `parse.rs` unit
+//! tests — no need to re-assert it here.
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
@@ -36,15 +31,14 @@ fn record(pairs: &[(&str, CborValue)]) -> Record<CborValue> {
 }
 
 fn seeded_shell() -> MockShell {
-    // Ids are integers because MockShell does strict CBOR equality for
-    // filters and the CLI's value auto-detection turns `2` into
-    // `Integer(2)` (not `Text("2")`). Real backends coerce; the mock
-    // doesn't, so we line up here.
+    // Ids match the declared "String" column type so column-typed value
+    // coercion (`id=2` → Text("2")) lines up with what MockShell's strict
+    // CBOR-eq filter compares against.
     MockShell::new()
         .with_record(
             "1",
             record(&[
-                ("id", CborValue::Integer(1.into())),
+                ("id", cbor_text("1")),
                 ("name", cbor_text("Alice")),
                 ("salary", CborValue::Integer(900.into())),
                 ("vip_flag", CborValue::Bool(true)),
@@ -53,7 +47,7 @@ fn seeded_shell() -> MockShell {
         .with_record(
             "2",
             record(&[
-                ("id", CborValue::Integer(2.into())),
+                ("id", cbor_text("2")),
                 ("name", cbor_text("Bob")),
                 ("salary", CborValue::Integer(2500.into())),
                 ("vip_flag", CborValue::Bool(false)),
@@ -62,10 +56,22 @@ fn seeded_shell() -> MockShell {
         .with_record(
             "3",
             record(&[
-                ("id", CborValue::Integer(3.into())),
+                ("id", cbor_text("3")),
                 ("name", cbor_text("Carol")),
                 ("salary", CborValue::Integer(1500.into())),
                 ("vip_flag", CborValue::Bool(true)),
+            ]),
+        )
+        // A user whose name is literally the string "true" — proves that
+        // column-typed coercion keeps `name=true` as text. Without the
+        // coercion this row would never match `name=true`.
+        .with_record(
+            "4",
+            record(&[
+                ("id", cbor_text("4")),
+                ("name", cbor_text("true")),
+                ("salary", CborValue::Integer(0.into())),
+                ("vip_flag", CborValue::Bool(false)),
             ]),
         )
 }
@@ -73,8 +79,13 @@ fn seeded_shell() -> MockShell {
 fn build_users_vista() -> Vista {
     let metadata = VistaMetadata::new()
         .with_column(Column::new("id", "String").with_flag("id"))
-        .with_column(Column::new("name", "String").with_flag("title"))
-        .with_column(Column::new("salary", "i64"))
+        .with_column(
+            Column::new("name", "String")
+                .with_flag("title")
+                .with_flag("orderable")
+                .with_flag("searchable"),
+        )
+        .with_column(Column::new("salary", "i64").with_flag("orderable"))
         .with_column(Column::new("vip_flag", "bool"))
         .with_id_column("id");
     Vista::new("users", Box::new(seeded_shell()), metadata)
@@ -96,11 +107,12 @@ impl ModelFactory for TestFactory {
     fn for_locator(&self, locator: &str) -> Option<Vista> {
         // Accept `user:<id>` (SurrealDB-style Thing) and narrow the
         // standard users vista to that id. Route through the same
-        // value coercion the CLI uses on `field=value` so ints stay
-        // ints — see [`vista_cli::auto_detect`].
+        // column-typed coercion the CLI uses on `field=value` so the
+        // value matches the id column's declared type.
         let id = locator.strip_prefix("user:")?;
         let mut v = build_users_vista();
-        v.add_condition_eq("id", vista_cli::auto_detect(id)).ok()?;
+        let coerced = vista_cli::coerce_for_column(&v, "id", id).ok()?;
+        v.add_condition_eq("id", coerced).ok()?;
         Some(v)
     }
 }
@@ -129,9 +141,6 @@ impl Recorder {
     }
     fn records(&self) -> Vec<String> {
         self.records.lock().unwrap().clone()
-    }
-    fn scalars(&self) -> Vec<String> {
-        self.scalars.lock().unwrap().clone()
     }
 }
 
@@ -224,6 +233,35 @@ async fn eq_filter_narrows_results() {
 }
 
 #[tokio::test]
+async fn eq_on_string_column_keeps_text_even_when_value_looks_like_bool() {
+    // Without column-typed coercion, `name=true` would auto-detect to
+    // `Bool(true)` and miss row id=4 (whose name is literally the string
+    // "true"). The runner consults the `name` column's declared type
+    // (`String`) and produces `Text("true")`, which matches.
+    let rec = Recorder::with_format(OutputFormat::CborDiag);
+    vista_cli::run(&TestFactory, &rec, &argv(&["users", "name=true"]))
+        .await
+        .unwrap();
+
+    let lists = rec.lists();
+    assert_eq!(lists.len(), 1);
+    let rendered = &lists[0];
+    // Only the row whose name is the text "true" comes back.
+    assert!(rendered.contains("\"4\""), "got: {rendered}");
+    assert!(!rendered.contains("\"Alice\""), "got: {rendered}");
+    assert!(!rendered.contains("\"Bob\""), "got: {rendered}");
+
+    // Sanity-check the other direction: bool column still gets a bool.
+    let rec2 = Recorder::with_format(OutputFormat::CborDiag);
+    vista_cli::run(&TestFactory, &rec2, &argv(&["users", "vip_flag=true"]))
+        .await
+        .unwrap();
+    let lists2 = rec2.lists();
+    assert!(lists2[0].contains("\"Alice\""), "got: {}", lists2[0]); // vip
+    assert!(!lists2[0].contains("\"Bob\""), "got: {}", lists2[0]); // not vip
+}
+
+#[tokio::test]
 async fn typed_bool_works_same_as_autodetect() {
     let rec = Recorder::with_format(OutputFormat::CborDiag);
     vista_cli::run(&TestFactory, &rec, &argv(&["users", "vip_flag=#true"]))
@@ -261,106 +299,64 @@ async fn index_narrows_to_single() {
 }
 
 #[tokio::test]
-async fn operator_lt_reaches_stub() {
-    let rec = Recorder::with_format(OutputFormat::CborDiag);
-    vista_cli::run(&TestFactory, &rec, &argv(&["users", "salary:lt=1000"]))
-        .await
-        .unwrap();
-
-    let stubs = rec.stubs();
-    assert_eq!(stubs.len(), 1);
-    assert!(stubs[0].starts_with("add_condition(\"salary\", lt"));
-    // Filter not applied yet — all three records still come back.
-    let lists = rec.lists();
-    assert_eq!(lists.len(), 1);
-    assert!(lists[0].contains("\"Bob\""));
-}
-
-#[tokio::test]
-async fn nullary_op_reaches_stub() {
-    let rec = Recorder::with_format(OutputFormat::CborDiag);
-    vista_cli::run(&TestFactory, &rec, &argv(&["users", "manager_id:null"]))
-        .await
-        .unwrap();
-
-    let stubs = rec.stubs();
-    assert_eq!(
-        stubs,
-        vec!["add_condition(\"manager_id\", null)".to_string()]
-    );
-}
-
-#[tokio::test]
-async fn sort_reaches_stub() {
+async fn sort_applies_via_add_order() {
     let rec = Recorder::with_format(OutputFormat::CborDiag);
     vista_cli::run(&TestFactory, &rec, &argv(&["users", "[+name]"]))
         .await
         .unwrap();
 
-    let stubs = rec.stubs();
-    assert_eq!(stubs.len(), 1);
-    assert!(stubs[0].starts_with("add_order(\"name\", Asc)"));
-}
-
-#[tokio::test]
-async fn slice_range_reaches_stub() {
-    let rec = Recorder::with_format(OutputFormat::CborDiag);
-    vista_cli::run(&TestFactory, &rec, &argv(&["users", "[0:2]"]))
-        .await
-        .unwrap();
-
-    let stubs = rec.stubs();
-    assert_eq!(stubs, vec!["set_pagination(0, Some(2))".to_string()]);
+    assert!(
+        rec.stubs().is_empty(),
+        "sort is wired to Vista::add_order, no stub expected: {:?}",
+        rec.stubs()
+    );
+    // MockShell honours add_order, so the rendered list comes back in
+    // name-ascending order: Alice, Bob, Carol.
+    let lists = rec.lists();
+    assert_eq!(lists.len(), 1);
+    let rendered = &lists[0];
+    let alice = rendered.find("Alice").expect("Alice present");
+    let bob = rendered.find("Bob").expect("Bob present");
+    let carol = rendered.find("Carol").expect("Carol present");
+    assert!(alice < bob && bob < carol, "got: {rendered}");
 }
 
 #[tokio::test]
 async fn sort_then_index_narrows_to_single() {
-    // [+name:0] — sort stub fires, then `apply_index` narrows to a row.
-    // With sort unwired the chosen row is just the first in seed order
-    // (id "1" = Alice), but the *narrowing* is the wired part being
-    // verified here.
+    // [+name:0] — sort, then `apply_index` narrows to the top row. With
+    // sort wired through `Vista::add_order`, "row 0" is the smallest
+    // by name-ascending, which is Alice (matches seed order here too).
     let rec = Recorder::with_format(OutputFormat::CborDiag);
     vista_cli::run(&TestFactory, &rec, &argv(&["users[+name:0]"]))
         .await
         .unwrap();
 
-    let stubs = rec.stubs();
-    assert_eq!(stubs, vec!["add_order(\"name\", Asc)".to_string()]);
+    assert!(rec.stubs().is_empty(), "stubs: {:?}", rec.stubs());
     let records = rec.records();
     assert_eq!(records.len(), 1);
-    // The first record in seed order is Alice. Once sort is wired,
-    // this will become "Alice" by name-ascending sort — same record
-    // here, but the assertion will need updating for fixtures whose
-    // seed order differs from alphabetical.
     assert!(records[0].contains("\"Alice\""));
 }
 
 #[tokio::test]
-async fn search_reaches_stub() {
+async fn search_applies_via_add_search() {
     let rec = Recorder::with_format(OutputFormat::CborDiag);
     vista_cli::run(&TestFactory, &rec, &argv(&["users", "?alice"]))
         .await
         .unwrap();
 
-    let stubs = rec.stubs();
-    assert_eq!(stubs, vec!["add_search(\"alice\")".to_string()]);
-}
-
-#[tokio::test]
-async fn aggregate_short_circuits_to_scalar() {
-    let rec = Recorder::with_format(OutputFormat::CborDiag);
-    vista_cli::run(&TestFactory, &rec, &argv(&["users", "@sum:salary"]))
-        .await
-        .unwrap();
-
-    let stubs = rec.stubs();
-    assert_eq!(stubs, vec!["sum(salary)".to_string()]);
-    assert!(rec.lists().is_empty());
-    assert!(rec.records().is_empty());
-    let scalars = rec.scalars();
-    assert_eq!(scalars.len(), 1);
-    // Stubbed value is null until vista.get_sum lands.
-    assert!(scalars[0].contains("null"));
+    assert!(
+        rec.stubs().is_empty(),
+        "search is wired to Vista::add_search, no stub expected: {:?}",
+        rec.stubs()
+    );
+    // MockShell honours add_search with case-insensitive substring
+    // matching across text fields — so "?alice" leaves only Alice.
+    let lists = rec.lists();
+    assert_eq!(lists.len(), 1);
+    let rendered = &lists[0];
+    assert!(rendered.contains("Alice"), "got: {rendered}");
+    assert!(!rendered.contains("Bob"), "got: {rendered}");
+    assert!(!rendered.contains("Carol"), "got: {rendered}");
 }
 
 #[tokio::test]
@@ -411,22 +407,22 @@ async fn cbor_diag_output_round_trips_record() {
     // the field ordering is stable.
     assert_eq!(
         records[0],
-        "\"1\": {\"id\": 1, \"name\": \"Alice\", \"salary\": 900, \"vip_flag\": true}\n"
+        "\"1\": {\"id\": \"1\", \"name\": \"Alice\", \"salary\": 900, \"vip_flag\": true}\n"
     );
 }
 
 #[tokio::test]
-async fn json_output_loses_int_but_keeps_bool() {
+async fn json_output_keeps_int_and_bool() {
     let rec = Recorder::with_format(OutputFormat::Json);
     vista_cli::run(&TestFactory, &rec, &argv(&["users", "id=1"]))
         .await
         .unwrap();
 
     let records = rec.records();
-    // JSON output: bool stays, int stays (fits in i64), strings quoted.
+    // JSON: bool, int (fits in i64), and string fields all serialise faithfully.
     assert_eq!(
         records[0],
-        "{\"1\":{\"id\":1,\"name\":\"Alice\",\"salary\":900,\"vip_flag\":true}}\n"
+        "{\"1\":{\"id\":\"1\",\"name\":\"Alice\",\"salary\":900,\"vip_flag\":true}}\n"
     );
 }
 
@@ -440,6 +436,6 @@ async fn ndjson_output_one_line_per_record() {
     let lists = rec.lists();
     assert_eq!(lists.len(), 1);
     let lines: Vec<&str> = lists[0].lines().collect();
-    assert_eq!(lines.len(), 3);
+    assert_eq!(lines.len(), 4);
     assert!(lines[0].starts_with("{\"_id\":\"1\","));
 }

@@ -71,66 +71,83 @@ pub fn write_record_map(record: &Record<CborValue>) -> String {
 
 pub fn write_value(v: &CborValue) -> String {
     match v {
-        CborValue::Integer(i) => {
-            let n = i128::from(*i);
-            if (i64::MIN as i128..=i64::MAX as i128).contains(&n) {
-                n.to_string()
-            } else {
-                // out of double-precision-safe range: emit as quoted decimal
-                // so JSON parsers don't silently round.
-                format!("\"{n}\"")
-            }
-        }
-        CborValue::Float(f) => {
-            if f.is_nan() || f.is_infinite() {
-                "null".to_string()
-            } else {
-                f.to_string()
-            }
-        }
+        CborValue::Integer(i) => write_integer(*i),
+        CborValue::Float(f) => write_float(*f),
         CborValue::Text(s) => write_string(s),
-        CborValue::Bytes(b) => {
-            let mut hex = String::with_capacity(b.len() * 2 + 4);
-            hex.push_str("\"0x");
-            for byte in b {
-                hex.push_str(&format!("{byte:02x}"));
-            }
-            hex.push('"');
-            hex
-        }
+        CborValue::Bytes(b) => write_bytes(b),
         CborValue::Bool(b) => b.to_string(),
         CborValue::Null => "null".to_string(),
-        CborValue::Array(items) => {
-            let mut out = String::from("[");
-            for (i, item) in items.iter().enumerate() {
-                if i > 0 {
-                    out.push(',');
-                }
-                out.push_str(&write_value(item));
-            }
-            out.push(']');
-            out
-        }
-        CborValue::Map(pairs) => {
-            let mut out = String::from("{");
-            for (i, (k, v)) in pairs.iter().enumerate() {
-                if i > 0 {
-                    out.push(',');
-                }
-                // JSON object keys must be strings; coerce non-string keys.
-                let key = match k {
-                    CborValue::Text(s) => write_string(s),
-                    other => write_string(&write_value(other)),
-                };
-                out.push_str(&key);
-                out.push(':');
-                out.push_str(&write_value(v));
-            }
-            out.push('}');
-            out
-        }
+        CborValue::Array(items) => write_array(items),
+        CborValue::Map(pairs) => write_map(pairs),
         CborValue::Tag(_, inner) => write_value(inner),
         other => write_string(&format!("{other:?}")),
+    }
+}
+
+/// Integers fitting in `i64` emit as bare numbers; anything wider is
+/// quoted so JSON parsers (which typically clamp at f64's 53-bit mantissa)
+/// don't silently round.
+fn write_integer(i: ciborium::value::Integer) -> String {
+    let n = i128::from(i);
+    if (i64::MIN as i128..=i64::MAX as i128).contains(&n) {
+        n.to_string()
+    } else {
+        format!("\"{n}\"")
+    }
+}
+
+/// JSON has no NaN/Infinity literals; collapse them to `null`.
+fn write_float(f: f64) -> String {
+    if f.is_nan() || f.is_infinite() {
+        "null".to_string()
+    } else {
+        f.to_string()
+    }
+}
+
+/// Byte strings have no native JSON form; emit as a `"0x…"` hex literal.
+fn write_bytes(b: &[u8]) -> String {
+    let mut hex = String::with_capacity(b.len() * 2 + 4);
+    hex.push_str("\"0x");
+    for byte in b {
+        hex.push_str(&format!("{byte:02x}"));
+    }
+    hex.push('"');
+    hex
+}
+
+fn write_array(items: &[CborValue]) -> String {
+    let mut out = String::from("[");
+    for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push_str(&write_value(item));
+    }
+    out.push(']');
+    out
+}
+
+fn write_map(pairs: &[(CborValue, CborValue)]) -> String {
+    let mut out = String::from("{");
+    for (i, (k, v)) in pairs.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push_str(&write_map_key(k));
+        out.push(':');
+        out.push_str(&write_value(v));
+    }
+    out.push('}');
+    out
+}
+
+/// JSON object keys must be strings; non-string keys get stringified
+/// through `write_value` first.
+fn write_map_key(k: &CborValue) -> String {
+    match k {
+        CborValue::Text(s) => write_string(s),
+        other => write_string(&write_value(other)),
     }
 }
 

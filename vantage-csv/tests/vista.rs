@@ -144,5 +144,56 @@ async fn vista_capabilities_advertise_read_only() -> Result<()> {
     assert!(!caps.can_update);
     assert!(!caps.can_delete);
     assert!(!caps.can_subscribe);
+    // CSV opts out of every Stage 5 query primitive — it's a flat-file
+    // backend with no native sort/search/paginate story.
+    assert!(!caps.can_order);
+    assert!(!caps.can_search);
+    assert!(!caps.can_set_page_size);
+    assert!(!caps.can_fetch_page);
+    assert!(!caps.can_fetch_next);
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_opts_out_of_query_primitives() -> Result<()> {
+    use vantage_core::ErrorKind;
+    use vantage_vista::SortDirection;
+
+    let csv = csv();
+    let table = Table::<Csv, EmptyEntity>::new("product", csv.clone())
+        .with_id_column("id")
+        .with_column_of::<String>("name");
+    let mut vista = csv.vista_factory().from_table(table)?;
+
+    // Every Stage 5 mutator and fetcher returns Unsupported (the honest
+    // contract — `can_*` flag is false → not "missing override", but
+    // "driver doesn't claim to support this").
+    let order_err = vista
+        .add_order("name", SortDirection::Ascending)
+        .expect_err("CSV should reject add_order");
+    assert_eq!(order_err.kind(), ErrorKind::Unsupported);
+
+    let search_err = vista
+        .add_search("anything")
+        .expect_err("CSV should reject add_search");
+    assert_eq!(search_err.kind(), ErrorKind::Unsupported);
+
+    let size_err = vista
+        .set_page_size(10)
+        .expect_err("CSV should reject set_page_size");
+    assert_eq!(size_err.kind(), ErrorKind::Unsupported);
+
+    let page_err = vista
+        .fetch_page(1)
+        .await
+        .expect_err("CSV should reject fetch_page");
+    assert_eq!(page_err.kind(), ErrorKind::Unsupported);
+
+    let next_err = vista
+        .fetch_next(None)
+        .await
+        .expect_err("CSV should reject fetch_next");
+    assert_eq!(next_err.kind(), ErrorKind::Unsupported);
+
     Ok(())
 }

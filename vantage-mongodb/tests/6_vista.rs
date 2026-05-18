@@ -340,3 +340,176 @@ mongo:
     teardown(&db, &name).await;
     Ok(())
 }
+
+#[tokio::test]
+async fn vista_add_order_filters_results_with_replace_semantics() -> TestResult {
+    use vantage_vista::SortDirection;
+
+    let (db, name) = setup().await;
+    let table = product_table(db.clone());
+
+    for (n, p) in [("Beta", 20i64), ("Alpha", 10), ("Gamma", 30)] {
+        table
+            .insert_value(
+                &MongoId::from(ObjectId::new()),
+                &rec(&[
+                    ("name", AnyMongoType::new(n.to_string())),
+                    ("price", AnyMongoType::new(p)),
+                ]),
+            )
+            .await?;
+    }
+
+    let mut vista = db.vista_factory().from_table(table)?;
+    assert!(vista.capabilities().can_order);
+
+    vista.add_order("price", SortDirection::Ascending)?;
+    let rows = vista.list_values().await?;
+    let names: Vec<String> = rows
+        .values()
+        .map(|r| match r.get("name") {
+            Some(CborValue::Text(s)) => s.clone(),
+            _ => String::new(),
+        })
+        .collect();
+    assert_eq!(
+        names,
+        vec!["Alpha".to_string(), "Beta".into(), "Gamma".into()]
+    );
+
+    vista.add_order("name", SortDirection::Descending)?;
+    let rows = vista.list_values().await?;
+    let names: Vec<String> = rows
+        .values()
+        .map(|r| match r.get("name") {
+            Some(CborValue::Text(s)) => s.clone(),
+            _ => String::new(),
+        })
+        .collect();
+    assert_eq!(
+        names,
+        vec!["Gamma".to_string(), "Beta".into(), "Alpha".into()]
+    );
+
+    vista.clear_orders()?;
+    let _rows = vista.list_values().await?;
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_add_search_uses_regex() -> TestResult {
+    let (db, name) = setup().await;
+    let table = product_table(db.clone());
+
+    for n in ["Alpha", "Beta", "Gamma"] {
+        table
+            .insert_value(
+                &MongoId::from(ObjectId::new()),
+                &rec(&[("name", AnyMongoType::new(n.to_string()))]),
+            )
+            .await?;
+    }
+
+    let mut vista = db.vista_factory().from_table(table)?;
+    assert!(vista.capabilities().can_search);
+
+    vista.add_search("amma")?;
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 1, "only Gamma matches 'amma'");
+
+    vista.add_search("alpha")?;
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 1, "only Alpha matches");
+
+    vista.clear_search()?;
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 3);
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_fetch_page_offset_pagination() -> TestResult {
+    use vantage_vista::SortDirection;
+
+    let (db, name) = setup().await;
+    let table = product_table(db.clone());
+
+    for n in ["A", "B", "C", "D", "E"] {
+        table
+            .insert_value(
+                &MongoId::from(ObjectId::new()),
+                &rec(&[("name", AnyMongoType::new(n.to_string()))]),
+            )
+            .await?;
+    }
+
+    let mut vista = db.vista_factory().from_table(table)?;
+    assert!(vista.capabilities().can_fetch_page);
+
+    vista.set_page_size(2)?;
+    vista.add_order("name", SortDirection::Ascending)?;
+
+    let p1 = vista.fetch_page(1).await?;
+    let names_p1: Vec<String> = p1
+        .iter()
+        .map(|(_, r)| match r.get("name") {
+            Some(CborValue::Text(s)) => s.clone(),
+            _ => String::new(),
+        })
+        .collect();
+    assert_eq!(names_p1, vec!["A".to_string(), "B".into()]);
+
+    let p2 = vista.fetch_page(2).await?;
+    let names_p2: Vec<String> = p2
+        .iter()
+        .map(|(_, r)| match r.get("name") {
+            Some(CborValue::Text(s)) => s.clone(),
+            _ => String::new(),
+        })
+        .collect();
+    assert_eq!(names_p2, vec!["C".to_string(), "D".into()]);
+
+    let p3 = vista.fetch_page(3).await?;
+    assert_eq!(p3.len(), 1, "partial last page");
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_fetch_next_chains_pages_until_exhausted() -> TestResult {
+    use vantage_vista::SortDirection;
+
+    let (db, name) = setup().await;
+    let table = product_table(db.clone());
+
+    for n in ["A", "B", "C"] {
+        table
+            .insert_value(
+                &MongoId::from(ObjectId::new()),
+                &rec(&[("name", AnyMongoType::new(n.to_string()))]),
+            )
+            .await?;
+    }
+
+    let mut vista = db.vista_factory().from_table(table)?;
+    assert!(vista.capabilities().can_fetch_next);
+
+    vista.set_page_size(2)?;
+    vista.add_order("name", SortDirection::Ascending)?;
+
+    let (r1, tok1) = vista.fetch_next(None).await?;
+    assert_eq!(r1.len(), 2);
+    assert!(tok1.is_some());
+
+    let (r2, tok2) = vista.fetch_next(tok1).await?;
+    assert_eq!(r2.len(), 1, "partial last page exhausts");
+    assert!(tok2.is_none());
+
+    teardown(&db, &name).await;
+    Ok(())
+}

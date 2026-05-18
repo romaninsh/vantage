@@ -8,8 +8,10 @@ use vantage_types::Record;
 use crate::{
     capabilities::VistaCapabilities,
     column::Column,
+    flags,
     metadata::VistaMetadata,
     reference::{Reference, ReferenceKind},
+    sort::SortDirection,
     source::TableShell,
 };
 
@@ -207,6 +209,94 @@ impl Vista {
     /// fetch time by reading a parent record).
     pub fn add_raw_condition<C: Send + Sync + 'static>(&mut self, condition: C) -> Result<()> {
         self.source.add_raw_condition(Box::new(condition))
+    }
+
+    // ---- pagination -------------------------------------------------------
+
+    /// Declare how many records constitute one page. Some backends (notably
+    /// REST APIs with server-fixed page sizes) refuse this — check
+    /// `capabilities().can_set_page_size` before calling.
+    pub fn set_page_size(&mut self, size: usize) -> Result<()> {
+        self.source.set_page_size(size)
+    }
+
+    /// Fetch a specific page (1-based) using offset-style pagination. The
+    /// per-page count comes from the most recent
+    /// [`set_page_size`](Self::set_page_size). Returns `Unsupported` when the
+    /// driver does not advertise `can_fetch_page`; cursor-only drivers
+    /// (DynamoDB, most token-paginated REST APIs) only support
+    /// [`fetch_next`](Self::fetch_next) instead.
+    pub async fn fetch_page(&self, page: usize) -> Result<Vec<(String, Record<CborValue>)>> {
+        self.source.fetch_page(self, page).await
+    }
+
+    /// Cursor-style chain fetch. Pass `None` on the first call; pass the
+    /// previous call's returned token on subsequent calls. Returned token is
+    /// `None` when the result set is exhausted.
+    ///
+    /// The token is **driver-private** — its shape is whatever the backend
+    /// uses (DynamoDB `LastEvaluatedKey`, REST `nextToken`, offset count,
+    /// …). Consumers treat it as opaque and round-trip it back unchanged.
+    /// Returns `Unsupported` when the driver does not advertise
+    /// `can_fetch_next`.
+    pub async fn fetch_next(
+        &self,
+        token: Option<CborValue>,
+    ) -> Result<(Vec<(String, Record<CborValue>)>, Option<CborValue>)> {
+        self.source.fetch_next(self, token).await
+    }
+
+    // ---- quicksearch -------------------------------------------------------
+
+    /// Apply a quicksearch filter. The driver decides which columns participate;
+    /// typically those carrying the [`SEARCHABLE`](crate::flags::SEARCHABLE)
+    /// flag.
+    ///
+    /// **Replace semantics**: calling `add_search` again drops the previous
+    /// search filter. Returns `Unsupported` when the driver does not advertise
+    /// `can_search`.
+    pub fn add_search(&mut self, text: impl Into<String>) -> Result<()> {
+        self.source.add_search(&text.into())
+    }
+
+    /// Drop any quicksearch filter previously applied. Returns `Unsupported`
+    /// from the driver shell when search is unsupported.
+    pub fn clear_search(&mut self) -> Result<()> {
+        self.source.clear_search()
+    }
+
+    // ---- ordering ---------------------------------------------------------
+
+    /// Sort results by `column` in the given direction.
+    ///
+    /// **Replace semantics**: calling `add_order` again wipes the previous
+    /// order and pushes the new one. V1 supports a single sort column only;
+    /// multi-column sort can be added later without renaming.
+    ///
+    /// Returns `Unsupported` when the column is not flagged
+    /// [`ORDERABLE`](crate::flags::ORDERABLE) — drivers like DynamoDB only
+    /// flag their declared sort-key columns. Returns `Unsupported` from the
+    /// driver shell when the driver itself does not support ordering at all
+    /// (`capabilities().can_order == false`).
+    pub fn add_order(&mut self, column: &str, dir: SortDirection) -> Result<()> {
+        let col = self
+            .columns
+            .get(column)
+            .ok_or_else(|| error!("Unknown column for add_order", column = column))?;
+        if !col.has_flag(flags::ORDERABLE) {
+            return Err(error!(
+                format!("column '{}' is not orderable", column),
+                column = column
+            )
+            .is_unsupported());
+        }
+        self.source.add_order(column, dir)
+    }
+
+    /// Wipe every sort previously applied through `add_order`. Returns
+    /// `Unsupported` from the driver shell when ordering is unsupported.
+    pub fn clear_orders(&mut self) -> Result<()> {
+        self.source.clear_orders()
     }
 
     // ---- references --------------------------------------------------------

@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use vantage_core::{Result, VantageError, error};
 use vantage_types::Record;
 
-use crate::{capabilities::VistaCapabilities, vista::Vista};
+use crate::{capabilities::VistaCapabilities, sort::SortDirection, vista::Vista};
 
 /// Per-driver executor for a `Vista`.
 ///
@@ -78,47 +78,47 @@ pub trait TableShell: Send + Sync + 'static {
 
     async fn insert_vista_value(
         &self,
-        vista: &Vista,
+        _vista: &Vista,
         _id: &String,
         _record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        Err(self.default_error("insert_vista_value", "can_insert", vista))
+        Err(self.default_error("insert_vista_value", "can_insert"))
     }
 
     async fn replace_vista_value(
         &self,
-        vista: &Vista,
+        _vista: &Vista,
         _id: &String,
         _record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        Err(self.default_error("replace_vista_value", "can_update", vista))
+        Err(self.default_error("replace_vista_value", "can_update"))
     }
 
     async fn patch_vista_value(
         &self,
-        vista: &Vista,
+        _vista: &Vista,
         _id: &String,
         _partial: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        Err(self.default_error("patch_vista_value", "can_update", vista))
+        Err(self.default_error("patch_vista_value", "can_update"))
     }
 
-    async fn delete_vista_value(&self, vista: &Vista, _id: &String) -> Result<()> {
-        Err(self.default_error("delete_vista_value", "can_delete", vista))
+    async fn delete_vista_value(&self, _vista: &Vista, _id: &String) -> Result<()> {
+        Err(self.default_error("delete_vista_value", "can_delete"))
     }
 
-    async fn delete_vista_all_values(&self, vista: &Vista) -> Result<()> {
-        Err(self.default_error("delete_vista_all_values", "can_delete", vista))
+    async fn delete_vista_all_values(&self, _vista: &Vista) -> Result<()> {
+        Err(self.default_error("delete_vista_all_values", "can_delete"))
     }
 
     // ---- InsertableValueSet delegate ---------------------------------------
 
     async fn insert_vista_return_id_value(
         &self,
-        vista: &Vista,
+        _vista: &Vista,
         _record: &Record<CborValue>,
     ) -> Result<String> {
-        Err(self.default_error("insert_vista_return_id_value", "can_insert", vista))
+        Err(self.default_error("insert_vista_return_id_value", "can_insert"))
     }
 
     // ---- Aggregates --------------------------------------------------------
@@ -169,6 +169,85 @@ pub trait TableShell: Send + Sync + 'static {
             source_type = std::any::type_name::<Self>()
         )
         .is_unimplemented())
+    }
+
+    // ---- Pagination --------------------------------------------------------
+
+    /// Declare how many records constitute one page. Used by both
+    /// [`fetch_page`](Self::fetch_page) and [`fetch_next`](Self::fetch_next).
+    /// Default returns `default_error("set_page_size", "can_set_page_size")`.
+    fn set_page_size(&mut self, _size: usize) -> Result<()> {
+        Err(self.default_error("set_page_size", "can_set_page_size"))
+    }
+
+    /// Fetch a specific page (1-based) using offset-style pagination. The
+    /// per-page count comes from the most recent
+    /// [`set_page_size`](Self::set_page_size).
+    ///
+    /// Drivers without random-access pagination (DynamoDB, most token-paginated
+    /// REST APIs) leave the default in place, which produces `Unsupported`.
+    /// Callers should branch on `vista.capabilities().can_fetch_page` first.
+    async fn fetch_page(
+        &self,
+        _vista: &Vista,
+        _page: usize,
+    ) -> Result<Vec<(String, Record<CborValue>)>> {
+        Err(self.default_error("fetch_page", "can_fetch_page"))
+    }
+
+    /// Cursor-style chain fetch. Pass `None` on the first call; pass the
+    /// previous call's returned token on subsequent calls. Returned token is
+    /// `None` when the result set is exhausted.
+    ///
+    /// The token is **driver-private** — its shape is whatever the backend
+    /// finds convenient (DynamoDB `LastEvaluatedKey` as a CBOR map, REST
+    /// `nextToken` as `CborValue::Text`, offset-based as `CborValue::Integer`).
+    /// Consumers treat it as opaque and round-trip it back unchanged.
+    ///
+    /// Default returns `default_error("fetch_next", "can_fetch_next")`.
+    async fn fetch_next(
+        &self,
+        _vista: &Vista,
+        _token: Option<CborValue>,
+    ) -> Result<(Vec<(String, Record<CborValue>)>, Option<CborValue>)> {
+        Err(self.default_error("fetch_next", "can_fetch_next"))
+    }
+
+    // ---- Quicksearch -------------------------------------------------------
+
+    /// Apply a quicksearch filter — a single string the driver fans out across
+    /// the columns it considers searchable (typically those flagged
+    /// [`SEARCHABLE`](crate::flags::SEARCHABLE), but each driver decides).
+    ///
+    /// **Replace semantics**: calling `add_search` again wipes the previous
+    /// search filter before applying the new one. Default produces
+    /// `Unimplemented` (when `can_search: true`) or `Unsupported` (when
+    /// `can_search: false`).
+    fn add_search(&mut self, _text: &str) -> Result<()> {
+        Err(self.default_error("add_search", "can_search"))
+    }
+
+    /// Drop the search filter previously applied via
+    /// [`add_search`](Self::add_search). Default mirrors `add_search`.
+    fn clear_search(&mut self) -> Result<()> {
+        Err(self.default_error("clear_search", "can_search"))
+    }
+
+    // ---- Ordering ----------------------------------------------------------
+
+    /// Push a single ORDER BY clause onto the wrapped table.
+    ///
+    /// Vista's `add_order` is replace-semantics: the driver shell should clear
+    /// any previously-set order before pushing the new one. Default produces
+    /// `Unimplemented` (when `can_order: true`) or `Unsupported` (when
+    /// `can_order: false`).
+    fn add_order(&mut self, _field: &str, _dir: SortDirection) -> Result<()> {
+        Err(self.default_error("add_order", "can_order"))
+    }
+
+    /// Wipe every order clause. Default mirrors [`add_order`](Self::add_order).
+    fn clear_orders(&mut self) -> Result<()> {
+        Err(self.default_error("clear_orders", "can_order"))
     }
 
     // ---- References --------------------------------------------------------
@@ -230,6 +309,11 @@ pub trait TableShell: Send + Sync + 'static {
             "can_delete" => caps.can_delete,
             "can_subscribe" => caps.can_subscribe,
             "can_invalidate" => caps.can_invalidate,
+            "can_order" => caps.can_order,
+            "can_search" => caps.can_search,
+            "can_set_page_size" => caps.can_set_page_size,
+            "can_fetch_page" => caps.can_fetch_page,
+            "can_fetch_next" => caps.can_fetch_next,
             _ => false,
         }
     }
@@ -243,9 +327,8 @@ pub trait TableShell: Send + Sync + 'static {
     ///
     /// Both kinds emit a `tracing::error!` at construction with `method`,
     /// `capability`, `source_type`, and `vista_name` as structured fields.
-    fn default_error(&self, method: &str, capability: &str, vista: &Vista) -> VantageError {
+    fn default_error(&self, method: &str, capability: &str) -> VantageError {
         let source_type = std::any::type_name::<Self>();
-        let vista_name = vista.name().to_string();
         if self.capability_flag(capability) {
             error!(
                 format!(
@@ -254,8 +337,7 @@ pub trait TableShell: Send + Sync + 'static {
                 ),
                 method = method,
                 capability = capability,
-                source_type = source_type,
-                vista_name = vista_name
+                source_type = source_type
             )
             .is_unimplemented()
         } else {
@@ -266,8 +348,7 @@ pub trait TableShell: Send + Sync + 'static {
                 ),
                 method = method,
                 capability = capability,
-                source_type = source_type,
-                vista_name = vista_name
+                source_type = source_type
             )
             .is_unsupported()
         }
