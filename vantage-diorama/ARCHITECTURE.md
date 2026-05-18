@@ -21,8 +21,8 @@ public-facing surface. This file covers the rest.
 +----------------------------------------------------------+
 |                          Dio                             |
 |                                                          |
-|  master: Vista (low-cap)     cache: Vista (lens-backed)  |
-|  write queue (mpsc)          event bus (broadcast)       |
+|  master: Vista (low-cap)  cache: Arc<dyn CacheTable>     |
+|  write queue (mpsc)       event bus (broadcast)          |
 |  refresh task                                            |
 +----------------------------------------------------------+
                             ▲
@@ -113,14 +113,13 @@ boxed shape above.
 
 ### Cache backend
 
-`cache_source` is an `Arc<dyn TableSource>` — the same trait Vista drivers
-implement. The default is redb; users can substitute anything that implements
-`TableSource` (in-memory, sqlite, even another remote backend if they really
-want).
-
-The Lens treats this source as a multi-table backend: each Dio gets its own
-table within it. The table name comes from `master.name()` by default, with
-an override via `make_dio_named(name, vista)`.
+`cache_source` is an [`Arc<dyn CacheBackend>`](src/lens/cache_backend.rs) —
+a narrow trait specific to Diorama (deliberately not `TableSource`: the
+cache is dumb id-keyed storage, no conditions or sorting). The default
+implementation is redb via `.cache_at(path)`; substitute anything that
+implements `CacheBackend` if you want an in-memory store, a remote object
+store, or sqlite. Each Dio under a Lens claims one named `CacheTable`
+within the backend — the name comes from `master.name()`.
 
 ## Dio
 
@@ -132,13 +131,13 @@ pub struct Dio {
 struct DioInner {
     lens: Arc<Lens>,
     master: Vista,
-    cache: Vista,                              // built on construction
+    cache: Arc<dyn CacheTable>,                // opened from lens.cache_source
     cache_table_name: String,
     write_queue: mpsc::Sender<WriteOp>,
     event_bus: broadcast::Sender<DioEvent>,
     refresh_task: Mutex<Option<JoinHandle<()>>>,
     write_worker: Mutex<Option<JoinHandle<()>>>,
-    hot_tier: Arc<HotTier>,                    // moka cache for active rows
+    hot_tier: Arc<HotTier>,                    // reserved slot; not active in v1
 }
 ```
 
@@ -163,17 +162,22 @@ alive as long as any handle outlives the original `Dio`.
 impl Dio {
     pub fn vista(&self) -> Vista { /* DioShell-backed */ }
     pub fn table_scenery(&self) -> TableSceneryBuilder { /* ... */ }
-    pub fn record_scenery(&self, id: impl Into<RecordId>) -> Arc<dyn RecordScenery> { /* ... */ }
+    pub async fn record_scenery(&self, id: impl Into<String>) -> Result<Arc<dyn RecordScenery>>;
+    pub fn record_scenery_with(&self, id: impl Into<String>, rec: Record<CborValue>) -> Arc<dyn RecordScenery>;
     pub fn value_scenery(&self) -> ValueSceneryBuilder { /* ... */ }
 
     pub fn master(&self) -> &Vista { &self.inner.master }
-    pub fn cache(&self) -> &Vista { &self.inner.cache }
+    pub fn cache(&self) -> &Arc<dyn CacheTable> { &self.inner.cache }
+    pub fn subscribe_events(&self) -> broadcast::Receiver<DioEvent>;
 
     pub async fn refresh(&self) -> Result<()> { /* fires on_refresh */ }
-    pub fn invalidate_record(&self, id: impl Into<RecordId>) { /* publishes event */ }
+    pub async fn handle_event(&self, evt: ChangeEvent) -> Result<()> {
+        // dispatches to lens.on_event if registered
+    }
+    pub fn invalidate_record(&self, id: impl Into<String>) { /* publishes event */ }
     pub fn invalidate_all(&self) { /* publishes event */ }
-    pub fn patched(&self, id: impl Into<RecordId>, record: Record<CborValue>) {
-        // user-driven patch: writes to cache, publishes event
+    pub async fn patched(&self, id: impl Into<String>, record: Record<CborValue>) -> Result<()> {
+        // user-driven patch: writes to cache + publishes RecordChanged
     }
 }
 ```
@@ -260,12 +264,12 @@ notifications. Sceneries subscribe; the Dio publishes.
 
 ```rust
 pub enum DioEvent {
-    RecordChanged { id: RecordId },
-    RecordRemoved { id: RecordId },
-    RecordInserted { id: RecordId },
+    RecordChanged { id: String },
+    RecordInserted { id: String },
+    RecordRemoved { id: String },
     Invalidated,                      // wholesale: refresh just completed
     Refreshing,                       // refresh started
-    WriteFailed { id: Option<RecordId>, error: String },
+    WriteFailed { id: Option<String>, error: String },
 }
 ```
 
@@ -341,44 +345,38 @@ impl TableSceneryBuilder {
 }
 ```
 
-### Scenery internal state
+### Scenery internal state (v1)
 
 ```rust
 struct TableSceneryState {
-    dio: Arc<DioInner>,
+    dio_weak: Weak<DioInner>,         // weak so Sceneries don't pin the Dio
 
-    // Query parameters (immutable after open, except search/sort which are mutable).
-    conditions: Vec<Condition>,
+    // Query parameters — mutable through setters on the Scenery.
+    conditions: RwLock<Vec<(String, CborValue)>>,
     sort: RwLock<Option<(String, SortDir)>>,
     search: RwLock<Option<String>>,
-    page_size: usize,
 
-    // Loaded data.
-    rows: RwLock<Vec<RowSlot>>,       // ordered, sparse — None where not yet loaded
-    has_more: AtomicBool,
-    estimated_total: RwLock<Option<usize>>,
-
-    // UI hints.
-    viewport: RwLock<Range<usize>>,
+    // Loaded data — eager v1 holds every matching cached row.
+    rows: RwLock<Vec<Arc<EnrichedRecord>>>,
 
     // Notification.
     generation: AtomicU64,
-    notify_tx: watch::Sender<u64>,
-
-    // Background fetch task.
-    fetcher: Mutex<Option<JoinHandle<()>>>,
-}
-
-enum RowSlot {
-    Loaded(Arc<EnrichedRecord>),
-    Pending,                          // fetch in flight
-    Empty,                            // unknown yet
+    generation_tx: watch::Sender<Generation>,
+    reload_notify: Arc<Notify>,
 }
 ```
 
-`set_viewport` triggers prefetch around the requested range. `request_load_more`
-extends `has_more` frontier. The background fetcher consumes prefetch requests
-and updates `rows`, bumps `generation`, notifies.
+The v1 implementation is eager: open scans `dio.cache().list_values()`,
+filters/sorts in memory, and publishes the result. A background reload
+task waits on `reload_notify` (poked by setters) and on the Dio's event
+bus (any `RecordChanged` / `RecordInserted` / `RecordRemoved` /
+`Invalidated`) — both trigger a full re-scan and a new generation.
+
+`set_viewport` and `request_load_more` are accepted at the trait surface
+but are no-ops in v1. The v2 implementation will introduce a sparse
+`Vec<RowSlot>` (Loaded / Pending / Empty) and a per-Scenery fetcher task
+that consumes prefetch requests; see
+[plans/5-table-scenery.md](plans/5-table-scenery.md) for the v2 sketch.
 
 ### EnrichedRecord
 
@@ -407,19 +405,19 @@ supports form-edit scenarios where only some columns have unsaved changes.
 For non-Scenery contexts (CLI, business logic via `dio.vista()`), bare
 `Record<CborValue>` flows through unchanged — the enrichment is Scenery-only.
 
-## Hot tier
+## Hot tier (reserved)
 
-The hot tier is an in-memory `moka::future::Cache<RecordId, Arc<EnrichedRecord>>`
-owned per Dio. It's populated on every cache read and on every Scenery row
-load. TTL and size are inherited from `LensDefaults::cache_ttl`.
+A `HotTier` slot exists on `DioInner` for a planned per-Dio moka cache that
+will deduplicate `Arc<EnrichedRecord>` across multiple Sceneries opened on
+the same Dio. v1 doesn't activate it — each Scenery owns its own
+`Vec<Arc<EnrichedRecord>>` populated from a single cache scan. Sharing
+`Arc<dyn TableScenery>` between consumers is the current way to dedupe.
 
-Purpose: keeps `TableScenery::row(idx)` synchronous and fast. The Scenery's
-row vector holds `Arc<EnrichedRecord>` references that come from the hot tier;
-when the tier evicts, the references survive until the Scenery drops them.
-
-Hot-tier writes happen on the same task that updates `rows` and bumps
-`generation`, so a single notification covers both the hot-tier population
-and the Scenery state.
+When the tier activates, `TableScenery::row(idx)` will still return cheaply
+(it already reads from the in-memory vector) — the change is upstream:
+multiple Sceneries seeing the same `(id, generation)` resolve to the same
+`Arc<EnrichedRecord>`. TTL and size will be inherited from
+`LensDefaults::cache_ttl`.
 
 ## Refresh scheduling
 

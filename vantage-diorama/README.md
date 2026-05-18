@@ -37,32 +37,38 @@ The picture: `Vista → Lens.make_dio(vista) → Dio → Vista | Scenery`.
 ## A small example
 
 ```rust
-use vantage_diorama::Lens;
-use bakery_model3::Product;
+use std::sync::Arc;
+use std::time::Duration;
+use vantage_diorama::{Lens, scenery::SortDir};
 
-let lens = Lens::new()
-    .cache_at("./local.redb")
-    .on_start(|dio| async move {
-        let data = dio.master().list_values().await?;
-        dio.cache().insert_values(data).await?;
-        Ok(())
-    })
-    .refresh_every(std::time::Duration::from_secs(3600))
-    .build()
-    .await?;
+let lens = Arc::new(
+    Lens::new()
+        .cache_at("./local.redb")
+        .on_start(|dio| {
+            let dio = dio.clone();
+            async move {
+                let rows = dio.master().list_values().await?;
+                dio.cache().insert_values(rows).await?;
+                Ok(())
+            }
+        })
+        .refresh_every(Duration::from_secs(3600))
+        .build()?,
+);
 
-let products = lens.make_dio(Product::dynamo_table(db).into_vista()?);
+let products = lens.make_dio(products_vista).await?;
 
 // Use it like any other Vista — but reads are instant, served from cache:
-let cheap = products.vista()
-    .where_eq("price_max", 10)
-    .list_values()
-    .await?;
+let mut facade = products.vista();
+facade.add_condition_eq("category", "books".into())?;
+let books = facade.list_values().await?;
 
 // Or open a reactive view that re-renders when data changes:
-let scenery = products.table_scenery()
-    .sort("price", Asc)
-    .open();
+let scenery = products
+    .table_scenery()
+    .sort("price", SortDir::Asc)
+    .open()
+    .await?;
 ```
 
 The Lens is the hard part: it decides what to cache, when to refresh, how to
@@ -89,7 +95,14 @@ Pick the role that matches what you're trying to do.
 
 ## Status
 
-This crate is in design. The READMEs describe the intended API; types and
-implementations land in `vantage-diorama/src/` as the plan progresses. See
-[`vantage-vista/plans/`](../vantage-vista/plans/) for the broader vista
-roadmap that this work sits inside.
+Stages 1–7 of [the plan](plans/0-overview.md) are landed: `Lens`, `Dio`,
+the event bus, and v1 of all three Scenery types ship today. Stage 8 (the
+GPUI adapter crate in `vantage-ui-adapters`) and stage 9 (composition
+primitives) are next. The reactive surface works against the real driver
+crates (`vantage-csv`, `vantage-sql`, `vantage-surrealdb`,
+`vantage-mongodb`, `vantage-api-client`, `vantage-log-writer`); the GPUI
+bindings described in [`README_ui.md`](README_ui.md) are the pattern you'd
+hand-roll today and the shape the adapter crate will provide.
+
+See [`vantage-vista/plans/`](../vantage-vista/plans/) for the broader
+vista roadmap that this work sits inside.

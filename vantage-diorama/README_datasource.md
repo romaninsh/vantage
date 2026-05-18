@@ -7,8 +7,17 @@ play well with Diorama, and what Diorama compensates for so you don't have
 to.
 
 If you haven't written a Vista driver yet, start with the persistence
-walkthrough at `docs4/src/new-persistence/step8-vista-integration.md`. This
-document picks up where that ends.
+walkthrough at `docs4/src/new-persistence/step8-vista-integration.md` and
+read the [`TableShell` trait](../vantage-vista/src/source.rs) — that's the
+canonical contract. This document picks up where those leave off.
+
+> **Implementation status.** The contracts described below all sit on
+> Vista's `TableShell`; the actual method names (`list_vista_values`,
+> `get_vista_value`, `fetch_page`, `fetch_next`, `add_eq_condition`,
+> `add_order`, `add_search`, `get_ref`, etc.) live there. The
+> `Page<Id, Rec>` shape sketched in this doc maps onto vista's `fetch_page`
+> / `fetch_next` (token-based) pagination — see vista's
+> [`source.rs`](../vantage-vista/src/source.rs) for the live signatures.
 
 ## The shortest possible Diorama-compatible driver
 

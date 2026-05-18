@@ -10,6 +10,14 @@ Short version: keep using Vista the way you already do. Diorama wraps your
 Vista in a Lens when you need caching or offline tolerance, and you get back
 a Vista that behaves the same way, just better.
 
+> **Implementation status.** The "minimum useful Diorama", the "Patterns by
+> shape of work" → "Internal library" / "Batch job" / "CLI tool" sections,
+> and the worked axum example use APIs that are mostly real but mention
+> a few v1 caveats: `on_query` is registered but not invoked until vista
+> stage 5b lands, and there is no shipped in-memory `CacheBackend` (everything
+> persists to redb today). Build a redb cache in a `tempdir` if you need an
+> ephemeral one.
+
 ## The minimum useful Diorama
 
 You have a slow API. Your handler hits it on every request. You want to
@@ -18,34 +26,50 @@ cache reads for sixty seconds and have writes invalidate the cache.
 ```rust
 use std::sync::Arc;
 use std::time::Duration;
-use vantage_diorama::{Lens, LensDefaults};
-use vantage_diorama::cache::MemorySource;
+use tempfile::TempDir;
+use vantage_diorama::{Lens, ops::WriteOp};
 
-let lens = Lens::new()
-    .cache_source(Arc::new(MemorySource::new()))
-    .with_default(LensDefaults {
-        cache_ttl: Some(Duration::from_secs(60)),
-        on_start_blocking: false,
-        ..Default::default()
-    })
-    .on_query(|dio, query| async move {
-        let rows = dio.master().with_query(query).list_values().await?;
-        dio.cache().insert_values(rows).await?;
-        Ok(())
-    })
-    .on_write(|dio, op| async move {
-        dio.master().apply(&op).await?;
-        if let Some(id) = op.target_id() {
-            dio.invalidate_record(id);
-        } else {
-            dio.invalidate_all();
-        }
-        Ok(())
-    })
-    .build()
-    .await?;
+// Pre-stage-5b: persistent in-memory caches aren't shipped yet — point
+// `cache_at` at a tempdir if you want a per-process cache.
+let cache_dir = TempDir::new()?;
+let lens = Arc::new(
+    Lens::new()
+        .cache_at(cache_dir.path().join("api.redb"))
+        .on_start_blocking(false)
+        .on_start(|dio| {
+            let dio = dio.clone();
+            async move {
+                let rows = dio.master().list_values().await?;
+                dio.cache().insert_values(rows).await?;
+                Ok(())
+            }
+        })
+        .on_write(|dio, op| {
+            let dio = dio.clone();
+            async move {
+                match &op {
+                    WriteOp::Insert { id, record } | WriteOp::Replace { id, record } => {
+                        dio.master().insert_value(id, record).await?;
+                        dio.invalidate_record(id.clone());
+                    }
+                    WriteOp::Delete { id } => {
+                        dio.master().delete_value(id).await?;
+                        dio.invalidate_record(id.clone());
+                    }
+                    WriteOp::DeleteAll => {
+                        dio.master().delete_all_values().await?;
+                        dio.invalidate_all();
+                    }
+                    _ => {}
+                }
+                Ok(())
+            }
+        })
+        .refresh_every(Duration::from_secs(60))
+        .build()?,
+);
 
-let products = lens.make_dio(remote_products.into_vista()?);
+let products = lens.make_dio(remote_products).await?;
 ```
 
 From here, `products.vista()` is a Vista. You use it the way you'd use any
@@ -54,22 +78,19 @@ other Vista:
 ```rust
 // Read.
 let all = products.vista().list_values().await?;
-let one = products.vista().get_value("sku-1234").await?;
+let one = products.vista().get_value(&"sku-1234".to_string()).await?;
 
-// Read with conditions.
-let cheap = products.vista()
-    .add_condition_eq("category", "books")
-    .add_condition_lt("price", 20)
-    .list_values()
-    .await?;
+// Narrow with eq conditions.
+let mut filtered = products.vista();
+filtered.add_condition_eq("category", "books".into())?;
+let books = filtered.list_values().await?;
 
 // Write.
-products.vista().insert(new_product.into_record()).await?;
-products.vista().update("sku-1234", patch).await?;
-products.vista().delete("sku-1234").await?;
+products.vista().insert_value(&"sku-1234".to_string(), &new_product_record).await?;
+products.vista().delete_value(&"sku-1234".to_string()).await?;
 
 // Count.
-let total: u64 = products.vista().count().await?;
+let total = products.vista().get_count().await?;
 ```
 
 If you're writing CLI code, this is functionally identical to what the

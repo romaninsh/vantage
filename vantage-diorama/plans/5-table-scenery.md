@@ -2,6 +2,39 @@
 
 Status: **Done (v1 — eager load, no prefetch/hot-tier/push-down — see module doc)**
 
+## v2 follow-up: windowed Scenery for virtual/infinite scroll
+
+The v1 trait already exposes `set_viewport(range)`, `request_load_more()`,
+`has_more()`, and `estimated_total()` — they're accepted but no-op today.
+v2 turns them into a real virtual-scroll backend so the Scenery scales to
+caches that don't fit comfortably in `Vec<Arc<EnrichedRecord>>` (low
+millions of rows / hundreds of MB).
+
+Sketch:
+
+- Replace the dense `Vec<Arc<EnrichedRecord>>` with a sparse
+  `Vec<RowSlot>` (`Loaded` / `Pending` / `Empty`). `row_count` reflects
+  the cache's full filtered set; `row(idx)` returns `Some` for `Loaded`
+  and `None` (= render skeleton) otherwise.
+- Background fetcher consumes prefetch requests from a channel. The
+  Scenery's `set_viewport(range)` enqueues prefetch for `range ± margin`;
+  `request_load_more` extends the loaded frontier.
+- `has_more()` returns `true` while the cache's count exceeds what's
+  loaded; flips to `false` when the loaded set covers the filtered total.
+- Cache-side iteration: needs `CacheTable` to grow a paged scan
+  (`list_values_paged(offset, limit)` or `scan(cursor) -> (rows, next)`).
+  Until then the v2 fetcher reads `list_values()` and slices.
+- Sort/search push-down: when vista stage 5b lands, the Scenery delegates
+  to `dio.vista().add_order(...)` and `dio.vista().add_search(...)`
+  through `DioShell`, which in turn calls the cache's `add_order` /
+  `add_search` if the cache backend honours them. The Scenery doesn't
+  need to know whether push-down happened — it just reads paged results.
+
+The v2 implementation is also what unlocks the "insight into local
+cached data" pattern described in `../README_ui.md` § "Virtual / infinite
+scroll" — today that pattern requires bypassing the Scenery and binding
+the UI to `dio.cache()` directly; v2 puts the Scenery back in charge.
+
 Implement the first reactive surface: `TableScenery`. A Scenery
 subscribes to a Dio's event bus, maintains an in-memory row vector
 sized to the current query + viewport, and bumps a

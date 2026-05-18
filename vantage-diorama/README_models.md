@@ -208,23 +208,33 @@ impl Review {
 That's the entire model contribution. A consumer can now:
 
 ```rust
-let reviews_dio = lens.make_dio(Review::sqlite_table(db).into_vista()?);
+use vantage_diorama::scenery::{Aggregate, SortDir};
+use vantage_sql::sqlite::SqliteVistaFactory;
 
-// CLI:
-let recent = reviews_dio.vista().sort("created_at", Desc).list_values().await?;
+let reviews_vista = SqliteVistaFactory::new(db.clone())
+    .from_table(Review::sqlite_table(db))?;
+let reviews_dio = lens.make_dio(reviews_vista).await?;
 
-// UI grid with quicksearch:
-let grid = reviews_dio.table_scenery().sort("rating", Desc).open();
+// UI grid with quicksearch + sort, served from the cache:
+let grid = reviews_dio
+    .table_scenery()
+    .sort("rating", SortDir::Desc)
+    .open()
+    .await?;
 
 // Live counter of 5-star reviews:
-let perfect_count = reviews_dio.value_scenery()
-    .aggregate(Aggregate::count_where("rating", 5))
-    .open();
+let perfect_count = reviews_dio
+    .value_scenery()
+    .aggregate(Aggregate::CountWhere(vec![
+        ("rating".to_string(), 5i64.into()),
+    ]))
+    .open()
+    .await?;
 
-// Cross-entity reference: opening a product's reviews:
-let product_reviews = reviews_dio.vista()
-    .add_condition_eq("product_id", product.id.clone())
-    .into_dio_via(lens.clone());
+// Narrow the facade Vista to a single product's reviews:
+let mut product_reviews = reviews_dio.vista();
+product_reviews.add_condition_eq("product_id", product.id.clone().into())?;
+let rows = product_reviews.list_values().await?;
 ```
 
 The model author wrote one struct, one constructor, and a few column flags.

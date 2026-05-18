@@ -13,6 +13,15 @@ This stage also ports `vantage-ui`'s existing grid to use Diorama
 instead of the current bulk-load pattern, validating the bindings
 against a real app.
 
+`../README_ui.md` was rewritten alongside the v1 Scenery work and
+covers three distinct integration patterns: (1) the eager-cache
+Scenery + GPUI's row virtualization (what this stage productizes),
+(2) a hand-rolled `TableDelegate` that binds to `dio.cache()` directly
+for unbounded local data, and (3) the v2 windowed Scenery (planned in
+[plans/5-table-scenery.md](5-table-scenery.md)). Confirm during the
+discussion phase whether the adapter ships utilities for pattern (2)
+or leaves that to per-app code.
+
 ## Discussion phase
 
 - [ ] Adapter crate home: `vantage-ui-adapters/src/diorama/` is the
@@ -29,6 +38,19 @@ against a real app.
       Option<Arc<EnrichedRecord>>` is synchronous. For unloaded rows,
       we render a skeleton cell. Confirm the skeleton cell shape — is
       this a vantage-ui-adapters utility, or per-app?
+- [ ] Virtual/infinite scroll: gpui-component virtualizes which rows
+      render via `visible_rows_changed` + `has_more` + `load_more` +
+      `load_more_threshold` (defaulting to 20 rows from bottom). v1
+      Scenery is eager — `has_more` returns false, `load_more` /
+      `set_viewport` are no-ops. The adapter still wires all four
+      hooks through so v2 lands without delegate changes. Confirm we
+      don't try to fake `has_more` from the Scenery side.
+- [ ] Unbounded-local-data escape hatch: does the adapter crate ship
+      a "bind to `dio.cache()` directly" helper for very large
+      caches, or do apps hand-roll? See pattern (2) in
+      `../README_ui.md` § "Virtual / infinite scroll". Lean: leave to
+      apps — every app's "huge cache" is a different shape (logs,
+      events, time series). Re-evaluate once a second app needs it.
 - [ ] Sort interaction: gpui-component calls `perform_sort(col_ix,
       direction)`; the adapter delegates to
       `scenery.set_sort(field, dir)`. Confirm we expose

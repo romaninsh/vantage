@@ -9,6 +9,15 @@ scenarios that exercise different cache strategies. UI is only one of them.
 Vantage runs in API servers, on the edge, on mobile, inside data pipelines —
 each context wants different behavior, and the Lens is where you express it.
 
+> **Implementation status.** Scenarios 1 ("Desktop UI") and 6 ("Realtime UI
+> with push events") use the exact APIs that ship today. Scenarios 2–5
+> reference features that aren't fully wired yet: the `on_query` callback is
+> registered but not invoked until vista stage 5b lands; there is no shipped
+> in-memory `CacheBackend` so "ephemeral" scenarios still need a redb file
+> today; `CacheTable::apply(op)` / `replace_all(rows)` / metadata kv are
+> design sketches. Read them as the eventual shape; the code is plausibly
+> close to final but won't compile verbatim against current `src/`.
+
 ## Anatomy of a Lens
 
 A Lens owns four kinds of things:
@@ -28,24 +37,32 @@ A Lens owns four kinds of things:
 use std::sync::Arc;
 use std::time::Duration;
 use vantage_diorama::Lens;
-use vantage_redb::Redb;
 
-let cache_db = Arc::new(Redb::open("./local.redb").await?);
-
-let lens = Lens::new()
-    .cache_source(cache_db)
-    .on_start(|dio| async move {
-        let data = dio.master().list_values().await?;
-        dio.cache().insert_values(data).await?;
-        Ok(())
-    })
-    .refresh_every(Duration::from_secs(3600))
-    .build()
-    .await?;
+let lens = Arc::new(
+    Lens::new()
+        .cache_at("./local.redb")
+        .on_start(|dio| {
+            let dio = dio.clone();
+            async move {
+                let rows = dio.master().list_values().await?;
+                dio.cache().insert_values(rows).await?;
+                Ok(())
+            }
+        })
+        .refresh_every(Duration::from_secs(3600))
+        .build()?,
+);
 ```
 
-After `.build()`, the Lens is immutable. You call `.make_dio(vista)` as many
-times as you like; every Dio inherits the same callbacks and policies.
+`Lens::new()` returns a `LensBuilder`; `.build()` is synchronous and returns
+`Result<Lens, LensBuildError>`. Wrap the result in `Arc` because
+`make_dio` takes `&Arc<Self>` (per-Dio tasks need to hold the Lens alive).
+Then call `.make_dio(vista).await?` as many times as you like; every Dio
+inherits the same callbacks and policies.
+
+The cache backend default is redb on disk via `.cache_at(path)`. For a
+custom backend, implement [`CacheBackend`](src/lens/cache_backend.rs) and
+pass `.cache_source(Arc::new(your_backend))`.
 
 ### Why does `on_start` block by default?
 
@@ -57,7 +74,7 @@ that's a worse experience than a brief startup spinner. Blocking until
 Turn it off when you'd rather show "loading…" UI than freeze startup:
 
 ```rust
-.with_default(LensDefaults { on_start_blocking: false, ..Default::default() })
+.on_start_blocking(false)
 ```
 
 ### Why are callbacks borrowing, not `'static`?
@@ -104,26 +121,49 @@ always served from the local cache. Writes go through both — cache first for
 instant UI update, then API for persistence.
 
 ```rust
-let lens = Lens::new()
-    .cache_at("./admin-cache.redb")
-    .on_start(|dio| async move {
-        let data = dio.master().list_values().await?;
-        dio.cache().insert_values(data).await?;
-        Ok(())
-    })
-    .on_refresh(|dio| async move {
-        let fresh = dio.master().list_values().await?;
-        dio.cache().replace_all(fresh).await?;
-        Ok(())
-    })
-    .on_write(|dio, op| async move {
-        dio.cache().apply(&op).await?;         // instant UI feedback
-        dio.master().apply(&op).await?;        // persist
-        Ok(())
-    })
-    .refresh_every(Duration::from_secs(300))   // every 5 minutes
-    .build()
-    .await?;
+use vantage_diorama::{Lens, ops::WriteOp};
+
+let lens = Arc::new(
+    Lens::new()
+        .cache_at("./admin-cache.redb")
+        .on_start(|dio| {
+            let dio = dio.clone();
+            async move {
+                let rows = dio.master().list_values().await?;
+                dio.cache().insert_values(rows).await?;
+                Ok(())
+            }
+        })
+        .on_refresh(|dio| {
+            let dio = dio.clone();
+            async move {
+                let fresh = dio.master().list_values().await?;
+                dio.cache().clear().await?;
+                dio.cache().insert_values(fresh).await?;
+                Ok(())
+            }
+        })
+        .on_write(|dio, op| {
+            let dio = dio.clone();
+            async move {
+                // Apply to cache first for instant UI feedback, then to master.
+                match &op {
+                    WriteOp::Insert { id, record } | WriteOp::Replace { id, record } => {
+                        dio.cache().insert_value(id, record).await?;
+                        dio.master().insert_value(id, record).await?;
+                    }
+                    WriteOp::Delete { id } => {
+                        dio.cache().delete_value(id).await?;
+                        dio.master().delete_value(id).await?;
+                    }
+                    _ => {}
+                }
+                Ok(())
+            }
+        })
+        .refresh_every(Duration::from_secs(300))   // every 5 minutes
+        .build()?,
+);
 ```
 
 The cache survives app restarts. If the API is unreachable on the next launch,
@@ -352,36 +392,61 @@ let lens = Lens::new()
         dio.cache().insert_values(data).await?;
         Ok(())
     })
-    .on_event(|dio, evt| async move {
-        match evt {
-            ChangeEvent::Updated { id, new } => {
-                dio.cache().replace_record(&id, new.clone()).await?;
-                dio.patched(id, new);                     // fans out to Sceneries
+    .on_event(|dio, evt| {
+        let dio = dio.clone();
+        async move {
+            match evt {
+                ChangeEvent::Updated { id, new: Some(record) } => {
+                    // Writes to cache + publishes RecordChanged on the bus.
+                    dio.patched(id, record).await?;
+                }
+                ChangeEvent::Updated { id, new: None } => {
+                    // Source didn't ship the new value — refetch from master.
+                    if let Some(rec) = dio.master().get_value(&id).await? {
+                        dio.patched(id, rec).await?;
+                    } else {
+                        dio.invalidate_record(id);
+                    }
+                }
+                ChangeEvent::Inserted { id, new: Some(record) } => {
+                    dio.patched(id, record).await?;
+                }
+                ChangeEvent::Deleted { id } => {
+                    dio.cache().delete_value(&id).await?;
+                    dio.invalidate_record(id);
+                }
+                _ => {
+                    dio.refresh().await?;
+                }
             }
-            ChangeEvent::Inserted { id } | ChangeEvent::Deleted { id } => {
-                dio.refresh().await?;                     // simpler than diffing
-            }
-            ChangeEvent::Invalidated => {
-                dio.refresh().await?;
-            }
+            Ok(())
         }
-        Ok(())
     })
-    .on_write(|dio, op| async move {
-        // Apply optimistically, then confirm.
-        dio.cache().apply(&op).await?;
-        match dio.master().apply(&op).await {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                // Roll back the optimistic patch.
-                dio.refresh().await?;
-                Err(e)
+    .on_write(|dio, op| {
+        let dio = dio.clone();
+        async move {
+            // Apply optimistically to cache, then push to master.
+            match &op {
+                WriteOp::Insert { id, record } | WriteOp::Replace { id, record } => {
+                    dio.cache().insert_value(id, record).await?;
+                    if let Err(e) = dio.master().insert_value(id, record).await {
+                        // Roll back via refresh — master is the source of truth.
+                        dio.refresh().await?;
+                        return Err(e);
+                    }
+                }
+                WriteOp::Delete { id } => {
+                    dio.cache().delete_value(id).await?;
+                    dio.master().delete_value(id).await?;
+                }
+                _ => {}
             }
+            Ok(())
         }
     })
     .refresh_every(Duration::from_secs(60))               // safety net
-    .build()
-    .await?;
+    .build()?,
+);
 
 // Wire the websocket into the event_bus.
 let dio = lens.make_dio(prices_vista);
@@ -430,19 +495,21 @@ write-heavy editor and a read-only reporting view), use two Lenses. They can
 share the same cache backend or use different ones:
 
 ```rust
-let edit_lens = Lens::new()
-    .cache_source(shared_redb.clone())
-    .on_write(complex_write_routing)
-    .refresh_every(Duration::from_secs(30))
-    .build()
-    .await?;
+let edit_lens = Arc::new(
+    Lens::new()
+        .cache_source(shared_redb.clone())
+        .on_write(complex_write_routing)
+        .refresh_every(Duration::from_secs(30))
+        .build()?,
+);
 
-let report_lens = Lens::new()
-    .cache_source(shared_redb)
-    .on_start(eager_load)
-    .refresh_every(Duration::from_secs(3600))
-    .build()
-    .await?;
+let report_lens = Arc::new(
+    Lens::new()
+        .cache_source(shared_redb)
+        .on_start(eager_load)
+        .refresh_every(Duration::from_secs(3600))
+        .build()?,
+);
 ```
 
 Dios under different Lenses are independent. Cross-Lens invalidation, if you
