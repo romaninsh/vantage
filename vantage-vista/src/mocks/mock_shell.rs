@@ -331,7 +331,7 @@ mod tests {
         );
         assert!(vista.get_column("email").unwrap().is_hidden());
         assert!(!vista.get_column("name").unwrap().is_hidden());
-        assert_eq!(vista.get_references(), vec!["orders"]);
+        assert_eq!(vista.get_references(), vec!["orders".to_string()]);
         assert_eq!(
             vista.get_reference("orders").unwrap().foreign_key,
             "user_id"

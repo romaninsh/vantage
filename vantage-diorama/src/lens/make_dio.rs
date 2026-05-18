@@ -49,10 +49,10 @@ impl Lens {
                 let dio_for_task = dio.clone();
                 let lens_for_task = self.clone();
                 self.runtime.spawn(async move {
-                    if let Some(cb) = lens_for_task.callbacks.on_start.as_ref() {
-                        if let Err(e) = cb(&dio_for_task).await {
-                            tracing::error!(error = %e, "on_start callback failed");
-                        }
+                    if let Some(cb) = lens_for_task.callbacks.on_start.as_ref()
+                        && let Err(e) = cb(&dio_for_task).await
+                    {
+                        tracing::error!(error = %e, "on_start callback failed");
                     }
                 });
             }
@@ -96,10 +96,10 @@ async fn refresh_loop(inner: Weak<DioInner>, interval: Duration) {
         };
         let dio = Dio { inner: strong };
         let _ = dio.inner.event_bus.send(DioEvent::Refreshing);
-        if let Some(cb) = dio.inner.lens.callbacks.on_refresh.as_ref() {
-            if let Err(e) = cb(&dio).await {
-                tracing::error!(error = %e, "on_refresh callback failed");
-            }
+        if let Some(cb) = dio.inner.lens.callbacks.on_refresh.as_ref()
+            && let Err(e) = cb(&dio).await
+        {
+            tracing::error!(error = %e, "on_refresh callback failed");
         }
         let _ = dio.inner.event_bus.send(DioEvent::Invalidated);
     }

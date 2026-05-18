@@ -58,10 +58,9 @@ pub async fn run<F: ModelFactory, R: Renderer>(
     .await
 }
 
-/// In-flight runner state — vista + mode + accumulated column override
-/// + pending aggregate. Kept in one struct so token application is a
-/// single `&mut self` call rather than a wad of locals threaded through
-/// every branch.
+/// In-flight runner state: vista, mode, accumulated column override, and
+/// pending aggregate. Kept in one struct so token application is a single
+/// `&mut self` call rather than a wad of locals threaded through every branch.
 struct RunState {
     vista: Vista,
     mode: Mode,

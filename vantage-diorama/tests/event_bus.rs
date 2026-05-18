@@ -7,7 +7,6 @@ use std::time::Duration;
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
-use vantage_dataset::prelude::ReadableValueSet;
 use vantage_diorama::{ChangeEvent, DioEvent, Lens};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};

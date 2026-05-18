@@ -115,23 +115,18 @@ impl Vista {
     /// resolvers from [`with_foreign`](Self::with_foreign) and shell-declared
     /// references. For the *complete* picture with cardinality, use
     /// [`list_references`](Self::list_references) instead.
-    pub fn get_references(&self) -> Vec<&str> {
-        let mut out: Vec<&str> = self.foreign_resolvers.keys().map(String::as_str).collect();
-        for k in self.source.references().keys() {
-            let s = k.as_str();
-            if !out.contains(&s) {
-                out.push(s);
-            }
-        }
-        out
+    pub fn get_references(&self) -> Vec<String> {
+        self.list_references().into_iter().map(|(n, _)| n).collect()
     }
 
     /// All references the Vista exposes, with their cardinality.
     ///
     /// Combines two sources: cross-persistence resolvers attached via
     /// [`with_foreign`](Self::with_foreign), and same-persistence
-    /// references declared by the wrapped shell. Each is returned once,
-    /// foreign first, with later duplicates ignored.
+    /// references declared by the wrapped shell (typically derived from
+    /// the typed `Table`'s `with_many` / `with_one` registrations via
+    /// [`TableShell::get_ref_kinds`]). Each is returned once, foreign
+    /// first, with later duplicates ignored.
     pub fn list_references(&self) -> Vec<(String, ReferenceKind)> {
         let mut seen = std::collections::HashSet::new();
         let mut out = Vec::new();
@@ -140,9 +135,9 @@ impl Vista {
                 out.push((name.clone(), fref.kind));
             }
         }
-        for (name, r) in self.source.references() {
+        for (name, kind) in self.source.get_ref_kinds() {
             if seen.insert(name.clone()) {
-                out.push((name.clone(), r.kind));
+                out.push((name, kind));
             }
         }
         out

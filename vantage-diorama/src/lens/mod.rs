@@ -39,6 +39,7 @@ pub struct Lens {
 
 impl Lens {
     /// Start building a Lens. Equivalent to [`LensBuilder::new`].
+    #[allow(clippy::new_ret_no_self)]
     pub fn new() -> LensBuilder {
         LensBuilder::new()
     }
