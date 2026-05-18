@@ -97,6 +97,7 @@ jobs:
             vantage-log-writer
             vantage-live
             vantage-config
+            vantage-diorama
           )
 
           # Project the bumped crates onto the canonical order. Anything
@@ -124,8 +125,24 @@ jobs:
           done
 
           printf 'Publish order: %s\n' "${ordered[*]}"
+          # `cargo publish` exits non-zero when the version is already on
+          # crates.io. That's the expected state after a partially-successful
+          # run, so treat "already exists" as success and let the retry walk
+          # past anything that landed last time. Any other failure still fails
+          # the step.
           for crate in "${ordered[@]}"; do
             echo "::group::Publishing $crate"
-            (cd "$crate" && cargo publish --no-verify --allow-dirty)
+            if output=$(cd "$crate" && cargo publish --no-verify --allow-dirty 2>&1); then
+              printf '%s\n' "$output"
+            else
+              rc=$?
+              printf '%s\n' "$output"
+              if printf '%s' "$output" | grep -q 'already exists on crates.io index'; then
+                echo "::notice::$crate is already on crates.io — skipping (likely a retry)."
+              else
+                echo "::endgroup::"
+                exit "$rc"
+              fi
+            fi
             echo "::endgroup::"
           done
