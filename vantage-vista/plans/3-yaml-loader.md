@@ -42,8 +42,8 @@ Out:
 
 - Hooks block (stage 6)
 - Conditions block (stage 5)
-- Coop integration (stage 7)
-- Cache key derivation (deferred — comes with stage 7)
+- Diorama integration (lives in `vantage-diorama`, not here)
+- Cache key derivation (lives in `vantage-diorama`)
 
 ## Plan
 

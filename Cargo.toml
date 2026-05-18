@@ -2,25 +2,25 @@
 members = [
     "vantage-core",
     "vantage-expressions",
-    "vantage-sql",
-    "vantage-surrealdb",
     "vantage-redb",
-    "vantage-mongodb",
     "vantage-live",
-    "bakery_model3",
-    "bakery_model4",
     "surreal-client",
     "vantage-dataset",
     "vantage-table",
     "vantage-csv",
-    "vantage-log-writer",
-    "vantage-api-client",
-    "vantage-api-pool",
-    "vantage-cli-util",
-    # "vantage-config",
     "cbor-test",
     "vantage-types", "learn-1", "learn-2", "learn-3",
     "vantage-vista",
+    "vantage-diorama",
+    "vantage-log-writer",
+    "vantage-sql",
+    "vantage-surrealdb",
+    "vantage-mongodb",
+    "vantage-api-client",
+    "vantage-api-pool",
+    "vantage-cli-util",
+    "bakery_model3",
+    "bakery_model4",
     "docs4",
 ]
 exclude = [
@@ -31,5 +31,9 @@ exclude = [
     "example_*",
     "vantage-ui-adapters",
     "test-api-server",
+    # vantage-config uses pre-refactor vantage-surrealdb / vantage-table
+    # APIs (SurrealColumn at root, Table/EmptyEntity at the vantage-table
+    # root). Unrelated to vista; needs its own porting pass.
+    "vantage-config",
 ]
 resolver = "2"

@@ -8,7 +8,8 @@ use vantage_core::Result;
 use vantage_types::Record;
 
 use crate::{
-    capabilities::VistaCapabilities, sort::SortDirection, source::TableShell, vista::Vista,
+    capabilities::VistaCapabilities, column::Column, metadata::VistaMetadata, reference::Reference,
+    sort::SortDirection, source::TableShell, vista::Vista,
 };
 
 #[derive(Clone)]
@@ -19,6 +20,7 @@ pub struct MockShell {
     order: Arc<Mutex<Option<(String, SortDirection)>>>,
     search: Arc<Mutex<Option<String>>>,
     capabilities: VistaCapabilities,
+    metadata: VistaMetadata,
 }
 
 impl MockShell {
@@ -38,11 +40,17 @@ impl MockShell {
                 can_search: true,
                 ..VistaCapabilities::default()
             },
+            metadata: VistaMetadata::new(),
         }
     }
 
     pub fn with_capabilities(mut self, capabilities: VistaCapabilities) -> Self {
         self.capabilities = capabilities;
+        self
+    }
+
+    pub fn with_metadata(mut self, metadata: VistaMetadata) -> Self {
+        self.metadata = metadata;
         self
     }
 
@@ -88,6 +96,18 @@ impl Default for MockShell {
 
 #[async_trait]
 impl TableShell for MockShell {
+    fn columns(&self) -> &IndexMap<String, Column> {
+        &self.metadata.columns
+    }
+
+    fn references(&self) -> &IndexMap<String, Reference> {
+        &self.metadata.references
+    }
+
+    fn id_column(&self) -> Option<&str> {
+        self.metadata.id_column.as_deref()
+    }
+
     async fn list_vista_values(
         &self,
         _vista: &Vista,
@@ -295,7 +315,7 @@ mod tests {
                 ReferenceKind::HasMany,
                 "user_id",
             ));
-        Vista::new("users", Box::new(source), metadata)
+        Vista::new("users", Box::new(source.with_metadata(metadata)))
     }
 
     #[test]
@@ -311,7 +331,7 @@ mod tests {
         );
         assert!(vista.get_column("email").unwrap().is_hidden());
         assert!(!vista.get_column("name").unwrap().is_hidden());
-        assert_eq!(vista.get_references(), vec!["orders"]);
+        assert_eq!(vista.get_references(), vec!["orders".to_string()]);
         assert_eq!(
             vista.get_reference("orders").unwrap().foreign_key,
             "user_id"

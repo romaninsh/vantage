@@ -24,7 +24,10 @@ use vantage_table::sorting::{OrderBy, SortDirection as TableSortDirection};
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Entity, Record};
-use vantage_vista::{SortDirection, TableShell, Vista, VistaCapabilities};
+use vantage_vista::{
+    Column as VistaColumn, Reference as VistaReference, SortDirection, TableShell, Vista,
+    VistaCapabilities, VistaMetadata,
+};
 
 use crate::identifier::Identifier;
 use crate::operation::SurrealOperation;
@@ -39,6 +42,7 @@ where
 {
     pub(crate) table: Table<SurrealDB, E>,
     pub(crate) capabilities: VistaCapabilities,
+    pub(crate) metadata: VistaMetadata,
     pub(crate) current_search_handle: Option<ConditionHandle>,
     pub(crate) page_size: Option<usize>,
 }
@@ -47,10 +51,15 @@ impl<E> SurrealTableShell<E>
 where
     E: Entity<AnySurrealType>,
 {
-    pub(crate) fn new(table: Table<SurrealDB, E>, capabilities: VistaCapabilities) -> Self {
+    pub(crate) fn new(
+        table: Table<SurrealDB, E>,
+        capabilities: VistaCapabilities,
+        metadata: VistaMetadata,
+    ) -> Self {
         Self {
             table,
             capabilities,
+            metadata,
             current_search_handle: None,
             page_size: None,
         }
@@ -89,6 +98,18 @@ impl<E> TableShell for SurrealTableShell<E>
 where
     E: Entity<AnySurrealType> + 'static,
 {
+    fn columns(&self) -> &IndexMap<String, VistaColumn> {
+        &self.metadata.columns
+    }
+
+    fn references(&self) -> &IndexMap<String, VistaReference> {
+        &self.metadata.references
+    }
+
+    fn id_column(&self) -> Option<&str> {
+        self.metadata.id_column.as_deref()
+    }
+
     async fn list_vista_values(
         &self,
         _vista: &Vista,

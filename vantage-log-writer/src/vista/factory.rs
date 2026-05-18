@@ -37,8 +37,9 @@ impl LogWriterVistaFactory {
                 can_insert: true,
                 ..VistaCapabilities::default()
             },
+            metadata,
         );
-        Ok(Vista::new(name, Box::new(source), metadata))
+        Ok(Vista::new(name, Box::new(source)))
     }
 
     pub fn table_from_spec(

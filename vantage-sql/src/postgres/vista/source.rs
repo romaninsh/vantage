@@ -10,7 +10,10 @@ use vantage_core::{Result, error};
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity, Record};
-use vantage_vista::{TableShell, Vista, VistaCapabilities};
+use vantage_vista::{
+    Column as VistaColumn, Reference as VistaReference, TableShell, Vista, VistaCapabilities,
+    VistaMetadata,
+};
 
 use crate::postgres::PostgresDB;
 use crate::postgres::operation::PostgresOperation;
@@ -22,16 +25,22 @@ where
 {
     pub(crate) table: Table<PostgresDB, E>,
     pub(crate) capabilities: VistaCapabilities,
+    pub(crate) metadata: VistaMetadata,
 }
 
 impl<E> PostgresTableShell<E>
 where
     E: Entity<AnyPostgresType>,
 {
-    pub(crate) fn new(table: Table<PostgresDB, E>, capabilities: VistaCapabilities) -> Self {
+    pub(crate) fn new(
+        table: Table<PostgresDB, E>,
+        capabilities: VistaCapabilities,
+        metadata: VistaMetadata,
+    ) -> Self {
         Self {
             table,
             capabilities,
+            metadata,
         }
     }
 }
@@ -55,6 +64,18 @@ impl<E> TableShell for PostgresTableShell<E>
 where
     E: Entity<AnyPostgresType> + 'static,
 {
+    fn columns(&self) -> &IndexMap<String, VistaColumn> {
+        &self.metadata.columns
+    }
+
+    fn references(&self) -> &IndexMap<String, VistaReference> {
+        &self.metadata.references
+    }
+
+    fn id_column(&self) -> Option<&str> {
+        self.metadata.id_column.as_deref()
+    }
+
     async fn list_vista_values(
         &self,
         _vista: &Vista,

@@ -20,26 +20,47 @@ use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::any::AnyTable;
 use vantage_table::traits::table_like::TableLike;
 use vantage_types::Record;
-use vantage_vista::{TableShell, Vista, VistaCapabilities};
+use vantage_vista::{
+    Column as VistaColumn, Reference as VistaReference, TableShell, Vista, VistaCapabilities,
+    VistaMetadata,
+};
 
 use crate::rest::vista::AnyTableShell;
 
 pub struct GraphqlApiTableShell {
     pub(crate) table: AnyTable,
     pub(crate) capabilities: VistaCapabilities,
+    pub(crate) metadata: VistaMetadata,
 }
 
 impl GraphqlApiTableShell {
-    pub(crate) fn new(table: AnyTable, capabilities: VistaCapabilities) -> Self {
+    pub(crate) fn new(
+        table: AnyTable,
+        capabilities: VistaCapabilities,
+        metadata: VistaMetadata,
+    ) -> Self {
         Self {
             table,
             capabilities,
+            metadata,
         }
     }
 }
 
 #[async_trait]
 impl TableShell for GraphqlApiTableShell {
+    fn columns(&self) -> &IndexMap<String, VistaColumn> {
+        &self.metadata.columns
+    }
+
+    fn references(&self) -> &IndexMap<String, VistaReference> {
+        &self.metadata.references
+    }
+
+    fn id_column(&self) -> Option<&str> {
+        self.metadata.id_column.as_deref()
+    }
+
     async fn list_vista_values(
         &self,
         _vista: &Vista,

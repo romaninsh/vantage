@@ -88,7 +88,7 @@ fn build_users_vista() -> Vista {
         .with_column(Column::new("salary", "i64").with_flag("orderable"))
         .with_column(Column::new("vip_flag", "bool"))
         .with_id_column("id");
-    Vista::new("users", Box::new(seeded_shell()), metadata)
+    Vista::new("users", Box::new(seeded_shell().with_metadata(metadata)))
 }
 
 // ─── Test factory + recorder ───────────────────────────────────────────────

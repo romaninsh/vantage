@@ -59,8 +59,9 @@ impl SqliteVistaFactory {
                 can_fetch_next: true,
                 ..VistaCapabilities::default()
             },
+            metadata,
         );
-        Vista::new(name, Box::new(source), metadata)
+        Vista::new(name, Box::new(source))
     }
 
     /// Build a `Table<SqliteDB, EmptyEntity>` from a spec.

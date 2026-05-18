@@ -7,7 +7,10 @@ use indexmap::IndexMap;
 use vantage_core::{Result, VantageError, error};
 use vantage_types::Record;
 
-use crate::{capabilities::VistaCapabilities, sort::SortDirection, vista::Vista};
+use crate::{
+    capabilities::VistaCapabilities, column::Column, reference::Reference, sort::SortDirection,
+    vista::Vista,
+};
 
 /// Per-driver executor for a `Vista`.
 ///
@@ -28,6 +31,18 @@ use crate::{capabilities::VistaCapabilities, sort::SortDirection, vista::Vista};
 #[async_trait]
 #[allow(clippy::ptr_arg)]
 pub trait TableShell: Send + Sync + 'static {
+    // ---- Schema --------------------------------------------------------------
+    //
+    // The shell owns the schema. `Vista` is a thin wrapper that forwards its
+    // metadata accessors here. No defaults — every impl must answer (an empty
+    // schema is a deliberate choice the impl declares explicitly).
+
+    fn columns(&self) -> &IndexMap<String, Column>;
+
+    fn references(&self) -> &IndexMap<String, Reference>;
+
+    fn id_column(&self) -> Option<&str>;
+
     // ---- ReadableValueSet delegates ----------------------------------------
 
     async fn list_vista_values(&self, vista: &Vista)
@@ -274,14 +289,14 @@ pub trait TableShell: Send + Sync + 'static {
         .is_unimplemented())
     }
 
-    /// Names + cardinalities of the wrapped typed `Table`'s same-persistence
-    /// references. Default returns empty; drivers that wrap a typed `Table`
-    /// override to surface `Table::ref_kinds()` translated into
-    /// [`ReferenceKind`](crate::reference::ReferenceKind). Combined with
-    /// `Vista`'s own `with_foreign` registry by
-    /// [`Vista::list_references`](crate::Vista::list_references).
+    /// Names + cardinalities of the shell's same-persistence references.
+    /// Derived from [`references`](Self::references) by default; impls
+    /// should rarely need to override.
     fn get_ref_kinds(&self) -> Vec<(String, crate::reference::ReferenceKind)> {
-        Vec::new()
+        self.references()
+            .iter()
+            .map(|(name, r)| (name.clone(), r.kind))
+            .collect()
     }
 
     // ---- Identity ----------------------------------------------------------

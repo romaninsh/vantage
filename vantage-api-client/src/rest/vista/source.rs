@@ -19,7 +19,10 @@ use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_table::traits::table_like::TableLike;
 use vantage_types::Record;
-use vantage_vista::{TableShell, Vista, VistaCapabilities};
+use vantage_vista::{
+    Column as VistaColumn, Reference as VistaReference, TableShell, Vista, VistaCapabilities,
+    VistaMetadata,
+};
 
 use super::any_shell::AnyTableShell;
 use super::factory::ModelResolver;
@@ -44,6 +47,7 @@ pub(crate) enum YamlReferenceKind {
 pub struct RestApiTableShell {
     pub(crate) table: Box<dyn TableLike<Value = CborValue, Id = String>>,
     pub(crate) capabilities: VistaCapabilities,
+    pub(crate) metadata: VistaMetadata,
     pub(crate) yaml_refs: IndexMap<String, YamlReference>,
     pub(crate) resolver: Option<ModelResolver>,
 }
@@ -52,10 +56,12 @@ impl RestApiTableShell {
     pub(crate) fn new(
         table: Box<dyn TableLike<Value = CborValue, Id = String>>,
         capabilities: VistaCapabilities,
+        metadata: VistaMetadata,
     ) -> Self {
         Self {
             table,
             capabilities,
+            metadata,
             yaml_refs: IndexMap::new(),
             resolver: None,
         }
@@ -74,6 +80,18 @@ impl RestApiTableShell {
 
 #[async_trait]
 impl TableShell for RestApiTableShell {
+    fn columns(&self) -> &IndexMap<String, VistaColumn> {
+        &self.metadata.columns
+    }
+
+    fn references(&self) -> &IndexMap<String, VistaReference> {
+        &self.metadata.references
+    }
+
+    fn id_column(&self) -> Option<&str> {
+        self.metadata.id_column.as_deref()
+    }
+
     async fn list_vista_values(
         &self,
         _vista: &Vista,

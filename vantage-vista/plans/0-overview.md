@@ -24,14 +24,13 @@ type (`bson::Document` for Mongo, `Expression<AnyCsvType>` for CSV) and
 mutates the wrapped `Table`'s condition list. Filtering happens
 server-side wherever the backend supports it.
 
-`Coop` is a separate crate (`vantage-coop`, stage 7) that **wraps a
-Vista and fills in capabilities the inner driver doesn't natively
-provide**. If a driver can't paginate, Coop pages client-side; if a
-driver is read-only, Coop's `with_writes(handler)` routes writes
-through a user-supplied closure. Same mechanism layers in caching,
-search, sort, and live-event invalidation. The consumer holds a plain
-`Vista` — nothing in the API surface signals "this is wrapped", only
-runtime behaviour and the reported capability flags change.
+Capability fill-ins, caching, write routing, and live-event invalidation
+live in a separate crate, `vantage-diorama` — see
+`../../vantage-diorama/plans/`. From Vista's perspective, Diorama is just
+another consumer: it wraps a Vista, runs it through a `Lens` (the cache
++ callback apparatus), and exposes the result as a richer Vista plus a
+reactive `Scenery` surface. Vista itself stays neutral about caching
+strategy.
 
 ## Crate layout
 
@@ -80,16 +79,15 @@ vista/
 | 5 | [Portable conditions](5-conditions.md) | Partial — driver-typed `eq` shipped; portable operator vocabulary still pending |
 | 5b | [Query controls (sort, paginate, search, aggregates)](5b-query-controls.md) | Not started |
 | 6 | [Hooks + Rhai](6-hooks.md) | Not started |
-| 7 | [vantage-coop crate](7-coop.md) | Not started |
 | 8 | [vantage-ui migration](8-ui-migration.md) | Not started |
 | 9 | [Decommission old types](9-decommission.md) | Not started |
 
 MVP = stages 1–4 plus the eq-condition delegation that landed alongside
 stage 4. Stages 5 (full operator vocabulary), 5b (sort/paginate/search/
-aggregates), 6 (hooks), and 7 (Coop) are progressive enhancement. 5b
-and 7 are deliberately paired: 5b adds the Vista API surface, 7 adds
+aggregates) and 6 (hooks) are progressive enhancement. Stage 5b pairs
+with `vantage-diorama` — 5b adds the Vista API surface, Diorama adds
 the client-side fallbacks for drivers that can't push those methods
-down.
+down (see `../../vantage-diorama/plans/`).
 
 ## What landed alongside stage 4
 

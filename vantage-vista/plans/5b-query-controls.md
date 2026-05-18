@@ -12,9 +12,10 @@ set" operations) but kept in a separate stage because the design space is
 unrelated: conditions need operator/policy machinery, sort/paginate/search
 are simple delegations to the driver, and aggregates are scalar reads.
 
-Architecturally they pair with stage 7 (Coop): every method here is
+Architecturally they pair with `vantage-diorama`: every method here is
 expected to return `Unsupported` on drivers that can't push it down, and
-Coop fills the gap client-side. The Vista surface stays uniform regardless.
+a Diorama-wrapped Vista fills the gap client-side via its cache and
+callbacks. The Vista surface stays uniform regardless.
 
 ## Discussion phase
 
@@ -36,8 +37,8 @@ Coop fills the gap client-side. The Vista surface stays uniform regardless.
       that returns the condition for the caller to apply? Lean:
       `add_search` (mutates), matching `Table::add_search`. Drivers that
       can push it down (SQL `LIKE`, Mongo `$regex`) do so; others
-      return `Unsupported` and Coop's `with_search()` fallback fetches
-      and filters in memory.
+      return `Unsupported` and a Diorama-backed Vista fetches and filters
+      in memory using its cache.
 - [ ] Aggregates `get_sum/max/min` value type — `CborValue` (universal)
       or driver-typed? Lean: `CborValue` for consistency with
       `get_count`'s `i64`-as-CBOR-int and the rest of the Vista
@@ -65,7 +66,7 @@ In:
   `Result<CborValue>`; `TableShell::get_vista_sum/max/min` driver hooks
 - New capability flags: `can_paginate_native`, `can_sort_native`,
   `can_search_native`, `can_aggregate_native` (advise consumers when
-  push-down is real vs. Coop-filled). Open question: do we collapse the
+  push-down is real vs. Diorama-filled). Open question: do we collapse the
   existing `paginate_kind` into the same vocabulary?
 - Aggregate semantics on a conditioned Vista — `get_sum` respects the
   current condition set, same as `get_count`. Document this.
@@ -104,9 +105,9 @@ Out:
 - [ ] Decide capability-flag vocabulary; update `VistaCapabilities`
 - [ ] Integration tests: each new method on CSV + Mongo, plus a
       `Unsupported` assertion on a stub driver that opts out
-- [ ] Cross-link to stage 7: every `Unsupported` path here is a Coop
-      fill-in target; confirm the surface stage 7 needs is exactly the
-      one this stage defines
+- [ ] Cross-link to `vantage-diorama`: every `Unsupported` path here
+      is a Diorama fill-in target; confirm Diorama's callback surface
+      matches what this stage defines
 
 ## References
 
@@ -123,5 +124,5 @@ Out:
     impls)
 - Pairs with:
   - Stage 5 (conditions): same delegation pattern, separate concern
-  - Stage 7 (Coop): provides the client-side fallback for every method
-    here that a driver can't push down
+  - `vantage-diorama`: provides the client-side fallback for every
+    method here that a driver can't push down

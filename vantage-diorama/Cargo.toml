@@ -1,0 +1,30 @@
+[package]
+name = "vantage-diorama"
+version = "0.4.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Cached, composable, reactive surface for Vantage Vistas"
+repository = "https://github.com/romaninsh/vantage"
+
+[lib]
+doctest = false
+
+[dependencies]
+vantage-core = { version = "0.4.1", path = "../vantage-core" }
+vantage-types = { version = "0.4", path = "../vantage-types" }
+vantage-vista = { version = "0.4", path = "../vantage-vista" }
+vantage-table = { version = "0.4", path = "../vantage-table" }
+vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
+
+async-trait = "0.1"
+ciborium = { version = "0.2", features = ["std"] }
+indexmap = "2"
+redb = "2.6"
+thiserror = "2"
+tokio = { version = "1", features = ["sync", "rt", "time"] }
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
+vantage-csv = { path = "../vantage-csv", features = ["vista"] }

@@ -3497,7 +3497,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.2",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -4031,7 +4031,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vantage-api-client"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4106,7 +4106,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cli-util"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4137,7 +4137,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-csv"
-version = "0.4.12"
+version = "0.4.13"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4177,6 +4177,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "vantage-diorama"
+version = "0.4.0"
+dependencies = [
+ "async-trait",
+ "ciborium",
+ "indexmap",
+ "redb",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "vantage-core",
+ "vantage-csv",
+ "vantage-dataset",
+ "vantage-table",
+ "vantage-types",
+ "vantage-vista",
+]
+
+[[package]]
 name = "vantage-docs"
 version = "0.0.0"
 dependencies = [
@@ -4207,7 +4227,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-live"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4233,7 +4253,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-log-writer"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4256,7 +4276,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-mongodb"
-version = "0.4.10"
+version = "0.4.11"
 dependencies = [
  "async-trait",
  "bson",
@@ -4302,7 +4322,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.4.8"
+version = "0.4.9"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4327,7 +4347,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.4.9"
+version = "0.4.10"
 dependencies = [
  "async-trait",
  "bakery_model3",
@@ -4407,7 +4427,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.4.9"
+version = "0.4.10"
 dependencies = [
  "async-stream",
  "async-trait",

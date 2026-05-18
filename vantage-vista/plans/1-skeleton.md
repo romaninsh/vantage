@@ -56,7 +56,8 @@ Out:
 - All implementations (drivers come in stage 2+)
 - YAML parsing (stage 3)
 - Hooks (stage 6)
-- Coop layer (stage 7)
+- Caching, write routing, capability fill-ins (these live in
+  `vantage-diorama`, not Vista)
 - Per-column condition policy (stage 5)
 
 ## Plan

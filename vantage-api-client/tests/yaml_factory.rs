@@ -103,7 +103,7 @@ references:
     assert_eq!(vista.get_id_column(), Some("id"));
     assert_eq!(vista.get_title_columns(), vec!["name"]);
     assert_eq!(vista.get_column_names(), vec!["id", "name", "email"]);
-    assert_eq!(vista.get_references(), vec!["albums"]);
+    assert_eq!(vista.get_references(), vec!["albums".to_string()]);
     let albums = vista.get_reference("albums").unwrap();
     assert_eq!(albums.target, "albums");
     assert_eq!(albums.foreign_key, "userId");

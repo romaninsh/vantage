@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.8 — 2026-05-18
+
+- `live_demo` is back. Re-enables the `vantage-api-client` dev-dep and the `[[example]]` block after the vista refactor; the example itself was unchanged.
+
 ## 0.4.7 — 2026-05-14
 
 - `live_demo` drops the in-example `JsonToCborAdapter` and wraps `Table<RestApi, _>` straight through `AnyTable::from_table`, now that [`vantage-api-client`](https://docs.rs/vantage-api-client) speaks `ciborium::Value` natively.

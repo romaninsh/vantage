@@ -16,9 +16,9 @@ Final cleanup pass; closes a long tail of TODO items deferred during the
       consumers of the old types
 - [ ] Deprecation timing — single-cut at 0.5 release vs deprecate-and-warn
       for one minor cycle?
-- [ ] `vantage-live` crate fate — fully removed (LiveStream/Cache moved
-      to vantage-coop in stage 7), or kept as a thin re-export shim for
-      one cycle?
+- [ ] `vantage-live` crate fate — fully removed (LiveStream/Cache
+      superseded by `vantage-diorama`'s event bus + Lens callbacks), or
+      kept as a thin re-export shim for one cycle?
 - [ ] `bakery_model4` is currently excluded from the workspace; bring it
       into Vista or leave excluded?
 
@@ -42,7 +42,10 @@ In:
   or keep for REST-specific deferred-condition cases.
 - Delete the old `TableLike` trait family (or whatever trait the wrapper
   boxed) if no other consumer remains
-- Delete or shrink `vantage-live` (logic moved to vantage-coop)
+- Delete or shrink `vantage-live` (logic moved to `vantage-diorama` —
+  the Lens callback machinery and event bus subsume LiveTable's
+  write-through cache, write queue, and live-stream invalidation; see
+  `../../vantage-diorama/plans/10-decommission-live.md`)
 - Delete the legacy `AnyTable` trait at `vantage/src/sql/table.rs`
   (unrelated to the new struct, dead-ish today)
 - Restore disabled tests under their new home

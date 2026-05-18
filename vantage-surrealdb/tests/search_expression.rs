@@ -26,14 +26,12 @@ fn test_search_expression_basic() {
         .with_column(Column::<String>::new("password").with_flag(ColumnFlag::Hidden))
         .with_column(Column::<i64>::new("age"));
 
-    // search_table_condition currently returns a simple SEARCH expression
-    // TODO: once implementation iterates searchable columns, update assertions
     let search_expr = db.search_table_condition(&table, "john");
     let preview = search_expr.preview();
 
     assert!(
-        preview.contains("SEARCH"),
-        "Should contain SEARCH keyword, got: {}",
+        preview.contains("string::contains"),
+        "Should contain string::contains call, got: {}",
         preview
     );
     assert!(
@@ -55,13 +53,13 @@ fn test_search_expression_special_characters() {
     let preview = search_expr.preview();
 
     assert!(
-        preview.contains("SEARCH"),
-        "Should contain SEARCH keyword, got: {}",
+        preview.contains("string::contains"),
+        "Should contain string::contains call, got: {}",
         preview
     );
     assert!(
-        preview.contains("O'Brien"),
-        "Should contain search value, got: {}",
+        preview.contains("o'brien"),
+        "Should contain lowercased search value, got: {}",
         preview
     );
 }

@@ -13,7 +13,7 @@ impl WritableValueSet for Vista {
         id: &String,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.source().insert_vista_value(self, id, record).await
+        self.source.insert_vista_value(self, id, record).await
     }
 
     async fn replace_value(
@@ -21,7 +21,7 @@ impl WritableValueSet for Vista {
         id: &String,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.source().replace_vista_value(self, id, record).await
+        self.source.replace_vista_value(self, id, record).await
     }
 
     async fn patch_value(
@@ -29,14 +29,14 @@ impl WritableValueSet for Vista {
         id: &String,
         partial: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.source().patch_vista_value(self, id, partial).await
+        self.source.patch_vista_value(self, id, partial).await
     }
 
     async fn delete(&self, id: &String) -> Result<()> {
-        self.source().delete_vista_value(self, id).await
+        self.source.delete_vista_value(self, id).await
     }
 
     async fn delete_all(&self) -> Result<()> {
-        self.source().delete_vista_all_values(self).await
+        self.source.delete_vista_all_values(self).await
     }
 }

@@ -140,8 +140,10 @@ the factory-side flip is trivial and should land in lockstep.
 
 SurrealDB has native LIVE queries. MongoDB has change streams. Neither
 advertises `can_subscribe: true` today. SurrealDB's CHANGELOG (0.4.5)
-explicitly defers this to a later pass. Wiring belongs in Stage 7
-(Coop's `with_live`), not here.
+explicitly defers this to a later pass. Wiring belongs in
+`vantage-diorama` (the event-bus + `on_event` callback path), not here.
+The driver just needs to expose a stream of `ChangeEvent`s; Diorama
+fans them out to Sceneries.
 
 ## Per-driver status
 
@@ -206,8 +208,8 @@ explicitly defers this to a later pass. Wiring belongs in Stage 7
       `SurrealOperation::eq`).
 - [ ] **Cross-cutting**: `TableShell::add_raw_condition` — same status
       as MongoDB above; pending Stage 9 review.
-- [ ] **Deferred**: `can_subscribe` + LIVE-query subscription — moves to
-      Stage 7 (Coop's `with_live`).
+- [ ] **Deferred**: `can_subscribe` + LIVE-query subscription — wires
+      into `vantage-diorama`'s event bus, not here.
 
 #### vantage-sql/sqlite, postgres, mysql — done (0.4.4)
 
@@ -330,7 +332,7 @@ Embedded key/value store. New to the Vista rollout list.
 - [ ] **Discuss**: redb is key/value with no native query language —
       conditions other than id lookup require client-side scan. Is
       `add_eq_condition` rejected at construction (refuse to advertise
-      capability) or filled by Coop client-side?
+      capability) or filled by a Diorama-wrapping Lens client-side?
 - [ ] **Discuss**: range queries (redb's native predicate shape) — do
       they belong on Vista at all, or only as a redb-specific extension?
 - [ ] **Discuss**: capability declaration — `can_count: true` is fine
@@ -352,10 +354,10 @@ primary backend.
 
 - [ ] **Discuss**: does PoolApi need its own Vista, or is it strictly
       transparent — i.e. `RestApi`'s Vista observed through PoolApi
-      "just works"? Lean: transparent, and PoolApi becomes one of the
-      first real-world consumers of Coop (Stage 7) once Coop ships,
-      since the rate-limit/retry/cache responsibilities are exactly
-      what Coop's wrappers cover.
+      "just works"? Lean: transparent. The rate-limit / retry / cache
+      responsibilities PoolApi was carrying belong in a `Lens`
+      configuration on top of a plain REST Vista — see
+      `../../vantage-diorama/plans/`.
 - [ ] If transparent: no Vista work needed; document the path in the
       crate README.
 - [ ] If not transparent: full factory + shell rollout.
@@ -437,10 +439,12 @@ lazy, but there's no integration test asserting that:
 - Touches:
   - `../../TODO.md` "Drop the String variant from MongoId" — independent
   - `../../TODO.md` "Wire up real LIVE query support end-to-end" —
-    deferred to stage 7
+    handled by `vantage-diorama`'s event bus
 - Pairs with:
   - Stage 5b (query controls): `paginate_kind` honesty waits on
     `Vista::set_pagination`; same for `add_search` and `add_order`
     landing as overrides here.
-  - Stage 7 (Coop): `with_upstream` / `with_writes` fills the
-    write-side capabilities the read-only drivers honestly can't claim.
+  - `vantage-diorama`: a `Lens` with an `on_write` callback fills
+    write-side capabilities the read-only drivers honestly can't
+    claim. The driver's job is to advertise truthfully; Diorama fills
+    the gaps.
