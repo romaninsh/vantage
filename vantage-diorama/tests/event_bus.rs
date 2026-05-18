@@ -233,10 +233,20 @@ async fn spawn_forwarder_pumps_stream_into_dio() -> Result<()> {
     .await
     .unwrap();
 
-    // Let the forwarder drain.
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
-    let count = dio.cache().list_values().await?.len();
-    assert_eq!(count, 2, "forwarder + on_event populated cache");
+    // Forwarder task pumps the mpsc, on_event fires, cache writes —
+    // poll until both rows land or we time out (CI runners are slow).
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        if dio.cache().list_values().await?.len() == 2 {
+            break;
+        }
+        if std::time::Instant::now() >= deadline {
+            panic!(
+                "forwarder + on_event did not populate cache within 5s (have {} rows)",
+                dio.cache().list_values().await?.len()
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     Ok(())
 }
