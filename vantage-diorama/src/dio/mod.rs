@@ -14,8 +14,8 @@ use vantage_vista::Vista;
 
 use crate::lens::{CacheTable, Lens};
 use crate::ops::{ChangeEvent, WriteOp};
-use crate::scenery::{RecordScenery, RecordStatus, TableSceneryBuilder, ValueSceneryBuilder};
 use crate::scenery::record::spawn_record_scenery;
+use crate::scenery::{RecordScenery, RecordStatus, TableSceneryBuilder, ValueSceneryBuilder};
 
 use ciborium::Value as CborValue;
 use vantage_types::Record;
@@ -101,10 +101,7 @@ impl Dio {
     /// No master fetch on miss (the cache is the source of truth in
     /// v1). Use [`Dio::patched`](Self::patched) — from an `on_query`
     /// callback or your own code — to seed the row.
-    pub async fn record_scenery(
-        &self,
-        id: impl Into<String>,
-    ) -> Result<Arc<dyn RecordScenery>> {
+    pub async fn record_scenery(&self, id: impl Into<String>) -> Result<Arc<dyn RecordScenery>> {
         let id = id.into();
         let (initial_record, initial_status) = match self.inner.cache.get_value(&id).await? {
             Some(rec) => (Some(rec), RecordStatus::Fresh),
@@ -126,12 +123,7 @@ impl Dio {
         id: impl Into<String>,
         record: Record<CborValue>,
     ) -> Arc<dyn RecordScenery> {
-        spawn_record_scenery(
-            &self.inner,
-            id.into(),
-            Some(record),
-            RecordStatus::Fresh,
-        )
+        spawn_record_scenery(&self.inner, id.into(), Some(record), RecordStatus::Fresh)
     }
 
     /// Start a [`ValueScenery`](crate::scenery::ValueScenery) builder.
@@ -178,7 +170,10 @@ impl Dio {
     /// the cache — use [`patched`](Self::patched) when you also have
     /// the new record value.
     pub fn invalidate_record(&self, id: impl Into<String>) {
-        let _ = self.inner.event_bus.send(DioEvent::RecordChanged { id: id.into() });
+        let _ = self
+            .inner
+            .event_bus
+            .send(DioEvent::RecordChanged { id: id.into() });
     }
 
     /// Publish [`DioEvent::Invalidated`] on the bus. Sceneries respond
@@ -190,11 +185,7 @@ impl Dio {
     /// Write `record` to the cache under `id` and publish
     /// [`DioEvent::RecordChanged`]. The canonical "external system
     /// told us about a row" pattern inside an `on_event` callback.
-    pub async fn patched(
-        &self,
-        id: impl Into<String>,
-        record: Record<CborValue>,
-    ) -> Result<()> {
+    pub async fn patched(&self, id: impl Into<String>, record: Record<CborValue>) -> Result<()> {
         let id = id.into();
         self.inner.cache.insert_value(&id, &record).await?;
         let _ = self.inner.event_bus.send(DioEvent::RecordChanged { id });

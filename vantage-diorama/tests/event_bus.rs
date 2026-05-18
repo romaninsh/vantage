@@ -17,10 +17,7 @@ fn master() -> Vista {
         .with_column(Column::new("id", "String").with_flag("id"))
         .with_column(Column::new("name", "String"))
         .with_id_column("id");
-    Vista::new(
-        "items",
-        Box::new(MockShell::new().with_metadata(metadata)),
-    )
+    Vista::new("items", Box::new(MockShell::new().with_metadata(metadata)))
 }
 
 fn record(name: &str) -> Record<CborValue> {

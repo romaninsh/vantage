@@ -152,7 +152,9 @@ async fn invalidate_own_id_triggers_reload() -> Result<()> {
     let initial = u64::from(*gen_rx.borrow_and_update());
 
     // Mutate the cache out-of-band, then publish without writing through `patched`.
-    dio.cache().insert_value("a", &record("alpha-prime", 31)).await?;
+    dio.cache()
+        .insert_value("a", &record("alpha-prime", 31))
+        .await?;
     dio.invalidate_record("a");
     wait_for_gen(&mut gen_rx, initial).await;
 

@@ -42,7 +42,12 @@ fn master() -> Vista {
     Vista::new("items", Box::new(shell))
 }
 
-fn show(label: &str, count: &Arc<dyn ValueScenery>, sum: &Arc<dyn ValueScenery>, avg: &Arc<dyn ValueScenery>) {
+fn show(
+    label: &str,
+    count: &Arc<dyn ValueScenery>,
+    sum: &Arc<dyn ValueScenery>,
+    avg: &Arc<dyn ValueScenery>,
+) {
     let fmt = |v: Option<CborValue>| match v {
         Some(CborValue::Integer(i)) => format!("{}", i128::from(i)),
         Some(other) => format!("{other:?}"),

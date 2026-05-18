@@ -78,8 +78,11 @@ async fn main() -> Result<()> {
     );
 
     let dio = lens.make_dio(master()).await?;
-    let scenery: Arc<dyn TableScenery> =
-        dio.table_scenery().sort("price", SortDir::Asc).open().await?;
+    let scenery: Arc<dyn TableScenery> = dio
+        .table_scenery()
+        .sort("price", SortDir::Asc)
+        .open()
+        .await?;
 
     print_scenery("initial (sorted by price asc)", &scenery);
 

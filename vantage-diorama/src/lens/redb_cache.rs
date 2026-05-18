@@ -123,26 +123,25 @@ impl CacheTable for RedbCacheTable {
             let txn = db
                 .begin_read()
                 .map_err(|e| error!("redb begin_read failed", detail = e.to_string()))?;
-            let table = match txn.open_table(TableDefinition::<&'static str, &'static [u8]>::new(
-                &name,
-            )) {
-                Ok(t) => t,
-                Err(redb::TableError::TableDoesNotExist(_)) => return Ok(IndexMap::new()),
-                Err(e) => {
-                    return Err(error!(
-                        "redb open_table failed",
-                        table = name,
-                        detail = e.to_string()
-                    ));
-                }
-            };
+            let table =
+                match txn.open_table(TableDefinition::<&'static str, &'static [u8]>::new(&name)) {
+                    Ok(t) => t,
+                    Err(redb::TableError::TableDoesNotExist(_)) => return Ok(IndexMap::new()),
+                    Err(e) => {
+                        return Err(error!(
+                            "redb open_table failed",
+                            table = name,
+                            detail = e.to_string()
+                        ));
+                    }
+                };
             let mut out = IndexMap::new();
             let iter = table
                 .iter()
                 .map_err(|e| error!("redb iter failed", detail = e.to_string()))?;
             for entry in iter {
-                let (k, v) = entry
-                    .map_err(|e| error!("redb iter entry failed", detail = e.to_string()))?;
+                let (k, v) =
+                    entry.map_err(|e| error!("redb iter entry failed", detail = e.to_string()))?;
                 let id = k.value().to_string();
                 let record = decode(v.value())?;
                 out.insert(id, record);
@@ -161,19 +160,18 @@ impl CacheTable for RedbCacheTable {
             let txn = db
                 .begin_read()
                 .map_err(|e| error!("redb begin_read failed", detail = e.to_string()))?;
-            let table = match txn.open_table(TableDefinition::<&'static str, &'static [u8]>::new(
-                &name,
-            )) {
-                Ok(t) => t,
-                Err(redb::TableError::TableDoesNotExist(_)) => return Ok(None),
-                Err(e) => {
-                    return Err(error!(
-                        "redb open_table failed",
-                        table = name,
-                        detail = e.to_string()
-                    ));
-                }
-            };
+            let table =
+                match txn.open_table(TableDefinition::<&'static str, &'static [u8]>::new(&name)) {
+                    Ok(t) => t,
+                    Err(redb::TableError::TableDoesNotExist(_)) => return Ok(None),
+                    Err(e) => {
+                        return Err(error!(
+                            "redb open_table failed",
+                            table = name,
+                            detail = e.to_string()
+                        ));
+                    }
+                };
             let row = table
                 .get(id.as_str())
                 .map_err(|e| error!("redb get failed", detail = e.to_string()))?;
@@ -193,15 +191,15 @@ impl CacheTable for RedbCacheTable {
                 .begin_write()
                 .map_err(|e| error!("redb begin_write failed", detail = e.to_string()))?;
             {
-                let mut table =
-                    txn.open_table(TableDefinition::<&'static str, &'static [u8]>::new(&name))
-                        .map_err(|e| {
-                            error!(
-                                "redb open_table failed",
-                                table = name,
-                                detail = e.to_string()
-                            )
-                        })?;
+                let mut table = txn
+                    .open_table(TableDefinition::<&'static str, &'static [u8]>::new(&name))
+                    .map_err(|e| {
+                        error!(
+                            "redb open_table failed",
+                            table = name,
+                            detail = e.to_string()
+                        )
+                    })?;
                 table
                     .insert(id.as_str(), bytes.as_slice())
                     .map_err(|e| error!("redb insert failed", detail = e.to_string()))?;
@@ -226,15 +224,15 @@ impl CacheTable for RedbCacheTable {
                 .begin_write()
                 .map_err(|e| error!("redb begin_write failed", detail = e.to_string()))?;
             {
-                let mut table =
-                    txn.open_table(TableDefinition::<&'static str, &'static [u8]>::new(&name))
-                        .map_err(|e| {
-                            error!(
-                                "redb open_table failed",
-                                table = name,
-                                detail = e.to_string()
-                            )
-                        })?;
+                let mut table = txn
+                    .open_table(TableDefinition::<&'static str, &'static [u8]>::new(&name))
+                    .map_err(|e| {
+                        error!(
+                            "redb open_table failed",
+                            table = name,
+                            detail = e.to_string()
+                        )
+                    })?;
                 for (id, bytes) in &encoded {
                     table
                         .insert(id.as_str(), bytes.as_slice())
@@ -258,15 +256,15 @@ impl CacheTable for RedbCacheTable {
                 .begin_write()
                 .map_err(|e| error!("redb begin_write failed", detail = e.to_string()))?;
             {
-                let mut table =
-                    txn.open_table(TableDefinition::<&'static str, &'static [u8]>::new(&name))
-                        .map_err(|e| {
-                            error!(
-                                "redb open_table failed",
-                                table = name,
-                                detail = e.to_string()
-                            )
-                        })?;
+                let mut table = txn
+                    .open_table(TableDefinition::<&'static str, &'static [u8]>::new(&name))
+                    .map_err(|e| {
+                        error!(
+                            "redb open_table failed",
+                            table = name,
+                            detail = e.to_string()
+                        )
+                    })?;
                 table
                     .remove(id.as_str())
                     .map_err(|e| error!("redb remove failed", detail = e.to_string()))?;
@@ -303,22 +301,22 @@ impl CacheTable for RedbCacheTable {
             let txn = db
                 .begin_read()
                 .map_err(|e| error!("redb begin_read failed", detail = e.to_string()))?;
-            let table = match txn.open_table(TableDefinition::<&'static str, &'static [u8]>::new(
-                &name,
-            )) {
-                Ok(t) => t,
-                Err(redb::TableError::TableDoesNotExist(_)) => return Ok(0),
-                Err(e) => {
-                    return Err(error!(
-                        "redb open_table failed",
-                        table = name,
-                        detail = e.to_string()
-                    ));
-                }
-            };
+            let table =
+                match txn.open_table(TableDefinition::<&'static str, &'static [u8]>::new(&name)) {
+                    Ok(t) => t,
+                    Err(redb::TableError::TableDoesNotExist(_)) => return Ok(0),
+                    Err(e) => {
+                        return Err(error!(
+                            "redb open_table failed",
+                            table = name,
+                            detail = e.to_string()
+                        ));
+                    }
+                };
             Ok(table
                 .len()
-                .map_err(|e| error!("redb len failed", detail = e.to_string()))? as i64)
+                .map_err(|e| error!("redb len failed", detail = e.to_string()))?
+                as i64)
         })
         .await
         .map_err(|e| error!("blocking task panicked", detail = e.to_string()))?

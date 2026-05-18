@@ -16,7 +16,9 @@ impl LensBuilder {
         if let Some(err) = self.deferred_cache_error {
             return Err(err);
         }
-        let cache_source = self.cache_source.ok_or(LensBuildError::MissingCacheSource)?;
+        let cache_source = self
+            .cache_source
+            .ok_or(LensBuildError::MissingCacheSource)?;
         let runtime = self
             .runtime
             .unwrap_or_else(|| Handle::try_current().expect("LensBuilder::build called outside a tokio runtime; supply one with .runtime(handle)"));

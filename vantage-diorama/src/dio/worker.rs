@@ -21,10 +21,7 @@ use crate::ops::WriteOp;
 /// drop. Each iteration upgrades the Weak to build a real Dio for the
 /// callback; if upgrade fails (very narrow race: op sent right before
 /// the last external Dio dropped), the op is discarded.
-pub(crate) async fn write_worker_loop(
-    inner: Weak<DioInner>,
-    mut rx: mpsc::Receiver<WriteOp>,
-) {
+pub(crate) async fn write_worker_loop(inner: Weak<DioInner>, mut rx: mpsc::Receiver<WriteOp>) {
     while let Some(op) = rx.recv().await {
         let Some(strong) = inner.upgrade() else {
             return;
@@ -57,15 +54,9 @@ async fn dispatch(dio: &Dio, op: WriteOp) -> Result<()> {
 async fn default_write(dio: &Dio, op: WriteOp) -> Result<()> {
     let master = dio.master();
     match op {
-        WriteOp::Insert { id, record } => {
-            master.insert_value(&id, &record).await.map(|_| ())
-        }
-        WriteOp::Replace { id, record } => {
-            master.replace_value(&id, &record).await.map(|_| ())
-        }
-        WriteOp::Patch { id, partial } => {
-            master.patch_value(&id, &partial).await.map(|_| ())
-        }
+        WriteOp::Insert { id, record } => master.insert_value(&id, &record).await.map(|_| ()),
+        WriteOp::Replace { id, record } => master.replace_value(&id, &record).await.map(|_| ()),
+        WriteOp::Patch { id, partial } => master.patch_value(&id, &partial).await.map(|_| ()),
         WriteOp::Delete { id } => master.delete(&id).await,
         WriteOp::DeleteAll => master.delete_all().await,
     }

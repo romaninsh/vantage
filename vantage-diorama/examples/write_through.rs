@@ -22,10 +22,7 @@ fn master() -> Vista {
         .with_column(Column::new("id", "String").with_flag("id"))
         .with_column(Column::new("name", "String"))
         .with_id_column("id");
-    Vista::new(
-        "tasks",
-        Box::new(MockShell::new().with_metadata(metadata)),
-    )
+    Vista::new("tasks", Box::new(MockShell::new().with_metadata(metadata)))
 }
 
 fn record(name: &str) -> Record<CborValue> {
@@ -71,8 +68,7 @@ async fn main() -> Result<()> {
                         WriteOp::Patch { id, partial } => {
                             dio.master().patch_value(&id, &partial).await?;
                             // Patch on cache: read-modify-write.
-                            let mut merged =
-                                dio.cache().get_value(&id).await?.unwrap_or_default();
+                            let mut merged = dio.cache().get_value(&id).await?.unwrap_or_default();
                             for (k, v) in &partial {
                                 merged.insert(k.clone(), v.clone());
                             }
@@ -97,8 +93,12 @@ async fn main() -> Result<()> {
     let dio = lens.make_dio(master()).await?;
     let facade = dio.vista();
 
-    facade.insert_value(&"t1".to_string(), &record("write docs")).await?;
-    facade.insert_value(&"t2".to_string(), &record("ship stage 3")).await?;
+    facade
+        .insert_value(&"t1".to_string(), &record("write docs"))
+        .await?;
+    facade
+        .insert_value(&"t2".to_string(), &record("ship stage 3"))
+        .await?;
 
     // Worker drains the queue.
     tokio::time::sleep(Duration::from_millis(50)).await;

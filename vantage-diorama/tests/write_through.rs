@@ -18,10 +18,7 @@ fn master() -> Vista {
         .with_column(Column::new("id", "String").with_flag("id"))
         .with_column(Column::new("name", "String"))
         .with_id_column("id");
-    Vista::new(
-        "items",
-        Box::new(MockShell::new().with_metadata(metadata)),
-    )
+    Vista::new("items", Box::new(MockShell::new().with_metadata(metadata)))
 }
 
 fn record(name: &str) -> Record<CborValue> {
@@ -61,8 +58,12 @@ async fn on_write_writes_both_master_and_cache() -> Result<()> {
     let dio = lens.make_dio(master()).await?;
     let facade = dio.vista();
 
-    facade.insert_value(&"a".to_string(), &record("apple")).await?;
-    facade.insert_value(&"b".to_string(), &record("banana")).await?;
+    facade
+        .insert_value(&"a".to_string(), &record("apple"))
+        .await?;
+    facade
+        .insert_value(&"b".to_string(), &record("banana"))
+        .await?;
 
     // Wait a beat for the worker to drain.
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -98,7 +99,9 @@ async fn default_write_goes_straight_to_master() -> Result<()> {
     let dio = lens.make_dio(master()).await?;
     let facade = dio.vista();
 
-    facade.insert_value(&"x".to_string(), &record("xerox")).await?;
+    facade
+        .insert_value(&"x".to_string(), &record("xerox"))
+        .await?;
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     // Master got it via the default path.
@@ -120,9 +123,7 @@ async fn on_write_error_publishes_write_failed_event() -> Result<()> {
     let lens = Arc::new(
         Lens::new()
             .cache_at(tmp.path().join("cache.redb"))
-            .on_write(|_dio, _op| async move {
-                Err(vantage_core::error!("user callback says no"))
-            })
+            .on_write(|_dio, _op| async move { Err(vantage_core::error!("user callback says no")) })
             .build()
             .expect("build lens"),
     );

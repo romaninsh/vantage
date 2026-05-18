@@ -57,14 +57,12 @@ pub trait ValueScenery: Send + Sync {
 }
 
 /// Future returned by a custom aggregate closure.
-pub type CustomAggregateFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<CborValue>> + Send + 'a>>;
+pub type CustomAggregateFuture<'a> = Pin<Box<dyn Future<Output = Result<CborValue>> + Send + 'a>>;
 
 /// Boxed user-supplied aggregate. HRTB so the same closure can be
 /// invoked against any `&Dio` borrow lifetime.
-pub type CustomAggregate = Box<
-    dyn for<'a> Fn(&'a Dio) -> CustomAggregateFuture<'a> + Send + Sync + 'static,
->;
+pub type CustomAggregate =
+    Box<dyn for<'a> Fn(&'a Dio) -> CustomAggregateFuture<'a> + Send + Sync + 'static>;
 
 /// Wrap a user closure into a [`CustomAggregate`]. Canonical user
 /// pattern: `move |dio| { let dio = dio.clone(); async move { ... } }`.

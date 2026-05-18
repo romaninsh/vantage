@@ -8,8 +8,8 @@ use vantage_core::Result;
 use vantage_types::Record;
 
 use crate::{
-    capabilities::VistaCapabilities, column::Column, metadata::VistaMetadata,
-    reference::Reference, sort::SortDirection, source::TableShell, vista::Vista,
+    capabilities::VistaCapabilities, column::Column, metadata::VistaMetadata, reference::Reference,
+    sort::SortDirection, source::TableShell, vista::Vista,
 };
 
 #[derive(Clone)]

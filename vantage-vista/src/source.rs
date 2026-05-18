@@ -8,10 +8,7 @@ use vantage_core::{Result, VantageError, error};
 use vantage_types::Record;
 
 use crate::{
-    capabilities::VistaCapabilities,
-    column::Column,
-    reference::Reference,
-    sort::SortDirection,
+    capabilities::VistaCapabilities, column::Column, reference::Reference, sort::SortDirection,
     vista::Vista,
 };
 
