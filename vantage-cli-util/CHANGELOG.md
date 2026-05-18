@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.6 — 2026-05-18
+
+- Tracks [vantage-vista 0.4.10](https://docs.rs/vantage-vista/0.4.10/vantage_vista/)'s schema-on-source refactor. Internal test fixtures build their `Vista` via `Box::new(MockShell::new().with_metadata(metadata))` instead of passing metadata to `Vista::new`. No change to the public CLI surface.
+- Pins `vantage-vista = "0.4.10"`.
+
 ## 0.4.5 — 2026-05-17
 
 - Wires the stage-5 vocabulary to real [`Vista`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.Vista.html) calls now that the methods have landed:

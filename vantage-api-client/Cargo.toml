@@ -23,7 +23,7 @@ vantage-dataset = { version = "0.4.1", path = "../vantage-dataset" }
 vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
 vantage-table = { version = "0.4.10", path = "../vantage-table" }
 vantage-types = { version = "0.4", path = "../vantage-types", features = ["serde"] }
-vantage-vista = { version = "0.4.9", path = "../vantage-vista" }
+vantage-vista = { version = "0.4.10", path = "../vantage-vista" }
 
 [dev-dependencies]
 anyhow = "1.0"

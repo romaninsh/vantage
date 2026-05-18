@@ -1,9 +1,13 @@
 # Changelog
 
-## 0.4.12 — 2026-05-18
+## 0.4.13 — 2026-05-18
 
-- Tracks [vantage-vista 0.4.9](https://docs.rs/vantage-vista/0.4.9/vantage_vista/)'s schema-on-source refactor. `CsvTableShell` now owns its [`VistaMetadata`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/struct.VistaMetadata.html) and implements the new [`columns`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/trait.TableShell.html#tymethod.columns) / [`references`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/trait.TableShell.html#tymethod.references) / [`id_column`](https://docs.rs/vantage-vista/0.4.9/vantage_vista/trait.TableShell.html#tymethod.id_column) shell methods. `csv.vista_factory().from_table(...)` / `from_yaml(...)` surface unchanged.
-- Pins `vantage-vista = "0.4.9"`.
+- Tracks [vantage-vista 0.4.10](https://docs.rs/vantage-vista/0.4.10/vantage_vista/)'s schema-on-source refactor. `CsvTableShell` now owns its [`VistaMetadata`](https://docs.rs/vantage-vista/0.4.10/vantage_vista/struct.VistaMetadata.html) and implements the new [`columns`](https://docs.rs/vantage-vista/0.4.10/vantage_vista/trait.TableShell.html#tymethod.columns) / [`references`](https://docs.rs/vantage-vista/0.4.10/vantage_vista/trait.TableShell.html#tymethod.references) / [`id_column`](https://docs.rs/vantage-vista/0.4.10/vantage_vista/trait.TableShell.html#tymethod.id_column) shell methods. `csv.vista_factory().from_table(...)` / `from_yaml(...)` surface unchanged.
+- Pins `vantage-vista = "0.4.10"`.
+
+## 0.4.12 — 2026-05-17
+
+Compatibility with change in vantage-vista
 
 ## 0.4.11 — 2026-05-16
 
