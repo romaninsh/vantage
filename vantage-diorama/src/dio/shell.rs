@@ -6,7 +6,7 @@ use super::DioInner;
 
 /// `TableShell` impl that backs the Vista returned by `Dio::vista()`.
 ///
-/// Holds the shared [`DioInner`] so reads/writes route through the
+/// Holds the shared inner Dio state so reads/writes route through the
 /// Dio's machinery while schema (columns, refs, id) is forwarded to
 /// the master Vista. Capability advertisement is the union of the
 /// master's capabilities and what the Lens's callbacks unlock.

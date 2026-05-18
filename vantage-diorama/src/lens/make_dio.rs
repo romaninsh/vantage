@@ -3,7 +3,8 @@
 //!
 //! Spawns the per-Dio write worker (always) and the refresh task (when
 //! `refresh_every` and `on_refresh` are both set). Fires `on_start`
-//! either blocking or detached per [`LensDefaults::on_start_blocking`].
+//! either blocking or detached per
+//! [`LensDefaults::on_start_blocking`](crate::lens::LensDefaults::on_start_blocking).
 
 use std::sync::{Arc, Weak};
 use std::time::Duration;

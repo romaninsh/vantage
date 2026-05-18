@@ -138,8 +138,9 @@ impl Dio {
     /// [`Vista::add_condition_eq`] without affecting other consumers.
     ///
     /// The facade's schema mirrors `master` (forwarded through
-    /// [`DioShell`]'s [`TableShell::columns`] etc.) while reads route
-    /// through the cache and writes route through the Dio's queue.
+    /// [`DioShell`]'s [`columns`](vantage_vista::TableShell::columns)
+    /// etc.) while reads route through the cache and writes route
+    /// through the Dio's queue.
     pub fn vista(&self) -> Vista {
         let name = self.inner.master.name().to_string();
         let shell = DioShell::new(self.inner.clone());

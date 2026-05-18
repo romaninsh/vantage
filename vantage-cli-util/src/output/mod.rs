@@ -1,10 +1,10 @@
 //! Output formatters for CLI results.
 //!
 //! The CLI doubles as a test-scenario runner across persistences, so output
-//! must be both human-readable (default `table`, ANSI styled via
-//! [`crate::table_display`]) and machine-comparable. JSON variants are the
-//! ergonomic-but-lossy options; `cbor-diag` (RFC 8949 §8 diagnostic
-//! notation) is the lossless form used for golden test fixtures.
+//! must be both human-readable (default `table`, ANSI styled via the
+//! crate-internal `table_display` module) and machine-comparable. JSON
+//! variants are the ergonomic-but-lossy options; `cbor-diag` (RFC 8949 §8
+//! diagnostic notation) is the lossless form used for golden test fixtures.
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;

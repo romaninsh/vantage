@@ -1,6 +1,6 @@
 //! Vista-backed model-driven CLI runner.
 //!
-//! Drives a [`Vista`] from positional argv tokens. The grammar covers
+//! Drives a [`Vista`](vantage_vista::Vista) from positional argv tokens. The grammar covers
 //! model selection, locator resolution, operator conditions, relation
 //! traversal, sort/slice selectors, search, aggregates, column
 //! overrides, and JSON-typed value escapes. Backend specifics (which
