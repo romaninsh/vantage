@@ -68,9 +68,10 @@ impl MongoVistaFactory {
                 can_fetch_next: true,
                 ..VistaCapabilities::default()
             },
+            metadata,
             column_paths,
         );
-        Vista::new(name, Box::new(source), metadata)
+        Vista::new(name, Box::new(source))
     }
 
     /// Compute the spec column → BSON path map for a `MongoVistaSpec`.

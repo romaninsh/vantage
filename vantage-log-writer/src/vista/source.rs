@@ -6,23 +6,29 @@ use vantage_core::{Result, error};
 use vantage_dataset::traits::InsertableValueSet;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::{TableShell, Vista, VistaCapabilities};
+use vantage_vista::{
+    Column as VistaColumn, Reference as VistaReference, TableShell, Vista, VistaCapabilities,
+    VistaMetadata,
+};
 
 use crate::log_writer::LogWriter;
 
 pub struct LogWriterTableShell {
     pub(crate) table: Table<LogWriter, EmptyEntity>,
     pub(crate) capabilities: VistaCapabilities,
+    pub(crate) metadata: VistaMetadata,
 }
 
 impl LogWriterTableShell {
     pub(crate) fn new(
         table: Table<LogWriter, EmptyEntity>,
         capabilities: VistaCapabilities,
+        metadata: VistaMetadata,
     ) -> Self {
         Self {
             table,
             capabilities,
+            metadata,
         }
     }
 }
@@ -39,6 +45,18 @@ fn cbor_record_to_json(record: &Record<CborValue>) -> Record<Value> {
 
 #[async_trait]
 impl TableShell for LogWriterTableShell {
+    fn columns(&self) -> &IndexMap<String, VistaColumn> {
+        &self.metadata.columns
+    }
+
+    fn references(&self) -> &IndexMap<String, VistaReference> {
+        &self.metadata.references
+    }
+
+    fn id_column(&self) -> Option<&str> {
+        self.metadata.id_column.as_deref()
+    }
+
     async fn list_vista_values(
         &self,
         _vista: &Vista,

@@ -59,8 +59,9 @@ impl SurrealVistaFactory {
                 can_fetch_next: true,
                 ..VistaCapabilities::default()
             },
+            metadata,
         );
-        Vista::new(name, Box::new(source), metadata)
+        Vista::new(name, Box::new(source))
     }
 
     /// Build a `Table<SurrealDB, EmptyEntity>` from a spec.

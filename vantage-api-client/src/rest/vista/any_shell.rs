@@ -20,20 +20,22 @@ use vantage_table::any::AnyTable;
 use vantage_table::traits::table_like::TableLike;
 use vantage_types::Record;
 use vantage_vista::{
-    Column as VistaColumn, TableShell, Vista, VistaCapabilities, VistaMetadata,
-    flags as vista_flags,
+    Column as VistaColumn, Reference as VistaReference, TableShell, Vista, VistaCapabilities,
+    VistaMetadata, flags as vista_flags,
 };
 
 pub struct AnyTableShell {
     table: AnyTable,
     capabilities: VistaCapabilities,
+    metadata: VistaMetadata,
 }
 
 impl AnyTableShell {
-    pub fn new(table: AnyTable, capabilities: VistaCapabilities) -> Self {
+    pub fn new(table: AnyTable, capabilities: VistaCapabilities, metadata: VistaMetadata) -> Self {
         Self {
             table,
             capabilities,
+            metadata,
         }
     }
 
@@ -54,8 +56,8 @@ impl AnyTableShell {
     pub fn into_vista_with(table: AnyTable, capabilities: VistaCapabilities) -> Result<Vista> {
         let name = table.table_name().to_string();
         let metadata = metadata_from_any_table(&table);
-        let shell = Self::new(table, capabilities);
-        Ok(Vista::new(name, Box::new(shell), metadata))
+        let shell = Self::new(table, capabilities, metadata);
+        Ok(Vista::new(name, Box::new(shell)))
     }
 }
 
@@ -82,6 +84,18 @@ fn metadata_from_any_table(table: &AnyTable) -> VistaMetadata {
 
 #[async_trait]
 impl TableShell for AnyTableShell {
+    fn columns(&self) -> &IndexMap<String, VistaColumn> {
+        &self.metadata.columns
+    }
+
+    fn references(&self) -> &IndexMap<String, VistaReference> {
+        &self.metadata.references
+    }
+
+    fn id_column(&self) -> Option<&str> {
+        self.metadata.id_column.as_deref()
+    }
+
     async fn list_vista_values(
         &self,
         _vista: &Vista,

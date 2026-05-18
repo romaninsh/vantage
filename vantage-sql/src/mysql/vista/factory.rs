@@ -48,8 +48,9 @@ impl MysqlVistaFactory {
                 can_delete: true,
                 ..VistaCapabilities::default()
             },
+            metadata,
         );
-        Vista::new(name, Box::new(source), metadata)
+        Vista::new(name, Box::new(source))
     }
 
     pub fn table_from_spec(&self, spec: &MysqlVistaSpec) -> Result<Table<MysqlDB, EmptyEntity>> {

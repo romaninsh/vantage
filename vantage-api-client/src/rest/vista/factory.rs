@@ -104,8 +104,9 @@ impl RestApiVistaFactory {
                 can_count: true,
                 ..VistaCapabilities::default()
             },
+            metadata,
         );
-        Ok(Vista::new(name, Box::new(source), metadata))
+        Ok(Vista::new(name, Box::new(source)))
     }
 
     /// Resolve a model name to a Vista — either via the installed
@@ -187,11 +188,12 @@ impl VistaFactory for RestApiVistaFactory {
                 can_count: true,
                 ..VistaCapabilities::default()
             },
+            metadata,
         )
         .with_yaml_refs(yaml_refs)
         .with_resolver(self.resolver_for_specs());
 
-        let mut vista = Vista::new(vista_name.clone(), Box::new(source), metadata);
+        let mut vista = Vista::new(vista_name.clone(), Box::new(source));
         vista.set_name(vista_name);
         Ok(vista)
     }

@@ -21,7 +21,10 @@ use vantage_table::sorting::{OrderBy, SortDirection as TableSortDirection};
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::{SortDirection, TableShell, Vista, VistaCapabilities};
+use vantage_vista::{
+    Column as VistaColumn, Reference as VistaReference, SortDirection, TableShell, Vista,
+    VistaCapabilities, VistaMetadata,
+};
 
 use crate::condition::MongoCondition;
 use crate::id::MongoId;
@@ -32,6 +35,7 @@ use crate::vista::cbor::{bson_to_cbor, cbor_to_bson};
 pub struct MongoTableShell {
     pub(crate) table: Table<MongoDB, EmptyEntity>,
     pub(crate) capabilities: VistaCapabilities,
+    pub(crate) metadata: VistaMetadata,
     /// spec column name → BSON path (e.g. `"city"` → `["address", "city"]`).
     /// Empty map ⇒ identity passthrough (used by typed `from_table` paths).
     pub(crate) column_paths: IndexMap<String, Vec<String>>,
@@ -45,11 +49,13 @@ impl MongoTableShell {
     pub(crate) fn new(
         table: Table<MongoDB, EmptyEntity>,
         capabilities: VistaCapabilities,
+        metadata: VistaMetadata,
         column_paths: IndexMap<String, Vec<String>>,
     ) -> Self {
         Self {
             table,
             capabilities,
+            metadata,
             column_paths,
             current_search_handle: None,
             page_size: None,
@@ -167,6 +173,18 @@ fn insert_at_path(doc: &mut Document, path: &[String], value: Bson) {
 
 #[async_trait]
 impl TableShell for MongoTableShell {
+    fn columns(&self) -> &IndexMap<String, VistaColumn> {
+        &self.metadata.columns
+    }
+
+    fn references(&self) -> &IndexMap<String, VistaReference> {
+        &self.metadata.references
+    }
+
+    fn id_column(&self) -> Option<&str> {
+        self.metadata.id_column.as_deref()
+    }
+
     async fn list_vista_values(
         &self,
         _vista: &Vista,

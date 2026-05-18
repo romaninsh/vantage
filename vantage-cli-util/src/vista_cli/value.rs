@@ -277,7 +277,7 @@ mod tests {
             .with_column(Column::new("name", "String"))
             .with_column(Column::new("vip_flag", "bool"))
             .with_column(Column::new("salary", "i64"));
-        let vista = Vista::new("users", Box::new(MockShell::new()), metadata);
+        let vista = Vista::new("users", Box::new(MockShell::new().with_metadata(metadata)));
 
         // `name=true` against a string column stays a string.
         assert_eq!(
@@ -313,7 +313,7 @@ mod tests {
             .with_column(Column::new("vip_flag", "bool"))
             .with_column(Column::new("salary", "i64"))
             .with_column(Column::new("ratio", "f64"));
-        let vista = Vista::new("users", Box::new(MockShell::new()), metadata);
+        let vista = Vista::new("users", Box::new(MockShell::new().with_metadata(metadata)));
 
         let bool_err = coerce_for_column(&vista, "vip_flag", "yes").unwrap_err();
         assert!(format!("{bool_err}").contains("bool column"));

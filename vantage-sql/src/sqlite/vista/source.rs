@@ -19,7 +19,10 @@ use vantage_table::sorting::{OrderBy, SortDirection as TableSortDirection};
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Entity, Record};
-use vantage_vista::{SortDirection, TableShell, Vista, VistaCapabilities};
+use vantage_vista::{
+    Column as VistaColumn, Reference as VistaReference, SortDirection, TableShell, Vista,
+    VistaCapabilities, VistaMetadata,
+};
 
 use crate::primitives::identifier::ident;
 use crate::sqlite::SqliteDB;
@@ -32,6 +35,7 @@ where
 {
     pub(crate) table: Table<SqliteDB, E>,
     pub(crate) capabilities: VistaCapabilities,
+    pub(crate) metadata: VistaMetadata,
     /// Handle for the active quicksearch condition (if any). Used by
     /// `clear_search` and by `add_search`'s replace-semantics to remove the
     /// previous search before pushing the new one.
@@ -45,10 +49,15 @@ impl<E> SqliteTableShell<E>
 where
     E: Entity<AnySqliteType>,
 {
-    pub(crate) fn new(table: Table<SqliteDB, E>, capabilities: VistaCapabilities) -> Self {
+    pub(crate) fn new(
+        table: Table<SqliteDB, E>,
+        capabilities: VistaCapabilities,
+        metadata: VistaMetadata,
+    ) -> Self {
         Self {
             table,
             capabilities,
+            metadata,
             current_search_handle: None,
             page_size: None,
         }
@@ -74,6 +83,18 @@ impl<E> TableShell for SqliteTableShell<E>
 where
     E: Entity<AnySqliteType> + 'static,
 {
+    fn columns(&self) -> &IndexMap<String, VistaColumn> {
+        &self.metadata.columns
+    }
+
+    fn references(&self) -> &IndexMap<String, VistaReference> {
+        &self.metadata.references
+    }
+
+    fn id_column(&self) -> Option<&str> {
+        self.metadata.id_column.as_deref()
+    }
+
     async fn list_vista_values(
         &self,
         _vista: &Vista,
