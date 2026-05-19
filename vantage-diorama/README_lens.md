@@ -27,9 +27,13 @@ A Lens owns four kinds of things:
 2. **Lifecycle callbacks.** Functions you write that describe how data moves.
    `on_start` runs once when a Dio is made; `on_refresh` runs on a timer or on
    demand; `on_write` routes mutations; `on_event` handles external change
-   notifications; `on_query` fills the cache lazily.
+   notifications; `on_query` fills the cache lazily. Plus two
+   `TableScenery`-specific hooks — `total_provider` and `on_load_chunk`
+   — that drive scrollbar sizing and paged fetches for virtualised grids.
 3. **Default policies.** TTLs, refresh intervals, write queue capacity,
-   whether `on_start` blocks. These apply to every Dio under the lens.
+   whether `on_start` blocks, whether sceneries auto-fetch their first
+   page at open, viewport-debounce window. These apply to every Dio
+   under the lens.
 4. **A runtime handle.** Tokio handle for spawning the per-Dio worker tasks.
    Picked up from the current runtime by default.
 
@@ -109,6 +113,75 @@ let metrics_for_cb = metrics.clone();
     }
 })
 ```
+
+### `total_provider` and `on_load_chunk` — paged grids
+
+A `TableScenery` over a million-row table doesn't want to copy every
+row into the cache at `on_start`. Two scenery-specific callbacks let
+the scrollbar size itself before any data is paged in and let the
+scenery fetch ranges on demand:
+
+```rust
+let lens = Arc::new(
+    Lens::new()
+        .cache_at("./products.redb")
+        // Fires once per TableScenery open. Returns the total row
+        // count; drives row_count() / estimated_total() and lets the
+        // UI render a full-height scrollbar before any rows load.
+        .total_provider(|dio| {
+            let dio = dio.clone();
+            async move {
+                let n = dio.master().get_count().await?;
+                Ok(n as usize)
+            }
+        })
+        // Fires when set_viewport / request_load_more hits a range
+        // that isn't fully cached. The callback fetches rows from
+        // wherever (a paged REST API, SQL OFFSET/LIMIT, …) and pushes
+        // them into the scenery via the sink.
+        .on_load_chunk(|dio, range, sink| {
+            let dio = dio.clone();
+            async move {
+                let page = dio
+                    .master()
+                    .fetch_offset(range.start, range.end - range.start)
+                    .await?;
+                for (offset, (id, rec)) in page.into_iter().enumerate() {
+                    sink.push(range.start + offset, id, rec).await?;
+                }
+                Ok(())
+            }
+        })
+        .build()?,
+);
+```
+
+`sink.push(idx, id, record).await` writes the row to the cache *and*
+inserts it into the scenery's sparse map. The callback may push fewer
+rows than the requested range (the master ran out before `range.end`),
+or push out of order, or push across `await` points as a slow
+streaming API trickles in. The scenery only bumps its generation once
+the callback's future returns — UIs get a single repaint per chunk
+rather than one per row, which keeps scroll behaviour predictable.
+
+By default a TableScenery opens, paints whatever it finds in the
+cache, then fires `set_viewport(0..page_size)` against itself so the
+configured `on_load_chunk` re-fetches the first page in the
+background. Turn that off when the cache is fully populated by an
+upstream pipeline and you don't want the open path to round-trip:
+
+```rust
+.refresh_on_open(false)
+```
+
+The viewport-debounce window is configurable per lens:
+
+```rust
+.viewport_debounce(Duration::from_millis(100))   // default is 50ms
+```
+
+A larger window absorbs more rapid scroll bursts before issuing the
+fetch; a smaller one makes the grid feel snappier on slower scrolls.
 
 ## Scenario 1 — Desktop UI, slow backend, instant reads
 
@@ -487,6 +560,14 @@ A few rules of thumb:
 - **`on_start_blocking`**: true for desktop UIs (better than empty grid).
   False for servers (let the first request take the hit; don't block startup
   on possibly-slow upstreams).
+- **`refresh_on_open`**: true when `on_load_chunk` is the primary
+  source of rows (the scenery should always re-fetch the first page so
+  the cache stays warm). False when `on_start` already fully populates
+  the cache and an extra round-trip would just churn.
+- **`viewport_debounce`**: 50ms balances scroll responsiveness against
+  fetch churn for typical desktop / mobile inputs. Bump it for slow
+  upstreams where a wider coalesce window is worth the extra latency;
+  drop it for trackpad-driven UIs that need to feel snappier.
 
 ## Multiple Lenses
 

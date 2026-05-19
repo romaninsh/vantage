@@ -180,20 +180,24 @@ impl TableDelegate for ProductsTable {
         self.entity.read(cx).scenery().has_more()
     }
 
-    fn load_more(&mut self, _: &mut Window, _: &mut Context<TableState<Self>>) {
-        // No-op today; the v1 Scenery loads every matching cached row at
-        // open time. See "Virtual / infinite scroll" below for the path
-        // that's planned for very large caches.
+    fn load_more(&mut self, _: &mut Window, cx: &mut Context<TableState<Self>>) {
+        // Asks the Scenery to fetch the next chunk past the current
+        // cache end. The configured `on_load_chunk` decides what
+        // "next chunk" means; the Scenery passes its `page_size` as a
+        // hint range.
+        self.entity.read(cx).scenery().request_load_more();
     }
 
     fn visible_rows_changed(
         &mut self,
-        _range: Range<usize>,
+        range: Range<usize>,
         _: &mut Window,
-        _: &mut Context<TableState<Self>>,
+        cx: &mut Context<TableState<Self>>,
     ) {
-        // No-op today (set_viewport is accepted but ignored by v1).
-        // Land prefetch here when Scenery v2 honors viewport hints.
+        // Forward the visible band straight to the Scenery; the
+        // viewport pipeline debounces, deduplicates, and dispatches
+        // `on_load_chunk` for any uncached ranges.
+        self.entity.read(cx).scenery().set_viewport(range);
     }
 
     fn perform_sort(
@@ -221,32 +225,39 @@ impl TableDelegate for ProductsTable {
 `record: Record<CborValue>` plus `status: RowStatus` plus a `dirty_fields`
 slot (reserved for form editing in a later stage — leave it `None` for now).
 
-### What `has_more` and `load_more` mean today
+### What `has_more` and `load_more` mean
 
-The current `TableScenery` is **eager**: it loads every cached row that
-matches `where_eq` filters at `.open().await` time and keeps them in a
-`Vec<Arc<EnrichedRecord>>`. So:
+The Scenery has two modes, controlled by which `Lens` callbacks are
+registered:
 
-- `row_count()` is the full filtered set size.
-- `has_more()` always returns `false`.
-- `request_load_more()` is accepted but no-op.
-- `set_viewport(range)` is accepted but no-op.
+- **Eager mode** — no `total_provider`, no `on_load_chunk`. The
+  scenery's row set comes from whatever the cache has. `row_count`
+  equals the filtered cache size, `has_more` is always false,
+  `set_viewport` / `request_load_more` only emit `ViewportChanged`
+  events. Best for caches that fit comfortably in memory and are
+  fully populated by `on_start`.
+- **Paged mode** — `total_provider` and `on_load_chunk` are both
+  registered. `row_count` and `estimated_total` come from the
+  provider; `row(i)` returns `None` for indices that haven't been
+  fetched yet (your `render_td` paints a skeleton); `set_viewport`
+  debounces scroll updates and fires `on_load_chunk` for any
+  uncached range; `request_load_more` pages the next chunk past
+  the current cache end and bumps the generation when it arrives.
 
-You wire `has_more` / `load_more` / `visible_rows_changed` through to the
-Scenery anyway because (a) it's the right shape for when v2 lands and (b)
-gpui-component virtualizes which rows it *renders* on its own — only the
-visible window's `render_td` fires, even if `row_count()` reports 100,000.
-A grid over a cache of 100k rows works fine today: GPUI renders ~50 visible
-rows per frame, your `render_td` reads `Arc<EnrichedRecord>` from the
-Scenery, cheap.
+You wire `has_more` / `load_more` / `visible_rows_changed` through to
+the Scenery in both modes — the eager-mode no-ops are harmless, and
+switching a screen from eager to paged is a Lens-config change with
+no UI rewiring. gpui-component virtualizes which rows it *renders* on
+its own — only the visible window's `render_td` fires, even if
+`row_count()` reports 1,000,000.
 
-## Virtual / infinite scroll: what works and what's coming
+## Virtual / infinite scroll: three patterns
 
-Diorama's design is *cache-as-viewport*: the UI shows what's locally cached,
-not what could be fetched from master on scroll. Three patterns, in order of
-"works today" to "needs a v2 Scenery":
+Diorama's design is *cache-as-viewport*: the UI shows what's locally
+cached, not what could be fetched from master on scroll. Three
+patterns, picking the right one for your data size:
 
-### 1. Eager cache + GPUI virtualization — works today
+### 1. Eager cache + GPUI virtualization — small/medium caches
 
 This is the default and it's the one you almost certainly want. The Lens's
 `on_start` (or a streaming `on_refresh`) populates the cache; the Scenery
@@ -363,26 +374,55 @@ shape — they're "load more from a paginated server" hooks. For "I have N
 million local rows, render the visible band," you want `visible_rows_changed`
 plus your own page LRU.
 
-### 3. Scenery v2 — windowed Scenery (planned, not built)
+### 3. Paged Scenery — windowed virtualised grids
 
-The trait shape (`set_viewport`, `request_load_more`, `has_more`) was
-designed for this and is already on the public surface. A v2 implementation
-will:
+The Scenery's paged mode covers the middle ground: caches "big enough
+that eager hurts but small enough that a Scenery still makes sense."
+Register both Lens callbacks:
 
-- Hold a sparse `Vec<RowSlot>` (`Loaded` / `Pending` / `Empty`).
-- Honor `set_viewport(range)` by prefetching ±N rows around the range.
-- Honor `request_load_more` for "user scrolled past 80% of loaded".
-- Surface `has_more = true` until the underlying cache page boundary is hit.
+```rust
+let lens = Arc::new(
+    Lens::new()
+        .cache_at("./orders.redb")
+        .total_provider(|dio| {
+            let dio = dio.clone();
+            async move { Ok(dio.master().get_count().await? as usize) }
+        })
+        .on_load_chunk(|dio, range, sink| {
+            let dio = dio.clone();
+            async move {
+                let page = dio
+                    .master()
+                    .fetch_offset(range.start, range.end - range.start)
+                    .await?;
+                for (offset, (id, rec)) in page.into_iter().enumerate() {
+                    sink.push(range.start + offset, id, rec).await?;
+                }
+                Ok(())
+            }
+        })
+        .build()?,
+);
+let dio = lens.make_dio(orders_vista).await?;
+let scenery = dio.table_scenery().page_size(200).open().await?;
+```
 
-When v2 lands the delegate from pattern 1 will keep working unchanged —
-that's why the trait already exposes these hooks. The bypass pattern (2)
-remains valuable for the largest workloads where even windowing is overkill;
-v2 is for the middle ground where the cache is "big enough that eager hurts
-but small enough that a Scenery still makes sense."
+The Scenery:
 
-If you have a concrete need for v2 today, see
-[plans/5-table-scenery.md](plans/5-table-scenery.md) and
-[plans/8-gpui-adapter.md](plans/8-gpui-adapter.md).
+- Holds a sparse `BTreeMap<usize, Arc<EnrichedRecord>>`.
+- Honours `set_viewport(range)` via a 50ms-debounced channel that
+  coalesces rapid scroll bursts into a single chunk fetch.
+- Honours `request_load_more` to page the next `page_size` rows past
+  the cache end.
+- Surfaces `has_more = true` while the cached map size is below
+  `total_provider`'s reported total.
+- Emits `DioEvent::RangeLoaded { range }` after each chunk arrives;
+  the existing `subscribe()` watch bumps once per chunk.
+
+The same `TableDelegate` from pattern 1 works unchanged — the only
+difference between eager and paged is which Lens callbacks the user
+registers. The bypass pattern (2) remains the right call for the
+largest workloads where even chunked windowing is overkill.
 
 ## Search and sort: in-memory today
 
@@ -567,9 +607,11 @@ Knobs to be aware of:
   per render frame it's N clones. GPUI virtualizes rendering so N is small
   (~50 rows × columns) regardless of `row_count`.
 - **`set_viewport` is called frequently** by gpui-component (every scroll
-  tick); it's a no-op today, so this doesn't matter yet. When v2 lands the
-  Scenery will debounce internally — your delegate impl should still keep
-  the call cheap.
+  tick). The Scenery debounces internally (50ms by default — tunable via
+  `LensBuilder::viewport_debounce`), so a rapid scroll burst collapses
+  into a single `on_load_chunk` call against the most recent range.
+  Your delegate impl should still keep the call cheap; it's just an
+  mpsc send.
 - **Lazy field formatting.** If your `render_cell` does heavy string work
   (number formatting, date parsing, markdown), cache it on `EnrichedRecord`
   load rather than on every render. Profile before optimizing.

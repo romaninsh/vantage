@@ -29,6 +29,8 @@ impl LensBuilder {
             on_write: self.on_write,
             on_event: self.on_event,
             on_query: self.on_query,
+            total_provider: self.total_provider,
+            on_load_chunk: self.on_load_chunk,
         };
 
         Ok(Lens {

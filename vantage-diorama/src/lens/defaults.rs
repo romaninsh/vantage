@@ -20,6 +20,17 @@ pub struct LensDefaults {
     /// returning the Dio. When `false`, `on_start` fires in the
     /// background and the Dio is returned immediately.
     pub on_start_blocking: bool,
+
+    /// When `true`, opening a `TableScenery` automatically schedules a
+    /// `set_viewport(0..page_size)` so the configured `on_load_chunk`
+    /// re-fetches the first page in the background. Cached rows (if
+    /// any) are painted immediately, then repainted as the fresh
+    /// chunk lands. Turn off for read-only / offline modes.
+    pub refresh_on_open: bool,
+
+    /// Window over which rapid `set_viewport` calls are coalesced
+    /// before a chunk fetch is fired.
+    pub viewport_debounce: Duration,
 }
 
 impl Default for LensDefaults {
@@ -29,6 +40,8 @@ impl Default for LensDefaults {
             cache_ttl: None,
             write_queue_capacity: 256,
             on_start_blocking: true,
+            refresh_on_open: true,
+            viewport_debounce: Duration::from_millis(50),
         }
     }
 }

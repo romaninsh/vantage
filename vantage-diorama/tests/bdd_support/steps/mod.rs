@@ -8,4 +8,5 @@ pub mod lifecycle;
 pub mod multi_dio;
 pub mod refresh;
 pub mod skeleton;
+pub mod table_v2;
 pub mod write_path;

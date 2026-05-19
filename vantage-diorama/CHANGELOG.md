@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.3 — 2026-05-20
+
+- `TableScenery` v2: sparse `BTreeMap<usize, Arc<EnrichedRecord>>` storage replaces the dense `Vec`. `row(i)` returns `None` for unloaded indices so virtualised UIs can render a skeleton at that slot.
+- New `LensBuilder` callbacks: `total_provider(&Dio) -> usize` runs once per scenery open and drives `row_count` / `estimated_total` ahead of any rows being paged in; `on_load_chunk(&Dio, Range, ChunkSink)` fetches uncached ranges, with `ChunkSink::push(idx, id, record)` writing to the cache and the scenery's sparse map.
+- New `DioEvent` variants — `ViewportChanged`, `RangeLoaded`, `LoadFailed` — fan out viewport-pipeline progress without colliding with `Invalidated`. The reactor ignores its own events to avoid loops.
+- New `LensDefaults`: `refresh_on_open` (default true) re-fetches the first page in the background at scenery open; `viewport_debounce` (default 50ms) coalesces rapid scroll bursts into a single fetch.
+- `TableSceneryBuilder::page_size` default raised from 50 → 100; `.initial_range(range)` overrides the refresh-on-open viewport.
+- BDD coverage for the three new contracts: `tests/features/v2_total_count.feature`, `v2_sparse_rows.feature`, `v2_viewport.feature`.
+- `src/scenery/table.rs` split into `scenery/table/{mod,builder,state,loader,reactor,helpers}.rs` so the viewport pipeline and reactor can grow without one monolithic file.
+
 ## 0.4.2 — 2026-05-19
 
 - BDD harness now covers the full Diorama surface: Lens lifecycle, write path (`on_write` modes, `WriteFailed` events, capability lifting), event path (`ChangeEvent` → `on_event` → cache, `TableScenery` generation contract), `refresh_every` skip-first semantics under virtual time, multi-Dio cache isolation, and read paths against Mock / CSV / in-memory SQLite via a `Scenario Outline`.

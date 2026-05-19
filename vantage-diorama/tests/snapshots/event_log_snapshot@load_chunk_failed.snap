@@ -1,0 +1,7 @@
+---
+source: vantage-diorama/tests/bdd_support/steps/assertions.rs
+assertion_line: 62
+expression: events
+---
+- "ViewportChanged { range: 500..600 }"
+- "LoadFailed { range: 500..600, error: \"on_load_chunk rejected\" }"

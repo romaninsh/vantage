@@ -1,39 +1,53 @@
 # Stage 5 — TableScenery
 
-Status: **Done (v1 — eager load, no prefetch/hot-tier/push-down — see module doc)**
+Status: **Done (v2 — sparse storage, total_provider, on_load_chunk, viewport pipeline)**
 
-## v2 follow-up: windowed Scenery for virtual/infinite scroll
+## What v2 shipped
 
-The v1 trait already exposes `set_viewport(range)`, `request_load_more()`,
-`has_more()`, and `estimated_total()` — they're accepted but no-op today.
-v2 turns them into a real virtual-scroll backend so the Scenery scales to
-caches that don't fit comfortably in `Vec<Arc<EnrichedRecord>>` (low
-millions of rows / hundreds of MB).
+The trait surface stayed the same; the implementation underneath
+changed. Sparse `BTreeMap<usize, Arc<EnrichedRecord>>` replaces the
+dense `Vec`. `row(i)` returns `None` for indices that aren't loaded
+(the UI renders a skeleton at that slot). Two new Lens callbacks
+drive paged behaviour:
 
-Sketch:
+- `total_provider(&Dio) -> Future<Result<usize>>` — fires once per
+  scenery open; result drives `row_count` / `estimated_total`. Absent
+  → cache-size fallback (v1-compat).
+- `on_load_chunk(&Dio, Range<usize>, ChunkSink) -> Future<Result<()>>`
+  — fires when `set_viewport` / `request_load_more` hits an uncached
+  range. The callback pushes rows via `sink.push(idx, id, record)`;
+  each push writes to the cache and inserts into the sparse map.
 
-- Replace the dense `Vec<Arc<EnrichedRecord>>` with a sparse
-  `Vec<RowSlot>` (`Loaded` / `Pending` / `Empty`). `row_count` reflects
-  the cache's full filtered set; `row(idx)` returns `Some` for `Loaded`
-  and `None` (= render skeleton) otherwise.
-- Background fetcher consumes prefetch requests from a channel. The
-  Scenery's `set_viewport(range)` enqueues prefetch for `range ± margin`;
-  `request_load_more` extends the loaded frontier.
-- `has_more()` returns `true` while the cache's count exceeds what's
-  loaded; flips to `false` when the loaded set covers the filtered total.
-- Cache-side iteration: needs `CacheTable` to grow a paged scan
-  (`list_values_paged(offset, limit)` or `scan(cursor) -> (rows, next)`).
-  Until then the v2 fetcher reads `list_values()` and slices.
-- Sort/search push-down: when vista stage 5b lands, the Scenery delegates
-  to `dio.vista().add_order(...)` and `dio.vista().add_search(...)`
-  through `DioShell`, which in turn calls the cache's `add_order` /
-  `add_search` if the cache backend honours them. The Scenery doesn't
-  need to know whether push-down happened — it just reads paged results.
+Three new `DioEvent` variants — `ViewportChanged`, `RangeLoaded`,
+`LoadFailed` — fan out viewport-pipeline progress. The reactor
+ignores them on the way back in so it doesn't loop on its own output.
 
-The v2 implementation is also what unlocks the "insight into local
-cached data" pattern described in `../README_ui.md` § "Virtual / infinite
-scroll" — today that pattern requires bypassing the Scenery and binding
-the UI to `dio.cache()` directly; v2 puts the Scenery back in charge.
+New `LensDefaults` knobs:
+
+- `refresh_on_open: bool` (default true) — opening a scenery
+  schedules `set_viewport(0..page_size)` so `on_load_chunk` re-fetches
+  the first page in the background.
+- `viewport_debounce: Duration` (default 50ms) — rapid scroll bursts
+  coalesce into a single fetch.
+
+Source layout: `src/scenery/table/{mod,builder,state,loader,reactor,helpers}.rs`.
+BDD coverage in `tests/features/v2_{total_count,sparse_rows,viewport}.feature`.
+
+## Deferred follow-ups
+
+- **Targeted single-row updates** — `update_by_id` exists on
+  `TableSceneryState`; the reactor still falls back to a full reseed
+  on `RecordChanged`. Wiring the targeted path requires preserving
+  chunk-loaded index assignments across `Invalidated`.
+- **Sort/search push-down through `dio.vista().add_order/add_search`**
+  — depends on vista stage 5b. Today the filter runs in-memory across
+  whatever's in the sparse map.
+- **Persisted sparse map** — restart drops the index map; the next
+  `set_viewport` re-fetches positions. A `(sort_key, idx) → id` redb
+  table would survive restart.
+- **Per-push generation bumps** — today the scenery bumps generation
+  once per chunk (at `RangeLoaded`). Per-push reactivity for very slow
+  streaming APIs is a follow-up.
 
 Implement the first reactive surface: `TableScenery`. A Scenery
 subscribes to a Dio's event bus, maintains an in-memory row vector
