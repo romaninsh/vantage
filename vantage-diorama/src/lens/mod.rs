@@ -1,10 +1,12 @@
 pub mod build;
 pub mod cache_backend;
 pub mod callbacks;
+pub mod chunk_sink;
 pub mod defaults;
 pub mod make_dio;
 pub mod redb_cache;
 
+use std::ops::Range;
 use std::sync::Arc;
 
 use tokio::runtime::Handle;
@@ -19,10 +21,12 @@ use crate::ops::{ChangeEvent, QueryDescriptor, WriteOp};
 
 pub use cache_backend::{CacheBackend, CacheTable};
 pub use callbacks::{
-    DioCallback, DioEventCallback, DioQueryCallback, DioWriteCallback, LensCallbacks,
-    boxed_dio_callback, boxed_dio_event_callback, boxed_dio_query_callback,
-    boxed_dio_write_callback,
+    DioCallback, DioEventCallback, DioLoadChunkCallback, DioQueryCallback,
+    DioTotalProviderCallback, DioWriteCallback, LensCallbacks, boxed_dio_callback,
+    boxed_dio_event_callback, boxed_dio_query_callback, boxed_dio_write_callback,
+    boxed_load_chunk_callback, boxed_total_provider_callback,
 };
+pub use chunk_sink::{ChunkRow, ChunkSink, SceneryChunkTarget};
 pub use defaults::LensDefaults;
 pub use redb_cache::{RedbCache, RedbCacheTable};
 
@@ -74,6 +78,8 @@ pub struct LensBuilder {
     pub(crate) on_write: Option<DioWriteCallback>,
     pub(crate) on_event: Option<DioEventCallback>,
     pub(crate) on_query: Option<DioQueryCallback>,
+    pub(crate) total_provider: Option<DioTotalProviderCallback>,
+    pub(crate) on_load_chunk: Option<DioLoadChunkCallback>,
     pub(crate) defaults: LensDefaults,
     pub(crate) runtime: Option<Handle>,
 }
@@ -94,6 +100,8 @@ impl LensBuilder {
             on_write: None,
             on_event: None,
             on_query: None,
+            total_provider: None,
+            on_load_chunk: None,
             defaults: LensDefaults::default(),
             runtime: None,
         }
@@ -183,6 +191,35 @@ impl LensBuilder {
         self
     }
 
+    /// Register the `total_provider` callback. Fires once per
+    /// [`TableScenery`](crate::scenery::TableScenery) open; the result
+    /// drives `row_count()` and `estimated_total()` for that scenery's
+    /// lifetime. Absent → `row_count` falls back to the cached map
+    /// size (v1 behaviour).
+    pub fn total_provider<F, Fut>(mut self, f: F) -> Self
+    where
+        F: for<'a> Fn(&'a Dio) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<usize>> + Send + 'static,
+    {
+        self.total_provider = Some(callbacks::boxed_total_provider_callback(f));
+        self
+    }
+
+    /// Register the `on_load_chunk` callback. The Scenery calls this
+    /// from `set_viewport` / `request_load_more` when the requested
+    /// range is not fully cached. The callback fetches the rows from
+    /// the master (or any other source) and streams them back via
+    /// [`ChunkSink::push`]. Absent → viewport calls only emit
+    /// `ViewportChanged` and never load.
+    pub fn on_load_chunk<F, Fut>(mut self, f: F) -> Self
+    where
+        F: for<'a> Fn(&'a Dio, Range<usize>, ChunkSink) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<()>> + Send + 'static,
+    {
+        self.on_load_chunk = Some(callbacks::boxed_load_chunk_callback(f));
+        self
+    }
+
     pub fn refresh_every(mut self, interval: std::time::Duration) -> Self {
         self.defaults.refresh_interval = Some(interval);
         self
@@ -200,6 +237,19 @@ impl LensBuilder {
 
     pub fn on_start_blocking(mut self, blocking: bool) -> Self {
         self.defaults.on_start_blocking = blocking;
+        self
+    }
+
+    /// Override the `refresh_on_open` default for sceneries opened
+    /// from any Dio of this Lens.
+    pub fn refresh_on_open(mut self, enabled: bool) -> Self {
+        self.defaults.refresh_on_open = enabled;
+        self
+    }
+
+    /// Override the viewport-debounce window.
+    pub fn viewport_debounce(mut self, window: std::time::Duration) -> Self {
+        self.defaults.viewport_debounce = window;
         self
     }
 

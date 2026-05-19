@@ -48,6 +48,26 @@ pub struct MasterRows {
 }
 
 impl MasterRows {
+    /// Build a synthetic `items` table with `count` rows. Ids are
+    /// zero-padded so cache iteration order (redb is btree-ordered by
+    /// key) matches index order. Each row has a single `title`
+    /// column whose value is `"row-{i}"`.
+    pub fn synthetic(count: usize) -> Self {
+        let mut rows = Vec::with_capacity(count);
+        for i in 0..count {
+            let id = format!("{i:06}");
+            let mut fields = IndexMap::new();
+            fields.insert("title".to_string(), CborValue::Text(format!("row-{i}")));
+            rows.push(RowSpec { id, fields });
+        }
+        Self {
+            name: "items".to_string(),
+            id_column: "id".to_string(),
+            columns: vec!["id".to_string(), "title".to_string()],
+            rows,
+        }
+    }
+
     /// Parse a Gherkin data table. The first row is the header; the
     /// `id_column` defaults to `"id"` and must appear in the header.
     pub fn from_table(name: &str, table: &cucumber::gherkin::Table) -> Self {

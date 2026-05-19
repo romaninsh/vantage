@@ -1,0 +1,160 @@
+//! `TableScenery` — reactive ordered-rows view onto a Dio.
+//!
+//! v2 implementation. The Scenery holds a sparse
+//! `BTreeMap<usize, Arc<EnrichedRecord>>` keyed by row index. Rows
+//! arrive via two paths:
+//!
+//! - **Cache seed** — `open()` reads whatever is already in the cache
+//!   (e.g. warmed from disk on restart) and assigns indices in
+//!   iteration order. Subsequent `Invalidated` / `Refreshing` events
+//!   re-seed the same way.
+//! - **Chunk load** — `set_viewport` / `request_load_more` queue a
+//!   range request on a debounce channel; on commit, the lens-level
+//!   `on_load_chunk` callback fetches the missing indices from the
+//!   master and streams them back through [`ChunkSink`](crate::ChunkSink).
+//!
+//! The reactor task ignores the scenery's own viewport events
+//! (`ViewportChanged`, `RangeLoaded`, `LoadFailed`) to avoid looping
+//! on its own output.
+
+mod builder;
+mod helpers;
+mod loader;
+mod reactor;
+mod state;
+
+use std::ops::Range;
+use std::sync::Arc;
+
+use tokio::sync::watch;
+
+use crate::dio::Generation;
+
+use super::enriched_record::EnrichedRecord;
+
+pub use builder::TableSceneryBuilder;
+pub(crate) use state::TableSceneryState;
+
+/// UI-side sort direction. Mirrors `vantage_vista::SortDirection` but
+/// kept distinct so Scenery callers don't need to import vista types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortDir {
+    Asc,
+    Desc,
+}
+
+/// Internal viewport request carried over the debounce channel.
+#[derive(Debug, Clone)]
+pub(crate) struct ViewportRequest {
+    pub(crate) range: Range<usize>,
+    /// `request_load_more` sets this true so a fully-cached range
+    /// still triggers a fetch (paging past the cache end).
+    pub(crate) force_load: bool,
+}
+
+/// Reactive view onto a Dio that exposes an ordered, paginated row set.
+pub trait TableScenery: Send + Sync {
+    fn row_count(&self) -> usize;
+    fn has_more(&self) -> bool;
+    fn estimated_total(&self) -> Option<usize>;
+    fn row(&self, idx: usize) -> Option<Arc<EnrichedRecord>>;
+
+    fn set_viewport(&self, range: Range<usize>);
+    fn request_load_more(&self);
+    fn request_refresh(&self);
+    fn set_search(&self, query: Option<String>);
+    fn set_sort(&self, column: Option<String>, dir: SortDir);
+
+    fn subscribe(&self) -> watch::Receiver<Generation>;
+}
+
+pub(crate) struct TableSceneryImpl {
+    pub(crate) inner: Arc<TableSceneryState>,
+}
+
+impl TableScenery for TableSceneryImpl {
+    fn row_count(&self) -> usize {
+        if let Some(t) = *self.inner.total.read().unwrap() {
+            return t;
+        }
+        self.inner.rows.read().unwrap().len()
+    }
+
+    fn has_more(&self) -> bool {
+        let total = *self.inner.total.read().unwrap();
+        let loaded = self.inner.rows.read().unwrap().len();
+        match total {
+            Some(t) => loaded < t,
+            None => false,
+        }
+    }
+
+    fn estimated_total(&self) -> Option<usize> {
+        let stored = *self.inner.total.read().unwrap();
+        stored.or_else(|| Some(self.inner.rows.read().unwrap().len()))
+    }
+
+    fn row(&self, idx: usize) -> Option<Arc<EnrichedRecord>> {
+        if let Some(t) = *self.inner.total.read().unwrap()
+            && idx >= t
+        {
+            return None;
+        }
+        self.inner.rows.read().unwrap().get(&idx).cloned()
+    }
+
+    fn set_viewport(&self, range: Range<usize>) {
+        loader::enqueue_viewport(
+            &self.inner,
+            ViewportRequest {
+                range,
+                force_load: false,
+            },
+        );
+    }
+
+    fn request_load_more(&self) {
+        let start = self.inner.next_load_more_start();
+        let mut end = start + self.inner.page_size;
+        if let Some(t) = *self.inner.total.read().unwrap() {
+            end = end.min(t);
+        }
+        if end <= start {
+            return;
+        }
+        loader::enqueue_viewport(
+            &self.inner,
+            ViewportRequest {
+                range: start..end,
+                force_load: true,
+            },
+        );
+    }
+
+    fn request_refresh(&self) {
+        let Some(dio_inner) = self.inner.dio_weak.upgrade() else {
+            return;
+        };
+        let runtime = dio_inner.lens.runtime.clone();
+        runtime.spawn(async move {
+            let dio = crate::Dio { inner: dio_inner };
+            if let Err(e) = dio.refresh().await {
+                tracing::error!(error = %e, "Scenery request_refresh failed");
+            }
+        });
+    }
+
+    fn set_search(&self, query: Option<String>) {
+        *self.inner.search.write().unwrap() = query;
+        self.inner.reload_notify.notify_one();
+    }
+
+    fn set_sort(&self, column: Option<String>, dir: SortDir) {
+        *self.inner.sort.write().unwrap() = column.map(|c| (c, dir));
+        self.inner.reload_notify.notify_one();
+    }
+
+    fn subscribe(&self) -> watch::Receiver<Generation> {
+        self.inner.generation_tx.subscribe()
+    }
+}

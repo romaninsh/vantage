@@ -62,20 +62,24 @@ pub struct Lens {
 }
 
 pub struct LensBuilder {
-    cache_source: Option<Arc<dyn TableSource>>,
-    on_start:   Option<DioCallback>,
-    on_refresh: Option<DioCallback>,
-    on_write:   Option<DioWriteCallback>,
-    on_event:   Option<DioEventCallback>,
-    on_query:   Option<DioQueryCallback>,
+    cache_source:    Option<Arc<dyn TableSource>>,
+    on_start:        Option<DioCallback>,
+    on_refresh:      Option<DioCallback>,
+    on_write:        Option<DioWriteCallback>,
+    on_event:        Option<DioEventCallback>,
+    on_query:        Option<DioQueryCallback>,
+    total_provider:  Option<DioTotalProviderCallback>,  // TableScenery: one-shot row-count probe
+    on_load_chunk:   Option<DioLoadChunkCallback>,      // TableScenery: paged fetch
     defaults: LensDefaults,
 }
 
 pub struct LensDefaults {
     pub refresh_interval: Option<Duration>,
     pub cache_ttl: Option<Duration>,
-    pub write_queue_capacity: usize,        // default 256
-    pub on_start_blocking: bool,            // default true — block make_dio until on_start completes
+    pub write_queue_capacity: usize,         // default 256
+    pub on_start_blocking: bool,             // default true — block make_dio until on_start completes
+    pub refresh_on_open: bool,               // default true — scenery fires initial set_viewport at open
+    pub viewport_debounce: Duration,         // default 50ms — coalesces rapid set_viewport calls
 }
 ```
 
@@ -105,11 +109,30 @@ pub type DioQueryCallback = Box<
     dyn for<'a> Fn(&'a Dio, QueryDescriptor) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>
     + Send + Sync,
 >;
+
+pub type DioTotalProviderCallback = Box<
+    dyn for<'a> Fn(&'a Dio) -> Pin<Box<dyn Future<Output = Result<usize>> + Send + 'a>>
+    + Send + Sync,
+>;
+
+pub type DioLoadChunkCallback = Box<
+    dyn for<'a> Fn(&'a Dio, Range<usize>, ChunkSink) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>
+    + Send + Sync,
+>;
 ```
 
 A `LensBuilder::on_start(F)` accepts any `F: for<'a> Fn(&'a Dio) -> Fut + …`
 where `Fut: Future<Output = Result<()>> + Send + 'a` and wraps it into the
-boxed shape above.
+boxed shape above. The `total_provider` and `on_load_chunk` setters
+follow the same pattern, with different `Fut` output types — `usize`
+and `()` respectively.
+
+`ChunkSink::push(idx, id, record).await` is the only way for an
+`on_load_chunk` callback to deliver rows to the calling Scenery. It
+writes the row to the cache and inserts it into the sparse map.
+Cheap to clone; safe to call from anywhere inside the callback
+future. Returns `Err` if the originating Scenery has dropped — the
+callback should treat that as "give up, the user navigated away".
 
 ### Cache backend
 
@@ -267,11 +290,19 @@ pub enum DioEvent {
     RecordChanged { id: String },
     RecordInserted { id: String },
     RecordRemoved { id: String },
-    Invalidated,                      // wholesale: refresh just completed
-    Refreshing,                       // refresh started
+    Invalidated,                                          // wholesale: refresh just completed
+    Refreshing,                                           // refresh started
     WriteFailed { id: Option<String>, error: String },
+    ViewportChanged { range: Range<usize> },              // TableScenery: viewport committed
+    RangeLoaded { range: Range<usize> },                  // TableScenery: on_load_chunk Ok
+    LoadFailed { range: Range<usize>, error: String },    // TableScenery: on_load_chunk Err
 }
 ```
+
+The `ViewportChanged` / `RangeLoaded` / `LoadFailed` variants are
+emitted *by* `TableScenery`'s viewport pipeline; the scenery's own
+reactor ignores them on the way back in so it doesn't loop on its
+own output. See [Sceneries](#sceneries) below.
 
 Sceneries hold a `broadcast::Receiver<DioEvent>` and react. The Lens itself
 never directly touches Sceneries — all UI updates flow through the event bus.
@@ -331,21 +362,16 @@ pub struct TableSceneryBuilder {
     conditions: Vec<Condition>,
     sort: Option<(String, SortDir)>,
     search: Option<String>,
-    page_size: usize,                  // default 50
-    eager: bool,                       // load all up front (small datasets)
-}
-
-impl TableSceneryBuilder {
-    pub fn where_eq(mut self, col: impl Into<String>, value: impl Into<CborValue>) -> Self { … }
-    pub fn sort(mut self, col: impl Into<String>, dir: SortDir) -> Self { … }
-    pub fn search(mut self, q: impl Into<String>) -> Self { … }
-    pub fn page_size(mut self, n: usize) -> Self { … }
-    pub fn eager(mut self) -> Self { … }
-    pub fn open(self) -> Arc<dyn TableScenery> { … }
+    page_size: usize,                   // default 100 — hint range for request_load_more
+    eager: bool,                        // currently inert; kept for API stability
+    initial_range: Option<Range<usize>>,// override the refresh-on-open viewport (default 0..page_size)
 }
 ```
 
-### Scenery internal state (v1)
+Setters: `.where_eq(col, value)`, `.sort(col, dir)`, `.search(q)`,
+`.page_size(n)`, `.initial_range(r)`, `.open() -> Arc<dyn TableScenery>`.
+
+### Scenery internal state
 
 ```rust
 struct TableSceneryState {
@@ -356,27 +382,88 @@ struct TableSceneryState {
     sort: RwLock<Option<(String, SortDir)>>,
     search: RwLock<Option<String>>,
 
-    // Loaded data — eager v1 holds every matching cached row.
-    rows: RwLock<Vec<Arc<EnrichedRecord>>>,
+    // Loaded data — sparse, keyed by row index. Whatever's not in the
+    // map is unloaded; row(i) returns None for missing slots.
+    rows: RwLock<BTreeMap<usize, Arc<EnrichedRecord>>>,
+    id_to_idx: RwLock<HashMap<String, usize>>,
+    total: RwLock<Option<usize>>,     // populated by total_provider; drives row_count / estimated_total
+
+    page_size: usize,
 
     // Notification.
     generation: AtomicU64,
     generation_tx: watch::Sender<Generation>,
+
+    // Background-loop wiring.
     reload_notify: Arc<Notify>,
+    viewport_tx: mpsc::UnboundedSender<ViewportRequest>,
+    load_in_flight: Mutex<Option<Range<usize>>>,
 }
 ```
 
-The v1 implementation is eager: open scans `dio.cache().list_values()`,
-filters/sorts in memory, and publishes the result. A background reload
-task waits on `reload_notify` (poked by setters) and on the Dio's event
-bus (any `RecordChanged` / `RecordInserted` / `RecordRemoved` /
-`Invalidated`) — both trigger a full re-scan and a new generation.
+`open()` runs four steps in order:
 
-`set_viewport` and `request_load_more` are accepted at the trait surface
-but are no-ops in v1. The v2 implementation will introduce a sparse
-`Vec<RowSlot>` (Loaded / Pending / Empty) and a per-Scenery fetcher task
-that consumes prefetch requests; see
-[plans/5-table-scenery.md](plans/5-table-scenery.md) for the v2 sketch.
+1. If `total_provider` is registered, fire it once and stash the result.
+   This drives `row_count()` and `estimated_total()` for the scenery's
+   lifetime; future `Invalidated` events do *not* re-fire it.
+2. Seed the sparse map from `cache.list_values()` in iteration order.
+   Whatever's already in the cache (warm from disk on restart, or
+   freshly written by an `on_start` callback) goes to indices
+   `0..len-1`. Filter / sort / search apply in memory at this step.
+3. Spawn the reactor (consumes the Dio event bus) and the viewport
+   loop (debounces `set_viewport` / `request_load_more`).
+4. If `LensDefaults::refresh_on_open` is true *and* `on_load_chunk`
+   is registered, enqueue an initial `set_viewport(0..page_size)`
+   so the configured callback re-fetches the first page in the
+   background. UIs paint the cache immediately, then repaint when
+   the fresh chunk arrives.
+
+The reactor handles single-row and whole-set events but **ignores**
+its own viewport events. v2 starts simple: any `RecordChanged{id}` /
+`RecordInserted{id}` / `RecordRemoved{id}` / `Invalidated` /
+`Refreshing` drops the sparse map and re-seeds from
+`cache.list_values()`. The targeted "update one slot by id" path is
+sketched in `TableSceneryState::update_by_id` and reserved for a
+future iteration once cache-vs-master ordering guarantees are
+tightened.
+
+### Viewport pipeline
+
+`set_viewport(range)` and `request_load_more()` enqueue a
+`ViewportRequest` on an unbounded mpsc. A dedicated debounce loop
+reads requests with a `tokio::time::timeout(viewport_debounce, recv)`;
+any burst that arrives within the window collapses into the *most
+recent* request before firing.
+
+When a request fires:
+
+1. `DioEvent::ViewportChanged { range }` is emitted unconditionally.
+2. If the range is fully cached (and `force_load` is false — only
+   `request_load_more` sets `force_load`), the pipeline stops here.
+3. Otherwise the `on_load_chunk` callback is dispatched with a
+   `ChunkSink`. The callback pushes rows via `sink.push(idx, id, rec)`
+   for each row it fetches. Each push writes to the cache and inserts
+   into the sparse map immediately — slow streaming APIs can `push`
+   multiple times across `await`s and have their rows land
+   incrementally. The scenery's generation does not bump per push;
+   one bump fires at the end so UIs render a single repaint per chunk.
+4. On `Ok` the pipeline bumps generation and emits
+   `DioEvent::RangeLoaded { range }`. On `Err` it emits
+   `DioEvent::LoadFailed { range, error }` and leaves the cache /
+   sparse map untouched (no generation bump).
+
+### Sparse-map persistence
+
+The id-keyed cache (redb by default) is persisted across restarts;
+the sparse `BTreeMap<usize, …>` is not. On restart, the scenery
+re-derives index assignments from `cache.list_values()`. That works
+because (a) `on_start` is expected to write rows in master order and
+(b) cache iteration is stable for the chosen backend. Sort, search,
+or filter changes invalidate the index assignments outright — the
+sparse map is dropped, the cache stays warm, and the next viewport
+call refetches positions. Persisting the index map (e.g. a second
+redb table keyed by `(sort_key, idx) → id`) is a future direction
+when offline-first scrollbar precision matters.
 
 ### EnrichedRecord
 

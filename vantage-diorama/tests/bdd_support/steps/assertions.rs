@@ -13,15 +13,25 @@ async fn wait_for_events(w: &mut DioramaWorld, expected: usize) {
     // single-threaded runtime, so it makes progress only when this task
     // yields. Bounded so a missed event becomes a test failure, not a
     // hang.
-    for _ in 0..500 {
+    const MAX_POLLS: usize = 2_000;
+    const YIELDS_PER_POLL: usize = 20;
+    for _ in 0..MAX_POLLS {
         if w.snapshot_events().await.len() >= expected {
             return;
         }
-        tokio::task::yield_now().await;
-        tokio::time::advance(std::time::Duration::from_micros(1)).await;
+        // Multiple yields per advance — the viewport pipeline has a
+        // long chain of awaits (debounce timer → callback → 100×
+        // sink.push → cache spawn_blocking → bump generation →
+        // event emit). One yield per advance only gives one task one
+        // cycle, so chains starve. Batching yields lets each task
+        // chip away before time moves on.
+        for _ in 0..YIELDS_PER_POLL {
+            tokio::task::yield_now().await;
+        }
+        tokio::time::advance(std::time::Duration::from_millis(1)).await;
     }
     let got = w.snapshot_events().await.len();
-    panic!("expected at least {expected} events, got {got} after 500 polls");
+    panic!("expected at least {expected} events, got {got} after {MAX_POLLS} polls");
 }
 
 #[then(regex = r#"^the event log matches snapshot "([^"]+)"$"#)]
