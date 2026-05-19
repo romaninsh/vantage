@@ -1,5 +1,3 @@
-#![allow(dead_code)] // Phase-1 placeholders consumed in later phases
-
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -9,7 +7,7 @@ use tempfile::TempDir;
 use tokio::sync::{Mutex, Notify, broadcast};
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_diorama::{Dio, DioEvent, Lens};
+use vantage_diorama::{ChangeEvent, Dio, DioEvent, Lens, TableScenery, WriteOp};
 use vantage_vista::Vista;
 
 use super::backend::BackendKind;
@@ -19,8 +17,23 @@ use super::spies::Spies;
 pub enum OnWriteMode {
     #[default]
     Unset,
+    /// Counter-only — proves the worker fired, nothing else.
     Pass,
+    /// Always errors — the `WriteFailed` event-bus path.
     Error,
+    /// Mirror: apply the op to both master and cache, so subsequent
+    /// facade reads see fresh data without round-tripping the upstream.
+    Mirror,
+}
+
+#[derive(Clone, Copy, Default, Debug)]
+pub enum OnEventMode {
+    #[default]
+    Unset,
+    /// On `ChangeEvent::Updated { id, new: Some(rec) }`, forward to
+    /// `dio.patched(id, rec)` so the cache + bus reflect the upstream
+    /// change. Other variants are counted but otherwise ignored.
+    PatchedFromUpdate,
 }
 
 #[derive(Default, Debug)]
@@ -29,7 +42,7 @@ pub struct LensBuilderState {
     pub on_start_load_master: bool,
     pub on_start_blocking: Option<bool>,
     pub on_write_mode: OnWriteMode,
-    pub register_on_event: bool,
+    pub on_event_mode: OnEventMode,
     pub register_on_refresh: bool,
     /// When present, the `on_start` closure awaits this Notify before
     /// running its body. Lets a test pin "make_dio is/isn't waiting on
@@ -61,6 +74,13 @@ pub struct DioramaWorld {
     /// Spawned `make_dio` future when a scenario needs to assert
     /// "pending" vs "complete" — see scenario 1.
     pub pending_dio: Option<tokio::task::JoinHandle<Result<Dio>>>,
+    /// Opened by the `the table scenery is opened` step; subsequent
+    /// generation assertions read from `scenery.subscribe()`.
+    pub scenery: Option<Arc<dyn TableScenery>>,
+    /// Multi-dio scenarios: a single Lens producing several Dios bound
+    /// to different masters, each claiming its own cache table.
+    pub named_masters: std::collections::HashMap<String, Vista>,
+    pub named_dios: std::collections::HashMap<String, Dio>,
 }
 
 impl std::fmt::Debug for DioramaWorld {
@@ -93,15 +113,19 @@ impl DioramaWorld {
             on_start_gate: None,
             worker_handle: None,
             pending_dio: None,
+            scenery: None,
+            named_masters: std::collections::HashMap::new(),
+            named_dios: std::collections::HashMap::new(),
         }
     }
 
-    /// Yield repeatedly so spawned tasks have a chance to progress on
-    /// the single-threaded paused-clock runtime. Five turns is enough
-    /// for `make_dio` to spawn the worker + refresh task and park the
-    /// `on_start` future on its gate.
+    /// Drive the single-threaded paused-clock runtime forward enough
+    /// for spawned tasks (write worker, refresh task, scenery reload
+    /// loop, event recorder) to reach their next suspension point.
+    /// 20 yields covers a multi-await pipeline: bus send → recv →
+    /// callback → bus send → recorder lock → push.
     pub async fn settle(&self) {
-        for _ in 0..5 {
+        for _ in 0..20 {
             tokio::task::yield_now().await;
         }
     }
@@ -179,13 +203,11 @@ impl LensBuilderState {
 
         if self.register_on_refresh {
             let counter = spies.on_refresh.clone();
-            b = b.on_refresh(move |dio| {
-                let dio = dio.clone();
+            b = b.on_refresh(move |_dio| {
                 let counter = counter.clone();
                 async move {
                     counter.fetch_add(1, Ordering::SeqCst);
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await
+                    Ok(())
                 }
             });
         }
@@ -212,17 +234,58 @@ impl LensBuilderState {
                     }
                 });
             }
+            OnWriteMode::Mirror => {
+                use vantage_dataset::traits::WritableValueSet;
+                let counter = spies.on_write.clone();
+                b = b.on_write(move |dio, op| {
+                    let dio = dio.clone();
+                    let counter = counter.clone();
+                    async move {
+                        counter.fetch_add(1, Ordering::SeqCst);
+                        match op {
+                            WriteOp::Insert { id, record } => {
+                                dio.master().insert_value(&id, &record).await?;
+                                dio.cache().insert_value(&id, &record).await?;
+                            }
+                            WriteOp::Replace { id, record } => {
+                                dio.master().replace_value(&id, &record).await?;
+                                dio.cache().insert_value(&id, &record).await?;
+                            }
+                            WriteOp::Patch { id, partial } => {
+                                dio.master().patch_value(&id, &partial).await?;
+                                dio.cache().insert_value(&id, &partial).await?;
+                            }
+                            WriteOp::Delete { id } => {
+                                dio.master().delete(&id).await?;
+                                dio.cache().delete_value(&id).await?;
+                            }
+                            WriteOp::DeleteAll => {
+                                dio.master().delete_all().await?;
+                                dio.cache().clear().await?;
+                            }
+                        }
+                        Ok(())
+                    }
+                });
+            }
         }
 
-        if self.register_on_event {
-            let counter = spies.on_event.clone();
-            b = b.on_event(move |_dio, _evt| {
-                let counter = counter.clone();
-                async move {
-                    counter.fetch_add(1, Ordering::SeqCst);
-                    Ok(())
-                }
-            });
+        match self.on_event_mode {
+            OnEventMode::Unset => {}
+            OnEventMode::PatchedFromUpdate => {
+                let counter = spies.on_event.clone();
+                b = b.on_event(move |dio, evt| {
+                    let counter = counter.clone();
+                    let dio = dio.clone();
+                    async move {
+                        counter.fetch_add(1, Ordering::SeqCst);
+                        if let ChangeEvent::Updated { id, new: Some(rec) } = evt {
+                            dio.patched(id, rec).await?;
+                        }
+                        Ok(())
+                    }
+                });
+            }
         }
 
         let lens = b.build().map_err(|e| vantage_core::error!(e.to_string()))?;

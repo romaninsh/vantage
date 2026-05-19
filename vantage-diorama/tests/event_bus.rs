@@ -1,13 +1,15 @@
-//! Stage 4: event bus + on_event + convenience publishers + handle_event.
+//! Stage 4 (residual): edge cases not covered by the cucumber suite.
+//! `handle_event` without a callback is a no-op contract; the stream
+//! forwarder pattern documents the canonical shape user code uses to
+//! pump an external `LiveStream`/`mpsc`/`broadcast` into a Dio.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
-use vantage_diorama::{ChangeEvent, DioEvent, Lens};
+use vantage_diorama::{ChangeEvent, Lens};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
 
@@ -23,150 +25,6 @@ fn record(name: &str) -> Record<CborValue> {
     let mut r = Record::new();
     r.insert("name".to_string(), CborValue::Text(name.to_string()));
     r
-}
-
-#[tokio::test]
-async fn invalidate_record_publishes_event() -> Result<()> {
-    let tmp = TempDir::new().unwrap();
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at(tmp.path().join("cache.redb"))
-            .build()
-            .expect("build lens"),
-    );
-    let dio = lens.make_dio(master()).await?;
-    let mut events = dio.subscribe_events();
-
-    dio.invalidate_record("a1");
-
-    let evt = tokio::time::timeout(Duration::from_millis(200), events.recv())
-        .await
-        .expect("timed out")
-        .expect("bus closed");
-    matches!(evt, DioEvent::RecordChanged { ref id } if id == "a1")
-        .then_some(())
-        .ok_or_else(|| vantage_core::error!("wrong event", got = format!("{:?}", evt)))?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn invalidate_all_publishes_event() -> Result<()> {
-    let tmp = TempDir::new().unwrap();
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at(tmp.path().join("cache.redb"))
-            .build()
-            .expect("build lens"),
-    );
-    let dio = lens.make_dio(master()).await?;
-    let mut events = dio.subscribe_events();
-
-    dio.invalidate_all();
-
-    let evt = tokio::time::timeout(Duration::from_millis(200), events.recv())
-        .await
-        .expect("timed out")
-        .expect("bus closed");
-    assert!(matches!(evt, DioEvent::Invalidated), "got {evt:?}");
-    Ok(())
-}
-
-#[tokio::test]
-async fn patched_writes_cache_and_publishes() -> Result<()> {
-    let tmp = TempDir::new().unwrap();
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at(tmp.path().join("cache.redb"))
-            .build()
-            .expect("build lens"),
-    );
-    let dio = lens.make_dio(master()).await?;
-    let mut events = dio.subscribe_events();
-
-    dio.patched("p1", record("patched-name")).await?;
-
-    // Cache reflects the patch.
-    let cached = dio
-        .cache()
-        .get_value("p1")
-        .await?
-        .expect("cache has the row");
-    assert_eq!(
-        cached.get("name"),
-        Some(&CborValue::Text("patched-name".to_string()))
-    );
-
-    // Bus saw the event.
-    let evt = tokio::time::timeout(Duration::from_millis(200), events.recv())
-        .await
-        .expect("timed out")
-        .expect("bus closed");
-    matches!(evt, DioEvent::RecordChanged { ref id } if id == "p1")
-        .then_some(())
-        .ok_or_else(|| vantage_core::error!("wrong event", got = format!("{:?}", evt)))?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn handle_event_dispatches_to_on_event_callback() -> Result<()> {
-    let tmp = TempDir::new().unwrap();
-    let calls = Arc::new(AtomicU64::new(0));
-    let calls_for_cb = calls.clone();
-
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at(tmp.path().join("cache.redb"))
-            .on_event(move |dio, evt| {
-                let dio = dio.clone();
-                let calls = calls_for_cb.clone();
-                async move {
-                    calls.fetch_add(1, Ordering::SeqCst);
-                    // Canonical "external system told us about a row" — mirror.
-                    if let ChangeEvent::Updated {
-                        id,
-                        new: Some(record),
-                    } = evt
-                    {
-                        dio.patched(id, record).await?;
-                    }
-                    Ok(())
-                }
-            })
-            .build()
-            .expect("build lens"),
-    );
-    let dio = lens.make_dio(master()).await?;
-    let mut events = dio.subscribe_events();
-
-    // Simulate an external forwarder pumping events into the Dio.
-    dio.handle_event(ChangeEvent::Updated {
-        id: "ext1".to_string(),
-        new: Some(record("from-stream")),
-    })
-    .await?;
-
-    assert_eq!(calls.load(Ordering::SeqCst), 1, "on_event ran once");
-
-    // Cache has the patched row (via `dio.patched` inside the callback).
-    let cached = dio
-        .cache()
-        .get_value("ext1")
-        .await?
-        .expect("callback patched cache");
-    assert_eq!(
-        cached.get("name"),
-        Some(&CborValue::Text("from-stream".to_string()))
-    );
-
-    // Bus emitted from inside `patched`.
-    let evt = tokio::time::timeout(Duration::from_millis(200), events.recv())
-        .await
-        .expect("timed out")
-        .expect("bus closed");
-    matches!(evt, DioEvent::RecordChanged { ref id } if id == "ext1")
-        .then_some(())
-        .ok_or_else(|| vantage_core::error!("wrong event", got = format!("{:?}", evt)))?;
-    Ok(())
 }
 
 #[tokio::test]

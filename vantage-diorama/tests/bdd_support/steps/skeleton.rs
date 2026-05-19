@@ -3,10 +3,7 @@
 use cucumber::{gherkin::Step, given, then, when};
 use vantage_dataset::traits::ReadableValueSet;
 
-use crate::bdd_support::{
-    backend::{BackendKind, MasterRows},
-    world::DioramaWorld,
-};
+use crate::bdd_support::{backend::MasterRows, world::DioramaWorld};
 
 #[given(regex = r"^a master with rows$")]
 async fn master_with_rows(w: &mut DioramaWorld, step: &Step) {
@@ -15,22 +12,13 @@ async fn master_with_rows(w: &mut DioramaWorld, step: &Step) {
         .as_ref()
         .expect("data table required for `a master with rows`");
     let rows = MasterRows::from_table("items", table);
-    let backend = w.backend;
-    let master = rows
-        .build_master(backend)
-        .await
-        .expect("build master vista");
+    let master = rows.build_master_for(w).await.expect("build master vista");
     w.master = Some(master);
 }
 
 #[given("a lens with on_start that copies master to cache")]
 async fn lens_with_on_start_load(w: &mut DioramaWorld) {
     w.lens_builder.on_start_load_master = true;
-}
-
-#[given(regex = r"^the backend is (mock|csv|sqlite)$")]
-async fn select_backend(w: &mut DioramaWorld, kind: String) {
-    w.backend = BackendKind::parse(&kind);
 }
 
 #[when("the dio is created")]
@@ -45,13 +33,6 @@ async fn create_dio(w: &mut DioramaWorld) {
     w.start_recorder(dio.subscribe_events());
     w.lens = Some(lens);
     w.dio = Some(dio);
-}
-
-#[then(regex = r"^the cache contains (\d+) rows?$")]
-async fn cache_contains_n(w: &mut DioramaWorld, n: u64) {
-    let dio = w.dio.as_ref().expect("dio not created");
-    let count = dio.cache().count().await.expect("cache count") as u64;
-    assert_eq!(count, n, "expected {n} cached rows, got {count}");
 }
 
 #[then(regex = r"^the master responds to list with (\d+) rows?$")]

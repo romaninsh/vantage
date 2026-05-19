@@ -1860,6 +1860,7 @@ checksum = "7b4a6248eb93a4401ed2f37dfe8ea592d3cf05b7cf4f8efa867b6895af7e094e"
 dependencies = [
  "console 0.16.3",
  "once_cell",
+ "regex",
  "serde",
  "similar",
  "tempfile",
@@ -4671,7 +4672,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4681,6 +4682,7 @@ dependencies = [
  "insta",
  "redb",
  "rstest",
+ "sqlx",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",

@@ -212,7 +212,10 @@ impl TableSceneryState {
 
     fn bump_generation(&self) {
         let next = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
-        let _ = self.generation_tx.send(Generation(next));
+        // `send_replace` (not `send`) — the stored value must reflect the
+        // current generation even when there are momentarily zero
+        // receivers. UIs that drop and re-subscribe must see the latest.
+        let _ = self.generation_tx.send_replace(Generation(next));
     }
 
     fn schedule_reload(&self) {
