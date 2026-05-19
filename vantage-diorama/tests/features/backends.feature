@@ -1,12 +1,8 @@
-@wip
 Feature: Read paths across backends
 
   Phase 5 — same read scenario, three backends. CSV is read-only via
   the `vista` feature so it lives here, not in write_path.feature.
   The `Examples:` table is the only place a new backend is added.
-  Drop the `@wip` tag once `MasterRows::build_csv` and
-  `MasterRows::build_sqlite` are implemented in
-  `tests/bdd_support/backend.rs`.
 
   Scenario Outline: facade list / get / count work uniformly
     Given the backend is <backend>

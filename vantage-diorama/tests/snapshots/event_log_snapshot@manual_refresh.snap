@@ -1,0 +1,7 @@
+---
+source: vantage-diorama/tests/bdd_support/steps/assertions.rs
+assertion_line: 52
+expression: events
+---
+- Refreshing
+- Invalidated

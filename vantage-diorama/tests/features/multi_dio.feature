@@ -1,10 +1,8 @@
-@wip
 Feature: Multiple Dios under one Lens
 
   Phase 5 — a single Lens may produce many Dios, each binding a
   different master Vista. They share the cache backend but claim
-  distinct cache tables (named after the master). Drop the `@wip`
-  tag once `tests/bdd_support/steps/multi_dio.rs` exists.
+  distinct cache tables (named after the master).
 
   Scenario: two dios share the cache backend but isolate by table name
     Given a master named "products" with rows

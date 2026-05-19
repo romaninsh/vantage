@@ -77,6 +77,10 @@ pub struct DioramaWorld {
     /// Opened by the `the table scenery is opened` step; subsequent
     /// generation assertions read from `scenery.subscribe()`.
     pub scenery: Option<Arc<dyn TableScenery>>,
+    /// Multi-dio scenarios: a single Lens producing several Dios bound
+    /// to different masters, each claiming its own cache table.
+    pub named_masters: std::collections::HashMap<String, Vista>,
+    pub named_dios: std::collections::HashMap<String, Dio>,
 }
 
 impl std::fmt::Debug for DioramaWorld {
@@ -110,15 +114,18 @@ impl DioramaWorld {
             worker_handle: None,
             pending_dio: None,
             scenery: None,
+            named_masters: std::collections::HashMap::new(),
+            named_dios: std::collections::HashMap::new(),
         }
     }
 
-    /// Yield repeatedly so spawned tasks have a chance to progress on
-    /// the single-threaded paused-clock runtime. Five turns is enough
-    /// for `make_dio` to spawn the worker + refresh task and park the
-    /// `on_start` future on its gate.
+    /// Drive the single-threaded paused-clock runtime forward enough
+    /// for spawned tasks (write worker, refresh task, scenery reload
+    /// loop, event recorder) to reach their next suspension point.
+    /// 20 yields covers a multi-await pipeline: bus send → recv →
+    /// callback → bus send → recorder lock → push.
     pub async fn settle(&self) {
-        for _ in 0..5 {
+        for _ in 0..20 {
             tokio::task::yield_now().await;
         }
     }
@@ -196,13 +203,11 @@ impl LensBuilderState {
 
         if self.register_on_refresh {
             let counter = spies.on_refresh.clone();
-            b = b.on_refresh(move |dio| {
-                let dio = dio.clone();
+            b = b.on_refresh(move |_dio, | {
                 let counter = counter.clone();
                 async move {
                     counter.fetch_add(1, Ordering::SeqCst);
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await
+                    Ok(())
                 }
             });
         }
