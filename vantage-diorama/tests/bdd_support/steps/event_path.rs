@@ -3,7 +3,7 @@
 
 use ciborium::Value as CborValue;
 use cucumber::{given, then, when};
-use vantage_diorama::{ChangeEvent, TableScenery};
+use vantage_diorama::ChangeEvent;
 use vantage_types::Record;
 
 use crate::bdd_support::world::{DioramaWorld, OnEventMode};
@@ -18,12 +18,9 @@ async fn change_event_updated(w: &mut DioramaWorld, id: String, title: String) {
     let dio = w.dio.as_ref().expect("dio not created");
     let mut rec: Record<CborValue> = Record::new();
     rec.insert("title".to_string(), CborValue::Text(title));
-    dio.handle_event(ChangeEvent::Updated {
-        id,
-        new: Some(rec),
-    })
-    .await
-    .expect("handle_event");
+    dio.handle_event(ChangeEvent::Updated { id, new: Some(rec) })
+        .await
+        .expect("handle_event");
     w.settle().await;
 }
 
@@ -57,7 +54,10 @@ async fn cache_record_title(w: &mut DioramaWorld, id: String, expected: String) 
             _ => None,
         })
         .unwrap_or_default();
-    assert_eq!(got, expected, "cache record {id}.title: want {expected}, got {got}");
+    assert_eq!(
+        got, expected,
+        "cache record {id}.title: want {expected}, got {got}"
+    );
 }
 
 #[when("the table scenery is opened")]

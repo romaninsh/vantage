@@ -92,19 +92,6 @@ impl MasterRows {
         }
     }
 
-    /// Convenience used by single-backend scenarios that don't need to
-    /// reach for the World's per-backend slots — Mock only.
-    pub async fn build_master(&self, backend: BackendKind) -> Result<Vista> {
-        match backend {
-            BackendKind::Mock => Ok(self.build_mock()),
-            BackendKind::Csv | BackendKind::Sqlite => {
-                Err(vantage_core::error!(
-                    "CSV/SQLite backends require `build_master_for(world)`"
-                ))
-            }
-        }
-    }
-
     fn build_mock(&self) -> Vista {
         let mut meta = VistaMetadata::new().with_id_column(&self.id_column);
         for col in &self.columns {
@@ -158,8 +145,8 @@ impl MasterRows {
         drop(f);
 
         let csv = Csv::new(&dir).with_id_column(&self.id_column);
-        let mut table = Table::<Csv, EmptyEntity>::new(&self.name, csv.clone())
-            .with_id_column(&self.id_column);
+        let mut table =
+            Table::<Csv, EmptyEntity>::new(&self.name, csv.clone()).with_id_column(&self.id_column);
         for col in &self.columns {
             if col != &self.id_column {
                 table = table.with_column_of::<String>(col);
@@ -184,7 +171,9 @@ impl MasterRows {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .map_err(|e| vantage_core::error!("build provisioning runtime", detail = e.to_string()))?;
+                .map_err(|e| {
+                    vantage_core::error!("build provisioning runtime", detail = e.to_string())
+                })?;
             rt.block_on(async move {
                 let db = SqliteDB::connect("sqlite::memory:")
                     .await

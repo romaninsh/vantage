@@ -12,10 +12,7 @@ async fn named_master(w: &mut DioramaWorld, name: String, step: &Step) {
         .as_ref()
         .expect("data table required for `a master named …`");
     let rows = MasterRows::from_table(&name, table);
-    let master = rows
-        .build_master_for(w)
-        .await
-        .expect("build named master");
+    let master = rows.build_master_for(w).await.expect("build named master");
     w.named_masters.insert(name, master);
 }
 

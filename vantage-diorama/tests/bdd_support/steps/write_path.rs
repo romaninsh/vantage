@@ -25,7 +25,7 @@ async fn on_write_mirrors(w: &mut DioramaWorld) {
 }
 
 #[when("the write queue drains")]
-async fn drain_write_queue(w: &mut DioramaWorld) {
+async fn drain_write_queue(_w: &mut DioramaWorld) {
     // The mirror path crosses redb's `spawn_blocking` on both master and
     // cache writes. Yielding alone leaves the blocking-pool waker
     // unfulfilled; tiny virtual-time advances tick all wakers, including
@@ -69,7 +69,9 @@ async fn insert_via_facade(w: &mut DioramaWorld, step: &Step) {
     w.settle().await;
 }
 
-#[then(regex = r"^the facade capability (can_insert|can_update|can_delete|can_subscribe|can_invalidate|can_count) is (true|false)$")]
+#[then(
+    regex = r"^the facade capability (can_insert|can_update|can_delete|can_subscribe|can_invalidate|can_count) is (true|false)$"
+)]
 async fn facade_capability(w: &mut DioramaWorld, flag: String, expected: String) {
     let dio = w.dio.as_ref().expect("dio not created");
     let facade = dio.vista();
@@ -84,7 +86,10 @@ async fn facade_capability(w: &mut DioramaWorld, flag: String, expected: String)
         other => panic!("unknown capability flag: {other}"),
     };
     let want = expected == "true";
-    assert_eq!(actual, want, "facade capability {flag}: want {want}, got {actual}");
+    assert_eq!(
+        actual, want,
+        "facade capability {flag}: want {want}, got {actual}"
+    );
 }
 
 #[then(regex = r"^on_write has been called (\d+) times?$")]
@@ -97,7 +102,12 @@ async fn assert_on_write_count(w: &mut DioramaWorld, n: u64) {
 async fn master_row_count(w: &mut DioramaWorld, n: u64) {
     let dio = w.dio.as_ref().expect("dio not created");
     let rows = dio.master().list_values().await.expect("master list");
-    assert_eq!(rows.len() as u64, n, "expected {n} master rows, got {}", rows.len());
+    assert_eq!(
+        rows.len() as u64,
+        n,
+        "expected {n} master rows, got {}",
+        rows.len()
+    );
 }
 
 #[then(regex = r"^the cache (?:still )?(?:has|contains) (\d+) rows?$")]

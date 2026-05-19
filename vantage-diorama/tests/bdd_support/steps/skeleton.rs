@@ -12,10 +12,7 @@ async fn master_with_rows(w: &mut DioramaWorld, step: &Step) {
         .as_ref()
         .expect("data table required for `a master with rows`");
     let rows = MasterRows::from_table("items", table);
-    let master = rows
-        .build_master_for(w)
-        .await
-        .expect("build master vista");
+    let master = rows.build_master_for(w).await.expect("build master vista");
     w.master = Some(master);
 }
 

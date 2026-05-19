@@ -1,5 +1,3 @@
-#![allow(dead_code)] // Phase-1 placeholders consumed in later phases
-
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -32,9 +30,6 @@ pub enum OnWriteMode {
 pub enum OnEventMode {
     #[default]
     Unset,
-    /// Bump the spy counter and return Ok — used when the test only
-    /// cares that on_event fired.
-    Counter,
     /// On `ChangeEvent::Updated { id, new: Some(rec) }`, forward to
     /// `dio.patched(id, rec)` so the cache + bus reflect the upstream
     /// change. Other variants are counted but otherwise ignored.
@@ -208,7 +203,7 @@ impl LensBuilderState {
 
         if self.register_on_refresh {
             let counter = spies.on_refresh.clone();
-            b = b.on_refresh(move |_dio, | {
+            b = b.on_refresh(move |_dio| {
                 let counter = counter.clone();
                 async move {
                     counter.fetch_add(1, Ordering::SeqCst);
@@ -277,16 +272,6 @@ impl LensBuilderState {
 
         match self.on_event_mode {
             OnEventMode::Unset => {}
-            OnEventMode::Counter => {
-                let counter = spies.on_event.clone();
-                b = b.on_event(move |_dio, _evt| {
-                    let counter = counter.clone();
-                    async move {
-                        counter.fetch_add(1, Ordering::SeqCst);
-                        Ok(())
-                    }
-                });
-            }
             OnEventMode::PatchedFromUpdate => {
                 let counter = spies.on_event.clone();
                 b = b.on_event(move |dio, evt| {
