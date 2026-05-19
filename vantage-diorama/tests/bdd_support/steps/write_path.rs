@@ -19,6 +19,22 @@ async fn on_write_errors(w: &mut DioramaWorld) {
     w.lens_builder.on_write_mode = OnWriteMode::Error;
 }
 
+#[given("an on_write callback that mirrors to master and cache")]
+async fn on_write_mirrors(w: &mut DioramaWorld) {
+    w.lens_builder.on_write_mode = OnWriteMode::Mirror;
+}
+
+#[when("the write queue drains")]
+async fn drain_write_queue(w: &mut DioramaWorld) {
+    // The mirror path crosses redb's `spawn_blocking` on both master and
+    // cache writes. Yielding alone leaves the blocking-pool waker
+    // unfulfilled; tiny virtual-time advances tick all wakers, including
+    // the ones from the blocking pool.
+    for _ in 0..200 {
+        tokio::time::advance(std::time::Duration::from_micros(1)).await;
+    }
+}
+
 #[when("I insert via the facade")]
 async fn insert_via_facade(w: &mut DioramaWorld, step: &Step) {
     let table = step
@@ -69,6 +85,12 @@ async fn facade_capability(w: &mut DioramaWorld, flag: String, expected: String)
     };
     let want = expected == "true";
     assert_eq!(actual, want, "facade capability {flag}: want {want}, got {actual}");
+}
+
+#[then(regex = r"^on_write has been called (\d+) times?$")]
+async fn assert_on_write_count(w: &mut DioramaWorld, n: u64) {
+    let got = w.spies.on_write.load(std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(got, n, "expected on_write={n}, got {got}");
 }
 
 #[then(regex = r"^the master has (\d+) rows?$")]

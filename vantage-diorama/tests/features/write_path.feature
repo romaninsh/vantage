@@ -39,7 +39,6 @@ Feature: Write path
       | b  | two   |
     Then the event log matches snapshot "write_failed"
 
-  @wip
   Scenario Outline: write path works against real backends
     Given the backend is <backend>
     And a master with rows
@@ -51,8 +50,11 @@ Feature: Write path
     And I insert via the facade
       | id | title |
       | b  | two   |
-    Then the cache has 2 rows
+    And the write queue drains
+    Then on_write has been called 1 time
+    And the event log matches snapshot "mirror_<backend>"
     And the master has 2 rows
+    And the cache has 2 rows
 
     Examples:
       | backend |

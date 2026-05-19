@@ -9,7 +9,7 @@ use tempfile::TempDir;
 use tokio::sync::{Mutex, Notify, broadcast};
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_diorama::{ChangeEvent, Dio, DioEvent, Lens, TableScenery};
+use vantage_diorama::{ChangeEvent, Dio, DioEvent, Lens, TableScenery, WriteOp};
 use vantage_vista::Vista;
 
 use super::backend::BackendKind;
@@ -19,8 +19,13 @@ use super::spies::Spies;
 pub enum OnWriteMode {
     #[default]
     Unset,
+    /// Counter-only — proves the worker fired, nothing else.
     Pass,
+    /// Always errors — the `WriteFailed` event-bus path.
     Error,
+    /// Mirror: apply the op to both master and cache, so subsequent
+    /// facade reads see fresh data without round-tripping the upstream.
+    Mirror,
 }
 
 #[derive(Clone, Copy, Default, Debug)]
@@ -231,6 +236,40 @@ impl LensBuilderState {
                     async move {
                         counter.fetch_add(1, Ordering::SeqCst);
                         Err(vantage_core::error!("on_write rejected"))
+                    }
+                });
+            }
+            OnWriteMode::Mirror => {
+                use vantage_dataset::traits::WritableValueSet;
+                let counter = spies.on_write.clone();
+                b = b.on_write(move |dio, op| {
+                    let dio = dio.clone();
+                    let counter = counter.clone();
+                    async move {
+                        counter.fetch_add(1, Ordering::SeqCst);
+                        match op {
+                            WriteOp::Insert { id, record } => {
+                                dio.master().insert_value(&id, &record).await?;
+                                dio.cache().insert_value(&id, &record).await?;
+                            }
+                            WriteOp::Replace { id, record } => {
+                                dio.master().replace_value(&id, &record).await?;
+                                dio.cache().insert_value(&id, &record).await?;
+                            }
+                            WriteOp::Patch { id, partial } => {
+                                dio.master().patch_value(&id, &partial).await?;
+                                dio.cache().insert_value(&id, &partial).await?;
+                            }
+                            WriteOp::Delete { id } => {
+                                dio.master().delete(&id).await?;
+                                dio.cache().delete_value(&id).await?;
+                            }
+                            WriteOp::DeleteAll => {
+                                dio.master().delete_all().await?;
+                                dio.cache().clear().await?;
+                            }
+                        }
+                        Ok(())
                     }
                 });
             }
