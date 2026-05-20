@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.4 — 2026-05-20
+
+- Viewport loader now edge-anchors the fetch range. When part of the visible window is already cached, the loader anchors the fetch at the cached/uncached boundary and grows it by `page_size` in the uncached direction — so dragging slowly across a cached region stops re-fetching what's already there. Force-load callers (`request_load_more`) still get the exact range they asked for.
+- Viewport loader gained `tracing` spans on the `vantage_diorama::viewport` target — debounce absorbtion, skip reasons, effective range, fetch latency, and cache-after counts — for diagnosing overfetch and stall behaviour in real UIs.
+- BDD coverage extended to the four facade write ops the original `write_path.feature` left out: `tests/features/v3_replace.feature`, `v3_patch.feature`, `v3_delete.feature`, `v3_delete_all.feature`. Each follows the Insert trio — default-route to master, `WriteFailed` on `on_write` error, and the `mock` / `sqlite` Mirror outline.
+- `OnWriteMode::Mirror`'s `WriteOp::Patch` arm in the BDD harness now reads-modifies-writes the cache so the merged row survives an op that omits columns. `cache.insert_value` is a redb full-replace, so the previous arm silently dropped fields outside the partial.
+
 ## 0.4.3 — 2026-05-20
 
 - `TableScenery` v2: sparse `BTreeMap<usize, Arc<EnrichedRecord>>` storage replaces the dense `Vec`. `row(i)` returns `None` for unloaded indices so virtualised UIs can render a skeleton at that slot.
