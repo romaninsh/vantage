@@ -39,12 +39,7 @@ async fn invalidate_all(w: &mut DioramaWorld) {
 }
 
 #[then(regex = r#"^the cache record "([^"]+)" has (\w+) "([^"]+)"$"#)]
-async fn cache_record_field(
-    w: &mut DioramaWorld,
-    id: String,
-    field: String,
-    expected: String,
-) {
+async fn cache_record_field(w: &mut DioramaWorld, id: String, field: String, expected: String) {
     let dio = w.dio.as_ref().expect("dio not created");
     let row = dio
         .cache()

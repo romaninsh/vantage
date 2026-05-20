@@ -192,7 +192,11 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
 
     {
         let mut guard = state.load_in_flight.lock().unwrap();
-        if guard.as_ref().map(|r| *r == effective_range).unwrap_or(false) {
+        if guard
+            .as_ref()
+            .map(|r| *r == effective_range)
+            .unwrap_or(false)
+        {
             tracing::debug!(
                 target: "vantage_diorama::viewport",
                 effective = ?effective_range,

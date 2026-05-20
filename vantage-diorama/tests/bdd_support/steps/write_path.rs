@@ -117,7 +117,10 @@ async fn delete_via_facade(w: &mut DioramaWorld, id: String) {
 async fn delete_all_via_facade(w: &mut DioramaWorld) {
     let dio = w.dio.as_ref().expect("dio not created");
     let facade = dio.vista();
-    facade.delete_all().await.expect("facade delete_all enqueue");
+    facade
+        .delete_all()
+        .await
+        .expect("facade delete_all enqueue");
     w.settle().await;
 }
 
@@ -170,12 +173,7 @@ async fn cache_row_count(w: &mut DioramaWorld, n: u64) {
 }
 
 #[then(regex = r#"^the master record "([^"]+)" has (\w+) "([^"]+)"$"#)]
-async fn master_record_field(
-    w: &mut DioramaWorld,
-    id: String,
-    field: String,
-    expected: String,
-) {
+async fn master_record_field(w: &mut DioramaWorld, id: String, field: String, expected: String) {
     let dio = w.dio.as_ref().expect("dio not created");
     let row = dio
         .master()

@@ -315,11 +315,8 @@ impl LensBuilderState {
                                 // is a full replace in redb, so an unmerged
                                 // write would drop columns absent from the
                                 // partial.
-                                let mut merged = dio
-                                    .cache()
-                                    .get_value(&id)
-                                    .await?
-                                    .unwrap_or_default();
+                                let mut merged =
+                                    dio.cache().get_value(&id).await?.unwrap_or_default();
                                 for (k, v) in &partial {
                                     merged.insert(k.clone(), v.clone());
                                 }
