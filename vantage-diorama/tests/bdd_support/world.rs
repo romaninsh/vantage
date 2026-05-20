@@ -309,7 +309,21 @@ impl LensBuilderState {
                             }
                             WriteOp::Patch { id, partial } => {
                                 dio.master().patch_value(&id, &partial).await?;
-                                dio.cache().insert_value(&id, &partial).await?;
+                                // Read-merge-write on the cache so consumers
+                                // see the same merged record they'd get from
+                                // a fresh master read. `cache.insert_value`
+                                // is a full replace in redb, so an unmerged
+                                // write would drop columns absent from the
+                                // partial.
+                                let mut merged = dio
+                                    .cache()
+                                    .get_value(&id)
+                                    .await?
+                                    .unwrap_or_default();
+                                for (k, v) in &partial {
+                                    merged.insert(k.clone(), v.clone());
+                                }
+                                dio.cache().insert_value(&id, &merged).await?;
                             }
                             WriteOp::Delete { id } => {
                                 dio.master().delete(&id).await?;
