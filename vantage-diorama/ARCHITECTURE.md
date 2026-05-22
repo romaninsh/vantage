@@ -323,15 +323,18 @@ pub trait TableScenery: Send + Sync {
     fn estimated_total(&self) -> Option<usize>;
     fn row(&self, idx: usize) -> Option<Arc<EnrichedRecord>>;
 
-    // UI-driven hints.
+    // UI-driven hints. Random-access masters (`can_fetch_page`) drive
+    // fetching through `set_viewport`; cursor-only masters
+    // (`can_fetch_next`) drive it through `request_load_more`.
     fn set_viewport(&self, range: Range<usize>);
     fn request_load_more(&self);
     fn request_refresh(&self);
     fn set_search(&self, query: Option<String>);
     fn set_sort(&self, column: Option<String>, dir: SortDir);
 
-    // Notification.
+    // Notification + capability advertisement.
     fn subscribe(&self) -> watch::Receiver<Generation>;
+    fn master_capabilities(&self) -> &VistaCapabilities;
 }
 
 pub trait RecordScenery: Send + Sync {
