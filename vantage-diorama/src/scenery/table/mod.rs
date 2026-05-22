@@ -27,6 +27,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use tokio::sync::watch;
+use vantage_vista::VistaCapabilities;
 
 use crate::dio::Generation;
 
@@ -66,6 +67,13 @@ pub trait TableScenery: Send + Sync {
     fn set_sort(&self, column: Option<String>, dir: SortDir);
 
     fn subscribe(&self) -> watch::Receiver<Generation>;
+
+    /// Snapshot of the master Vista's capability flags taken at open
+    /// time. UI delegates branch on these to pick the right page
+    /// primitive: `can_fetch_page` → drive everything through
+    /// `set_viewport`; cursor-only (`can_fetch_next`) → call
+    /// `request_load_more` to walk forward.
+    fn master_capabilities(&self) -> &VistaCapabilities;
 }
 
 pub(crate) struct TableSceneryImpl {
@@ -156,5 +164,9 @@ impl TableScenery for TableSceneryImpl {
 
     fn subscribe(&self) -> watch::Receiver<Generation> {
         self.inner.generation_tx.subscribe()
+    }
+
+    fn master_capabilities(&self) -> &VistaCapabilities {
+        &self.inner.master_capabilities
     }
 }

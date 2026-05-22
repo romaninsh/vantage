@@ -390,14 +390,19 @@ impl LensBuilderState {
                 let counter = spies.on_load_chunk.clone();
                 let master_list_counter = spies.master_list_calls.clone();
                 let last_range = spies.last_load_chunk_range.clone();
+                let error_once = spies.on_load_chunk_error_once.clone();
                 b = b.on_load_chunk(move |dio, range, sink| {
                     let counter = counter.clone();
                     let master_list_counter = master_list_counter.clone();
                     let last_range = last_range.clone();
+                    let error_once = error_once.clone();
                     let dio = dio.clone();
                     async move {
                         counter.fetch_add(1, Ordering::SeqCst);
                         *last_range.lock().await = Some(range.clone());
+                        if error_once.swap(false, Ordering::SeqCst) {
+                            return Err(vantage_core::error!("on_load_chunk rejected (one-shot)"));
+                        }
                         master_list_counter.fetch_add(1, Ordering::SeqCst);
                         let all = dio.master().list_values().await?;
                         let slice: Vec<_> = all.into_iter().collect();

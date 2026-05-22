@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, AtomicUsize};
 use std::sync::{Arc, Mutex, RwLock};
 
 use ciborium::Value as CborValue;
@@ -91,6 +91,7 @@ impl TableSceneryBuilder {
         let (gen_tx, _gen_rx) = watch::channel(Generation::default());
         let (viewport_tx, viewport_rx) = mpsc::unbounded_channel();
 
+        let master_capabilities = dio.master.capabilities().clone();
         let state = Arc::new(TableSceneryState {
             dio_weak: Arc::downgrade(&dio),
             conditions: RwLock::new(conditions),
@@ -104,7 +105,9 @@ impl TableSceneryBuilder {
             generation_tx: gen_tx,
             reload_notify: Arc::new(Notify::new()),
             viewport_tx,
+            viewport_queue_depth: AtomicUsize::new(0),
             load_in_flight: Mutex::new(None),
+            master_capabilities,
         });
 
         // 1. total_provider runs once per open, result cached.

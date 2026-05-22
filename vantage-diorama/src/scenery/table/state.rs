@@ -1,11 +1,12 @@
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use ciborium::Value as CborValue;
 use tokio::sync::{Notify, mpsc, watch};
 use vantage_types::Record;
+use vantage_vista::VistaCapabilities;
 
 use crate::dio::{DioInner, Generation};
 use crate::lens::SceneryChunkTarget;
@@ -37,9 +38,21 @@ pub(crate) struct TableSceneryState {
     pub(crate) reload_notify: Arc<Notify>,
     pub(crate) viewport_tx: mpsc::UnboundedSender<ViewportRequest>,
 
+    /// Mirrors the live depth of `viewport_tx`. Bumped on every send,
+    /// decremented every time the loader pops a message. Surfaces the
+    /// backlog when chunk fetches can't keep up with scroll bursts.
+    pub(crate) viewport_queue_depth: AtomicUsize,
+
     /// True while a chunk load is currently dispatched — prevents
     /// `request_load_more` from queueing the same range twice in a row.
     pub(crate) load_in_flight: Mutex<Option<Range<usize>>>,
+
+    /// Snapshot of the master Vista's capability flags taken at open
+    /// time. Sceneries hand this back through
+    /// `TableScenery::master_capabilities` so UI delegates can route
+    /// page requests through the right primitive (`set_viewport` for
+    /// `can_fetch_page`, `request_load_more` for `can_fetch_next`).
+    pub(crate) master_capabilities: VistaCapabilities,
 }
 
 impl TableSceneryState {

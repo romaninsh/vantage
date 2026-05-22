@@ -122,7 +122,22 @@ impl MasterRows {
             meta = meta.with_column(c);
         }
 
-        let mut shell = MockShell::new().with_metadata(meta);
+        // Mock acts as a random-access master for v4 scenarios that
+        // assert capability flags. The Vista's reads still go through
+        // `list_values` in the test harness — this only flips what the
+        // shell advertises to consumers.
+        let caps = vantage_vista::VistaCapabilities {
+            can_count: true,
+            can_insert: true,
+            can_update: true,
+            can_delete: true,
+            can_order: true,
+            can_search: true,
+            can_set_page_size: true,
+            can_fetch_page: true,
+            ..Default::default()
+        };
+        let mut shell = MockShell::new().with_metadata(meta).with_capabilities(caps);
         for row in &self.rows {
             let mut rec: Record<CborValue> = Record::new();
             for (k, v) in &row.fields {

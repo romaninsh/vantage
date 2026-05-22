@@ -181,11 +181,17 @@ impl TableDelegate for ProductsTable {
     }
 
     fn load_more(&mut self, _: &mut Window, cx: &mut Context<TableState<Self>>) {
-        // Asks the Scenery to fetch the next chunk past the current
-        // cache end. The configured `on_load_chunk` decides what
-        // "next chunk" means; the Scenery passes its `page_size` as a
-        // hint range.
-        self.entity.read(cx).scenery().request_load_more();
+        // Random-access masters (SQLite/Postgres/CSV/REST with offset)
+        // are driven entirely by `set_viewport` from
+        // `visible_rows_changed` — jumping the scrollbar already loads
+        // the visible band. Cursor-only masters (DynamoDB, token-paged
+        // REST) can't be queried by index, so `request_load_more`
+        // walks the cache forward one page at a time.
+        let scenery = self.entity.read(cx).scenery();
+        if scenery.master_capabilities().can_fetch_page {
+            return;
+        }
+        scenery.request_load_more();
     }
 
     fn visible_rows_changed(
@@ -241,8 +247,23 @@ registered:
   provider; `row(i)` returns `None` for indices that haven't been
   fetched yet (your `render_td` paints a skeleton); `set_viewport`
   debounces scroll updates and fires `on_load_chunk` for any
-  uncached range; `request_load_more` pages the next chunk past
-  the current cache end and bumps the generation when it arrives.
+  uncached range.
+
+Inside paged mode there are two paging primitives, picked per master
+by inspecting `scenery.master_capabilities()`:
+
+- **Random-access masters** (`can_fetch_page: true`) — SQLite,
+  Postgres, CSV, REST with offset. `set_viewport(range)` is the only
+  growth primitive needed; dragging the scrollbar to the bottom
+  fetches the visible band directly. `load_more` should be a no-op
+  here — calling `request_load_more` would march the cache forward
+  from index 0 one page at a time, which is wrong when the user has
+  already jumped past the cached region.
+- **Cursor-only masters** (`can_fetch_next: true`, `can_fetch_page:
+  false`) — DynamoDB, token-paginated REST. The master can't be
+  queried by row index, so `request_load_more` is the only growth
+  primitive: it pages the next `page_size` rows past the cache end.
+  `set_viewport` past the cache end is a no-op.
 
 You wire `has_more` / `load_more` / `visible_rows_changed` through to
 the Scenery in both modes — the eager-mode no-ops are harmless, and
@@ -413,11 +434,13 @@ The Scenery:
 - Honours `set_viewport(range)` via a 50ms-debounced channel that
   coalesces rapid scroll bursts into a single chunk fetch.
 - Honours `request_load_more` to page the next `page_size` rows past
-  the cache end.
+  the cache end — the right primitive for cursor-only masters.
 - Surfaces `has_more = true` while the cached map size is below
   `total_provider`'s reported total.
 - Emits `DioEvent::RangeLoaded { range }` after each chunk arrives;
   the existing `subscribe()` watch bumps once per chunk.
+- Exposes `master_capabilities()` so the `TableDelegate` can branch
+  `load_more` between the random-access and cursor-only paths.
 
 The same `TableDelegate` from pattern 1 works unchanged — the only
 difference between eager and paged is which Lens callbacks the user
