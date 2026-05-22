@@ -1,6 +1,6 @@
 use std::ops::Range;
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 
 use tokio::sync::Mutex;
 
@@ -21,4 +21,8 @@ pub struct Spies {
     /// "coalesce" scenario to assert the surviving load was for the
     /// most recent viewport.
     pub last_load_chunk_range: Arc<Mutex<Option<Range<usize>>>>,
+    /// One-shot fault injector. When set true, the next `on_load_chunk`
+    /// invocation returns `Err` and clears the flag. Drives the
+    /// `LoadFailed` scenarios without rebuilding the lens.
+    pub on_load_chunk_error_once: Arc<AtomicBool>,
 }

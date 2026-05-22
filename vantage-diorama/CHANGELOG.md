@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.5 — 2026-05-22
+
+- `TableScenery::master_capabilities()` exposes the master Vista's capability flags. Lets UI delegates pick `set_viewport` for random-access masters and `request_load_more` for cursor-only ones.
+- `VistaCapabilities` re-exported from the crate root.
+
 ## 0.4.4 — 2026-05-20
 
 - Viewport loader now edge-anchors the fetch range. When part of the visible window is already cached, the loader anchors the fetch at the cached/uncached boundary and grows it by `page_size` in the uncached direction — so dragging slowly across a cached region stops re-fetching what's already there. Force-load callers (`request_load_more`) still get the exact range they asked for.

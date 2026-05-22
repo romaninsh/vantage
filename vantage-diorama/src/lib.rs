@@ -23,3 +23,4 @@ pub use scenery::{
     TableScenery, TableSceneryBuilder, ValueScenery, ValueSceneryBuilder, ValueStatus,
     boxed_custom_aggregate,
 };
+pub use vantage_vista::VistaCapabilities;

@@ -1,5 +1,6 @@
 use std::ops::Range;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use tokio::sync::mpsc;
@@ -27,6 +28,12 @@ pub(crate) async fn viewport_loop(
             tracing::warn!(target: "vantage_diorama::viewport", "viewport_loop: channel closed, exiting");
             return;
         };
+        // Decrement the producer-side counter once per pop so the
+        // tracing-visible queue depth tracks what's actually pending.
+        let depth_on_pop = state
+            .viewport_queue_depth
+            .fetch_sub(1, Ordering::SeqCst)
+            .saturating_sub(1);
         let mut latest = initial;
         let mut absorbed = 0usize;
 
@@ -34,6 +41,9 @@ pub(crate) async fn viewport_loop(
         loop {
             match tokio::time::timeout(debounce, rx.recv()).await {
                 Ok(Some(next)) => {
+                    state
+                        .viewport_queue_depth
+                        .fetch_sub(1, Ordering::SeqCst);
                     absorbed += 1;
                     latest = next;
                 }
@@ -44,11 +54,14 @@ pub(crate) async fn viewport_loop(
                 Err(_) => break,
             }
         }
+        let depth_after = state.viewport_queue_depth.load(Ordering::SeqCst);
         tracing::debug!(
             target: "vantage_diorama::viewport",
             range = ?latest.range,
             force_load = latest.force_load,
             absorbed,
+            depth_on_pop,
+            depth_after,
             "viewport_loop: firing",
         );
         fire_chunk_load(state.clone(), latest).await;
@@ -292,5 +305,16 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
 /// Convenience wrapper used by `set_viewport` and `request_load_more`
 /// to enqueue a viewport request on the debounce channel.
 pub(crate) fn enqueue_viewport(state: &TableSceneryState, request: ViewportRequest) {
-    let _ = state.viewport_tx.send(request);
+    // Bump the depth counter *before* sending so a racing consumer
+    // can't observe a depth lower than what's actually in the channel.
+    state
+        .viewport_queue_depth
+        .fetch_add(1, Ordering::SeqCst);
+    if state.viewport_tx.send(request).is_err() {
+        // Channel closed (Dio dropped). Reverse the bump so the
+        // counter doesn't drift upward forever.
+        state
+            .viewport_queue_depth
+            .fetch_sub(1, Ordering::SeqCst);
+    }
 }
