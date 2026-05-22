@@ -38,8 +38,8 @@ async fn invalidate_all(w: &mut DioramaWorld) {
     w.settle().await;
 }
 
-#[then(regex = r#"^the cache record "([^"]+)" has title "([^"]+)"$"#)]
-async fn cache_record_title(w: &mut DioramaWorld, id: String, expected: String) {
+#[then(regex = r#"^the cache record "([^"]+)" has (\w+) "([^"]+)"$"#)]
+async fn cache_record_field(w: &mut DioramaWorld, id: String, field: String, expected: String) {
     let dio = w.dio.as_ref().expect("dio not created");
     let row = dio
         .cache()
@@ -48,7 +48,7 @@ async fn cache_record_title(w: &mut DioramaWorld, id: String, expected: String) 
         .expect("cache get_value")
         .unwrap_or_else(|| panic!("cache has no record {id}"));
     let got = row
-        .get("title")
+        .get(&field)
         .and_then(|v| match v {
             CborValue::Text(s) => Some(s.clone()),
             _ => None,
@@ -56,7 +56,17 @@ async fn cache_record_title(w: &mut DioramaWorld, id: String, expected: String) 
         .unwrap_or_default();
     assert_eq!(
         got, expected,
-        "cache record {id}.title: want {expected}, got {got}"
+        "cache record {id}.{field}: want {expected}, got {got}"
+    );
+}
+
+#[then(regex = r#"^the cache record "([^"]+)" is absent$"#)]
+async fn cache_record_absent(w: &mut DioramaWorld, id: String) {
+    let dio = w.dio.as_ref().expect("dio not created");
+    let row = dio.cache().get_value(&id).await.expect("cache get_value");
+    assert!(
+        row.is_none(),
+        "expected cache record {id} to be absent, got {row:?}"
     );
 }
 
