@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1 — 2026-05-23
+
+- Restored `tests/table_like.rs`. The previous AnyTable-on-`MockTableSource` tests were disabled during the CBOR swap; the file now runs as Vista smoke tests against [`MockShell`](https://docs.rs/vantage-vista/0.4/vantage_vista/mocks/struct.MockShell.html) — six tests covering table-name/column metadata, value round-trip via `ReadableValueSet` / `WritableValueSet` / `InsertableValueSet`, count, and `get_some_value`. These tests survive the AnyTable removal scheduled for the next release.
+- `MockTableSource` stays JSON-typed for now. The original plan called for converting it to `ciborium::Value` so it could bridge into the (about-to-be-removed) `AnyTable`, but with `AnyTable` going away that's no longer needed — Vista-flavoured tests use [`vantage_vista::mocks::MockShell`](https://docs.rs/vantage-vista/0.4/vantage_vista/mocks/struct.MockShell.html) directly.
+
 ## 0.5.0 — 2026-05-23
 
 Opens the 0.5 cycle. No code changes in this release beyond a docstring

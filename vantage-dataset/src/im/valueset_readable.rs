@@ -1,13 +1,14 @@
 use async_trait::async_trait;
 use indexmap::IndexMap;
-use vantage_types::{Entity, Record};
+use vantage_types::Record;
 
 use crate::{im::ImTable, traits::ReadableValueSet};
 
 #[async_trait]
-impl<E> ReadableValueSet for ImTable<E>
+impl<E, V> ReadableValueSet for ImTable<E, V>
 where
-    E: Entity,
+    V: Clone + Send + Sync + 'static,
+    E: Send + Sync,
 {
     async fn list_values(&self) -> crate::traits::Result<IndexMap<Self::Id, Record<Self::Value>>> {
         let table = self.data_source.get_or_create_table(&self.table_name);

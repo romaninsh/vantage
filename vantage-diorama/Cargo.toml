@@ -1,6 +1,6 @@
 [package]
 name = "vantage-diorama"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Cached, composable, reactive surface for Vantage Vistas"
@@ -14,7 +14,7 @@ vantage-core = { version = "0.4.1", path = "../vantage-core" }
 vantage-types = { version = "0.4", path = "../vantage-types" }
 vantage-vista = { version = "0.4", path = "../vantage-vista" }
 vantage-table = { version = "0.5", path = "../vantage-table" }
-vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
+vantage-dataset = { version = "0.5", path = "../vantage-dataset" }
 
 async-trait = "0.1"
 ciborium = { version = "0.2", features = ["std"] }

@@ -1,12 +1,17 @@
 use async_trait::async_trait;
-use vantage_types::{Entity, Record};
+use vantage_types::Record;
 
 use crate::{im::ImTable, traits::InsertableValueSet};
 
+/// `InsertableValueSet` is only available for `V = serde_json::Value` because
+/// it inspects the record for an `"id"` field via JSON-specific accessors
+/// (`as_str`, `as_u64`, …). CBOR consumers carry their own id generation
+/// upstream (e.g. `MockTableSource::insert_table_value` constructs the id
+/// before calling into `ImTable`).
 #[async_trait]
-impl<E> InsertableValueSet for ImTable<E>
+impl<E> InsertableValueSet for ImTable<E, serde_json::Value>
 where
-    E: Entity,
+    E: Send + Sync,
 {
     async fn insert_return_id_value(
         &self,
