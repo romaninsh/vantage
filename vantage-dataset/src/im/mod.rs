@@ -16,34 +16,49 @@ pub mod valueset_writable;
 pub use im_table::ImTable;
 
 /// Type alias for the complex table storage structure
-type TableStorage = Arc<Mutex<HashMap<String, IndexMap<String, Record<serde_json::Value>>>>>;
+type TableStorage<V> = Arc<Mutex<HashMap<String, IndexMap<String, Record<V>>>>>;
 
-/// ImDataSource stores tables in memory using IndexMap for ordered iteration
-#[derive(Debug, Clone)]
-pub struct ImDataSource {
+/// In-memory data source storing tables as nested maps, keyed first by table
+/// name then by row id. Generic over the wire value type `V` so the same
+/// storage primitive can hold `serde_json::Value` records (the original
+/// entity-friendly mode) or `ciborium::Value` records (used by
+/// `MockTableSource` to participate in the CBOR-typed `TableSource` /
+/// `Vista` machinery). Defaults to `serde_json::Value` for back-compat.
+#[derive(Debug)]
+pub struct ImDataSource<V = serde_json::Value> {
     // table_name -> IndexMap<id, record>
-    tables: TableStorage,
+    tables: TableStorage<V>,
 }
 
-impl ImDataSource {
+impl<V> Clone for ImDataSource<V> {
+    fn clone(&self) -> Self {
+        Self {
+            tables: self.tables.clone(),
+        }
+    }
+}
+
+impl<V> ImDataSource<V> {
     pub fn new() -> Self {
         Self {
             tables: Arc::new(Mutex::new(HashMap::new())),
         }
     }
+}
 
-    fn get_or_create_table(&self, table_name: &str) -> IndexMap<String, Record<serde_json::Value>> {
+impl<V: Clone> ImDataSource<V> {
+    pub(super) fn get_or_create_table(&self, table_name: &str) -> IndexMap<String, Record<V>> {
         let mut tables = self.tables.lock().unwrap();
         tables.entry(table_name.to_string()).or_default().clone()
     }
 
-    fn update_table(&self, table_name: &str, table: IndexMap<String, Record<serde_json::Value>>) {
+    pub(super) fn update_table(&self, table_name: &str, table: IndexMap<String, Record<V>>) {
         let mut tables = self.tables.lock().unwrap();
         tables.insert(table_name.to_string(), table);
     }
 }
 
-impl Default for ImDataSource {
+impl<V> Default for ImDataSource<V> {
     fn default() -> Self {
         Self::new()
     }

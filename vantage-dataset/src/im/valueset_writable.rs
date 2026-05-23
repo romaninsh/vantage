@@ -1,12 +1,13 @@
 use async_trait::async_trait;
-use vantage_types::{Entity, Record};
+use vantage_types::Record;
 
 use crate::{im::ImTable, traits::WritableValueSet};
 
 #[async_trait]
-impl<E> WritableValueSet for ImTable<E>
+impl<E, V> WritableValueSet for ImTable<E, V>
 where
-    E: Entity,
+    V: Clone + Send + Sync + 'static,
+    E: Send + Sync,
 {
     async fn insert_value(
         &self,
