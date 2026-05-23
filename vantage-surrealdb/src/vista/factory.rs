@@ -1,6 +1,8 @@
 //! `SurrealVistaFactory` — typed-table and YAML entry points, plus the
 //! `VistaFactory` trait impl. SurrealDB advertises full read/write/count.
 
+use std::sync::Arc;
+
 use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::column::flags::ColumnFlag;
@@ -8,8 +10,8 @@ use vantage_table::table::Table;
 use vantage_table::traits::column_like::ColumnLike;
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
-    Column as VistaColumn, NoExtras, Vista, VistaCapabilities, VistaFactory, VistaMetadata,
-    flags as vista_flags,
+    Column as VistaColumn, NoExtras, ReferenceKind, Vista, VistaCapabilities, VistaFactory,
+    VistaMetadata, flags as vista_flags, reference::Reference as VistaReferenceMeta,
 };
 
 use crate::surrealdb::SurrealDB;
@@ -18,13 +20,27 @@ use crate::types::AnySurrealType;
 use crate::vista::source::SurrealTableShell;
 use crate::vista::spec::{SurrealColumnExtras, SurrealTableExtras, SurrealVistaSpec};
 
+/// Resolves a YAML spec by table name. The factory hands clones of this
+/// into each `with_one` / `with_many` closure so child tables can be
+/// rebuilt from the live spec at traversal time.
+pub type SurrealSpecResolver = Arc<dyn Fn(&str) -> Option<SurrealVistaSpec> + Send + Sync>;
+
 pub struct SurrealVistaFactory {
     db: SurrealDB,
+    resolver: Option<SurrealSpecResolver>,
 }
 
 impl SurrealVistaFactory {
     pub fn new(db: SurrealDB) -> Self {
-        Self { db }
+        Self { db, resolver: None }
+    }
+
+    /// Attach a spec resolver. Required for YAML-declared references to
+    /// resolve their target tables — without it, traversals yield a
+    /// column-less target Table and the next query fails loudly.
+    pub fn with_resolver(mut self, resolver: SurrealSpecResolver) -> Self {
+        self.resolver = Some(resolver);
+        self
     }
 
     /// Wrap a typed table as a Vista. Column metadata is harvested from the
@@ -35,16 +51,16 @@ impl SurrealVistaFactory {
         E: Entity<AnySurrealType> + 'static,
     {
         let name = table.table_name().to_string();
-        Ok(self.wrap(table, name))
+        let metadata = metadata_from_table(&table);
+        Ok(self.wrap(table, name, metadata))
     }
 
     /// Single source-construction site shared by `from_table` and
     /// `build_from_spec`.
-    fn wrap<E>(&self, table: Table<SurrealDB, E>, name: String) -> Vista
+    fn wrap<E>(&self, table: Table<SurrealDB, E>, name: String, metadata: VistaMetadata) -> Vista
     where
         E: Entity<AnySurrealType> + 'static,
     {
-        let metadata = metadata_from_table(&table);
         let source = SurrealTableShell::new(
             table,
             VistaCapabilities {
@@ -60,6 +76,7 @@ impl SurrealVistaFactory {
                 ..VistaCapabilities::default()
             },
             metadata,
+            self.resolver.clone(),
         );
         Vista::new(name, Box::new(source))
     }
@@ -69,32 +86,7 @@ impl SurrealVistaFactory {
         &self,
         spec: &SurrealVistaSpec,
     ) -> Result<Table<SurrealDB, EmptyEntity>> {
-        let table_name = spec
-            .driver
-            .surreal
-            .as_ref()
-            .and_then(|m| m.table.clone())
-            .unwrap_or_else(|| spec.name.clone());
-
-        let mut table = Table::<SurrealDB, EmptyEntity>::new(table_name, self.db.clone());
-
-        for (name, col_spec) in &spec.columns {
-            table.add_column(build_column(name, col_spec)?);
-            if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
-                table.add_title_field(name);
-            }
-        }
-
-        let id_column = resolve_id_column(spec);
-        if !table.columns().contains_key(&id_column) {
-            return Err(error!(
-                "id column not present in spec.columns",
-                id = id_column
-            ));
-        }
-        table.set_id_field(&id_column);
-
-        Ok(table)
+        build_surreal_table(spec, self.db.clone(), self.resolver.clone())
     }
 }
 
@@ -106,10 +98,88 @@ impl VistaFactory for SurrealVistaFactory {
     fn build_from_spec(&self, spec: SurrealVistaSpec) -> Result<Vista> {
         let vista_name = spec.name.clone();
         let table = self.table_from_spec(&spec)?;
-        let mut vista = self.wrap(table, vista_name.clone());
+        let mut metadata = metadata_from_table(&table);
+        for (rel_name, ref_spec) in &spec.references {
+            let fk = ref_spec
+                .foreign_key
+                .clone()
+                .unwrap_or_else(|| rel_name.clone());
+            metadata = metadata.with_reference(VistaReferenceMeta::new(
+                rel_name.clone(),
+                ref_spec.table.clone(),
+                ref_spec.kind,
+                fk,
+            ));
+        }
+        let mut vista = self.wrap(table, vista_name.clone(), metadata);
         vista.set_name(vista_name);
         Ok(vista)
     }
+}
+
+/// Build a `Table<SurrealDB, EmptyEntity>` from a spec, registering each
+/// `references:` entry as a typed `with_one` / `with_many` on the parent.
+///
+/// Each reference closure captures a clone of the resolver `Arc` and the
+/// target table name; at traversal time it asks the resolver for the
+/// target's current spec and rebuilds the child table. On a resolver miss,
+/// the closure falls back to an empty `Table::new(target_name, db)` — the
+/// next query then fails loudly when it discovers no columns are defined.
+pub(crate) fn build_surreal_table(
+    spec: &SurrealVistaSpec,
+    db: SurrealDB,
+    resolver: Option<SurrealSpecResolver>,
+) -> Result<Table<SurrealDB, EmptyEntity>> {
+    let table_name = spec
+        .driver
+        .surreal
+        .as_ref()
+        .and_then(|m| m.table.clone())
+        .unwrap_or_else(|| spec.name.clone());
+
+    let mut table = Table::<SurrealDB, EmptyEntity>::new(table_name, db);
+
+    for (name, col_spec) in &spec.columns {
+        table.add_column(build_column(name, col_spec)?);
+        if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
+            table.add_title_field(name);
+        }
+    }
+
+    let id_column = resolve_id_column(spec);
+    if !table.columns().contains_key(&id_column) {
+        return Err(error!(
+            "id column not present in spec.columns",
+            id = id_column
+        ));
+    }
+    table.set_id_field(&id_column);
+
+    for (rel_name, ref_spec) in &spec.references {
+        let target_name = ref_spec.table.clone();
+        let fk = ref_spec
+            .foreign_key
+            .clone()
+            .unwrap_or_else(|| rel_name.clone());
+        let resolver_clone = resolver.clone();
+
+        let build_child = move |db: SurrealDB| -> Table<SurrealDB, EmptyEntity> {
+            if let Some(r) = &resolver_clone
+                && let Some(child_spec) = r(&target_name)
+                && let Ok(child) = build_surreal_table(&child_spec, db.clone(), Some(r.clone()))
+            {
+                return child;
+            }
+            Table::<SurrealDB, EmptyEntity>::new(target_name.clone(), db)
+        };
+
+        table = match ref_spec.kind {
+            ReferenceKind::HasOne => table.with_one::<EmptyEntity>(rel_name, &fk, build_child),
+            ReferenceKind::HasMany => table.with_many::<EmptyEntity>(rel_name, &fk, build_child),
+        };
+    }
+
+    Ok(table)
 }
 
 pub(crate) fn resolve_id_column(spec: &SurrealVistaSpec) -> String {
@@ -204,4 +274,137 @@ where
         }
     }
     metadata
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use indexmap::IndexMap;
+    use surreal_client::{MockSurrealEngine, SurrealClient};
+    use vantage_vista::VistaFactory;
+
+    fn test_db() -> SurrealDB {
+        let client = SurrealClient::new(
+            Box::new(MockSurrealEngine::new()),
+            Some("test".into()),
+            Some("test".into()),
+        );
+        SurrealDB::new(client)
+    }
+
+    fn parse(yaml: &str) -> SurrealVistaSpec {
+        serde_yaml_ng::from_str(yaml).expect("yaml parse")
+    }
+
+    fn registry_resolver(specs: Vec<(String, SurrealVistaSpec)>) -> SurrealSpecResolver {
+        let map: IndexMap<String, SurrealVistaSpec> = specs.into_iter().collect();
+        let map = Arc::new(map);
+        Arc::new(move |name: &str| map.get(name).cloned())
+    }
+
+    #[test]
+    fn build_from_spec_surfaces_references_in_metadata() {
+        let yaml = r#"
+name: bakery
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: string, flags: [title] }
+references:
+  products:
+    table: product
+    kind: has_many
+    foreign_key: bakery
+  primary_product:
+    table: product
+    kind: has_one
+    foreign_key: primary_product
+"#;
+        let spec = parse(yaml);
+        let factory = SurrealVistaFactory::new(test_db());
+        let vista = factory.build_from_spec(spec).expect("build");
+
+        let mut listed = vista.get_references();
+        listed.sort();
+        assert_eq!(listed, vec!["primary_product", "products"]);
+
+        let products = vista.get_reference("products").expect("products ref");
+        assert_eq!(products.target, "product");
+        assert_eq!(products.kind, ReferenceKind::HasMany);
+        assert_eq!(products.foreign_key, "bakery");
+
+        let primary = vista.get_reference("primary_product").expect("primary ref");
+        assert_eq!(primary.kind, ReferenceKind::HasOne);
+    }
+
+    #[test]
+    fn resolver_supplies_child_columns_on_traversal() {
+        let bakery_yaml = r#"
+name: bakery
+columns:
+  id: { type: thing, flags: [id] }
+references:
+  products:
+    table: product
+    kind: has_many
+    foreign_key: bakery
+"#;
+        let product_yaml = r#"
+name: product
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: string, flags: [title] }
+  price: { type: int }
+  bakery: { type: thing }
+"#;
+        let bakery_spec = parse(bakery_yaml);
+        let product_spec = parse(product_yaml);
+
+        let resolver = registry_resolver(vec![
+            ("bakery".into(), bakery_spec.clone()),
+            ("product".into(), product_spec.clone()),
+        ]);
+
+        let factory = SurrealVistaFactory::new(test_db()).with_resolver(resolver);
+        let bakery = factory.build_from_spec(bakery_spec).expect("build bakery");
+
+        let mut row: vantage_types::Record<ciborium::Value> = vantage_types::Record::new();
+        row.insert(
+            "id".into(),
+            ciborium::Value::Text("bakery:hill_valley".into()),
+        );
+
+        let child = bakery.get_ref("products", &row).expect("traverse products");
+
+        let mut cols = child.get_column_names();
+        cols.sort();
+        assert_eq!(cols, vec!["bakery", "id", "name", "price"]);
+        assert_eq!(child.get_id_column(), Some("id"));
+    }
+
+    #[test]
+    fn resolver_miss_falls_back_to_empty_child_table() {
+        let bakery_yaml = r#"
+name: bakery
+columns:
+  id: { type: thing, flags: [id] }
+references:
+  ghosts:
+    table: missing_table
+    kind: has_many
+    foreign_key: bakery
+"#;
+        let bakery_spec = parse(bakery_yaml);
+        let resolver = registry_resolver(vec![]);
+        let factory = SurrealVistaFactory::new(test_db()).with_resolver(resolver);
+        let bakery = factory.build_from_spec(bakery_spec).expect("build");
+
+        let mut row: vantage_types::Record<ciborium::Value> = vantage_types::Record::new();
+        row.insert(
+            "id".into(),
+            ciborium::Value::Text("bakery:hill_valley".into()),
+        );
+
+        let child = bakery.get_ref("ghosts", &row).expect("fallback child");
+        assert!(child.get_column_names().is_empty());
+    }
 }

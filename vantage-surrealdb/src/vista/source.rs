@@ -35,6 +35,7 @@ use crate::surreal_expr;
 use crate::surrealdb::SurrealDB;
 use crate::thing::Thing;
 use crate::types::AnySurrealType;
+use crate::vista::factory::SurrealSpecResolver;
 
 pub struct SurrealTableShell<E = EmptyEntity>
 where
@@ -45,6 +46,7 @@ where
     pub(crate) metadata: VistaMetadata,
     pub(crate) current_search_handle: Option<ConditionHandle>,
     pub(crate) page_size: Option<usize>,
+    pub(crate) resolver: Option<SurrealSpecResolver>,
 }
 
 impl<E> SurrealTableShell<E>
@@ -55,6 +57,7 @@ where
         table: Table<SurrealDB, E>,
         capabilities: VistaCapabilities,
         metadata: VistaMetadata,
+        resolver: Option<SurrealSpecResolver>,
     ) -> Self {
         Self {
             table,
@@ -62,6 +65,7 @@ where
             metadata,
             current_search_handle: None,
             page_size: None,
+            resolver,
         }
     }
 
@@ -227,8 +231,11 @@ where
         let target = self
             .table
             .get_ref_from_row::<EmptyEntity>(relation, &native_row)?;
-        let factory =
+        let mut factory =
             crate::vista::factory::SurrealVistaFactory::new(self.table.data_source().clone());
+        if let Some(resolver) = &self.resolver {
+            factory = factory.with_resolver(resolver.clone());
+        }
         factory.from_table(target)
     }
 

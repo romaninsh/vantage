@@ -4807,7 +4807,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.4.10"
+version = "0.4.11"
 dependencies = [
  "async-trait",
  "bakery_model3",
