@@ -457,8 +457,7 @@ mod tests {
 
     #[test]
     fn s3_permanent_redirect_hint_ignores_unrelated_errors() {
-        let body =
-            r#"<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>"#;
+        let body = r#"<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>"#;
         assert!(s3_permanent_redirect_hint(403, body).is_none());
         assert!(s3_permanent_redirect_hint(301, body).is_none());
     }
