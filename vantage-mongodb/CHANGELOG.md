@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.2 — 2026-05-23
+
+- Drops the `vantage_table::any::AnyTable` re-export from `prelude` — `AnyTable` is deleted upstream in [vantage-table 0.5.2](https://docs.rs/vantage-table/0.5.2/vantage_table/). Use `MongoDB::vista_factory().from_table(...)` for cross-driver wrapping.
+
+## 0.5.1 — 2026-05-23
+
+- Tracks [vantage-dataset 0.5.0](https://docs.rs/vantage-dataset/0.5/vantage_dataset/)'s `ImTable` / `ImDataSource` parametrization. No public API change in this crate.
+
 ## 0.5.0 — 2026-05-23
 
 - Bumped to the 0.5 line to track [vantage-table 0.5.0](https://docs.rs/vantage-table/0.5.0/vantage_table/)'s opening of the `AnyTable` decommission cycle. No code changes beyond the dependency pin.

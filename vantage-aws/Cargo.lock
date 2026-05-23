@@ -2111,7 +2111,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2139,7 +2139,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cli-util"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -2168,7 +2168,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "0.4.3"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2187,7 +2187,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-expressions"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "async-trait",
  "serde",
@@ -2200,7 +2200,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2244,7 +2244,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.4.10"
+version = "0.4.11"
 dependencies = [
  "async-stream",
  "async-trait",

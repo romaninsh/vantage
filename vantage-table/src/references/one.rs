@@ -9,7 +9,6 @@ use vantage_core::{Result, error};
 use vantage_types::{EmptyEntity, Entity, Record};
 
 use crate::{
-    any::AnyTable,
     references::Reference,
     table::Table,
     traits::{column_like::ColumnLike, table_source::TableSource},
@@ -115,34 +114,6 @@ where
         target.add_condition(condition);
 
         Ok(Box::new(target.into_entity::<EmptyEntity>()))
-    }
-
-    fn resolve_as_any(&self, source_table: &dyn Any) -> Result<AnyTable> {
-        let source = source_table
-            .downcast_ref::<Table<T, SourceE>>()
-            .ok_or_else(|| {
-                vantage_core::error!("Source table type mismatch in HasOne::resolve_as_any")
-            })?;
-
-        let source_id = source
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
-
-        let mut target = (self.build_target)(source.data_source().clone());
-
-        let target_id = target
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
-
-        let (src_col, tgt_col) = self.columns(&source_id, &target_id);
-        let condition = source
-            .data_source()
-            .related_in_condition(&tgt_col, source, &src_col);
-        target.add_condition(condition);
-
-        Ok(AnyTable::from_table(target))
     }
 
     fn target_type_name(&self) -> &'static str {

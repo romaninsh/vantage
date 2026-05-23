@@ -10,7 +10,6 @@ pub use vantage_dataset::{
     InsertableDataSet, ReadableDataSet, ReadableValueSet, WritableDataSet, WritableValueSet,
 };
 pub use vantage_expressions::{ExprDataSource, Expression, Expressive, Order, Selectable};
-pub use vantage_table::any::AnyTable;
 pub use vantage_table::column::core::Column;
 pub use vantage_table::table::Table;
 pub use vantage_table::traits::table_like::TableLike;

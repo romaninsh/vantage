@@ -9,7 +9,6 @@ pub use vantage_dataset::{
     InsertableDataSet, ReadableDataSet, ReadableValueSet, WritableDataSet, WritableValueSet,
 };
 pub use vantage_expressions::{Expression, Expressive};
-pub use vantage_table::any::AnyTable;
 pub use vantage_table::column::core::Column;
 pub use vantage_table::pagination::Pagination;
 pub use vantage_table::table::Table;

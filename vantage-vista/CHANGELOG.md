@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.12 — 2026-05-23
+
+- Doc comment touch-up on [`TableShell`](https://docs.rs/vantage-vista/0.4.12/vantage_vista/trait.TableShell.html) — drops the `AnyTable` reference now that [vantage-table 0.5.2](https://docs.rs/vantage-table/0.5.2/vantage_table/) removes it. No code change.
+
+## 0.4.11 — 2026-05-23
+
+- Dep-pin bump on `vantage-dataset` to 0.5; tracks the `ImTable` / `ImDataSource` parametrization. No public API change.
+
 ## 0.4.10 — 2026-05-18
 
 - **Breaking**: schema moves to the shell. [`TableShell`](https://docs.rs/vantage-vista/0.4.10/vantage_vista/trait.TableShell.html) gains three required methods — [`columns`](https://docs.rs/vantage-vista/0.4.10/vantage_vista/trait.TableShell.html#tymethod.columns), [`references`](https://docs.rs/vantage-vista/0.4.10/vantage_vista/trait.TableShell.html#tymethod.references), [`id_column`](https://docs.rs/vantage-vista/0.4.10/vantage_vista/trait.TableShell.html#tymethod.id_column) — and [`Vista::new(name, source)`](https://docs.rs/vantage-vista/0.4.10/vantage_vista/struct.Vista.html#method.new) loses its `VistaMetadata` parameter. Driver shells store the metadata themselves and answer schema queries directly; `Vista` forwards every metadata accessor to the shell, and `Vista::get_ref_kinds` derives from `shell.references()` by default. Driver crates that wrap a typed `Table` are already updated.

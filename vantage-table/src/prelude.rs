@@ -25,22 +25,9 @@ pub use crate::pagination::Pagination;
 // Conditions
 pub use crate::conditions::ConditionHandle;
 
-// CBOR value accessor helpers (for Record<CborValue> consumers of AnyTable)
+// CBOR value accessor helpers (for `Record<CborValue>` consumers crossing
+// the typed/erased boundary via `vantage_vista::Vista`).
 pub use crate::cbor_ext::CborValueExt;
 
 // Mock functionality for testing
 pub use crate::mocks::mock_table_source::MockTableSource;
-
-// TODO: Re-enable these when modules are implemented
-// Record functionality
-// pub use crate::record::{Record, RecordTable};
-
-// Type aliases
-pub use crate::any::AnyRecord;
-
-// Reference functionality
-pub use crate::any::AnyTable;
-// pub use crate::references::{ReferenceMany, ReferenceOne, RelatedTable};
-
-// Model macros
-// pub use crate::models;

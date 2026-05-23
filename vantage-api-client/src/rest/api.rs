@@ -316,7 +316,7 @@ impl RestApi {
 
             // The HTTP body parses as JSON for free; convert to CBOR
             // at this single boundary so the rest of the pipeline
-            // (Table, Vista, AnyTable) sees the universal carrier.
+            // (Table, Vista) sees the universal carrier.
             let mut record: Record<CborValue> = Record::new();
             for (k, v) in obj {
                 let cbor = CborValue::serialized(v).map_err(|e| {

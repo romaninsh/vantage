@@ -16,8 +16,6 @@ use std::any::Any;
 
 use vantage_core::Result;
 
-use crate::any::AnyTable;
-
 pub mod many;
 pub mod one;
 
@@ -29,7 +27,11 @@ pub trait Reference: Send + Sync {
     /// Given source and target id field names, return (source_column, target_column).
     fn columns(&self, source_id: &str, target_id: &str) -> (String, String);
 
-    /// Produce a fresh target table (no conditions applied).
+    /// Produce a fresh target table (no conditions applied), wrapped in
+    /// `Box<dyn Any>` so callers can downcast back to the concrete
+    /// `Table<T, TargetE>`. Used by [`Table::get_ref_as`] and
+    /// [`Table::get_subquery_as`] to build the target before applying the
+    /// join condition.
     fn build_target(&self, data_source: &dyn Any) -> Box<dyn Any>;
 
     /// Cardinality of this relation. `HasOne` if traversing yields at most
@@ -56,13 +58,6 @@ pub trait Reference: Send + Sync {
         source_id_field: &str,
         source_row: &dyn Any,
     ) -> Result<Box<dyn Any>>;
-
-    /// Resolve this reference and return an AnyTable.
-    ///
-    /// Legacy path used by `Table::get_ref` / `get_ref_as` / `get_subquery_as`.
-    /// Slated for deletion in Stage 9 alongside `AnyTable`; new callers should
-    /// use `resolve_from_row` (typed) or `Vista::get_ref` (erased) instead.
-    fn resolve_as_any(&self, source_table: &dyn Any) -> Result<AnyTable>;
 
     /// Type name of the target table (for error messages).
     fn target_type_name(&self) -> &'static str;

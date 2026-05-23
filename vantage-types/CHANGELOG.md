@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.4 — 2026-05-23
+
+- Doc comment refresh on the `Entity<ciborium::Value>` blanket — references the `Vista` boundary now that [vantage-table 0.5.2](https://docs.rs/vantage-table/0.5.2/vantage_table/) drops `AnyTable`.
+
 ## 0.4.3 — 2026-05-16
 
 - Internal dependency version refresh; no public API changes.

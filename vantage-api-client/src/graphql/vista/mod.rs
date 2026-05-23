@@ -2,9 +2,10 @@
 //!
 //! Construct a `Vista` from a typed `Table<GraphqlApi, E>` via
 //! `GraphqlApi::vista_factory().from_table(...)`. Metadata (columns, id
-//! field, title fields, references) is harvested before erasing the
-//! table through `AnyTable`, so the universal Vista surface sees the
-//! same level of detail as the REST bridge.
+//! field, title fields, references) is harvested up front; the typed
+//! table is then re-wrapped as `Table<GraphqlApi, EmptyEntity>` so the
+//! universal Vista surface sees the same level of detail as the REST
+//! bridge.
 //!
 //! GraphQL is read-only at this stage — the shell advertises
 //! `can_count` only. Writes will follow once the schema map (Phase 9)

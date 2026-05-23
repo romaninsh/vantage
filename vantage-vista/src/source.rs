@@ -18,9 +18,9 @@ use crate::{
 /// vantage-aws, etc.). Each method receives `&Vista` so the driver can read
 /// the current condition state, columns, and other metadata.
 ///
-/// `Id = String` and `Value = ciborium::Value` at this boundary, mirroring
-/// `AnyTable`. CBOR-typed driver ids (Mongo `ObjectId`, Surreal `Thing`)
-/// stringify here. Methods are named with the `_vista_` infix to mirror
+/// `Id = String` and `Value = ciborium::Value` at this boundary, so every
+/// driver's native id (Mongo `ObjectId`, Surreal `Thing`, …) stringifies
+/// here. Methods are named with the `_vista_` infix to mirror
 /// `TableSource`'s `_table_` convention; `Vista`'s `ValueSet` impls
 /// delegate by stripping the infix.
 ///
