@@ -49,8 +49,8 @@ the separate crates (vantage-expressions, vantage-table, vantage-surrealdb, etc)
 
 ## Example
 
-Version 0.2 had a example "model" in bakery_model/ crate. It defined entity
-structure and mapping rules:
+Version 0.2 had a example "model" in bakery_model/ crate (now removed). The
+example code below illustrates the entity structure and mapping rules:
 
 ```rust
 impl Bakery {
@@ -137,7 +137,7 @@ stuff:
     //  paying_clients = Table<Postgres, Client>
     //  orders         = Table<Postgres, Order>
 
-    // Execute my custom method on Table<Postgres, Order> from bakery_model/src/order.rs:
+    // Execute my custom method on Table<Postgres, Order>:
     let report = orders.generate_report().await?;
 ```
 
@@ -238,7 +238,6 @@ bring some scheduling capabilities, like
 find_nearest_free_time(calendar1: EventTable, calendar2: EventTable)
 
 given the generic nature of tables, integrating with Axum will also be easy.
-Some implementation already exist in bakery_api/.
 
 ## Error Handling
 
@@ -399,10 +398,6 @@ embedded Tokio runtime for async operations.
 
 ### Application Examples
 
-**bakery_model** preserves the example entity structure from Vantage v0.2,
-demonstrating the static_table() pattern and relationship definitions that will
-eventually be migrated to the new architecture.
-
 **bakery_model3** shows complete 0.3 migration of bakery_model, using
 vantage-table + vantage-surrealdb instead of monolithic vantage crate. Entities
 adapted for SurrealDB (string IDs, embedded documents). Includes multi-source
@@ -410,29 +405,12 @@ CLI example (`db <csv|surreal> <entity> <command>`) demonstrating full CRUD
 through AnyTable — same handle_commands function works with both CSV and
 SurrealDB backends. Also includes 0-intro.rs for direct SurrealDB queries.
 
-**bakery_api** illustrates Axum web framework integration, showing how Vantage
-tables can power HTTP APIs and generic data grid capabilities for web
-applications.
-
 **bakery_model4** demonstrates dynamic entity loading from YAML configuration
-files instead of compile-time struct definitions. Uses vantage-config to parse
-entity schemas (tables, columns, types, rules) at runtime and creates
-Table<SurrealDB, EmptyEntity> instances dynamically. Includes cli4 example that
+files instead of compile-time struct definitions. Includes cli4 example that
 provides full CLI interface for any entity defined in config.yaml, supporting
-list, get, and field filtering operations. Shows how Vantage can work without
-predefined entity types using get_values() for data retrieval.
+list, get, and field filtering operations.
 
 ### Summary
-
-**vantage-config** provides YAML-based configuration parsing for dynamic entity
-definitions. Supports entity schemas with table names, columns (with types like
-int, float, decimal, string, bool, datetime, duration, any), validation rules
-(email, min, max), optional/nullable fields, default values, and relationships.
-Includes get_table() method that dynamically builds Table instances from config
-at runtime, including .with_one() and .with_many() relationships. Enables
-building data applications where entity schemas are defined in config files
-rather than Rust code. Relations can be traversed via CLI commands like
-`cli bakery name="X" ref products list`.
 
 **vantage-table** provides the core Table<DataSource, Entity> abstraction since
 0.3, replacing the monolithic table implementation from 0.2. Supports table
