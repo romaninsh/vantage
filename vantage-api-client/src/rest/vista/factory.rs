@@ -88,18 +88,19 @@ impl RestApiVistaFactory {
 
     /// Wrap a typed `Table<RestApi, E>` as a `Vista`. Column metadata,
     /// id field, title fields, and references are harvested up front;
-    /// the table itself is stored as `Box<dyn TableLike>` so the
-    /// original `E` stays attached for reference traversal via the
-    /// typed-table machinery.
+    /// the table is erased to `Table<RestApi, EmptyEntity>` so the
+    /// shell carries a uniform entity type while still routing
+    /// reference traversal through `Reference::resolve_from_row`.
     pub fn from_table<E>(&self, table: Table<RestApi, E>) -> Result<Vista>
     where
         E: Entity<CborValue> + 'static,
     {
         let metadata = metadata_from_table(&table);
         let name = table.table_name().to_string();
+        let any_table = table.into_entity::<EmptyEntity>();
 
         let source = RestApiTableShell::new(
-            Box::new(table),
+            any_table,
             VistaCapabilities {
                 can_count: true,
                 ..VistaCapabilities::default()
@@ -183,7 +184,7 @@ impl VistaFactory for RestApiVistaFactory {
         }
 
         let source = RestApiTableShell::new(
-            Box::new(table),
+            table,
             VistaCapabilities {
                 can_count: true,
                 ..VistaCapabilities::default()

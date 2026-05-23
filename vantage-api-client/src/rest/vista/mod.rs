@@ -9,12 +9,10 @@
 //! REST APIs are read-only at this stage — the shell advertises only
 //! `can_count`.
 
-pub mod any_shell;
 pub mod factory;
 pub mod source;
 pub mod spec;
 
-pub use any_shell::AnyTableShell;
 pub use factory::{ModelResolver, RestApiVistaFactory};
 pub use source::RestApiTableShell;
 pub use spec::{

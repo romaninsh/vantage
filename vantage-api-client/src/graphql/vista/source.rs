@@ -25,7 +25,7 @@ use vantage_vista::{
     VistaMetadata,
 };
 
-use crate::rest::vista::AnyTableShell;
+use super::any_shell::AnyTableShell;
 
 pub struct GraphqlApiTableShell {
     pub(crate) table: AnyTable,
