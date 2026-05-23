@@ -95,4 +95,33 @@ columns:
         let spec: SurrealVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
         assert!(spec.driver.surreal.is_none());
     }
+
+    #[test]
+    fn yaml_parses_references_block() {
+        let yaml = r#"
+name: bakery
+columns:
+  id: { type: thing, flags: [id] }
+references:
+  clients:
+    table: client
+    kind: has_many
+    foreign_key: bakery
+  primary_product:
+    table: product
+    kind: has_one
+    foreign_key: primary_product
+"#;
+        let spec: SurrealVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
+        assert_eq!(spec.references.len(), 2);
+
+        let clients = &spec.references["clients"];
+        assert_eq!(clients.table, "client");
+        assert_eq!(clients.kind, vantage_vista::ReferenceKind::HasMany);
+        assert_eq!(clients.foreign_key.as_deref(), Some("bakery"));
+
+        let primary = &spec.references["primary_product"];
+        assert_eq!(primary.table, "product");
+        assert_eq!(primary.kind, vantage_vista::ReferenceKind::HasOne);
+    }
 }

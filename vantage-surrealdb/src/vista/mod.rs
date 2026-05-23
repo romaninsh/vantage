@@ -13,7 +13,7 @@ pub mod factory;
 pub mod source;
 pub mod spec;
 
-pub use factory::SurrealVistaFactory;
+pub use factory::{SurrealSpecResolver, SurrealVistaFactory};
 pub use source::SurrealTableShell;
 pub use spec::{
     SurrealColumnBlock, SurrealColumnExtras, SurrealTableBlock, SurrealTableExtras,
