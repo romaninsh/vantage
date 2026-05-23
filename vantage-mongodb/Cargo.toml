@@ -14,7 +14,7 @@ vista = ["dep:vantage-vista"]
 vantage-core = { version = "0.4", path = "../vantage-core" }
 vantage-types = { version = "0.4.2", path = "../vantage-types" }
 vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
-vantage-table = { version = "0.4.12", path = "../vantage-table" }
+vantage-table = { version = "0.5", path = "../vantage-table" }
 vantage-dataset = { version = "0.4.2", path = "../vantage-dataset" }
 vantage-vista = { version = "0.4.10", path = "../vantage-vista", optional = true }
 

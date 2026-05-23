@@ -4837,7 +4837,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.4.12"
+version = "0.5.0"
 dependencies = [
  "async-stream",
  "async-trait",
