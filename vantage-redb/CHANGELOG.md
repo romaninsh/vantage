@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0 — 2026-05-23
+
+- Bumped to the 0.5 line to track [vantage-table 0.5.0](https://docs.rs/vantage-table/0.5.0/vantage_table/)'s opening of the `AnyTable` decommission cycle. No code changes beyond the dependency pin.
+
 ## 0.4.0 — 2026-04-26
 
 Full rewrite for the 0.4 trait surface. **Storage format and public API are not compatible with 0.3** — open in a fresh database file.

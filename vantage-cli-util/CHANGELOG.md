@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0 — 2026-05-23
+
+- Bumped to the 0.5 line to track [vantage-table 0.5.0](https://docs.rs/vantage-table/0.5.0/vantage_table/)'s opening of the `AnyTable` decommission cycle. No code changes beyond the dependency pin.
+
 ## 0.4.6 — 2026-05-18
 
 - Tracks [vantage-vista 0.4.10](https://docs.rs/vantage-vista/0.4.10/vantage_vista/)'s schema-on-source refactor. Internal test fixtures build their `Vista` via `Box::new(MockShell::new().with_metadata(metadata))` instead of passing metadata to `Vista::new`. No change to the public CLI surface.

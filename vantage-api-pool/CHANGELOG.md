@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0 — 2026-05-23
+
+- Bumped to the 0.5 line to track [vantage-table 0.5.0](https://docs.rs/vantage-table/0.5.0/vantage_table/)'s opening of the `AnyTable` decommission cycle, aligning with the rest of the workspace. No code changes beyond the dependency pin.
+
 ## 0.1.4 — 2026-05-16
 
 - Internal dependency version refresh; no public API changes.
