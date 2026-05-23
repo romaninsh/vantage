@@ -73,7 +73,6 @@ where
                 );
             }
         }
-        dbg!(&select);
 
         select
     }
