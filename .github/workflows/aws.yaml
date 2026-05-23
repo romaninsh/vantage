@@ -27,11 +27,11 @@ jobs:
 
       - name: Build vantage-aws
         working-directory: vantage-aws
-        run: cargo build --all-targets
+        run: cargo build --all-targets --features vista
 
       - name: Run tests (offline only — integration tests are #[ignore]d)
         working-directory: vantage-aws
-        run: cargo test
+        run: cargo test --features vista
 
       - name: Check formatting
         working-directory: vantage-aws
@@ -39,7 +39,7 @@ jobs:
 
       - name: Run clippy
         working-directory: vantage-aws
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --features vista -- -D warnings
 
       - name: Run aws-cli against live AWS
         working-directory: vantage-aws
@@ -48,10 +48,10 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: eu-west-2
         run: |
-          cargo run --example aws-cli -- log.groups
-          cargo run --example aws-cli -- log.groups logGroupNamePrefix=/aws/lambda/
-          cargo run --example aws-cli -- iam.users
-          cargo run --example aws-cli -- iam.roles PathPrefix=/aws-service-role/
-          cargo run --example aws-cli -- s3.buckets
-          cargo run --example aws-cli -- lambda.functions
-          cargo run --example aws-cli -- dynamodb.tables
+          cargo run --features vista --example aws-cli -- log.groups
+          cargo run --features vista --example aws-cli -- log.groups logGroupNamePrefix=/aws/lambda/
+          cargo run --features vista --example aws-cli -- iam.users
+          cargo run --features vista --example aws-cli -- iam.roles PathPrefix=/aws-service-role/
+          cargo run --features vista --example aws-cli -- s3.buckets
+          cargo run --features vista --example aws-cli -- lambda.functions
+          cargo run --features vista --example aws-cli -- dynamodb.tables
