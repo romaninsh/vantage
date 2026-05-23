@@ -46,6 +46,19 @@ impl TableSource for AwsAccount {
         Ok(AwsCondition::eq(field.to_string(), value.to_string()))
     }
 
+    /// Build `field == value` from a typed `Self::Value` (CBOR). Used by
+    /// `Reference::resolve_from_row` when traversing `with_many` /
+    /// `with_one` relations — the join value is pulled out of a
+    /// `Record<CborValue>` and pushed onto the child table verbatim,
+    /// without round-tripping through a string.
+    fn eq_value_condition(
+        &self,
+        field: &str,
+        value: Self::Value,
+    ) -> DatasetResult<Self::Condition> {
+        Ok(AwsCondition::eq(field.to_string(), value))
+    }
+
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
         Column::new(name)
     }

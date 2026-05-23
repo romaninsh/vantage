@@ -58,6 +58,8 @@ pub mod logs;
 pub mod s3;
 
 use vantage_table::any::AnyTable;
+#[cfg(feature = "vista")]
+use vantage_vista::Vista;
 
 use crate::AwsAccount;
 
@@ -249,6 +251,163 @@ impl Factory {
         }
         if let Some(t) = dynamodb::table::DynamoDbTable::from_arn(arn, aws.clone()) {
             return Some(AnyTable::new(t));
+        }
+        None
+    }
+
+    /// Vista-flavoured mirror of [`Self::for_name`]. Returns a fully
+    /// constructed [`Vista`] (carrying the same per-table metadata as
+    /// `AnyTable`) plus the model's natural mode.
+    ///
+    /// Composite-id endpoints (`iam.access_keys`, `s3.objects`,
+    /// `lambda.aliases`, `lambda.versions`, `ecs.services`, `ecs.tasks`,
+    /// `log.streams`, `log.events`) intentionally aren't surfaced here for
+    /// the same reason they're absent from [`Self::for_name`]: the AWS
+    /// list endpoint requires a parent filter, so the only useful way to
+    /// reach them is via `:relation` traversal from the parent.
+    #[cfg(feature = "vista")]
+    pub fn vista_for_name(&self, name: &str) -> Option<(Vista, FactoryMode)> {
+        let aws = self.aws.clone();
+        let factory = aws.vista_factory();
+        let (vista, mode) = match name {
+            "iam.user" => (
+                factory.from_table(iam::users_table(aws)).ok()?,
+                FactoryMode::Single,
+            ),
+            "iam.users" => (
+                factory.from_table(iam::users_table(aws)).ok()?,
+                FactoryMode::List,
+            ),
+            "iam.group" => (
+                factory.from_table(iam::groups_table(aws)).ok()?,
+                FactoryMode::Single,
+            ),
+            "iam.groups" => (
+                factory.from_table(iam::groups_table(aws)).ok()?,
+                FactoryMode::List,
+            ),
+            "iam.role" => (
+                factory.from_table(iam::roles_table(aws)).ok()?,
+                FactoryMode::Single,
+            ),
+            "iam.roles" => (
+                factory.from_table(iam::roles_table(aws)).ok()?,
+                FactoryMode::List,
+            ),
+            "iam.policy" => (
+                factory.from_table(iam::policies_table(aws)).ok()?,
+                FactoryMode::Single,
+            ),
+            "iam.policies" => (
+                factory.from_table(iam::policies_table(aws)).ok()?,
+                FactoryMode::List,
+            ),
+            "iam.instance_profile" => (
+                factory.from_table(iam::instance_profiles_table(aws)).ok()?,
+                FactoryMode::Single,
+            ),
+            "iam.instance_profiles" => (
+                factory.from_table(iam::instance_profiles_table(aws)).ok()?,
+                FactoryMode::List,
+            ),
+            "log.group" => (
+                factory.from_table(logs::groups_table(aws)).ok()?,
+                FactoryMode::Single,
+            ),
+            "log.groups" => (
+                factory.from_table(logs::groups_table(aws)).ok()?,
+                FactoryMode::List,
+            ),
+            "ecs.cluster" => (
+                factory.from_table(ecs::clusters_table(aws)).ok()?,
+                FactoryMode::Single,
+            ),
+            "ecs.clusters" => (
+                factory.from_table(ecs::clusters_table(aws)).ok()?,
+                FactoryMode::List,
+            ),
+            "ecs.task_definition" => (
+                factory.from_table(ecs::task_definitions_table(aws)).ok()?,
+                FactoryMode::Single,
+            ),
+            "ecs.task_definitions" => (
+                factory.from_table(ecs::task_definitions_table(aws)).ok()?,
+                FactoryMode::List,
+            ),
+            "s3.bucket" => (
+                factory.from_table(s3::buckets_table(aws)).ok()?,
+                FactoryMode::Single,
+            ),
+            "s3.buckets" => (
+                factory.from_table(s3::buckets_table(aws)).ok()?,
+                FactoryMode::List,
+            ),
+            "lambda.function" => (
+                factory.from_table(lambda::functions_table(aws)).ok()?,
+                FactoryMode::Single,
+            ),
+            "lambda.functions" => (
+                factory.from_table(lambda::functions_table(aws)).ok()?,
+                FactoryMode::List,
+            ),
+            "dynamodb.table" => (
+                factory.from_table(dynamodb::tables_table(aws)).ok()?,
+                FactoryMode::Single,
+            ),
+            "dynamodb.tables" => (
+                factory.from_table(dynamodb::tables_table(aws)).ok()?,
+                FactoryMode::List,
+            ),
+            _ => return None,
+        };
+        Some((vista, mode))
+    }
+
+    /// Vista-flavoured mirror of [`Self::from_arn`]. Dispatch order
+    /// matches `from_arn` exactly — S3 objects probed before buckets,
+    /// etc.
+    #[cfg(feature = "vista")]
+    pub fn vista_from_arn(&self, arn: &str) -> Option<Vista> {
+        let aws = self.aws.clone();
+        let factory = aws.vista_factory();
+        if let Some(t) = iam::user::User::from_arn(arn, aws.clone()) {
+            return factory.from_table(t).ok();
+        }
+        if let Some(t) = iam::group::Group::from_arn(arn, aws.clone()) {
+            return factory.from_table(t).ok();
+        }
+        if let Some(t) = iam::role::Role::from_arn(arn, aws.clone()) {
+            return factory.from_table(t).ok();
+        }
+        if let Some(t) = iam::policy::Policy::from_arn(arn, aws.clone()) {
+            return factory.from_table(t).ok();
+        }
+        if let Some(t) = iam::instance_profile::InstanceProfile::from_arn(arn, aws.clone()) {
+            return factory.from_table(t).ok();
+        }
+        if let Some(t) = iam::access_key::AccessKey::from_arn(arn, aws.clone()) {
+            return factory.from_table(t).ok();
+        }
+        if let Some(t) = logs::stream::LogStream::from_arn(arn, aws.clone()) {
+            return factory.from_table(t).ok();
+        }
+        if let Some(t) = logs::group::LogGroup::from_arn(arn, aws.clone()) {
+            return factory.from_table(t).ok();
+        }
+        if let Some(t) = ecs::cluster::Cluster::from_arn(arn, aws.clone()) {
+            return factory.from_table(t).ok();
+        }
+        if let Some(t) = s3::object::Object::from_arn(arn, aws.clone()) {
+            return factory.from_table(t).ok();
+        }
+        if let Some(t) = s3::bucket::Bucket::from_arn(arn, aws.clone()) {
+            return factory.from_table(t).ok();
+        }
+        if let Some(t) = lambda::function::Function::from_arn(arn, aws.clone()) {
+            return factory.from_table(t).ok();
+        }
+        if let Some(t) = dynamodb::table::DynamoDbTable::from_arn(arn, aws.clone()) {
+            return factory.from_table(t).ok();
         }
         None
     }

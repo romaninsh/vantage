@@ -220,6 +220,9 @@ pub(crate) async fn restxml_call(
         .map_err(|e| error!("Failed to read AWS REST-XML response body", detail = e))?;
 
     if !status.is_success() {
+        if let Some(hint) = s3_permanent_redirect_hint(status.as_u16(), &response_text) {
+            return Err(error!(hint));
+        }
         return Err(error!(
             "AWS REST-XML request returned error status",
             url = url.as_str(),
@@ -229,6 +232,64 @@ pub(crate) async fn restxml_call(
     }
 
     Ok(response_text)
+}
+
+/// S3 returns `301 PermanentRedirect` when a bucket-scoped request goes
+/// to the wrong region. SigV4 binds the signature to the original host,
+/// so transparent redirect-following isn't viable — but the response
+/// body names the correct endpoint, which we surface as an actionable
+/// message ("re-run with --region eu-west-2") instead of dumping raw
+/// XML at the user.
+fn s3_permanent_redirect_hint(status: u16, body: &str) -> Option<String> {
+    if status != 301 || !body.contains("<Code>PermanentRedirect</Code>") {
+        return None;
+    }
+    let bucket = xml_inner(body, "Bucket");
+    let endpoint = xml_inner(body, "Endpoint")?;
+    let region = parse_s3_endpoint_region(endpoint)?;
+    let bucket_label = bucket.unwrap_or("(unknown)");
+    Some(format!(
+        "S3 bucket `{bucket_label}` lives in region `{region}`, \
+         not the one currently configured. Re-run with `--region {region}` \
+         (or set AWS_REGION={region}). Original endpoint: {endpoint}."
+    ))
+}
+
+/// Pull the region out of an S3 redirect `<Endpoint>` value. S3 emits
+/// the endpoint in one of four shapes (depending on bucket age and
+/// region):
+///   - `<bucket>.s3.<region>.amazonaws.com` — modern virtual-hosted
+///   - `<bucket>.s3-<region>.amazonaws.com` — legacy dash form (still
+///     used for some pre-2019 buckets in older regions)
+///   - `s3.<region>.amazonaws.com` — path-style, modern
+///   - `s3-<region>.amazonaws.com` — path-style, legacy
+fn parse_s3_endpoint_region(endpoint: &str) -> Option<&str> {
+    let stripped = endpoint.strip_suffix(".amazonaws.com")?;
+    // Try the `.s3.` / `.s3-` (virtual-hosted) markers first — they
+    // carry an explicit boundary before `s3`. Fall back to a
+    // start-of-string `s3.` / `s3-` for path-style endpoints.
+    for marker in [".s3.", ".s3-"] {
+        if let Some(idx) = stripped.rfind(marker) {
+            return Some(&stripped[idx + marker.len()..]);
+        }
+    }
+    for marker in ["s3.", "s3-"] {
+        if let Some(rest) = stripped.strip_prefix(marker) {
+            return Some(rest);
+        }
+    }
+    None
+}
+
+/// Extract the *first* `<tag>…</tag>` inner text from a flat XML
+/// string. Good enough for AWS error bodies, which are single-level and
+/// don't have nested elements named the same as the wrapper.
+fn xml_inner<'a>(xml: &'a str, tag: &str) -> Option<&'a str> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let start = xml.find(&open)? + open.len();
+    let end = xml[start..].find(&close)? + start;
+    Some(&xml[start..end])
 }
 
 fn build_url(host: &str, path: &str, query: &[(String, String)]) -> String {
@@ -356,5 +417,48 @@ mod tests {
         assert_eq!(m, "GET");
         assert_eq!(p, "/");
         assert!(q.is_empty());
+    }
+
+    #[test]
+    fn s3_permanent_redirect_hint_names_bucket_and_region() {
+        let body = r#"<?xml version="1.0" encoding="UTF-8"?>
+<Error><Code>PermanentRedirect</Code><Message>The bucket you are attempting to access must be addressed using the specified endpoint. Please send all future requests to this endpoint.</Message><Endpoint>ba-coruscant-dev-bucket1.s3.eu-west-2.amazonaws.com</Endpoint><Bucket>ba-coruscant-dev-bucket1</Bucket><RequestId>X</RequestId><HostId>Y</HostId></Error>"#;
+        let hint = s3_permanent_redirect_hint(301, body).expect("hint should fire");
+        assert!(hint.contains("ba-coruscant-dev-bucket1"));
+        assert!(hint.contains("eu-west-2"));
+        assert!(hint.contains("--region eu-west-2"));
+    }
+
+    #[test]
+    fn parse_s3_endpoint_region_handles_all_four_shapes() {
+        // virtual-hosted, modern
+        assert_eq!(
+            parse_s3_endpoint_region("my-bucket.s3.eu-west-2.amazonaws.com"),
+            Some("eu-west-2"),
+        );
+        // virtual-hosted, legacy dash form
+        assert_eq!(
+            parse_s3_endpoint_region("my-bucket.s3-eu-west-1.amazonaws.com"),
+            Some("eu-west-1"),
+        );
+        // path-style, modern
+        assert_eq!(
+            parse_s3_endpoint_region("s3.us-east-1.amazonaws.com"),
+            Some("us-east-1"),
+        );
+        // path-style, legacy
+        assert_eq!(
+            parse_s3_endpoint_region("s3-ap-southeast-2.amazonaws.com"),
+            Some("ap-southeast-2"),
+        );
+        // unrelated host → None
+        assert_eq!(parse_s3_endpoint_region("example.com"), None);
+    }
+
+    #[test]
+    fn s3_permanent_redirect_hint_ignores_unrelated_errors() {
+        let body = r#"<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>"#;
+        assert!(s3_permanent_redirect_hint(403, body).is_none());
+        assert!(s3_permanent_redirect_hint(301, body).is_none());
     }
 }
