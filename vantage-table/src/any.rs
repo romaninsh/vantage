@@ -85,10 +85,9 @@ impl AnyTable {
     }
 
     /// Wrap any `TableLike<Value = CborValue, Id = String>` directly. Use
-    /// this for table-like wrappers (e.g. `vantage_live::LiveTable`) that
-    /// aren't a `Table<T, E>` instance themselves but already satisfy the
-    /// `AnyTable`-facing trait surface. The entity type is recorded as
-    /// `()` since wrappers don't carry one.
+    /// this for table-like wrappers that aren't a `Table<T, E>` instance
+    /// themselves but already satisfy the `AnyTable`-facing trait surface.
+    /// The entity type is recorded as `()` since wrappers don't carry one.
     pub fn from_table_like<T>(table: T) -> Self
     where
         T: TableLike<Value = CborValue, Id = String> + 'static,

@@ -23,7 +23,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 vantage-core = { version = "0.4", path = "../vantage-core" }
 vantage-dataset = { version = "0.4.1", path = "../vantage-dataset" }
 vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
-vantage-table = { version = "0.4.10", path = "../vantage-table" }
+vantage-table = { version = "0.5", path = "../vantage-table" }
 vantage-types = { version = "0.4.2", path = "../vantage-types", features = ["serde"] }
 vantage-vista = { version = "0.4.10", path = "../vantage-vista", optional = true }
 

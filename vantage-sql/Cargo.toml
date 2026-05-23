@@ -23,7 +23,7 @@ vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
 paste = "1.0"
 
 vantage-dataset = { version = "0.4.2", path = "../vantage-dataset" }
-vantage-table = { version = "0.4.12", path = "../vantage-table" }
+vantage-table = { version = "0.5", path = "../vantage-table" }
 vantage-vista = { version = "0.4.10", path = "../vantage-vista", optional = true }
 async-trait = "0.1"
 sqlx = { version = "0.8", features = ["runtime-tokio", "rust_decimal", "uuid", "chrono"] }
