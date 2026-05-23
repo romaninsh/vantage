@@ -1,8 +1,13 @@
 # Changelog
 
+## 0.5.0 — 2026-05-23
+
+- Align all internal dependency versions to 0.5+. No public API changes.
+
 ## 0.4.4 — 2026-05-23
 
-- Doc comment refresh on the `Entity<ciborium::Value>` blanket — references the `Vista` boundary now that [vantage-table 0.5.2](https://docs.rs/vantage-table/0.5.2/vantage_table/) drops `AnyTable`.
+- Doc comment refresh on the `Entity<ciborium::Value>` blanket — references the `Vista` boundary now
+  that [vantage-table 0.5.2](https://docs.rs/vantage-table/0.5.2/vantage_table/) drops `AnyTable`.
 
 ## 0.4.3 — 2026-05-16
 
@@ -10,12 +15,22 @@
 
 ## 0.4.2 — 2026-04-30
 
-Catches up the crates.io release with the additions that landed locally in [#214](https://github.com/romaninsh/vantage/pull/214) but never got their own version bump.
+Catches up the crates.io release with the additions that landed locally in
+[#214](https://github.com/romaninsh/vantage/pull/214) but never got their own version bump.
 
-- New `RichText` / `Span` / `Style` types and a refactored `TerminalRender` trait — `render() -> RichText` instead of `render() -> String` plus a separate `color_hint()`. `Style` is semantic (`Default`, `Dim`, `Muted`, `Strong`, `Success`, `Error`, `Warning`, `Info`) — UI layers map to native presentation. `RichText` impls `Display` (writes the plain text), so existing string-shaped consumers keep compiling without code changes.
-- Default `TerminalRender` impls migrated for `String`, `&str`, `i32` / `i64` / `f64`, `bool`, `Option<T>`, `serde_json::Value`, and `ciborium::Value`. Booleans render as `Style::Success` / `Style::Error`; nulls render as a dim em-dash.
+- New `RichText` / `Span` / `Style` types and a refactored `TerminalRender` trait —
+  `render() -> RichText` instead of `render() -> String` plus a separate `color_hint()`. `Style` is
+  semantic (`Default`, `Dim`, `Muted`, `Strong`, `Success`, `Error`, `Warning`, `Info`) — UI layers
+  map to native presentation. `RichText` impls `Display` (writes the plain text), so existing
+  string-shaped consumers keep compiling without code changes.
+- Default `TerminalRender` impls migrated for `String`, `&str`, `i32` / `i64` / `f64`, `bool`,
+  `Option<T>`, `serde_json::Value`, and `ciborium::Value`. Booleans render as `Style::Success` /
+  `Style::Error`; nulls render as a dim em-dash.
 
 ## 0.4.1 — 2026-04-25
 
-- `TerminalRender` impl for `ciborium::Value` so generic CLI/UI rendering keeps working when records flow through `AnyTable`.
-- Blanket `From<ciborium::Value> for Record<ciborium::Value>` (and reverse), plus serde-blanket `IntoRecord<CborValue>` / `TryFromRecord<CborValue>` so any `Serialize + DeserializeOwned` entity auto-implements `Entity<CborValue>`.
+- `TerminalRender` impl for `ciborium::Value` so generic CLI/UI rendering keeps working when records
+  flow through `AnyTable`.
+- Blanket `From<ciborium::Value> for Record<ciborium::Value>` (and reverse), plus serde-blanket
+  `IntoRecord<CborValue>` / `TryFromRecord<CborValue>` so any `Serialize + DeserializeOwned` entity
+  auto-implements `Entity<CborValue>`.
