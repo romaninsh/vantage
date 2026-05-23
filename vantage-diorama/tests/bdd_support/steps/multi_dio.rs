@@ -23,7 +23,7 @@ async fn create_named_dio(w: &mut DioramaWorld, name: String) {
     if w.lens.is_none() {
         let lens = w
             .lens_builder
-            .build(cache_path, &w.spies)
+            .build(cache_path, &w.spies, w.backend)
             .expect("build lens");
         w.lens = Some(lens);
     }

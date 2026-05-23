@@ -7,5 +7,6 @@
 
 pub mod backend;
 pub mod spies;
+pub mod sqlite_runtime;
 pub mod steps;
 pub mod world;
