@@ -43,7 +43,7 @@ struct AwsFactoryAdapter(Factory);
 
 impl ModelFactory for AwsFactoryAdapter {
     fn for_name(&self, name: &str) -> Option<(Vista, Mode)> {
-        self.0.vista_for_name(name).map(|(v, m)| {
+        self.0.for_name(name).map(|(v, m)| {
             (
                 v,
                 match m {
@@ -55,7 +55,7 @@ impl ModelFactory for AwsFactoryAdapter {
     }
 
     fn for_locator(&self, locator: &str) -> Option<Vista> {
-        self.0.vista_from_arn(locator)
+        self.0.from_arn(locator)
     }
 }
 

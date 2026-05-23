@@ -57,8 +57,6 @@ pub mod lambda;
 pub mod logs;
 pub mod s3;
 
-use vantage_table::any::AnyTable;
-#[cfg(feature = "vista")]
 use vantage_vista::Vista;
 
 use crate::AwsAccount;
@@ -135,138 +133,17 @@ impl Factory {
         ]
     }
 
-    /// Resolve a model name to an `AnyTable` plus its mode.
-    pub fn for_name(&self, name: &str) -> Option<(AnyTable, FactoryMode)> {
-        let aws = self.aws.clone();
-        let (table, mode) = match name {
-            "iam.user" => (AnyTable::new(iam::users_table(aws)), FactoryMode::Single),
-            "iam.users" => (AnyTable::new(iam::users_table(aws)), FactoryMode::List),
-            "iam.group" => (AnyTable::new(iam::groups_table(aws)), FactoryMode::Single),
-            "iam.groups" => (AnyTable::new(iam::groups_table(aws)), FactoryMode::List),
-            "iam.role" => (AnyTable::new(iam::roles_table(aws)), FactoryMode::Single),
-            "iam.roles" => (AnyTable::new(iam::roles_table(aws)), FactoryMode::List),
-            "iam.policy" => (AnyTable::new(iam::policies_table(aws)), FactoryMode::Single),
-            "iam.policies" => (AnyTable::new(iam::policies_table(aws)), FactoryMode::List),
-            // iam.access_key / iam.access_keys intentionally omitted:
-            // listing them standalone returns just the caller's keys,
-            // which is rarely what people mean. Reach them via
-            // `iam.user ... :access_keys`.
-            "iam.instance_profile" => (
-                AnyTable::new(iam::instance_profiles_table(aws)),
-                FactoryMode::Single,
-            ),
-            "iam.instance_profiles" => (
-                AnyTable::new(iam::instance_profiles_table(aws)),
-                FactoryMode::List,
-            ),
-            "log.group" => (AnyTable::new(logs::groups_table(aws)), FactoryMode::Single),
-            "log.groups" => (AnyTable::new(logs::groups_table(aws)), FactoryMode::List),
-            // log.stream / log.event intentionally omitted: AWS
-            // requires `logGroupName`. Reach them via
-            // `log.group ... :streams` / `:events`.
-            "ecs.cluster" => (AnyTable::new(ecs::clusters_table(aws)), FactoryMode::Single),
-            "ecs.clusters" => (AnyTable::new(ecs::clusters_table(aws)), FactoryMode::List),
-            // ecs.service / ecs.task intentionally omitted: AWS
-            // requires `cluster` as a filter, so listing them
-            // standalone returns nothing useful. Reach them via
-            // `ecs.cluster ... :services` / `:tasks`.
-            "ecs.task_definition" => (
-                AnyTable::new(ecs::task_definitions_table(aws)),
-                FactoryMode::Single,
-            ),
-            "ecs.task_definitions" => (
-                AnyTable::new(ecs::task_definitions_table(aws)),
-                FactoryMode::List,
-            ),
-            "s3.bucket" => (AnyTable::new(s3::buckets_table(aws)), FactoryMode::Single),
-            "s3.buckets" => (AnyTable::new(s3::buckets_table(aws)), FactoryMode::List),
-            // s3.object intentionally omitted: ListObjectsV2 requires
-            // a Bucket. Reach via `s3.bucket ... :objects`.
-            "lambda.function" => (
-                AnyTable::new(lambda::functions_table(aws)),
-                FactoryMode::Single,
-            ),
-            "lambda.functions" => (
-                AnyTable::new(lambda::functions_table(aws)),
-                FactoryMode::List,
-            ),
-            // lambda.alias / lambda.version intentionally omitted:
-            // both list APIs require FunctionName. Reach via
-            // `lambda.function ... :aliases` / `:versions`.
-            "dynamodb.table" => (
-                AnyTable::new(dynamodb::tables_table(aws)),
-                FactoryMode::Single,
-            ),
-            "dynamodb.tables" => (
-                AnyTable::new(dynamodb::tables_table(aws)),
-                FactoryMode::List,
-            ),
-            _ => return None,
-        };
-        Some((table, mode))
-    }
-
-    /// Resolve an ARN to a pre-conditioned single-record table by
-    /// dispatching to each entity's `from_arn`. Returns `None` if no
-    /// entity recognises the ARN's resource type.
-    pub fn from_arn(&self, arn: &str) -> Option<AnyTable> {
-        let aws = self.aws.clone();
-        if let Some(t) = iam::user::User::from_arn(arn, aws.clone()) {
-            return Some(AnyTable::new(t));
-        }
-        if let Some(t) = iam::group::Group::from_arn(arn, aws.clone()) {
-            return Some(AnyTable::new(t));
-        }
-        if let Some(t) = iam::role::Role::from_arn(arn, aws.clone()) {
-            return Some(AnyTable::new(t));
-        }
-        if let Some(t) = iam::policy::Policy::from_arn(arn, aws.clone()) {
-            return Some(AnyTable::new(t));
-        }
-        if let Some(t) = iam::instance_profile::InstanceProfile::from_arn(arn, aws.clone()) {
-            return Some(AnyTable::new(t));
-        }
-        if let Some(t) = iam::access_key::AccessKey::from_arn(arn, aws.clone()) {
-            return Some(AnyTable::new(t));
-        }
-        if let Some(t) = logs::stream::LogStream::from_arn(arn, aws.clone()) {
-            return Some(AnyTable::new(t));
-        }
-        if let Some(t) = logs::group::LogGroup::from_arn(arn, aws.clone()) {
-            return Some(AnyTable::new(t));
-        }
-        if let Some(t) = ecs::cluster::Cluster::from_arn(arn, aws.clone()) {
-            return Some(AnyTable::new(t));
-        }
-        // S3 — object ARNs (`arn:aws:s3:::bucket/key`) check first
-        // since they're a strict superset of bucket ARNs.
-        if let Some(t) = s3::object::Object::from_arn(arn, aws.clone()) {
-            return Some(AnyTable::new(t));
-        }
-        if let Some(t) = s3::bucket::Bucket::from_arn(arn, aws.clone()) {
-            return Some(AnyTable::new(t));
-        }
-        if let Some(t) = lambda::function::Function::from_arn(arn, aws.clone()) {
-            return Some(AnyTable::new(t));
-        }
-        if let Some(t) = dynamodb::table::DynamoDbTable::from_arn(arn, aws.clone()) {
-            return Some(AnyTable::new(t));
-        }
-        None
-    }
-
-    /// Vista-flavoured mirror of [`Self::for_name`]. Returns a fully
-    /// constructed [`Vista`] (carrying the same per-table metadata as
-    /// `AnyTable`) plus the model's natural mode.
+    /// Resolve a model name to a fully-constructed [`Vista`] plus its
+    /// natural mode (singular → [`FactoryMode::Single`], plural →
+    /// [`FactoryMode::List`]).
     ///
     /// Composite-id endpoints (`iam.access_keys`, `s3.objects`,
     /// `lambda.aliases`, `lambda.versions`, `ecs.services`, `ecs.tasks`,
-    /// `log.streams`, `log.events`) intentionally aren't surfaced here for
-    /// the same reason they're absent from [`Self::for_name`]: the AWS
-    /// list endpoint requires a parent filter, so the only useful way to
-    /// reach them is via `:relation` traversal from the parent.
-    #[cfg(feature = "vista")]
-    pub fn vista_for_name(&self, name: &str) -> Option<(Vista, FactoryMode)> {
+    /// `log.streams`, `log.events`) intentionally aren't surfaced here:
+    /// the AWS list endpoint requires a parent filter, so the only
+    /// useful way to reach them is via `:relation` traversal from the
+    /// parent.
+    pub fn for_name(&self, name: &str) -> Option<(Vista, FactoryMode)> {
         let aws = self.aws.clone();
         let factory = aws.vista_factory();
         let (vista, mode) = match name {
@@ -363,11 +240,13 @@ impl Factory {
         Some((vista, mode))
     }
 
-    /// Vista-flavoured mirror of [`Self::from_arn`]. Dispatch order
-    /// matches `from_arn` exactly — S3 objects probed before buckets,
-    /// etc.
-    #[cfg(feature = "vista")]
-    pub fn vista_from_arn(&self, arn: &str) -> Option<Vista> {
+    /// Resolve an ARN to a pre-conditioned single-record [`Vista`].
+    /// Returns `None` if no entity recognises the ARN's resource type.
+    ///
+    /// Dispatch order: each entity's `from_arn` runs in turn — S3 object
+    /// ARNs (`arn:aws:s3:::bucket/key`) are probed before bucket ARNs
+    /// since the object form is a strict superset.
+    pub fn from_arn(&self, arn: &str) -> Option<Vista> {
         let aws = self.aws.clone();
         let factory = aws.vista_factory();
         if let Some(t) = iam::user::User::from_arn(arn, aws.clone()) {

@@ -6,7 +6,6 @@ use gpui_component::{
     table::{DataTable, TableState},
     v_flex, ActiveTheme, Root, StyledExt,
 };
-use vantage_table::any::AnyTable;
 
 actions!(example_gpui, [Quit, AddClient]);
 
@@ -108,8 +107,12 @@ fn main() {
                 ..Default::default()
             };
 
-            let client_table = AnyTable::from_table(Client::surreal_table(surrealdb()));
-            let dataset = VantageTableAdapter::new(client_table).await;
+            let db = surrealdb();
+            let vista = db
+                .vista_factory()
+                .from_table(Client::surreal_table(db.clone()))
+                .expect("Failed to build Vista");
+            let dataset = VantageTableAdapter::new(vista).await;
             let store = TableStore::new(dataset);
             let delegate = GpuiTableDelegate::new(store);
 

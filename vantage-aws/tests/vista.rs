@@ -6,8 +6,6 @@
 //! `dynamodb_live.rs`; this file is the part that can run on any
 //! developer machine and in CI without secrets.
 
-#![cfg(feature = "vista")]
-
 use ciborium::Value as CborValue;
 use vantage_aws::AwsAccount;
 use vantage_aws::models::{Factory, FactoryMode, ecs, iam, lambda, logs, s3};
@@ -221,13 +219,13 @@ fn column_original_type_carries_renderer_keys() -> Result<()> {
 }
 
 #[test]
-fn factory_vista_for_name_covers_every_known_name() {
+fn factory_for_name_covers_every_known_name() {
     let factory = Factory::new(aws());
 
     for name in Factory::known_names() {
         let (_vista, mode) = factory
-            .vista_for_name(name)
-            .unwrap_or_else(|| panic!("vista_for_name missing arm for `{name}`"));
+            .for_name(name)
+            .unwrap_or_else(|| panic!("for_name missing arm for `{name}`"));
 
         // Every known name is either singular (no trailing 's') or
         // plural; the dispatcher in `Factory::vista_for_name` mirrors

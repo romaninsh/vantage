@@ -2137,6 +2137,7 @@ name = "dataset-ui-adapters"
 version = "0.4.0"
 dependencies = [
  "async-trait",
+ "ciborium",
  "crossterm 0.29.0",
  "cursive",
  "cursive_table_view",
@@ -2145,6 +2146,7 @@ dependencies = [
  "egui_extras",
  "gpui",
  "gpui-component",
+ "indexmap 2.14.0",
  "ratatui",
  "serde",
  "serde_json",
@@ -2155,6 +2157,8 @@ dependencies = [
  "tokio-test",
  "vantage-dataset",
  "vantage-table",
+ "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]
@@ -8107,9 +8111,9 @@ dependencies = [
 
 [[package]]
 name = "rust_decimal"
-version = "1.41.0"
+version = "1.42.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ce901f9a19d251159075a4c37af514c3b8ef99c22e02dd8c19161cf397ee94a"
+checksum = "0c5108e3d4d903e21aac27f12ba5377b6b34f9f44b325e4894c7924169d06995"
 dependencies = [
  "arrayvec",
  "borsh",
@@ -8578,6 +8582,19 @@ name = "serde_yaml"
 version = "0.9.34+deprecated"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+dependencies = [
+ "indexmap 2.14.0",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
+]
+
+[[package]]
+name = "serde_yaml_ng"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b4db627b98b36d4203a7b458cf3573730f2bb591b28871d916dfa9efabfd41f"
 dependencies = [
  "indexmap 2.14.0",
  "itoa",
@@ -10802,18 +10819,19 @@ dependencies = [
 
 [[package]]
 name = "vantage-core"
-version = "0.4.0"
+version = "0.4.2"
 dependencies = [
  "atty",
  "indexmap 2.14.0",
  "owo-colors",
  "serde",
  "thiserror 1.0.69",
+ "tracing",
 ]
 
 [[package]]
 name = "vantage-dataset"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -10832,7 +10850,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-expressions"
-version = "0.4.2"
+version = "0.4.4"
 dependencies = [
  "async-trait",
  "serde",
@@ -10840,11 +10858,12 @@ dependencies = [
  "thiserror 2.0.18",
  "vantage-core",
  "vantage-dataset",
+ "vantage-vista",
 ]
 
 [[package]]
 name = "vantage-table"
-version = "0.4.3"
+version = "0.5.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -10861,11 +10880,12 @@ dependencies = [
  "vantage-dataset",
  "vantage-expressions",
  "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]
 name = "vantage-types"
-version = "0.4.0"
+version = "0.4.3"
 dependencies = [
  "ciborium",
  "indexmap 2.14.0",
@@ -10883,6 +10903,23 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "vantage-vista"
+version = "0.4.10"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "ciborium",
+ "futures-core",
+ "indexmap 2.14.0",
+ "serde",
+ "serde_yaml_ng",
+ "thiserror 2.0.18",
+ "vantage-core",
+ "vantage-dataset",
+ "vantage-types",
 ]
 
 [[package]]

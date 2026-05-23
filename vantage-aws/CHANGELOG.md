@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1 — 2026-05-23
+
+- `Factory::for_name` / `Factory::from_arn` now return [`Vista`](https://docs.rs/vantage-vista/0.4/vantage_vista/struct.Vista.html) directly — the dual AnyTable / Vista API from 0.4.10 collapses into a single Vista path. The `vista_for_name` / `vista_from_arn` shims are gone (rename callers to `for_name` / `from_arn`).
+- The optional `vista` cargo feature is removed; the `vantage-vista` dependency is now unconditional. `vantage_aws::vista::*` is always available.
+- `aws-cli` example drops its `required-features = ["vista"]` gate now that there's only one path.
+- `dynamo-single-table` example removed — it was the last in-tree user of the legacy `model_cli` runner (the `AnyTable`-based one), and migrating it to `vista_cli` is left as a follow-up. The multi-service `aws-cli` example still demonstrates the same Vista patterns against real AWS endpoints.
+
 ## 0.5.0 — 2026-05-23
 
 - Bumped to the 0.5 line to track [vantage-table 0.5.0](https://docs.rs/vantage-table/0.5.0/vantage_table/)'s opening of the `AnyTable` decommission cycle. No code changes beyond the dependency pin.

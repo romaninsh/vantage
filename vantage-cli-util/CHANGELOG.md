@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1 — 2026-05-23
+
+- Removed the legacy `model_cli` module (the `AnyTable`-based runner). [`vista_cli`](https://docs.rs/vantage-cli-util/0.5.1/vantage_cli_util/vista_cli/index.html) is now the only CLI runner — it has carried the full token grammar (operators, selectors, search, aggregates) since 0.4.5 and is what every consumer in-tree already uses. Crate-root re-exports `Mode`, `ModelFactory`, `Renderer` are gone; import them from `vista_cli::*` instead.
+
 ## 0.5.0 — 2026-05-23
 
 - Bumped to the 0.5 line to track [vantage-table 0.5.0](https://docs.rs/vantage-table/0.5.0/vantage_table/)'s opening of the `AnyTable` decommission cycle. No code changes beyond the dependency pin.

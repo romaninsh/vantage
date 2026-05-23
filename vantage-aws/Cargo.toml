@@ -1,6 +1,6 @@
 [package]
 name = "vantage-aws"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -10,17 +10,13 @@ homepage = "https://romaninsh.github.io/vantage"
 repository = "https://github.com/romaninsh/vantage"
 readme = "README.md"
 
-[features]
-default = []
-vista = ["dep:vantage-vista"]
-
 [dependencies]
 vantage-core = { version = "0.4", path = "../vantage-core" }
 vantage-types = { version = "0.4", path = "../vantage-types", features = ["serde"] }
 vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
 vantage-table = { version = "0.5", path = "../vantage-table" }
 vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
-vantage-vista = { version = "0.4", path = "../vantage-vista", optional = true }
+vantage-vista = { version = "0.4", path = "../vantage-vista" }
 
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
@@ -56,12 +52,7 @@ clap = { version = "4", features = ["derive"] }
 [[example]]
 name = "aws-cli"
 path = "examples/aws-cli.rs"
-required-features = ["vista"]
 
 [[example]]
 name = "aws-dynamo"
 path = "examples/aws-dynamo.rs"
-
-[[example]]
-name = "dynamo-single-table"
-path = "examples/dynamo-single-table.rs"
