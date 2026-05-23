@@ -41,9 +41,7 @@ pub(crate) async fn viewport_loop(
         loop {
             match tokio::time::timeout(debounce, rx.recv()).await {
                 Ok(Some(next)) => {
-                    state
-                        .viewport_queue_depth
-                        .fetch_sub(1, Ordering::SeqCst);
+                    state.viewport_queue_depth.fetch_sub(1, Ordering::SeqCst);
                     absorbed += 1;
                     latest = next;
                 }
@@ -307,14 +305,10 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
 pub(crate) fn enqueue_viewport(state: &TableSceneryState, request: ViewportRequest) {
     // Bump the depth counter *before* sending so a racing consumer
     // can't observe a depth lower than what's actually in the channel.
-    state
-        .viewport_queue_depth
-        .fetch_add(1, Ordering::SeqCst);
+    state.viewport_queue_depth.fetch_add(1, Ordering::SeqCst);
     if state.viewport_tx.send(request).is_err() {
         // Channel closed (Dio dropped). Reverse the bump so the
         // counter doesn't drift upward forever.
-        state
-            .viewport_queue_depth
-            .fetch_sub(1, Ordering::SeqCst);
+        state.viewport_queue_depth.fetch_sub(1, Ordering::SeqCst);
     }
 }
