@@ -12,6 +12,7 @@ use vantage_vista::Vista;
 
 use super::backend::BackendKind;
 use super::spies::Spies;
+use super::sqlite_runtime::dispatch;
 
 #[derive(Clone, Copy, Default, Debug)]
 pub enum OnWriteMode {
@@ -213,8 +214,21 @@ impl DioramaWorld {
 impl LensBuilderState {
     /// Materialise the configured Lens. Closures clone the spy counters so
     /// each callback invocation lands in the matching `AtomicU64`.
-    pub fn build(&self, cache_path: std::path::PathBuf, spies: &Spies) -> Result<Arc<Lens>> {
+    ///
+    /// `backend` decides whether the worker callbacks bridge their
+    /// `dio.master().*` calls through the sqlite io-runtime. SQLite must
+    /// bridge (see [`super::sqlite_runtime`] for why); Mock/CSV must NOT —
+    /// the cross-runtime suspension desynchronises the worker from the
+    /// test task's `settle()` / `drain_write_queue` polling and races
+    /// cache assertions.
+    pub fn build(
+        &self,
+        cache_path: std::path::PathBuf,
+        spies: &Spies,
+        backend: BackendKind,
+    ) -> Result<Arc<Lens>> {
         let mut b = Lens::new().cache_at(cache_path);
+        let bridge = backend == BackendKind::Sqlite;
 
         // on_start — legacy "copy master" mode kept for v1 features;
         // v2 features select a variant via `on_start_load_kind`.
@@ -239,7 +253,12 @@ impl LensBuilderState {
                     }
                     counter.fetch_add(1, Ordering::SeqCst);
                     master_list_counter.fetch_add(1, Ordering::SeqCst);
-                    let rows = dio.master().list_values().await?;
+                    let rows = if bridge {
+                        let dio_io = dio.clone();
+                        dispatch(async move { dio_io.master().list_values().await }).await?
+                    } else {
+                        dio.master().list_values().await?
+                    };
                     let rows: indexmap::IndexMap<_, _> = match load_kind {
                         OnStartLoad::AllRows | OnStartLoad::Unset => rows,
                         OnStartLoad::FirstN(n) => rows.into_iter().take(n).collect(),
@@ -300,15 +319,45 @@ impl LensBuilderState {
                         counter.fetch_add(1, Ordering::SeqCst);
                         match op {
                             WriteOp::Insert { id, record } => {
-                                dio.master().insert_value(&id, &record).await?;
+                                if bridge {
+                                    let dio_io = dio.clone();
+                                    let id_io = id.clone();
+                                    let record_io = record.clone();
+                                    dispatch(async move {
+                                        dio_io.master().insert_value(&id_io, &record_io).await
+                                    })
+                                    .await?;
+                                } else {
+                                    dio.master().insert_value(&id, &record).await?;
+                                }
                                 dio.cache().insert_value(&id, &record).await?;
                             }
                             WriteOp::Replace { id, record } => {
-                                dio.master().replace_value(&id, &record).await?;
+                                if bridge {
+                                    let dio_io = dio.clone();
+                                    let id_io = id.clone();
+                                    let record_io = record.clone();
+                                    dispatch(async move {
+                                        dio_io.master().replace_value(&id_io, &record_io).await
+                                    })
+                                    .await?;
+                                } else {
+                                    dio.master().replace_value(&id, &record).await?;
+                                }
                                 dio.cache().insert_value(&id, &record).await?;
                             }
                             WriteOp::Patch { id, partial } => {
-                                dio.master().patch_value(&id, &partial).await?;
+                                if bridge {
+                                    let dio_io = dio.clone();
+                                    let id_io = id.clone();
+                                    let partial_io = partial.clone();
+                                    dispatch(async move {
+                                        dio_io.master().patch_value(&id_io, &partial_io).await
+                                    })
+                                    .await?;
+                                } else {
+                                    dio.master().patch_value(&id, &partial).await?;
+                                }
                                 // Read-merge-write on the cache so consumers
                                 // see the same merged record they'd get from
                                 // a fresh master read. `cache.insert_value`
@@ -323,11 +372,24 @@ impl LensBuilderState {
                                 dio.cache().insert_value(&id, &merged).await?;
                             }
                             WriteOp::Delete { id } => {
-                                dio.master().delete(&id).await?;
+                                if bridge {
+                                    let dio_io = dio.clone();
+                                    let id_io = id.clone();
+                                    dispatch(async move { dio_io.master().delete(&id_io).await })
+                                        .await?;
+                                } else {
+                                    dio.master().delete(&id).await?;
+                                }
                                 dio.cache().delete_value(&id).await?;
                             }
                             WriteOp::DeleteAll => {
-                                dio.master().delete_all().await?;
+                                if bridge {
+                                    let dio_io = dio.clone();
+                                    dispatch(async move { dio_io.master().delete_all().await })
+                                        .await?;
+                                } else {
+                                    dio.master().delete_all().await?;
+                                }
                                 dio.cache().clear().await?;
                             }
                         }
@@ -363,7 +425,11 @@ impl LensBuilderState {
                 b = b.total_provider(move |dio| {
                     let dio = dio.clone();
                     async move {
-                        let n = dio.master().get_count().await?;
+                        let n = if bridge {
+                            dispatch(async move { dio.master().get_count().await }).await?
+                        } else {
+                            dio.master().get_count().await?
+                        };
                         Ok(n as usize)
                     }
                 });
@@ -375,7 +441,11 @@ impl LensBuilderState {
                     let dio = dio.clone();
                     async move {
                         counter.fetch_add(1, Ordering::SeqCst);
-                        let n = dio.master().get_count().await?;
+                        let n = if bridge {
+                            dispatch(async move { dio.master().get_count().await }).await?
+                        } else {
+                            dio.master().get_count().await?
+                        };
                         Ok(n as usize)
                     }
                 });
@@ -404,7 +474,12 @@ impl LensBuilderState {
                             return Err(vantage_core::error!("on_load_chunk rejected (one-shot)"));
                         }
                         master_list_counter.fetch_add(1, Ordering::SeqCst);
-                        let all = dio.master().list_values().await?;
+                        let all = if bridge {
+                            let dio_io = dio.clone();
+                            dispatch(async move { dio_io.master().list_values().await }).await?
+                        } else {
+                            dio.master().list_values().await?
+                        };
                         let slice: Vec<_> = all.into_iter().collect();
                         let start = range.start.min(slice.len());
                         let end = range.end.min(slice.len());

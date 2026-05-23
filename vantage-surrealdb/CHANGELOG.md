@@ -4,6 +4,13 @@
 
 - Bumped to the 0.5 line to track [vantage-table 0.5.0](https://docs.rs/vantage-table/0.5.0/vantage_table/)'s opening of the `AnyTable` decommission cycle. No code changes beyond the dependency pin.
 
+## 0.4.11 — 2026-05-23
+
+- YAML `references:` blocks now build live traversals. `SurrealVistaFactory::build_from_spec` registers each `has_one` / `has_many` entry as a `with_one` / `with_many` on the underlying [`Table`](https://docs.rs/vantage-table/0.5.0/vantage_table/table/struct.Table.html), so `vista.get_ref("clients", &row)` returns a fully-typed child Vista — no Rust glue per relation.
+- New [`SurrealSpecResolver`](https://docs.rs/vantage-surrealdb/0.4.11/vantage_surrealdb/vista/type.SurrealSpecResolver.html) (`Arc<dyn Fn(&str) -> Option<SurrealVistaSpec>>`) plus [`SurrealVistaFactory::with_resolver`](https://docs.rs/vantage-surrealdb/0.4.11/vantage_surrealdb/vista/struct.SurrealVistaFactory.html#method.with_resolver): pass in a name-to-spec lookup and child tables get their columns from the resolved spec at traversal time, not from a single pre-built registry.
+- Many-to-many drops out of chained `has_many` / `has_one` traversal — no new YAML keyword needed. See `tests/7_vista_refs.rs` for `client → bakery → clients`.
+- Without a resolver the references still parse and surface in [`VistaMetadata`](https://docs.rs/vantage-vista/0.4.10/vantage_vista/struct.VistaMetadata.html), but traversed children come back column-less; the next query then fails loudly.
+
 ## 0.4.10 — 2026-05-18
 
 - Tracks [vantage-vista 0.4.10](https://docs.rs/vantage-vista/0.4.10/vantage_vista/)'s schema-on-source refactor. `SurrealTableShell` now owns its [`VistaMetadata`](https://docs.rs/vantage-vista/0.4.10/vantage_vista/struct.VistaMetadata.html) and implements the new `columns` / `references` / `id_column` shell methods. `surrealdb.vista_factory().from_table(...)` / `from_yaml(...)` surface unchanged.
