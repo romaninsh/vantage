@@ -3,7 +3,6 @@ members = [
     "vantage-core",
     "vantage-expressions",
     "vantage-redb",
-    "vantage-live",
     "surreal-client",
     "vantage-dataset",
     "vantage-table",

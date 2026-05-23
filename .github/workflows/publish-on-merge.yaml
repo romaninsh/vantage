@@ -95,7 +95,6 @@ jobs:
             vantage-sql
             vantage-surrealdb
             vantage-log-writer
-            vantage-live
             vantage-config
             vantage-diorama
           )
