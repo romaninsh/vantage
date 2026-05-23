@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0 — 2026-05-23
+
+- Bumped to the 0.5 line to track [vantage-table 0.5.0](https://docs.rs/vantage-table/0.5.0/vantage_table/)'s opening of the `AnyTable` decommission cycle. No code changes beyond the dependency pin.
+
 ## 0.4.11 — 2026-05-23
 
 - YAML `references:` blocks now build live traversals. `SurrealVistaFactory::build_from_spec` registers each `has_one` / `has_many` entry as a `with_one` / `with_many` on the underlying [`Table`](https://docs.rs/vantage-table/0.5.0/vantage_table/table/struct.Table.html), so `vista.get_ref("clients", &row)` returns a fully-typed child Vista — no Rust glue per relation.

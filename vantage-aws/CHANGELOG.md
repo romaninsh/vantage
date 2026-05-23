@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0 — 2026-05-23
+
+- Bumped to the 0.5 line to track [vantage-table 0.5.0](https://docs.rs/vantage-table/0.5.0/vantage_table/)'s opening of the `AnyTable` decommission cycle. No code changes beyond the dependency pin.
+
 ## 0.4.10 — 2026-05-23
 
 The AWS backend now plugs into the universal Vista layer — wrap a typed `Table<AwsAccount, E>` with [`AwsAccount::vista_factory().from_table(...)`](https://docs.rs/vantage-aws/0.4.10/vantage_aws/vista/struct.AwsVistaFactory.html#method.from_table) and the resulting [`Vista`](https://docs.rs/vantage-vista/0.4/vantage_vista/struct.Vista.html) carries the same column metadata, id field, title columns, and `with_one` / `with_many` relations as the typed table.

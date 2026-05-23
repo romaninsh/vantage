@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0 — 2026-05-23
+
+- Bumped to the 0.5 line to track [vantage-table 0.5.0](https://docs.rs/vantage-table/0.5.0/vantage_table/)'s opening of the `AnyTable` decommission cycle. No code changes beyond the dependency pin.
+
 ## 0.4.2 — 2026-05-18
 
 - Tracks [vantage-vista 0.4.10](https://docs.rs/vantage-vista/0.4.10/vantage_vista/)'s schema-on-source refactor. `LogWriterTableShell` now owns its [`VistaMetadata`](https://docs.rs/vantage-vista/0.4.10/vantage_vista/struct.VistaMetadata.html) and implements the new `columns` / `references` / `id_column` shell methods. `writer.vista_factory().from_table(...)` / `from_yaml(...)` surface unchanged.
