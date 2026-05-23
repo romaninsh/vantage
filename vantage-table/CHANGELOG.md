@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.2 — 2026-05-23
+
+The `AnyTable` type-erasing carrier is gone. Type erasure for cross-driver
+work now lives one layer up in [`vantage_vista::Vista`](https://docs.rs/vantage-vista/0.4/vantage_vista/struct.Vista.html) — wrap any
+typed `Table<T, E>` with `T::vista_factory().from_table(...)` to get a
+`Vista` carrying `Record<ciborium::Value>` regardless of the underlying
+driver.
+
+### Removed
+
+- The `vantage_table::any` module — `AnyTable`, `AnyRecord`, `CborAdapter`, and the inline tests are all deleted.
+- `Reference::resolve_as_any` — the AnyTable-returning trait method on `Reference`.
+- `Table::get_ref` — the legacy method returning `AnyTable`. The typed `Table::get_ref_as` and `Table::get_subquery_as` survive; for the row-driven case prefer `Table::get_ref_from_row`.
+- `TableLike::get_ref` — the AnyTable-returning default on the `TableLike` trait. The trait itself stays (it's used independently by `Box<dyn TableLike>` consumers).
+- The commented-out `vantage_table::models_macro` and the `AnyTable`-only `with_pagination` test block.
+- The `ref_example` example — the AnyTable-flavoured demo it covered is folded into `vantage-vista`'s mock-shell + driver factory examples.
+
+### Carried over
+
+- `Table::get_ref_as` and `Table::get_subquery_as` continue to work — their internals route through `Reference::build_target` and return typed `Table<T, E2>`, no `AnyTable` involvement.
+
 ## 0.5.1 — 2026-05-23
 
 - Restored `tests/table_like.rs`. The previous AnyTable-on-`MockTableSource` tests were disabled during the CBOR swap; the file now runs as Vista smoke tests against [`MockShell`](https://docs.rs/vantage-vista/0.4/vantage_vista/mocks/struct.MockShell.html) — six tests covering table-name/column metadata, value round-trip via `ReadableValueSet` / `WritableValueSet` / `InsertableValueSet`, count, and `get_some_value`. These tests survive the AnyTable removal scheduled for the next release.

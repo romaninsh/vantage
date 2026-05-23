@@ -8,7 +8,6 @@ use vantage_expressions::Expression;
 use vantage_types::{EmptyEntity, Entity, Record};
 
 use crate::{
-    any::AnyTable,
     references::{HasMany, HasOne, Reference},
     table::Table,
     traits::{column_like::ColumnLike, table_source::TableSource},
@@ -127,18 +126,21 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         Ok(target_empty.into_entity::<E2>())
     }
 
-    /// Get a same-backend related table with automatic downcasting.
+    /// Traverse a same-backend relation into a typed `Table<T, E2>` with an
+    /// `IN (subquery)` filter on the source column.
     ///
-    /// Legacy AnyTable-flavoured path; slated for deletion in Stage 9 alongside
-    /// `AnyTable`. New code should prefer [`Table::get_ref_from_row`] (typed) or
-    /// `Vista::get_ref` (erased).
+    /// Use this when the parent table already carries the narrowing
+    /// conditions (e.g. `clients.add_condition(is_paying = true)`) and you
+    /// want every related child row matching that filter. For the
+    /// "I have a specific row in hand" case, prefer
+    /// [`Table::get_ref_from_row`] — it pushes a plain eq-condition
+    /// instead of a subquery.
     pub fn get_ref_as<E2: Entity<T::Value> + 'static>(
         &self,
         relation: &str,
     ) -> Result<Table<T, E2>> {
         let (reference, relation_str) = self.lookup_ref(relation)?;
 
-        // 1. Build target
         let source_id = self
             .id_field()
             .map(|c| c.name().to_string())
@@ -154,7 +156,6 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
                 )
             })?;
 
-        // 2. Get columns
         let target_id = target
             .id_field()
             .map(|c| c.name().to_string())
@@ -162,7 +163,6 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
 
         let (src_col, tgt_col) = reference.columns(&source_id, &target_id);
 
-        // 3. Build and apply condition
         let condition = self
             .data_source()
             .related_in_condition(&tgt_col, self, &src_col);
@@ -171,26 +171,18 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         Ok(target)
     }
 
-    /// Get a related table as AnyTable.
-    ///
-    /// Legacy AnyTable-flavoured path; slated for deletion in Stage 9.
-    pub fn get_ref(&self, relation: &str) -> Result<AnyTable> {
-        let (reference, _) = self.lookup_ref(relation)?;
-        reference.resolve_as_any(self as &dyn std::any::Any)
-    }
-
     /// Get a correlated related table for use inside SELECT expressions.
     ///
-    /// Unlike `get_ref_as` (which uses `IN (subquery)`), this produces a
+    /// Unlike [`Self::get_ref_as`] (which uses `IN (subquery)`), this produces a
     /// correlated condition like `order.client_id = client.id`, suitable
-    /// for embedding as a subquery in a SELECT clause.
+    /// for embedding as a subquery in a SELECT clause via
+    /// [`Self::with_expression`].
     pub fn get_subquery_as<E2: Entity<T::Value> + 'static>(
         &self,
         relation: &str,
     ) -> Result<Table<T, E2>> {
         let (reference, relation_str) = self.lookup_ref(relation)?;
 
-        // 1. Build target
         let source_id = self
             .id_field()
             .map(|c| c.name().to_string())
@@ -206,7 +198,6 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
                 )
             })?;
 
-        // 2. Get columns
         let target_id = target
             .id_field()
             .map(|c| c.name().to_string())
@@ -214,7 +205,6 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
 
         let (src_col, tgt_col) = reference.columns(&source_id, &target_id);
 
-        // 3. Build correlated condition: target_table.tgt_col = source_table.src_col
         let condition = self.data_source().related_correlated_condition(
             target.table_name(),
             &tgt_col,
@@ -230,12 +220,6 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
     ///
     /// The closure receives `&Table<T, E>` and returns an `Expression<T::Value>`.
     /// It is evaluated lazily when `select()` builds the query.
-    ///
-    /// ```rust,ignore
-    /// .with_expression("order_count", |t| {
-    ///     t.get_subquery_as::<Order>("orders").unwrap().get_count_query()
-    /// })
-    /// ```
     pub fn with_expression(
         mut self,
         name: &str,

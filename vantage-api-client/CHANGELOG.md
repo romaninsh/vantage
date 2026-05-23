@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.4 — 2026-05-23
+
+- Doc comment touch-ups tracking [vantage-table 0.5.2](https://docs.rs/vantage-table/0.5.2/vantage_table/)'s `AnyTable` removal. No code change.
+
+## 0.5.3 — 2026-05-23
+
+- Dep-pin bump on `vantage-dataset` to 0.5; tracks the `ImTable` / `ImDataSource` parametrization. No public API change.
+
 ## 0.5.2 — 2026-05-23
 
 - GraphQL Vista shell rewritten on a typed `Table<GraphqlApi, EmptyEntity>` — `AnyTable` is gone from the GraphQL path. `GraphqlApiTableShell` converts `AnyGraphqlType` ↔ [`CborValue`](https://docs.rs/ciborium/latest/ciborium/value/enum.Value.html) at the Vista boundary via the symmetric `From` impls; the typed table keeps the native value flow for filters and reference traversal.

@@ -132,45 +132,4 @@ mod tests {
         assert_eq!(p.get_ipp(), 50);
         assert_eq!(p.skip(), 0);
     }
-
-    // #[test]
-    // fn test_with_table() {
-    //     use crate::{Table, TableLike, any::AnyTable, mocks::MockTableSource};
-
-    //     let ds = MockTableSource::new();
-    //     let table = Table::new("users", ds);
-    //     let mut any_table = AnyTable::new(table);
-
-    //     // Set pagination using callback
-    //     // Note: set_ipp before set_page to avoid page recalculation
-    //     any_table.with_pagination(|p| {
-    //         p.set_ipp(25);
-    //         p.set_page(3);
-    //     });
-
-    //     let pagination = any_table.get_pagination().unwrap();
-    //     assert_eq!(pagination.get_page(), 3);
-    //     assert_eq!(pagination.get_ipp(), 25);
-    //     assert_eq!(pagination.skip(), 50);
-    //     assert_eq!(pagination.limit(), 25);
-    // }
-
-    //     #[test]
-    //     fn test_table_pagination_direct_set() {
-    //         use crate::{Table, TableLike, mocks::MockTableSource};
-
-    //         let ds = MockTableSource::new();
-    //         let mut table = Table::new("products", ds);
-
-    //         // Set pagination directly via TableLike trait
-    //         table.set_pagination(Some(Pagination::new(2, 10)));
-
-    //         let pagination = table.get_pagination().unwrap();
-    //         assert_eq!(pagination.get_page(), 2);
-    //         assert_eq!(pagination.get_ipp(), 10);
-
-    //         // Remove pagination
-    //         table.set_pagination(None);
-    //         assert!(table.get_pagination().is_none());
-    //     }
 }

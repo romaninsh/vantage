@@ -4511,7 +4511,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vantage-api-client"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4737,7 +4737,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-mongodb"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "async-trait",
  "bson",
@@ -4783,7 +4783,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4838,7 +4838,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -4862,7 +4862,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "ciborium",
  "csv",
@@ -4888,7 +4888,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.4.11"
+version = "0.4.12"
 dependencies = [
  "async-stream",
  "async-trait",

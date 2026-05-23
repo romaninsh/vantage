@@ -178,6 +178,7 @@ dependencies = [
  "serde_json",
  "surreal-client",
  "tokio",
+ "vantage-aws",
  "vantage-core",
  "vantage-csv",
  "vantage-dataset",
@@ -187,6 +188,7 @@ dependencies = [
  "vantage-surrealdb",
  "vantage-table",
  "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]
@@ -813,7 +815,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "vantage-dataset",
- "vantage-table",
+ "vantage-vista",
 ]
 
 [[package]]
@@ -1271,6 +1273,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower-service",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -1594,6 +1597,12 @@ name = "log"
 version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
+
+[[package]]
+name = "lru-slab"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "macro_magic"
@@ -2212,6 +2221,70 @@ dependencies = [
 ]
 
 [[package]]
+name = "quick-xml"
+version = "0.36.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7649a7b4df05aed9ea7ec6f628c67c9953a43869b8bc50929569b2999d443fe"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
+name = "quinn"
+version = "0.11.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9e20a958963c291dc322d98411f541009df2ced7b5a4f2bd52337638cfccf20"
+dependencies = [
+ "bytes",
+ "cfg_aliases",
+ "pin-project-lite",
+ "quinn-proto",
+ "quinn-udp",
+ "rustc-hash",
+ "rustls",
+ "socket2",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "web-time",
+]
+
+[[package]]
+name = "quinn-proto"
+version = "0.11.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "434b42fec591c96ef50e21e886936e66d3cc3f737104fdb9b737c40ffb94c098"
+dependencies = [
+ "bytes",
+ "getrandom 0.3.4",
+ "lru-slab",
+ "rand 0.9.4",
+ "ring",
+ "rustc-hash",
+ "rustls",
+ "rustls-pki-types",
+ "slab",
+ "thiserror 2.0.18",
+ "tinyvec",
+ "tracing",
+ "web-time",
+]
+
+[[package]]
+name = "quinn-udp"
+version = "0.5.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "addec6a0dcad8a8d96a771f815f0eaf55f9d1805756410b39f5fa81332574cbd"
+dependencies = [
+ "cfg_aliases",
+ "libc",
+ "once_cell",
+ "socket2",
+ "tracing",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2348,6 +2421,8 @@ dependencies = [
  "native-tls",
  "percent-encoding",
  "pin-project-lite",
+ "quinn",
+ "rustls",
  "rustls-pki-types",
  "serde",
  "serde_json",
@@ -2355,6 +2430,7 @@ dependencies = [
  "sync_wrapper",
  "tokio",
  "tokio-native-tls",
+ "tokio-rustls",
  "tower",
  "tower-http",
  "tower-service",
@@ -2362,6 +2438,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -2435,9 +2512,9 @@ dependencies = [
 
 [[package]]
 name = "rust_decimal"
-version = "1.41.0"
+version = "1.42.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ce901f9a19d251159075a4c37af514c3b8ef99c22e02dd8c19161cf397ee94a"
+checksum = "0c5108e3d4d903e21aac27f12ba5377b6b34f9f44b325e4894c7924169d06995"
 dependencies = [
  "arrayvec",
  "borsh",
@@ -2460,6 +2537,12 @@ dependencies = [
  "quote",
  "syn 2.0.117",
 ]
+
+[[package]]
+name = "rustc-hash"
+version = "2.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94300abf3f1ae2e2b8ffb7b58043de3d399c73fa6f4b73826402a5c457614dbe"
 
 [[package]]
 name = "rustc_version"
@@ -2514,6 +2597,7 @@ version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be040f8b0a225e40375822a563fa9524378b9d63112f53e19ffff34df5d33fdd"
 dependencies = [
+ "web-time",
  "zeroize",
 ]
 
@@ -2687,6 +2771,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "serde_yaml_ng"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b4db627b98b36d4203a7b458cf3573730f2bb591b28871d916dfa9efabfd41f"
+dependencies = [
+ "indexmap",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
 ]
 
 [[package]]
@@ -3017,9 +3114,10 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "surreal-client"
-version = "0.4.0"
+version = "0.4.3"
 dependencies = [
  "async-trait",
+ "base64",
  "bincode",
  "chrono",
  "ciborium",
@@ -3035,6 +3133,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-tungstenite",
+ "tracing",
  "url",
  "uuid",
  "vantage-core",
@@ -3254,9 +3353,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.52.1"
+version = "1.52.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b67dee974fe86fd92cc45b7a95fdd2f99a36a6d7b0d431a231178d3d670bbcc6"
+checksum = "8fc7f01b389ac15039e4dc9531aa973a135d7a4135281b12d7c1bc79fd57fffe"
 dependencies = [
  "bytes",
  "libc",
@@ -3533,6 +3632,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 
 [[package]]
+name = "unsafe-libyaml"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
+
+[[package]]
 name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3581,35 +3686,64 @@ dependencies = [
 ]
 
 [[package]]
+name = "vantage-aws"
+version = "0.5.2"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "ciborium",
+ "hex",
+ "hmac",
+ "indexmap",
+ "paste",
+ "quick-xml",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "vantage-core",
+ "vantage-dataset",
+ "vantage-expressions",
+ "vantage-table",
+ "vantage-types",
+ "vantage-vista",
+]
+
+[[package]]
 name = "vantage-core"
-version = "0.4.0"
+version = "0.4.2"
 dependencies = [
  "atty",
  "indexmap",
  "owo-colors",
  "serde",
  "thiserror 1.0.69",
+ "tracing",
 ]
 
 [[package]]
 name = "vantage-csv"
-version = "0.4.1"
+version = "0.5.1"
 dependencies = [
  "async-trait",
+ "ciborium",
  "csv",
  "indexmap",
  "paste",
+ "serde",
  "serde_json",
  "vantage-core",
  "vantage-dataset",
  "vantage-expressions",
  "vantage-table",
  "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]
 name = "vantage-dataset"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -3628,7 +3762,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-expressions"
-version = "0.4.2"
+version = "0.4.5"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3637,14 +3771,16 @@ dependencies = [
  "thiserror 2.0.18",
  "vantage-core",
  "vantage-dataset",
+ "vantage-vista",
 ]
 
 [[package]]
 name = "vantage-mongodb"
-version = "0.4.1"
+version = "0.5.1"
 dependencies = [
  "async-trait",
  "bson",
+ "ciborium",
  "futures-util",
  "indexmap",
  "mongodb",
@@ -3657,11 +3793,12 @@ dependencies = [
  "vantage-expressions",
  "vantage-table",
  "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]
 name = "vantage-sql"
-version = "0.4.1"
+version = "0.5.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3680,11 +3817,12 @@ dependencies = [
  "vantage-expressions",
  "vantage-table",
  "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.4.1"
+version = "0.5.1"
 dependencies = [
  "async-trait",
  "base64",
@@ -3707,14 +3845,16 @@ dependencies = [
  "vantage-expressions",
  "vantage-table",
  "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]
 name = "vantage-table"
-version = "0.4.1"
+version = "0.5.1"
 dependencies = [
  "async-stream",
  "async-trait",
+ "ciborium",
  "futures-core",
  "indexmap",
  "mockall",
@@ -3727,12 +3867,14 @@ dependencies = [
  "vantage-dataset",
  "vantage-expressions",
  "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]
 name = "vantage-types"
-version = "0.4.0"
+version = "0.4.3"
 dependencies = [
+ "ciborium",
  "indexmap",
  "paste",
  "serde",
@@ -3748,6 +3890,23 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "vantage-vista"
+version = "0.4.11"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "ciborium",
+ "futures-core",
+ "indexmap",
+ "serde",
+ "serde_yaml_ng",
+ "thiserror 2.0.18",
+ "vantage-core",
+ "vantage-dataset",
+ "vantage-types",
 ]
 
 [[package]]
@@ -3896,6 +4055,16 @@ name = "web-sys"
 version = "0.3.95"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4f2dfbb17949fa2088e5d39408c48368947b86f7834484e87b73de55bc14d97d"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "web-time"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
 dependencies = [
  "js-sys",
  "wasm-bindgen",

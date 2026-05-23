@@ -4,7 +4,9 @@
 //!
 //! This crate provides definition for Columns, TableSource - necessary trait for Database SDKs to implement.
 //!
-//! Additionally this crate implements generic Table struct and AnyTable type-erasing wrapper.
+//! Type erasure for cross-driver work lives one layer up in [`vantage-vista`](https://docs.rs/vantage-vista):
+//! wrap any typed `Table<T, E>` with `T::vista_factory().from_table(...)` to get a `Vista`
+//! that talks `Record<ciborium::Value>` regardless of the underlying driver.
 //!
 //! ## Example
 //!
@@ -42,14 +44,6 @@ pub mod prelude;
 pub mod references;
 pub mod sorting;
 
-pub mod any;
-
 pub mod column;
 pub mod source;
 pub mod table;
-
-// TODO: Re-enable when 0.3 migration is complete
-// pub mod models_macro;
-// pub mod record;
-// pub mod references;
-// pub mod with_columns;

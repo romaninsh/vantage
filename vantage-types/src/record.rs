@@ -266,11 +266,11 @@ where
 }
 
 // Blanket impls bridging serde-derived entity structs to ciborium::Value.
-// `AnyTable` carries `Record<ciborium::Value>` across the type-erased
-// boundary, so any entity that wants to be wrapped via `AnyTable::new`
-// (i.e. without going through the `CborAdapter` conversion path) needs
-// `Entity<ciborium::Value>`. These impls auto-supply that for any
-// Serialize/DeserializeOwned struct, mirroring the JSON impls above.
+// `vantage_vista::Vista` carries `Record<ciborium::Value>` across the
+// type-erased boundary, so any entity wrapped through a driver's
+// `vista_factory().from_table(...)` needs `Entity<ciborium::Value>`.
+// These impls auto-supply that for any Serialize/DeserializeOwned
+// struct, mirroring the JSON impls above.
 #[cfg(feature = "serde")]
 impl<T> IntoRecord<ciborium::Value> for T
 where

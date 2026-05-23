@@ -12,8 +12,9 @@
 //! additional properties.
 //!
 //!
-//! Additionally this crate defines TableLike trait and AnyTable, that
-//! proides type-erased version of TableLike.
+//! Additionally this crate defines the [`TableLike`](crate::traits::table_like::TableLike)
+//! trait — a dyn-safe interface for table-shaped backends. Type erasure for
+//! cross-driver work lives at the Vista layer in `vantage-vista`.
 //! A table abstraction defined over a datasource and entity
 
 pub mod base;
