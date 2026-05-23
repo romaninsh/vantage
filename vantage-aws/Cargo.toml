@@ -10,12 +10,17 @@ homepage = "https://romaninsh.github.io/vantage"
 repository = "https://github.com/romaninsh/vantage"
 readme = "README.md"
 
+[features]
+default = []
+vista = ["dep:vantage-vista"]
+
 [dependencies]
 vantage-core = { version = "0.4", path = "../vantage-core" }
 vantage-types = { version = "0.4", path = "../vantage-types", features = ["serde"] }
 vantage-expressions = { version = "0.4", path = "../vantage-expressions" }
 vantage-table = { version = "0.4.10", path = "../vantage-table" }
 vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
+vantage-vista = { version = "0.4", path = "../vantage-vista", optional = true }
 
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
@@ -42,6 +47,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "serd
 [dev-dependencies]
 vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
 vantage-cli-util = { version = "0.4.1", path = "../vantage-cli-util" }
+vantage-vista = { version = "0.4", path = "../vantage-vista" }
 
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }
@@ -50,6 +56,7 @@ clap = { version = "4", features = ["derive"] }
 [[example]]
 name = "aws-cli"
 path = "examples/aws-cli.rs"
+required-features = ["vista"]
 
 [[example]]
 name = "aws-dynamo"

@@ -47,10 +47,11 @@ pub struct Function {
 ///   - `versions` → `ListVersionsByFunction` for this function
 ///
 /// Cross-service traversal to CloudWatch Logs is available via the
-/// inherent [`Function::ref_log_group`] helper; the typed `with_foreign`
-/// machinery it previously used was removed in the Vista get_ref rollout,
-/// and `log_group` will reappear as a [`vantage_vista::Vista::with_foreign`]
-/// registration once AWS gains a Vista factory.
+/// inherent [`Function::ref_log_group`] helper. The typed `with_foreign`
+/// machinery it previously used was removed in the Vista `get_ref`
+/// rollout; wiring it as a cross-service Vista reference (via
+/// `add_raw_condition` on the AWS shell) is deferred — for now,
+/// reach the function's log group through the inherent helper.
 ///
 /// ```no_run
 /// # use vantage_aws::AwsAccount;

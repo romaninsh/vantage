@@ -1511,9 +1511,9 @@ dependencies = [
 
 [[package]]
 name = "rust_decimal"
-version = "1.41.0"
+version = "1.42.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ce901f9a19d251159075a4c37af514c3b8ef99c22e02dd8c19161cf397ee94a"
+checksum = "0c5108e3d4d903e21aac27f12ba5377b6b34f9f44b325e4894c7924169d06995"
 dependencies = [
  "arrayvec",
  "borsh",
@@ -2111,7 +2111,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.4.7"
+version = "0.4.9"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2134,26 +2134,29 @@ dependencies = [
  "vantage-expressions",
  "vantage-table",
  "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]
 name = "vantage-cli-util"
-version = "0.4.1"
+version = "0.4.6"
 dependencies = [
  "async-trait",
  "ciborium",
  "comfy-table",
  "indexmap",
  "owo-colors",
+ "serde_json",
  "vantage-core",
  "vantage-dataset",
  "vantage-table",
  "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]
 name = "vantage-core"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "atty",
  "indexmap",
@@ -2165,7 +2168,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2184,7 +2187,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-expressions"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "async-trait",
  "serde",
@@ -2197,7 +2200,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.4.8"
+version = "0.4.12"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2214,11 +2217,12 @@ dependencies = [
  "vantage-dataset",
  "vantage-expressions",
  "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]
 name = "vantage-types"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "ciborium",
  "indexmap",
@@ -2240,7 +2244,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.4.4"
+version = "0.4.10"
 dependencies = [
  "async-stream",
  "async-trait",
