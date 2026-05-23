@@ -1,13 +1,15 @@
 use bakery_model3::{connect_surrealdb, surrealdb, Client};
 use dataset_ui_adapters::{cursive_adapter::CursiveTableApp, TableStore, VantageTableAdapter};
-use vantage_table::any::AnyTable;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     connect_surrealdb().await?;
 
-    let client_table = AnyTable::from_table(Client::surreal_table(surrealdb()));
-    let dataset = VantageTableAdapter::new(client_table).await;
+    let db = surrealdb();
+    let vista = db
+        .vista_factory()
+        .from_table(Client::surreal_table(db.clone()))?;
+    let dataset = VantageTableAdapter::new(vista).await;
     let store = TableStore::new(dataset);
     let app = CursiveTableApp::new(store)
         .await

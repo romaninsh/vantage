@@ -1,6 +1,6 @@
 [package]
 name = "dataset-ui-adapters"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 
 [dependencies]
@@ -12,6 +12,10 @@ thiserror = "2.0"
 async-trait = "0.1"
 vantage-table = { path = "../vantage-table" }
 vantage-dataset = { path = "../vantage-dataset" }
+vantage-types = { path = "../vantage-types" }
+vantage-vista = { path = "../vantage-vista" }
+ciborium = "0.2"
+indexmap = "2"
 
 # Framework-specific dependencies (all optional)
 egui = { version = "0.33", optional = true }

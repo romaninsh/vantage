@@ -1,7 +1,6 @@
 use bakery_model3::{connect_surrealdb, surrealdb, Client};
 use dataset_ui_adapters::{egui_adapter::EguiTable, TableStore, VantageTableAdapter};
 use eframe::egui;
-use vantage_table::any::AnyTable;
 
 struct TableApp {
     table: EguiTable<VantageTableAdapter>,
@@ -10,8 +9,11 @@ struct TableApp {
 impl TableApp {
     async fn new() -> Result<Self, Box<dyn std::error::Error>> {
         connect_surrealdb().await?;
-        let client_table = AnyTable::from_table(Client::surreal_table(surrealdb()));
-        let dataset = VantageTableAdapter::new(client_table).await;
+        let db = surrealdb();
+        let vista = db
+            .vista_factory()
+            .from_table(Client::surreal_table(db.clone()))?;
+        let dataset = VantageTableAdapter::new(vista).await;
         let store = TableStore::new(dataset);
         let table = EguiTable::new(store).await;
         Ok(Self { table })

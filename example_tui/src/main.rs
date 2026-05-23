@@ -9,8 +9,6 @@ use ratatui::{
     widgets::{Block, BorderType, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
     DefaultTerminal, Frame,
 };
-use vantage_table::any::AnyTable;
-
 const INFO_TEXT: [&str; 2] = [
     "(Esc) quit | (↑) move up | (↓) move down",
     "Bakery Model 3 - Ratatui Client List",
@@ -126,9 +124,13 @@ async fn main() -> Result<()> {
     connect_surrealdb()
         .await
         .expect("Failed to connect to SurrealDB");
-    let client_table = AnyTable::from_table(Client::surreal_table(surrealdb()));
+    let db = surrealdb();
+    let vista = db
+        .vista_factory()
+        .from_table(Client::surreal_table(db.clone()))
+        .expect("Failed to build Vista");
 
-    let dataset = VantageTableAdapter::new(client_table).await;
+    let dataset = VantageTableAdapter::new(vista).await;
     let store = TableStore::new(dataset);
 
     println!("Starting Bakery Model 3 — Ratatui Client List (SurrealDB)");

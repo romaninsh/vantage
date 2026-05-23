@@ -4562,7 +4562,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4582,11 +4582,12 @@ dependencies = [
  "vantage-expressions",
  "vantage-table",
  "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]
 name = "vantage-cli-util"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "async-trait",
  "ciborium",

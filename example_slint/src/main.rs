@@ -3,7 +3,6 @@ use std::rc::Rc;
 use bakery_model3::{connect_surrealdb, surrealdb, Client};
 use dataset_ui_adapters::{slint_adapter::SlintTable, TableStore, VantageTableAdapter};
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
-use vantage_table::any::AnyTable;
 
 slint::include_modules!();
 
@@ -13,8 +12,12 @@ async fn main() -> Result<(), slint::PlatformError> {
         .await
         .expect("Failed to connect to SurrealDB");
 
-    let client_table = AnyTable::from_table(Client::surreal_table(surrealdb()));
-    let dataset = VantageTableAdapter::new(client_table).await;
+    let db = surrealdb();
+    let vista = db
+        .vista_factory()
+        .from_table(Client::surreal_table(db.clone()))
+        .expect("Failed to build Vista");
+    let dataset = VantageTableAdapter::new(vista).await;
     let store = TableStore::new(dataset);
     let table = SlintTable::new(store).await;
     let window = MainWindow::new()?;
