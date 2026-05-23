@@ -1,6 +1,5 @@
-//! `RestApiTableShell` — owns the typed `Table<RestApi, E>` behind a
-//! `dyn TableLike` so the original entity type stays attached for
-//! reference traversal.
+//! `RestApiTableShell` — owns the typed `Table<RestApi, EmptyEntity>`
+//! and exposes it through the `TableShell` boundary.
 //!
 //! `RestApi` already speaks `ciborium::Value` natively (the HTTP body
 //! is converted at the fetch boundary), so the shell is a pass-through
@@ -17,15 +16,17 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
+use vantage_dataset::traits::ReadableValueSet;
+use vantage_table::table::Table;
 use vantage_table::traits::table_like::TableLike;
-use vantage_types::Record;
+use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
     Column as VistaColumn, Reference as VistaReference, TableShell, Vista, VistaCapabilities,
     VistaMetadata,
 };
 
-use super::any_shell::AnyTableShell;
-use super::factory::ModelResolver;
+use super::factory::{ModelResolver, RestApiVistaFactory};
+use crate::RestApi;
 
 /// A single YAML-declared reference attached to a parent shell at
 /// build time. Carries the foreign-key wiring; the URL form is
@@ -45,7 +46,7 @@ pub(crate) enum YamlReferenceKind {
 }
 
 pub struct RestApiTableShell {
-    pub(crate) table: Box<dyn TableLike<Value = CborValue, Id = String>>,
+    pub(crate) table: Table<RestApi, EmptyEntity>,
     pub(crate) capabilities: VistaCapabilities,
     pub(crate) metadata: VistaMetadata,
     pub(crate) yaml_refs: IndexMap<String, YamlReference>,
@@ -54,7 +55,7 @@ pub struct RestApiTableShell {
 
 impl RestApiTableShell {
     pub(crate) fn new(
-        table: Box<dyn TableLike<Value = CborValue, Id = String>>,
+        table: Table<RestApi, EmptyEntity>,
         capabilities: VistaCapabilities,
         metadata: VistaMetadata,
     ) -> Self {
@@ -121,15 +122,9 @@ impl TableShell for RestApiTableShell {
     }
 
     fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
-        // Build a typed `Expression<CborValue>` and hand it through
-        // the type-erased `add_condition` API — `Table::add_condition`
-        // downcasts it back to `RestApi::Condition` on the other side.
         let condition = crate::eq_condition(field, value.clone());
-        self.table.add_condition(Box::new(condition))
-    }
-
-    fn add_raw_condition(&mut self, condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()> {
-        self.table.add_condition(condition)
+        self.table.add_condition(condition);
+        Ok(())
     }
 
     fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
@@ -155,12 +150,16 @@ impl TableShell for RestApiTableShell {
             // accordingly.
             let (source_column, target_field) = match yref.kind {
                 YamlReferenceKind::HasMany => {
-                    let parent_id = self.table.id_field_name().ok_or_else(|| {
-                        error!(
-                            "YAML has_many reference needs the parent to have an id field",
-                            relation = relation
-                        )
-                    })?;
+                    let parent_id = self
+                        .table
+                        .id_field()
+                        .map(|c| c.name().to_string())
+                        .ok_or_else(|| {
+                            error!(
+                                "YAML has_many reference needs the parent to have an id field",
+                                relation = relation
+                            )
+                        })?;
                     (parent_id, yref.foreign_key.clone())
                 }
                 YamlReferenceKind::HasOne => {
@@ -185,12 +184,13 @@ impl TableShell for RestApiTableShell {
             return Ok(child);
         }
 
-        // Fall through to the typed `Table` reference machinery for
-        // hand-coded `with_many` / `with_one` registrations. This still
-        // routes through AnyTable in this transition; cleaned up alongside
-        // the REST shell refactor that ships in Stage 9.
-        let any_table = self.table.get_ref(relation)?;
-        AnyTableShell::into_vista(any_table)
+        // Hand-coded `with_many` / `with_one` registrations on the typed
+        // table: resolve the target table from `row` directly, then wrap
+        // it back into a Vista via a fresh factory bound to the same
+        // data source.
+        let target = self.table.get_ref_from_row::<EmptyEntity>(relation, row)?;
+        let factory = RestApiVistaFactory::new(self.table.data_source().clone());
+        factory.from_table(target)
     }
 
     fn capabilities(&self) -> &VistaCapabilities {

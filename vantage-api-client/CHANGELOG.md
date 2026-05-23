@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1 — 2026-05-23
+
+- REST Vista shell no longer routes typed `Table::with_many` / `with_one` references through `AnyTable`. `RestApiTableShell` now carries a typed `Table<RestApi, EmptyEntity>` and `TableShell::get_ref` resolves children via [`Table::get_ref_from_row`](https://docs.rs/vantage-table/0.5.0/vantage_table/table/struct.Table.html#method.get_ref_from_row) + a fresh `RestApiVistaFactory::from_table` wrap — mirroring the pattern used by the MongoDB, SQL, and SurrealDB drivers.
+- [`RestApi::eq_value_condition`](https://docs.rs/vantage-table/0.5.0/vantage_table/traits/table_source/trait.TableSource.html#method.eq_value_condition) implemented so `Reference::resolve_from_row` can push a row-derived `CborValue` join key onto a child REST table without a string round-trip.
+- `AnyTableShell` is no longer re-exported from `vantage_api_client::rest` (or the crate root / `prelude`). The legacy adapter survives as a `pub(crate)` helper under `graphql::vista` only as long as the GraphQL shell still wraps `AnyTable`; the matching GraphQL rewrite ships in the next release.
+- `tests/any_table.rs` drops the REST half — REST no longer participates in the `AnyTable::from_table` blanket bridge from the Vista layer. The GraphQL half stays until the GraphQL shell is rewritten.
+
 ## 0.5.0 — 2026-05-23
 
 - Bumped to the 0.5 line to track [vantage-table 0.5.0](https://docs.rs/vantage-table/0.5.0/vantage_table/)'s opening of the `AnyTable` decommission cycle, aligning with the rest of the workspace. No code changes beyond the dependency pin.

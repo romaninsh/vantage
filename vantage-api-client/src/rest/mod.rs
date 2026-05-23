@@ -17,6 +17,6 @@ pub use api::{PaginationParams, ResponseShape, RestApi, RestApiBuilder};
 pub(crate) use operation::condition_to_query_param;
 pub use operation::eq_condition;
 pub use vista::{
-    AnyTableShell, ApiColumnExtras, ApiReferenceExtras, ApiTableBlock, ApiTableExtras,
-    ModelResolver, NoApiExtras, RestApiTableShell, RestApiVistaFactory, RestApiVistaSpec,
+    ApiColumnExtras, ApiReferenceExtras, ApiTableBlock, ApiTableExtras, ModelResolver, NoApiExtras,
+    RestApiTableShell, RestApiVistaFactory, RestApiVistaSpec,
 };

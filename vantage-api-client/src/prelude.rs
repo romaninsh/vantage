@@ -13,6 +13,6 @@ pub use crate::graphql::{
     RenderedQuery,
 };
 pub use crate::rest::{
-    AnyTableShell, NoApiExtras, PaginationParams, ResponseShape, RestApi, RestApiBuilder,
-    RestApiTableShell, RestApiVistaFactory, RestApiVistaSpec, eq_condition,
+    NoApiExtras, PaginationParams, ResponseShape, RestApi, RestApiBuilder, RestApiTableShell,
+    RestApiVistaFactory, RestApiVistaSpec, eq_condition,
 };

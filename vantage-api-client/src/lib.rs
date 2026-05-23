@@ -25,7 +25,7 @@ pub use graphql::{
 };
 pub(crate) use rest::condition_to_query_param;
 pub use rest::{
-    AnyTableShell, ApiColumnExtras, ApiReferenceExtras, ApiTableBlock, ApiTableExtras,
-    ModelResolver, NoApiExtras, PaginationParams, ResponseShape, RestApi, RestApiBuilder,
-    RestApiTableShell, RestApiVistaFactory, RestApiVistaSpec, eq_condition,
+    ApiColumnExtras, ApiReferenceExtras, ApiTableBlock, ApiTableExtras, ModelResolver, NoApiExtras,
+    PaginationParams, ResponseShape, RestApi, RestApiBuilder, RestApiTableShell,
+    RestApiVistaFactory, RestApiVistaSpec, eq_condition,
 };

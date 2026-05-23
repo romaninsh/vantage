@@ -66,6 +66,13 @@ impl TableSource for RestApi {
         Ok(crate::eq_condition(field, value.to_string()))
     }
 
+    /// Typed-value sibling of `eq_condition`. Used by `Reference::resolve_from_row`
+    /// to push a row-derived join value onto a child table without a
+    /// string round-trip.
+    fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
+        Ok(crate::eq_condition(field, value))
+    }
+
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
         Column::new(name)
     }
