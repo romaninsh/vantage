@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0 — 2026-05-23
+
+- Bumped to the 0.5 line to track [vantage-table 0.5.0](https://docs.rs/vantage-table/0.5.0/vantage_table/)'s opening of the `AnyTable` decommission cycle. No code changes beyond the dependency pin.
+
 ## 0.4.5 — 2026-05-22
 
 - `TableScenery::master_capabilities()` exposes the master Vista's capability flags. Lets UI delegates pick `set_viewport` for random-access masters and `request_load_more` for cursor-only ones.

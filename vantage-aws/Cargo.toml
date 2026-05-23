@@ -1,6 +1,6 @@
 [package]
 name = "vantage-aws"
-version = "0.4.10"
+version = "0.5.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -46,7 +46,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "serd
 
 [dev-dependencies]
 vantage-dataset = { version = "0.4", path = "../vantage-dataset" }
-vantage-cli-util = { version = "0.4.1", path = "../vantage-cli-util" }
+vantage-cli-util = { version = "0.5", path = "../vantage-cli-util" }
 vantage-vista = { version = "0.4", path = "../vantage-vista" }
 
 anyhow = "1"
