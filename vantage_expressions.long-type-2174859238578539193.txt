@@ -1,1 +1,0 @@
-mocks::selectable::MockSelect: traits::expressive::Expressive<serde_json::Value>

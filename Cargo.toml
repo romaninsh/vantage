@@ -7,7 +7,6 @@ members = [
     "vantage-dataset",
     "vantage-table",
     "vantage-csv",
-    "cbor-test",
     "vantage-types", "learn-1", "learn-2", "learn-3",
     "vantage-vista",
     "vantage-diorama",
@@ -23,16 +22,9 @@ members = [
     "docs4",
 ]
 exclude = [
-    "vantage",
     "vantage-aws",
-    "bakery_model",
-    "bakery_api",
     "example_*",
     "vantage-ui-adapters",
     "test-api-server",
-    # vantage-config uses pre-refactor vantage-surrealdb / vantage-table
-    # APIs (SurrealColumn at root, Table/EmptyEntity at the vantage-table
-    # root). Unrelated to vista; needs its own porting pass.
-    "vantage-config",
 ]
 resolver = "2"

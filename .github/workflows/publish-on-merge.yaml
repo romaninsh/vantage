@@ -83,19 +83,19 @@ jobs:
             vantage-types
             vantage-dataset
             vantage-vista
+            surreal-client
             vantage-expressions
             vantage-table
-            vantage-cli-util
+            vantage-csv
+            vantage-surrealdb
+            vantage-sql
+            vantage-mongodb
             vantage-redb
+            vantage-cli-util
+            vantage-api-client
             vantage-api-pool
             vantage-aws
-            vantage-api-client
-            vantage-csv
-            vantage-mongodb
-            vantage-sql
-            vantage-surrealdb
             vantage-log-writer
-            vantage-config
             vantage-diorama
           )
 
