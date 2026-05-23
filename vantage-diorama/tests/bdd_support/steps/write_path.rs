@@ -7,7 +7,9 @@ use cucumber::{gherkin::Step, given, then, when};
 use vantage_dataset::traits::{ReadableValueSet, WritableValueSet};
 use vantage_types::Record;
 
-use crate::bdd_support::{world::DioramaWorld, world::OnWriteMode};
+use crate::bdd_support::{
+    backend::BackendKind, sqlite_runtime::dispatch, world::DioramaWorld, world::OnWriteMode,
+};
 
 /// Parse a gherkin data table whose first row is the header (with an `id`
 /// column) and remaining rows are records. Returns `(id, record)` pairs
@@ -155,8 +157,13 @@ async fn assert_on_write_count(w: &mut DioramaWorld, n: u64) {
 
 #[then(regex = r"^the master has (\d+) rows?$")]
 async fn master_row_count(w: &mut DioramaWorld, n: u64) {
-    let dio = w.dio.as_ref().expect("dio not created");
-    let rows = dio.master().list_values().await.expect("master list");
+    let dio = w.dio.as_ref().expect("dio not created").clone();
+    let rows = if w.backend == BackendKind::Sqlite {
+        dispatch(async move { dio.master().list_values().await }).await
+    } else {
+        dio.master().list_values().await
+    }
+    .expect("master list");
     assert_eq!(
         rows.len() as u64,
         n,
@@ -174,13 +181,15 @@ async fn cache_row_count(w: &mut DioramaWorld, n: u64) {
 
 #[then(regex = r#"^the master record "([^"]+)" has (\w+) "([^"]+)"$"#)]
 async fn master_record_field(w: &mut DioramaWorld, id: String, field: String, expected: String) {
-    let dio = w.dio.as_ref().expect("dio not created");
-    let row = dio
-        .master()
-        .get_value(&id)
-        .await
-        .expect("master get_value")
-        .unwrap_or_else(|| panic!("master has no record {id}"));
+    let dio = w.dio.as_ref().expect("dio not created").clone();
+    let id_for_dispatch = id.clone();
+    let row = if w.backend == BackendKind::Sqlite {
+        dispatch(async move { dio.master().get_value(&id_for_dispatch).await }).await
+    } else {
+        dio.master().get_value(&id_for_dispatch).await
+    }
+    .expect("master get_value")
+    .unwrap_or_else(|| panic!("master has no record {id}"));
     let got = row
         .get(&field)
         .and_then(|v| match v {
@@ -196,8 +205,14 @@ async fn master_record_field(w: &mut DioramaWorld, id: String, field: String, ex
 
 #[then(regex = r#"^the master record "([^"]+)" is absent$"#)]
 async fn master_record_absent(w: &mut DioramaWorld, id: String) {
-    let dio = w.dio.as_ref().expect("dio not created");
-    let row = dio.master().get_value(&id).await.expect("master get_value");
+    let dio = w.dio.as_ref().expect("dio not created").clone();
+    let id_for_dispatch = id.clone();
+    let row = if w.backend == BackendKind::Sqlite {
+        dispatch(async move { dio.master().get_value(&id_for_dispatch).await }).await
+    } else {
+        dio.master().get_value(&id_for_dispatch).await
+    }
+    .expect("master get_value");
     assert!(
         row.is_none(),
         "expected master record {id} to be absent, got {row:?}"

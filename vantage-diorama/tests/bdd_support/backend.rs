@@ -191,77 +191,73 @@ impl MasterRows {
     }
 
     async fn build_sqlite(&self, w: &mut DioramaWorld) -> Result<Vista> {
-        // Provision the pool + DDL + seed data on a dedicated thread with
-        // its own real-time runtime. The main test runtime runs paused
-        // virtual time (needed for refresh scenarios), which would deadlock
-        // sqlx's internal acquire-timeout machinery. Once the DB is set up
-        // and returned here, reads from the Vista's `Table` use the
-        // pool's worker threads — they don't depend on the test runtime's
-        // clock.
+        // Provision the pool + DDL + seed data on the shared sqlite-io
+        // runtime — see `super::sqlite_runtime` for the why. We also pin
+        // the pool to a single connection so every `:memory:` query hits
+        // the same in-memory database (default `SqlitePool` config would
+        // hand out up to 10 separate ones).
         let name = self.name.clone();
         let id_column = self.id_column.clone();
         let columns = self.columns.clone();
         let rows = self.rows.clone();
-        let db = std::thread::spawn(move || -> Result<SqliteDB> {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|e| {
-                    vantage_core::error!("build provisioning runtime", detail = e.to_string())
-                })?;
-            rt.block_on(async move {
-                let db = SqliteDB::connect("sqlite::memory:")
-                    .await
-                    .map_err(|e| vantage_core::error!("sqlite connect", detail = e.to_string()))?;
+        let db = super::sqlite_runtime::dispatch(async move {
+            // `max_connections(1)` keeps every query on the same
+            // `sqlite::memory:` connection — sqlx's default would let the
+            // pool hand out additional connections, each of which is its
+            // own private in-memory database.
+            let pool = sqlx::sqlite::SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect("sqlite::memory:")
+                .await
+                .map_err(|e| vantage_core::error!("sqlite connect", detail = e.to_string()))?;
+            let db = SqliteDB::new(pool);
 
-                let col_defs: Vec<String> = columns
-                    .iter()
-                    .map(|c| {
-                        if c == &id_column {
-                            format!("{c} TEXT PRIMARY KEY")
-                        } else {
-                            format!("{c} TEXT")
-                        }
-                    })
-                    .collect();
-                let create = format!("CREATE TABLE {name} ({})", col_defs.join(", "));
-                sqlx::query(&create)
+            let col_defs: Vec<String> = columns
+                .iter()
+                .map(|c| {
+                    if c == &id_column {
+                        format!("{c} TEXT PRIMARY KEY")
+                    } else {
+                        format!("{c} TEXT")
+                    }
+                })
+                .collect();
+            let create = format!("CREATE TABLE {name} ({})", col_defs.join(", "));
+            sqlx::query(&create)
+                .execute(db.pool())
+                .await
+                .map_err(|e| vantage_core::error!("CREATE TABLE", detail = e.to_string()))?;
+
+            for row in &rows {
+                let mut values: Vec<String> = Vec::with_capacity(columns.len());
+                for col in &columns {
+                    let raw = if col == &id_column {
+                        row.id.clone()
+                    } else {
+                        row.fields
+                            .get(col)
+                            .and_then(|v| match v {
+                                CborValue::Text(s) => Some(s.clone()),
+                                _ => None,
+                            })
+                            .unwrap_or_default()
+                    };
+                    values.push(format!("'{}'", raw.replace('\'', "''")));
+                }
+                let stmt = format!(
+                    "INSERT INTO {name} ({}) VALUES ({})",
+                    columns.join(", "),
+                    values.join(", ")
+                );
+                sqlx::query(&stmt)
                     .execute(db.pool())
                     .await
-                    .map_err(|e| vantage_core::error!("CREATE TABLE", detail = e.to_string()))?;
+                    .map_err(|e| vantage_core::error!("INSERT", detail = e.to_string()))?;
+            }
 
-                for row in &rows {
-                    let mut values: Vec<String> = Vec::with_capacity(columns.len());
-                    for col in &columns {
-                        let raw = if col == &id_column {
-                            row.id.clone()
-                        } else {
-                            row.fields
-                                .get(col)
-                                .and_then(|v| match v {
-                                    CborValue::Text(s) => Some(s.clone()),
-                                    _ => None,
-                                })
-                                .unwrap_or_default()
-                        };
-                        values.push(format!("'{}'", raw.replace('\'', "''")));
-                    }
-                    let stmt = format!(
-                        "INSERT INTO {name} ({}) VALUES ({})",
-                        columns.join(", "),
-                        values.join(", ")
-                    );
-                    sqlx::query(&stmt)
-                        .execute(db.pool())
-                        .await
-                        .map_err(|e| vantage_core::error!("INSERT", detail = e.to_string()))?;
-                }
-
-                Ok(db)
-            })
+            Ok::<_, vantage_core::VantageError>(db)
         })
-        .join()
-        .map_err(|_| vantage_core::error!("sqlite provisioning thread panicked"))??;
+        .await?;
 
         let mut table = Table::<SqliteDB, EmptyEntity>::new(&self.name, db.clone())
             .with_id_column(&self.id_column);
