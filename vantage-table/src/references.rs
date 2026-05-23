@@ -29,9 +29,9 @@ pub trait Reference: Send + Sync {
 
     /// Produce a fresh target table (no conditions applied), wrapped in
     /// `Box<dyn Any>` so callers can downcast back to the concrete
-    /// `Table<T, TargetE>`. Used by [`Table::get_ref_as`] and
-    /// [`Table::get_subquery_as`] to build the target before applying the
-    /// join condition.
+    /// `Table<T, TargetE>`. Used by [`crate::table::Table::get_ref_as`] and
+    /// [`crate::table::Table::get_subquery_as`] to build the target before
+    /// applying the join condition.
     fn build_target(&self, data_source: &dyn Any) -> Box<dyn Any>;
 
     /// Cardinality of this relation. `HasOne` if traversing yields at most

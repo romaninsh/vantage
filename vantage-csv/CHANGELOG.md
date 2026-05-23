@@ -1,12 +1,27 @@
 # Changelog
 
+## 0.5.2 — 2026-05-23
+
+- Align all internal dependency versions to 0.5+. No public API changes.
+
 ## 0.5.0 — 2026-05-23
 
-- Bumped to the 0.5 line to track [vantage-table 0.5.0](https://docs.rs/vantage-table/0.5.0/vantage_table/)'s opening of the `AnyTable` decommission cycle. No code changes beyond the dependency pin.
+- Bumped to the 0.5 line to track
+  [vantage-table 0.5.0](https://docs.rs/vantage-table/0.5.0/vantage_table/)'s opening of the
+  `AnyTable` decommission cycle. No code changes beyond the dependency pin.
 
 ## 0.4.13 — 2026-05-18
 
-- Tracks [vantage-vista 0.4.10](https://docs.rs/vantage-vista/0.4.10/vantage_vista/)'s schema-on-source refactor. `CsvTableShell` now owns its [`VistaMetadata`](https://docs.rs/vantage-vista/0.4.10/vantage_vista/struct.VistaMetadata.html) and implements the new [`columns`](https://docs.rs/vantage-vista/0.4.10/vantage_vista/trait.TableShell.html#tymethod.columns) / [`references`](https://docs.rs/vantage-vista/0.4.10/vantage_vista/trait.TableShell.html#tymethod.references) / [`id_column`](https://docs.rs/vantage-vista/0.4.10/vantage_vista/trait.TableShell.html#tymethod.id_column) shell methods. `csv.vista_factory().from_table(...)` / `from_yaml(...)` surface unchanged.
+- Tracks [vantage-vista 0.4.10](https://docs.rs/vantage-vista/0.4.10/vantage_vista/)'s
+  schema-on-source refactor. `CsvTableShell` now owns its
+  [`VistaMetadata`](https://docs.rs/vantage-vista/0.4.10/vantage_vista/struct.VistaMetadata.html)
+  and implements the new
+  [`columns`](https://docs.rs/vantage-vista/0.4.10/vantage_vista/trait.TableShell.html#tymethod.columns)
+  /
+  [`references`](https://docs.rs/vantage-vista/0.4.10/vantage_vista/trait.TableShell.html#tymethod.references)
+  /
+  [`id_column`](https://docs.rs/vantage-vista/0.4.10/vantage_vista/trait.TableShell.html#tymethod.id_column)
+  shell methods. `csv.vista_factory().from_table(...)` / `from_yaml(...)` surface unchanged.
 - Pins `vantage-vista = "0.4.10"`.
 
 ## 0.4.12 — 2026-05-17

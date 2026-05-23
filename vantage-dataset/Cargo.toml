@@ -1,6 +1,6 @@
 [package]
 name = "vantage-dataset"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Dataset traits for the Vantage data framework"
@@ -21,8 +21,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0.18"
 uuid = { version = "1.23.1", features = ["v4"] }
-vantage-core = { version = "0.4", path = "../vantage-core" }
-vantage-types = { version = "0.4", path = "../vantage-types", features = ["serde"] }
+vantage-core = { version = "0.5", path = "../vantage-core" }
+vantage-types = { version = "0.5", path = "../vantage-types", features = ["serde"] }
 
 [dev-dependencies]
 tokio = { version = "1.52", features = ["full"] }

@@ -272,8 +272,11 @@ impl VantageTableAdapter {
             })
             .collect();
 
-        let records: IndexMap<String, Record<CborValue>> =
-            vista.source.list_vista_values(&vista).await.unwrap_or_default();
+        let records: IndexMap<String, Record<CborValue>> = vista
+            .source
+            .list_vista_values(&vista)
+            .await
+            .unwrap_or_default();
         let cached_data: Vec<TableRow> = records
             .into_values()
             .map(|record| {
