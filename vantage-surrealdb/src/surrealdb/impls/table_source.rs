@@ -27,6 +27,7 @@ fn parse_cbor_row(
     map: Vec<(ciborium::Value, ciborium::Value)>,
     id_field_name: &str,
 ) -> (Option<Thing>, Record<AnySurrealType>) {
+    dbg!(&map);
     let mut fields = IndexMap::new();
     let mut thing: Option<Thing> = None;
 
