@@ -7,15 +7,14 @@
 //! and relations all reach the Vista layer with full fidelity.
 
 use vantage_core::{Result, error};
-use vantage_table::any::AnyTable;
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::column::flags::ColumnFlag;
 use vantage_table::table::Table;
 use vantage_table::traits::column_like::ColumnLike;
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
-    Column as VistaColumn, ColumnSpec, Reference as VistaReference, ReferenceKind, Vista,
-    VistaCapabilities, VistaFactory, VistaMetadata, flags as vista_flags,
+    Column as VistaColumn, ColumnSpec, Reference as VistaReference, Vista, VistaCapabilities,
+    VistaFactory, VistaMetadata, flags as vista_flags,
 };
 
 use crate::graphql::api::GraphqlApi;
@@ -39,15 +38,16 @@ impl GraphqlApiVistaFactory {
 
     /// Wrap a typed `Table<GraphqlApi, E>` as a `Vista`. Column metadata,
     /// id field, title fields, and references are harvested up front;
-    /// the table is then erased through `AnyTable::from_table` so the
-    /// CBOR boundary is handled by the shared `CborAdapter` blanket.
+    /// the table is erased to `Table<GraphqlApi, EmptyEntity>` so the
+    /// shell carries a uniform entity type while still routing
+    /// reference traversal through `Reference::resolve_from_row`.
     pub fn from_table<E>(&self, table: Table<GraphqlApi, E>) -> Result<Vista>
     where
         E: Entity<AnyGraphqlType> + 'static,
     {
         let name = table.table_name().to_string();
         let metadata = metadata_from_table(&table);
-        let any_table = AnyTable::from_table(table);
+        let any_table = table.into_entity::<EmptyEntity>();
 
         let source = GraphqlApiTableShell::new(
             any_table,
@@ -216,16 +216,12 @@ where
             col.flags.push(vista_flags::TITLE.to_string());
         }
     }
-    for relation in table.references() {
-        metadata = metadata.with_reference(VistaReference::new(
-            relation.clone(),
-            // Target / FK metadata is internal to the typed-table reference
-            // closure — surface a placeholder so the universal shape stays
-            // populated, matching REST's posture.
-            "",
-            ReferenceKind::HasMany,
-            "",
-        ));
+    // Cardinality comes from the typed table's reference registry
+    // (`ref_kinds`). Target name + foreign-key field stay placeholders
+    // because the typed-table `Reference` only exposes the build closure,
+    // not the target's name or FK column — same posture as REST.
+    for (relation, kind) in table.ref_kinds() {
+        metadata = metadata.with_reference(VistaReference::new(relation, "", kind, ""));
     }
     metadata
 }
