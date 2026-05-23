@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.10 — 2026-05-23
+
+The AWS backend now plugs into the universal Vista layer — wrap a typed `Table<AwsAccount, E>` with [`AwsAccount::vista_factory().from_table(...)`](https://docs.rs/vantage-aws/0.4.10/vantage_aws/vista/struct.AwsVistaFactory.html#method.from_table) and the resulting [`Vista`](https://docs.rs/vantage-vista/0.4/vantage_vista/struct.Vista.html) carries the same column metadata, id field, title columns, and `with_one` / `with_many` relations as the typed table.
+
+- New `vista` cargo feature on `vantage-aws` (off by default) brings in [`vantage_aws::vista`](https://docs.rs/vantage-aws/0.4.10/vantage_aws/vista/index.html). The driver advertises `can_count` only — AWS is read-only at this stage; writes, ordering, search, and explicit paging all return `ErrorKind::Unsupported`.
+- [`Factory::vista_for_name`](https://docs.rs/vantage-aws/0.4.10/vantage_aws/models/struct.Factory.html#method.vista_for_name) and [`Factory::vista_from_arn`](https://docs.rs/vantage-aws/0.4.10/vantage_aws/models/struct.Factory.html#method.vista_from_arn) mirror the existing `for_name` / `from_arn` dispatch but return `Vista`s instead of `AnyTable`s.
+- `aws-cli` rewires onto [`vantage_cli_util::vista_cli`](https://docs.rs/vantage-cli-util/0.4/vantage_cli_util/vista_cli/index.html). Picks up the full grammar — operator suffixes (`field:lt=…`), sort selectors (`[+name]`), column overrides (`=col1,col2`), search (`?term`), aggregates (`@count`, `@sum:field`), and `--format=json|ndjson|cbor-diag` for non-table output. The example now lives behind the `vista` feature.
+- S3 `301 PermanentRedirect` errors are translated into an actionable hint that names the bucket's actual region and tells you how to re-run — no more raw XML in the terminal.
+- `TableSource::eq_value_condition` lets `Reference::resolve_from_row` push typed `CborValue` join values through without round-tripping via `to_string`, which mattered for relations whose key isn't text (timestamps, numeric ids).
+
 ## 0.4.9 — 2026-05-16
 
 - Lambda's `Function` table drops the `with_foreign("log_group", …)` declaration: the typed-Table `with_foreign` mechanism is removed in `vantage-table 0.4.10` (cross-persistence refs move to the Vista layer). The inherent `Function::ref_log_group(aws)` helper still returns a `Table<AwsAccount, LogGroup>` for direct typed use; the universal-Vista form returns once `vantage-aws` gains a Vista factory.
