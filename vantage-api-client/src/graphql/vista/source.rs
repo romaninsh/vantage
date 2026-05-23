@@ -1,41 +1,39 @@
-//! `GraphqlApiTableShell` — wraps an [`AnyTable`] for the Vista universal
-//! surface.
+//! `GraphqlApiTableShell` — owns the typed `Table<GraphqlApi, EmptyEntity>`
+//! and exposes it through the `TableShell` boundary.
 //!
-//! Why an `AnyTable` instead of the typed `Table<GraphqlApi, E>` like the
-//! REST shell does? GraphQL speaks `AnyGraphqlType` (wrapping
-//! `serde_json::Value`) natively, but Vista's contract is
-//! `TableLike<Value = CborValue, Id = String>`. The `CborAdapter` blanket
-//! inside `AnyTable` provides that bridge for free — we'd otherwise have
-//! to re-implement the conversion path here.
-//!
-//! The shell forwards every Vista call through to the wrapped `AnyTable`;
-//! the only GraphQL-specific bit is the driver name that surfaces in
-//! Vista metadata.
+//! The shell speaks `AnyGraphqlType` internally (matches the underlying
+//! `TableSource::Value`) and converts to/from `CborValue` at the Vista
+//! boundary via the symmetric `From` impls on `AnyGraphqlType`. Vista
+//! sees a uniform CBOR surface; the typed table keeps the native value
+//! flow intact for filters and reference traversal.
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_core::{Result, error};
+use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_table::any::AnyTable;
-use vantage_table::traits::table_like::TableLike;
-use vantage_types::Record;
+use vantage_table::column::core::Column;
+use vantage_table::table::Table;
+use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Column as VistaColumn, Reference as VistaReference, TableShell, Vista, VistaCapabilities,
-    VistaMetadata,
+    Column as VistaColumn, Reference as VistaReference, ReferenceKind, TableShell, Vista,
+    VistaCapabilities, VistaMetadata,
 };
 
-use super::any_shell::AnyTableShell;
+use crate::graphql::api::GraphqlApi;
+use crate::graphql::operation::GraphqlOperation;
+use crate::graphql::types::AnyGraphqlType;
+use crate::graphql::vista::factory::GraphqlApiVistaFactory;
 
 pub struct GraphqlApiTableShell {
-    pub(crate) table: AnyTable,
+    pub(crate) table: Table<GraphqlApi, EmptyEntity>,
     pub(crate) capabilities: VistaCapabilities,
     pub(crate) metadata: VistaMetadata,
 }
 
 impl GraphqlApiTableShell {
     pub(crate) fn new(
-        table: AnyTable,
+        table: Table<GraphqlApi, EmptyEntity>,
         capabilities: VistaCapabilities,
         metadata: VistaMetadata,
     ) -> Self {
@@ -44,6 +42,19 @@ impl GraphqlApiTableShell {
             capabilities,
             metadata,
         }
+    }
+
+    fn record_to_cbor(record: Record<AnyGraphqlType>) -> Record<CborValue> {
+        record
+            .into_iter()
+            .map(|(k, v)| (k, CborValue::from(v)))
+            .collect()
+    }
+
+    fn row_to_native(row: &Record<CborValue>) -> Record<AnyGraphqlType> {
+        row.iter()
+            .map(|(k, v)| (k.clone(), AnyGraphqlType::from(v.clone())))
+            .collect()
     }
 }
 
@@ -65,7 +76,11 @@ impl TableShell for GraphqlApiTableShell {
         &self,
         _vista: &Vista,
     ) -> Result<IndexMap<String, Record<CborValue>>> {
-        self.table.list_values().await
+        let raw = self.table.list_values().await?;
+        Ok(raw
+            .into_iter()
+            .map(|(id, rec)| (id, Self::record_to_cbor(rec)))
+            .collect())
     }
 
     async fn get_vista_value(
@@ -73,14 +88,20 @@ impl TableShell for GraphqlApiTableShell {
         _vista: &Vista,
         id: &String,
     ) -> Result<Option<Record<CborValue>>> {
-        self.table.get_value(id).await
+        let Some(rec) = self.table.get_value(id).await? else {
+            return Ok(None);
+        };
+        Ok(Some(Self::record_to_cbor(rec)))
     }
 
     async fn get_vista_some_value(
         &self,
         _vista: &Vista,
     ) -> Result<Option<(String, Record<CborValue>)>> {
-        self.table.get_some_value().await
+        let Some((id, rec)) = self.table.get_some_value().await? else {
+            return Ok(None);
+        };
+        Ok(Some((id, Self::record_to_cbor(rec))))
     }
 
     async fn get_vista_count(&self, _vista: &Vista) -> Result<i64> {
@@ -88,34 +109,27 @@ impl TableShell for GraphqlApiTableShell {
     }
 
     fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
-        // Vista hands us a CBOR scalar; coerce to its natural string form
-        // and push through `AnyTable::add_condition_eq`, which routes back
-        // to `GraphqlApi::eq_condition` and lands as a typed `_eq` filter.
-        let s = match value {
-            CborValue::Text(s) => s.clone(),
-            CborValue::Integer(i) => i128::from(*i).to_string(),
-            CborValue::Float(f) => f.to_string(),
-            CborValue::Bool(b) => b.to_string(),
-            CborValue::Null => String::new(),
-            other => {
-                return Err(error!(
-                    "GraphqlApiTableShell: eq value must be scalar",
-                    field = field,
-                    value = format!("{:?}", other)
-                ));
-            }
-        };
-        self.table.add_condition_eq(field, &s)
+        let native = AnyGraphqlType::from(value.clone());
+        let condition = Column::<AnyGraphqlType>::new(field).eq(native);
+        self.table.add_condition(condition);
+        Ok(())
     }
 
-    fn get_ref(&self, relation: &str, _row: &Record<CborValue>) -> Result<Vista> {
-        // GraphQL still routes traversal through `AnyTable` because the
-        // shell holds an `AnyTable` (the CBOR adapter is what bridges
-        // `AnyGraphqlType` to `CborValue`). Cleaned up alongside the REST
-        // refactor in Stage 9; for now the `row` parameter is ignored and
-        // the legacy AnyTable-flavoured resolution runs.
-        let any_table = self.table.get_ref(relation)?;
-        AnyTableShell::into_vista(any_table)
+    fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
+        // Hand-coded `with_many` / `with_one` registrations on the typed
+        // table: convert the parent's CBOR row to the native value type,
+        // resolve the target via `get_ref_from_row`, then re-wrap as a
+        // Vista through a fresh factory bound to the same data source.
+        let native_row = Self::row_to_native(row);
+        let target = self
+            .table
+            .get_ref_from_row::<EmptyEntity>(relation, &native_row)?;
+        let factory = GraphqlApiVistaFactory::new(self.table.data_source().clone());
+        factory.from_table(target)
+    }
+
+    fn get_ref_kinds(&self) -> Vec<(String, ReferenceKind)> {
+        self.table.ref_kinds()
     }
 
     fn capabilities(&self) -> &VistaCapabilities {

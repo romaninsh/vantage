@@ -10,7 +10,6 @@
 //! `can_count` only. Writes will follow once the schema map (Phase 9)
 //! describes mutation field names per-table.
 
-pub(crate) mod any_shell;
 pub mod factory;
 pub mod source;
 pub mod spec;

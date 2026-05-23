@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.2 — 2026-05-23
+
+- GraphQL Vista shell rewritten on a typed `Table<GraphqlApi, EmptyEntity>` — `AnyTable` is gone from the GraphQL path. `GraphqlApiTableShell` converts `AnyGraphqlType` ↔ [`CborValue`](https://docs.rs/ciborium/latest/ciborium/value/enum.Value.html) at the Vista boundary via the symmetric `From` impls; the typed table keeps the native value flow for filters and reference traversal.
+- `GraphqlApiTableShell::get_ref` now resolves children through [`Table::get_ref_from_row`](https://docs.rs/vantage-table/0.5.0/vantage_table/table/struct.Table.html#method.get_ref_from_row) + a fresh `GraphqlApiVistaFactory::from_table` wrap — same row-based traversal pattern as REST / MongoDB / SQL.
+- [`GraphqlApi::eq_value_condition`](https://docs.rs/vantage-table/0.5.0/vantage_table/traits/table_source/trait.TableSource.html#method.eq_value_condition) implemented so `Reference::resolve_from_row` can push a row-derived `AnyGraphqlType` join key without a string round-trip.
+- `GraphqlApiTableShell` implements `get_ref_kinds` via the typed table's reference registry. Vista metadata's `references` map now carries real cardinality flags (`HasOne` / `HasMany`) instead of the placeholder `HasMany`; target name and FK column remain blank because the typed `Reference` doesn't expose them.
+- Removed `graphql/vista/any_shell.rs` — no remaining consumers.
+- Removed `tests/any_table.rs` — both halves are gone now that neither shell routes through `AnyTable`.
+
 ## 0.5.1 — 2026-05-23
 
 - REST Vista shell no longer routes typed `Table::with_many` / `with_one` references through `AnyTable`. `RestApiTableShell` now carries a typed `Table<RestApi, EmptyEntity>` and `TableShell::get_ref` resolves children via [`Table::get_ref_from_row`](https://docs.rs/vantage-table/0.5.0/vantage_table/table/struct.Table.html#method.get_ref_from_row) + a fresh `RestApiVistaFactory::from_table` wrap — mirroring the pattern used by the MongoDB, SQL, and SurrealDB drivers.
