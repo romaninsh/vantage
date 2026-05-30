@@ -50,7 +50,13 @@ pub struct VistaSpec<T = NoExtras, C = NoExtras, R = NoExtras> {
 /// record's own column schema (built via the driver's `build_column`) instead
 /// of a foreign key.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "C: Serialize",
+        deserialize = "C: DeserializeOwned + Default"
+    )
+)]
 pub struct ContainedYaml<C = NoExtras> {
     /// Column on the parent row holding the embedded object (one) or array (many).
     pub host_column: String,

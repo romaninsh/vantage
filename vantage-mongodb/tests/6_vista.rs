@@ -595,3 +595,45 @@ async fn contained_array_round_trips_on_mongo() -> TestResult {
     teardown(&db, &name).await;
     Ok(())
 }
+
+#[tokio::test]
+async fn contained_from_yaml_round_trips_on_mongo() -> TestResult {
+    let (db, name) = setup().await;
+    db.collection::<bson::Document>("orders")
+        .insert_one(bson::doc! { "_id": "o1", "lines": [ { "sku": "a", "qty": 1 } ] })
+        .await?;
+
+    let yaml = r#"
+name: orders
+columns:
+  _id: { type: string, flags: [id] }
+  lines: { type: string }
+mongo:
+  collection: orders
+contained:
+  lines:
+    host_column: lines
+    kind: contains_many
+    columns:
+      sku: { type: string }
+      qty: { type: int }
+"#;
+    let vista = db.vista_factory().from_yaml(yaml)?;
+    assert_eq!(vista.list_contained().len(), 1);
+
+    let doc = vista.get_value(&"o1".to_string()).await?.unwrap();
+    let lines = vista.get_ref("lines", &doc)?;
+    assert_eq!(lines.list_values().await?.len(), 1);
+
+    let mut line = Record::new();
+    line.insert("sku".to_string(), CborValue::Text("b".into()));
+    line.insert("qty".to_string(), CborValue::Integer(2i64.into()));
+    lines.insert_return_id_value(&line).await?;
+
+    let doc2 = vista.get_value(&"o1".to_string()).await?.unwrap();
+    let lines2 = vista.get_ref("lines", &doc2)?;
+    assert_eq!(lines2.list_values().await?.len(), 2);
+
+    teardown(&db, &name).await;
+    Ok(())
+}
