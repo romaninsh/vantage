@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.4 — 2026-05-30
+
+- `MongoTableShell` implements
+  [`TableShell::get_ref_target`](https://docs.rs/vantage-vista/0.5.1/vantage_vista/trait.TableShell.html),
+  and the factory populates `VistaMetadata::references` — enabling
+  [vantage-vista 0.5.1](https://docs.rs/vantage-vista/0.5.1/vantage_vista/)'s nested insert through
+  relations. Tracks [vantage-table 0.5.4](https://docs.rs/vantage-table/0.5.4/vantage_table/).
+
 ## 0.5.3 — 2026-05-23
 
 - Align all internal dependency versions to 0.5+. No public API changes.

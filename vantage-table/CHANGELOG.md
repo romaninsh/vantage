@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.4 — 2026-05-30
+
+Support for [vantage-vista 0.5.1](https://docs.rs/vantage-vista/0.5.1/vantage_vista/)'s nested insert.
+
+### Added
+
+- `Table::get_ref_target::<E2>(relation)` — builds a relation's target table with **no** join
+  condition (the bare table a new related row is inserted into), complementing the row-conditioned
+  `get_ref_from_row` / `get_ref_as`.
+- `Table::vista_references()` — snapshots the table's relations as `vantage_vista::Reference`s (name,
+  target, cardinality, foreign key) for driver factories to fold into `VistaMetadata`.
+- `Reference::foreign_key()` on the `Reference` trait — exposes the relation's FK column. **Note:** a
+  new required trait method; external `Reference` impls (beyond the built-in `HasOne` / `HasMany`)
+  must add it.
+
 ## 0.5.3 — 2026-05-23
 
 - Align all internal dependency versions to 0.5+. No public API changes.
