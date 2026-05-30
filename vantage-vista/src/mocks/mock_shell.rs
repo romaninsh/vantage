@@ -150,7 +150,7 @@ impl TableShell for MockShell {
             })
         });
 
-        build_contained_vista(spec, host_value.as_ref(), writeback)
+        build_contained_vista(spec, host_value.as_ref(), writeback, None)
     }
 
     fn id_column(&self) -> Option<&str> {

@@ -11,7 +11,7 @@ use vantage_surrealdb::types::AnySurrealType;
 use vantage_table::table::Table;
 use vantage_types::entity;
 
-use crate::Client;
+use crate::{Client, Product};
 
 #[entity(CsvType, SurrealType, SqliteType, PostgresType, MongoType, DynamoType)]
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -51,6 +51,8 @@ impl Order {
                         .with_column_of::<Thing>("product")
                         .with_column_of::<i64>("quantity")
                         .with_column_of::<i64>("price")
+                        // a line traverses out to the real product table
+                        .with_one("product", "product", Product::surreal_table)
                 },
                 None,
             )

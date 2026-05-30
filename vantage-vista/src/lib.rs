@@ -19,7 +19,9 @@ pub mod vista;
 pub use any_expression::{AnyExpression, ExpressionLike};
 pub use capabilities::VistaCapabilities;
 pub use column::Column;
-pub use contained::{ContainedShell, ContainedWriteback, build_contained_vista};
+pub use contained::{
+    ContainedRefResolver, ContainedShell, ContainedWriteback, build_contained_vista,
+};
 pub use factory::VistaFactory;
 pub use metadata::VistaMetadata;
 pub use reference::{ContainedKind, ContainedSpec, Reference, ReferenceKind};

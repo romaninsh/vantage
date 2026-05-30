@@ -27,8 +27,9 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Entity, Record};
 use vantage_vista::{
-    Column as VistaColumn, ContainedSpec, ContainedWriteback, Reference as VistaReference,
-    SortDirection, TableShell, Vista, VistaCapabilities, VistaMetadata, build_contained_vista,
+    Column as VistaColumn, ContainedRefResolver, ContainedSpec, ContainedWriteback,
+    Reference as VistaReference, SortDirection, TableShell, Vista, VistaCapabilities,
+    VistaMetadata, build_contained_vista,
 };
 
 use crate::identifier::Identifier;
@@ -296,7 +297,24 @@ where
             })
         });
 
-        build_contained_vista(&spec, host_value.as_ref(), writeback)
+        // Resolve a contained record's own relations (e.g. a line's `product`)
+        // through the contained table's `with_one`/`with_many`, wrapped back
+        // as a Vista — the same path the parent shell's `get_ref` uses.
+        let factory_db = self.table.data_source().clone();
+        let spec_resolver = self.resolver.clone();
+        let ref_resolver: ContainedRefResolver =
+            Arc::new(move |relation: &str, child_row: &Record<CborValue>| {
+                let native = to_native_record(child_row);
+                let target = contained_table.get_ref_from_row::<EmptyEntity>(relation, &native)?;
+                let mut factory =
+                    crate::vista::factory::SurrealVistaFactory::new(factory_db.clone());
+                if let Some(r) = &spec_resolver {
+                    factory = factory.with_resolver(r.clone());
+                }
+                factory.from_table(target)
+            });
+
+        build_contained_vista(&spec, host_value.as_ref(), writeback, Some(ref_resolver))
     }
 
     fn get_ref_kinds(&self) -> Vec<(String, vantage_vista::ReferenceKind)> {

@@ -39,6 +39,12 @@ use crate::{
 pub type ContainedWriteback =
     Arc<dyn Fn(CborValue) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync>;
 
+/// Resolves a relation *of* a contained record (e.g. a line's `product`) back
+/// into the real table as a `Vista`. Supplied by the host at traversal time,
+/// capturing the contained table's own `with_one`/`with_many` registrations.
+pub type ContainedRefResolver =
+    Arc<dyn Fn(&str, &Record<CborValue>) -> Result<Vista> + Send + Sync>;
+
 /// `TableShell` over a contained relation's in-memory records.
 ///
 /// Reads delegate to the seeded [`ImTable`]; writes apply to it and then flush
@@ -52,6 +58,7 @@ pub struct ContainedShell {
     id_column: Option<String>,
     capabilities: VistaCapabilities,
     writeback: ContainedWriteback,
+    ref_resolver: Option<ContainedRefResolver>,
 }
 
 /// Build a sub-[`Vista`] over the records embedded in `host_value`.
@@ -64,6 +71,7 @@ pub fn build_contained_vista(
     spec: &ContainedSpec,
     host_value: Option<&CborValue>,
     writeback: ContainedWriteback,
+    ref_resolver: Option<ContainedRefResolver>,
 ) -> Result<Vista> {
     let ds = ImDataSource::<CborValue>::new();
     let im = ImTable::<EmptyEntity, CborValue>::new(&ds, &spec.name);
@@ -90,6 +98,7 @@ pub fn build_contained_vista(
             ..VistaCapabilities::default()
         },
         writeback,
+        ref_resolver,
     };
     Ok(Vista::new(spec.name.clone(), Box::new(shell)))
 }
@@ -163,6 +172,18 @@ impl TableShell for ContainedShell {
 
     fn id_column(&self) -> Option<&str> {
         self.metadata.id_column.as_deref()
+    }
+
+    /// Resolve a relation of the contained record (e.g. a line's `product`)
+    /// through the host-supplied resolver, back into the real table.
+    fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
+        match &self.ref_resolver {
+            Some(resolve) => resolve(relation, row),
+            None => Err(vantage_core::error!(
+                "contained record has no relation",
+                relation = relation
+            )),
+        }
     }
 
     async fn list_vista_values(

@@ -98,5 +98,14 @@ async fn main() -> Result<()> {
             .get("quantity")
     );
 
+    // ---- traverse OUT of a contained record: line.product -> product -----
+    let line0 = lines.get_value(&"0".to_string()).await?.unwrap();
+    let product_of_line = lines.get_ref("product", &line0)?;
+    let (_id, prod) = product_of_line
+        .get_some_value()
+        .await?
+        .expect("line's product resolves to a real product row");
+    println!("line[0].product -> product.name = {:?}", prod.get("name"));
+
     Ok(())
 }
