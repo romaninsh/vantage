@@ -102,10 +102,7 @@ impl Vista {
                     }
                     CborValue::Array(items) => {
                         if collected.contains_key(key.as_str()) {
-                            return Err(error!(
-                                "relation given more than once",
-                                relation = key
-                            ));
+                            return Err(error!("relation given more than once", relation = key));
                         }
                         let mut children = Vec::with_capacity(items.len());
                         for item in items {
@@ -208,7 +205,10 @@ impl Vista {
     ) -> Result<String> {
         let (mut main, has_one, has_many) = self.classify_insert(record)?;
         self.insert_has_one_children(&mut main, has_one).await?;
-        let parent_id = self.source.insert_vista_return_id_value(self, &main).await?;
+        let parent_id = self
+            .source
+            .insert_vista_return_id_value(self, &main)
+            .await?;
         self.insert_has_many_children(&parent_id, has_many).await?;
         Ok(parent_id)
     }
@@ -231,9 +231,7 @@ impl Vista {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        Column, Reference, ReferenceKind, VistaMetadata, mocks::mock_shell::MockShell,
-    };
+    use crate::{Column, Reference, ReferenceKind, VistaMetadata, mocks::mock_shell::MockShell};
 
     /// Vista over a `client` table: scalar columns plus a has-one `bakery`
     /// (FK `bakery_id` on this row) and a has-many `orders` (FK `client_id` on
@@ -272,13 +270,19 @@ mod tests {
     }
 
     fn record(pairs: &[(&str, CborValue)]) -> Record<CborValue> {
-        pairs.iter().map(|(k, v)| ((*k).into(), v.clone())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).into(), v.clone()))
+            .collect()
     }
 
     #[test]
     fn flat_record_has_no_relations() {
         let (main, has_one, has_many) = client_vista()
-            .classify_insert(&record(&[("name", text("John")), ("bakery_id", text("b1"))]))
+            .classify_insert(&record(&[
+                ("name", text("John")),
+                ("bakery_id", text("b1")),
+            ]))
             .unwrap();
         assert_eq!(main.get("name"), Some(&text("John")));
         assert_eq!(main.get("bakery_id"), Some(&text("b1")));
@@ -303,7 +307,10 @@ mod tests {
         assert_eq!(relation, "bakery");
         assert_eq!(fk, "bakery_id");
         assert_eq!(child.get("name"), Some(&text("New Bakery")));
-        assert_eq!(child.get("profit_margin"), Some(&CborValue::Integer(10.into())));
+        assert_eq!(
+            child.get("profit_margin"),
+            Some(&CborValue::Integer(10.into()))
+        );
     }
 
     #[test]
@@ -356,8 +363,7 @@ mod tests {
         });
         // `warehouse` resolves via list_references but has no same-persistence
         // Reference, so classify must reject it before any write.
-        let err =
-            vista.classify_insert(&record(&[("warehouse", map(&[("name", text("w1"))]))]));
+        let err = vista.classify_insert(&record(&[("warehouse", map(&[("name", text("w1"))]))]));
         assert!(err.is_err());
     }
 }
