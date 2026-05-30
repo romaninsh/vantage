@@ -8,7 +8,10 @@ use vantage_core::{Result, VantageError, error};
 use vantage_types::Record;
 
 use crate::{
-    capabilities::VistaCapabilities, column::Column, reference::Reference, sort::SortDirection,
+    capabilities::VistaCapabilities,
+    column::Column,
+    reference::{ContainedSpec, Reference},
+    sort::SortDirection,
     vista::Vista,
 };
 
@@ -307,6 +310,32 @@ pub trait TableShell: Send + Sync + 'static {
                 std::any::type_name::<Self>()
             ),
             method = "get_ref_target",
+            relation = relation,
+            source_type = std::any::type_name::<Self>()
+        )
+        .is_unimplemented())
+    }
+
+    /// Contained (embedded-in-row) relations this shell exposes, keyed by name.
+    /// Default empty — only shells that model embedded objects/arrays override.
+    fn contained(&self) -> &IndexMap<String, ContainedSpec> {
+        static EMPTY: std::sync::OnceLock<IndexMap<String, ContainedSpec>> =
+            std::sync::OnceLock::new();
+        EMPTY.get_or_init(IndexMap::new)
+    }
+
+    /// Resolve a contained relation against a known parent `row`, returning the
+    /// embedded records as a sub-`Vista`. Writes to that sub-Vista patch the
+    /// host column of `row`'s record back through the shell. Default returns
+    /// `Unimplemented`; shells override to seed [`crate::build_contained_vista`]
+    /// with a writeback that patches the parent.
+    fn get_contained_ref(&self, relation: &str, _row: &Record<CborValue>) -> Result<Vista> {
+        Err(error!(
+            format!(
+                "get_contained_ref not implemented for '{}'",
+                std::any::type_name::<Self>()
+            ),
+            method = "get_contained_ref",
             relation = relation,
             source_type = std::any::type_name::<Self>()
         )

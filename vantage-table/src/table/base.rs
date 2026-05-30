@@ -29,6 +29,7 @@ where
     pub(super) order_by: IndexMap<i64, (T::Condition, SortDirection)>,
     pub(super) next_order_id: i64,
     pub(super) refs: Option<IndexMap<String, Arc<dyn Reference>>>,
+    pub(super) contained: Vec<crate::references::ContainedRelation<T>>,
     pub(super) expressions: IndexMap<String, ExpressionFn<T, E>>,
     pub(super) pagination: Option<Pagination>,
     pub(super) title_field: Option<String>,
@@ -49,6 +50,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             order_by: IndexMap::new(),
             next_order_id: 1,
             refs: None,
+            contained: Vec::new(),
             expressions: IndexMap::new(),
             pagination: None,
             title_field: None,
@@ -69,6 +71,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             order_by: self.order_by,
             next_order_id: self.next_order_id,
             refs: self.refs,
+            contained: self.contained,
             expressions: IndexMap::new(),
             pagination: self.pagination,
             title_field: self.title_field,
@@ -97,6 +100,22 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// Shape-only specs (name, host, kind, id) for the contained relations
+    /// declared on this table, for driver factories to fold into
+    /// `VistaMetadata`. Columns are derived at traversal from each relation's
+    /// `build_target` closure.
+    pub fn vista_contained(&self) -> Vec<vantage_vista::ContainedSpec> {
+        self.contained.iter().map(|c| c.spec()).collect()
+    }
+
+    /// Look up a contained relation by name (for the driver's traversal).
+    pub fn contained_relation(
+        &self,
+        name: &str,
+    ) -> Option<&crate::references::ContainedRelation<T>> {
+        self.contained.iter().find(|c| c.name() == name)
     }
 
     /// Use a callback with a builder pattern for configuration

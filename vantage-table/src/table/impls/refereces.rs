@@ -8,7 +8,7 @@ use vantage_expressions::Expression;
 use vantage_types::{EmptyEntity, Entity, Record};
 
 use crate::{
-    references::{HasMany, HasOne, Reference},
+    references::{ContainedRelation, HasMany, HasOne, Reference},
     table::Table,
     traits::{column_like::ColumnLike, table_source::TableSource},
 };
@@ -51,6 +51,61 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
     {
         let reference = HasMany::<T, E, E2>::new(foreign_key, build_target);
         self.add_ref(relation, Box::new(reference));
+        self
+    }
+
+    /// Declare a `contains_one` relation: a single record embedded in
+    /// `host_column` (e.g. a product's `inventory` object), surfaced as a
+    /// sub-`Vista`. `build_target` builds the contained record's table —
+    /// the same closure shape as [`with_one`](Self::with_one).
+    ///
+    /// ```rust,ignore
+    /// .with_contained_one("inventory", "inventory", |db| {
+    ///     Table::new("inventory", db).with_column_of::<i64>("stock")
+    /// })
+    /// ```
+    pub fn with_contained_one(
+        mut self,
+        relation: &str,
+        host_column: &str,
+        build_target: impl Fn(T) -> Table<T, EmptyEntity> + Send + Sync + 'static,
+    ) -> Self {
+        self.contained.push(ContainedRelation::new(
+            relation,
+            host_column,
+            vantage_vista::ContainedKind::ContainsOne,
+            None,
+            build_target,
+        ));
+        self
+    }
+
+    /// Declare a `contains_many` relation: an array of records embedded in
+    /// `host_column` (e.g. an order's `lines`). `build_target` builds the
+    /// contained record's table; `id_column` names the field used as each
+    /// record's id (`None` → positional index).
+    ///
+    /// ```rust,ignore
+    /// .with_contained_many("lines", "lines", |db| {
+    ///     Table::new("lines", db)
+    ///         .with_column_of::<Thing>("product")
+    ///         .with_column_of::<i64>("quantity")
+    /// }, None)
+    /// ```
+    pub fn with_contained_many(
+        mut self,
+        relation: &str,
+        host_column: &str,
+        build_target: impl Fn(T) -> Table<T, EmptyEntity> + Send + Sync + 'static,
+        id_column: Option<&str>,
+    ) -> Self {
+        self.contained.push(ContainedRelation::new(
+            relation,
+            host_column,
+            vantage_vista::ContainedKind::ContainsMany,
+            id_column.map(str::to_string),
+            build_target,
+        ));
         self
     }
 

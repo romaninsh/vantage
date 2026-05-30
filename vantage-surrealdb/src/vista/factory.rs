@@ -273,6 +273,9 @@ where
             col.flags.push(vista_flags::TITLE.to_string());
         }
     }
+    for spec in table.vista_contained() {
+        metadata = metadata.with_contained(spec);
+    }
     metadata
 }
 

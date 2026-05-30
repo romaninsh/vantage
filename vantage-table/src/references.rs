@@ -16,9 +16,11 @@ use std::any::Any;
 
 use vantage_core::Result;
 
+pub mod contained;
 pub mod many;
 pub mod one;
 
+pub use contained::ContainedRelation;
 pub use many::HasMany;
 pub use one::HasOne;
 

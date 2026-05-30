@@ -1,6 +1,9 @@
 use indexmap::IndexMap;
 
-use crate::{column::Column, reference::Reference};
+use crate::{
+    column::Column,
+    reference::{ContainedSpec, Reference},
+};
 
 /// Schema a `Vista` is built around.
 ///
@@ -14,6 +17,10 @@ use crate::{column::Column, reference::Reference};
 pub struct VistaMetadata {
     pub columns: IndexMap<String, Column>,
     pub references: IndexMap<String, Reference>,
+    /// Contained (embedded-in-row) relations, keyed by relation name. Kept
+    /// apart from `references` because their data lives in a column of the
+    /// parent row, not in a joined table.
+    pub contained: IndexMap<String, ContainedSpec>,
     pub id_column: Option<String>,
 }
 
@@ -29,6 +36,11 @@ impl VistaMetadata {
 
     pub fn with_reference(mut self, reference: Reference) -> Self {
         self.references.insert(reference.name.clone(), reference);
+        self
+    }
+
+    pub fn with_contained(mut self, spec: ContainedSpec) -> Self {
+        self.contained.insert(spec.name.clone(), spec);
         self
     }
 

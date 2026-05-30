@@ -1,4 +1,6 @@
+use indexmap::IndexMap;
 use uuid::Uuid;
+use vantage_types::Record;
 
 use crate::{im::ImDataSource, traits::ValueSet};
 
@@ -30,6 +32,17 @@ impl<E, V> ImTable<E, V> {
 
     pub fn generate_id(&self) -> String {
         Uuid::new_v4().to_string()
+    }
+
+    /// Synchronously replace this table's rows with `records` (ordered).
+    /// Lets callers seed an in-memory table from a known collection without
+    /// going through the async insert path — used to materialize a contained
+    /// relation's records from a parent row's embedded column.
+    pub fn seed(&self, records: IndexMap<String, Record<V>>)
+    where
+        V: Clone,
+    {
+        self.data_source.update_table(&self.table_name, records);
     }
 }
 
