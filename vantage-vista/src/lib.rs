@@ -6,6 +6,7 @@ pub mod column;
 pub mod factory;
 pub mod flags;
 pub mod impls;
+pub mod insert;
 pub mod metadata;
 pub mod mocks;
 pub mod reference;

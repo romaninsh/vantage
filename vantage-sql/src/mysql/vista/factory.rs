@@ -184,5 +184,8 @@ where
             col.flags.push(vista_flags::TITLE.to_string());
         }
     }
+    for reference in table.vista_references() {
+        metadata = metadata.with_reference(reference);
+    }
     metadata
 }

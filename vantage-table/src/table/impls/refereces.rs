@@ -216,6 +216,30 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         Ok(target)
     }
 
+    /// Build the relation's target table with **no condition** applied.
+    ///
+    /// Unlike [`Self::get_ref_from_row`] / [`Self::get_ref_as`] (which select
+    /// the related rows for a known parent), this returns the bare target — the
+    /// table you'd insert a new related row into. Used by Vista's nested insert
+    /// to obtain the destination for a has-one/has-many child before any join
+    /// value exists.
+    pub fn get_ref_target<E2: Entity<T::Value> + 'static>(
+        &self,
+        relation: &str,
+    ) -> Result<Table<T, E2>> {
+        let (reference, relation_str) = self.lookup_ref(relation)?;
+        let target: Table<T, E2> = *reference
+            .build_target(self.data_source() as &dyn std::any::Any)
+            .downcast::<Table<T, E2>>()
+            .map_err(|_| {
+                error!(
+                    "Failed to downcast related table",
+                    relation = relation_str.as_str()
+                )
+            })?;
+        Ok(target)
+    }
+
     /// Add a computed expression field using builder pattern.
     ///
     /// The closure receives `&Table<T, E>` and returns an `Expression<T::Value>`.

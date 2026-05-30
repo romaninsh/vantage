@@ -68,6 +68,10 @@ where
         (source_id.to_string(), self.target_foreign_key.clone())
     }
 
+    fn foreign_key(&self) -> &str {
+        &self.target_foreign_key
+    }
+
     fn build_target(&self, data_source: &dyn Any) -> Box<dyn Any> {
         let ds = data_source
             .downcast_ref::<T>()

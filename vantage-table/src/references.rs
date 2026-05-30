@@ -27,6 +27,13 @@ pub trait Reference: Send + Sync {
     /// Given source and target id field names, return (source_column, target_column).
     fn columns(&self, source_id: &str, target_id: &str) -> (String, String);
 
+    /// The foreign-key column carried by this relation. For `HasOne` it names a
+    /// column on the *source* table (set to the related row's id after the
+    /// related row is inserted); for `HasMany` it names a column on the *target*
+    /// table (set to the parent's id when inserting each child). Drives nested
+    /// insert at the Vista layer.
+    fn foreign_key(&self) -> &str;
+
     /// Produce a fresh target table (no conditions applied), wrapped in
     /// `Box<dyn Any>` so callers can downcast back to the concrete
     /// `Table<T, TargetE>`. Used by [`crate::table::Table::get_ref_as`] and

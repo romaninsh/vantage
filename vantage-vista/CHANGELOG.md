@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.5.1 — 2026-05-30
+
+### Added
+
+- **Nested insert through relations.** `insert_value` / `insert_return_id_value` now accept a record
+  whose keys name a **relation** instead of a column, and sequence the writes so foreign keys are
+  populated automatically: a **has-one** child (`inventory` as a map, or grouped `inventory.count` /
+  `inventory.flag` keys) is inserted first and its id stamped into the parent's FK column; **has-many**
+  children (`orders` as a list of maps) are inserted after the parent with the parent's id stamped
+  into each child's FK column. Arbitrary depth, native (same-persistence) relations only. Best-effort
+  and non-atomic — a mid-sequence failure leaves earlier writes committed. Vista does no field
+  validation; the underlying table validates each record. Cross-persistence
+  ([`with_foreign`](https://docs.rs/vantage-vista/0.5.1/vantage_vista/struct.Vista.html#method.with_foreign))
+  relations are rejected.
+- [`TableShell::get_ref_target`](https://docs.rs/vantage-vista/0.5.1/vantage_vista/trait.TableShell.html)
+  and `Vista::get_ref_target` — build the **bare** (unconditioned) target of a relation, i.e. the
+  table a new related row is inserted into. Default impl returns `Unimplemented`.
+
+### Changed
+
+- Driver factories now populate `VistaMetadata::references`, so `Vista::get_reference` carries the
+  relation's `foreign_key` for code-first vistas (previously empty). Requires
+  [vantage-table 0.5.4](https://docs.rs/vantage-table/0.5.4/vantage_table/).
+
 ## 0.5.0 — 2026-05-23
 
 - Align all internal dependency versions to 0.5+. No public API changes.

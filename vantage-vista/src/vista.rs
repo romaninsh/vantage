@@ -330,4 +330,19 @@ impl Vista {
         }
         self.source.get_ref(relation, row)
     }
+
+    /// Build the bare target of a same-persistence relation — the unconditioned
+    /// table a new related row is inserted into. Forwards to
+    /// [`TableShell::get_ref_target`]. Cross-persistence relations registered
+    /// via [`with_foreign`](Self::with_foreign) are not insertable this way and
+    /// error here.
+    pub fn get_ref_target(&self, relation: &str) -> Result<Vista> {
+        if self.foreign_resolvers.contains_key(relation) {
+            return Err(error!(
+                "cross-persistence nested insert is not supported",
+                relation = relation
+            ));
+        }
+        self.source.get_ref_target(relation)
+    }
 }
