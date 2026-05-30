@@ -591,3 +591,83 @@ async fn vista_columns_advertise_orderable_flag() -> TestResult {
     }
     Ok(())
 }
+
+/// A `cart` whose `items` column is a JSON array, surfaced as a contains-many
+/// relation. SQLite has no native nesting — the collection round-trips as a
+/// JSON string in a TEXT column.
+fn cart_table(db: SqliteDB) -> Table<SqliteDB, EmptyEntity> {
+    Table::<SqliteDB, EmptyEntity>::new("cart", db)
+        .with_id_column("id")
+        .with_column_of::<String>("items")
+        .with_contained_many(
+            "items",
+            "items",
+            |db| {
+                Table::<SqliteDB, EmptyEntity>::new("items", db)
+                    .with_column_of::<String>("sku")
+                    .with_column_of::<i64>("qty")
+            },
+            None,
+        )
+}
+
+fn field(name: &str, value: CborValue) -> Record<CborValue> {
+    let mut r = Record::new();
+    r.insert(name.to_string(), value);
+    r
+}
+
+#[tokio::test]
+async fn contained_json_column_round_trips_on_sqlite() -> TestResult {
+    let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
+    sqlx::query("CREATE TABLE cart (id TEXT PRIMARY KEY, items TEXT NOT NULL)")
+        .execute(db.pool())
+        .await
+        .unwrap();
+    sqlx::query(r#"INSERT INTO cart VALUES ('c1', '[{"sku":"a","qty":1},{"sku":"b","qty":2}]')"#)
+        .execute(db.pool())
+        .await
+        .unwrap();
+
+    let vista = db.vista_factory().from_table(cart_table(db.clone()))?;
+    assert_eq!(vista.list_contained().len(), 1);
+
+    // The host column reads back as a JSON string; the sub-Vista parses it.
+    let cart = vista.get_value(&"c1".to_string()).await?.unwrap();
+    assert!(matches!(cart.get("items"), Some(CborValue::Text(_))));
+    let items = vista.get_ref("items", &cart)?;
+    assert_eq!(items.list_values().await?.len(), 2);
+
+    // Add an item — eager writeback serializes to JSON and UPDATEs the column.
+    let mut line = Record::new();
+    line.insert("sku".to_string(), CborValue::Text("c".into()));
+    line.insert("qty".to_string(), CborValue::Integer(3i64.into()));
+    let new_id = items.insert_return_id_value(&line).await?;
+    assert_eq!(new_id, "2");
+
+    // Fresh read + re-traverse re-parses the persisted JSON → three items.
+    let cart2 = vista.get_value(&"c1".to_string()).await?.unwrap();
+    let items2 = vista.get_ref("items", &cart2)?;
+    let rows = items2.list_values().await?;
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows["2"].get("sku"), Some(&CborValue::Text("c".into())));
+
+    // Patch one item; confirm it persisted through the JSON column.
+    items2
+        .patch_value(
+            &"0".to_string(),
+            &field("qty", CborValue::Integer(99i64.into())),
+        )
+        .await?;
+    let cart3 = vista.get_value(&"c1".to_string()).await?.unwrap();
+    let items3 = vista.get_ref("items", &cart3)?;
+    assert_eq!(
+        items3
+            .get_value(&"0".to_string())
+            .await?
+            .unwrap()
+            .get("qty"),
+        Some(&CborValue::Integer(99i64.into()))
+    );
+    Ok(())
+}
