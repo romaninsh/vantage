@@ -209,6 +209,23 @@ impl Dio {
         Ok(())
     }
 
+    /// Remove `id` from the cache and publish [`DioEvent::RecordRemoved`].
+    /// Symmetric to [`patched`](Self::patched) — call after a successful
+    /// master-side delete so subscribed Sceneries drop the row from
+    /// their view. Without the cache wipe, the bus event still fires
+    /// but Sceneries that reseed from the cache (e.g. TableScenery)
+    /// re-include the row, leaving the grid out of sync with the
+    /// master until the next `refresh()` / `invalidate_all()`.
+    ///
+    /// `Ok(())` if the row wasn't in the cache to begin with —
+    /// idempotent.
+    pub async fn removed(&self, id: impl Into<String>) -> Result<()> {
+        let id = id.into();
+        self.inner.cache.delete_value(&id).await?;
+        let _ = self.inner.event_bus.send(DioEvent::RecordRemoved { id });
+        Ok(())
+    }
+
     /// Fire the `on_refresh` callback synchronously. Errors propagate
     /// to the caller (the scheduled refresh task only logs them).
     ///
