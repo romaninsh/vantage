@@ -179,6 +179,7 @@ pub(crate) fn build_surreal_table(
         };
     }
 
+    let table = table.with_contained_specs(&spec.contained, build_column)?;
     Ok(table)
 }
 

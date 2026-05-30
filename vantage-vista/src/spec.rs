@@ -9,7 +9,7 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-use crate::reference::ReferenceKind;
+use crate::reference::{ContainedKind, ReferenceKind};
 
 /// Empty extras placeholder. Serializes as an absent key.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -37,8 +37,31 @@ pub struct VistaSpec<T = NoExtras, C = NoExtras, R = NoExtras> {
     pub columns: IndexMap<String, ColumnSpec<C>>,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub references: IndexMap<String, ReferenceSpec<R>>,
+    /// Contained (embedded-in-row) relations, keyed by relation name. Each is
+    /// lowered into a `with_contained_one`/`with_contained_many` registration.
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub contained: IndexMap<String, ContainedYaml<C>>,
     #[serde(flatten, default)]
     pub driver: T,
+}
+
+/// YAML shape of a contained relation — embedded records stored in a column of
+/// the parent row. Mirrors [`ReferenceSpec`] but carries the contained
+/// record's own column schema (built via the driver's `build_column`) instead
+/// of a foreign key.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContainedYaml<C = NoExtras> {
+    /// Column on the parent row holding the embedded object (one) or array (many).
+    pub host_column: String,
+    /// `contains_one` or `contains_many`.
+    #[serde(default)]
+    pub kind: ContainedKind,
+    /// Field used as each contained record's id (`None` → positional index).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id_column: Option<String>,
+    /// The contained record's columns.
+    pub columns: IndexMap<String, ColumnSpec<C>>,
 }
 
 /// Per-column metadata in a `VistaSpec`.
@@ -193,6 +216,47 @@ dummy:
             ReferenceSugar::Sugar(s) => assert_eq!(s, "shops"),
             other => panic!("expected sugar, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn contained_section_round_trip() {
+        let yaml = r#"
+name: order
+columns:
+  id: { type: string, flags: [id] }
+  lines: { type: string }
+contained:
+  lines:
+    host_column: lines
+    kind: contains_many
+    id_column: line_id
+    columns:
+      line_id: { type: string, flags: [id] }
+      product: { type: string }
+      quantity: { type: int }
+dummy:
+  path: x
+"#;
+        let spec: DummySpec = serde_yaml_ng::from_str(yaml).unwrap();
+        let c = &spec.contained["lines"];
+        assert_eq!(c.host_column, "lines");
+        assert_eq!(c.kind, ContainedKind::ContainsMany);
+        assert_eq!(c.id_column.as_deref(), Some("line_id"));
+        assert_eq!(c.columns.len(), 3);
+        assert_eq!(c.columns["quantity"].col_type.as_deref(), Some("int"));
+    }
+
+    #[test]
+    fn spec_without_contained_still_parses() {
+        let yaml = r#"
+name: clients
+columns:
+  id: { type: int, flags: [id] }
+dummy:
+  path: x
+"#;
+        let spec: DummySpec = serde_yaml_ng::from_str(yaml).unwrap();
+        assert!(spec.contained.is_empty());
     }
 
     #[test]

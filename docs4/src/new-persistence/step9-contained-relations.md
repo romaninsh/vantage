@@ -146,27 +146,65 @@ traverse out (`line → product`) or even nest further, but each backend write i
 That's the same best-effort contract as nested insert (Step 6's neighbour) — fine for these shapes,
 not a transaction.
 
+### From YAML
+
+Contained relations are declarable in a YAML vista spec too, via a `contained:` section that mirrors
+`columns:`/`references:`:
+
+```yaml
+name: order
+columns:
+  id: { type: string, flags: [id] }
+  lines: { type: string }          # the host column — declare it so it's selected
+sqlite:
+  table: order
+contained:
+  lines:
+    host_column: lines
+    kind: contains_many            # or contains_one
+    id_column: line_id             # optional; omit for positional ids
+    columns:
+      product: { type: string }
+      quantity: { type: int }
+```
+
+The loader lowers this through one generic helper —
+[`Table::with_contained_specs`](https://docs.rs/vantage-table/latest/vantage_table/) — which calls
+your driver's existing `build_column` on each contained column, so the YAML and code-first paths
+converge on the same registration. Wiring it is one line per driver in `table_from_spec`:
+
+```rust
+table = table.with_contained_specs(&spec.contained, build_column)?;
+```
+
+**Limitation:** YAML-declared contained records carry *columns only* — no nested relations, so
+traverse-out (`line.product`) isn't expressible from YAML yet (the code-first closure still supports
+it, since it can add `with_one` to the contained table). Lifting this means letting the contained
+columns carry `references:` sugar plus a resolver, the same machinery YAML foreign-key references
+would need.
+
 ### Step 9 checklist
 
 A backend supports contained relations once it has:
 
 1. **`TableShell::contained()`** returning `&self.metadata.contained`.
 
-2. **`TableShell::get_contained_ref`** that:
-   - looks up the relation via `self.table.contained_relation(name)`;
-   - obtains the host value as a CBOR map/array — natively, or by parsing JSON;
-   - harvests the contained schema from `rel.build_target(db)` via `metadata_from_table`;
-   - supplies a **writeback** that patches the parent row's host column (native `MERGE`/`$set`/
-     `UPDATE`, or a serialized JSON string);
-   - supplies a **ref_resolver** that forwards the contained record's relations through
-     `get_ref_from_row`, so embedded records can traverse out;
-   - calls `build_contained_vista`.
+2. **`TableShell::get_contained_ref`** — a thin shim that extracts the parent row's id (in the
+   driver's native id type) and forwards to the shared
+   [`Table::get_contained_ref`](https://docs.rs/vantage-table/latest/vantage_table/), passing three
+   things only the driver knows: the `wrap` closure (target `Table` → `Vista` via its factory), and
+   the host `decode`/`encode` codec (native passthrough, or JSON parse/serialize). The generic helper
+   seeds the records, harvests the contained schema, wires the eager writeback, and resolves
+   traverse-out.
 
 3. **`metadata_from_table`** copying `table.vista_contained()` into `VistaMetadata`.
 
-4. **Tests** (gated on `feature = "vista"`, against a real backend): declare a host column holding a
-   collection, traverse it, insert/patch through the sub-Vista, and re-read the parent row to prove
-   the writeback landed.
+4. **YAML** — one line in `table_from_spec`:
+   `table = table.with_contained_specs(&spec.contained, build_column)?;`
 
-Native and JSON-blob backends differ only in two lines — how the host value enters and how the
+5. **Tests** (gated on `feature = "vista"`, against a real backend): declare a host column holding a
+   collection (code-first *and* via `from_yaml`), traverse it, insert/patch through the sub-Vista, and
+   re-read the parent row to prove the writeback landed.
+
+Native and JSON-blob backends differ only in two closures — how the host value enters and how the
 writeback leaves. Everything between is shared.

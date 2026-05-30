@@ -91,6 +91,7 @@ impl SqliteVistaFactory {
         }
         table.set_id_field(&id_column);
 
+        let table = table.with_contained_specs(&spec.contained, build_column)?;
         Ok(table)
     }
 }

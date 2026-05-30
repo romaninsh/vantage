@@ -203,6 +203,45 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         )
     }
 
+    /// Lower a YAML `contained:` section into `with_contained_*` registrations,
+    /// reusing the driver's `build_col` to construct each contained record's
+    /// columns. Column-build errors surface here; the per-relation target
+    /// closure stays infallible by cloning the pre-built columns.
+    pub fn with_contained_specs<C>(
+        mut self,
+        specs: &IndexMap<String, vantage_vista::ContainedYaml<C>>,
+        build_col: impl Fn(&str, &vantage_vista::ColumnSpec<C>) -> Result<T::Column<T::AnyType>>,
+    ) -> Result<Self>
+    where
+        T::Column<T::AnyType>: Clone,
+    {
+        for (relation, c) in specs {
+            let cols = c
+                .columns
+                .iter()
+                .map(|(n, cs)| build_col(n, cs))
+                .collect::<Result<Vec<_>>>()?;
+            let rel = relation.clone();
+            let host = c.host_column.clone();
+            let build = move |db: T| {
+                let mut t = Table::<T, EmptyEntity>::new(rel.clone(), db);
+                for col in &cols {
+                    t.add_column(col.clone());
+                }
+                t
+            };
+            self = match c.kind {
+                vantage_vista::ContainedKind::ContainsOne => {
+                    self.with_contained_one(relation, &host, build)
+                }
+                vantage_vista::ContainedKind::ContainsMany => {
+                    self.with_contained_many(relation, &host, build, c.id_column.as_deref())
+                }
+            };
+        }
+        Ok(self)
+    }
+
     pub(crate) fn add_ref(&mut self, relation: &str, reference: Box<dyn Reference>) {
         if self.refs.is_none() {
             self.refs = Some(IndexMap::new());
