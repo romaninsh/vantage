@@ -513,3 +513,85 @@ async fn vista_fetch_next_chains_pages_until_exhausted() -> TestResult {
     teardown(&db, &name).await;
     Ok(())
 }
+
+/// An `orders` collection whose `lines` field is an embedded BSON array,
+/// surfaced as a contains-many relation. MongoDB stores it natively.
+fn orders_contained_table(db: MongoDB) -> Table<MongoDB, EmptyEntity> {
+    Table::<MongoDB, EmptyEntity>::new("orders", db)
+        .with_id_column("_id")
+        .with_column_of::<AnyMongoType>("lines")
+        .with_contained_many(
+            "lines",
+            "lines",
+            |db| {
+                Table::new("lines", db)
+                    .with_column_of::<String>("sku")
+                    .with_column_of::<i64>("qty")
+            },
+            None,
+        )
+}
+
+fn line(sku: &str, qty: i64) -> CborValue {
+    CborValue::Map(vec![
+        (CborValue::Text("sku".into()), CborValue::Text(sku.into())),
+        (
+            CborValue::Text("qty".into()),
+            CborValue::Integer(qty.into()),
+        ),
+    ])
+}
+
+#[tokio::test]
+async fn contained_array_round_trips_on_mongo() -> TestResult {
+    let (db, name) = setup().await;
+    let vista = db
+        .vista_factory()
+        .from_table(orders_contained_table(db.clone()))?;
+    assert_eq!(vista.list_contained().len(), 1);
+
+    // Insert a document with a native embedded array.
+    let mut order = Record::new();
+    order.insert(
+        "lines".to_string(),
+        CborValue::Array(vec![line("a", 1), line("b", 2)]),
+    );
+    vista.insert_value(&"o1".to_string(), &order).await?;
+
+    // The embedded array reads back natively (not a string).
+    let doc = vista.get_value(&"o1".to_string()).await?.unwrap();
+    assert!(matches!(doc.get("lines"), Some(CborValue::Array(_))));
+    let lines = vista.get_ref("lines", &doc)?;
+    assert_eq!(lines.list_values().await?.len(), 2);
+
+    // Add a line — eager writeback $sets the whole array.
+    let mut new = Record::new();
+    new.insert("sku".to_string(), CborValue::Text("c".into()));
+    new.insert("qty".to_string(), CborValue::Integer(3i64.into()));
+    let id = lines.insert_return_id_value(&new).await?;
+    assert_eq!(id, "2");
+
+    let doc2 = vista.get_value(&"o1".to_string()).await?.unwrap();
+    let CborValue::Array(stored) = doc2.get("lines").unwrap() else {
+        panic!("lines should be a BSON array");
+    };
+    assert_eq!(stored.len(), 3);
+
+    // Patch one line; confirm it persisted.
+    let mut patch = Record::new();
+    patch.insert("qty".to_string(), CborValue::Integer(99i64.into()));
+    lines.patch_value(&"0".to_string(), &patch).await?;
+    let doc3 = vista.get_value(&"o1".to_string()).await?.unwrap();
+    let lines3 = vista.get_ref("lines", &doc3)?;
+    assert_eq!(
+        lines3
+            .get_value(&"0".to_string())
+            .await?
+            .unwrap()
+            .get("qty"),
+        Some(&CborValue::Integer(99i64.into()))
+    );
+
+    teardown(&db, &name).await;
+    Ok(())
+}

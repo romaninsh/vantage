@@ -8,6 +8,7 @@
 //! back to identity passthrough on top-level keys.
 
 use std::str::FromStr;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use bson::{Bson, Document, doc};
@@ -22,8 +23,9 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Column as VistaColumn, Reference as VistaReference, SortDirection, TableShell, Vista,
-    VistaCapabilities, VistaMetadata,
+    Column as VistaColumn, ContainedRefResolver, ContainedSpec, ContainedWriteback,
+    Reference as VistaReference, SortDirection, TableShell, Vista, VistaCapabilities,
+    VistaMetadata, build_contained_vista,
 };
 
 use crate::condition::MongoCondition;
@@ -301,6 +303,73 @@ impl TableShell for MongoTableShell {
 
     fn get_ref_kinds(&self) -> Vec<(String, vantage_vista::ReferenceKind)> {
         self.table.ref_kinds()
+    }
+
+    fn contained(&self) -> &IndexMap<String, ContainedSpec> {
+        &self.metadata.contained
+    }
+
+    /// Resolve a contained relation embedded in `row`. MongoDB stores nested
+    /// objects/arrays natively, so the host value is already a CBOR map/array;
+    /// writes `$set` the whole collection back into the parent document's field.
+    fn get_contained_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
+        let rel = self
+            .table
+            .contained_relation(relation)
+            .ok_or_else(|| error!("unknown contained relation", relation = relation))?;
+        let host_value = row.get(rel.host_column()).cloned();
+
+        let id_field = self.metadata.id_column.as_deref().unwrap_or("_id");
+        let parent_id = match row.get(id_field) {
+            Some(CborValue::Text(s)) => s.clone(),
+            Some(CborValue::Integer(i)) => i128::from(*i).to_string(),
+            _ => {
+                return Err(error!(
+                    "contained traversal requires the parent document's id",
+                    relation = relation
+                ));
+            }
+        };
+        let mongo_id = self.parse_id(&parent_id);
+
+        let contained_table = rel.build_target(self.table.data_source().clone());
+        let columns: Vec<VistaColumn> =
+            crate::vista::factory::metadata_from_table(&contained_table)
+                .columns
+                .into_values()
+                .collect();
+        let mut spec = ContainedSpec::new(rel.name(), rel.host_column(), rel.kind());
+        if let Some(id) = rel.id_column() {
+            spec = spec.with_id_column(id);
+        }
+        spec = spec.with_columns(columns);
+
+        let table = self.table.clone();
+        let host_column = rel.host_column().to_string();
+        let writeback: ContainedWriteback = Arc::new(move |collection: CborValue| {
+            let table = table.clone();
+            let host_column = host_column.clone();
+            let mongo_id = mongo_id.clone();
+            Box::pin(async move {
+                let mut patch: Record<AnyMongoType> = Record::new();
+                patch.insert(host_column, AnyMongoType::from(collection));
+                table.patch_value(&mongo_id, &patch).await?;
+                Ok(())
+            })
+        });
+
+        let factory_db = self.table.data_source().clone();
+        let ref_resolver: ContainedRefResolver =
+            Arc::new(move |relation: &str, child_row: &Record<CborValue>| {
+                let native: Record<AnyMongoType> = child_row
+                    .iter()
+                    .map(|(k, v)| (k.clone(), AnyMongoType::from(v.clone())))
+                    .collect();
+                let target = contained_table.get_ref_from_row::<EmptyEntity>(relation, &native)?;
+                crate::vista::factory::MongoVistaFactory::new(factory_db.clone()).from_table(target)
+            });
+
+        build_contained_vista(&spec, host_value.as_ref(), writeback, Some(ref_resolver))
     }
 
     fn add_order(&mut self, field: &str, dir: SortDirection) -> Result<()> {
