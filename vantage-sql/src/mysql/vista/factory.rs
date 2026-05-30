@@ -187,5 +187,8 @@ where
     for reference in table.vista_references() {
         metadata = metadata.with_reference(reference);
     }
+    for spec in table.vista_contained() {
+        metadata = metadata.with_contained(spec);
+    }
     metadata
 }

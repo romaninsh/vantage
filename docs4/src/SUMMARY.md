@@ -21,6 +21,7 @@
   - [Step 6: Relationships](./new-persistence/step6-relationships.md)
   - [Step 7: Multi-Backend](./new-persistence/step7-multi-backend.md)
   - [Step 8: Vista Integration](./new-persistence/step8-vista-integration.md)
+  - [Step 9: Contained Relations](./new-persistence/step9-contained-relations.md)
 - [Persistence-aligned Type System](./type-system.md)
   - [Adding Custom Types](./type-system/custom-types.md)
 - [SQL: PostgreSQL, MySQL & SQLite](./sql.md)

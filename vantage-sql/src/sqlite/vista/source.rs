@@ -31,7 +31,7 @@ use crate::primitives::identifier::ident;
 use crate::sqlite::SqliteDB;
 use crate::sqlite::operation::SqliteOperation;
 use crate::sqlite::types::AnySqliteType;
-use crate::types::{cbor_to_json, json_to_cbor};
+use crate::types::{cbor_to_json, parse_json_host};
 
 pub struct SqliteTableShell<E = EmptyEntity>
 where
@@ -419,17 +419,5 @@ where
 
     fn driver_name(&self) -> &'static str {
         "sqlite"
-    }
-}
-
-/// Parse a host-column value into a CBOR map/array. SQLite returns a JSON
-/// column as `CborValue::Text`; anything already structured passes through.
-fn parse_json_host(v: &CborValue) -> Option<CborValue> {
-    match v {
-        CborValue::Text(s) => serde_json::from_str::<serde_json::Value>(s)
-            .ok()
-            .map(json_to_cbor),
-        CborValue::Map(_) | CborValue::Array(_) => Some(v.clone()),
-        _ => None,
     }
 }
