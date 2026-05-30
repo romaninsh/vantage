@@ -8,8 +8,6 @@
 //! `Column<AnySqliteType>::eq` comparison via the `SqliteOperation` trait
 //! and pushes it onto the wrapped table.
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
@@ -22,9 +20,8 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Entity, Record};
 use vantage_vista::{
-    Column as VistaColumn, ContainedRefResolver, ContainedSpec, ContainedWriteback,
-    Reference as VistaReference, SortDirection, TableShell, Vista, VistaCapabilities,
-    VistaMetadata, build_contained_vista,
+    Column as VistaColumn, ContainedSpec, Reference as VistaReference, SortDirection, TableShell,
+    Vista, VistaCapabilities, VistaMetadata,
 };
 
 use crate::primitives::identifier::ident;
@@ -348,17 +345,11 @@ where
         &self.metadata.contained
     }
 
-    /// Resolve a contained relation embedded in `row`. SQLite has no native
-    /// nesting, so the host column stores the collection as a **JSON string**:
-    /// the host value is parsed from JSON on read, and writes re-serialize the
-    /// whole collection to JSON and `UPDATE` the column.
+    /// Resolve a contained relation. SQLite has no native nesting, so the host
+    /// column stores the collection as a JSON string — parsed on read,
+    /// re-serialized on write. The shared `Table::get_contained_ref` does the
+    /// rest.
     fn get_contained_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
-        let rel = self
-            .table
-            .contained_relation(relation)
-            .ok_or_else(|| error!("unknown contained relation", relation = relation))?;
-        let host_value = row.get(rel.host_column()).and_then(parse_json_host);
-
         let id_field = self.metadata.id_column.as_deref().unwrap_or("id");
         let parent_id = match row.get(id_field) {
             Some(CborValue::Text(s)) => s.clone(),
@@ -370,47 +361,17 @@ where
                 ));
             }
         };
-
-        // Contained columns from the closure-built table.
-        let contained_table = rel.build_target(self.table.data_source().clone());
-        let columns: Vec<VistaColumn> =
-            crate::sqlite::vista::factory::metadata_from_table(&contained_table)
-                .columns
-                .into_values()
-                .collect();
-        let mut spec = ContainedSpec::new(rel.name(), rel.host_column(), rel.kind());
-        if let Some(id) = rel.id_column() {
-            spec = spec.with_id_column(id);
-        }
-        spec = spec.with_columns(columns);
-
-        // Writeback: serialize the collection to a JSON string and UPDATE it.
-        let table = self.table.clone();
-        let host_column = rel.host_column().to_string();
-        let writeback: ContainedWriteback = Arc::new(move |collection: CborValue| {
-            let table = table.clone();
-            let host_column = host_column.clone();
-            let parent_id = parent_id.clone();
-            Box::pin(async move {
-                let json = cbor_to_json(collection).to_string();
-                let mut patch: Record<AnySqliteType> = Record::new();
-                patch.insert(host_column, AnySqliteType::untyped(CborValue::Text(json)));
-                table.patch_value(&parent_id, &patch).await?;
-                Ok(())
-            })
-        });
-
-        // Traverse-out: resolve a contained record's own relations.
-        let factory_db = self.table.data_source().clone();
-        let ref_resolver: ContainedRefResolver =
-            Arc::new(move |relation: &str, child_row: &Record<CborValue>| {
-                let native = to_native_record(child_row);
-                let target = contained_table.get_ref_from_row::<EmptyEntity>(relation, &native)?;
-                crate::sqlite::vista::factory::SqliteVistaFactory::new(factory_db.clone())
-                    .from_table(target)
-            });
-
-        build_contained_vista(&spec, host_value.as_ref(), writeback, Some(ref_resolver))
+        let db = self.table.data_source().clone();
+        self.table.get_contained_ref(
+            relation,
+            row,
+            parent_id,
+            move |t| {
+                crate::sqlite::vista::factory::SqliteVistaFactory::new(db.clone()).from_table(t)
+            },
+            parse_json_host,
+            |c| CborValue::Text(cbor_to_json(c).to_string()),
+        )
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
