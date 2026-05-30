@@ -289,6 +289,30 @@ pub trait TableShell: Send + Sync + 'static {
         .is_unimplemented())
     }
 
+    /// Build the **bare** target of a same-persistence relation as a `Vista` —
+    /// the table a new related row would be inserted into, with no join
+    /// condition applied. Used by Vista's nested insert to reach a has-one /
+    /// has-many child's destination.
+    ///
+    /// Drivers override by forwarding into the wrapped typed `Table`'s
+    /// `get_ref_target::<EmptyEntity>(relation)` and wrapping the result back
+    /// through the driver's factory — the same path as [`get_ref`](Self::get_ref)
+    /// minus the row-derived condition. The default returns `Unimplemented`;
+    /// cross-persistence relations are rejected at the `Vista` layer before
+    /// this is reached.
+    fn get_ref_target(&self, relation: &str) -> Result<Vista> {
+        Err(error!(
+            format!(
+                "get_ref_target not implemented for '{}'",
+                std::any::type_name::<Self>()
+            ),
+            method = "get_ref_target",
+            relation = relation,
+            source_type = std::any::type_name::<Self>()
+        )
+        .is_unimplemented())
+    }
+
     /// Names + cardinalities of the shell's same-persistence references.
     /// Derived from [`references`](Self::references) by default; impls
     /// should rarely need to override.

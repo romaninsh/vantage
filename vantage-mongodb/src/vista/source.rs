@@ -292,6 +292,13 @@ impl TableShell for MongoTableShell {
         factory.from_table(target)
     }
 
+    fn get_ref_target(&self, relation: &str) -> Result<Vista> {
+        let target = self.table.get_ref_target::<EmptyEntity>(relation)?;
+        let factory =
+            crate::vista::factory::MongoVistaFactory::new(self.table.data_source().clone());
+        factory.from_table(target)
+    }
+
     fn get_ref_kinds(&self) -> Vec<(String, vantage_vista::ReferenceKind)> {
         self.table.ref_kinds()
     }

@@ -77,6 +77,28 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         }
     }
 
+    /// Snapshot the table's relations as Vista references (name, target type,
+    /// cardinality, foreign key). Driver factories fold this into
+    /// `VistaMetadata` so the erased `Vista` carries enough to drive nested
+    /// insert and relation traversal.
+    pub fn vista_references(&self) -> Vec<vantage_vista::Reference> {
+        self.refs
+            .as_ref()
+            .map(|refs| {
+                refs.iter()
+                    .map(|(name, r)| {
+                        vantage_vista::Reference::new(
+                            name.clone(),
+                            r.target_type_name().to_string(),
+                            r.cardinality(),
+                            r.foreign_key().to_string(),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Use a callback with a builder pattern for configuration
     pub fn with<F>(mut self, func: F) -> Self
     where

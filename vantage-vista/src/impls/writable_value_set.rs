@@ -13,7 +13,7 @@ impl WritableValueSet for Vista {
         id: &String,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.source.insert_vista_value(self, id, record).await
+        self.insert_nested_value(id, record).await
     }
 
     async fn replace_value(
