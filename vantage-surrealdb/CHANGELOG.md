@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.4 — 2026-05-31
+
+- SurrealDB v2 seed defines order lifecycle status and cancellation fields.
+
 ## 0.5.3 — 2026-05-31
 
 - Contained relations backed by native nested objects and arrays: an order's embedded `lines`
