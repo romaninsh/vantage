@@ -671,3 +671,62 @@ async fn contained_json_column_round_trips_on_sqlite() -> TestResult {
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn contained_from_yaml_round_trips_on_sqlite() -> TestResult {
+    let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
+    sqlx::query("CREATE TABLE cart_yaml (id TEXT PRIMARY KEY, items TEXT NOT NULL)")
+        .execute(db.pool())
+        .await
+        .unwrap();
+    sqlx::query(r#"INSERT INTO cart_yaml VALUES ('c1', '[{"sku":"a","qty":1}]')"#)
+        .execute(db.pool())
+        .await
+        .unwrap();
+
+    let yaml = r#"
+name: cart
+columns:
+  id: { type: string, flags: [id] }
+  items: { type: string }
+sqlite:
+  table: cart_yaml
+contained:
+  items:
+    host_column: items
+    kind: contains_many
+    columns:
+      sku: { type: string }
+      qty: { type: int }
+"#;
+    let vista = db.vista_factory().from_yaml(yaml)?;
+    assert_eq!(
+        vista.list_contained(),
+        vec![(
+            "items".to_string(),
+            vantage_vista::ContainedKind::ContainsMany
+        )]
+    );
+
+    let cart = vista.get_value(&"c1".to_string()).await?.unwrap();
+    let items = vista.get_ref("items", &cart)?;
+    assert_eq!(items.list_values().await?.len(), 1);
+
+    let mut line = Record::new();
+    line.insert("sku".to_string(), CborValue::Text("b".into()));
+    line.insert("qty".to_string(), CborValue::Integer(2i64.into()));
+    items.insert_return_id_value(&line).await?;
+
+    let cart2 = vista.get_value(&"c1".to_string()).await?.unwrap();
+    let items2 = vista.get_ref("items", &cart2)?;
+    assert_eq!(items2.list_values().await?.len(), 2);
+    assert_eq!(
+        items2
+            .get_value(&"1".to_string())
+            .await?
+            .unwrap()
+            .get("sku"),
+        Some(&CborValue::Text("b".into()))
+    );
+    Ok(())
+}
