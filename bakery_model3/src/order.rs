@@ -11,7 +11,7 @@ use vantage_surrealdb::types::AnySurrealType;
 use vantage_table::table::Table;
 use vantage_types::entity;
 
-use crate::Client;
+use crate::{Client, Product};
 
 #[entity(CsvType, SurrealType, SqliteType, PostgresType, MongoType, DynamoType)]
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -37,7 +37,25 @@ impl Order {
             .with_id_column("id")
             .with_column_of::<Thing>("client")
             .with_column_of::<bool>("is_deleted")
+            // `lines` is an embedded `array<object>` of `{ product, quantity,
+            // price }` — declared as a column so it's selected, and as a
+            // contains-many relation whose record schema is built by the
+            // closure (like `with_many`).
+            .with_column_of::<AnySurrealType>("lines")
             .with_one("client", "client", Client::surreal_table)
+            .with_contained_many(
+                "lines",
+                "lines",
+                |db| {
+                    Table::new("lines", db)
+                        .with_column_of::<Thing>("product")
+                        .with_column_of::<i64>("quantity")
+                        .with_column_of::<i64>("price")
+                        // a line traverses out to the real product table
+                        .with_one("product", "product", Product::surreal_table)
+                },
+                None,
+            )
     }
 
     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Order> {

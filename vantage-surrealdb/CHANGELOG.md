@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.3 — 2026-05-31
+
+- Contained relations backed by native nested objects and arrays: an order's embedded `lines`
+  surface as an editable sub-Vista and can traverse out to real tables (`line.product`). See the
+  [contained relations guide](https://romaninsh.github.io/vantage/new-persistence/step9-contained-relations.html).
+
 ## 0.5.2 — 2026-05-23
 
 - Align all internal dependency versions to 0.5+. No public API changes.

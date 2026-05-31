@@ -41,7 +41,14 @@ impl Product {
             .with_column_of::<bool>("is_deleted")
             .with_column_of::<Option<Animal>>("sticker")
             .with_column_of::<String>("bakery")
+            // `inventory` is an embedded object `{ stock }` — declared as a
+            // column so it's selected, and as a contains-one relation whose
+            // record schema is built by the closure (like `with_one`).
+            .with_column_of::<AnySurrealType>("inventory")
             .with_one("bakery", "bakery", Bakery::surreal_table)
+            .with_contained_one("inventory", "inventory", |db| {
+                Table::new("inventory", db).with_column_of::<i64>("stock")
+            })
     }
 
     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Product> {

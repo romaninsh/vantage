@@ -25,8 +25,8 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Entity, Record};
 use vantage_vista::{
-    Column as VistaColumn, Reference as VistaReference, SortDirection, TableShell, Vista,
-    VistaCapabilities, VistaMetadata,
+    Column as VistaColumn, ContainedSpec, Reference as VistaReference, SortDirection, TableShell,
+    Vista, VistaCapabilities, VistaMetadata,
 };
 
 use crate::identifier::Identifier;
@@ -34,7 +34,7 @@ use crate::operation::SurrealOperation;
 use crate::surreal_expr;
 use crate::surrealdb::SurrealDB;
 use crate::thing::Thing;
-use crate::types::AnySurrealType;
+use crate::types::{AnySurrealType, SurrealType};
 use crate::vista::factory::SurrealSpecResolver;
 
 pub struct SurrealTableShell<E = EmptyEntity>
@@ -237,6 +237,45 @@ where
             factory = factory.with_resolver(resolver.clone());
         }
         factory.from_table(target)
+    }
+
+    fn contained(&self) -> &IndexMap<String, ContainedSpec> {
+        &self.metadata.contained
+    }
+
+    /// Resolve a contained relation. SurrealDB stores the embedded object /
+    /// array natively, so the host value passes through unchanged and writes
+    /// `UPDATE … MERGE` it back. The shared `Table::get_contained_ref` does the
+    /// rest; this shim supplies the `Thing` id and the factory wrap (which
+    /// carries the cross-persistence resolver for traverse-out).
+    fn get_contained_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
+        let id_field = self.metadata.id_column.as_deref().unwrap_or("id");
+        let id_cbor = row
+            .get(id_field)
+            .ok_or_else(|| error!("contained traversal requires the parent row's id"))?;
+        let thing = Thing::from_cbor(id_cbor.clone())
+            .or_else(|| match id_cbor {
+                CborValue::Text(s) => Some(self.parse_id(s)),
+                _ => None,
+            })
+            .ok_or_else(|| error!("could not resolve parent id into a Thing"))?;
+
+        let db = self.table.data_source().clone();
+        let spec_resolver = self.resolver.clone();
+        self.table.get_contained_ref(
+            relation,
+            row,
+            thing,
+            move |t| {
+                let mut factory = crate::vista::factory::SurrealVistaFactory::new(db.clone());
+                if let Some(r) = &spec_resolver {
+                    factory = factory.with_resolver(r.clone());
+                }
+                factory.from_table(t)
+            },
+            |v| Some(v.clone()),
+            |c| c,
+        )
     }
 
     fn get_ref_kinds(&self) -> Vec<(String, vantage_vista::ReferenceKind)> {

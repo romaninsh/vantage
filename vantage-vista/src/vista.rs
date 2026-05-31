@@ -328,7 +328,21 @@ impl Vista {
         if let Some(fref) = self.foreign_resolvers.get(relation) {
             return (fref.resolver)(row);
         }
+        if self.source.contained().contains_key(relation) {
+            return self.source.get_contained_ref(relation, row);
+        }
         self.source.get_ref(relation, row)
+    }
+
+    /// Contained (embedded-in-row) relations the Vista exposes, with their
+    /// cardinality. Distinct from [`list_references`](Self::list_references),
+    /// which covers foreign-key relations.
+    pub fn list_contained(&self) -> Vec<(String, crate::reference::ContainedKind)> {
+        self.source
+            .contained()
+            .values()
+            .map(|s| (s.name.clone(), s.kind))
+            .collect()
     }
 
     /// Build the bare target of a same-persistence relation — the unconditioned

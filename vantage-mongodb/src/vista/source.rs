@@ -22,8 +22,8 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Column as VistaColumn, Reference as VistaReference, SortDirection, TableShell, Vista,
-    VistaCapabilities, VistaMetadata,
+    Column as VistaColumn, ContainedSpec, Reference as VistaReference, SortDirection, TableShell,
+    Vista, VistaCapabilities, VistaMetadata,
 };
 
 use crate::condition::MongoCondition;
@@ -301,6 +301,38 @@ impl TableShell for MongoTableShell {
 
     fn get_ref_kinds(&self) -> Vec<(String, vantage_vista::ReferenceKind)> {
         self.table.ref_kinds()
+    }
+
+    fn contained(&self) -> &IndexMap<String, ContainedSpec> {
+        &self.metadata.contained
+    }
+
+    /// Resolve a contained relation. MongoDB stores nested objects/arrays
+    /// natively, so the host value passes through unchanged and writes `$set`
+    /// it back. The shared `Table::get_contained_ref` does the rest; this shim
+    /// supplies the `MongoId` and the factory wrap.
+    fn get_contained_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
+        let id_field = self.metadata.id_column.as_deref().unwrap_or("_id");
+        let parent_id = match row.get(id_field) {
+            Some(CborValue::Text(s)) => s.clone(),
+            Some(CborValue::Integer(i)) => i128::from(*i).to_string(),
+            _ => {
+                return Err(error!(
+                    "contained traversal requires the parent document's id",
+                    relation = relation
+                ));
+            }
+        };
+        let mongo_id = self.parse_id(&parent_id);
+        let db = self.table.data_source().clone();
+        self.table.get_contained_ref(
+            relation,
+            row,
+            mongo_id,
+            move |t| crate::vista::factory::MongoVistaFactory::new(db.clone()).from_table(t),
+            |v| Some(v.clone()),
+            |c| c,
+        )
     }
 
     fn add_order(&mut self, field: &str, dir: SortDirection) -> Result<()> {

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.2 — 2026-05-31
+
+### Added
+
+- Contained relations surface embedded objects/arrays as a full editable sub-`Vista` via
+  `build_contained_vista`. Reads project the host column into records; writes re-serialize the
+  whole collection and patch the parent row through a writeback closure. Contained records can
+  traverse out to real tables, and a `contained:` section is now decodable from YAML specs. See the
+  [contained relations guide](https://romaninsh.github.io/vantage/new-persistence/step9-contained-relations.html).
+
 ## 0.5.1 — 2026-05-30
 
 ### Added

@@ -179,6 +179,7 @@ pub(crate) fn build_surreal_table(
         };
     }
 
+    let table = table.with_contained_specs(&spec.contained, build_column)?;
     Ok(table)
 }
 
@@ -272,6 +273,9 @@ where
         if let Some(col) = metadata.columns.get_mut(title) {
             col.flags.push(vista_flags::TITLE.to_string());
         }
+    }
+    for spec in table.vista_contained() {
+        metadata = metadata.with_contained(spec);
     }
     metadata
 }

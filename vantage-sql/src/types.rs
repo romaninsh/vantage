@@ -10,6 +10,19 @@
 use ciborium::Value as CborValue;
 use serde_json::Value as JsonValue;
 
+/// Parse a contained relation's host-column value into a CBOR map/array.
+/// A SQL `TEXT` column holding JSON comes back as `CborValue::Text` (parse it);
+/// a native `json`/`jsonb` column already decodes to `Map`/`Array` (pass
+/// through). Returns `None` for anything else (e.g. NULL/absent column).
+#[cfg(feature = "vista")]
+pub(crate) fn parse_json_host(v: &CborValue) -> Option<CborValue> {
+    match v {
+        CborValue::Text(s) => serde_json::from_str::<JsonValue>(s).ok().map(json_to_cbor),
+        CborValue::Map(_) | CborValue::Array(_) => Some(v.clone()),
+        _ => None,
+    }
+}
+
 /// Convert a `serde_json::Value` into a `ciborium::Value`.
 pub(crate) fn json_to_cbor(val: JsonValue) -> CborValue {
     match val {

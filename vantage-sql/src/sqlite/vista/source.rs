@@ -20,14 +20,15 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Entity, Record};
 use vantage_vista::{
-    Column as VistaColumn, Reference as VistaReference, SortDirection, TableShell, Vista,
-    VistaCapabilities, VistaMetadata,
+    Column as VistaColumn, ContainedSpec, Reference as VistaReference, SortDirection, TableShell,
+    Vista, VistaCapabilities, VistaMetadata,
 };
 
 use crate::primitives::identifier::ident;
 use crate::sqlite::SqliteDB;
 use crate::sqlite::operation::SqliteOperation;
 use crate::sqlite::types::AnySqliteType;
+use crate::types::{cbor_to_json, parse_json_host};
 
 pub struct SqliteTableShell<E = EmptyEntity>
 where
@@ -338,6 +339,39 @@ where
 
     fn get_ref_kinds(&self) -> Vec<(String, vantage_vista::ReferenceKind)> {
         self.table.ref_kinds()
+    }
+
+    fn contained(&self) -> &IndexMap<String, ContainedSpec> {
+        &self.metadata.contained
+    }
+
+    /// Resolve a contained relation. SQLite has no native nesting, so the host
+    /// column stores the collection as a JSON string — parsed on read,
+    /// re-serialized on write. The shared `Table::get_contained_ref` does the
+    /// rest.
+    fn get_contained_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
+        let id_field = self.metadata.id_column.as_deref().unwrap_or("id");
+        let parent_id = match row.get(id_field) {
+            Some(CborValue::Text(s)) => s.clone(),
+            Some(CborValue::Integer(i)) => i128::from(*i).to_string(),
+            _ => {
+                return Err(error!(
+                    "contained traversal requires the parent row's id",
+                    relation = relation
+                ));
+            }
+        };
+        let db = self.table.data_source().clone();
+        self.table.get_contained_ref(
+            relation,
+            row,
+            parent_id,
+            move |t| {
+                crate::sqlite::vista::factory::SqliteVistaFactory::new(db.clone()).from_table(t)
+            },
+            parse_json_host,
+            |c| CborValue::Text(cbor_to_json(c).to_string()),
+        )
     }
 
     fn capabilities(&self) -> &VistaCapabilities {

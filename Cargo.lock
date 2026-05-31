@@ -4628,7 +4628,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -4678,11 +4678,13 @@ version = "0.0.0"
 dependencies = [
  "vantage-core",
  "vantage-dataset",
+ "vantage-diorama",
  "vantage-expressions",
  "vantage-mongodb",
  "vantage-sql",
  "vantage-table",
  "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]
@@ -4726,7 +4728,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-mongodb"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "async-trait",
  "bson",
@@ -4772,7 +4774,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4797,7 +4799,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "async-trait",
  "bakery_model3",
@@ -4827,7 +4829,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -4877,7 +4879,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "async-stream",
  "async-trait",

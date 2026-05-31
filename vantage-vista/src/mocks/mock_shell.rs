@@ -8,8 +8,15 @@ use vantage_core::Result;
 use vantage_types::Record;
 
 use crate::{
-    capabilities::VistaCapabilities, column::Column, metadata::VistaMetadata, reference::Reference,
-    sort::SortDirection, source::TableShell, vista::Vista,
+    build_contained_vista,
+    capabilities::VistaCapabilities,
+    column::Column,
+    contained::ContainedWriteback,
+    metadata::VistaMetadata,
+    reference::{ContainedSpec, Reference},
+    sort::SortDirection,
+    source::TableShell,
+    vista::Vista,
 };
 
 #[derive(Clone)]
@@ -102,6 +109,48 @@ impl TableShell for MockShell {
 
     fn references(&self) -> &IndexMap<String, Reference> {
         &self.metadata.references
+    }
+
+    fn contained(&self) -> &IndexMap<String, ContainedSpec> {
+        &self.metadata.contained
+    }
+
+    /// Resolve a contained relation against `row`, with a writeback that patches
+    /// the parent record's host column directly in this mock's store — the
+    /// in-memory analogue of a driver patching its row.
+    fn get_contained_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
+        let spec = self.metadata.contained.get(relation).ok_or_else(|| {
+            vantage_core::error!("unknown contained relation", relation = relation)
+        })?;
+        let host_value = row.get(&spec.host_column).cloned();
+
+        let id_field = self.metadata.id_column.as_deref().unwrap_or("id");
+        let parent_id = match row.get(id_field) {
+            Some(CborValue::Text(s)) => s.clone(),
+            _ => {
+                return Err(vantage_core::error!(
+                    "contained traversal requires the parent row's id",
+                    relation = relation
+                ));
+            }
+        };
+
+        let data = self.data.clone();
+        let host_column = spec.host_column.clone();
+        let writeback: ContainedWriteback = Arc::new(move |collection: CborValue| {
+            let data = data.clone();
+            let host_column = host_column.clone();
+            let parent_id = parent_id.clone();
+            Box::pin(async move {
+                let mut store = data.lock().unwrap();
+                if let Some(record) = store.get_mut(&parent_id) {
+                    record.insert(host_column, collection);
+                }
+                Ok(())
+            })
+        });
+
+        build_contained_vista(spec, host_value.as_ref(), writeback, None)
     }
 
     fn id_column(&self) -> Option<&str> {
