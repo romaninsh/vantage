@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Historical Timeline - Vantage 0.4 Framework</title>
+        <title>Step 9: Contained Relations - Vantage 0.4 Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -12,34 +12,34 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
-        <link rel="icon" href="favicon-de23e50b.svg">
-        <link rel="shortcut icon" href="favicon-8114d1fc.png">
-        <link rel="stylesheet" href="css/variables-8adf115d.css">
-        <link rel="stylesheet" href="css/general-2459343d.css">
-        <link rel="stylesheet" href="css/chrome-ae938929.css">
-        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-2459343d.css">
+        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
 
         <!-- Highlight.js Stylesheets -->
-        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
-        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
-        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
 
         <!-- Custom theme stylesheets -->
-        <link rel="stylesheet" href="./mdbook-admonish.css">
+        <link rel="stylesheet" href=".././mdbook-admonish.css">
 
 
         <!-- Provide site root and default themes to javascript -->
         <script>
-            const path_to_root = "";
+            const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-959ffe55.js";
+            window.path_to_searchindex_js = "../searchindex-959ffe55.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-3f24ff2a.js"></script>
+        <script src="../toc-3f24ff2a.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -106,7 +106,7 @@
             <!-- populated by js -->
             <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
             <noscript>
-                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
             </noscript>
             <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -141,7 +141,7 @@
                     <h1 class="menu-title">Vantage 0.4 Framework</h1>
 
                     <div class="right-buttons">
-                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
                         </a>
 
@@ -175,311 +175,202 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="the-vantage-journey"><a class="header" href="#the-vantage-journey">The Vantage Journey</a></h1>
-<p>Vantage didn’t start as a multi-backend entity framework. It started as a weekend experiment to see
-if Rust could build SQL queries without feeling like Rust.</p>
-<p>This page walks you through each release — what changed, why it mattered, and how the API evolved
-from raw Postgres queries to a universal persistence layer.</p>
+                        <h1 id="step-9-contained-relations"><a class="header" href="#step-9-contained-relations">Step 9: Contained Relations</a></h1>
+<p>Some data doesn’t live in its own table. A product carries an <code>inventory</code> object; an order carries
+a <code>lines</code> array. The records are real — they have fields, you want to list them, add to them, edit
+one — but they’re physically embedded in a column of the parent row, not stored in a table of their
+own.</p>
+<p><code>with_one</code> / <code>with_many</code> (Step 6) can’t model this: they resolve to <em>another</em> table via a foreign
+key. A contained relation resolves to a <strong>sub-<code>Vista</code> backed by one column of the same row</strong>.
+Reads project that column into records; writes patch the column back in place. To the consumer it
+looks exactly like any other relation — <code>get_ref("lines")</code>, then <code>list_values</code> / <code>insert</code> / <code>patch</code>
+/ <code>delete</code>.</p>
+<p>This step is optional. Skip it unless your backend stores embedded objects or arrays that users
+should be able to edit as records.</p>
+<h3 id="what-the-framework-gives-you"><a class="header" href="#what-the-framework-gives-you">What the framework gives you</a></h3>
+<p>Almost all of it is backend-agnostic and already done:</p>
 <ul>
-<li><a href="#00--dorm-aprilnovember-2024">0.0 — “DORM” (April–November 2024)</a>
-<ul>
-<li><a href="#milestones">Milestones</a></li>
-</ul>
+<li>
+<p><strong>Declaration</strong> is on the typed <code>Table</code>, mirroring <code>with_one</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>Table::new("order", db)
+    .with_id_column("id")
+    .with_column_of::&lt;…&gt;("lines")          // declare the host column (see Sharp edges)
+    .with_contained_many("lines", "lines", |db| {
+        Table::new("lines", db)
+            .with_column_of::&lt;i64&gt;("quantity")
+            .with_one("product", "product", Product::table)  // a line can traverse out
+    }, None)
+<span class="boring">}</span></code></pre>
+<p>The closure builds the contained record’s schema — same shape as <code>with_one</code>’s <code>build_target</code>,
+same type system, evaluated lazily. <code>vista_contained()</code> surfaces these as <code>ContainedSpec</code>s.</p>
 </li>
-<li><a href="#01--vantage-is-born-december-2024">0.1 — Vantage is born (December 2024)</a></li>
-<li><a href="#02--entity-framework--mda-february-2025">0.2 — Entity Framework &amp; MDA (February 2025)</a></li>
-<li><a href="#03--the-great-separation-julyoctober-2025">0.3 — The Great Separation (July–October 2025)</a></li>
-<li><a href="#04--the-type-system-rewrite-november-2025present">0.4 — The Type System Rewrite (November 2025–present)</a></li>
-<li><a href="#the-bigger-picture">The bigger picture</a></li>
+<li>
+<p><strong>The sub-Vista</strong> is <a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/contained/fn.build_contained_vista.html" title="vantage_vista::build_contained_vista"><code>vantage_vista::build_contained_vista</code></a>. It materializes the column’s
+records into an in-memory <code>ImTable</code>, serves reads from it, and on every write re-serializes the
+whole collection and calls a <strong>writeback</strong> closure. That writeback — patch the parent row’s host
+column — is the only persistence-specific part you supply.</p>
+</li>
 </ul>
-<pre class="mermaid">graph LR
-    D[0.0 DORM] --&gt;|rename| V1[0.1 Vantage]
-    V1 --&gt;|entity framework| V2[0.2 MDA]
-    V2 --&gt;|crate split| V3[0.3 UI Adapters]
-    V3 --&gt;|type rewrite| V4[0.4 Type System]
-    style D fill:#555,color:#fff
-    style V1 fill:#4a7c59,color:#fff
-    style V2 fill:#2d6a8f,color:#fff
-    style V3 fill:#8f5a2d,color:#fff
-    style V4 fill:#7c2d8f,color:#fff
-</pre>
-
-<hr>
-<h2 id="00--dorm-aprilnovember-2024"><a class="header" href="#00--dorm-aprilnovember-2024">0.0 — “DORM” (April–November 2024)</a></h2>
-<p>The project was originally called <strong>DORM</strong> — the Dry ORM. It was Postgres-only, monolithic, and
-proudly opinionated. Everything lived in one crate.</p>
-<p>The core idea was already there: <strong>Data Sets</strong>. Instead of loading records eagerly, you describe
-<em>what</em> you want and let the framework figure out the query.</p>
+<p>So your job is one <code>TableShell</code> method.</p>
+<h3 id="tableshellget_contained_ref"><a class="header" href="#tableshellget_contained_ref"><code>TableShell::get_contained_ref</code></a></h3>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>let clients = Client::table();           // Table&lt;Postgres, Client&gt;
-let paying = clients.with_condition(
-    clients.is_paying_client().eq(&amp;true)
-);
-let orders = paying.ref_orders();         // Table&lt;Postgres, Order&gt;
+</span>fn contained(&amp;self) -&gt; &amp;IndexMap&lt;String, ContainedSpec&gt; {
+    &amp;self.metadata.contained
+}
 
-for order in orders.get().await? {
-    println!("#{} total: ${:.2}", order.id, order.total as f64 / 100.0);
+fn get_contained_ref(&amp;self, relation: &amp;str, row: &amp;Record&lt;CborValue&gt;) -&gt; Result&lt;Vista&gt; {
+    let rel = self.table.contained_relation(relation)?;          // host column, kind, build_target
+    let host_value = /* the embedded collection as a CBOR map/array — see below */;
+    let parent_id  = /* this row's id, as your native id */;
+
+    // Columns for the sub-Vista's schema, harvested from the closure-built table.
+    let columns = metadata_from_table(&amp;rel.build_target(self.db())).columns;
+    let spec    = ContainedSpec::new(rel.name(), rel.host_column(), rel.kind()).with_columns(columns);
+
+    // Eager writeback: re-serialize → patch the host column on the parent row.
+    let writeback = Arc::new(move |collection: CborValue| { /* patch parent[host] = collection */ });
+
+    // Traverse-out: resolve the contained record's own relations (line → product).
+    let ref_resolver = Arc::new(move |rel, child_row| { /* get_ref_from_row on the contained table */ });
+
+    build_contained_vista(&amp;spec, host_value.as_ref(), writeback, Some(ref_resolver))
 }
 <span class="boring">}</span></code></pre>
-<p>Behind this innocent-looking code, DORM generated a single SQL query with subqueries, joins, and
-soft-delete filters — all derived from model definitions:</p>
-<pre><code class="language-sql">SELECT id,
-    (SELECT name FROM client WHERE client.id = ord.client_id) AS client_name,
-    (SELECT SUM((SELECT price FROM product WHERE id = product_id) * quantity)
-     FROM order_line WHERE order_line.order_id = ord.id) AS total
-FROM ord
-WHERE client_id IN (SELECT id FROM client WHERE is_paying_client = true)
-  AND is_deleted = false
+<p>And in the factory’s <code>metadata_from_table</code>, copy the specs so the relation surfaces:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>for spec in table.vista_contained() {
+    metadata = metadata.with_contained(spec);
+}
+<span class="boring">}</span></code></pre>
+<p>That’s the whole integration. The two driver-specific decisions are how the host value crosses the
+boundary, and what the writeback does — and those split cleanly along one line.</p>
+<h3 id="native-vs-json-blob"><a class="header" href="#native-vs-json-blob">Native vs JSON-blob</a></h3>
+<p><strong>Native backends</strong> (SurrealDB, MongoDB) store the host column as a real nested object/array. The
+value arrives as <code>CborValue::Map</code>/<code>Array</code> already, and the writeback patches it back as-is —
+SurrealDB <code>UPDATE … MERGE</code>, MongoDB <code>$set</code>. No serialization on either side:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let host_value = row.get(rel.host_column()).cloned();       // already a Map/Array
+// writeback: patch { host: AnyNativeType::from(collection) }
+<span class="boring">}</span></code></pre>
+<p><strong>JSON-blob backends</strong> (SQL with no native nesting — the SQLite path) store the collection as a
+JSON string in a <code>TEXT</code> column. Parse on read, serialize on write, using the shared
+<code>json_to_cbor</code> / <code>cbor_to_json</code> bridge:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let host_value = row.get(rel.host_column()).and_then(parse_json_host);   // Text(json) → Map/Array
+// writeback: patch { host: Text(cbor_to_json(collection).to_string()) }
+<span class="boring">}</span></code></pre>
+<p><code>parse_json_host</code> also passes a <code>Map</code>/<code>Array</code> straight through, so the same code copes with a
+backend that <em>does</em> parse JSON columns natively (Postgres <code>jsonb</code>, MySQL <code>json</code>) — there, declaring
+the host column as <code>TEXT</code> keeps the round-trip a plain string and avoids the write-side bind for
+nested values. Postgres and MySQL share the SQLite implementation verbatim for exactly this reason.</p>
+<h3 id="why-not-just-flatten-the-keys"><a class="header" href="#why-not-just-flatten-the-keys">Why not just flatten the keys?</a></h3>
+<p>You can, for <em>reading</em> a fixed shape — <code>inventory.stock</code> as a scalar column is fine when there’s
+one known field. It falls apart the moment the embedded data is a <em>collection</em> (an order has N
+lines, not a fixed set), or the user needs to add and remove elements. A contained relation gives
+you a record set with ids, not a bag of dotted columns.</p>
+<h3 id="why-not-model-it-as-a-foreign-key-relation"><a class="header" href="#why-not-model-it-as-a-foreign-key-relation">Why not model it as a foreign-key relation?</a></h3>
+<p>Because there’s no other table to point at, and no foreign key to join on. The data is in the row.
+Forcing it into <code>with_many</code> would mean inventing a synthetic table and writing a join that the
+storage engine can’t honour. Contained relations are the honest model: traversal is a column
+projection, not a query.</p>
+<h3 id="eager-writeback"><a class="header" href="#eager-writeback">Eager writeback</a></h3>
+<p>Every mutation on the sub-Vista patches the parent row immediately — there’s no <code>flush</code>. This keeps
+the sub-Vista and the parent row coherent at all times, and it’s deliberate: batching belongs to a
+higher layer (a UI’s write queue), not the storage boundary. The cost is one parent patch per edit,
+which is trivial for the small collections this targets.</p>
+<p>The flip side: the whole collection is re-serialized and written each time. A contained relation is
+for line items and embedded objects, not for a thousand-element array you mutate in a tight loop.</p>
+<h3 id="sharp-edges"><a class="header" href="#sharp-edges">Sharp edges</a></h3>
+<p><strong>Declare the host column.</strong> This is the bug every backend hits. If <code>lines</code> isn’t a declared
+column, your read path won’t select or project it (SQL builds its <code>SELECT</code> from declared columns;
+MongoDB projects from <code>column_paths</code>), so the parent row arrives without it and traversal sees an
+empty collection. Declare it alongside the <code>with_contained_*</code> call.</p>
+<p><strong>Positional ids shift.</strong> With no declared id column, contained-many records are keyed by index
+(<code>"0"</code>, <code>"1"</code>, …). Deleting element 0 renumbers the rest. Give the contained schema an id column
+(<code>with_contained_many(…, Some("line_id"))</code>) when callers hold onto ids across mutations.</p>
+<p><strong>Contained-one uses a fixed id.</strong> A single embedded object is addressed as <code>"0"</code>; there’s no
+ambiguity to resolve.</p>
+<p><strong>The writeback is not atomic with the contained record’s own children.</strong> A contained record can
+traverse out (<code>line → product</code>) or even nest further, but each backend write is its own statement.
+That’s the same best-effort contract as nested insert (Step 6’s neighbour) — fine for these shapes,
+not a transaction.</p>
+<h3 id="from-yaml"><a class="header" href="#from-yaml">From YAML</a></h3>
+<p>Contained relations are declarable in a YAML vista spec too, via a <code>contained:</code> section that mirrors
+<code>columns:</code>/<code>references:</code>:</p>
+<pre><code class="language-yaml">name: order
+columns:
+  id: { type: string, flags: [id] }
+  lines: { type: string }          # the host column — declare it so it's selected
+sqlite:
+  table: order
+contained:
+  lines:
+    host_column: lines
+    kind: contains_many            # or contains_one
+    id_column: line_id             # optional; omit for positional ids
+    columns:
+      product: { type: string }
+      quantity: { type: int }
 </code></pre>
-<p>No hand-written SQL. No query strings. The framework composed everything from relationship
-definitions and table extensions like <code>SoftDelete</code>.</p>
-<div id="admonition-the-arc-breakthrough" class="admonition admonish-tip" role="note" aria-labelledby="admonition-the-arc-breakthrough-title">
-<div class="admonition-title">
-<div id="admonition-the-arc-breakthrough-title">
-<p>The Arc breakthrough</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-the-arc-breakthrough"></a>
-</div>
-
-<div>
-<p>Early commits show a battle with Rust’s borrow checker — the infamous “lifetime hell.”
-The solution came on April 28: switching to <code>Arc</code> for shared ownership. This unlocked
-clonable data sources and composable table references that define the framework to this day.</p>
-</div>
-
-</div>
-
-<h3 id="milestones"><a class="header" href="#milestones">Milestones</a></h3>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Date</th><th>What happened</th></tr>
-</thead>
-<tbody>
-<tr><td>Apr 11</td><td>First commit — queries, expressions, SQLite binding</td></tr>
-<tr><td>Apr 18</td><td>Insert/delete support, first Postgres tests</td></tr>
-<tr><td>Apr 28</td><td><code>Arc</code> adoption — escaped lifetime hell</td></tr>
-<tr><td>May 14</td><td><code>Query::Join</code> implemented</td></tr>
-<tr><td>May 25</td><td><code>has_one</code>, <code>has_many</code>, relationship traversal</td></tr>
-<tr><td>May 26</td><td>Bakery model example — all entities defined</td></tr>
-</tbody>
-</table>
-</div>
-<hr>
-<h2 id="01--vantage-is-born-december-2024"><a class="header" href="#01--vantage-is-born-december-2024">0.1 — Vantage is born (December 2024)</a></h2>
-<p>On December 12, the framework was renamed from DORM to <strong>Vantage</strong> and published to crates.io for
-the first time. The API stayed the same — this was a branding milestone, not an architectural one.</p>
-<div id="admonition-why-vantage" class="admonition admonish-note" role="note" aria-labelledby="admonition-why-vantage-title">
-<div class="admonition-title">
-<div id="admonition-why-vantage-title">
-<p>Why ‘Vantage’?</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-why-vantage"></a>
-</div>
-
-<div>
-<p>A vantage point gives you a clear view of the landscape below. The framework gives you
-a clear view of your data — no matter where it lives or how complex the relationships are.</p>
-</div>
-
-</div>
-
-<p>The same month brought the first Axum integration (<code>bakery_api</code>), proving that data sets could drive
-REST endpoints naturally:</p>
+<p>The loader lowers this through one generic helper —
+<a href="https://docs.rs/vantage-table/latest/vantage_table/"><code>Table::with_contained_specs</code></a> — which calls
+your driver’s existing <code>build_column</code> on each contained column, so the YAML and code-first paths
+converge on the same registration. Wiring it is one line per driver in <code>table_from_spec</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>async fn list_orders(
-    client: axum::extract::Query&lt;OrderRequest&gt;,
-    pager: axum::extract::Query&lt;Pagination&gt;,
-) -&gt; impl IntoResponse {
-    let orders = Client::table()
-        .with_id(client.client_id.into())
-        .ref_orders();
-
-    let mut query = orders.query();
-    query.add_limit(Some(pager.per_page));
-    Json(query.get().await.unwrap())
-}
+</span>table = table.with_contained_specs(&amp;spec.contained, build_column)?;
 <span class="boring">}</span></code></pre>
-<p>Tags <code>v0.1.0</code> and <code>v0.1.1</code> were published the same day. SQLx data source landed 11 days later.</p>
-<hr>
-<h2 id="02--entity-framework--mda-february-2025"><a class="header" href="#02--entity-framework--mda-february-2025">0.2 — Entity Framework &amp; MDA (February 2025)</a></h2>
-<p>Version 0.2 repositioned Vantage as a full <strong>Entity Framework</strong> with Model-Driven Architecture. The
-README doubled in size. The vision expanded from “clever query builder” to “how enterprises should
-structure business logic.”</p>
-<p>The key insight: entities aren’t just database rows. They’re <strong>business objects</strong> that might live in
-SQL, NoSQL, a REST API, or a message queue — and your code shouldn’t care which.</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>impl Client {
-    fn table() -&gt; Table&lt;Client, Oracle&gt; { /* ... */ }
-    fn registration_queue() -&gt; impl Insertable&lt;Client&gt; { /* Kafka */ }
-    fn admin_api() -&gt; impl DataSet&lt;Client&gt; { /* REST */ }
-    fn read_csv(file: String) -&gt; impl ReadableDataSet&lt;Client&gt; { /* CSV */ }
-}
-<span class="boring">}</span></code></pre>
-<div id="admonition-same-interface-any-backend" class="admonition admonish-example" role="note" aria-labelledby="admonition-same-interface-any-backend-title">
-<div class="admonition-title">
-<div id="admonition-same-interface-any-backend-title">
-<p>Same interface, any backend</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-same-interface-any-backend"></a>
-</div>
-
-<div>
-<p>A developer calling <code>Client::registration_queue().insert(id, client).await</code> doesn’t
-need to know it’s Kafka underneath. The SDK hides the transport — only the entity
-contract matters.</p>
-</div>
-
-</div>
-
-<p>This release also introduced the idea of <strong>struct projection</strong> — using different Rust types against
-the same data set to control which fields get queried:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>struct MiniClient { name: String }
-struct FullClient { name: String, email: String, balance: Decimal }
-
-// Only fetches `name` from the database
-let name = clients.get_id_as::&lt;MiniClient&gt;(42).await?.name;
-<span class="boring">}</span></code></pre>
-<p>The monolith was getting heavy, though. Everything still lived in one crate, and adding a new
-database meant touching core code.</p>
-<hr>
-<h2 id="03--the-great-separation-julyoctober-2025"><a class="header" href="#03--the-great-separation-julyoctober-2025">0.3 — The Great Separation (July–October 2025)</a></h2>
-<p>Version 0.3 broke the monolith into <strong>dedicated crates</strong> and bet heavily on SurrealDB as the primary
-backend. The trait-based architecture that defines Vantage today was born here.</p>
-<div id="admonition-crate-explosion" class="admonition admonish-info" role="note" aria-labelledby="admonition-crate-explosion-title">
-<div class="admonition-title">
-<div id="admonition-crate-explosion-title">
-<p>Crate explosion</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-crate-explosion"></a>
-</div>
-
-<div>
-<p>One crate became many: <code>vantage-expressions</code>, <code>vantage-table</code>, <code>vantage-dataset</code>,
-<code>vantage-surrealdb</code>, <code>surreal-client</code>, <code>vantage-config</code>, <code>vantage-ui-adapters</code> — each
-with a focused responsibility.</p>
-</div>
-
-</div>
-
-<p>Table definitions moved from static initialization to a <strong>builder pattern</strong>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// 0.2 — static, Postgres-only
-Table::new_with_entity("bakery", postgres())
-    .with_id_column("id")
-    .with_column("name")
-    .with_many("clients", "bakery_id", || Box::new(Client::table()))
-
-// 0.3 — builder, any datasource
-Table::&lt;SurrealDB, Client&gt;::new("client", ds.clone())
-    .with_id_column("id")
-    .with_column("name")
-    .with_column("email")
-    .with_many("orders", "client_id", || Client::order_table())
-<span class="boring">}</span></code></pre>
-<p>Field accessors now return <code>Expression</code> instead of column objects — making them composable across
-query builders:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// Build conditions from expressions
-let active = clients.is_paying_client().eq(true);
-let big_spenders = clients.balance().gt(1000);
-let query = clients.with_condition(active).with_condition(big_spenders);
-<span class="boring">}</span></code></pre>
-<p>The <strong><code>AnyTable</code></strong> type-erasure system arrived, enabling generic code that works with any
-datasource:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let tables: Vec&lt;AnyTable&gt; = vec![
-    AnyTable::new(Client::table()),   // SurrealDB
-    AnyTable::new(Product::table()),  // SQLite
-];
-
-for table in &amp;tables {
-    println!("{}: {} records", table.name(), table.count().await?);
-}
-<span class="boring">}</span></code></pre>
-<p>This release culminated with <strong>UI adapters for six frameworks</strong> — egui, GPUI, Slint, Tauri, Ratatui,
-and Cursive — all driven by the same <code>AnyTable</code> interface.</p>
-<div id="admonition-one-data-layer-six-uis" class="admonition admonish-success" role="note" aria-labelledby="admonition-one-data-layer-six-uis-title">
-<div class="admonition-title">
-<div id="admonition-one-data-layer-six-uis-title">
-<p>One data layer, six UIs</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-one-data-layer-six-uis"></a>
-</div>
-
-<div>
-<p>The same bakery model powered a native desktop app (GPUI), a web app (Tauri), a terminal
-dashboard (Ratatui), and three more — without changing a single line of business logic.</p>
-</div>
-
-</div>
-
-<p><img src="images/ui-slideshow.gif" alt="egui, GPUI, Slint, Tauri, Cursive, Ratatui — same data, six frameworks"></p>
-<hr>
-<h2 id="04--the-type-system-rewrite-november-2025present"><a class="header" href="#04--the-type-system-rewrite-november-2025present">0.4 — The Type System Rewrite (November 2025–present)</a></h2>
-<div id="admonition-vantage-04--the-current-release" class="admonition admonish-info" role="note" aria-labelledby="admonition-vantage-04--the-current-release-title">
-<div class="admonition-title">
-<div id="admonition-vantage-04--the-current-release-title">
-<p>Vantage 0.4 — the current release</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-vantage-04--the-current-release"></a>
-</div>
-
-<div>
-<p>Version 0.4 rewrites the type system from the ground up. Custom types per datasource, CBOR
-protocol, 7 persistence backends (SurrealDB, Postgres, MySQL, SQLite, MongoDB, CSV, REST API),
-<code>ActiveEntity</code> / <code>ActiveRecord</code> patterns, typed columns, unified error handling, and a progressive
-trait model where each persistence only implements what its engine supports.</p>
-<p><strong><a href="./whats-new-04.html">Read the full 0.4 feature guide →</a></strong></p>
-</div>
-
-</div>
-
-<hr>
-<h2 id="the-bigger-picture"><a class="header" href="#the-bigger-picture">The bigger picture</a></h2>
-<p>Looking at the trajectory:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Version</th><th>Core idea</th><th>Backends</th><th>Crates</th></tr>
-</thead>
-<tbody>
-<tr><td>0.0</td><td>Can Rust build SQL smartly?</td><td>Postgres</td><td>1</td></tr>
-<tr><td>0.1</td><td>Let’s publish this</td><td>Postgres</td><td>1</td></tr>
-<tr><td>0.2</td><td>Entity Framework for Rust</td><td>Postgres</td><td>1</td></tr>
-<tr><td>0.3</td><td>Traits, not inheritance</td><td>SurrealDB, SQLite</td><td>10+</td></tr>
-<tr><td>0.4</td><td>Strict types, any persistence</td><td>SurrealDB, SQLite, Postgres, MySQL, MongoDB, CSV, REST API</td><td>20+</td></tr>
-</tbody>
-</table>
-</div>
-<p>What started as 16 commits in April 2024 is now <strong>470+ commits</strong>, <strong>189+ pull requests</strong>, and a
-framework that can drive the same business logic across five backends and six UI frameworks.</p>
-<p>The destination hasn’t changed since day one: <strong>describe your data once, use it everywhere.</strong> Each
-version just made “everywhere” a little bigger.</p>
+<p><strong>Limitation:</strong> YAML-declared contained records carry <em>columns only</em> — no nested relations, so
+traverse-out (<code>line.product</code>) isn’t expressible from YAML yet (the code-first closure still supports
+it, since it can add <code>with_one</code> to the contained table). Lifting this means letting the contained
+columns carry <code>references:</code> sugar plus a resolver, the same machinery YAML foreign-key references
+would need.</p>
+<h3 id="step-9-checklist"><a class="header" href="#step-9-checklist">Step 9 checklist</a></h3>
+<p>A backend supports contained relations once it has:</p>
+<ol>
+<li>
+<p><strong><code>TableShell::contained()</code></strong> returning <code>&amp;self.metadata.contained</code>.</p>
+</li>
+<li>
+<p><strong><code>TableShell::get_contained_ref</code></strong> — a thin shim that extracts the parent row’s id (in the
+driver’s native id type) and forwards to the shared
+<a href="https://docs.rs/vantage-table/latest/vantage_table/"><code>Table::get_contained_ref</code></a>, passing three
+things only the driver knows: the <code>wrap</code> closure (target <code>Table</code> → <code>Vista</code> via its factory), and
+the host <code>decode</code>/<code>encode</code> codec (native passthrough, or JSON parse/serialize). The generic helper
+seeds the records, harvests the contained schema, wires the eager writeback, and resolves
+traverse-out.</p>
+</li>
+<li>
+<p><strong><code>metadata_from_table</code></strong> copying <code>table.vista_contained()</code> into <code>VistaMetadata</code>.</p>
+</li>
+<li>
+<p><strong>YAML</strong> — one line in <code>table_from_spec</code>:
+<code>table = table.with_contained_specs(&amp;spec.contained, build_column)?;</code></p>
+</li>
+<li>
+<p><strong>Tests</strong> (gated on <code>feature = "vista"</code>, against a real backend): declare a host column holding a
+collection (code-first <em>and</em> via <code>from_yaml</code>), traverse it, insert/patch through the sub-Vista, and
+re-read the parent row to prove the writeback landed.</p>
+</li>
+</ol>
+<p>Native and JSON-blob backends differ only in two closures — how the host value enters and how the
+writeback leaves. Everything between is shared.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="intro/step6-scenery.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../new-persistence/step8-vista-integration.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="whats-new-04.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../type-system.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -489,11 +380,11 @@ version just made “everywhere” a little bigger.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="intro/step6-scenery.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../new-persistence/step8-vista-integration.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="whats-new-04.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../type-system.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
@@ -513,17 +404,17 @@ version just made “everywhere” a little bigger.</p>
         </script>
 
 
-        <script src="elasticlunr-ef4e11c1.min.js"></script>
-        <script src="mark-09e88c2c.min.js"></script>
-        <script src="searcher-c2a407aa.js"></script>
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
 
-        <script src="clipboard-1626706a.min.js"></script>
-        <script src="highlight-abc7f01d.js"></script>
-        <script src="book-a0b12cfe.js"></script>
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-a0b12cfe.js"></script>
 
         <!-- Custom JS scripts -->
-        <script src="mermaid-eefea253.min.js"></script>
-        <script src="mermaid-init-ccf746f1.js"></script>
+        <script src="../mermaid-eefea253.min.js"></script>
+        <script src="../mermaid-init-ccf746f1.js"></script>
 
 
 

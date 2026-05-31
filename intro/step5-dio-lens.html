@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Step 1: Type System - Vantage 0.4 Framework</title>
+        <title>Dio &amp; Lens — Caching and Events - Vantage 0.4 Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,250 +175,428 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="step-1-define-your-type-system"><a class="header" href="#step-1-define-your-type-system">Step 1: Define Your Type System</a></h1>
-<p>Every database has its own idea of what types exist. SQLite has 5 storage classes (NULL, INTEGER,
-REAL, TEXT, BLOB). Postgres has dozens. SurrealDB has its own set with Things and Geometry types.</p>
-<p>The vantage type system gives you two things:</p>
+                        <h1 id="dio--lens--caching-and-events"><a class="header" href="#dio--lens--caching-and-events">Dio &amp; Lens — Caching and Events</a></h1>
+<p>Chapter 4 gave you Vista — a universal handle that works with any backend. But every call still hits
+the database. No caching, no reactivity, no way to route writes elsewhere.</p>
+<p><strong>Diorama</strong> (<code>vantage-diorama</code>) sits between your Vista and whatever consumes it. Three things it
+does:</p>
 <ol>
-<li><strong>Type markers</strong> — so you can tell the difference between “this is an integer” and “this is text”
-even when both are stored as <code>serde_json::Value</code> under the hood.</li>
-<li><strong>Safe extraction</strong> — <code>try_get::&lt;i64&gt;()</code> on a text value returns <code>None</code> instead of silently
-coercing. This prevents the kind of bugs where a string “42” gets treated as a number somewhere
-downstream.</li>
+<li><strong>Transparent caching.</strong> Keep a local copy of your data. Reads come from cache, not from the
+master — no matter how slow or rate-limited the backend is. A CSV file that takes 200ms to parse
+on every <code>list_values()</code> becomes instant after the first load.</li>
+<li><strong>Capability injection.</strong> A Vista backed by a CSV file can’t paginate, sort, or search
+server-side. Diorama caches the full dataset locally and answers those queries from cache — the
+consumer sees a Vista that <em>can</em> paginate, even though the underlying source can’t.</li>
+<li><strong>Custom write routing.</strong> Writes don’t have to go to the master. Route them to a Kafka topic, a
+queue, or a different database entirely. The cache updates immediately; persistence happens
+asynchronously.</li>
 </ol>
-<h3 id="why-not-just-use-serde_jsonvalue-directly"><a class="header" href="#why-not-just-use-serde_jsonvalue-directly">Why not just use serde_json::Value directly?</a></h3>
-<p>You can! And for simple cases it works fine. The problem shows up when values move between contexts.
-A JSON number <code>42</code> could be an integer, a float, or even a boolean (SQLite stores bools as 0/1).
-Without type markers, you lose that distinction and get silent data corruption.</p>
-<h3 id="setting-it-up"><a class="header" href="#setting-it-up">Setting it up</a></h3>
-<p>Use the <code>vantage_type_system!</code> macro. It generates a trait, an enum of variants, and a type-erased
-<code>AnyType</code> wrapper:</p>
+<div id="admonition-goals-for-this-chapter" class="admonition admonish-example" role="note" aria-labelledby="admonition-goals-for-this-chapter-title">
+<div class="admonition-title">
+<div id="admonition-goals-for-this-chapter-title">
+<p>Goals for this chapter</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-goals-for-this-chapter"></a>
+</div>
+
+<div>
+<p>By the end of this page you’ll be able to:</p>
+<ol>
+<li>Build a Lens with cache backend and callbacks</li>
+<li>Create a Dio from a Vista + Lens</li>
+<li>Read from cache, write through the queue</li>
+<li>React to live changes via the event bus</li>
+<li>Produce a facade Vista that hides the caching layer</li>
+</ol>
+</div>
+
+</div>
+
+<hr>
+<h2 id="the-four-words"><a class="header" href="#the-four-words">The four words</a></h2>
+<p>Before the code, four terms you’ll see throughout:</p>
+<ul>
+<li><strong>Vista</strong> — a single backend data source (chapter 4). Speaks whatever the backend supports.</li>
+<li><strong>Lens</strong> — long-lived shared infrastructure: cache backend, callbacks, refresh config. Built once.</li>
+<li><strong>Dio</strong> — a Vista bound to a Lens. Owns the cache table, write queue, event bus, and refresh task.
+Produced by <code>lens.make_dio(vista)</code>.</li>
+<li><strong>Scenery</strong> — a reactive view onto a Dio (tables, records, aggregates). The UI binds here. Covered
+in the next chapter.</li>
+</ul>
+<p>The picture:</p>
+<pre><code class="language-text">Vista → Lens.make_dio(vista) → Dio → facade Vista | Scenery
+                                      ↑
+                                  cache + events
+</code></pre>
+<hr>
+<h2 id="building-a-lens"><a class="header" href="#building-a-lens">Building a Lens</a></h2>
+<p>A <a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a> is built once and shared across every Dio you create from it. It
+holds the cache backend, lifecycle callbacks, and default policies:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>vantage_type_system! {
-    type_trait: SqliteType,
-    method_name: json,
-    value_type: serde_json::Value,
-    type_variants: [Null, Integer, Text, Real, Numeric, Blob]
-}
+</span>use std::sync::Arc;
+use std::time::Duration;
+use vantage_diorama::Lens;
+
+let lens = Arc::new(
+    Lens::new()
+        .cache_at("./cache.redb")
+        .on_start(|dio| {
+            let dio = dio.clone();
+            async move {
+                let rows = dio.master().list_values().await?;
+                dio.cache().insert_values(rows).await?;
+                Ok(())
+            }
+        })
+        .refresh_every(Duration::from_secs(300))
+        .build()?,
+);
 <span class="boring">}</span></code></pre>
-<p>This gives you <code>SqliteType</code> (trait), <code>SqliteTypeVariants</code> (enum), and <code>AnySqliteType</code> (the
-type-erased wrapper that remembers which variant a value belongs to).</p>
-<p>The <code>value_type</code> is whatever your database driver naturally speaks. For SQL databases that’s usually
-<code>serde_json::Value</code>. SurrealDB uses <code>ciborium::Value</code> (CBOR). You could use any type — even <code>String</code>
-if your storage is that simple.</p>
-<p>Then implement the trait for each Rust type. Here’s bool — SQLite stores it as 0/1:</p>
+<p>Three things happen here:</p>
+<ul>
+<li><strong><code>.cache_at(path)</code></strong> — opens a redb file on disk. Each Dio claims a named table inside it. You
+can also pass a custom <a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a> with
+<code>.cache_source(backend)</code> for in-memory or remote stores.</li>
+<li><strong><code>.on_start(|dio| { ... })</code></strong> — fires once when <code>make_dio</code> is called. The canonical pattern is
+seed the cache from the master: list everything, write it to cache. The <code>dio.clone()</code> inside the
+closure produces a <code>'static</code> future — required because the callback outlives the borrow.</li>
+<li><strong><code>.refresh_every(duration)</code></strong> — schedules periodic refresh. Combined with <code>on_refresh</code> (another
+callback), the Dio re-fetches from the master on a timer.</li>
+</ul>
+<div id="admonition-all-callbacks-borrow-dio" class="admonition admonish-info" role="note" aria-labelledby="admonition-all-callbacks-borrow-dio-title">
+<div class="admonition-title">
+<div id="admonition-all-callbacks-borrow-dio-title">
+<p>All callbacks borrow &amp;Dio</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-all-callbacks-borrow-dio"></a>
+</div>
+
+<div>
+<p>Every Lens callback receives <code>&amp;Dio</code> — a borrowed reference to the Dio it’s running for. If you
+need to spawn a task or hold the Dio across an <code>.await</code>, clone it inside the closure:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>impl SqliteType for bool {
-    type Target = SqliteTypeIntegerMarker;  // bool lives in the Integer family
-
-    fn to_json(&amp;self) -&gt; serde_json::Value {
-        Value::Number(if *self { 1.into() } else { 0.into() })
+</span>.on_start(|dio| {
+    let dio = dio.clone();
+    async move {
+        // dio is now owned, safe to hold across await
     }
+})
+<span class="boring">}</span></code></pre>
+<p>This <code>clone()</code> is cheap — Dio wraps an <code>Arc</code>, so you’re just bumping a reference count.</p>
+</div>
 
-    fn from_json(value: serde_json::Value) -&gt; Option&lt;Self&gt; {
-        match value {
-            Value::Number(n) =&gt; n.as_i64().map(|i| i != 0),
-            Value::Bool(b) =&gt; Some(b),  // accept native bools too
-            _ =&gt; None,
+</div>
+
+<hr>
+<h2 id="creating-a-dio"><a class="header" href="#creating-a-dio">Creating a Dio</a></h2>
+<p><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/lens/struct.Lens.html#method.make_dio"><code>make_dio</code></a> binds a Vista to the Lens. It opens the cache table,
+spawns the write worker and refresh task, fires <code>on_start</code>, and returns a
+<a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let products_dio = lens.make_dio(products_vista).await?;
+<span class="boring">}</span></code></pre>
+<p>That one call does all of this:</p>
+<ol>
+<li>Opens (or creates) a cache table named after the Vista</li>
+<li>Spawns a write worker that drains the write queue</li>
+<li>Starts the refresh timer (if <code>refresh_every</code> + <code>on_refresh</code> are set)</li>
+<li>Fires <code>on_start</code> — your callback seeds the cache</li>
+<li>Returns the Dio, ready to use</li>
+</ol>
+<p>You can create many Dios from one Lens — one per entity, each with its own cache table and write
+queue, all sharing the same cache file and callback configuration.</p>
+<hr>
+<h2 id="reading-from-the-cache"><a class="header" href="#reading-from-the-cache">Reading from the cache</a></h2>
+<p>The Dio’s cache is a simple key-value store — <code>id → Record&lt;CborValue&gt;</code>. Reads come from cache, not
+from the master:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// List everything in cache
+let rows = products_dio.cache().list_values().await?;
+
+// Get one record by id
+let product = products_dio.cache().get_value("7").await?;
+
+// Count
+let n = products_dio.cache().count().await?;
+<span class="boring">}</span></code></pre>
+<p>The cache is intentionally dumb — no conditions, no sort, no search. It stores rows; query planning
+lives on the Dio/Scenery layer.</p>
+<div id="admonition-the-facade-vista" class="admonition admonish-tip" role="note" aria-labelledby="admonition-the-facade-vista-title">
+<div class="admonition-title">
+<div id="admonition-the-facade-vista-title">
+<p>The facade Vista</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-the-facade-vista"></a>
+</div>
+
+<div>
+<p>Direct cache access works, but there’s a more ergonomic path. <code>dio.vista()</code> returns a
+<a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/vista/struct.Vista.html">Vista</a> backed by the Dio — reads go through cache, writes go through
+the queue, schema comes from the master. Consumers can’t tell the difference:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut v = products_dio.vista();
+v.add_condition_eq("category_id", 1.into())?;
+let rows = v.list_values().await?;  // served from cache
+<span class="boring">}</span></code></pre>
+<p>The facade’s capabilities are the union of the master’s and what the Lens provides. A read-only CSV
+Vista gets <code>can_count</code> from the cache. If you register <code>on_write</code>, it gains <code>can_insert</code> too — the
+queue accepts the write even though the master can’t.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="writing-through-the-queue"><a class="header" href="#writing-through-the-queue">Writing through the queue</a></h2>
+<p>Writes don’t hit the master directly. They go into the Dio’s write queue as a
+<a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_types::Record;
+
+let record = Record::from_iter([
+    ("name".into(), "Muffin".into()),
+    ("price".into(), 175i64.into()),
+]);
+
+// Through the facade Vista
+products_dio.vista().insert(&amp;"muffin".to_string(), &amp;record).await?;
+<span class="boring">}</span></code></pre>
+<p>Under the hood this enqueues a <code>WriteOp::Insert</code>. The write worker picks it up asynchronously and
+either calls your <code>on_write</code> callback or applies it to <code>dio.master()</code> directly.</p>
+<div id="admonition-write-through-vs-write-around" class="admonition admonish-info" role="note" aria-labelledby="admonition-write-through-vs-write-around-title">
+<div class="admonition-title">
+<div id="admonition-write-through-vs-write-around-title">
+<p>Write-through vs write-around</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-write-through-vs-write-around"></a>
+</div>
+
+<div>
+<p>When <code>on_write</code> is <strong>not</strong> registered, the write worker applies ops to <code>dio.master()</code> directly —
+the default write-through path. The insert returns as soon as the op is enqueued; the master write
+happens in the background. If it fails, a <code>DioEvent::WriteFailed</code> is published on the event bus.</p>
+<p>When <code>on_write</code> <strong>is</strong> registered, you control where writes go. A common pattern: write to Kafka
+(via <code>on_write</code>) and let the Kafka consumer feed back through <code>on_event</code> to update the cache.
+This decouples the write path from the read path entirely.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="the-event-bus"><a class="header" href="#the-event-bus">The event bus</a></h2>
+<p>Every Dio has a <code>broadcast</code> channel. When data changes, events are published there:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_diorama::DioEvent;
+
+let mut rx = products_dio.subscribe_events();
+
+// In a spawned task
+tokio::spawn(async move {
+    while let Ok(event) = rx.recv().await {
+        match event {
+            DioEvent::RecordChanged { id } =&gt; {
+                println!("updated: {}", id);
+            }
+            DioEvent::RecordInserted { id } =&gt; {
+                println!("new: {}", id);
+            }
+            DioEvent::RecordRemoved { id } =&gt; {
+                println!("deleted: {}", id);
+            }
+            DioEvent::Invalidated =&gt; {
+                println!("full refresh happened");
+            }
+            _ =&gt; {}
         }
     }
-}
+});
 <span class="boring">}</span></code></pre>
-<p>And here’s how the type safety works in practice:</p>
+<p>Sceneries subscribe to this bus to react to changes. You can also subscribe directly — for logging,
+metrics, cache warming, or triggering side effects in any consumer.</p>
+<hr>
+<h2 id="live-updates-on_event"><a class="header" href="#live-updates-on_event">Live updates: <code>on_event</code></a></h2>
+<p>The event bus carries <em>internal</em> events (cache writes, refreshes). But what about changes happening
+on the master that you didn’t initiate — other users editing records, a database trigger firing, a
+webhook arriving?</p>
+<p><code>on_event</code> receives <em>upstream</em> <a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a> objects and reconciles
+them into the cache. Add it to the Lens alongside <code>on_start</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>let val = AnySqliteType::new(42i64);
-assert_eq!(val.try_get::&lt;i64&gt;(), Some(42));    // same variant → works
-assert_eq!(val.try_get::&lt;String&gt;(), None);      // Integer ≠ Text → rejected
-
-let val = AnySqliteType::new("hello".to_string());
-assert_eq!(val.try_get::&lt;String&gt;(), Some("hello".to_string()));
-assert_eq!(val.try_get::&lt;i64&gt;(), None);          // Text ≠ Integer → rejected
+</span>let lens = Arc::new(
+    Lens::new()
+        .cache_at("./cache.redb")
+        .on_start(|dio| {
+            let dio = dio.clone();
+            async move {
+                let rows = dio.master().list_values().await?;
+                dio.cache().insert_values(rows).await?;
+                Ok(())
+            }
+        })
+        .on_event(|dio, event| {
+            let dio = dio.clone();
+            async move {
+                match event {
+                    ChangeEvent::Updated { id, new: Some(row) } =&gt; {
+                        dio.patched(id, row).await?;
+                    }
+                    ChangeEvent::Deleted { id } =&gt; {
+                        dio.cache().delete_value(&amp;id).await?;
+                        dio.invalidate_record(id);
+                    }
+                    ChangeEvent::Invalidated =&gt; {
+                        dio.invalidate_all();
+                    }
+                    _ =&gt; {}
+                }
+                Ok(())
+            }
+        })
+        .build()?,
+);
 <span class="boring">}</span></code></pre>
-<p>You also need <code>From</code> conversions so values can be created conveniently:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let val: AnySqliteType = 42i64.into();
-let val: AnySqliteType = "hello".into();
-let val: AnySqliteType = true.into();
-<span class="boring">}</span></code></pre>
-<h3 id="records-and-struct-conversion"><a class="header" href="#records-and-struct-conversion">Records and struct conversion</a></h3>
-<p>A <code>Record&lt;V&gt;</code> is an ordered key-value map (field name → value). It’s how vantage represents a single
-row of data regardless of the backend. The question is: how do your structs become Records and vice
-versa?</p>
-<p>There are two paths depending on your <code>value_type</code>.</p>
-<h4 id="path-a-serde_jsonvalue-the-easy-path"><a class="header" href="#path-a-serde_jsonvalue-the-easy-path">Path A: serde_json::Value (the easy path)</a></h4>
-<p>If your type system uses <code>serde_json::Value</code> as the value type (like SQLite does), you get struct
-conversion for free. Vantage has blanket implementations of <code>IntoRecord</code> and <code>TryFromRecord</code> for any
-type that implements serde’s <code>Serialize</code>/<code>Deserialize</code>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[derive(Serialize, Deserialize)]
-struct Product {
-    name: String,
-    price: i64,
-    is_deleted: bool,
-}
+<p>The typical wiring: a live stream from SurrealDB, a Kafka consumer, or a WebSocket listener feeds
+<a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a>s into <code>dio.handle_event(evt).await</code>, which invokes
+your <code>on_event</code> callback. You write the row to cache and publish the matching <code>DioEvent</code> — any
+subscriber (Scenery, logger, metrics) picks it up.</p>
+<div id="admonition-patched-andinvalidate_record" class="admonition admonish-tip" role="note" aria-labelledby="admonition-patched-andinvalidate_record-title">
+<div class="admonition-title">
+<div id="admonition-patched-andinvalidate_record-title">
+<p>patched() andinvalidate_record()</p>
+</div>
 
-let product = Product { name: "Cupcake".into(), price: 120, is_deleted: false };
+<a class="admonition-anchor-link" href="#admonition-patched-andinvalidate_record"></a>
+</div>
 
-// Struct → Record&lt;serde_json::Value&gt; — automatic via serde
-let record: Record&lt;serde_json::Value&gt; = product.into_record();
-
-// Record&lt;serde_json::Value&gt; → Struct — automatic via serde
-let restored: Product = Product::from_record(record).unwrap();
-<span class="boring">}</span></code></pre>
-<p>This works because serde already knows how to turn structs into JSON objects and back. No extra code
-needed on your part.</p>
-<h4 id="path-b-custom-value-type-the-entity-path"><a class="header" href="#path-b-custom-value-type-the-entity-path">Path B: Custom value type (the <code>#[entity]</code> path)</a></h4>
-<p>If your type system uses something other than <code>serde_json::Value</code> — like SurrealDB’s
-<code>ciborium::Value</code> — then serde’s blanket impls don’t apply. You need the <code>#[entity]</code> proc macro to
-generate the conversion code:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[entity(SurrealType)]
-#[derive(Debug, Clone)]
-struct Product {
-    name: String,
-    price: i64,
-    is_deleted: bool,
-}
-<span class="boring">}</span></code></pre>
-<p>The <code>#[entity(SurrealType)]</code> macro looks at each field, and generates:</p>
+<div>
 <ul>
-<li><code>IntoRecord&lt;AnySurrealType&gt;</code> — calls <code>AnySurrealType::new(self.name)</code> for each field</li>
-<li><code>TryFromRecord&lt;AnySurrealType&gt;</code> — calls <code>record["name"].try_get::&lt;String&gt;()</code> for each field</li>
+<li><code>dio.patched(id, record)</code> writes to cache <strong>and</strong> publishes <code>DioEvent::RecordChanged</code>. The
+canonical “external system told us about a row” pattern.</li>
+<li><code>dio.invalidate_record(id)</code> publishes <code>RecordChanged</code> <strong>without</strong> touching cache — use when you
+know the cache is already stale and a Scenery will refetch.</li>
+<li><code>dio.invalidate_all()</code> publishes <code>Invalidated</code> — Sceneries respond by re-reading their full state.</li>
 </ul>
-<p>This is where the type markers from Step 1 become critical. When you read a record back from the
-database, each value is an <code>AnySurrealType</code> with a variant tag. The <code>try_get::&lt;String&gt;()</code> call
-checks that the variant is <code>Text</code> before extracting. If someone stored an integer in a field that
-should be a string, you get an error instead of garbage.</p>
-<p>You can even target multiple type systems at once:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[entity(SurrealType, CsvType)]
-struct Product {
-    name: String,
-    price: i64,
-}
-<span class="boring">}</span></code></pre>
-<p>This generates conversions for both <code>Record&lt;AnySurrealType&gt;</code> and <code>Record&lt;AnyCsvType&gt;</code>, so the same
-struct works across different backends.</p>
-<h4 id="testing-record-conversions"><a class="header" href="#testing-record-conversions">Testing Record conversions</a></h4>
-<p>Test <code>Record&lt;AnySqliteType&gt;</code> in both modes — typed (write path) and untyped (read path).</p>
-<p><strong>Typed records</strong> simulate what you’d build when inserting data. Values have variant tags, and
-<code>try_get</code> enforces them:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[test]
-fn test_typed_record() {
-    let mut record: Record&lt;AnySqliteType&gt; = Record::new();
-    record.insert("name".into(), AnySqliteType::new("Cupcake".to_string()));
-    record.insert("price".into(), AnySqliteType::new(120i64));
+</div>
 
-    assert_eq!(record["name"].try_get::&lt;String&gt;(), Some("Cupcake".to_string()));
-    assert_eq!(record["name"].try_get::&lt;i64&gt;(), None);  // Text ≠ Integer → blocked
-    assert_eq!(record["price"].try_get::&lt;i64&gt;(), Some(120));
-    assert_eq!(record["price"].try_get::&lt;String&gt;(), None);  // Integer ≠ Text → blocked
-}
-<span class="boring">}</span></code></pre>
-<p><strong>Untyped records</strong> simulate what comes back from the database. Values have <code>type_variant: None</code>, so
-<code>try_get</code> is permissive — it just attempts the conversion:</p>
+</div>
+
+<hr>
+<h2 id="manual-refresh"><a class="header" href="#manual-refresh">Manual refresh</a></h2>
+<p><code>on_refresh</code> fires on the timer set by <code>refresh_every</code>. You can also trigger it manually:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>#[test]
-fn test_untyped_record() {
-    let mut record: Record&lt;AnySqliteType&gt; = Record::new();
-    record.insert("name".into(), AnySqliteType::untyped(json!("Cupcake")));
-    record.insert("price".into(), AnySqliteType::untyped(json!(120)));
-
-    assert_eq!(record["name"].try_get::&lt;String&gt;(), Some("Cupcake".to_string()));
-    assert_eq!(record["name"].try_get::&lt;i64&gt;(), None);  // fails because "Cupcake" isn't a number
-    assert_eq!(record["price"].try_get::&lt;i64&gt;(), Some(120));
-    assert_eq!(record["price"].try_get::&lt;f64&gt;(), Some(120.0));  // permissive — json 120 can be f64
-}
+</span>products_dio.refresh().await?;
 <span class="boring">}</span></code></pre>
-<p>The key difference: a typed <code>AnySqliteType::new(42i64)</code> blocks <code>try_get::&lt;f64&gt;()</code> because Integer ≠
-Real. An untyped <code>AnySqliteType::untyped(json!(42))</code> allows it because there’s no variant to check —
-it just asks “can JSON number 42 be read as f64?”</p>
-<p>Also test <code>Option&lt;T&gt;</code> fields, null handling, and missing fields.</p>
-<h3 id="tryfromanytype-for-common-types"><a class="header" href="#tryfromanytype-for-common-types">TryFrom&lt;AnyType&gt; for common types</a></h3>
-<p>You also need <code>TryFrom&amp;lt;AnyType&amp;gt;</code> implementations for scalar types and Records. These are used later
-by <code>AssociatedExpression::get()</code> in Step 2, but they belong here because they’re part of the type
-system:</p>
+<p>This fires the <code>on_refresh</code> callback (if registered) and publishes <code>Invalidated</code> on the event bus.
+Sceneries re-read from cache after the refresh completes.</p>
+<hr>
+<h2 id="callback-summary"><a class="header" href="#callback-summary">Callback summary</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Callback</th><th>When it fires</th><th>Typical use</th></tr>
+</thead>
+<tbody>
+<tr><td><code>on_start</code></td><td>Once at <code>make_dio</code></td><td>Seed cache from master</td></tr>
+<tr><td><code>on_refresh</code></td><td>Timer + manual <code>refresh()</code></td><td>Re-fetch from master</td></tr>
+<tr><td><code>on_write</code></td><td>Every <code>WriteOp</code></td><td>Custom write routing (e.g. to Kafka)</td></tr>
+<tr><td><code>on_event</code></td><td>Upstream <code>ChangeEvent</code></td><td>Reconcile live updates into cache</td></tr>
+<tr><td><code>on_query</code></td><td>Scenery data fetch</td><td>Custom query routing</td></tr>
+<tr><td><code>total_provider</code></td><td>Scenery open</td><td>Supply total row count</td></tr>
+<tr><td><code>on_load_chunk</code></td><td>Scenery viewport/page</td><td>Fetch a range from master</td></tr>
+</tbody>
+</table>
+</div>
+<hr>
+<h2 id="putting-it-together"><a class="header" href="#putting-it-together">Putting it together</a></h2>
+<p>Everything in one place:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>// Scalars — extract single value from single-row results
-impl TryFrom&lt;AnySqliteType&gt; for i64 { ... }
-impl TryFrom&lt;AnySqliteType&gt; for String { ... }
-// etc.
+</span>use std::sync::Arc;
+use std::time::Duration;
+use vantage_diorama::Lens;
 
-// Records — extract first row from result array
-impl TryFrom&lt;AnySqliteType&gt; for Record&lt;AnySqliteType&gt; { ... }
-impl TryFrom&lt;AnySqliteType&gt; for Record&lt;serde_json::Value&gt; { ... }
-<span class="boring">}</span></code></pre>
-<p>For scalars, if the result is a single-row, single-column array like <code>[{"COUNT(*)": 3}]</code>, extract
-the value automatically. For Records, extract the first row and wrap each field as an untyped
-<code>AnyType</code>.</p>
-<h3 id="step-1-conclusion"><a class="header" href="#step-1-conclusion">Step 1 conclusion</a></h3>
-<p>At this point you should have:</p>
-<ol>
-<li>
-<p><strong>Type impls</strong> in <code>src/&lt;backend&gt;/types/</code> — the <code>vantage_type_system!</code> macro call, trait
-implementations for each Rust type, <code>From</code> conversions on <code>AnyType</code>, variant detection in
-<code>TypeVariants::from_*()</code>, and <code>TryFrom&amp;lt;AnyType&amp;gt;</code> for scalars and Records.</p>
-</li>
-<li>
-<p><strong>Tests</strong> in <code>tests/&lt;backend&gt;/1_types_round_trip.rs</code> covering:</p>
-<ul>
-<li>In-memory <code>AnyType</code> round-trips for each supported type</li>
-<li>Type mismatch rejections (wrong variant → <code>None</code>)</li>
-<li>Struct ↔ Record conversions (including Option fields and error cases)</li>
-<li>Values read from the actual database converting correctly</li>
-</ul>
-</li>
-</ol>
-<h3 id="how-type-markers-flow-through-the-system"><a class="header" href="#how-type-markers-flow-through-the-system">How type markers flow through the system</a></h3>
-<p>The <code>AnyType</code> wrapper has an <code>Option&lt;Variant&gt;</code> field — <code>Some(Integer)</code> means “I know this is an
-integer”, <code>None</code> means “I don’t know, just try whatever conversion you need.”</p>
-<p><strong>Writing (you → database):</strong> Values created with <code>AnySqliteType::new(42i64)</code> get
-<code>type_variant: Some(Integer)</code>. The bind layer uses the variant to pick the right sqlx bind call —
-Integer binds as <code>i64</code>, Text as <code>&amp;str</code>, Real as <code>f64</code>. No guessing.</p>
-<p><strong>Reading (database → you):</strong> Values coming back from the database are created with
-<code>AnySqliteType::untyped(json_value)</code> which sets <code>type_variant: None</code>. This means <code>try_get::&lt;i64&gt;()</code>
-won’t be blocked by a variant mismatch — it just attempts the conversion. The type checking happens
-later when you deserialize into a struct.</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// Writing — typed, variant enforced
-let val = AnySqliteType::new(true);            // type_variant: Some(Bool)
-val.try_get::&lt;bool&gt;();   // Some(true) — variant matches
-val.try_get::&lt;i64&gt;();    // None — Bool ≠ Integer, blocked by type boundary
-val.try_get::&lt;String&gt;(); // None — Bool ≠ Text, blocked
+// Build once per application
+let lens = Arc::new(
+    Lens::new()
+        .cache_at("./cache.redb")
+        .on_start(|dio| {
+            let dio = dio.clone();
+            async move {
+                let rows = dio.master().list_values().await?;
+                dio.cache().insert_values(rows).await?;
+                Ok(())
+            }
+        })
+        .refresh_every(Duration::from_secs(300))
+        .build()?,
+);
 
-// Reading — untyped, permissive
-let val = AnySqliteType::untyped(json!(1));    // type_variant: None
-val.try_get::&lt;i64&gt;();    // Some(1) — no variant check, json 1 parses as i64
-val.try_get::&lt;bool&gt;();   // Some(true) — no variant check, json 1 parses as bool (≠0)
-val.try_get::&lt;f64&gt;();    // Some(1.0) — no variant check, json 1 parses as f64
-val.try_get::&lt;String&gt;(); // None — json 1 can't parse as String
+// One Dio per entity
+let products = lens.make_dio(products_vista).await?;
+
+// Read and write through the facade — cache is transparent
+let mut v = products.vista();
+let rows = v.list_values().await?;       // cache hit
+v.insert(&amp;"muffin".to_string(), &amp;rec).await?;  // enqueued
 <span class="boring">}</span></code></pre>
-<p>Both directions use <code>Record&lt;AnySqliteType&gt;</code>, but the values behave differently:</p>
-<pre><code>Writing:  Struct → Record&lt;AnySqliteType&gt; (typed) → bind_sqlite_value() → sqlx
-Reading:  sqlx → Record&lt;AnySqliteType&gt; (untyped) → try_get / serde → Struct
-</code></pre>
+<hr>
+<h2 id="what-we-covered"><a class="header" href="#what-we-covered">What we covered</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Concept</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a></td><td>Shared infrastructure: cache, callbacks, defaults</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/lens/struct.LensBuilder.html"><code>LensBuilder</code></a></td><td>Chainable configuration for building a Lens</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a></td><td>Per-entity binding of Vista + Lens; owns cache, queue, events</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a></td><td>Storage backing for cached rows</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a></td><td>One unit of work on the write queue</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/dio/event_bus/enum.DioEvent.html"><code>DioEvent</code></a></td><td>Internal event: record changed, invalidated, write failed</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a></td><td>Upstream event from the master backend</td></tr>
+<tr><td><code>on_start</code> / <code>on_refresh</code> / <code>on_write</code> / <code>on_event</code></td><td>Lifecycle callbacks</td></tr>
+<tr><td><code>dio.vista()</code></td><td>Facade Vista that reads from cache, writes through queue</td></tr>
+</tbody>
+</table>
+</div>
+<div id="admonition-whats-next" class="admonition admonish-tip" role="note" aria-labelledby="admonition-whats-next-title">
+<div class="admonition-title">
+<div id="admonition-whats-next-title">
+<p>What’s next</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-whats-next"></a>
+</div>
+
+<div>
+<p>Dio gives you caching and events. But consumers often need more — ordered rows, viewport-driven
+loading, aggregate counts. The next chapter introduces <strong>Scenery</strong>: reactive views that sit on top
+of a Dio and provide structured access patterns for tables, individual records, and aggregates.</p>
+</div>
+
+</div>
+
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../new-persistence.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../intro/step4-vista.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../new-persistence/step2-expressions.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../intro/step6-scenery.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -428,11 +606,11 @@ Reading:  sqlx → Record&lt;AnySqliteType&gt; (untyped) → try_get / serde →
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../new-persistence.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../intro/step4-vista.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../new-persistence/step2-expressions.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../intro/step6-scenery.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

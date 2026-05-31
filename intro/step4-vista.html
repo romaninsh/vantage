@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Primitives - Vantage 0.4 Framework</title>
+        <title>Vista — the Universal Data Handle - Vantage 0.4 Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,166 +175,438 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="sql-primitives"><a class="header" href="#sql-primitives">SQL Primitives</a></h1>
-<p>Primitives are reusable building blocks for constructing SQL expressions. They handle quoting,
-escaping, vendor-specific syntax, and logical composition so you don’t have to.</p>
-<p>Conditions built with typed columns and <code>SqliteOperation</code> cover simple comparisons, but real queries
-need more — <code>OR</code> groups, function calls, string concatenation, date formatting. That’s what
-primitives are for.</p>
-<p>Import them with:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use vantage_sql::primitives::*;
-<span class="boring">}</span></code></pre>
-<p>Primitives are <strong>not</strong> part of the prelude — import them explicitly when needed.</p>
-<div id="admonition-macros-and-structs" class="admonition admonish-note" role="note" aria-labelledby="admonition-macros-and-structs-title">
+                        <h1 id="vista--the-universal-data-handle"><a class="header" href="#vista--the-universal-data-handle">Vista — the Universal Data Handle</a></h1>
+<p>Chapters 1–3 built a typed data layer: <code>Table&lt;SqliteDB, Product&gt;</code>, conditions, relationships, CRUD.
+That layer is great when you know the entity at compile time. But step 3’s generic <code>crud()</code> helper
+already showed the limitation — it could only exist because we erased the entity type with
+<code>Serialize + DeserializeOwned</code> and went through JSON.</p>
+<p>A CLI that lists “any table from any backend”, a web admin that draws forms from a YAML schema, a UI
+data grid that works with whatever you point it at — none of these know your <code>Product</code> struct. They
+need a handle that carries its own schema, speaks a single value type, and works regardless of which
+database sits underneath.</p>
+<p>That handle is <a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a>.</p>
+<div id="admonition-goals-for-this-chapter" class="admonition admonish-example" role="note" aria-labelledby="admonition-goals-for-this-chapter-title">
 <div class="admonition-title">
-<div id="admonition-macros-and-structs-title">
-<p>Macros and structs</p>
+<div id="admonition-goals-for-this-chapter-title">
+<p>Goals for this chapter</p>
 </div>
 
-<a class="admonition-anchor-link" href="#admonition-macros-and-structs"></a>
+<a class="admonition-anchor-link" href="#admonition-goals-for-this-chapter"></a>
 </div>
 
 <div>
-<p>Some primitives have convenience macros that accept a variable number of arguments and call
-<code>.expr()</code> on each one automatically: <code>fx!</code> → <code>Fx</code>, <code>concat_!</code> → <code>Concat</code>. The macros are
-syntactic sugar — if you need to build arguments programmatically (e.g. from a <code>Vec</code>), use
-the underlying struct directly.</p>
+<p>By the end of this page you’ll be able to:</p>
+<ol>
+<li>Wrap a typed <code>Table</code> into a Vista</li>
+<li>Read schema metadata (columns, references, id column) from a Vista</li>
+<li>Add conditions, search, and ordering through the Vista API</li>
+<li>Fetch paginated results with <code>fetch_page</code> and <code>fetch_next</code></li>
+<li>Traverse relationships and cross-backend references</li>
+<li>Understand capabilities — the honesty contract between Vista and its driver</li>
+</ol>
 </div>
 
 </div>
 
-<h2 id="or_--and_--logical-combinators"><a class="header" href="#or_--and_--logical-combinators"><code>or_()</code> / <code>and_()</code> — Logical Combinators</a></h2>
-<p>By default, multiple calls to <code>.with_condition()</code> combine with <code>AND</code>. When you need <code>OR</code>, use
-<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/logical/fn.or_.html"><code>or_()</code></a>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use vantage_sql::primitives::*;
+<hr>
+<h2 id="what-vista-actually-is"><a class="header" href="#what-vista-actually-is">What Vista actually is</a></h2>
+<p>A <code>Vista</code> wraps a typed <code>Table&lt;DB, E&gt;</code> and erases both the backend and the entity. All data flows
+through <code>Record&lt;CborValue&gt;</code> — an ordered map of string keys to CBOR values. All schema lives on the
+Vista itself: columns (with types and flags), references, id column, and a set of capability flags.</p>
+<p>Think of the progression:</p>
+<pre><code class="language-text">Table&lt;SqliteDB, Product&gt;   — typed entity, typed backend, compile-time safe
+Vista                      — fully erased: schema-bearing, CborValue, no generics
+</code></pre>
+<p>Vista trades away compile-time knowledge for runtime flexibility. Everything is a string key and a
+CBOR value — but it carries enough metadata to build a data grid, a form, a CLI, or a REST endpoint
+without knowing anything about the underlying database.</p>
+<div id="admonition-cbor-not-json" class="admonition admonish-info" role="note" aria-labelledby="admonition-cbor-not-json-title">
+<div class="admonition-title">
+<div id="admonition-cbor-not-json-title">
+<p>CBOR, not JSON</p>
+</div>
 
-// role = 'admin' OR role = 'superuser'
-let cond = or_(ident("role").eq("admin"), ident("role").eq("superuser"));
-<span class="boring">}</span></code></pre>
-<p>For nested logic, combine with <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/logical/fn.and_.html"><code>and_()</code></a>:</p>
+<a class="admonition-anchor-link" href="#admonition-cbor-not-json"></a>
+</div>
+
+<div>
+<p>Vista uses <a href="https://docs.rs/ciborium"><code>ciborium::Value</code></a> as its carrier type — a CBOR value. CBOR preserves type fidelity that JSON loses (integer vs float, binary blobs, precise decimals). You’ll see <code>CborValue</code> in every Vista method signature.</p>
+<p>If you need JSON (for an HTTP response, for example), convert at the boundary — <code>Record&lt;CborValue&gt;</code> → <code>Record&lt;serde_json::Value&gt;</code> is a one-liner. But inside the Vista layer, CBOR is the standard.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="wrapping-a-typed-table"><a class="header" href="#wrapping-a-typed-table">Wrapping a typed Table</a></h2>
+<p>Each backend ships a factory that turns a typed table into a Vista. For SQLite:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>// (price &gt; 100 AND in_stock = 1) OR (featured = 1)
-let cond = or_(
-    and_(ident("price").gt(100), ident("in_stock").eq(true)),
-    ident("featured").eq(true),
+</span>use vantage_sql::prelude::*;
+use vantage_vista::Vista;
+
+let table = Product::table(db.clone());
+let vista = SqliteVistaFactory::new(db).from_table(table)?;
+<span class="boring">}</span></code></pre>
+<p>That’s it. The factory harvests columns, id field, title fields, and references from the typed table
+definition you already built in chapter 2. No extra mapping code.</p>
+<p>For MongoDB it would be <code>MongoVistaFactory</code>, for AWS it would be <code>AwsVistaFactory</code> — same shape,
+different import. The resulting <code>Vista</code> is identical regardless of which factory produced it.</p>
+<hr>
+<h2 id="reading-schema"><a class="header" href="#reading-schema">Reading schema</a></h2>
+<p>Once you have a Vista, everything is runtime introspection:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Columns — name, original type, flags
+for name in vista.get_column_names() {
+    let col = vista.get_column(name).unwrap();
+    println!("{}: {}", col.name, col.original_type);
+}
+// name: String
+// price: i64
+// is_deleted: bool
+
+// ID column
+if let Some(id_col) = vista.get_id_column() {
+    println!("id column: {}", id_col);
+}
+
+// Title columns — the human-readable ones
+for title in vista.get_title_columns() {
+    println!("title: {}", title);
+}
+
+// References — relationships declared on the typed table
+for (name, kind) in vista.list_references() {
+    println!("ref: {} ({:?})", name, kind);
+}
+// ref: products (HasMany)
+<span class="boring">}</span></code></pre>
+<p><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/column/struct.Column.html"><code>Column</code></a> carries an <code>original_type</code> string (preserved from the typed column
+definition) and a set of flags. The standard flag vocabulary:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>"id"</code></td><td>This column is the primary key</td></tr>
+<tr><td><code>"title"</code></td><td>Human-readable label column</td></tr>
+<tr><td><code>"searchable"</code></td><td>Included in quicksearch</td></tr>
+<tr><td><code>"orderable"</code></td><td>Can be sorted server-side</td></tr>
+<tr><td><code>"hidden"</code></td><td>Don’t show in default views</td></tr>
+<tr><td><code>"mandatory"</code></td><td>Required on insert</td></tr>
+</tbody>
+</table>
+</div>
+<p>Flags are open — drivers and consumers can add their own.</p>
+<hr>
+<h2 id="adding-conditions"><a class="header" href="#adding-conditions">Adding conditions</a></h2>
+<p>Vista doesn’t carry its own condition type. Instead, it delegates to the wrapped driver, which
+translates the value into whatever the backend speaks:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut v = vista.clone();
+v.add_condition_eq("category_id", 1.into())?;
+
+let rows = v.list_values().await?;
+// Only products with category_id == 1
+<span class="boring">}</span></code></pre>
+<p><code>.into()</code> converts the <code>i64</code> into a <code>CborValue</code>. The driver’s shell translates that into a native
+condition — <code>Expression</code> for SQL, <code>bson::Document</code> for MongoDB, <code>AwsCondition::Eq</code> for AWS — and
+pushes it onto the wrapped table.</p>
+<div id="admonition-conditions-mutate-the-shell" class="admonition admonish-info" role="note" aria-labelledby="admonition-conditions-mutate-the-shell-title">
+<div class="admonition-title">
+<div id="admonition-conditions-mutate-the-shell-title">
+<p>Conditions mutate the shell</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-conditions-mutate-the-shell"></a>
+</div>
+
+<div>
+<p>Unlike <code>Table</code>’s <code>.with_condition()</code> (which consumes and returns a new table), Vista’s <code>add_condition_eq</code> mutates in place. Vista is a runtime handle — there’s no builder pattern to preserve. Clone before narrowing if you need the unfiltered version later.</p>
+</div>
+
+</div>
+
+<h3 id="narrowing-by-id"><a class="header" href="#narrowing-by-id">Narrowing by id</a></h3>
+<p>A common pattern — “I have an id and want the row”:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut v = vista.clone();
+v.with_id("7")?;
+let row = v.get_some_value().await?;
+<span class="boring">}</span></code></pre>
+<p><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/vista/struct.Vista.html#method.with_id"><code>with_id</code></a> reads the id column name from the schema and calls
+<code>add_condition_eq</code> for you. Returns <code>&amp;mut Self</code> so you can chain.</p>
+<hr>
+<h2 id="search-and-ordering"><a class="header" href="#search-and-ordering">Search and ordering</a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut v = vista.clone();
+
+// Quicksearch — fans across columns flagged SEARCHABLE
+v.add_search("tart")?;
+
+// Sort by column
+v.add_order("price", SortDirection::Descending)?;
+
+let rows = v.list_values().await?;
+<span class="boring">}</span></code></pre>
+<p>Both are <strong>replace semantics</strong> — calling again drops the previous filter/order. Both return an error
+if the driver doesn’t support them. Check capabilities first (or just try and handle the error).</p>
+<div id="admonition-not-every-driver-supports-these" class="admonition admonish-warning" role="note" aria-labelledby="admonition-not-every-driver-supports-these-title">
+<div class="admonition-title">
+<div id="admonition-not-every-driver-supports-these-title">
+<p>Not every driver supports these</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-not-every-driver-supports-these"></a>
+</div>
+
+<div>
+<p>A CSV file can’t sort or search server-side — it loads everything into memory. DynamoDB can only order by its declared sort key. The driver sets capability flags honestly:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let caps = vista.capabilities();
+if caps.can_search {
+    v.add_search("query")?;
+}
+if caps.can_order {
+    v.add_order("name", SortDirection::Ascending)?;
+}
+<span class="boring">}</span></code></pre>
+<p>Calling a method the driver doesn’t advertise returns an <code>Unsupported</code> error. This is by design — it’s better to fail clearly than to silently return unfiltered results.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="pagination"><a class="header" href="#pagination">Pagination</a></h2>
+<p>Vista exposes two pagination primitives. Not every driver supports both — capabilities tell you
+which to use.</p>
+<h3 id="offset-pagination-fetch_page"><a class="header" href="#offset-pagination-fetch_page">Offset pagination: <code>fetch_page</code></a></h3>
+<p>Random-access — jump to any page by number:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut v = vista.clone();
+v.set_page_size(25)?;
+
+let page1 = v.fetch_page(1).await?;   // first 25 rows
+let page2 = v.fetch_page(2).await?;   // next 25 rows
+<span class="boring">}</span></code></pre>
+<p>Works for SQL databases, MongoDB, anything with <code>LIMIT … OFFSET</code>. Requires <code>can_fetch_page</code>.</p>
+<h3 id="cursor-pagination-fetch_next"><a class="header" href="#cursor-pagination-fetch_next">Cursor pagination: <code>fetch_next</code></a></h3>
+<p>Forward-only — each call returns a token for the next:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let v = vista.clone();
+
+let (rows, token) = v.fetch_next(None).await?;        // first page
+let (rows, token) = v.fetch_next(token).await?;      // second page
+// token is None when exhausted
+<span class="boring">}</span></code></pre>
+<p>The token is <strong>opaque</strong> — its shape is driver-private (a DynamoDB <code>LastEvaluatedKey</code>, a REST
+<code>nextToken</code>, an offset counter). Just round-trip it. Requires <code>can_fetch_next</code>.</p>
+<div id="admonition-when-neither-is-available" class="admonition admonish-info" role="note" aria-labelledby="admonition-when-neither-is-available-title">
+<div class="admonition-title">
+<div id="admonition-when-neither-is-available-title">
+<p>When neither is available</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-when-neither-is-available"></a>
+</div>
+
+<div>
+<p>If both <code>can_fetch_page</code> and <code>can_fetch_next</code> are <code>false</code>, the driver has no native pagination. Fall through to <code>list_values()</code> which returns everything. This is the CSV case — fine for small datasets.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="traversing-references"><a class="header" href="#traversing-references">Traversing references</a></h2>
+<p>Same-persistence references (the <code>with_many</code> / <code>with_one</code> from chapter 2) come through
+automatically. Given a parent row, <code>get_ref</code> resolves the relationship:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Given a category row, traverse to its products
+let products = vista.get_ref("products", &amp;category_row)?;
+for (id, row) in products.list_values().await? {
+    println!("  {} — {:?}", id, row["name"]);
+}
+<span class="boring">}</span></code></pre>
+<p><code>get_ref</code> needs a <code>Record&lt;CborValue&gt;</code> — the parent row. It reads the join field (e.g. <code>category_id</code>)
+out of that row to build the eq-condition on the target. You can’t traverse from a Vista alone; you
+need a row first. Typical flow: fetch the parent with <code>get_some_value()</code> or <code>list_values()</code>, then
+traverse from each row.</p>
+<p><code>get_ref</code> routes in order:</p>
+<ol>
+<li><strong>Foreign resolver</strong> — checks for a <a href="#cross-backend-references-with_foreign"><code>with_foreign</code></a>
+closure registered under that name.</li>
+<li><strong>Driver shell fallback</strong> — delegates to the shell’s <code>get_ref</code>, which resolves the <code>with_one</code> /
+<code>with_many</code> relationship declared on the typed table.</li>
+</ol>
+<p>So the same <code>get_ref("products", &amp;row)</code> call works whether the relationship lives in the same
+database or crosses a backend boundary — Vista handles the routing transparently.</p>
+<h3 id="cross-backend-references-with_foreign"><a class="header" href="#cross-backend-references-with_foreign">Cross-backend references: <code>with_foreign</code></a></h3>
+<p>Same-persistence refs work because the driver’s shell can translate them natively. But what if your
+categories live in PostgreSQL and your products in MongoDB? <code>with_foreign</code> registers a
+cross-persistence resolver:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>categories.with_foreign(
+    "products",
+    ReferenceKind::HasMany,
+    |row| {
+        let mut p = mongo_factory.from_table(Product::table(mongo_db.clone()))?;
+        p.add_condition_eq("category_id", row["id"].clone())?;
+        Ok(p)
+    },
 );
+// get_ref("products", &amp;row) now crosses from Postgres into MongoDB
 <span class="boring">}</span></code></pre>
-<p>Both return <code>Expression&lt;T&gt;</code>, so they plug directly into <code>.with_condition()</code>.</p>
-<h2 id="ident--identifiers"><a class="header" href="#ident--identifiers"><code>ident()</code> — Identifiers</a></h2>
-<p>Creates a quoted column or table name. Quoting adapts per backend (<code>"</code> for SQLite/Postgres, <code>`</code>
-for MySQL).</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let col = ident("price");                     // "price"
-let qualified = ident("name").dot_of("u");    // "u"."name"
-let aliased = ident("total").with_alias("t"); // "total" AS "t"
-<span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/identifier/fn.ident.html"><code>ident()</code></a> is a shorthand for
-<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/identifier/struct.Identifier.html#method.new"><code>Identifier::new()</code></a>. Reserved words and
-names with spaces are quoted automatically.</p>
-<h2 id="fx--function-calls"><a class="header" href="#fx--function-calls"><code>fx!</code> — Function Calls</a></h2>
-<p>The <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/macro.fx.html"><code>fx!</code></a> macro builds a SQL function call. Arguments are passed directly —
-<code>.expr()</code> is called on each one automatically:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>fx!("count", sqlite_expr!("*"))
-// =&gt; COUNT(*)
+<p>The closure is <strong>stored, not called</strong> at registration. It fires once — lazily — when
+<code>get_ref("products", &amp;row)</code> is invoked. This avoids recursion when two Vistas reference each other.</p>
+<p>The closure receives the parent row and returns a Vista from <strong>any</strong> backend. The consumer calling
+<code>get_ref</code> doesn’t know or care that the join crossed a database boundary.</p>
+<div id="admonition-lazy-resolution" class="admonition admonish-tip" role="note" aria-labelledby="admonition-lazy-resolution-title">
+<div class="admonition-title">
+<div id="admonition-lazy-resolution-title">
+<p>Lazy resolution</p>
+</div>
 
-fx!("avg", ident("price"))
-// =&gt; AVG("price")
+<a class="admonition-anchor-link" href="#admonition-lazy-resolution"></a>
+</div>
 
-// Multiple arguments
-fx!("coalesce", ident("nickname"), "anonymous")
-// =&gt; COALESCE("nickname", 'anonymous')
+<div>
+<p>Because <code>with_foreign</code> closures are lazy, you can register mutual references between two Vistas (A → B and B → A) without worrying about construction order. The closures capture factories by clone, not by reference to a Vista that doesn’t exist yet.</p>
+</div>
 
-// Nested
-fx!("round", fx!("avg", ident("price")), 2i64)
-// =&gt; ROUND(AVG("price"), 2)
-<span class="boring">}</span></code></pre>
-<p>If you need to build arguments programmatically (e.g. from a <code>Vec</code>), use
-<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/fx/struct.Fx.html#method.new"><code>Fx::new()</code></a> directly:</p>
+</div>
+
+<hr>
+<h2 id="capabilities--the-honesty-contract"><a class="header" href="#capabilities--the-honesty-contract">Capabilities — the honesty contract</a></h2>
+<p><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a> is a struct of booleans. The driver sets
+each flag to reflect what it actually implements:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>let args: Vec&lt;Expression&lt;AnySqliteType&gt;&gt; = columns.iter().map(|c| c.expr()).collect();
-let f = Fx::new("coalesce", args);
+</span>let caps = vista.capabilities();
+println!("can_count: {}", caps.can_count);
+println!("can_insert: {}", caps.can_insert);
+println!("can_update: {}", caps.can_update);
+println!("can_delete: {}", caps.can_delete);
+println!("can_order: {}", caps.can_order);
+println!("can_search: {}", caps.can_search);
+println!("can_fetch_page: {}", caps.can_fetch_page);
+println!("can_fetch_next: {}", caps.can_fetch_next);
 <span class="boring">}</span></code></pre>
-<h2 id="ternary--conditional-expression"><a class="header" href="#ternary--conditional-expression"><code>ternary()</code> — Conditional Expression</a></h2>
-<p>Three-valued conditional. Renders as <code>IIF()</code> on SQLite, <code>IF()</code> on MySQL, and
-<code>CASE WHEN ... THEN ... ELSE ... END</code> on PostgreSQL:</p>
+<p>A CSV file sets <code>can_count</code> and nothing else — it’s read-only. A SQL database sets everything. AWS
+DynamoDB sets <code>can_count</code> and <code>can_fetch_next</code> (cursor-only) but not <code>can_fetch_page</code> (no random
+access).</p>
+<div id="admonition-calling-unsupported-methods-is-an-error" class="admonition admonish-warning" role="note" aria-labelledby="admonition-calling-unsupported-methods-is-an-error-title">
+<div class="admonition-title">
+<div id="admonition-calling-unsupported-methods-is-an-error-title">
+<p>Calling unsupported methods is an error</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-calling-unsupported-methods-is-an-error"></a>
+</div>
+
+<div>
+<p>The capability flags aren’t suggestions — they’re a contract. If <code>can_search</code> is <code>false</code>, calling <code>add_search()</code> returns an <code>Unsupported</code> error. If a flag is <code>true</code> but the driver forgot to implement the method, you get an <code>Unimplemented</code> error instead. Both are <code>VantageError</code> variants you can match on.</p>
+<p>UI adapters branch on these flags to decide which controls to show. A data grid checks <code>can_fetch_page</code> to decide between a scrollbar (random access) and a “load more” button (cursor-based).</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="putting-it-together"><a class="header" href="#putting-it-together">Putting it together</a></h2>
+<p>Here’s a small function that takes any Vista and prints a summary — works with any backend:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>let expr = ternary(
-    ident("stock").gt(0),
-    "in stock",
-    "sold out",
-);
+</span>use vantage_vista::Vista;
+
+async fn print_vista(vista: &amp;Vista) -&gt; VantageResult&lt;()&gt; {
+    let columns = vista.get_column_names();
+    let caps = vista.capabilities();
+
+    // Header
+    print!("  {:&gt;12} ", vista.get_id_column().unwrap_or("id"));
+    for col in &amp;columns {
+        print!("{:&gt;16} ", col);
+    }
+    println!();
+
+    // Count
+    if caps.can_count {
+        println!("  ({} rows)", vista.get_count().await?);
+    }
+
+    // Rows
+    let rows = vista.list_values().await?;
+    for (id, record) in &amp;rows {
+        print!("  {:&gt;12} ", id);
+        for col in &amp;columns {
+            let val = record
+                .get(col)
+                .map(|v| format!("{:?}", v))
+                .unwrap_or_default();
+            print!("{:&gt;16} ", val);
+        }
+        println!();
+    }
+    Ok(())
+}
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/ternary/fn.ternary.html"><code>ternary()</code></a> is a shorthand for
-<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/ternary/struct.Ternary.html#method.new"><code>Ternary::new()</code></a>.</p>
-<h2 id="case--case-expressions"><a class="header" href="#case--case-expressions"><code>Case</code> — CASE Expressions</a></h2>
-<p>For more than two branches, use <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/case/struct.Case.html"><code>Case</code></a> to build a full
-<code>CASE WHEN ... END</code> block:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let expr = Case::new()
-    .when(ident("status").eq("active"), "yes")
-    .when(ident("status").eq("banned"), "no")
-    .else_("unknown");
-<span class="boring">}</span></code></pre>
-<h2 id="concat_--string-concatenation"><a class="header" href="#concat_--string-concatenation"><code>concat_!</code> — String Concatenation</a></h2>
-<p>Concatenates expressions. Renders as <code>||</code> on SQLite/Postgres, <code>CONCAT()</code> on MySQL. The
-<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/macro.concat_.html"><code>concat_!</code></a> macro calls <code>.expr()</code> on each argument automatically:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>concat_!(ident("first_name"), " ", ident("last_name"))
-<span class="boring">}</span></code></pre>
-<p>Use <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/concat/struct.Concat.html#method.ws"><code>.ws()</code></a> for a separator — it accepts any
-<code>Expressive&lt;T&gt;</code>, including string literals:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>concat_!(ident("first_name"), ident("last_name")).ws(", ")
-// SQLite:   "first_name" || ', ' || "last_name"
-// MySQL:    CONCAT_WS(', ', `first_name`, `last_name`)
-<span class="boring">}</span></code></pre>
-<h2 id="interval--date-intervals"><a class="header" href="#interval--date-intervals"><code>Interval</code> — Date Intervals</a></h2>
-<p>Portable date interval that adapts per backend:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let i = Interval::days(30);
-// SQLite:   30  (used with date functions)
-// MySQL:    INTERVAL 30 DAY
-// Postgres: INTERVAL '30 days'
-<span class="boring">}</span></code></pre>
-<p>See <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/interval/struct.Interval.html"><code>Interval</code></a> for available constructors (<code>days</code>,
-<code>hours</code>, <code>months</code>, etc.).</p>
-<h2 id="date_format--date-formatting"><a class="header" href="#date_format--date-formatting"><code>date_format()</code> — Date Formatting</a></h2>
-<p>Portable strftime-style formatting. Translates format tokens per backend:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let formatted = date_format(ident("created_at"), "%Y-%m-%d");
-// SQLite:   STRFTIME('%Y-%m-%d', "created_at")
-// MySQL:    DATE_FORMAT("created_at", '%Y-%m-%d')
-// Postgres: TO_CHAR("created_at", 'YYYY-MM-DD')
-<span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/date_format/fn.date_format.html"><code>date_format()</code></a> is a shorthand for
-<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/date_format/struct.DateFormat.html#method.new"><code>DateFormat::new()</code></a>. Use
-<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/date_format/struct.DateFormat.html#method.raw_format"><code>.raw_format()</code></a> to skip token
-translation and pass a native format string.</p>
+<p>No generics. No entity type. No backend knowledge. <code>print_vista</code> works with a SQLite Vista, a
+MongoDB Vista, an AWS Vista — anything the framework can produce.</p>
+<hr>
+<h2 id="what-we-covered"><a class="header" href="#what-we-covered">What we covered</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Concept</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a></td><td>Universal schema-bearing data handle, wraps any <code>Table</code></td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/source/trait.TableShell.html"><code>TableShell</code></a></td><td>Per-driver executor that Vista delegates to</td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a></td><td>Honest contract of what the driver supports</td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/column/struct.Column.html"><code>Column</code></a></td><td>Column metadata with name, type, and flags</td></tr>
+<tr><td><code>add_condition_eq</code></td><td>Narrow results to field == value</td></tr>
+<tr><td><code>with_id</code></td><td>Convenience: narrow by primary key</td></tr>
+<tr><td><code>add_search</code> / <code>add_order</code></td><td>Quicksearch and sorting (replace semantics)</td></tr>
+<tr><td><code>fetch_page</code> / <code>fetch_next</code></td><td>Offset and cursor pagination</td></tr>
+<tr><td><code>get_ref</code></td><td>Traverse a same-persistence relationship</td></tr>
+<tr><td><code>with_foreign</code></td><td>Register a cross-persistence relationship resolver</td></tr>
+</tbody>
+</table>
+</div>
+<div id="admonition-whats-next" class="admonition admonish-tip" role="note" aria-labelledby="admonition-whats-next-title">
+<div class="admonition-title">
+<div id="admonition-whats-next-title">
+<p>What’s next</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-whats-next"></a>
+</div>
+
+<div>
+<p>Vista gives you a universal read/write handle. But every call still hits the database — there’s no caching, no reactivity, no way to push live updates to a UI.</p>
+<p>The next chapter introduces <strong>Dio</strong> and <strong>Lens</strong> — the caching and event layer that sits between a Vista (your master data) and a Scenery (the reactive view a UI consumes).</p>
+</div>
+
+</div>
+
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../sql.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../intro/step3-axum-server.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../sql/type-conversions.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../intro/step5-dio-lens.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -344,11 +616,11 @@ translation and pass a native format string.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../sql.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../intro/step3-axum-server.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../sql/type-conversions.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../intro/step5-dio-lens.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

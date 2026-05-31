@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Historical Timeline - Vantage 0.4 Framework</title>
+        <title>Scenery — Reactive Views - Vantage 0.4 Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -12,34 +12,34 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
-        <link rel="icon" href="favicon-de23e50b.svg">
-        <link rel="shortcut icon" href="favicon-8114d1fc.png">
-        <link rel="stylesheet" href="css/variables-8adf115d.css">
-        <link rel="stylesheet" href="css/general-2459343d.css">
-        <link rel="stylesheet" href="css/chrome-ae938929.css">
-        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-2459343d.css">
+        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
 
         <!-- Highlight.js Stylesheets -->
-        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
-        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
-        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
 
         <!-- Custom theme stylesheets -->
-        <link rel="stylesheet" href="./mdbook-admonish.css">
+        <link rel="stylesheet" href=".././mdbook-admonish.css">
 
 
         <!-- Provide site root and default themes to javascript -->
         <script>
-            const path_to_root = "";
+            const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-959ffe55.js";
+            window.path_to_searchindex_js = "../searchindex-959ffe55.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-3f24ff2a.js"></script>
+        <script src="../toc-3f24ff2a.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -106,7 +106,7 @@
             <!-- populated by js -->
             <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
             <noscript>
-                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
             </noscript>
             <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -141,7 +141,7 @@
                     <h1 class="menu-title">Vantage 0.4 Framework</h1>
 
                     <div class="right-buttons">
-                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
                         </a>
 
@@ -175,311 +175,348 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="the-vantage-journey"><a class="header" href="#the-vantage-journey">The Vantage Journey</a></h1>
-<p>Vantage didn’t start as a multi-backend entity framework. It started as a weekend experiment to see
-if Rust could build SQL queries without feeling like Rust.</p>
-<p>This page walks you through each release — what changed, why it mattered, and how the API evolved
-from raw Postgres queries to a universal persistence layer.</p>
+                        <h1 id="scenery--reactive-views"><a class="header" href="#scenery--reactive-views">Scenery — Reactive Views</a></h1>
+<p>Chapters 4–5 built the data pipeline: Vista wraps your table, Dio caches it and routes writes. But
+consumers — data grids, dashboards, CLI tools, test harnesses — don’t want to deal with cache
+management and event subscriptions directly. They want an ordered row set, a single record, or a
+computed value that stays up to date.</p>
+<p><strong>Scenery</strong> is that layer. Each Scenery is a reactive view onto a Dio that exposes a specific access
+pattern:</p>
 <ul>
-<li><a href="#00--dorm-aprilnovember-2024">0.0 — “DORM” (April–November 2024)</a>
-<ul>
-<li><a href="#milestones">Milestones</a></li>
+<li><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a> — ordered, paginated rows</li>
+<li><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a> — a single record by id</li>
+<li><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a> — a computed scalar (count, sum, custom)</li>
 </ul>
-</li>
-<li><a href="#01--vantage-is-born-december-2024">0.1 — Vantage is born (December 2024)</a></li>
-<li><a href="#02--entity-framework--mda-february-2025">0.2 — Entity Framework &amp; MDA (February 2025)</a></li>
-<li><a href="#03--the-great-separation-julyoctober-2025">0.3 — The Great Separation (July–October 2025)</a></li>
-<li><a href="#04--the-type-system-rewrite-november-2025present">0.4 — The Type System Rewrite (November 2025–present)</a></li>
-<li><a href="#the-bigger-picture">The bigger picture</a></li>
-</ul>
-<pre class="mermaid">graph LR
-    D[0.0 DORM] --&gt;|rename| V1[0.1 Vantage]
-    V1 --&gt;|entity framework| V2[0.2 MDA]
-    V2 --&gt;|crate split| V3[0.3 UI Adapters]
-    V3 --&gt;|type rewrite| V4[0.4 Type System]
-    style D fill:#555,color:#fff
-    style V1 fill:#4a7c59,color:#fff
-    style V2 fill:#2d6a8f,color:#fff
-    style V3 fill:#8f5a2d,color:#fff
-    style V4 fill:#7c2d8f,color:#fff
-</pre>
-
-<hr>
-<h2 id="00--dorm-aprilnovember-2024"><a class="header" href="#00--dorm-aprilnovember-2024">0.0 — “DORM” (April–November 2024)</a></h2>
-<p>The project was originally called <strong>DORM</strong> — the Dry ORM. It was Postgres-only, monolithic, and
-proudly opinionated. Everything lived in one crate.</p>
-<p>The core idea was already there: <strong>Data Sets</strong>. Instead of loading records eagerly, you describe
-<em>what</em> you want and let the framework figure out the query.</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let clients = Client::table();           // Table&lt;Postgres, Client&gt;
-let paying = clients.with_condition(
-    clients.is_paying_client().eq(&amp;true)
-);
-let orders = paying.ref_orders();         // Table&lt;Postgres, Order&gt;
-
-for order in orders.get().await? {
-    println!("#{} total: ${:.2}", order.id, order.total as f64 / 100.0);
-}
-<span class="boring">}</span></code></pre>
-<p>Behind this innocent-looking code, DORM generated a single SQL query with subqueries, joins, and
-soft-delete filters — all derived from model definitions:</p>
-<pre><code class="language-sql">SELECT id,
-    (SELECT name FROM client WHERE client.id = ord.client_id) AS client_name,
-    (SELECT SUM((SELECT price FROM product WHERE id = product_id) * quantity)
-     FROM order_line WHERE order_line.order_id = ord.id) AS total
-FROM ord
-WHERE client_id IN (SELECT id FROM client WHERE is_paying_client = true)
-  AND is_deleted = false
-</code></pre>
-<p>No hand-written SQL. No query strings. The framework composed everything from relationship
-definitions and table extensions like <code>SoftDelete</code>.</p>
-<div id="admonition-the-arc-breakthrough" class="admonition admonish-tip" role="note" aria-labelledby="admonition-the-arc-breakthrough-title">
+<p>All three share the same reactivity mechanism: a <a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a> counter
+that bumps whenever the view’s state changes. Consumers subscribe via a <code>watch</code> channel and react on
+each bump.</p>
+<div id="admonition-goals-for-this-chapter" class="admonition admonish-example" role="note" aria-labelledby="admonition-goals-for-this-chapter-title">
 <div class="admonition-title">
-<div id="admonition-the-arc-breakthrough-title">
-<p>The Arc breakthrough</p>
+<div id="admonition-goals-for-this-chapter-title">
+<p>Goals for this chapter</p>
 </div>
 
-<a class="admonition-anchor-link" href="#admonition-the-arc-breakthrough"></a>
+<a class="admonition-anchor-link" href="#admonition-goals-for-this-chapter"></a>
 </div>
 
 <div>
-<p>Early commits show a battle with Rust’s borrow checker — the infamous “lifetime hell.”
-The solution came on April 28: switching to <code>Arc</code> for shared ownership. This unlocked
-clonable data sources and composable table references that define the framework to this day.</p>
+<p>By the end of this page you’ll be able to:</p>
+<ol>
+<li>Open a TableScenery and read rows by index</li>
+<li>Use sequential mode (append-only) vs random-access mode (viewport-driven)</li>
+<li>Open a RecordScenery for a single record</li>
+<li>Open a ValueScenery for aggregates</li>
+<li>Subscribe to changes via the Generation counter</li>
+</ol>
 </div>
 
 </div>
 
-<h3 id="milestones"><a class="header" href="#milestones">Milestones</a></h3>
+<hr>
+<h2 id="generation--the-reactivity-primitive"><a class="header" href="#generation--the-reactivity-primitive">Generation — the reactivity primitive</a></h2>
+<p>Every Scenery carries a monotonically increasing <code>Generation(u64)</code>. When the underlying Dio
+publishes an event that affects the view, the Scenery recomputes its state and bumps the counter.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut rx = scenery.subscribe();
+
+// Block until something changes
+let gen = rx.changed().await.unwrap();
+println!("updated to generation {:?}", gen);
+<span class="boring">}</span></code></pre>
+<p>The <code>subscribe()</code> call returns a <code>watch::Receiver&lt;Generation&gt;</code> — a Tokio channel that holds the
+latest value. Multiple subscribers share the same channel. If nothing changes, <code>changed()</code> blocks
+indefinitely. If the Scenery is dropped, the channel closes.</p>
+<div id="admonition-watch-not-stream" class="admonition admonish-info" role="note" aria-labelledby="admonition-watch-not-stream-title">
+<div class="admonition-title">
+<div id="admonition-watch-not-stream-title">
+<p>Watch, not stream</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-watch-not-stream"></a>
+</div>
+
+<div>
+<p><code>watch</code> only keeps the <em>latest</em> value. If three changes happen before your consumer reads, it
+sees one bump — not three. This is intentional: consumers re-read the full state on each bump,
+so intermediate states are wasted work.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="tablescenery--ordered-rows"><a class="header" href="#tablescenery--ordered-rows">TableScenery — ordered rows</a></h2>
+<p>The most common view. Built from a Dio via a builder:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_diorama::scenery::SortDir;
+
+let scenery = dio
+    .table_scenery()
+    .sort("name", SortDir::Asc)
+    .page_size(50)
+    .open()
+    .await?;
+<span class="boring">}</span></code></pre>
+<p>The builder chains configuration, then <code>.open()</code> seeds the view from cache, spawns a reactor task,
+and returns <code>Arc&lt;dyn TableScenery&gt;</code>.</p>
+<h3 id="reading-rows"><a class="header" href="#reading-rows">Reading rows</a></h3>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>for i in 0..scenery.row_count() {
+    if let Some(row) = scenery.row(i) {
+        let name = &amp;row.record["name"];
+        println!("  {}: {:?}", i, name);
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Rows are accessed by index — a <code>BTreeMap&lt;usize, Arc&lt;EnrichedRecord&gt;&gt;</code> under the hood. Not every
+index is populated: the map is sparse when only part of the dataset is loaded. <code>row(i)</code> returns
+<code>None</code> for unloaded indices.</p>
+<h3 id="two-loading-strategies"><a class="header" href="#two-loading-strategies">Two loading strategies</a></h3>
+<p>TableScenery supports two modes, selected automatically based on which Lens callbacks you’ve
+configured:</p>
+<p><strong>Sequential mode</strong> — append-only paging. Use when the master can only return “the next page”
+(cursor APIs, append-only logs). No <code>total_provider</code> is registered. You call <code>request_load_more()</code>
+and the cache grows page by page:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>scenery.request_load_more();
+// cache grows: 50 → 100 → 150 → ...
+<span class="boring">}</span></code></pre>
+<div id="admonition-sequential-mode-no-skipping" class="admonition admonish-warning" role="note" aria-labelledby="admonition-sequential-mode-no-skipping-title">
+<div class="admonition-title">
+<div id="admonition-sequential-mode-no-skipping-title">
+<p>Sequential mode: no skipping</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-sequential-mode-no-skipping"></a>
+</div>
+
+<div>
+<p>In sequential mode, <code>set_viewport()</code> past the cache end <strong>clamps</strong> to whatever is already loaded
+and emits <code>ViewportClamped</code>. You can’t jump to row 900 — you have to call <code>request_load_more()</code>
+repeatedly until the cache grows that far. This matches the reality of cursor-based backends:
+they can’t skip ahead either.</p>
+</div>
+
+</div>
+
+<p><strong>Random-access mode</strong> — viewport-driven sparse paging. Use when you know the total row count and
+can fetch any range. Register <code>total_provider</code> and <code>on_load_chunk</code> on the Lens. Then:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>scenery.set_viewport(200..250);
+// on_load_chunk fires for the missing range
+// rows arrive in the sparse map
+<span class="boring">}</span></code></pre>
+<p><code>set_viewport()</code> triggers a fetch only for the portion not already cached. Scrolling back to a
+previously loaded range is instant. You can jump to any row — the master supports it.</p>
+<h3 id="table-size-row_count-estimated_total-has_more"><a class="header" href="#table-size-row_count-estimated_total-has_more">Table size: <code>row_count</code>, <code>estimated_total</code>, <code>has_more</code></a></h3>
+<p>These three methods behave differently per mode:</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Date</th><th>What happened</th></tr>
+<tr><th></th><th>Sequential</th><th>Random-access</th></tr>
 </thead>
 <tbody>
-<tr><td>Apr 11</td><td>First commit — queries, expressions, SQLite binding</td></tr>
-<tr><td>Apr 18</td><td>Insert/delete support, first Postgres tests</td></tr>
-<tr><td>Apr 28</td><td><code>Arc</code> adoption — escaped lifetime hell</td></tr>
-<tr><td>May 14</td><td><code>Query::Join</code> implemented</td></tr>
-<tr><td>May 25</td><td><code>has_one</code>, <code>has_many</code>, relationship traversal</td></tr>
-<tr><td>May 26</td><td>Bakery model example — all entities defined</td></tr>
+<tr><td><code>row_count()</code></td><td>Cache size (grows as you load more)</td><td>Total from <code>total_provider</code> (known upfront)</td></tr>
+<tr><td><code>estimated_total()</code></td><td><code>None</code> (unknown until you hit the end)</td><td><code>Some(total)</code></td></tr>
+<tr><td><code>has_more()</code></td><td>Always <code>true</code> (no total to compare against)</td><td><code>loaded &lt; total</code></td></tr>
 </tbody>
 </table>
 </div>
-<hr>
-<h2 id="01--vantage-is-born-december-2024"><a class="header" href="#01--vantage-is-born-december-2024">0.1 — Vantage is born (December 2024)</a></h2>
-<p>On December 12, the framework was renamed from DORM to <strong>Vantage</strong> and published to crates.io for
-the first time. The API stayed the same — this was a branding milestone, not an architectural one.</p>
-<div id="admonition-why-vantage" class="admonition admonish-note" role="note" aria-labelledby="admonition-why-vantage-title">
+<p>In sequential mode, the table size is a mystery — the master only knows “next page”. You load pages
+until <code>on_load_chunk</code> returns a short page (fewer rows than <code>page_size</code>). At that point,
+<code>estimated_total()</code> freezes to the cache size and <code>has_more()</code> flips to <code>false</code>.</p>
+<p>In random-access mode, the total is known from the start — <code>total_provider</code> runs once at open.
+Scrollbars size correctly before any data loads. The sparse map fills gaps on demand.</p>
+<div id="admonition-which-mode-do-i-get" class="admonition admonish-info" role="note" aria-labelledby="admonition-which-mode-do-i-get-title">
 <div class="admonition-title">
-<div id="admonition-why-vantage-title">
-<p>Why ‘Vantage’?</p>
+<div id="admonition-which-mode-do-i-get-title">
+<p>Which mode do I get?</p>
 </div>
 
-<a class="admonition-anchor-link" href="#admonition-why-vantage"></a>
+<a class="admonition-anchor-link" href="#admonition-which-mode-do-i-get"></a>
 </div>
 
 <div>
-<p>A vantage point gives you a clear view of the landscape below. The framework gives you
-a clear view of your data — no matter where it lives or how complex the relationships are.</p>
-</div>
-
-</div>
-
-<p>The same month brought the first Axum integration (<code>bakery_api</code>), proving that data sets could drive
-REST endpoints naturally:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>async fn list_orders(
-    client: axum::extract::Query&lt;OrderRequest&gt;,
-    pager: axum::extract::Query&lt;Pagination&gt;,
-) -&gt; impl IntoResponse {
-    let orders = Client::table()
-        .with_id(client.client_id.into())
-        .ref_orders();
-
-    let mut query = orders.query();
-    query.add_limit(Some(pager.per_page));
-    Json(query.get().await.unwrap())
-}
-<span class="boring">}</span></code></pre>
-<p>Tags <code>v0.1.0</code> and <code>v0.1.1</code> were published the same day. SQLx data source landed 11 days later.</p>
-<hr>
-<h2 id="02--entity-framework--mda-february-2025"><a class="header" href="#02--entity-framework--mda-february-2025">0.2 — Entity Framework &amp; MDA (February 2025)</a></h2>
-<p>Version 0.2 repositioned Vantage as a full <strong>Entity Framework</strong> with Model-Driven Architecture. The
-README doubled in size. The vision expanded from “clever query builder” to “how enterprises should
-structure business logic.”</p>
-<p>The key insight: entities aren’t just database rows. They’re <strong>business objects</strong> that might live in
-SQL, NoSQL, a REST API, or a message queue — and your code shouldn’t care which.</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>impl Client {
-    fn table() -&gt; Table&lt;Client, Oracle&gt; { /* ... */ }
-    fn registration_queue() -&gt; impl Insertable&lt;Client&gt; { /* Kafka */ }
-    fn admin_api() -&gt; impl DataSet&lt;Client&gt; { /* REST */ }
-    fn read_csv(file: String) -&gt; impl ReadableDataSet&lt;Client&gt; { /* CSV */ }
-}
-<span class="boring">}</span></code></pre>
-<div id="admonition-same-interface-any-backend" class="admonition admonish-example" role="note" aria-labelledby="admonition-same-interface-any-backend-title">
-<div class="admonition-title">
-<div id="admonition-same-interface-any-backend-title">
-<p>Same interface, any backend</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-same-interface-any-backend"></a>
-</div>
-
-<div>
-<p>A developer calling <code>Client::registration_queue().insert(id, client).await</code> doesn’t
-need to know it’s Kafka underneath. The SDK hides the transport — only the entity
-contract matters.</p>
-</div>
-
-</div>
-
-<p>This release also introduced the idea of <strong>struct projection</strong> — using different Rust types against
-the same data set to control which fields get queried:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>struct MiniClient { name: String }
-struct FullClient { name: String, email: String, balance: Decimal }
-
-// Only fetches `name` from the database
-let name = clients.get_id_as::&lt;MiniClient&gt;(42).await?.name;
-<span class="boring">}</span></code></pre>
-<p>The monolith was getting heavy, though. Everything still lived in one crate, and adding a new
-database meant touching core code.</p>
-<hr>
-<h2 id="03--the-great-separation-julyoctober-2025"><a class="header" href="#03--the-great-separation-julyoctober-2025">0.3 — The Great Separation (July–October 2025)</a></h2>
-<p>Version 0.3 broke the monolith into <strong>dedicated crates</strong> and bet heavily on SurrealDB as the primary
-backend. The trait-based architecture that defines Vantage today was born here.</p>
-<div id="admonition-crate-explosion" class="admonition admonish-info" role="note" aria-labelledby="admonition-crate-explosion-title">
-<div class="admonition-title">
-<div id="admonition-crate-explosion-title">
-<p>Crate explosion</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-crate-explosion"></a>
-</div>
-
-<div>
-<p>One crate became many: <code>vantage-expressions</code>, <code>vantage-table</code>, <code>vantage-dataset</code>,
-<code>vantage-surrealdb</code>, <code>surreal-client</code>, <code>vantage-config</code>, <code>vantage-ui-adapters</code> — each
-with a focused responsibility.</p>
-</div>
-
-</div>
-
-<p>Table definitions moved from static initialization to a <strong>builder pattern</strong>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// 0.2 — static, Postgres-only
-Table::new_with_entity("bakery", postgres())
-    .with_id_column("id")
-    .with_column("name")
-    .with_many("clients", "bakery_id", || Box::new(Client::table()))
-
-// 0.3 — builder, any datasource
-Table::&lt;SurrealDB, Client&gt;::new("client", ds.clone())
-    .with_id_column("id")
-    .with_column("name")
-    .with_column("email")
-    .with_many("orders", "client_id", || Client::order_table())
-<span class="boring">}</span></code></pre>
-<p>Field accessors now return <code>Expression</code> instead of column objects — making them composable across
-query builders:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// Build conditions from expressions
-let active = clients.is_paying_client().eq(true);
-let big_spenders = clients.balance().gt(1000);
-let query = clients.with_condition(active).with_condition(big_spenders);
-<span class="boring">}</span></code></pre>
-<p>The <strong><code>AnyTable</code></strong> type-erasure system arrived, enabling generic code that works with any
-datasource:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let tables: Vec&lt;AnyTable&gt; = vec![
-    AnyTable::new(Client::table()),   // SurrealDB
-    AnyTable::new(Product::table()),  // SQLite
-];
-
-for table in &amp;tables {
-    println!("{}: {} records", table.name(), table.count().await?);
-}
-<span class="boring">}</span></code></pre>
-<p>This release culminated with <strong>UI adapters for six frameworks</strong> — egui, GPUI, Slint, Tauri, Ratatui,
-and Cursive — all driven by the same <code>AnyTable</code> interface.</p>
-<div id="admonition-one-data-layer-six-uis" class="admonition admonish-success" role="note" aria-labelledby="admonition-one-data-layer-six-uis-title">
-<div class="admonition-title">
-<div id="admonition-one-data-layer-six-uis-title">
-<p>One data layer, six UIs</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-one-data-layer-six-uis"></a>
-</div>
-
-<div>
-<p>The same bakery model powered a native desktop app (GPUI), a web app (Tauri), a terminal
-dashboard (Ratatui), and three more — without changing a single line of business logic.</p>
-</div>
-
-</div>
-
-<p><img src="images/ui-slideshow.gif" alt="egui, GPUI, Slint, Tauri, Cursive, Ratatui — same data, six frameworks"></p>
-<hr>
-<h2 id="04--the-type-system-rewrite-november-2025present"><a class="header" href="#04--the-type-system-rewrite-november-2025present">0.4 — The Type System Rewrite (November 2025–present)</a></h2>
-<div id="admonition-vantage-04--the-current-release" class="admonition admonish-info" role="note" aria-labelledby="admonition-vantage-04--the-current-release-title">
-<div class="admonition-title">
-<div id="admonition-vantage-04--the-current-release-title">
-<p>Vantage 0.4 — the current release</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-vantage-04--the-current-release"></a>
-</div>
-
-<div>
-<p>Version 0.4 rewrites the type system from the ground up. Custom types per datasource, CBOR
-protocol, 7 persistence backends (SurrealDB, Postgres, MySQL, SQLite, MongoDB, CSV, REST API),
-<code>ActiveEntity</code> / <code>ActiveRecord</code> patterns, typed columns, unified error handling, and a progressive
-trait model where each persistence only implements what its engine supports.</p>
-<p><strong><a href="./whats-new-04.html">Read the full 0.4 feature guide →</a></strong></p>
-</div>
-
-</div>
-
-<hr>
-<h2 id="the-bigger-picture"><a class="header" href="#the-bigger-picture">The bigger picture</a></h2>
-<p>Looking at the trajectory:</p>
+<p>It depends on your Lens configuration:</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Version</th><th>Core idea</th><th>Backends</th><th>Crates</th></tr>
+<tr><th>Callback registered</th><th>Mode</th><th>Pagination</th></tr>
 </thead>
 <tbody>
-<tr><td>0.0</td><td>Can Rust build SQL smartly?</td><td>Postgres</td><td>1</td></tr>
-<tr><td>0.1</td><td>Let’s publish this</td><td>Postgres</td><td>1</td></tr>
-<tr><td>0.2</td><td>Entity Framework for Rust</td><td>Postgres</td><td>1</td></tr>
-<tr><td>0.3</td><td>Traits, not inheritance</td><td>SurrealDB, SQLite</td><td>10+</td></tr>
-<tr><td>0.4</td><td>Strict types, any persistence</td><td>SurrealDB, SQLite, Postgres, MySQL, MongoDB, CSV, REST API</td><td>20+</td></tr>
+<tr><td><code>total_provider</code> + <code>on_load_chunk</code></td><td>Random-access</td><td><code>set_viewport()</code></td></tr>
+<tr><td><code>on_load_chunk</code> only</td><td>Sequential</td><td><code>request_load_more()</code></td></tr>
+<tr><td>Neither</td><td>Cache-only</td><td>Whatever <code>on_start</code> seeded</td></tr>
 </tbody>
 </table>
 </div>
-<p>What started as 16 commits in April 2024 is now <strong>470+ commits</strong>, <strong>189+ pull requests</strong>, and a
-framework that can drive the same business logic across five backends and six UI frameworks.</p>
-<p>The destination hasn’t changed since day one: <strong>describe your data once, use it everywhere.</strong> Each
-version just made “everywhere” a little bigger.</p>
+<p>Check <code>master_capabilities()</code> to see what the view advertises: <code>can_fetch_page</code> → random-access,
+<code>can_fetch_next</code> → sequential.</p>
+</div>
+
+</div>
+
+<h3 id="search-and-sort"><a class="header" href="#search-and-sort">Search and sort</a></h3>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>scenery.set_search(Some("tart".into()));
+scenery.set_sort(Some("price".into()), SortDir::Desc);
+<span class="boring">}</span></code></pre>
+<p>These trigger a full reload from cache. Search and sort are applied locally against the cached data
+— they work even when the master backend doesn’t support them (capability injection from chapter 5
+in action).</p>
+<hr>
+<h2 id="recordscenery--single-record"><a class="header" href="#recordscenery--single-record">RecordScenery — single record</a></h2>
+<p>A reactive view onto one record by id:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let record = dio.record_scenery("42").await?;
+
+match record.status() {
+    RecordStatus::Fresh =&gt; {
+        let row = record.record().unwrap();
+        println!("name: {:?}", row.record["name"]);
+    }
+    RecordStatus::NotFound =&gt; println!("not in cache"),
+    RecordStatus::Error(msg) =&gt; println!("error: {}", msg),
+    _ =&gt; {}
+}
+<span class="boring">}</span></code></pre>
+<p>The record reads from cache at creation time — no master fetch on miss. If the cache doesn’t have
+the row, status is <code>NotFound</code>. The reactor listens to the Dio’s event bus and reloads when
+<code>RecordChanged</code> or <code>Invalidated</code> arrives for that id.</p>
+<p>If you already have the record (e.g. from a table row click), skip the cache read:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let record = dio.record_scenery_with("42", row_from_table);
+<span class="boring">}</span></code></pre>
+<hr>
+<h2 id="valuescenery--aggregates"><a class="header" href="#valuescenery--aggregates">ValueScenery — aggregates</a></h2>
+<p>A reactive scalar computed from the cache:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_diorama::scenery::Aggregate;
+
+let count = dio
+    .value_scenery()
+    .count()
+    .open()
+    .await?;
+
+let total = dio
+    .value_scenery()
+    .sum("price")
+    .open()
+    .await?;
+<span class="boring">}</span></code></pre>
+<p>Built-in aggregates:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>Computes</th></tr>
+</thead>
+<tbody>
+<tr><td><code>.count()</code></td><td>Total rows in cache</td></tr>
+<tr><td><code>.count_where(conds)</code></td><td>Rows matching field=value pairs</td></tr>
+<tr><td><code>.sum("field")</code></td><td>Sum of an integer field</td></tr>
+<tr><td><code>.max("field")</code></td><td>Maximum of an integer field</td></tr>
+<tr><td><code>.min("field")</code></td><td>Minimum of an integer field</td></tr>
+</tbody>
+</table>
+</div>
+<p>All are computed locally against the cache — no database query. The reactor recomputes on every
+<code>DioEvent</code> and bumps the generation if the value changed.</p>
+<div id="admonition-custom-aggregates" class="admonition admonish-tip" role="note" aria-labelledby="admonition-custom-aggregates-title">
+<div class="admonition-title">
+<div id="admonition-custom-aggregates-title">
+<p>Custom aggregates</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-custom-aggregates"></a>
+</div>
+
+<div>
+<p>For computations the built-in variants don’t cover:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let expensive = dio
+    .value_scenery()
+    .custom(|dio| {
+        let dio = dio.clone();
+        async move {
+            let rows = dio.cache().list_values().await?;
+            let avg = /* your logic */;
+            Ok(avg.into())
+        }
+    })
+    .open()
+    .await?;
+<span class="boring">}</span></code></pre>
+<p>The closure receives a <code>&amp;Dio</code> — same pattern as Lens callbacks.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="putting-it-together"><a class="header" href="#putting-it-together">Putting it together</a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_diorama::scenery::SortDir;
+
+// Table view — ordered, paginated
+let table = dio
+    .table_scenery()
+    .sort("name", SortDir::Asc)
+    .page_size(50)
+    .open()
+    .await?;
+
+println!("{} rows loaded", table.row_count());
+
+// Single record
+let rec = dio.record_scenery("42").await?;
+
+// Live counter
+let count = dio.value_scenery().count().open().await?;
+let mut rx = count.subscribe();
+loop {
+    rx.changed().await?;
+    println!("count: {:?}", count.value());
+}
+<span class="boring">}</span></code></pre>
+<hr>
+<h2 id="what-we-covered"><a class="header" href="#what-we-covered">What we covered</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Concept</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a></td><td>Ordered, paginated row view with sequential or random-access loading</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a></td><td>Reactive single-record view by id</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a></td><td>Reactive aggregate (count, sum, max, min, custom)</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a></td><td>Monotonic counter bumped on every state change</td></tr>
+<tr><td><code>subscribe()</code></td><td>Returns <code>watch::Receiver&lt;Generation&gt;</code> for reactive updates</td></tr>
+<tr><td><code>set_viewport()</code></td><td>Request a row range for random-access loading</td></tr>
+<tr><td><code>request_load_more()</code></td><td>Append the next page for sequential loading</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/value/enum.Aggregate.html"><code>Aggregate</code></a></td><td>Enum of built-in and custom aggregate operations</td></tr>
+</tbody>
+</table>
+</div>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="intro/step6-scenery.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../intro/step5-dio-lens.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="whats-new-04.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../history.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -489,11 +526,11 @@ version just made “everywhere” a little bigger.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="intro/step6-scenery.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../intro/step5-dio-lens.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="whats-new-04.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../history.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
@@ -513,17 +550,17 @@ version just made “everywhere” a little bigger.</p>
         </script>
 
 
-        <script src="elasticlunr-ef4e11c1.min.js"></script>
-        <script src="mark-09e88c2c.min.js"></script>
-        <script src="searcher-c2a407aa.js"></script>
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
 
-        <script src="clipboard-1626706a.min.js"></script>
-        <script src="highlight-abc7f01d.js"></script>
-        <script src="book-a0b12cfe.js"></script>
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-a0b12cfe.js"></script>
 
         <!-- Custom JS scripts -->
-        <script src="mermaid-eefea253.min.js"></script>
-        <script src="mermaid-init-ccf746f1.js"></script>
+        <script src="../mermaid-eefea253.min.js"></script>
+        <script src="../mermaid-init-ccf746f1.js"></script>
 
 
 

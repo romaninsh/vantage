@@ -37,10 +37,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-c8e0a8a7.js";
+            window.path_to_searchindex_js = "searchindex-959ffe55.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-99e15bc2.js"></script>
+        <script src="toc-3f24ff2a.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -349,8 +349,8 @@ async fn run() -&gt; VantageResult&lt;()&gt; {
 }</code></pre>
 <p>A few things going on here:</p>
 <ul>
-<li><strong><code>use vantage_sql::prelude::*</code></strong> brings in everything we need for this chapter — <a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>,
-<a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a>, the <code>sqlite_expr!</code> macro, error types, and the traits that make builder and
+<li><strong><code>use vantage_sql::prelude::*</code></strong> brings in everything we need for this chapter — <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>,
+<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a>, the <code>sqlite_expr!</code> macro, error types, and the traits that make builder and
 execution methods work.</li>
 <li><strong><code>VantageResult&lt;()&gt;</code></strong> is Vantage’s own Result type. It uses <code>VantageError</code>, which tracks context
 and error chains for readable diagnostics.</li>
@@ -416,11 +416,11 @@ any <code>Result</code> with a standard error type.</p>
 
 <hr>
 <h2 id="build-a-select"><a class="header" href="#build-a-select">Build a SELECT</a></h2>
-<p><a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a> is the query builder for SQLite.
+<p><a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a> is the query builder for SQLite.
 Other persistences have their own —
-<a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/postgres/statements/select/struct.PostgresSelect.html"><code>PostgresSelect</code></a>,
-<a href="https://docs.rs/vantage_mongodb/0.4.9/vantage_mongodb/select/struct.MongoSelect.html"><code>MongoSelect</code></a> — and they all implement the
-<a href="https://docs.rs/vantage_expressions/0.4.3/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a> trait, so the interface is identical apart from
+<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/postgres/statements/select/struct.PostgresSelect.html"><code>PostgresSelect</code></a>,
+<a href="https://docs.rs/vantage_mongodb/0.5.5/vantage_mongodb/select/struct.MongoSelect.html"><code>MongoSelect</code></a> — and they all implement the
+<a href="https://docs.rs/vantage_expressions/0.5.0/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a> trait, so the interface is identical apart from
 vendor-specific extensions. None of them need a database connection — they’re just structs that
 accumulate query parts. You build them with a chain of <code>.with_*()</code> calls:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -473,10 +473,10 @@ you’re building a query conditionally in a loop.</p>
 </span>let result = db.execute(&amp;select.expr()).await?;
 println!("{:?}", result);
 <span class="boring">}</span></code></pre>
-<p>Two steps here: <code>.expr()</code> turns the builder into an <a href="https://docs.rs/vantage_expressions/0.4.3/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a>
+<p>Two steps here: <code>.expr()</code> turns the builder into an <a href="https://docs.rs/vantage_expressions/0.5.0/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a>
 — Vantage’s internal representation that keeps parameters separate from the SQL template. Then
-<a href="https://docs.rs/vantage_expressions/0.4.3/vantage_expressions/traits/datasource/trait.ExprDataSource.html#tymethod.execute"><code>db.execute()</code></a> sends it to the database.</p>
-<p>The result is <a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> — a type-tagged wrapper around whatever came back. The <code>Debug</code> output
+<a href="https://docs.rs/vantage_expressions/0.5.0/vantage_expressions/traits/datasource/trait.ExprDataSource.html#tymethod.execute"><code>db.execute()</code></a> sends it to the database.</p>
+<p>The result is <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> — a type-tagged wrapper around whatever came back. The <code>Debug</code> output
 isn’t pretty, but you should see all 6 product rows in there.</p>
 <div id="admonition-when-does-vantage-hit-the-database" class="admonition admonish-tip" role="note" aria-labelledby="admonition-when-does-vantage-hit-the-database-title">
 <div class="admonition-title">
@@ -511,13 +511,13 @@ let select = SqliteSelect::new()
 println!("{}", select.preview());
 // SELECT "name", "price" FROM "product" WHERE "is_deleted" = 0
 <span class="boring">}</span></code></pre>
-<p><code>sqlite_expr!</code> creates an <a href="https://docs.rs/vantage_expressions/0.4.3/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a> — a SQL template with
+<p><code>sqlite_expr!</code> creates an <a href="https://docs.rs/vantage_expressions/0.5.0/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a> — a SQL template with
 typed, bound parameters. That <code>{}</code> is <strong>not</strong> Rust’s <code>format!</code>: the value <code>false</code> is stored
 separately and bound through sqlx’s parameterized query interface at execution time — no injection
 risk, ever. The preview shows it inline for readability.</p>
 <p>In SQL persistences, a condition is just an expression. When you pass it to <code>.with_condition()</code>,
 it’s nested inside the select’s own expression tree. At execution time the whole tree is
-<a href="https://docs.rs/vantage_expressions/0.4.3/vantage_expressions/expression/flatten/struct.ExpressionFlattener.html">flattened</a> into a single template + parameter list that
+<a href="https://docs.rs/vantage_expressions/0.5.0/vantage_expressions/expression/flatten/struct.ExpressionFlattener.html">flattened</a> into a single template + parameter list that
 the database driver can bind safely.</p>
 <p>Run it — you should see 5 rows, with “Discontinued Cake” filtered out.</p>
 <div id="admonition-types-and-persistence-rendering" class="admonition admonish-info" role="note" aria-labelledby="admonition-types-and-persistence-rendering-title">
@@ -542,8 +542,8 @@ See <a href="#persistence-aligned-type-system">Persistence-aligned Type System</
 
 <h2 id="typed-columns-and-operators"><a class="header" href="#typed-columns-and-operators">Typed columns and operators</a></h2>
 <p>Writing <code>\"is_deleted\"</code> in a raw expression works, but there’s a cleaner way.
-<a href="https://docs.rs/vantage_table/0.4.10/vantage_table/column/core/struct.Column.html"><code>Column&lt;T&gt;</code></a> creates a typed column reference, then chain an
-<a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a> like <code>.eq()</code> to build the
+<a href="https://docs.rs/vantage_table/0.5.5/vantage_table/column/core/struct.Column.html"><code>Column&lt;T&gt;</code></a> creates a typed column reference, then chain an
+<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a> like <code>.eq()</code> to build the
 condition:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -553,7 +553,7 @@ let condition = is_deleted.eq(false);
 <p>Same result, but the type parameter <code>&lt;bool&gt;</code> ensures you can only compare against matching types.
 Try <code>is_deleted.eq(42)</code> — it won’t compile. Other operators — <code>.gt()</code>, <code>.lt()</code>, <code>.ne()</code>, <code>.in_()</code> —
 enforce the same type safety.</p>
-<p>The result is a <a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/condition/struct.SqliteCondition.html"><code>SqliteCondition</code></a> — the backend’s native condition type — ready to be passed
+<p>The result is a <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/condition/struct.SqliteCondition.html"><code>SqliteCondition</code></a> — the backend’s native condition type — ready to be passed
 directly to <code>.with_condition()</code>.</p>
 <div id="admonition-type-safety-and-backend-specific-operations" class="admonition admonish-info" role="note" aria-labelledby="admonition-type-safety-and-backend-specific-operations-title">
 <div class="admonition-title">
@@ -640,7 +640,7 @@ eligible to be parameters of expressions.</p>
 
 <hr>
 <h2 id="working-with-any-types"><a class="header" href="#working-with-any-types">Working with Any-types</a></h2>
-<p><a href="https://docs.rs/vantage_types/0.4.2/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a> is an ordered map (<code>IndexMap&lt;String, V&gt;</code>) — one record per row,
+<p><a href="https://docs.rs/vantage_types/0.5.0/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a> is an ordered map (<code>IndexMap&lt;String, V&gt;</code>) — one record per row,
 with column names as keys. It lives in the <code>vantage-types</code> crate, so add that dependency and import
 its prelude:</p>
 <pre><code class="language-sh">cargo add vantage-types --features serde
@@ -651,7 +651,7 @@ its prelude:</p>
 <span class="boring">}</span></code></pre>
 <p>So far we’ve been printing raw <code>AnySqliteType</code> with <code>Debug</code>. That works for verifying queries, but
 it’s useless for real work. When <code>db.execute()</code> returns a multi-row result, the
-<a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> holds an array of maps internally. Convert it
+<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> holds an array of maps internally. Convert it
 to <code>Vec&lt;Record&lt;AnySqliteType&gt;&gt;</code> to work with individual rows:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -710,7 +710,7 @@ println!("{:?}", price_cbor);
 <hr>
 <h2 id="mapping-rows-to-structs"><a class="header" href="#mapping-rows-to-structs">Mapping rows to structs</a></h2>
 <p>Calling <code>.try_get::&lt;T&gt;()</code> on every field gets tedious. The <code>#[entity]</code> macro generates
-<a href="https://docs.rs/vantage_types/0.4.2/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord&lt;AnySqliteType&gt;</code></a> for your struct, so conversion
+<a href="https://docs.rs/vantage_types/0.5.0/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord&lt;AnySqliteType&gt;</code></a> for your struct, so conversion
 happens in one call with no type information lost:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -823,13 +823,13 @@ async fn run() -&gt; VantageResult&lt;()&gt; {
 <tr><th>Concept</th><th>What it does</th><th>More info</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a></td><td>Builds SELECT queries via builder pattern</td><td><a href="https://docs.rs/vantage_expressions/0.4.3/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a></td></tr>
-<tr><td><a href="https://docs.rs/vantage_table/0.4.10/vantage_table/column/core/struct.Column.html"><code>Column</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
-<tr><td><a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a></td><td>Ext trait giving <code>.eq()</code>, <code>.gt()</code>, etc. → <code>SqliteCondition</code></td><td></td></tr>
-<tr><td><code>sqlite_expr!</code></td><td>Creates expressions with typed, bound parameters</td><td><a href="https://docs.rs/vantage_expressions/0.4.3/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a></td></tr>
-<tr><td><code>db.execute()</code></td><td>Runs an expression, returns <a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a></td><td><a href="https://docs.rs/vantage_expressions/0.4.3/vantage_expressions/traits/datasource/trait.ExprDataSource.html"><code>ExprDataSource</code></a></td></tr>
-<tr><td><a href="https://docs.rs/vantage_types/0.4.2/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a></td><td>Ordered map of column names to values — row-level access</td><td><code>.try_get::&lt;T&gt;()</code></td></tr>
-<tr><td><code>#[entity(SqliteType)]</code></td><td>Generates lossless record-to-struct conversion</td><td><a href="https://docs.rs/vantage_types/0.4.2/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord</code></a></td></tr>
+<tr><td><a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a></td><td>Builds SELECT queries via builder pattern</td><td><a href="https://docs.rs/vantage_expressions/0.5.0/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a></td></tr>
+<tr><td><a href="https://docs.rs/vantage_table/0.5.5/vantage_table/column/core/struct.Column.html"><code>Column</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
+<tr><td><a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a></td><td>Ext trait giving <code>.eq()</code>, <code>.gt()</code>, etc. → <code>SqliteCondition</code></td><td></td></tr>
+<tr><td><code>sqlite_expr!</code></td><td>Creates expressions with typed, bound parameters</td><td><a href="https://docs.rs/vantage_expressions/0.5.0/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a></td></tr>
+<tr><td><code>db.execute()</code></td><td>Runs an expression, returns <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a></td><td><a href="https://docs.rs/vantage_expressions/0.5.0/vantage_expressions/traits/datasource/trait.ExprDataSource.html"><code>ExprDataSource</code></a></td></tr>
+<tr><td><a href="https://docs.rs/vantage_types/0.5.0/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a></td><td>Ordered map of column names to values — row-level access</td><td><code>.try_get::&lt;T&gt;()</code></td></tr>
+<tr><td><code>#[entity(SqliteType)]</code></td><td>Generates lossless record-to-struct conversion</td><td><a href="https://docs.rs/vantage_types/0.5.0/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord</code></a></td></tr>
 </tbody>
 </table>
 </div>
@@ -913,7 +913,7 @@ important differences:</p>
 </tbody>
 </table>
 </div>
-<p>A <a href="https://docs.rs/vantage_table/0.4.10/vantage_table/table/base/struct.Table.html"><code>Table</code></a> is typically defined in its own file alongside the entity.
+<p>A <a href="https://docs.rs/vantage_table/0.5.5/vantage_table/table/base/struct.Table.html"><code>Table</code></a> is typically defined in its own file alongside the entity.
 Create <code>src/product.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -1038,7 +1038,7 @@ side effects.</p>
 <p><code>Table&lt;SqliteDB, Product&gt;</code> is great when you know the types at compile time. But what if you want to
 write a function that lists <em>any</em> table — products, orders, customers — without knowing the entity
 type?</p>
-<p><a href="https://docs.rs/vantage_table/0.4.10/vantage_table/any/struct.AnyTable.html"><code>AnyTable</code></a> wraps a concrete table and erases its type parameters.
+<p><code>AnyTable</code> wraps a concrete table and erases its type parameters.
 Values come back as <code>Record&lt;serde_json::Value&gt;</code> instead of typed entities. You can iterate columns
 by name and build a generic display:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -1577,7 +1577,7 @@ chapter we <strong>migrate</strong> them to MongoDB. That migration is a change 
 and routes don’t know the difference.</li>
 </ul>
 <p>The handler functions are each written <strong>once</strong> and mounted against any
-<a href="https://docs.rs/vantage_table/0.4.10/vantage_table/table/base/struct.Table.html"><code>Table&lt;Backend, Entity&gt;</code></a> the router has on hand — one <code>list</code>, one
+<a href="https://docs.rs/vantage_table/0.5.5/vantage_table/table/base/struct.Table.html"><code>Table&lt;Backend, Entity&gt;</code></a> the router has on hand — one <code>list</code>, one
 <code>get</code>, one <code>post</code>, one <code>patch</code>, one <code>delete</code>, parameterised over the backend and entity types.
 Adding another entity is a route registration, not a new handler.</p>
 <hr>
@@ -1592,7 +1592,7 @@ the existing <code>serde</code> to encode response bodies as JSON.</p>
 a computed <code>category</code> field. Both were assembled from subqueries — great for display, but they don’t
 round-trip cleanly through a <code>POST</code> body because the JSON would try to write columns that don’t
 exist. For a writable API we replace the computed fields with the plain FK column that sits under
-them. (See <a href="https://docs.rs/vantage_table/0.4.10/vantage_table/table/base/struct.Table.html#method.with_expression"><code>with_expression</code></a> for the chapter-2
+them. (See <a href="https://docs.rs/vantage_table/0.5.5/vantage_table/table/base/struct.Table.html#method.with_expression"><code>with_expression</code></a> for the chapter-2
 computed-field setup we’re walking away from here.)</p>
 <p><code>src/category.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -1690,7 +1690,7 @@ async fn main() -&gt; VantageResult&lt;()&gt; {
 }</code></pre>
 <p>A few notes on what this is doing:</p>
 <ul>
-<li><strong><code>static DB: OnceLock&lt;</code><a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a><code>&gt;</code>.</strong> The handler needs a
+<li><strong><code>static DB: OnceLock&lt;</code><a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a><code>&gt;</code>.</strong> The handler needs a
 database handle but we don’t want to open a new connection per request. A program-wide <code>OnceLock</code>
 is the simplest possible holder — set once in <code>main</code>, read from anywhere.</li>
 <li><strong>Each request calls <code>Category::table(db())</code></strong> — building the table (columns, relationships) and
@@ -1732,17 +1732,17 @@ of <code>Category::table</code>:</p>
 <ul>
 <li><strong>Return type is <code>&amp;'static Table&lt;...&gt;</code> instead of <code>Table&lt;...&gt;</code>.</strong> The cache owns the definition;
 callers get a shared reference. Most table operations
-(<a href="https://docs.rs/vantage_dataset/0.4.2/vantage_dataset/traits/dataset/trait.ReadableDataSet.html#tymethod.list"><code>list</code></a>,
-<a href="https://docs.rs/vantage_dataset/0.4.2/vantage_dataset/traits/dataset/trait.ReadableDataSet.html#tymethod.get"><code>get</code></a>,
-<a href="https://docs.rs/vantage_dataset/0.4.2/vantage_dataset/traits/dataset/trait.WritableDataSet.html#tymethod.insert"><code>insert</code></a>,
-<a href="https://docs.rs/vantage_dataset/0.4.2/vantage_dataset/traits/dataset/trait.WritableDataSet.html#tymethod.replace"><code>replace</code></a>,
-<a href="https://docs.rs/vantage_dataset/0.4.2/vantage_dataset/traits/valueset/trait.WritableValueSet.html#tymethod.delete"><code>delete</code></a>,
-<a href="https://docs.rs/vantage_table/0.4.10/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>) take <code>&amp;self</code>, so they work on the
+(<a href="https://docs.rs/vantage_dataset/0.5.2/vantage_dataset/traits/dataset/trait.ReadableDataSet.html#tymethod.list"><code>list</code></a>,
+<a href="https://docs.rs/vantage_dataset/0.5.2/vantage_dataset/traits/dataset/trait.ReadableDataSet.html#tymethod.get"><code>get</code></a>,
+<a href="https://docs.rs/vantage_dataset/0.5.2/vantage_dataset/traits/dataset/trait.WritableDataSet.html#tymethod.insert"><code>insert</code></a>,
+<a href="https://docs.rs/vantage_dataset/0.5.2/vantage_dataset/traits/dataset/trait.WritableDataSet.html#tymethod.replace"><code>replace</code></a>,
+<a href="https://docs.rs/vantage_dataset/0.5.2/vantage_dataset/traits/valueset/trait.WritableValueSet.html#tymethod.delete"><code>delete</code></a>,
+<a href="https://docs.rs/vantage_table/0.5.5/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>) take <code>&amp;self</code>, so they work on the
 reference without any clone.</li>
 <li><strong><code>static CACHE: OnceLock&lt;...&gt;</code> lives inside the function.</strong> A function-local static is still a
 program-wide single instance — Rust allows this and it keeps the cache private to the table that
 owns it.</li>
-<li><strong>The <a href="https://docs.rs/vantage_table/0.4.10/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> callback is a closure: <code>|db| Product::table(db).clone()</code>.</strong> The framework still hands us a db and expects an owned
+<li><strong>The <a href="https://docs.rs/vantage_table/0.5.5/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> callback is a closure: <code>|db| Product::table(db).clone()</code>.</strong> The framework still hands us a db and expects an owned
 <code>Table&lt;SqliteDB, Product&gt;</code> back, so we call the cached accessor and clone the reference. On the
 first call this triggers Product’s cache to build; every subsequent call just clones a pre-built
 definition.</li>
@@ -1781,7 +1781,7 @@ it’s a copy of the shape (columns, conditions, relationships), and it’s chea
 
 <hr>
 <h2 id="products-of-a-category"><a class="header" href="#products-of-a-category">Products of a category</a></h2>
-<p>The <a href="https://docs.rs/vantage_table/0.4.10/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> relationship we kept from chapter 2 lets
+<p>The <a href="https://docs.rs/vantage_table/0.5.5/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> relationship we kept from chapter 2 lets
 us serve a nested route — <code>/categories/{id}/products</code>. Before writing the handler, give the
 relationship a proper name with an extension trait on <code>Table&lt;SqliteDB, Category&gt;</code>. Add this to
 <code>src/category.rs</code>:</p>
@@ -1821,13 +1821,13 @@ async fn list_category_products(Path(id): Path&lt;i64&gt;) -&gt; Json&lt;Vec&lt;
 <span class="boring">}</span></code></pre>
 <p>Three things going on:</p>
 <ul>
-<li><strong><code>Category::table(db()).clone()</code></strong> — we need an owned <a href="https://docs.rs/vantage_table/0.4.10/vantage_table/table/base/struct.Table.html"><code>Table</code></a> to
-chain <a href="https://docs.rs/vantage_table/0.4.10/vantage_table/table/base/struct.Table.html#method.with_condition"><code>with_condition</code></a> onto, so we clone the cached
+<li><strong><code>Category::table(db()).clone()</code></strong> — we need an owned <a href="https://docs.rs/vantage_table/0.5.5/vantage_table/table/base/struct.Table.html"><code>Table</code></a> to
+chain <a href="https://docs.rs/vantage_table/0.5.5/vantage_table/table/base/struct.Table.html#method.with_condition"><code>with_condition</code></a> onto, so we clone the cached
 definition. The clone copies the shape (columns, conditions, relationships), not any rows.</li>
 <li><strong><code>with_condition(id_col.eq(id))</code></strong> — narrows the category table to one row: the one we’re asking
 for. Nothing hits the database yet.</li>
 <li><strong><code>ref_products()</code></strong> — traverses the <code>with_many</code> relationship we registered on Category in
-chapter 2, via <a href="https://docs.rs/vantage_table/0.4.10/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>. The returned table is
+chapter 2, via <a href="https://docs.rs/vantage_table/0.5.5/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>. The returned table is
 <code>Table&lt;SqliteDB, Product&gt;</code>, already scoped to products whose <code>category_id</code> matches the narrowed
 category set. Chapter 2 walked through what the emitted SQL looks like; it’s the same here.</li>
 </ul>
@@ -2074,7 +2074,7 @@ dropped and the client sees an empty reply, with no status code and no body to e
 <li>Everything else returns <strong>500</strong> but with a structured JSON body, not silence.</li>
 </ul>
 <p>Axum already gives us the middle one for free — it rejects malformed <code>Json&lt;E&gt;</code> bodies with 400.
-The other two come down to converting <a href="https://docs.rs/vantage_core/0.4.1/vantage_core/util/error/struct.VantageError.html"><code>VantageError</code></a> into an HTTP
+The other two come down to converting <a href="https://docs.rs/vantage_core/0.5.0/vantage_core/util/error/struct.VantageError.html"><code>VantageError</code></a> into an HTTP
 response. Add an <code>ApiError</code> type to <code>main.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -2263,11 +2263,11 @@ table with whatever the caller asked for, and lists:</p>
 <span class="boring">}</span></code></pre>
 <p>Two things happen:</p>
 <ul>
-<li><strong><a href="https://docs.rs/vantage_table/0.4.10/vantage_table/table/base/struct.Table.html#method.set_pagination"><code>set_pagination</code></a><code>(Some(</code><a href="https://docs.rs/vantage_table/0.4.10/vantage_table/pagination/struct.Pagination.html#method.new"><code>Pagination::new</code></a><code>(page, per_page)))</code></strong>
+<li><strong><a href="https://docs.rs/vantage_table/0.5.5/vantage_table/table/base/struct.Table.html#method.set_pagination"><code>set_pagination</code></a><code>(Some(</code><a href="https://docs.rs/vantage_table/0.5.5/vantage_table/pagination/struct.Pagination.html#method.new"><code>Pagination::new</code></a><code>(page, per_page)))</code></strong>
 takes a page number and a page size. Vantage applies these as <code>LIMIT … OFFSET …</code> on the SELECT.
 Missing params fall back to the defaults (page 1, 50 per page) — and if neither is supplied we
 don’t touch pagination at all, so the unfiltered list still hits the whole set.</li>
-<li><strong><a href="https://docs.rs/vantage_table/0.4.10/vantage_table/table/base/struct.Table.html#method.add_search"><code>add_search</code></a><code>(term)</code></strong> is the <code>.with_search</code> we used
+<li><strong><a href="https://docs.rs/vantage_table/0.5.5/vantage_table/table/base/struct.Table.html#method.add_search"><code>add_search</code></a><code>(term)</code></strong> is the <code>.with_search</code> we used
 in chapter 2 to add a LIKE filter across all columns. Both end up as extra <code>WHERE</code> clauses on the
 query that vantage already compiles for us.</li>
 </ul>
@@ -2343,7 +2343,7 @@ already knows how to render a 400.</p>
 databases is a change to the model, not to the routes, handlers, or business logic. Now we
 cash the check. <code>/categories</code>, <code>/categories/{id}</code>, and <code>/categories/{cat_id}/products</code> keep
 their exact URL shape, response bodies, and behaviour — but the data lives in
-<a href="https://docs.rs/vantage_mongodb/0.4.9/vantage_mongodb/mongodb/struct.MongoDB.html"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>.</p>
+<a href="https://docs.rs/vantage_mongodb/0.5.5/vantage_mongodb/mongodb/struct.MongoDB.html"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>.</p>
 <p>Start Mongo — Docker is the easiest way:</p>
 <pre><code class="language-sh">docker run -d --name mongo-learn -p 27017:27017 mongo:7
 </code></pre>
@@ -2454,7 +2454,7 @@ URL’s <code>cat_id</code> string directly:</p>
 })
 <span class="boring">}</span></code></pre>
 <p><code>.eq(&amp;str)</code> works here because <code>vantage-mongodb</code>’s <code>From&lt;&amp;str&gt;</code> for
-<a href="https://docs.rs/vantage_mongodb/0.4.9/vantage_mongodb/types/struct.AnyMongoType.html"><code>AnyMongoType</code></a> auto-promotes 24-character hex strings to
+<a href="https://docs.rs/vantage_mongodb/0.5.5/vantage_mongodb/types/struct.AnyMongoType.html"><code>AnyMongoType</code></a> auto-promotes 24-character hex strings to
 <code>ObjectId</code> and leaves everything else as <code>String</code>. The comparison fires with the right BSON type
 whichever <code>_id</code> convention the collection uses.</p>
 <h3 id="mainrs"><a class="header" href="#mainrs">main.rs</a></h3>
@@ -2616,6 +2616,1175 @@ principle from chapter 2’s <code>Table</code> carried all the way to the wire,
 <p>The <code>vantage_axum</code> module is generic enough to lift directly into a larger codebase — it has
 no knowledge of <code>Category</code>, <code>Product</code>, or your particular routes. Drop it into your own
 binary, give it a <code>db()</code> accessor, write entity files, mount routes.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="vista--the-universal-data-handle"><a class="header" href="#vista--the-universal-data-handle">Vista — the Universal Data Handle</a></h1>
+<p>Chapters 1–3 built a typed data layer: <code>Table&lt;SqliteDB, Product&gt;</code>, conditions, relationships, CRUD.
+That layer is great when you know the entity at compile time. But step 3’s generic <code>crud()</code> helper
+already showed the limitation — it could only exist because we erased the entity type with
+<code>Serialize + DeserializeOwned</code> and went through JSON.</p>
+<p>A CLI that lists “any table from any backend”, a web admin that draws forms from a YAML schema, a UI
+data grid that works with whatever you point it at — none of these know your <code>Product</code> struct. They
+need a handle that carries its own schema, speaks a single value type, and works regardless of which
+database sits underneath.</p>
+<p>That handle is <a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a>.</p>
+<div id="admonition-goals-for-this-chapter-1" class="admonition admonish-example" role="note" aria-labelledby="admonition-goals-for-this-chapter-title">
+<div class="admonition-title">
+<div id="admonition-goals-for-this-chapter-title-1">
+<p>Goals for this chapter</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-goals-for-this-chapter-1"></a>
+</div>
+
+<div>
+<p>By the end of this page you’ll be able to:</p>
+<ol>
+<li>Wrap a typed <code>Table</code> into a Vista</li>
+<li>Read schema metadata (columns, references, id column) from a Vista</li>
+<li>Add conditions, search, and ordering through the Vista API</li>
+<li>Fetch paginated results with <code>fetch_page</code> and <code>fetch_next</code></li>
+<li>Traverse relationships and cross-backend references</li>
+<li>Understand capabilities — the honesty contract between Vista and its driver</li>
+</ol>
+</div>
+
+</div>
+
+<hr>
+<h2 id="what-vista-actually-is"><a class="header" href="#what-vista-actually-is">What Vista actually is</a></h2>
+<p>A <code>Vista</code> wraps a typed <code>Table&lt;DB, E&gt;</code> and erases both the backend and the entity. All data flows
+through <code>Record&lt;CborValue&gt;</code> — an ordered map of string keys to CBOR values. All schema lives on the
+Vista itself: columns (with types and flags), references, id column, and a set of capability flags.</p>
+<p>Think of the progression:</p>
+<pre><code class="language-text">Table&lt;SqliteDB, Product&gt;   — typed entity, typed backend, compile-time safe
+Vista                      — fully erased: schema-bearing, CborValue, no generics
+</code></pre>
+<p>Vista trades away compile-time knowledge for runtime flexibility. Everything is a string key and a
+CBOR value — but it carries enough metadata to build a data grid, a form, a CLI, or a REST endpoint
+without knowing anything about the underlying database.</p>
+<div id="admonition-cbor-not-json" class="admonition admonish-info" role="note" aria-labelledby="admonition-cbor-not-json-title">
+<div class="admonition-title">
+<div id="admonition-cbor-not-json-title">
+<p>CBOR, not JSON</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-cbor-not-json"></a>
+</div>
+
+<div>
+<p>Vista uses <a href="https://docs.rs/ciborium"><code>ciborium::Value</code></a> as its carrier type — a CBOR value. CBOR preserves type fidelity that JSON loses (integer vs float, binary blobs, precise decimals). You’ll see <code>CborValue</code> in every Vista method signature.</p>
+<p>If you need JSON (for an HTTP response, for example), convert at the boundary — <code>Record&lt;CborValue&gt;</code> → <code>Record&lt;serde_json::Value&gt;</code> is a one-liner. But inside the Vista layer, CBOR is the standard.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="wrapping-a-typed-table"><a class="header" href="#wrapping-a-typed-table">Wrapping a typed Table</a></h2>
+<p>Each backend ships a factory that turns a typed table into a Vista. For SQLite:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_sql::prelude::*;
+use vantage_vista::Vista;
+
+let table = Product::table(db.clone());
+let vista = SqliteVistaFactory::new(db).from_table(table)?;
+<span class="boring">}</span></code></pre>
+<p>That’s it. The factory harvests columns, id field, title fields, and references from the typed table
+definition you already built in chapter 2. No extra mapping code.</p>
+<p>For MongoDB it would be <code>MongoVistaFactory</code>, for AWS it would be <code>AwsVistaFactory</code> — same shape,
+different import. The resulting <code>Vista</code> is identical regardless of which factory produced it.</p>
+<hr>
+<h2 id="reading-schema"><a class="header" href="#reading-schema">Reading schema</a></h2>
+<p>Once you have a Vista, everything is runtime introspection:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Columns — name, original type, flags
+for name in vista.get_column_names() {
+    let col = vista.get_column(name).unwrap();
+    println!("{}: {}", col.name, col.original_type);
+}
+// name: String
+// price: i64
+// is_deleted: bool
+
+// ID column
+if let Some(id_col) = vista.get_id_column() {
+    println!("id column: {}", id_col);
+}
+
+// Title columns — the human-readable ones
+for title in vista.get_title_columns() {
+    println!("title: {}", title);
+}
+
+// References — relationships declared on the typed table
+for (name, kind) in vista.list_references() {
+    println!("ref: {} ({:?})", name, kind);
+}
+// ref: products (HasMany)
+<span class="boring">}</span></code></pre>
+<p><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/column/struct.Column.html"><code>Column</code></a> carries an <code>original_type</code> string (preserved from the typed column
+definition) and a set of flags. The standard flag vocabulary:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>"id"</code></td><td>This column is the primary key</td></tr>
+<tr><td><code>"title"</code></td><td>Human-readable label column</td></tr>
+<tr><td><code>"searchable"</code></td><td>Included in quicksearch</td></tr>
+<tr><td><code>"orderable"</code></td><td>Can be sorted server-side</td></tr>
+<tr><td><code>"hidden"</code></td><td>Don’t show in default views</td></tr>
+<tr><td><code>"mandatory"</code></td><td>Required on insert</td></tr>
+</tbody>
+</table>
+</div>
+<p>Flags are open — drivers and consumers can add their own.</p>
+<hr>
+<h2 id="adding-conditions-1"><a class="header" href="#adding-conditions-1">Adding conditions</a></h2>
+<p>Vista doesn’t carry its own condition type. Instead, it delegates to the wrapped driver, which
+translates the value into whatever the backend speaks:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut v = vista.clone();
+v.add_condition_eq("category_id", 1.into())?;
+
+let rows = v.list_values().await?;
+// Only products with category_id == 1
+<span class="boring">}</span></code></pre>
+<p><code>.into()</code> converts the <code>i64</code> into a <code>CborValue</code>. The driver’s shell translates that into a native
+condition — <code>Expression</code> for SQL, <code>bson::Document</code> for MongoDB, <code>AwsCondition::Eq</code> for AWS — and
+pushes it onto the wrapped table.</p>
+<div id="admonition-conditions-mutate-the-shell" class="admonition admonish-info" role="note" aria-labelledby="admonition-conditions-mutate-the-shell-title">
+<div class="admonition-title">
+<div id="admonition-conditions-mutate-the-shell-title">
+<p>Conditions mutate the shell</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-conditions-mutate-the-shell"></a>
+</div>
+
+<div>
+<p>Unlike <code>Table</code>’s <code>.with_condition()</code> (which consumes and returns a new table), Vista’s <code>add_condition_eq</code> mutates in place. Vista is a runtime handle — there’s no builder pattern to preserve. Clone before narrowing if you need the unfiltered version later.</p>
+</div>
+
+</div>
+
+<h3 id="narrowing-by-id"><a class="header" href="#narrowing-by-id">Narrowing by id</a></h3>
+<p>A common pattern — “I have an id and want the row”:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut v = vista.clone();
+v.with_id("7")?;
+let row = v.get_some_value().await?;
+<span class="boring">}</span></code></pre>
+<p><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/vista/struct.Vista.html#method.with_id"><code>with_id</code></a> reads the id column name from the schema and calls
+<code>add_condition_eq</code> for you. Returns <code>&amp;mut Self</code> so you can chain.</p>
+<hr>
+<h2 id="search-and-ordering"><a class="header" href="#search-and-ordering">Search and ordering</a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut v = vista.clone();
+
+// Quicksearch — fans across columns flagged SEARCHABLE
+v.add_search("tart")?;
+
+// Sort by column
+v.add_order("price", SortDirection::Descending)?;
+
+let rows = v.list_values().await?;
+<span class="boring">}</span></code></pre>
+<p>Both are <strong>replace semantics</strong> — calling again drops the previous filter/order. Both return an error
+if the driver doesn’t support them. Check capabilities first (or just try and handle the error).</p>
+<div id="admonition-not-every-driver-supports-these" class="admonition admonish-warning" role="note" aria-labelledby="admonition-not-every-driver-supports-these-title">
+<div class="admonition-title">
+<div id="admonition-not-every-driver-supports-these-title">
+<p>Not every driver supports these</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-not-every-driver-supports-these"></a>
+</div>
+
+<div>
+<p>A CSV file can’t sort or search server-side — it loads everything into memory. DynamoDB can only order by its declared sort key. The driver sets capability flags honestly:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let caps = vista.capabilities();
+if caps.can_search {
+    v.add_search("query")?;
+}
+if caps.can_order {
+    v.add_order("name", SortDirection::Ascending)?;
+}
+<span class="boring">}</span></code></pre>
+<p>Calling a method the driver doesn’t advertise returns an <code>Unsupported</code> error. This is by design — it’s better to fail clearly than to silently return unfiltered results.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="pagination"><a class="header" href="#pagination">Pagination</a></h2>
+<p>Vista exposes two pagination primitives. Not every driver supports both — capabilities tell you
+which to use.</p>
+<h3 id="offset-pagination-fetch_page"><a class="header" href="#offset-pagination-fetch_page">Offset pagination: <code>fetch_page</code></a></h3>
+<p>Random-access — jump to any page by number:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut v = vista.clone();
+v.set_page_size(25)?;
+
+let page1 = v.fetch_page(1).await?;   // first 25 rows
+let page2 = v.fetch_page(2).await?;   // next 25 rows
+<span class="boring">}</span></code></pre>
+<p>Works for SQL databases, MongoDB, anything with <code>LIMIT … OFFSET</code>. Requires <code>can_fetch_page</code>.</p>
+<h3 id="cursor-pagination-fetch_next"><a class="header" href="#cursor-pagination-fetch_next">Cursor pagination: <code>fetch_next</code></a></h3>
+<p>Forward-only — each call returns a token for the next:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let v = vista.clone();
+
+let (rows, token) = v.fetch_next(None).await?;        // first page
+let (rows, token) = v.fetch_next(token).await?;      // second page
+// token is None when exhausted
+<span class="boring">}</span></code></pre>
+<p>The token is <strong>opaque</strong> — its shape is driver-private (a DynamoDB <code>LastEvaluatedKey</code>, a REST
+<code>nextToken</code>, an offset counter). Just round-trip it. Requires <code>can_fetch_next</code>.</p>
+<div id="admonition-when-neither-is-available" class="admonition admonish-info" role="note" aria-labelledby="admonition-when-neither-is-available-title">
+<div class="admonition-title">
+<div id="admonition-when-neither-is-available-title">
+<p>When neither is available</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-when-neither-is-available"></a>
+</div>
+
+<div>
+<p>If both <code>can_fetch_page</code> and <code>can_fetch_next</code> are <code>false</code>, the driver has no native pagination. Fall through to <code>list_values()</code> which returns everything. This is the CSV case — fine for small datasets.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="traversing-references"><a class="header" href="#traversing-references">Traversing references</a></h2>
+<p>Same-persistence references (the <code>with_many</code> / <code>with_one</code> from chapter 2) come through
+automatically. Given a parent row, <code>get_ref</code> resolves the relationship:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Given a category row, traverse to its products
+let products = vista.get_ref("products", &amp;category_row)?;
+for (id, row) in products.list_values().await? {
+    println!("  {} — {:?}", id, row["name"]);
+}
+<span class="boring">}</span></code></pre>
+<p><code>get_ref</code> needs a <code>Record&lt;CborValue&gt;</code> — the parent row. It reads the join field (e.g. <code>category_id</code>)
+out of that row to build the eq-condition on the target. You can’t traverse from a Vista alone; you
+need a row first. Typical flow: fetch the parent with <code>get_some_value()</code> or <code>list_values()</code>, then
+traverse from each row.</p>
+<p><code>get_ref</code> routes in order:</p>
+<ol>
+<li><strong>Foreign resolver</strong> — checks for a <a href="#cross-backend-references-with_foreign"><code>with_foreign</code></a>
+closure registered under that name.</li>
+<li><strong>Driver shell fallback</strong> — delegates to the shell’s <code>get_ref</code>, which resolves the <code>with_one</code> /
+<code>with_many</code> relationship declared on the typed table.</li>
+</ol>
+<p>So the same <code>get_ref("products", &amp;row)</code> call works whether the relationship lives in the same
+database or crosses a backend boundary — Vista handles the routing transparently.</p>
+<h3 id="cross-backend-references-with_foreign"><a class="header" href="#cross-backend-references-with_foreign">Cross-backend references: <code>with_foreign</code></a></h3>
+<p>Same-persistence refs work because the driver’s shell can translate them natively. But what if your
+categories live in PostgreSQL and your products in MongoDB? <code>with_foreign</code> registers a
+cross-persistence resolver:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>categories.with_foreign(
+    "products",
+    ReferenceKind::HasMany,
+    |row| {
+        let mut p = mongo_factory.from_table(Product::table(mongo_db.clone()))?;
+        p.add_condition_eq("category_id", row["id"].clone())?;
+        Ok(p)
+    },
+);
+// get_ref("products", &amp;row) now crosses from Postgres into MongoDB
+<span class="boring">}</span></code></pre>
+<p>The closure is <strong>stored, not called</strong> at registration. It fires once — lazily — when
+<code>get_ref("products", &amp;row)</code> is invoked. This avoids recursion when two Vistas reference each other.</p>
+<p>The closure receives the parent row and returns a Vista from <strong>any</strong> backend. The consumer calling
+<code>get_ref</code> doesn’t know or care that the join crossed a database boundary.</p>
+<div id="admonition-lazy-resolution" class="admonition admonish-tip" role="note" aria-labelledby="admonition-lazy-resolution-title">
+<div class="admonition-title">
+<div id="admonition-lazy-resolution-title">
+<p>Lazy resolution</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-lazy-resolution"></a>
+</div>
+
+<div>
+<p>Because <code>with_foreign</code> closures are lazy, you can register mutual references between two Vistas (A → B and B → A) without worrying about construction order. The closures capture factories by clone, not by reference to a Vista that doesn’t exist yet.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="capabilities--the-honesty-contract"><a class="header" href="#capabilities--the-honesty-contract">Capabilities — the honesty contract</a></h2>
+<p><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a> is a struct of booleans. The driver sets
+each flag to reflect what it actually implements:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let caps = vista.capabilities();
+println!("can_count: {}", caps.can_count);
+println!("can_insert: {}", caps.can_insert);
+println!("can_update: {}", caps.can_update);
+println!("can_delete: {}", caps.can_delete);
+println!("can_order: {}", caps.can_order);
+println!("can_search: {}", caps.can_search);
+println!("can_fetch_page: {}", caps.can_fetch_page);
+println!("can_fetch_next: {}", caps.can_fetch_next);
+<span class="boring">}</span></code></pre>
+<p>A CSV file sets <code>can_count</code> and nothing else — it’s read-only. A SQL database sets everything. AWS
+DynamoDB sets <code>can_count</code> and <code>can_fetch_next</code> (cursor-only) but not <code>can_fetch_page</code> (no random
+access).</p>
+<div id="admonition-calling-unsupported-methods-is-an-error" class="admonition admonish-warning" role="note" aria-labelledby="admonition-calling-unsupported-methods-is-an-error-title">
+<div class="admonition-title">
+<div id="admonition-calling-unsupported-methods-is-an-error-title">
+<p>Calling unsupported methods is an error</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-calling-unsupported-methods-is-an-error"></a>
+</div>
+
+<div>
+<p>The capability flags aren’t suggestions — they’re a contract. If <code>can_search</code> is <code>false</code>, calling <code>add_search()</code> returns an <code>Unsupported</code> error. If a flag is <code>true</code> but the driver forgot to implement the method, you get an <code>Unimplemented</code> error instead. Both are <code>VantageError</code> variants you can match on.</p>
+<p>UI adapters branch on these flags to decide which controls to show. A data grid checks <code>can_fetch_page</code> to decide between a scrollbar (random access) and a “load more” button (cursor-based).</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="putting-it-together-1"><a class="header" href="#putting-it-together-1">Putting it together</a></h2>
+<p>Here’s a small function that takes any Vista and prints a summary — works with any backend:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_vista::Vista;
+
+async fn print_vista(vista: &amp;Vista) -&gt; VantageResult&lt;()&gt; {
+    let columns = vista.get_column_names();
+    let caps = vista.capabilities();
+
+    // Header
+    print!("  {:&gt;12} ", vista.get_id_column().unwrap_or("id"));
+    for col in &amp;columns {
+        print!("{:&gt;16} ", col);
+    }
+    println!();
+
+    // Count
+    if caps.can_count {
+        println!("  ({} rows)", vista.get_count().await?);
+    }
+
+    // Rows
+    let rows = vista.list_values().await?;
+    for (id, record) in &amp;rows {
+        print!("  {:&gt;12} ", id);
+        for col in &amp;columns {
+            let val = record
+                .get(col)
+                .map(|v| format!("{:?}", v))
+                .unwrap_or_default();
+            print!("{:&gt;16} ", val);
+        }
+        println!();
+    }
+    Ok(())
+}
+<span class="boring">}</span></code></pre>
+<p>No generics. No entity type. No backend knowledge. <code>print_vista</code> works with a SQLite Vista, a
+MongoDB Vista, an AWS Vista — anything the framework can produce.</p>
+<hr>
+<h2 id="what-we-covered-1"><a class="header" href="#what-we-covered-1">What we covered</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Concept</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a></td><td>Universal schema-bearing data handle, wraps any <code>Table</code></td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/source/trait.TableShell.html"><code>TableShell</code></a></td><td>Per-driver executor that Vista delegates to</td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a></td><td>Honest contract of what the driver supports</td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/column/struct.Column.html"><code>Column</code></a></td><td>Column metadata with name, type, and flags</td></tr>
+<tr><td><code>add_condition_eq</code></td><td>Narrow results to field == value</td></tr>
+<tr><td><code>with_id</code></td><td>Convenience: narrow by primary key</td></tr>
+<tr><td><code>add_search</code> / <code>add_order</code></td><td>Quicksearch and sorting (replace semantics)</td></tr>
+<tr><td><code>fetch_page</code> / <code>fetch_next</code></td><td>Offset and cursor pagination</td></tr>
+<tr><td><code>get_ref</code></td><td>Traverse a same-persistence relationship</td></tr>
+<tr><td><code>with_foreign</code></td><td>Register a cross-persistence relationship resolver</td></tr>
+</tbody>
+</table>
+</div>
+<div id="admonition-whats-next" class="admonition admonish-tip" role="note" aria-labelledby="admonition-whats-next-title">
+<div class="admonition-title">
+<div id="admonition-whats-next-title">
+<p>What’s next</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-whats-next"></a>
+</div>
+
+<div>
+<p>Vista gives you a universal read/write handle. But every call still hits the database — there’s no caching, no reactivity, no way to push live updates to a UI.</p>
+<p>The next chapter introduces <strong>Dio</strong> and <strong>Lens</strong> — the caching and event layer that sits between a Vista (your master data) and a Scenery (the reactive view a UI consumes).</p>
+</div>
+
+</div>
+
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="dio--lens--caching-and-events"><a class="header" href="#dio--lens--caching-and-events">Dio &amp; Lens — Caching and Events</a></h1>
+<p>Chapter 4 gave you Vista — a universal handle that works with any backend. But every call still hits
+the database. No caching, no reactivity, no way to route writes elsewhere.</p>
+<p><strong>Diorama</strong> (<code>vantage-diorama</code>) sits between your Vista and whatever consumes it. Three things it
+does:</p>
+<ol>
+<li><strong>Transparent caching.</strong> Keep a local copy of your data. Reads come from cache, not from the
+master — no matter how slow or rate-limited the backend is. A CSV file that takes 200ms to parse
+on every <code>list_values()</code> becomes instant after the first load.</li>
+<li><strong>Capability injection.</strong> A Vista backed by a CSV file can’t paginate, sort, or search
+server-side. Diorama caches the full dataset locally and answers those queries from cache — the
+consumer sees a Vista that <em>can</em> paginate, even though the underlying source can’t.</li>
+<li><strong>Custom write routing.</strong> Writes don’t have to go to the master. Route them to a Kafka topic, a
+queue, or a different database entirely. The cache updates immediately; persistence happens
+asynchronously.</li>
+</ol>
+<div id="admonition-goals-for-this-chapter-2" class="admonition admonish-example" role="note" aria-labelledby="admonition-goals-for-this-chapter-title">
+<div class="admonition-title">
+<div id="admonition-goals-for-this-chapter-title-2">
+<p>Goals for this chapter</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-goals-for-this-chapter-2"></a>
+</div>
+
+<div>
+<p>By the end of this page you’ll be able to:</p>
+<ol>
+<li>Build a Lens with cache backend and callbacks</li>
+<li>Create a Dio from a Vista + Lens</li>
+<li>Read from cache, write through the queue</li>
+<li>React to live changes via the event bus</li>
+<li>Produce a facade Vista that hides the caching layer</li>
+</ol>
+</div>
+
+</div>
+
+<hr>
+<h2 id="the-four-words"><a class="header" href="#the-four-words">The four words</a></h2>
+<p>Before the code, four terms you’ll see throughout:</p>
+<ul>
+<li><strong>Vista</strong> — a single backend data source (chapter 4). Speaks whatever the backend supports.</li>
+<li><strong>Lens</strong> — long-lived shared infrastructure: cache backend, callbacks, refresh config. Built once.</li>
+<li><strong>Dio</strong> — a Vista bound to a Lens. Owns the cache table, write queue, event bus, and refresh task.
+Produced by <code>lens.make_dio(vista)</code>.</li>
+<li><strong>Scenery</strong> — a reactive view onto a Dio (tables, records, aggregates). The UI binds here. Covered
+in the next chapter.</li>
+</ul>
+<p>The picture:</p>
+<pre><code class="language-text">Vista → Lens.make_dio(vista) → Dio → facade Vista | Scenery
+                                      ↑
+                                  cache + events
+</code></pre>
+<hr>
+<h2 id="building-a-lens"><a class="header" href="#building-a-lens">Building a Lens</a></h2>
+<p>A <a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a> is built once and shared across every Dio you create from it. It
+holds the cache backend, lifecycle callbacks, and default policies:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use std::sync::Arc;
+use std::time::Duration;
+use vantage_diorama::Lens;
+
+let lens = Arc::new(
+    Lens::new()
+        .cache_at("./cache.redb")
+        .on_start(|dio| {
+            let dio = dio.clone();
+            async move {
+                let rows = dio.master().list_values().await?;
+                dio.cache().insert_values(rows).await?;
+                Ok(())
+            }
+        })
+        .refresh_every(Duration::from_secs(300))
+        .build()?,
+);
+<span class="boring">}</span></code></pre>
+<p>Three things happen here:</p>
+<ul>
+<li><strong><code>.cache_at(path)</code></strong> — opens a redb file on disk. Each Dio claims a named table inside it. You
+can also pass a custom <a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a> with
+<code>.cache_source(backend)</code> for in-memory or remote stores.</li>
+<li><strong><code>.on_start(|dio| { ... })</code></strong> — fires once when <code>make_dio</code> is called. The canonical pattern is
+seed the cache from the master: list everything, write it to cache. The <code>dio.clone()</code> inside the
+closure produces a <code>'static</code> future — required because the callback outlives the borrow.</li>
+<li><strong><code>.refresh_every(duration)</code></strong> — schedules periodic refresh. Combined with <code>on_refresh</code> (another
+callback), the Dio re-fetches from the master on a timer.</li>
+</ul>
+<div id="admonition-all-callbacks-borrow-dio" class="admonition admonish-info" role="note" aria-labelledby="admonition-all-callbacks-borrow-dio-title">
+<div class="admonition-title">
+<div id="admonition-all-callbacks-borrow-dio-title">
+<p>All callbacks borrow &amp;Dio</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-all-callbacks-borrow-dio"></a>
+</div>
+
+<div>
+<p>Every Lens callback receives <code>&amp;Dio</code> — a borrowed reference to the Dio it’s running for. If you
+need to spawn a task or hold the Dio across an <code>.await</code>, clone it inside the closure:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>.on_start(|dio| {
+    let dio = dio.clone();
+    async move {
+        // dio is now owned, safe to hold across await
+    }
+})
+<span class="boring">}</span></code></pre>
+<p>This <code>clone()</code> is cheap — Dio wraps an <code>Arc</code>, so you’re just bumping a reference count.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="creating-a-dio"><a class="header" href="#creating-a-dio">Creating a Dio</a></h2>
+<p><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/lens/struct.Lens.html#method.make_dio"><code>make_dio</code></a> binds a Vista to the Lens. It opens the cache table,
+spawns the write worker and refresh task, fires <code>on_start</code>, and returns a
+<a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let products_dio = lens.make_dio(products_vista).await?;
+<span class="boring">}</span></code></pre>
+<p>That one call does all of this:</p>
+<ol>
+<li>Opens (or creates) a cache table named after the Vista</li>
+<li>Spawns a write worker that drains the write queue</li>
+<li>Starts the refresh timer (if <code>refresh_every</code> + <code>on_refresh</code> are set)</li>
+<li>Fires <code>on_start</code> — your callback seeds the cache</li>
+<li>Returns the Dio, ready to use</li>
+</ol>
+<p>You can create many Dios from one Lens — one per entity, each with its own cache table and write
+queue, all sharing the same cache file and callback configuration.</p>
+<hr>
+<h2 id="reading-from-the-cache"><a class="header" href="#reading-from-the-cache">Reading from the cache</a></h2>
+<p>The Dio’s cache is a simple key-value store — <code>id → Record&lt;CborValue&gt;</code>. Reads come from cache, not
+from the master:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// List everything in cache
+let rows = products_dio.cache().list_values().await?;
+
+// Get one record by id
+let product = products_dio.cache().get_value("7").await?;
+
+// Count
+let n = products_dio.cache().count().await?;
+<span class="boring">}</span></code></pre>
+<p>The cache is intentionally dumb — no conditions, no sort, no search. It stores rows; query planning
+lives on the Dio/Scenery layer.</p>
+<div id="admonition-the-facade-vista" class="admonition admonish-tip" role="note" aria-labelledby="admonition-the-facade-vista-title">
+<div class="admonition-title">
+<div id="admonition-the-facade-vista-title">
+<p>The facade Vista</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-the-facade-vista"></a>
+</div>
+
+<div>
+<p>Direct cache access works, but there’s a more ergonomic path. <code>dio.vista()</code> returns a
+<a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/vista/struct.Vista.html">Vista</a> backed by the Dio — reads go through cache, writes go through
+the queue, schema comes from the master. Consumers can’t tell the difference:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut v = products_dio.vista();
+v.add_condition_eq("category_id", 1.into())?;
+let rows = v.list_values().await?;  // served from cache
+<span class="boring">}</span></code></pre>
+<p>The facade’s capabilities are the union of the master’s and what the Lens provides. A read-only CSV
+Vista gets <code>can_count</code> from the cache. If you register <code>on_write</code>, it gains <code>can_insert</code> too — the
+queue accepts the write even though the master can’t.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="writing-through-the-queue"><a class="header" href="#writing-through-the-queue">Writing through the queue</a></h2>
+<p>Writes don’t hit the master directly. They go into the Dio’s write queue as a
+<a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_types::Record;
+
+let record = Record::from_iter([
+    ("name".into(), "Muffin".into()),
+    ("price".into(), 175i64.into()),
+]);
+
+// Through the facade Vista
+products_dio.vista().insert(&amp;"muffin".to_string(), &amp;record).await?;
+<span class="boring">}</span></code></pre>
+<p>Under the hood this enqueues a <code>WriteOp::Insert</code>. The write worker picks it up asynchronously and
+either calls your <code>on_write</code> callback or applies it to <code>dio.master()</code> directly.</p>
+<div id="admonition-write-through-vs-write-around" class="admonition admonish-info" role="note" aria-labelledby="admonition-write-through-vs-write-around-title">
+<div class="admonition-title">
+<div id="admonition-write-through-vs-write-around-title">
+<p>Write-through vs write-around</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-write-through-vs-write-around"></a>
+</div>
+
+<div>
+<p>When <code>on_write</code> is <strong>not</strong> registered, the write worker applies ops to <code>dio.master()</code> directly —
+the default write-through path. The insert returns as soon as the op is enqueued; the master write
+happens in the background. If it fails, a <code>DioEvent::WriteFailed</code> is published on the event bus.</p>
+<p>When <code>on_write</code> <strong>is</strong> registered, you control where writes go. A common pattern: write to Kafka
+(via <code>on_write</code>) and let the Kafka consumer feed back through <code>on_event</code> to update the cache.
+This decouples the write path from the read path entirely.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="the-event-bus"><a class="header" href="#the-event-bus">The event bus</a></h2>
+<p>Every Dio has a <code>broadcast</code> channel. When data changes, events are published there:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_diorama::DioEvent;
+
+let mut rx = products_dio.subscribe_events();
+
+// In a spawned task
+tokio::spawn(async move {
+    while let Ok(event) = rx.recv().await {
+        match event {
+            DioEvent::RecordChanged { id } =&gt; {
+                println!("updated: {}", id);
+            }
+            DioEvent::RecordInserted { id } =&gt; {
+                println!("new: {}", id);
+            }
+            DioEvent::RecordRemoved { id } =&gt; {
+                println!("deleted: {}", id);
+            }
+            DioEvent::Invalidated =&gt; {
+                println!("full refresh happened");
+            }
+            _ =&gt; {}
+        }
+    }
+});
+<span class="boring">}</span></code></pre>
+<p>Sceneries subscribe to this bus to react to changes. You can also subscribe directly — for logging,
+metrics, cache warming, or triggering side effects in any consumer.</p>
+<hr>
+<h2 id="live-updates-on_event"><a class="header" href="#live-updates-on_event">Live updates: <code>on_event</code></a></h2>
+<p>The event bus carries <em>internal</em> events (cache writes, refreshes). But what about changes happening
+on the master that you didn’t initiate — other users editing records, a database trigger firing, a
+webhook arriving?</p>
+<p><code>on_event</code> receives <em>upstream</em> <a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a> objects and reconciles
+them into the cache. Add it to the Lens alongside <code>on_start</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let lens = Arc::new(
+    Lens::new()
+        .cache_at("./cache.redb")
+        .on_start(|dio| {
+            let dio = dio.clone();
+            async move {
+                let rows = dio.master().list_values().await?;
+                dio.cache().insert_values(rows).await?;
+                Ok(())
+            }
+        })
+        .on_event(|dio, event| {
+            let dio = dio.clone();
+            async move {
+                match event {
+                    ChangeEvent::Updated { id, new: Some(row) } =&gt; {
+                        dio.patched(id, row).await?;
+                    }
+                    ChangeEvent::Deleted { id } =&gt; {
+                        dio.cache().delete_value(&amp;id).await?;
+                        dio.invalidate_record(id);
+                    }
+                    ChangeEvent::Invalidated =&gt; {
+                        dio.invalidate_all();
+                    }
+                    _ =&gt; {}
+                }
+                Ok(())
+            }
+        })
+        .build()?,
+);
+<span class="boring">}</span></code></pre>
+<p>The typical wiring: a live stream from SurrealDB, a Kafka consumer, or a WebSocket listener feeds
+<a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a>s into <code>dio.handle_event(evt).await</code>, which invokes
+your <code>on_event</code> callback. You write the row to cache and publish the matching <code>DioEvent</code> — any
+subscriber (Scenery, logger, metrics) picks it up.</p>
+<div id="admonition-patched-andinvalidate_record" class="admonition admonish-tip" role="note" aria-labelledby="admonition-patched-andinvalidate_record-title">
+<div class="admonition-title">
+<div id="admonition-patched-andinvalidate_record-title">
+<p>patched() andinvalidate_record()</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-patched-andinvalidate_record"></a>
+</div>
+
+<div>
+<ul>
+<li><code>dio.patched(id, record)</code> writes to cache <strong>and</strong> publishes <code>DioEvent::RecordChanged</code>. The
+canonical “external system told us about a row” pattern.</li>
+<li><code>dio.invalidate_record(id)</code> publishes <code>RecordChanged</code> <strong>without</strong> touching cache — use when you
+know the cache is already stale and a Scenery will refetch.</li>
+<li><code>dio.invalidate_all()</code> publishes <code>Invalidated</code> — Sceneries respond by re-reading their full state.</li>
+</ul>
+</div>
+
+</div>
+
+<hr>
+<h2 id="manual-refresh"><a class="header" href="#manual-refresh">Manual refresh</a></h2>
+<p><code>on_refresh</code> fires on the timer set by <code>refresh_every</code>. You can also trigger it manually:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>products_dio.refresh().await?;
+<span class="boring">}</span></code></pre>
+<p>This fires the <code>on_refresh</code> callback (if registered) and publishes <code>Invalidated</code> on the event bus.
+Sceneries re-read from cache after the refresh completes.</p>
+<hr>
+<h2 id="callback-summary"><a class="header" href="#callback-summary">Callback summary</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Callback</th><th>When it fires</th><th>Typical use</th></tr>
+</thead>
+<tbody>
+<tr><td><code>on_start</code></td><td>Once at <code>make_dio</code></td><td>Seed cache from master</td></tr>
+<tr><td><code>on_refresh</code></td><td>Timer + manual <code>refresh()</code></td><td>Re-fetch from master</td></tr>
+<tr><td><code>on_write</code></td><td>Every <code>WriteOp</code></td><td>Custom write routing (e.g. to Kafka)</td></tr>
+<tr><td><code>on_event</code></td><td>Upstream <code>ChangeEvent</code></td><td>Reconcile live updates into cache</td></tr>
+<tr><td><code>on_query</code></td><td>Scenery data fetch</td><td>Custom query routing</td></tr>
+<tr><td><code>total_provider</code></td><td>Scenery open</td><td>Supply total row count</td></tr>
+<tr><td><code>on_load_chunk</code></td><td>Scenery viewport/page</td><td>Fetch a range from master</td></tr>
+</tbody>
+</table>
+</div>
+<hr>
+<h2 id="putting-it-together-2"><a class="header" href="#putting-it-together-2">Putting it together</a></h2>
+<p>Everything in one place:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use std::sync::Arc;
+use std::time::Duration;
+use vantage_diorama::Lens;
+
+// Build once per application
+let lens = Arc::new(
+    Lens::new()
+        .cache_at("./cache.redb")
+        .on_start(|dio| {
+            let dio = dio.clone();
+            async move {
+                let rows = dio.master().list_values().await?;
+                dio.cache().insert_values(rows).await?;
+                Ok(())
+            }
+        })
+        .refresh_every(Duration::from_secs(300))
+        .build()?,
+);
+
+// One Dio per entity
+let products = lens.make_dio(products_vista).await?;
+
+// Read and write through the facade — cache is transparent
+let mut v = products.vista();
+let rows = v.list_values().await?;       // cache hit
+v.insert(&amp;"muffin".to_string(), &amp;rec).await?;  // enqueued
+<span class="boring">}</span></code></pre>
+<hr>
+<h2 id="what-we-covered-2"><a class="header" href="#what-we-covered-2">What we covered</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Concept</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a></td><td>Shared infrastructure: cache, callbacks, defaults</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/lens/struct.LensBuilder.html"><code>LensBuilder</code></a></td><td>Chainable configuration for building a Lens</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a></td><td>Per-entity binding of Vista + Lens; owns cache, queue, events</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a></td><td>Storage backing for cached rows</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a></td><td>One unit of work on the write queue</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/dio/event_bus/enum.DioEvent.html"><code>DioEvent</code></a></td><td>Internal event: record changed, invalidated, write failed</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a></td><td>Upstream event from the master backend</td></tr>
+<tr><td><code>on_start</code> / <code>on_refresh</code> / <code>on_write</code> / <code>on_event</code></td><td>Lifecycle callbacks</td></tr>
+<tr><td><code>dio.vista()</code></td><td>Facade Vista that reads from cache, writes through queue</td></tr>
+</tbody>
+</table>
+</div>
+<div id="admonition-whats-next-1" class="admonition admonish-tip" role="note" aria-labelledby="admonition-whats-next-title">
+<div class="admonition-title">
+<div id="admonition-whats-next-title-1">
+<p>What’s next</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-whats-next-1"></a>
+</div>
+
+<div>
+<p>Dio gives you caching and events. But consumers often need more — ordered rows, viewport-driven
+loading, aggregate counts. The next chapter introduces <strong>Scenery</strong>: reactive views that sit on top
+of a Dio and provide structured access patterns for tables, individual records, and aggregates.</p>
+</div>
+
+</div>
+
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="scenery--reactive-views"><a class="header" href="#scenery--reactive-views">Scenery — Reactive Views</a></h1>
+<p>Chapters 4–5 built the data pipeline: Vista wraps your table, Dio caches it and routes writes. But
+consumers — data grids, dashboards, CLI tools, test harnesses — don’t want to deal with cache
+management and event subscriptions directly. They want an ordered row set, a single record, or a
+computed value that stays up to date.</p>
+<p><strong>Scenery</strong> is that layer. Each Scenery is a reactive view onto a Dio that exposes a specific access
+pattern:</p>
+<ul>
+<li><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a> — ordered, paginated rows</li>
+<li><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a> — a single record by id</li>
+<li><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a> — a computed scalar (count, sum, custom)</li>
+</ul>
+<p>All three share the same reactivity mechanism: a <a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a> counter
+that bumps whenever the view’s state changes. Consumers subscribe via a <code>watch</code> channel and react on
+each bump.</p>
+<div id="admonition-goals-for-this-chapter-3" class="admonition admonish-example" role="note" aria-labelledby="admonition-goals-for-this-chapter-title">
+<div class="admonition-title">
+<div id="admonition-goals-for-this-chapter-title-3">
+<p>Goals for this chapter</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-goals-for-this-chapter-3"></a>
+</div>
+
+<div>
+<p>By the end of this page you’ll be able to:</p>
+<ol>
+<li>Open a TableScenery and read rows by index</li>
+<li>Use sequential mode (append-only) vs random-access mode (viewport-driven)</li>
+<li>Open a RecordScenery for a single record</li>
+<li>Open a ValueScenery for aggregates</li>
+<li>Subscribe to changes via the Generation counter</li>
+</ol>
+</div>
+
+</div>
+
+<hr>
+<h2 id="generation--the-reactivity-primitive"><a class="header" href="#generation--the-reactivity-primitive">Generation — the reactivity primitive</a></h2>
+<p>Every Scenery carries a monotonically increasing <code>Generation(u64)</code>. When the underlying Dio
+publishes an event that affects the view, the Scenery recomputes its state and bumps the counter.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut rx = scenery.subscribe();
+
+// Block until something changes
+let gen = rx.changed().await.unwrap();
+println!("updated to generation {:?}", gen);
+<span class="boring">}</span></code></pre>
+<p>The <code>subscribe()</code> call returns a <code>watch::Receiver&lt;Generation&gt;</code> — a Tokio channel that holds the
+latest value. Multiple subscribers share the same channel. If nothing changes, <code>changed()</code> blocks
+indefinitely. If the Scenery is dropped, the channel closes.</p>
+<div id="admonition-watch-not-stream" class="admonition admonish-info" role="note" aria-labelledby="admonition-watch-not-stream-title">
+<div class="admonition-title">
+<div id="admonition-watch-not-stream-title">
+<p>Watch, not stream</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-watch-not-stream"></a>
+</div>
+
+<div>
+<p><code>watch</code> only keeps the <em>latest</em> value. If three changes happen before your consumer reads, it
+sees one bump — not three. This is intentional: consumers re-read the full state on each bump,
+so intermediate states are wasted work.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="tablescenery--ordered-rows"><a class="header" href="#tablescenery--ordered-rows">TableScenery — ordered rows</a></h2>
+<p>The most common view. Built from a Dio via a builder:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_diorama::scenery::SortDir;
+
+let scenery = dio
+    .table_scenery()
+    .sort("name", SortDir::Asc)
+    .page_size(50)
+    .open()
+    .await?;
+<span class="boring">}</span></code></pre>
+<p>The builder chains configuration, then <code>.open()</code> seeds the view from cache, spawns a reactor task,
+and returns <code>Arc&lt;dyn TableScenery&gt;</code>.</p>
+<h3 id="reading-rows"><a class="header" href="#reading-rows">Reading rows</a></h3>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>for i in 0..scenery.row_count() {
+    if let Some(row) = scenery.row(i) {
+        let name = &amp;row.record["name"];
+        println!("  {}: {:?}", i, name);
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Rows are accessed by index — a <code>BTreeMap&lt;usize, Arc&lt;EnrichedRecord&gt;&gt;</code> under the hood. Not every
+index is populated: the map is sparse when only part of the dataset is loaded. <code>row(i)</code> returns
+<code>None</code> for unloaded indices.</p>
+<h3 id="two-loading-strategies"><a class="header" href="#two-loading-strategies">Two loading strategies</a></h3>
+<p>TableScenery supports two modes, selected automatically based on which Lens callbacks you’ve
+configured:</p>
+<p><strong>Sequential mode</strong> — append-only paging. Use when the master can only return “the next page”
+(cursor APIs, append-only logs). No <code>total_provider</code> is registered. You call <code>request_load_more()</code>
+and the cache grows page by page:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>scenery.request_load_more();
+// cache grows: 50 → 100 → 150 → ...
+<span class="boring">}</span></code></pre>
+<div id="admonition-sequential-mode-no-skipping" class="admonition admonish-warning" role="note" aria-labelledby="admonition-sequential-mode-no-skipping-title">
+<div class="admonition-title">
+<div id="admonition-sequential-mode-no-skipping-title">
+<p>Sequential mode: no skipping</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-sequential-mode-no-skipping"></a>
+</div>
+
+<div>
+<p>In sequential mode, <code>set_viewport()</code> past the cache end <strong>clamps</strong> to whatever is already loaded
+and emits <code>ViewportClamped</code>. You can’t jump to row 900 — you have to call <code>request_load_more()</code>
+repeatedly until the cache grows that far. This matches the reality of cursor-based backends:
+they can’t skip ahead either.</p>
+</div>
+
+</div>
+
+<p><strong>Random-access mode</strong> — viewport-driven sparse paging. Use when you know the total row count and
+can fetch any range. Register <code>total_provider</code> and <code>on_load_chunk</code> on the Lens. Then:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>scenery.set_viewport(200..250);
+// on_load_chunk fires for the missing range
+// rows arrive in the sparse map
+<span class="boring">}</span></code></pre>
+<p><code>set_viewport()</code> triggers a fetch only for the portion not already cached. Scrolling back to a
+previously loaded range is instant. You can jump to any row — the master supports it.</p>
+<h3 id="table-size-row_count-estimated_total-has_more"><a class="header" href="#table-size-row_count-estimated_total-has_more">Table size: <code>row_count</code>, <code>estimated_total</code>, <code>has_more</code></a></h3>
+<p>These three methods behave differently per mode:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th>Sequential</th><th>Random-access</th></tr>
+</thead>
+<tbody>
+<tr><td><code>row_count()</code></td><td>Cache size (grows as you load more)</td><td>Total from <code>total_provider</code> (known upfront)</td></tr>
+<tr><td><code>estimated_total()</code></td><td><code>None</code> (unknown until you hit the end)</td><td><code>Some(total)</code></td></tr>
+<tr><td><code>has_more()</code></td><td>Always <code>true</code> (no total to compare against)</td><td><code>loaded &lt; total</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>In sequential mode, the table size is a mystery — the master only knows “next page”. You load pages
+until <code>on_load_chunk</code> returns a short page (fewer rows than <code>page_size</code>). At that point,
+<code>estimated_total()</code> freezes to the cache size and <code>has_more()</code> flips to <code>false</code>.</p>
+<p>In random-access mode, the total is known from the start — <code>total_provider</code> runs once at open.
+Scrollbars size correctly before any data loads. The sparse map fills gaps on demand.</p>
+<div id="admonition-which-mode-do-i-get" class="admonition admonish-info" role="note" aria-labelledby="admonition-which-mode-do-i-get-title">
+<div class="admonition-title">
+<div id="admonition-which-mode-do-i-get-title">
+<p>Which mode do I get?</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-which-mode-do-i-get"></a>
+</div>
+
+<div>
+<p>It depends on your Lens configuration:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Callback registered</th><th>Mode</th><th>Pagination</th></tr>
+</thead>
+<tbody>
+<tr><td><code>total_provider</code> + <code>on_load_chunk</code></td><td>Random-access</td><td><code>set_viewport()</code></td></tr>
+<tr><td><code>on_load_chunk</code> only</td><td>Sequential</td><td><code>request_load_more()</code></td></tr>
+<tr><td>Neither</td><td>Cache-only</td><td>Whatever <code>on_start</code> seeded</td></tr>
+</tbody>
+</table>
+</div>
+<p>Check <code>master_capabilities()</code> to see what the view advertises: <code>can_fetch_page</code> → random-access,
+<code>can_fetch_next</code> → sequential.</p>
+</div>
+
+</div>
+
+<h3 id="search-and-sort"><a class="header" href="#search-and-sort">Search and sort</a></h3>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>scenery.set_search(Some("tart".into()));
+scenery.set_sort(Some("price".into()), SortDir::Desc);
+<span class="boring">}</span></code></pre>
+<p>These trigger a full reload from cache. Search and sort are applied locally against the cached data
+— they work even when the master backend doesn’t support them (capability injection from chapter 5
+in action).</p>
+<hr>
+<h2 id="recordscenery--single-record"><a class="header" href="#recordscenery--single-record">RecordScenery — single record</a></h2>
+<p>A reactive view onto one record by id:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let record = dio.record_scenery("42").await?;
+
+match record.status() {
+    RecordStatus::Fresh =&gt; {
+        let row = record.record().unwrap();
+        println!("name: {:?}", row.record["name"]);
+    }
+    RecordStatus::NotFound =&gt; println!("not in cache"),
+    RecordStatus::Error(msg) =&gt; println!("error: {}", msg),
+    _ =&gt; {}
+}
+<span class="boring">}</span></code></pre>
+<p>The record reads from cache at creation time — no master fetch on miss. If the cache doesn’t have
+the row, status is <code>NotFound</code>. The reactor listens to the Dio’s event bus and reloads when
+<code>RecordChanged</code> or <code>Invalidated</code> arrives for that id.</p>
+<p>If you already have the record (e.g. from a table row click), skip the cache read:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let record = dio.record_scenery_with("42", row_from_table);
+<span class="boring">}</span></code></pre>
+<hr>
+<h2 id="valuescenery--aggregates"><a class="header" href="#valuescenery--aggregates">ValueScenery — aggregates</a></h2>
+<p>A reactive scalar computed from the cache:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_diorama::scenery::Aggregate;
+
+let count = dio
+    .value_scenery()
+    .count()
+    .open()
+    .await?;
+
+let total = dio
+    .value_scenery()
+    .sum("price")
+    .open()
+    .await?;
+<span class="boring">}</span></code></pre>
+<p>Built-in aggregates:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>Computes</th></tr>
+</thead>
+<tbody>
+<tr><td><code>.count()</code></td><td>Total rows in cache</td></tr>
+<tr><td><code>.count_where(conds)</code></td><td>Rows matching field=value pairs</td></tr>
+<tr><td><code>.sum("field")</code></td><td>Sum of an integer field</td></tr>
+<tr><td><code>.max("field")</code></td><td>Maximum of an integer field</td></tr>
+<tr><td><code>.min("field")</code></td><td>Minimum of an integer field</td></tr>
+</tbody>
+</table>
+</div>
+<p>All are computed locally against the cache — no database query. The reactor recomputes on every
+<code>DioEvent</code> and bumps the generation if the value changed.</p>
+<div id="admonition-custom-aggregates" class="admonition admonish-tip" role="note" aria-labelledby="admonition-custom-aggregates-title">
+<div class="admonition-title">
+<div id="admonition-custom-aggregates-title">
+<p>Custom aggregates</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-custom-aggregates"></a>
+</div>
+
+<div>
+<p>For computations the built-in variants don’t cover:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let expensive = dio
+    .value_scenery()
+    .custom(|dio| {
+        let dio = dio.clone();
+        async move {
+            let rows = dio.cache().list_values().await?;
+            let avg = /* your logic */;
+            Ok(avg.into())
+        }
+    })
+    .open()
+    .await?;
+<span class="boring">}</span></code></pre>
+<p>The closure receives a <code>&amp;Dio</code> — same pattern as Lens callbacks.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="putting-it-together-3"><a class="header" href="#putting-it-together-3">Putting it together</a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_diorama::scenery::SortDir;
+
+// Table view — ordered, paginated
+let table = dio
+    .table_scenery()
+    .sort("name", SortDir::Asc)
+    .page_size(50)
+    .open()
+    .await?;
+
+println!("{} rows loaded", table.row_count());
+
+// Single record
+let rec = dio.record_scenery("42").await?;
+
+// Live counter
+let count = dio.value_scenery().count().open().await?;
+let mut rx = count.subscribe();
+loop {
+    rx.changed().await?;
+    println!("count: {:?}", count.value());
+}
+<span class="boring">}</span></code></pre>
+<hr>
+<h2 id="what-we-covered-3"><a class="header" href="#what-we-covered-3">What we covered</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Concept</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a></td><td>Ordered, paginated row view with sequential or random-access loading</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a></td><td>Reactive single-record view by id</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a></td><td>Reactive aggregate (count, sum, max, min, custom)</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a></td><td>Monotonic counter bumped on every state change</td></tr>
+<tr><td><code>subscribe()</code></td><td>Returns <code>watch::Receiver&lt;Generation&gt;</code> for reactive updates</td></tr>
+<tr><td><code>set_viewport()</code></td><td>Request a row range for random-access loading</td></tr>
+<tr><td><code>request_load_more()</code></td><td>Append the next page for sequential loading</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/value/enum.Aggregate.html"><code>Aggregate</code></a></td><td>Enum of built-in and custom aggregate operations</td></tr>
+</tbody>
+</table>
+</div>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="the-vantage-journey"><a class="header" href="#the-vantage-journey">The Vantage Journey</a></h1>
 <p>Vantage didn’t start as a multi-backend entity framework. It started as a weekend experiment to see
@@ -5196,7 +6365,7 @@ shaped you’re done; otherwise you need a dedicated bridge (see <code>cbor.rs</
 doesn’t have these yet, add them before going further. The vista boundary stringifies ids
 unconditionally.</li>
 </ul>
-<h3 id="what-vista-actually-is"><a class="header" href="#what-vista-actually-is">What Vista actually is</a></h3>
+<h3 id="what-vista-actually-is-1"><a class="header" href="#what-vista-actually-is-1">What Vista actually is</a></h3>
 <p><code>Vista</code> is a concrete struct in <code>vantage-vista</code> (no consumer-facing trait surface). It owns
 universal metadata — name, columns, references, capabilities, id column — and a boxed <code>TableShell</code>
 that does the real work. Your job as a driver author is two-fold:</p>
@@ -5432,7 +6601,7 @@ output and diagnostics, and there’s no reason not to.</li>
 <p>The defaults exist for cases where the override would be a no-op or a net pessimisation. Otherwise:
 override. Leaving <code>get_vista_count</code> defaulted on a real table is the same shape of bug as not
 pushing down conditions — it works, but it works the wrong way.</p>
-<h3 id="capabilities--the-honesty-contract"><a class="header" href="#capabilities--the-honesty-contract">Capabilities — the honesty contract</a></h3>
+<h3 id="capabilities--the-honesty-contract-1"><a class="header" href="#capabilities--the-honesty-contract-1">Capabilities — the honesty contract</a></h3>
 <p><code>VistaCapabilities</code> is six booleans plus a <code>PaginateKind</code>. They’re the contract a generic UI relies
 on to decide which buttons to draw:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -5735,6 +6904,193 @@ and MongoDB drives your backend too — without recompiling, without an entity i
 single backend-specific line of code on the consumer side. That’s what the six previous steps were
 clearing the runway for.</p>
 <div style="break-before: page; page-break-before: always;"></div>
+<h1 id="step-9-contained-relations"><a class="header" href="#step-9-contained-relations">Step 9: Contained Relations</a></h1>
+<p>Some data doesn’t live in its own table. A product carries an <code>inventory</code> object; an order carries
+a <code>lines</code> array. The records are real — they have fields, you want to list them, add to them, edit
+one — but they’re physically embedded in a column of the parent row, not stored in a table of their
+own.</p>
+<p><code>with_one</code> / <code>with_many</code> (Step 6) can’t model this: they resolve to <em>another</em> table via a foreign
+key. A contained relation resolves to a <strong>sub-<code>Vista</code> backed by one column of the same row</strong>.
+Reads project that column into records; writes patch the column back in place. To the consumer it
+looks exactly like any other relation — <code>get_ref("lines")</code>, then <code>list_values</code> / <code>insert</code> / <code>patch</code>
+/ <code>delete</code>.</p>
+<p>This step is optional. Skip it unless your backend stores embedded objects or arrays that users
+should be able to edit as records.</p>
+<h3 id="what-the-framework-gives-you"><a class="header" href="#what-the-framework-gives-you">What the framework gives you</a></h3>
+<p>Almost all of it is backend-agnostic and already done:</p>
+<ul>
+<li>
+<p><strong>Declaration</strong> is on the typed <code>Table</code>, mirroring <code>with_one</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>Table::new("order", db)
+    .with_id_column("id")
+    .with_column_of::&lt;…&gt;("lines")          // declare the host column (see Sharp edges)
+    .with_contained_many("lines", "lines", |db| {
+        Table::new("lines", db)
+            .with_column_of::&lt;i64&gt;("quantity")
+            .with_one("product", "product", Product::table)  // a line can traverse out
+    }, None)
+<span class="boring">}</span></code></pre>
+<p>The closure builds the contained record’s schema — same shape as <code>with_one</code>’s <code>build_target</code>,
+same type system, evaluated lazily. <code>vista_contained()</code> surfaces these as <code>ContainedSpec</code>s.</p>
+</li>
+<li>
+<p><strong>The sub-Vista</strong> is <a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/contained/fn.build_contained_vista.html" title="vantage_vista::build_contained_vista"><code>vantage_vista::build_contained_vista</code></a>. It materializes the column’s
+records into an in-memory <code>ImTable</code>, serves reads from it, and on every write re-serializes the
+whole collection and calls a <strong>writeback</strong> closure. That writeback — patch the parent row’s host
+column — is the only persistence-specific part you supply.</p>
+</li>
+</ul>
+<p>So your job is one <code>TableShell</code> method.</p>
+<h3 id="tableshellget_contained_ref"><a class="header" href="#tableshellget_contained_ref"><code>TableShell::get_contained_ref</code></a></h3>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn contained(&amp;self) -&gt; &amp;IndexMap&lt;String, ContainedSpec&gt; {
+    &amp;self.metadata.contained
+}
+
+fn get_contained_ref(&amp;self, relation: &amp;str, row: &amp;Record&lt;CborValue&gt;) -&gt; Result&lt;Vista&gt; {
+    let rel = self.table.contained_relation(relation)?;          // host column, kind, build_target
+    let host_value = /* the embedded collection as a CBOR map/array — see below */;
+    let parent_id  = /* this row's id, as your native id */;
+
+    // Columns for the sub-Vista's schema, harvested from the closure-built table.
+    let columns = metadata_from_table(&amp;rel.build_target(self.db())).columns;
+    let spec    = ContainedSpec::new(rel.name(), rel.host_column(), rel.kind()).with_columns(columns);
+
+    // Eager writeback: re-serialize → patch the host column on the parent row.
+    let writeback = Arc::new(move |collection: CborValue| { /* patch parent[host] = collection */ });
+
+    // Traverse-out: resolve the contained record's own relations (line → product).
+    let ref_resolver = Arc::new(move |rel, child_row| { /* get_ref_from_row on the contained table */ });
+
+    build_contained_vista(&amp;spec, host_value.as_ref(), writeback, Some(ref_resolver))
+}
+<span class="boring">}</span></code></pre>
+<p>And in the factory’s <code>metadata_from_table</code>, copy the specs so the relation surfaces:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>for spec in table.vista_contained() {
+    metadata = metadata.with_contained(spec);
+}
+<span class="boring">}</span></code></pre>
+<p>That’s the whole integration. The two driver-specific decisions are how the host value crosses the
+boundary, and what the writeback does — and those split cleanly along one line.</p>
+<h3 id="native-vs-json-blob"><a class="header" href="#native-vs-json-blob">Native vs JSON-blob</a></h3>
+<p><strong>Native backends</strong> (SurrealDB, MongoDB) store the host column as a real nested object/array. The
+value arrives as <code>CborValue::Map</code>/<code>Array</code> already, and the writeback patches it back as-is —
+SurrealDB <code>UPDATE … MERGE</code>, MongoDB <code>$set</code>. No serialization on either side:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let host_value = row.get(rel.host_column()).cloned();       // already a Map/Array
+// writeback: patch { host: AnyNativeType::from(collection) }
+<span class="boring">}</span></code></pre>
+<p><strong>JSON-blob backends</strong> (SQL with no native nesting — the SQLite path) store the collection as a
+JSON string in a <code>TEXT</code> column. Parse on read, serialize on write, using the shared
+<code>json_to_cbor</code> / <code>cbor_to_json</code> bridge:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let host_value = row.get(rel.host_column()).and_then(parse_json_host);   // Text(json) → Map/Array
+// writeback: patch { host: Text(cbor_to_json(collection).to_string()) }
+<span class="boring">}</span></code></pre>
+<p><code>parse_json_host</code> also passes a <code>Map</code>/<code>Array</code> straight through, so the same code copes with a
+backend that <em>does</em> parse JSON columns natively (Postgres <code>jsonb</code>, MySQL <code>json</code>) — there, declaring
+the host column as <code>TEXT</code> keeps the round-trip a plain string and avoids the write-side bind for
+nested values. Postgres and MySQL share the SQLite implementation verbatim for exactly this reason.</p>
+<h3 id="why-not-just-flatten-the-keys"><a class="header" href="#why-not-just-flatten-the-keys">Why not just flatten the keys?</a></h3>
+<p>You can, for <em>reading</em> a fixed shape — <code>inventory.stock</code> as a scalar column is fine when there’s
+one known field. It falls apart the moment the embedded data is a <em>collection</em> (an order has N
+lines, not a fixed set), or the user needs to add and remove elements. A contained relation gives
+you a record set with ids, not a bag of dotted columns.</p>
+<h3 id="why-not-model-it-as-a-foreign-key-relation"><a class="header" href="#why-not-model-it-as-a-foreign-key-relation">Why not model it as a foreign-key relation?</a></h3>
+<p>Because there’s no other table to point at, and no foreign key to join on. The data is in the row.
+Forcing it into <code>with_many</code> would mean inventing a synthetic table and writing a join that the
+storage engine can’t honour. Contained relations are the honest model: traversal is a column
+projection, not a query.</p>
+<h3 id="eager-writeback"><a class="header" href="#eager-writeback">Eager writeback</a></h3>
+<p>Every mutation on the sub-Vista patches the parent row immediately — there’s no <code>flush</code>. This keeps
+the sub-Vista and the parent row coherent at all times, and it’s deliberate: batching belongs to a
+higher layer (a UI’s write queue), not the storage boundary. The cost is one parent patch per edit,
+which is trivial for the small collections this targets.</p>
+<p>The flip side: the whole collection is re-serialized and written each time. A contained relation is
+for line items and embedded objects, not for a thousand-element array you mutate in a tight loop.</p>
+<h3 id="sharp-edges-1"><a class="header" href="#sharp-edges-1">Sharp edges</a></h3>
+<p><strong>Declare the host column.</strong> This is the bug every backend hits. If <code>lines</code> isn’t a declared
+column, your read path won’t select or project it (SQL builds its <code>SELECT</code> from declared columns;
+MongoDB projects from <code>column_paths</code>), so the parent row arrives without it and traversal sees an
+empty collection. Declare it alongside the <code>with_contained_*</code> call.</p>
+<p><strong>Positional ids shift.</strong> With no declared id column, contained-many records are keyed by index
+(<code>"0"</code>, <code>"1"</code>, …). Deleting element 0 renumbers the rest. Give the contained schema an id column
+(<code>with_contained_many(…, Some("line_id"))</code>) when callers hold onto ids across mutations.</p>
+<p><strong>Contained-one uses a fixed id.</strong> A single embedded object is addressed as <code>"0"</code>; there’s no
+ambiguity to resolve.</p>
+<p><strong>The writeback is not atomic with the contained record’s own children.</strong> A contained record can
+traverse out (<code>line → product</code>) or even nest further, but each backend write is its own statement.
+That’s the same best-effort contract as nested insert (Step 6’s neighbour) — fine for these shapes,
+not a transaction.</p>
+<h3 id="from-yaml"><a class="header" href="#from-yaml">From YAML</a></h3>
+<p>Contained relations are declarable in a YAML vista spec too, via a <code>contained:</code> section that mirrors
+<code>columns:</code>/<code>references:</code>:</p>
+<pre><code class="language-yaml">name: order
+columns:
+  id: { type: string, flags: [id] }
+  lines: { type: string }          # the host column — declare it so it's selected
+sqlite:
+  table: order
+contained:
+  lines:
+    host_column: lines
+    kind: contains_many            # or contains_one
+    id_column: line_id             # optional; omit for positional ids
+    columns:
+      product: { type: string }
+      quantity: { type: int }
+</code></pre>
+<p>The loader lowers this through one generic helper —
+<a href="https://docs.rs/vantage-table/latest/vantage_table/"><code>Table::with_contained_specs</code></a> — which calls
+your driver’s existing <code>build_column</code> on each contained column, so the YAML and code-first paths
+converge on the same registration. Wiring it is one line per driver in <code>table_from_spec</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>table = table.with_contained_specs(&amp;spec.contained, build_column)?;
+<span class="boring">}</span></code></pre>
+<p><strong>Limitation:</strong> YAML-declared contained records carry <em>columns only</em> — no nested relations, so
+traverse-out (<code>line.product</code>) isn’t expressible from YAML yet (the code-first closure still supports
+it, since it can add <code>with_one</code> to the contained table). Lifting this means letting the contained
+columns carry <code>references:</code> sugar plus a resolver, the same machinery YAML foreign-key references
+would need.</p>
+<h3 id="step-9-checklist"><a class="header" href="#step-9-checklist">Step 9 checklist</a></h3>
+<p>A backend supports contained relations once it has:</p>
+<ol>
+<li>
+<p><strong><code>TableShell::contained()</code></strong> returning <code>&amp;self.metadata.contained</code>.</p>
+</li>
+<li>
+<p><strong><code>TableShell::get_contained_ref</code></strong> — a thin shim that extracts the parent row’s id (in the
+driver’s native id type) and forwards to the shared
+<a href="https://docs.rs/vantage-table/latest/vantage_table/"><code>Table::get_contained_ref</code></a>, passing three
+things only the driver knows: the <code>wrap</code> closure (target <code>Table</code> → <code>Vista</code> via its factory), and
+the host <code>decode</code>/<code>encode</code> codec (native passthrough, or JSON parse/serialize). The generic helper
+seeds the records, harvests the contained schema, wires the eager writeback, and resolves
+traverse-out.</p>
+</li>
+<li>
+<p><strong><code>metadata_from_table</code></strong> copying <code>table.vista_contained()</code> into <code>VistaMetadata</code>.</p>
+</li>
+<li>
+<p><strong>YAML</strong> — one line in <code>table_from_spec</code>:
+<code>table = table.with_contained_specs(&amp;spec.contained, build_column)?;</code></p>
+</li>
+<li>
+<p><strong>Tests</strong> (gated on <code>feature = "vista"</code>, against a real backend): declare a host column holding a
+collection (code-first <em>and</em> via <code>from_yaml</code>), traverse it, insert/patch through the sub-Vista, and
+re-read the parent row to prove the writeback landed.</p>
+</li>
+</ol>
+<p>Native and JSON-blob backends differ only in two closures — how the host value enters and how the
+writeback leaves. Everything between is shared.</p>
+<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="persistence-aligned-type-system"><a class="header" href="#persistence-aligned-type-system">Persistence-aligned Type System</a></h1>
 <p>Every Vantage persistence defines its own type trait — <code>SqliteType</code>, <code>PostgresType</code>, <code>SurrealType</code>,
 <code>MongoType</code>, <code>CsvType</code> — that maps Rust values to and from the storage format. This is how
@@ -5842,7 +7198,7 @@ the underlying struct directly.</p>
 
 <h2 id="or_--and_--logical-combinators"><a class="header" href="#or_--and_--logical-combinators"><code>or_()</code> / <code>and_()</code> — Logical Combinators</a></h2>
 <p>By default, multiple calls to <code>.with_condition()</code> combine with <code>AND</code>. When you need <code>OR</code>, use
-<a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/primitives/logical/fn.or_.html"><code>or_()</code></a>:</p>
+<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/logical/fn.or_.html"><code>or_()</code></a>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use vantage_sql::primitives::*;
@@ -5850,7 +7206,7 @@ the underlying struct directly.</p>
 // role = 'admin' OR role = 'superuser'
 let cond = or_(ident("role").eq("admin"), ident("role").eq("superuser"));
 <span class="boring">}</span></code></pre>
-<p>For nested logic, combine with <a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/primitives/logical/fn.and_.html"><code>and_()</code></a>:</p>
+<p>For nested logic, combine with <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/logical/fn.and_.html"><code>and_()</code></a>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>// (price &gt; 100 AND in_stock = 1) OR (featured = 1)
@@ -5869,11 +7225,11 @@ for MySQL).</p>
 let qualified = ident("name").dot_of("u");    // "u"."name"
 let aliased = ident("total").with_alias("t"); // "total" AS "t"
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/primitives/identifier/fn.ident.html"><code>ident()</code></a> is a shorthand for
-<a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/primitives/identifier/struct.Identifier.html#method.new"><code>Identifier::new()</code></a>. Reserved words and
+<p><a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/identifier/fn.ident.html"><code>ident()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/identifier/struct.Identifier.html#method.new"><code>Identifier::new()</code></a>. Reserved words and
 names with spaces are quoted automatically.</p>
 <h2 id="fx--function-calls"><a class="header" href="#fx--function-calls"><code>fx!</code> — Function Calls</a></h2>
-<p>The <a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/macro.fx.html"><code>fx!</code></a> macro builds a SQL function call. Arguments are passed directly —
+<p>The <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/macro.fx.html"><code>fx!</code></a> macro builds a SQL function call. Arguments are passed directly —
 <code>.expr()</code> is called on each one automatically:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -5892,7 +7248,7 @@ fx!("round", fx!("avg", ident("price")), 2i64)
 // =&gt; ROUND(AVG("price"), 2)
 <span class="boring">}</span></code></pre>
 <p>If you need to build arguments programmatically (e.g. from a <code>Vec</code>), use
-<a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/primitives/fx/struct.Fx.html#method.new"><code>Fx::new()</code></a> directly:</p>
+<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/fx/struct.Fx.html#method.new"><code>Fx::new()</code></a> directly:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>let args: Vec&lt;Expression&lt;AnySqliteType&gt;&gt; = columns.iter().map(|c| c.expr()).collect();
@@ -5909,10 +7265,10 @@ let f = Fx::new("coalesce", args);
     "sold out",
 );
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/primitives/ternary/fn.ternary.html"><code>ternary()</code></a> is a shorthand for
-<a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/primitives/ternary/struct.Ternary.html#method.new"><code>Ternary::new()</code></a>.</p>
+<p><a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/ternary/fn.ternary.html"><code>ternary()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/ternary/struct.Ternary.html#method.new"><code>Ternary::new()</code></a>.</p>
 <h2 id="case--case-expressions"><a class="header" href="#case--case-expressions"><code>Case</code> — CASE Expressions</a></h2>
-<p>For more than two branches, use <a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/primitives/case/struct.Case.html"><code>Case</code></a> to build a full
+<p>For more than two branches, use <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/case/struct.Case.html"><code>Case</code></a> to build a full
 <code>CASE WHEN ... END</code> block:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -5923,12 +7279,12 @@ let f = Fx::new("coalesce", args);
 <span class="boring">}</span></code></pre>
 <h2 id="concat_--string-concatenation"><a class="header" href="#concat_--string-concatenation"><code>concat_!</code> — String Concatenation</a></h2>
 <p>Concatenates expressions. Renders as <code>||</code> on SQLite/Postgres, <code>CONCAT()</code> on MySQL. The
-<a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/macro.concat_.html"><code>concat_!</code></a> macro calls <code>.expr()</code> on each argument automatically:</p>
+<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/macro.concat_.html"><code>concat_!</code></a> macro calls <code>.expr()</code> on each argument automatically:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>concat_!(ident("first_name"), " ", ident("last_name"))
 <span class="boring">}</span></code></pre>
-<p>Use <a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/primitives/concat/struct.Concat.html#method.ws"><code>.ws()</code></a> for a separator — it accepts any
+<p>Use <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/concat/struct.Concat.html#method.ws"><code>.ws()</code></a> for a separator — it accepts any
 <code>Expressive&lt;T&gt;</code>, including string literals:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -5945,7 +7301,7 @@ let f = Fx::new("coalesce", args);
 // MySQL:    INTERVAL 30 DAY
 // Postgres: INTERVAL '30 days'
 <span class="boring">}</span></code></pre>
-<p>See <a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/primitives/interval/struct.Interval.html"><code>Interval</code></a> for available constructors (<code>days</code>,
+<p>See <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/interval/struct.Interval.html"><code>Interval</code></a> for available constructors (<code>days</code>,
 <code>hours</code>, <code>months</code>, etc.).</p>
 <h2 id="date_format--date-formatting"><a class="header" href="#date_format--date-formatting"><code>date_format()</code> — Date Formatting</a></h2>
 <p>Portable strftime-style formatting. Translates format tokens per backend:</p>
@@ -5956,9 +7312,9 @@ let f = Fx::new("coalesce", args);
 // MySQL:    DATE_FORMAT("created_at", '%Y-%m-%d')
 // Postgres: TO_CHAR("created_at", 'YYYY-MM-DD')
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/primitives/date_format/fn.date_format.html"><code>date_format()</code></a> is a shorthand for
-<a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/primitives/date_format/struct.DateFormat.html#method.new"><code>DateFormat::new()</code></a>. Use
-<a href="https://docs.rs/vantage_sql/0.4.6/vantage_sql/primitives/date_format/struct.DateFormat.html#method.raw_format"><code>.raw_format()</code></a> to skip token
+<p><a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/date_format/fn.date_format.html"><code>date_format()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/date_format/struct.DateFormat.html#method.new"><code>DateFormat::new()</code></a>. Use
+<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/date_format/struct.DateFormat.html#method.raw_format"><code>.raw_format()</code></a> to skip token
 translation and pass a native format string.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="type-conversions"><a class="header" href="#type-conversions">Type Conversions</a></h1>
