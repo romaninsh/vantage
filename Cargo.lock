@@ -4678,11 +4678,13 @@ version = "0.0.0"
 dependencies = [
  "vantage-core",
  "vantage-dataset",
+ "vantage-diorama",
  "vantage-expressions",
  "vantage-mongodb",
  "vantage-sql",
  "vantage-table",
  "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]

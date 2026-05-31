@@ -194,7 +194,7 @@ side effects.
 write a function that lists _any_ table — products, orders, customers — without knowing the entity
 type?
 
-[`AnyTable`](vantage_table::any::AnyTable) wraps a concrete table and erases its type parameters.
+`AnyTable` wraps a concrete table and erases its type parameters.
 Values come back as `Record<serde_json::Value>` instead of typed entities. You can iterate columns
 by name and build a generic display:
 

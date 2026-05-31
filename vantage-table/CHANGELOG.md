@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.5 — 2026-05-31
+
+### Added
+
+- `Table::with_contained_one` / `with_contained_many` — declare an embedded object/array column as a
+  contained relation, surfaced through Vista as an editable sub-table. The closure builds the
+  contained record's schema, reusing the normal `Table` column machinery.
+- `Table::get_contained_ref` — the generic, driver-agnostic resolution of a contained relation from a
+  parent row (each backend supplies only its host-column encode/decode pair).
+- `Table::with_contained_specs` — lowers a YAML `contained:` section into the same registrations,
+  reusing the driver's existing column builder.
+- `ContainedRelation<T>`, plus `Table::vista_contained()` / `contained_relation()` for driver
+  factories. See the [contained relations guide](https://romaninsh.github.io/vantage/new-persistence/step9-contained-relations.html).
+
 ## 0.5.4 — 2026-05-30
 
 Support for [vantage-vista 0.5.1](https://docs.rs/vantage-vista/0.5.1/vantage_vista/)'s nested insert.
