@@ -201,6 +201,48 @@ async fn patched_updates_visible_rows() -> Result<()> {
     Ok(())
 }
 
+/// `dio.removed(id)` wipes the cache entry AND publishes the bus
+/// event so a subscribed TableScenery's reseed actually drops the
+/// row. The bare `invalidate_record(id)` path leaves the cache
+/// untouched — sceneries would reload the deleted row right back in.
+#[tokio::test]
+async fn removed_drops_row_from_visible_set() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let lens = build_lens(tmp.path().join("cache.redb")).await?;
+    let dio = lens.make_dio(seeded_master()).await?;
+
+    let scenery = dio.table_scenery().open().await?;
+    let mut gen_rx = scenery.subscribe();
+    let initial = u64::from(*gen_rx.borrow_and_update());
+    assert_eq!(scenery.row_count(), 3);
+
+    dio.removed("b").await?;
+    wait_for_gen(&mut gen_rx, initial).await;
+
+    assert_eq!(scenery.row_count(), 2);
+    let names: Vec<_> = (0..scenery.row_count())
+        .filter_map(|i| scenery.row(i))
+        .filter_map(|r| r.record.get("name").cloned())
+        .collect();
+    assert!(names.contains(&cbor_text("alpha")));
+    assert!(!names.contains(&cbor_text("beta")));
+    Ok(())
+}
+
+/// `dio.removed(id)` is idempotent — calling on an absent id is a
+/// no-op (still publishes the event so any reseed-style scenery
+/// re-syncs harmlessly).
+#[tokio::test]
+async fn removed_is_idempotent_on_missing_id() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let lens = build_lens(tmp.path().join("cache.redb")).await?;
+    let dio = lens.make_dio(seeded_master()).await?;
+
+    let _scenery = dio.table_scenery().open().await?;
+    dio.removed("does-not-exist").await?;
+    Ok(())
+}
+
 #[tokio::test]
 async fn scenery_outlives_dio_handle_drop() -> Result<()> {
     let tmp = TempDir::new().unwrap();

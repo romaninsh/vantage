@@ -9,13 +9,16 @@
 -- SCHEMA DEFINITIONS
 -- =====================================================
 
--- Bakery table (schema-full for core business data)
-DEFINE TABLE bakery SCHEMAFULL;
+-- Bakery table — schemaless so vantage-ui's inventory YAML is the
+-- source of truth for columns; new fields land via patch_value
+-- without needing a corresponding DEFINE FIELD.
+DEFINE TABLE bakery SCHEMALESS;
 DEFINE FIELD name ON bakery TYPE string;
 DEFINE FIELD profit_margin ON bakery TYPE int ASSERT $value >= 0 AND $value <= 100;
 
--- Client table (schema-full with flexible metadata field)
-DEFINE TABLE client SCHEMAFULL;
+-- Client table — schemaless (was SCHEMAFULL; lets inventory-driven
+-- columns like `password_hash` land without DDL edits here).
+DEFINE TABLE client SCHEMALESS;
 DEFINE FIELD email ON client TYPE string;
 DEFINE FIELD name ON client TYPE string;
 DEFINE FIELD contact_details ON client TYPE string;
@@ -26,7 +29,7 @@ DEFINE FIELD metadata ON client TYPE option<object> FLEXIBLE; -- For future exte
 DEFINE INDEX unique_email ON client FIELDS email UNIQUE;
 
 -- Product table (schema-full with embedded inventory)
-DEFINE TABLE product SCHEMAFULL;
+DEFINE TABLE product SCHEMALESS;
 DEFINE FIELD name ON product TYPE string;
 DEFINE FIELD calories ON product TYPE int ASSERT $value >= 0;
 DEFINE FIELD price ON product TYPE int ASSERT $value > 0;
@@ -37,11 +40,20 @@ DEFINE FIELD inventory ON product TYPE object;
 DEFINE FIELD inventory.stock ON product TYPE int DEFAULT 0;
 
 -- Order table (schema-full with embedded line items)
-DEFINE TABLE order SCHEMAFULL;
+DEFINE TABLE order SCHEMALESS;
 DEFINE FIELD client ON order TYPE record<client>; -- Direct link to client
 DEFINE FIELD bakery ON order TYPE record<bakery>; -- Direct link to bakery
 DEFINE FIELD is_deleted ON order TYPE bool DEFAULT false;
 DEFINE FIELD created_at ON order TYPE datetime DEFAULT time::now();
+-- Lifecycle state + cancellation metadata. Catalog YAML
+-- (`examples/surreal-bakery/table/bakery-surreal/order.yaml`)
+-- carries the human-readable choices. `option<string>` so old rows
+-- without a cancellation reason don't trip the type.
+DEFINE FIELD status ON order TYPE string DEFAULT "placed"
+    ASSERT $value IN ["placed", "confirmed", "in_production", "ready",
+                      "delivered", "picked_up", "paid", "cancelled"];
+DEFINE FIELD cancellation_reason ON order TYPE option<string>;
+DEFINE FIELD cancellation_note ON order TYPE option<string>;
 -- Embedded order lines instead of separate table
 DEFINE FIELD lines ON order TYPE array<object> DEFAULT [];
 DEFINE FIELD lines.*.product ON order TYPE record<product>;
@@ -130,11 +142,15 @@ CREATE product:hover_cookies SET
     inventory = { stock: 40 };
 
 
--- Create orders with embedded line items
--- Order 1: Marty's order
+-- Create orders with embedded line items. Status values seed the
+-- lifecycle at different points so the right-click menu demos every
+-- transition gate (placed → confirmed → in_production → ready →
+-- delivered/picked_up → paid).
+-- Order 1: Marty's order — fresh placement
 CREATE order:order1 SET
     client = client:marty,
     bakery = bakery:hill_valley,
+    status = "placed",
     lines = [
         {
             product: product:flux_cupcake,
@@ -153,10 +169,11 @@ CREATE order:order1 SET
         }
     ];
 
--- Order 2: Doc's order
+-- Order 2: Doc's order — mid-flight (ready for delivery / pickup)
 CREATE order:order2 SET
     client = client:doc,
     bakery = bakery:hill_valley,
+    status = "ready",
     lines = [
         {
             product: product:time_tart,
@@ -165,10 +182,11 @@ CREATE order:order2 SET
         }
     ];
 
--- Order 3: Doc's second order
+-- Order 3: Doc's second order — delivered, awaiting payment
 CREATE order:order3 SET
     client = client:doc,
     bakery = bakery:hill_valley,
+    status = "delivered",
     lines = [
         {
             product: product:hover_cookies,

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.3 — 2026-05-31
+
+- `Dio::removed(id)` clears cached rows before publishing `RecordRemoved`.
+
 ## 0.5.2 — 2026-05-23
 
 - Align all internal dependency versions to 0.5+. No public API changes.
