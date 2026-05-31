@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2 — 2026-05-31
+
+- `ImTable::seed` synchronously replaces a table's rows from a known collection, without the async
+  insert path — backing the in-memory sub-Vistas used by contained relations.
+
 ## 0.5.1 — 2026-05-23
 
 - Align all internal dependency versions to 0.5+. No public API changes.

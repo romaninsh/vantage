@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.5 — 2026-05-31
+
+- Contained relations on SQLite, PostgreSQL, and MySQL: embedded collections stored as JSON columns
+  surface as editable sub-Vistas, with eager writeback patching the host column. Postgres and MySQL
+  share the SQLite path verbatim. Also lowers a YAML `contained:` section in `table_from_spec`. See
+  the [contained relations guide](https://romaninsh.github.io/vantage/new-persistence/step9-contained-relations.html).
+
 ## 0.5.4 — 2026-05-30
 
 - The SQLite, PostgreSQL, and MySQL shells implement

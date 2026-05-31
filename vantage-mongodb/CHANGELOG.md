@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.5 — 2026-05-31
+
+- Contained relations backed by native BSON arrays and documents, surfaced as editable sub-Vistas
+  with eager `$set` writeback. Also lowers a YAML `contained:` section in `table_from_spec`. See the
+  [contained relations guide](https://romaninsh.github.io/vantage/new-persistence/step9-contained-relations.html).
+
 ## 0.5.4 — 2026-05-30
 
 - `MongoTableShell` implements
