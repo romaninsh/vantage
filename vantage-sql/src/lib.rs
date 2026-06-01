@@ -15,3 +15,6 @@ pub mod postgres;
 
 #[cfg(feature = "mysql")]
 pub mod mysql;
+
+#[cfg(feature = "rhai")]
+pub mod rhai_engine;

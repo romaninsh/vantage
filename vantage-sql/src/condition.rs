@@ -123,6 +123,14 @@ macro_rules! define_typed_ident {
                 self.0 = self.0.with_alias(alias);
                 self
             }
+
+            pub fn name(&self) -> String {
+                self.0.name()
+            }
+
+            pub fn alias(&self) -> Option<&str> {
+                self.0.alias()
+            }
         }
 
         impl $crate::vantage_expressions::Expressive<$any_type> for $struct_name {

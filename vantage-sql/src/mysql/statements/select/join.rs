@@ -2,6 +2,7 @@ use vantage_expressions::{Expression, Expressive, ExpressiveEnum, expr_any};
 
 use crate::mysql::types::AnyMysqlType;
 use crate::primitives::identifier::ident;
+use crate::primitives::select::{SelectBuilder, JoinBuilder};
 
 type Expr = Expression<AnyMysqlType>;
 
@@ -103,5 +104,31 @@ impl MysqlSelectJoin {
                 ExpressiveEnum::Nested(self.on_condition.clone()),
             ],
         )
+    }
+}
+
+impl SelectBuilder<AnyMysqlType> for super::MysqlSelect {
+    type Join = MysqlSelectJoin;
+
+    fn push_join(&mut self, join: MysqlSelectJoin) {
+        self.joins.push(join);
+    }
+
+    fn push_having(&mut self, cond: Expr) {
+        self.having.push(cond);
+    }
+
+    fn push_cte(&mut self, name: String, query: Expr, recursive: bool) {
+        self.ctes.push((name, query, recursive));
+    }
+}
+
+impl JoinBuilder<AnyMysqlType> for MysqlSelectJoin {
+    fn make_inner(table: &str, alias: &str, on: Expr) -> Self {
+        Self::inner(table, alias, on)
+    }
+
+    fn make_left(table: &str, alias: &str, on: Expr) -> Self {
+        Self::left(table, alias, on)
     }
 }
