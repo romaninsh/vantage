@@ -53,6 +53,16 @@ impl Identifier {
         self
     }
 
+    /// Returns the identifier name (parts joined with dots, no quotes).
+    pub fn name(&self) -> String {
+        self.parts.join(".")
+    }
+
+    /// Returns the alias, if any.
+    pub fn alias(&self) -> Option<&str> {
+        self.alias.as_deref()
+    }
+
     /// Render with a given quote character. Used by backend `Expressive` impls.
     fn render_with(&self, q: char) -> String {
         let base = self

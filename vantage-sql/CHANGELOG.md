@@ -1,11 +1,48 @@
 # Changelog
 
+## 0.5.6 — 2026-06-01
+
+### New Features
+
+- **Rhai DSL Engine**: Write SQL queries in Rhai scripting language with full cross-database
+  support. The new `rhai` feature flag enables a high-level DSL that compiles to vendor-specific SQL
+  for SQLite, PostgreSQL, and MySQL. Example:
+
+  ```rust
+  let users = table("users").alias("u");
+  select()
+      .from(users)
+      .expression(users["name"])
+      .where(users["age"] >= 18)
+      .order_by(users["name"], "asc")
+  ```
+
+  - Automatic identifier quoting (backticks for MySQL, double quotes for PostgreSQL/SQLite)
+  - Dialect-aware primitives: `date_format()` translates to `strftime()`/`TO_CHAR()`/`DATE_FORMAT()`
+  - New `group_concat()` primitive with DISTINCT support (maps to `GROUP_CONCAT`/`STRING_AGG`)
+  - Comparison operators (`==`, `!=`, `<`, `>`, `<=`, `>=`) work across all backends
+  - Test runner with `--fix` mode for generating SQL snapshots
+
+- **GroupConcat Primitive**: Cross-database string aggregation with optional DISTINCT. Renders as:
+  - SQLite/MySQL: `GROUP_CONCAT(DISTINCT expr, ',')`
+  - PostgreSQL: `STRING_AGG(DISTINCT expr, ',')`
+
+### Internal Changes
+
+- Added `SelectBuilder` and `JoinBuilder` traits for database-specific select/join operations
+- Refactored select builder methods into dedicated module (`src/rhai_engine/select_methods.rs`)
+- Implemented comparison operators module (`src/rhai_engine/operators.rs`)
+- New test infrastructure: `examples/rhai_test.rs` runner with snapshot testing support
+- Added `tests/rhai-tests/` directory with `.rhai` query files and `.sql`/`.err` snapshots for all
+  three backends
+
 ## 0.5.5 — 2026-05-31
 
 - Contained relations on SQLite, PostgreSQL, and MySQL: embedded collections stored as JSON columns
   surface as editable sub-Vistas, with eager writeback patching the host column. Postgres and MySQL
   share the SQLite path verbatim. Also lowers a YAML `contained:` section in `table_from_spec`. See
-  the [contained relations guide](https://romaninsh.github.io/vantage/new-persistence/step9-contained-relations.html).
+  the
+  [contained relations guide](https://romaninsh.github.io/vantage/new-persistence/step9-contained-relations.html).
 
 ## 0.5.4 — 2026-05-30
 

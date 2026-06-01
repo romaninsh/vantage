@@ -2,6 +2,7 @@ use vantage_expressions::{Expression, Expressive, ExpressiveEnum, expr_any};
 
 use crate::postgres::types::AnyPostgresType;
 use crate::primitives::identifier::ident;
+use crate::primitives::select::{JoinBuilder, SelectBuilder};
 
 type Expr = Expression<AnyPostgresType>;
 
@@ -139,7 +140,6 @@ impl PostgresSelectJoin {
     }
 
     /// PostgreSQL-specific: `CROSS JOIN LATERAL expr` (no wrapping parens).
-    /// Useful for set-returning functions like `UNNEST(...) WITH ORDINALITY AS alias(col, col)`.
     pub fn cross_lateral_raw(table_expr: impl Expressive<AnyPostgresType>) -> Self {
         Self::new(
             PostgresJoinType::CrossLateral,
@@ -150,13 +150,10 @@ impl PostgresSelectJoin {
 
     pub fn render(&self) -> Expr {
         match self.join_type {
-            PostgresJoinType::CrossLateral => {
-                // CROSS JOIN LATERAL has no ON clause
-                Expression::new(
-                    format!(" {} {{}}", self.join_type.as_str()),
-                    vec![ExpressiveEnum::Nested(self.table.clone())],
-                )
-            }
+            PostgresJoinType::CrossLateral => Expression::new(
+                format!(" {} {{}}", self.join_type.as_str()),
+                vec![ExpressiveEnum::Nested(self.table.clone())],
+            ),
             _ => Expression::new(
                 format!(" {} {{}} ON {{}}", self.join_type.as_str()),
                 vec![
@@ -165,5 +162,31 @@ impl PostgresSelectJoin {
                 ],
             ),
         }
+    }
+}
+
+impl SelectBuilder<AnyPostgresType> for super::PostgresSelect {
+    type Join = PostgresSelectJoin;
+
+    fn push_join(&mut self, join: PostgresSelectJoin) {
+        self.joins.push(join);
+    }
+
+    fn push_having(&mut self, cond: Expr) {
+        self.having.push(cond);
+    }
+
+    fn push_cte(&mut self, name: String, query: Expr, recursive: bool) {
+        self.ctes.push((name, query, recursive));
+    }
+}
+
+impl JoinBuilder<AnyPostgresType> for PostgresSelectJoin {
+    fn make_inner(table: &str, alias: &str, on: Expr) -> Self {
+        Self::inner(table, alias, on)
+    }
+
+    fn make_left(table: &str, alias: &str, on: Expr) -> Self {
+        Self::left(table, alias, on)
     }
 }

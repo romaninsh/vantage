@@ -1,6 +1,6 @@
 [package]
 name = "vantage-sql"
-version = "0.5.5"
+version = "0.5.6"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -15,6 +15,7 @@ sqlite = ["sqlx/sqlite"]
 postgres = ["sqlx/postgres"]
 mysql = ["sqlx/mysql"]
 vista = ["dep:vantage-vista"]
+rhai = ["dep:rhai"]
 
 [dependencies]
 vantage-core = { version = "0.5", path = "../vantage-core" }
@@ -36,8 +37,15 @@ ciborium = "0.2"
 hex = "0.4"
 indexmap = { version = "2.14.0", features = ["serde"] }
 tokio = { version = "1", features = ["full"] }
+rhai = { version = "1.25", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 serde_yaml_ng = "0.10"
 vantage-vista = { version = "0.5", path = "../vantage-vista" }
+sqlformat = "0.3"
+
+[[example]]
+name = "rhai_test"
+path = "examples/rhai_test.rs"
+required-features = ["rhai"]

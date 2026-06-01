@@ -1,6 +1,7 @@
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum, expr_any};
 
 use crate::primitives::identifier::ident;
+use crate::primitives::select::{JoinBuilder, SelectBuilder};
 use crate::sqlite::types::AnySqliteType;
 
 type Expr = Expression<AnySqliteType>;
@@ -107,5 +108,31 @@ impl SqliteSelectJoin {
                 ExpressiveEnum::Nested(self.on_condition.clone()),
             ],
         )
+    }
+}
+
+impl SelectBuilder<AnySqliteType> for super::SqliteSelect {
+    type Join = SqliteSelectJoin;
+
+    fn push_join(&mut self, join: SqliteSelectJoin) {
+        self.joins.push(join);
+    }
+
+    fn push_having(&mut self, cond: Expr) {
+        self.having.push(cond);
+    }
+
+    fn push_cte(&mut self, name: String, query: Expr, recursive: bool) {
+        self.ctes.push((name, query, recursive));
+    }
+}
+
+impl JoinBuilder<AnySqliteType> for SqliteSelectJoin {
+    fn make_inner(table: &str, alias: &str, on: Expr) -> Self {
+        Self::inner(table, alias, on)
+    }
+
+    fn make_left(table: &str, alias: &str, on: Expr) -> Self {
+        Self::left(table, alias, on)
     }
 }

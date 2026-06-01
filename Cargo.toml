@@ -22,7 +22,12 @@ members = [
     "docs4",
 ]
 exclude = [
+    "learn-ds",
+    "learn-qw",
+    "learn-qw7",
     "vantage-aws",
+    "vantage-aggregate",
+    "vantage-aggregate-qw",
     "example_*",
     "vantage-ui-adapters",
     "test-api-server",

@@ -105,10 +105,12 @@ fn prepare_typed_query(expr: &Expression<AnySqliteType>) -> (String, Vec<AnySqli
                 params.push(value.clone());
             }
             ExpressiveEnum::Nested(_) => {
-                panic!("nested expression should have been flattened");
+                unreachable!(
+                    "nested expression should have been flattened during query preparation"
+                );
             }
             ExpressiveEnum::Deferred(_) => {
-                panic!("deferred expression should have been resolved before prepare");
+                unreachable!("deferred expression should have been resolved before prepare");
             }
         }
 
