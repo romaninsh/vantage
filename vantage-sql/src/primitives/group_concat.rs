@@ -62,7 +62,10 @@ impl Expressive<crate::mysql::types::AnyMysqlType>
 {
     fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
         let distinct_kw = if self.distinct { "DISTINCT " } else { "" };
-        let template = format!("GROUP_CONCAT({}{{}} SEPARATOR '{}')", distinct_kw, self.separator);
+        let template = format!(
+            "GROUP_CONCAT({}{{}} SEPARATOR '{}')",
+            distinct_kw, self.separator
+        );
         Expression::new(&template, vec![ExpressiveEnum::Nested(self.expr.clone())])
     }
 }

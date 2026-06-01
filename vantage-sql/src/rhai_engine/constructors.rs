@@ -3,17 +3,20 @@
 //! All helpers are generic over the value type V, monomorphised by the
 //! macro at the call site.
 
-use std::fmt::{Debug, Display};
-use rhai::Array;
-use vantage_expressions::{Expressive, ExpressiveEnum, Expression};
-use crate::primitives::identifier::{ident as make_ident, Identifier};
 use crate::primitives::fx::Fx;
+use crate::primitives::identifier::{Identifier, ident as make_ident};
+use rhai::Array;
+use std::fmt::{Debug, Display};
+use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
 use super::{RhaiExpr, RhaiIdent};
 
 /// Extract Expression<V> from a Dynamic that is either RhaiExpr or RhaiIdent.
-fn unwrap_expr<V: Clone + 'static>(val: rhai::Dynamic) -> Result<Expression<V>, Box<rhai::EvalAltResult>>
-where Identifier: Expressive<V>,
+fn unwrap_expr<V: Clone + 'static>(
+    val: rhai::Dynamic,
+) -> Result<Expression<V>, Box<rhai::EvalAltResult>>
+where
+    Identifier: Expressive<V>,
 {
     if let Some(e) = val.clone().try_cast::<RhaiExpr<V>>() {
         Ok(e.0)
@@ -21,7 +24,8 @@ where Identifier: Expressive<V>,
         Ok(Expressive::<V>::expr(&i.0))
     } else {
         Err(super::convert::rhai_err(format!(
-            "expected Expr or Ident, got '{}'", val.type_name()
+            "expected Expr or Ident, got '{}'",
+            val.type_name()
         )))
     }
 }
@@ -37,12 +41,16 @@ pub fn ident_dot_of(id: Identifier, prefix: &str) -> Identifier {
 }
 
 pub fn ident_as_alias<V: Clone>(id: Identifier, alias: &str) -> Expression<V>
-where Identifier: Expressive<V>,
+where
+    Identifier: Expressive<V>,
 {
-    Expression::new("{} AS {}", vec![
-        ExpressiveEnum::Nested(Expressive::<V>::expr(&id)),
-        ExpressiveEnum::Nested(Expressive::<V>::expr(&Identifier::new(alias))),
-    ])
+    Expression::new(
+        "{} AS {}",
+        vec![
+            ExpressiveEnum::Nested(Expressive::<V>::expr(&id)),
+            ExpressiveEnum::Nested(Expressive::<V>::expr(&Identifier::new(alias))),
+        ],
+    )
 }
 
 pub fn ident_index(id: Identifier, col: &str) -> Identifier {
@@ -51,12 +59,16 @@ pub fn ident_index(id: Identifier, col: &str) -> Identifier {
 }
 
 pub fn expr_as_alias<V: Clone>(e: Expression<V>, alias: &str) -> Expression<V>
-where Identifier: Expressive<V>,
+where
+    Identifier: Expressive<V>,
 {
-    Expression::new("{} AS {}", vec![
-        ExpressiveEnum::Nested(e),
-        ExpressiveEnum::Nested(Expressive::<V>::expr(&Identifier::new(alias))),
-    ])
+    Expression::new(
+        "{} AS {}",
+        vec![
+            ExpressiveEnum::Nested(e),
+            ExpressiveEnum::Nested(Expressive::<V>::expr(&Identifier::new(alias))),
+        ],
+    )
 }
 
 // ── Expr constructors ──────────────────────────────────────────────────
@@ -87,7 +99,8 @@ where
                 Ok(ExpressiveEnum::Scalar(V::from(v.to_string())))
             } else {
                 Err(super::convert::rhai_err(format!(
-                    "expr: unsupported param type '{}'", a.type_name()
+                    "expr: unsupported param type '{}'",
+                    a.type_name()
                 )))
             }
         })
@@ -97,8 +110,12 @@ where
 
 // ── SQL function call ──────────────────────────────────────────────────
 
-pub fn make_fx<V: Clone + Debug + Display + 'static>(name: &str, args: Array) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
-where Identifier: Expressive<V>,
+pub fn make_fx<V: Clone + Debug + Display + 'static>(
+    name: &str,
+    args: Array,
+) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
+where
+    Identifier: Expressive<V>,
 {
     let exprs: Result<Vec<Expression<V>>, _> = args
         .into_iter()
@@ -109,7 +126,8 @@ where Identifier: Expressive<V>,
                 Ok(Expressive::<V>::expr(&i.0))
             } else {
                 Err(super::convert::rhai_err(format!(
-                    "fx: expected Expr or Ident, got '{}'", a.type_name()
+                    "fx: expected Expr or Ident, got '{}'",
+                    a.type_name()
                 )))
             }
         })
@@ -119,20 +137,33 @@ where Identifier: Expressive<V>,
 
 // ── Aggregates ─────────────────────────────────────────────────────────
 
-pub fn fn_sum<V: Clone + Debug + Display + 'static>(arg: rhai::Dynamic) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
-where Identifier: Expressive<V>,
+pub fn fn_sum<V: Clone + Debug + Display + 'static>(
+    arg: rhai::Dynamic,
+) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
+where
+    Identifier: Expressive<V>,
 {
-    Ok(RhaiExpr(Fx::new("SUM", vec![unwrap_expr::<V>(arg)?]).expr()))
+    Ok(RhaiExpr(
+        Fx::new("SUM", vec![unwrap_expr::<V>(arg)?]).expr(),
+    ))
 }
 
-pub fn fn_count<V: Clone + Debug + Display + 'static>(arg: rhai::Dynamic) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
-where Identifier: Expressive<V>,
+pub fn fn_count<V: Clone + Debug + Display + 'static>(
+    arg: rhai::Dynamic,
+) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
+where
+    Identifier: Expressive<V>,
 {
-    Ok(RhaiExpr(Fx::new("COUNT", vec![unwrap_expr::<V>(arg)?]).expr()))
+    Ok(RhaiExpr(
+        Fx::new("COUNT", vec![unwrap_expr::<V>(arg)?]).expr(),
+    ))
 }
 
-pub fn fn_count_distinct<V: Clone + Debug + Display + 'static>(arg: rhai::Dynamic) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
-where Identifier: Expressive<V>,
+pub fn fn_count_distinct<V: Clone + Debug + Display + 'static>(
+    arg: rhai::Dynamic,
+) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
+where
+    Identifier: Expressive<V>,
 {
     Ok(RhaiExpr(Expression::new(
         "COUNT(DISTINCT {})",
@@ -140,40 +171,71 @@ where Identifier: Expressive<V>,
     )))
 }
 
-pub fn fn_avg<V: Clone + Debug + Display + 'static>(arg: rhai::Dynamic) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
-where Identifier: Expressive<V>,
+pub fn fn_avg<V: Clone + Debug + Display + 'static>(
+    arg: rhai::Dynamic,
+) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
+where
+    Identifier: Expressive<V>,
 {
-    Ok(RhaiExpr(Fx::new("AVG", vec![unwrap_expr::<V>(arg)?]).expr()))
+    Ok(RhaiExpr(
+        Fx::new("AVG", vec![unwrap_expr::<V>(arg)?]).expr(),
+    ))
 }
 
-pub fn fn_min<V: Clone + Debug + Display + 'static>(arg: rhai::Dynamic) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
-where Identifier: Expressive<V>,
+pub fn fn_min<V: Clone + Debug + Display + 'static>(
+    arg: rhai::Dynamic,
+) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
+where
+    Identifier: Expressive<V>,
 {
-    Ok(RhaiExpr(Fx::new("MIN", vec![unwrap_expr::<V>(arg)?]).expr()))
+    Ok(RhaiExpr(
+        Fx::new("MIN", vec![unwrap_expr::<V>(arg)?]).expr(),
+    ))
 }
 
-pub fn fn_max<V: Clone + Debug + Display + 'static>(arg: rhai::Dynamic) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
-where Identifier: Expressive<V>,
+pub fn fn_max<V: Clone + Debug + Display + 'static>(
+    arg: rhai::Dynamic,
+) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
+where
+    Identifier: Expressive<V>,
 {
-    Ok(RhaiExpr(Fx::new("MAX", vec![unwrap_expr::<V>(arg)?]).expr()))
+    Ok(RhaiExpr(
+        Fx::new("MAX", vec![unwrap_expr::<V>(arg)?]).expr(),
+    ))
 }
 
 // ── SQL functions ──────────────────────────────────────────────────────
 
-pub fn fn_coalesce<V: Clone + Debug + Display + 'static>(a: rhai::Dynamic, b: rhai::Dynamic) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
-where Identifier: Expressive<V>,
+pub fn fn_coalesce<V: Clone + Debug + Display + 'static>(
+    a: rhai::Dynamic,
+    b: rhai::Dynamic,
+) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
+where
+    Identifier: Expressive<V>,
 {
-    Ok(RhaiExpr(Fx::new("COALESCE", vec![unwrap_expr::<V>(a)?, unwrap_expr::<V>(b)?]).expr()))
+    Ok(RhaiExpr(
+        Fx::new("COALESCE", vec![unwrap_expr::<V>(a)?, unwrap_expr::<V>(b)?]).expr(),
+    ))
 }
 
-pub fn fn_nullif<V: Clone + Debug + Display + 'static>(a: rhai::Dynamic, b: rhai::Dynamic) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
-where Identifier: Expressive<V>,
+pub fn fn_nullif<V: Clone + Debug + Display + 'static>(
+    a: rhai::Dynamic,
+    b: rhai::Dynamic,
+) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
+where
+    Identifier: Expressive<V>,
 {
-    Ok(RhaiExpr(Fx::new("NULLIF", vec![unwrap_expr::<V>(a)?, unwrap_expr::<V>(b)?]).expr()))
+    Ok(RhaiExpr(
+        Fx::new("NULLIF", vec![unwrap_expr::<V>(a)?, unwrap_expr::<V>(b)?]).expr(),
+    ))
 }
 
-pub fn fn_cast<V: Clone + Debug + Display + 'static>(e: rhai::Dynamic, sql_type: &str) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
-where Identifier: Expressive<V>,
+pub fn fn_cast<V: Clone + Debug + Display + 'static>(
+    e: rhai::Dynamic,
+    sql_type: &str,
+) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
+where
+    Identifier: Expressive<V>,
 {
     Ok(RhaiExpr(Expression::new(
         &format!("CAST({{}} AS {sql_type})"),
@@ -181,20 +243,32 @@ where Identifier: Expressive<V>,
     )))
 }
 
-pub fn fn_round<V>(value: rhai::Dynamic, decimals: i64) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
+pub fn fn_round<V>(
+    value: rhai::Dynamic,
+    decimals: i64,
+) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
 where
     V: Clone + Debug + Display + From<i64> + 'static,
     Identifier: Expressive<V>,
 {
-    Ok(RhaiExpr(Fx::new("ROUND", vec![
-        unwrap_expr::<V>(value)?,
-        Expression::new("{}", vec![ExpressiveEnum::Scalar(V::from(decimals))]),
-    ]).expr()))
+    Ok(RhaiExpr(
+        Fx::new(
+            "ROUND",
+            vec![
+                unwrap_expr::<V>(value)?,
+                Expression::new("{}", vec![ExpressiveEnum::Scalar(V::from(decimals))]),
+            ],
+        )
+        .expr(),
+    ))
 }
 
 // ── Date/Time functions ──────────────────────────────────────────────
 
-pub fn fn_date_format<V>(expr: rhai::Dynamic, format: &str) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
+pub fn fn_date_format<V>(
+    expr: rhai::Dynamic,
+    format: &str,
+) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
 where
     V: Clone + Debug + Display + 'static,
     Identifier: Expressive<V>,
@@ -205,7 +279,10 @@ where
     Ok(RhaiExpr(DateFormat::new(inner, format).expr()))
 }
 
-pub fn fn_group_concat<V>(expr: rhai::Dynamic, distinct: bool) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
+pub fn fn_group_concat<V>(
+    expr: rhai::Dynamic,
+    distinct: bool,
+) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
 where
     V: Clone + Debug + Display + 'static,
     Identifier: Expressive<V>,
@@ -222,40 +299,68 @@ where
 
 // ── Arithmetic ─────────────────────────────────────────────────────────
 
-pub fn fn_mul<V: Clone + Debug + Display + 'static>(a: rhai::Dynamic, b: rhai::Dynamic) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
-where Identifier: Expressive<V>,
+pub fn fn_mul<V: Clone + Debug + Display + 'static>(
+    a: rhai::Dynamic,
+    b: rhai::Dynamic,
+) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
+where
+    Identifier: Expressive<V>,
 {
-    Ok(RhaiExpr(Expression::new("({} * {})", vec![
-        ExpressiveEnum::Nested(unwrap_expr::<V>(a)?),
-        ExpressiveEnum::Nested(unwrap_expr::<V>(b)?),
-    ])))
+    Ok(RhaiExpr(Expression::new(
+        "({} * {})",
+        vec![
+            ExpressiveEnum::Nested(unwrap_expr::<V>(a)?),
+            ExpressiveEnum::Nested(unwrap_expr::<V>(b)?),
+        ],
+    )))
 }
 
-pub fn fn_add<V: Clone + Debug + Display + 'static>(a: rhai::Dynamic, b: rhai::Dynamic) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
-where Identifier: Expressive<V>,
+pub fn fn_add<V: Clone + Debug + Display + 'static>(
+    a: rhai::Dynamic,
+    b: rhai::Dynamic,
+) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
+where
+    Identifier: Expressive<V>,
 {
-    Ok(RhaiExpr(Expression::new("({} + {})", vec![
-        ExpressiveEnum::Nested(unwrap_expr::<V>(a)?),
-        ExpressiveEnum::Nested(unwrap_expr::<V>(b)?),
-    ])))
+    Ok(RhaiExpr(Expression::new(
+        "({} + {})",
+        vec![
+            ExpressiveEnum::Nested(unwrap_expr::<V>(a)?),
+            ExpressiveEnum::Nested(unwrap_expr::<V>(b)?),
+        ],
+    )))
 }
 
-pub fn fn_sub<V: Clone + Debug + Display + 'static>(a: rhai::Dynamic, b: rhai::Dynamic) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
-where Identifier: Expressive<V>,
+pub fn fn_sub<V: Clone + Debug + Display + 'static>(
+    a: rhai::Dynamic,
+    b: rhai::Dynamic,
+) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
+where
+    Identifier: Expressive<V>,
 {
-    Ok(RhaiExpr(Expression::new("({} - {})", vec![
-        ExpressiveEnum::Nested(unwrap_expr::<V>(a)?),
-        ExpressiveEnum::Nested(unwrap_expr::<V>(b)?),
-    ])))
+    Ok(RhaiExpr(Expression::new(
+        "({} - {})",
+        vec![
+            ExpressiveEnum::Nested(unwrap_expr::<V>(a)?),
+            ExpressiveEnum::Nested(unwrap_expr::<V>(b)?),
+        ],
+    )))
 }
 
-pub fn fn_div<V: Clone + Debug + Display + 'static>(a: rhai::Dynamic, b: rhai::Dynamic) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
-where Identifier: Expressive<V>,
+pub fn fn_div<V: Clone + Debug + Display + 'static>(
+    a: rhai::Dynamic,
+    b: rhai::Dynamic,
+) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
+where
+    Identifier: Expressive<V>,
 {
-    Ok(RhaiExpr(Expression::new("({} / {})", vec![
-        ExpressiveEnum::Nested(unwrap_expr::<V>(a)?),
-        ExpressiveEnum::Nested(unwrap_expr::<V>(b)?),
-    ])))
+    Ok(RhaiExpr(Expression::new(
+        "({} / {})",
+        vec![
+            ExpressiveEnum::Nested(unwrap_expr::<V>(a)?),
+            ExpressiveEnum::Nested(unwrap_expr::<V>(b)?),
+        ],
+    )))
 }
 
 // ── Macro ──────────────────────────────────────────────────────────────

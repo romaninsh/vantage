@@ -3,9 +3,9 @@
 //! All operators accept Dynamic args and auto-convert
 //! RhaiExpr, RhaiIdent, or scalar values.
 
-use rhai::Dynamic;
-use vantage_expressions::{Expressive, ExpressiveEnum, Expression};
 use crate::primitives::identifier::Identifier;
+use rhai::Dynamic;
+use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
 use super::{RhaiExpr, RhaiIdent};
 
@@ -21,28 +21,40 @@ where
     } else if let Some(i) = val.clone().try_cast::<RhaiIdent>() {
         Ok(i.0.expr())
     } else if let Some(v) = val.clone().try_cast::<i64>() {
-        Ok(Expression::new("{}", vec![ExpressiveEnum::Scalar(V::from(v))]))
+        Ok(Expression::new(
+            "{}",
+            vec![ExpressiveEnum::Scalar(V::from(v))],
+        ))
     } else if let Some(v) = val.clone().try_cast::<f64>() {
-        Ok(Expression::new("{}", vec![ExpressiveEnum::Scalar(V::from(v))]))
+        Ok(Expression::new(
+            "{}",
+            vec![ExpressiveEnum::Scalar(V::from(v))],
+        ))
     } else if let Some(v) = val.clone().try_cast::<bool>() {
-        Ok(Expression::new("{}", vec![ExpressiveEnum::Scalar(V::from(v))]))
+        Ok(Expression::new(
+            "{}",
+            vec![ExpressiveEnum::Scalar(V::from(v))],
+        ))
     } else if let Some(v) = val.clone().try_cast::<rhai::ImmutableString>() {
-        Ok(Expression::new("{}", vec![ExpressiveEnum::Scalar(V::from(v.to_string()))]))
+        Ok(Expression::new(
+            "{}",
+            vec![ExpressiveEnum::Scalar(V::from(v.to_string()))],
+        ))
     } else if let Some(v) = val.clone().try_cast::<String>() {
-        Ok(Expression::new("{}", vec![ExpressiveEnum::Scalar(V::from(v))]))
+        Ok(Expression::new(
+            "{}",
+            vec![ExpressiveEnum::Scalar(V::from(v))],
+        ))
     } else {
         Err(super::convert::rhai_err(format!(
-            "operator: unsupported type '{}'", val.type_name()
+            "operator: unsupported type '{}'",
+            val.type_name()
         )))
     }
 }
 
 /// Build a binary comparison expression.
-pub fn cmp_binary<V: Clone>(
-    op: &str,
-    a: Expression<V>,
-    b: Expression<V>,
-) -> RhaiExpr<V> {
+pub fn cmp_binary<V: Clone>(op: &str, a: Expression<V>, b: Expression<V>) -> RhaiExpr<V> {
     RhaiExpr(Expression::new(
         &format!("{{}} {} {{}}", op),
         vec![ExpressiveEnum::Nested(a), ExpressiveEnum::Nested(b)],
@@ -61,9 +73,10 @@ macro_rules! register_operators {
 
         macro_rules! reg_op {
             ($rhai_op:expr, $sql_op:expr, $name:ident) => {
-                fn $name(a: rhai::Dynamic, b: rhai::Dynamic)
-                    -> Result<$crate::rhai_engine::RhaiExpr<$V>, Box<rhai::EvalAltResult>>
-                {
+                fn $name(
+                    a: rhai::Dynamic,
+                    b: rhai::Dynamic,
+                ) -> Result<$crate::rhai_engine::RhaiExpr<$V>, Box<rhai::EvalAltResult>> {
                     let la = $crate::rhai_engine::operators::to_expr::<$V>(a)?;
                     let rb = $crate::rhai_engine::operators::to_expr::<$V>(b)?;
                     Ok($crate::rhai_engine::operators::cmp_binary($sql_op, la, rb))
@@ -72,11 +85,11 @@ macro_rules! register_operators {
             };
         }
 
-        reg_op!("==", "=",   cmp_eq);
-        reg_op!("!=", "!=",  cmp_ne);
-        reg_op!("<",  "<",   cmp_lt);
-        reg_op!(">",  ">",   cmp_gt);
-        reg_op!("<=", "<=",  cmp_le);
-        reg_op!(">=", ">=",  cmp_ge);
+        reg_op!("==", "=", cmp_eq);
+        reg_op!("!=", "!=", cmp_ne);
+        reg_op!("<", "<", cmp_lt);
+        reg_op!(">", ">", cmp_gt);
+        reg_op!("<=", "<=", cmp_le);
+        reg_op!(">=", ">=", cmp_ge);
     }};
 }

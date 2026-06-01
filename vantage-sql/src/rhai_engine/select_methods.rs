@@ -2,9 +2,9 @@
 //!
 //! Generic helper functions + the `register_select!` macro.
 
-use vantage_expressions::{Expressive, Expression, Selectable};
-use crate::primitives::select::{SelectBuilder, JoinBuilder};
 use crate::primitives::identifier::Identifier;
+use crate::primitives::select::{JoinBuilder, SelectBuilder};
+use vantage_expressions::{Expression, Expressive, Selectable};
 
 use super::{RhaiExpr, RhaiIdent, RhaiSelect};
 
@@ -14,7 +14,10 @@ pub fn select_new<V, S: Default, J, C>() -> RhaiSelect<V, S, J, C> {
     RhaiSelect::new(S::default())
 }
 
-pub fn select_from_str<V, S, J, C>(mut s: RhaiSelect<V, S, J, C>, name: &str) -> RhaiSelect<V, S, J, C>
+pub fn select_from_str<V, S, J, C>(
+    mut s: RhaiSelect<V, S, J, C>,
+    name: &str,
+) -> RhaiSelect<V, S, J, C>
 where
     S: Selectable<V, C>,
     V: From<String>,
@@ -220,26 +223,77 @@ where
 #[macro_export]
 macro_rules! register_select {
     ($engine:expr, value: $V:ty, select: $Select:ty, join: $Join:ty, cond: $Cond:ty) => {{
-        $engine.register_fn("select", $crate::rhai_engine::select_methods::select_new::<$V, $Select, $Join, $Cond>);
+        $engine.register_fn(
+            "select",
+            $crate::rhai_engine::select_methods::select_new::<$V, $Select, $Join, $Cond>,
+        );
 
-        $engine.register_fn("from", $crate::rhai_engine::select_methods::select_from_str::<$V, $Select, $Join, $Cond>);
-        $engine.register_fn("from", $crate::rhai_engine::select_methods::select_from_id::<$V, $Select, $Join, $Cond>);
-        $engine.register_fn("from_as", $crate::rhai_engine::select_methods::select_from_str_as::<$V, $Select, $Join, $Cond>);
+        $engine.register_fn(
+            "from",
+            $crate::rhai_engine::select_methods::select_from_str::<$V, $Select, $Join, $Cond>,
+        );
+        $engine.register_fn(
+            "from",
+            $crate::rhai_engine::select_methods::select_from_id::<$V, $Select, $Join, $Cond>,
+        );
+        $engine.register_fn(
+            "from_as",
+            $crate::rhai_engine::select_methods::select_from_str_as::<$V, $Select, $Join, $Cond>,
+        );
 
-        $engine.register_fn("field", $crate::rhai_engine::select_methods::select_field::<$V, $Select, $Join, $Cond>);
-        $engine.register_fn("expression", $crate::rhai_engine::select_methods::select_expression::<$V, $Select, $Join, $Cond>);
-        $engine.register_fn("expression", $crate::rhai_engine::select_methods::select_expression_id::<$V, $Select, $Join, $Cond>);
-        $engine.register_fn("where", $crate::rhai_engine::select_methods::select_where::<$V, $Select, $Join, $Cond>);
-        $engine.register_fn("group_by", $crate::rhai_engine::select_methods::select_group_by::<$V, $Select, $Join, $Cond>);
-        $engine.register_fn("group_by", $crate::rhai_engine::select_methods::select_group_by_id::<$V, $Select, $Join, $Cond>);
-        $engine.register_fn("order_by", $crate::rhai_engine::select_methods::select_order_by::<$V, $Select, $Join, $Cond>);
-        $engine.register_fn("order_by", $crate::rhai_engine::select_methods::select_order_by_id::<$V, $Select, $Join, $Cond>);
+        $engine.register_fn(
+            "field",
+            $crate::rhai_engine::select_methods::select_field::<$V, $Select, $Join, $Cond>,
+        );
+        $engine.register_fn(
+            "expression",
+            $crate::rhai_engine::select_methods::select_expression::<$V, $Select, $Join, $Cond>,
+        );
+        $engine.register_fn(
+            "expression",
+            $crate::rhai_engine::select_methods::select_expression_id::<$V, $Select, $Join, $Cond>,
+        );
+        $engine.register_fn(
+            "where",
+            $crate::rhai_engine::select_methods::select_where::<$V, $Select, $Join, $Cond>,
+        );
+        $engine.register_fn(
+            "group_by",
+            $crate::rhai_engine::select_methods::select_group_by::<$V, $Select, $Join, $Cond>,
+        );
+        $engine.register_fn(
+            "group_by",
+            $crate::rhai_engine::select_methods::select_group_by_id::<$V, $Select, $Join, $Cond>,
+        );
+        $engine.register_fn(
+            "order_by",
+            $crate::rhai_engine::select_methods::select_order_by::<$V, $Select, $Join, $Cond>,
+        );
+        $engine.register_fn(
+            "order_by",
+            $crate::rhai_engine::select_methods::select_order_by_id::<$V, $Select, $Join, $Cond>,
+        );
 
-        $engine.register_fn("having", $crate::rhai_engine::select_methods::select_having::<$V, $Select, $Join, $Cond>);
-        $engine.register_fn("distinct", $crate::rhai_engine::select_methods::select_distinct::<$V, $Select, $Join, $Cond>);
-        $engine.register_fn("limit", $crate::rhai_engine::select_methods::select_limit::<$V, $Select, $Join, $Cond>);
+        $engine.register_fn(
+            "having",
+            $crate::rhai_engine::select_methods::select_having::<$V, $Select, $Join, $Cond>,
+        );
+        $engine.register_fn(
+            "distinct",
+            $crate::rhai_engine::select_methods::select_distinct::<$V, $Select, $Join, $Cond>,
+        );
+        $engine.register_fn(
+            "limit",
+            $crate::rhai_engine::select_methods::select_limit::<$V, $Select, $Join, $Cond>,
+        );
 
-        $engine.register_fn("inner_join", $crate::rhai_engine::select_methods::select_inner_join::<$V, $Select, $Join, $Cond>);
-        $engine.register_fn("left_join", $crate::rhai_engine::select_methods::select_left_join::<$V, $Select, $Join, $Cond>);
+        $engine.register_fn(
+            "inner_join",
+            $crate::rhai_engine::select_methods::select_inner_join::<$V, $Select, $Join, $Cond>,
+        );
+        $engine.register_fn(
+            "left_join",
+            $crate::rhai_engine::select_methods::select_left_join::<$V, $Select, $Join, $Cond>,
+        );
     }};
 }

@@ -4,11 +4,11 @@
 
 #[cfg(all(feature = "sqlite", feature = "rhai"))]
 mod sqlite_tests {
+    use vantage_sql::condition::SqliteCondition;
     use vantage_sql::rhai_engine::RhaiSelect;
     use vantage_sql::sqlite::AnySqliteType;
     use vantage_sql::sqlite::statements::SqliteSelect;
     use vantage_sql::sqlite::statements::select::join::SqliteSelectJoin;
-    use vantage_sql::condition::SqliteCondition;
 
     vantage_sql::register_engine!(
         value: AnySqliteType,
@@ -40,11 +40,11 @@ mod sqlite_tests {
 
 #[cfg(all(feature = "postgres", feature = "rhai"))]
 mod postgres_tests {
-    use vantage_sql::rhai_engine::RhaiSelect;
+    use vantage_sql::condition::PostgresCondition;
     use vantage_sql::postgres::AnyPostgresType;
     use vantage_sql::postgres::statements::PostgresSelect;
     use vantage_sql::postgres::statements::select::join::PostgresSelectJoin;
-    use vantage_sql::condition::PostgresCondition;
+    use vantage_sql::rhai_engine::RhaiSelect;
 
     vantage_sql::register_engine!(
         value: AnyPostgresType,
@@ -53,7 +53,8 @@ mod postgres_tests {
         cond: PostgresCondition,
     );
 
-    type Select = RhaiSelect<AnyPostgresType, PostgresSelect, PostgresSelectJoin, PostgresCondition>;
+    type Select =
+        RhaiSelect<AnyPostgresType, PostgresSelect, PostgresSelectJoin, PostgresCondition>;
 
     fn eval_rhai_file(path: &str) -> Select {
         let code = std::fs::read_to_string(path)
@@ -76,11 +77,11 @@ mod postgres_tests {
 
 #[cfg(all(feature = "mysql", feature = "rhai"))]
 mod mysql_tests {
-    use vantage_sql::rhai_engine::RhaiSelect;
+    use vantage_sql::condition::MysqlCondition;
     use vantage_sql::mysql::AnyMysqlType;
     use vantage_sql::mysql::statements::MysqlSelect;
     use vantage_sql::mysql::statements::select::join::MysqlSelectJoin;
-    use vantage_sql::condition::MysqlCondition;
+    use vantage_sql::rhai_engine::RhaiSelect;
 
     vantage_sql::register_engine!(
         value: AnyMysqlType,

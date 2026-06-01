@@ -1,10 +1,10 @@
 //! Generic wrapper types for the Rhai query-building DSL.
 
-use std::fmt::{self, Debug, Display};
-use vantage_expressions::Expression;
 use crate::primitives::case::Case;
 use crate::primitives::identifier::Identifier;
 use crate::primitives::select::window::Window;
+use std::fmt::{self, Debug, Display};
+use vantage_expressions::Expression;
 
 // ── RhaiIdent ──────────────────────────────────────────────────────────
 
@@ -22,7 +22,9 @@ impl RhaiIdent {
 pub struct RhaiExpr<V: Clone>(pub Expression<V>);
 
 impl<V: Clone> Clone for RhaiExpr<V> {
-    fn clone(&self) -> Self { Self(self.0.clone()) }
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
 }
 
 impl<V: Clone + Debug + Display> Debug for RhaiExpr<V> {
@@ -32,7 +34,9 @@ impl<V: Clone + Debug + Display> Debug for RhaiExpr<V> {
 }
 
 impl<V: Clone> RhaiExpr<V> {
-    pub fn into_inner(self) -> Expression<V> { self.0 }
+    pub fn into_inner(self) -> Expression<V> {
+        self.0
+    }
 }
 
 // ── RhaiSelect ─────────────────────────────────────────────────────────
@@ -44,21 +48,31 @@ pub struct RhaiSelect<V, S, J, C> {
 
 impl<V, S: Clone, J, C> Clone for RhaiSelect<V, S, J, C> {
     fn clone(&self) -> Self {
-        Self { inner: self.inner.clone(), _marker: std::marker::PhantomData }
+        Self {
+            inner: self.inner.clone(),
+            _marker: std::marker::PhantomData,
+        }
     }
 }
 
 impl<V, S: Debug, J, C> Debug for RhaiSelect<V, S, J, C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("RhaiSelect").field("inner", &self.inner).finish()
+        f.debug_struct("RhaiSelect")
+            .field("inner", &self.inner)
+            .finish()
     }
 }
 
 impl<V, S, J, C> RhaiSelect<V, S, J, C> {
     pub fn new(inner: S) -> Self {
-        Self { inner, _marker: std::marker::PhantomData }
+        Self {
+            inner,
+            _marker: std::marker::PhantomData,
+        }
     }
-    pub fn into_inner(self) -> S { self.inner }
+    pub fn into_inner(self) -> S {
+        self.inner
+    }
 }
 
 // ── RhaiWindow ─────────────────────────────────────────────────────────
@@ -66,7 +80,9 @@ impl<V, S, J, C> RhaiSelect<V, S, J, C> {
 pub struct RhaiWindow<V: Debug + Display + Clone>(pub Window<V>);
 
 impl<V: Debug + Display + Clone> Clone for RhaiWindow<V> {
-    fn clone(&self) -> Self { Self(self.0.clone()) }
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
 }
 
 impl<V: Debug + Display + Clone> Debug for RhaiWindow<V> {
@@ -80,7 +96,9 @@ impl<V: Debug + Display + Clone> Debug for RhaiWindow<V> {
 pub struct RhaiCase<V: Debug + Display + Clone>(pub Case<V>);
 
 impl<V: Debug + Display + Clone> Clone for RhaiCase<V> {
-    fn clone(&self) -> Self { Self(self.0.clone()) }
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
 }
 
 impl<V: Debug + Display + Clone> Debug for RhaiCase<V> {

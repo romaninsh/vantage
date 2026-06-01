@@ -24,11 +24,11 @@ fn format_sql(sql: &str) -> String {
 
 #[cfg(feature = "sqlite")]
 mod sqlite_engine {
+    use vantage_sql::condition::SqliteCondition;
     use vantage_sql::rhai_engine::RhaiSelect;
     use vantage_sql::sqlite::AnySqliteType;
     use vantage_sql::sqlite::statements::SqliteSelect;
     use vantage_sql::sqlite::statements::select::join::SqliteSelectJoin;
-    use vantage_sql::condition::SqliteCondition;
 
     vantage_sql::register_engine!(
         value: AnySqliteType,
@@ -46,11 +46,11 @@ mod sqlite_engine {
 
 #[cfg(feature = "postgres")]
 mod postgres_engine {
-    use vantage_sql::rhai_engine::RhaiSelect;
+    use vantage_sql::condition::PostgresCondition;
     use vantage_sql::postgres::AnyPostgresType;
     use vantage_sql::postgres::statements::PostgresSelect;
     use vantage_sql::postgres::statements::select::join::PostgresSelectJoin;
-    use vantage_sql::condition::PostgresCondition;
+    use vantage_sql::rhai_engine::RhaiSelect;
 
     vantage_sql::register_engine!(
         value: AnyPostgresType,
@@ -59,7 +59,8 @@ mod postgres_engine {
         cond: PostgresCondition,
     );
 
-    pub type Select = RhaiSelect<AnyPostgresType, PostgresSelect, PostgresSelectJoin, PostgresCondition>;
+    pub type Select =
+        RhaiSelect<AnyPostgresType, PostgresSelect, PostgresSelectJoin, PostgresCondition>;
 
     pub fn create() -> rhai::Engine {
         __create_engine()
@@ -68,11 +69,11 @@ mod postgres_engine {
 
 #[cfg(feature = "mysql")]
 mod mysql_engine {
-    use vantage_sql::rhai_engine::RhaiSelect;
+    use vantage_sql::condition::MysqlCondition;
     use vantage_sql::mysql::AnyMysqlType;
     use vantage_sql::mysql::statements::MysqlSelect;
     use vantage_sql::mysql::statements::select::join::MysqlSelectJoin;
-    use vantage_sql::condition::MysqlCondition;
+    use vantage_sql::rhai_engine::RhaiSelect;
 
     vantage_sql::register_engine!(
         value: AnyMysqlType,
@@ -121,16 +122,25 @@ fn main() {
         let code = fs::read_to_string(&path).expect("Failed to read .rhai");
 
         #[cfg(feature = "sqlite")]
-        run_test(&mut pass, &mut fail, "sqlite", name, &code, fix,
-            |e| sqlite_engine::create().eval::<sqlite_engine::Select>(e).map(|s| s.inner.preview()));
+        run_test(&mut pass, &mut fail, "sqlite", name, &code, fix, |e| {
+            sqlite_engine::create()
+                .eval::<sqlite_engine::Select>(e)
+                .map(|s| s.inner.preview())
+        });
 
         #[cfg(feature = "postgres")]
-        run_test(&mut pass, &mut fail, "postgres", name, &code, fix,
-            |e| postgres_engine::create().eval::<postgres_engine::Select>(e).map(|s| s.inner.preview()));
+        run_test(&mut pass, &mut fail, "postgres", name, &code, fix, |e| {
+            postgres_engine::create()
+                .eval::<postgres_engine::Select>(e)
+                .map(|s| s.inner.preview())
+        });
 
         #[cfg(feature = "mysql")]
-        run_test(&mut pass, &mut fail, "mysql", name, &code, fix,
-            |e| mysql_engine::create().eval::<mysql_engine::Select>(e).map(|s| s.inner.preview()));
+        run_test(&mut pass, &mut fail, "mysql", name, &code, fix, |e| {
+            mysql_engine::create()
+                .eval::<mysql_engine::Select>(e)
+                .map(|s| s.inner.preview())
+        });
     }
 
     println!("\n  {} passed, {} failed", pass, fail);
@@ -139,8 +149,15 @@ fn main() {
     }
 }
 
-fn run_test<F>(pass: &mut u32, fail: &mut u32, vendor: &str, name: &str, code: &str, fix: bool, eval: F)
-where
+fn run_test<F>(
+    pass: &mut u32,
+    fail: &mut u32,
+    vendor: &str,
+    name: &str,
+    code: &str,
+    fix: bool,
+    eval: F,
+) where
     F: Fn(&str) -> Result<String, Box<rhai::EvalAltResult>>,
 {
     let base = test_dir();
@@ -250,7 +267,12 @@ where
                 }
             }
             Ok(sql) => {
-                println!("  ❌ {} [{}] expected error, got SQL: {}", name, vendor, sql.trim());
+                println!(
+                    "  ❌ {} [{}] expected error, got SQL: {}",
+                    name,
+                    vendor,
+                    sql.trim()
+                );
                 *fail += 1;
             }
         }

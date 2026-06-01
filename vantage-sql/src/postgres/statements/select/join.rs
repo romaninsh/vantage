@@ -1,8 +1,8 @@
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum, expr_any};
 
+use crate::postgres::types::AnyPostgresType;
 use crate::primitives::identifier::ident;
 use crate::primitives::select::{JoinBuilder, SelectBuilder};
-use crate::postgres::types::AnyPostgresType;
 
 type Expr = Expression<AnyPostgresType>;
 
@@ -150,12 +150,10 @@ impl PostgresSelectJoin {
 
     pub fn render(&self) -> Expr {
         match self.join_type {
-            PostgresJoinType::CrossLateral => {
-                Expression::new(
-                    format!(" {} {{}}", self.join_type.as_str()),
-                    vec![ExpressiveEnum::Nested(self.table.clone())],
-                )
-            }
+            PostgresJoinType::CrossLateral => Expression::new(
+                format!(" {} {{}}", self.join_type.as_str()),
+                vec![ExpressiveEnum::Nested(self.table.clone())],
+            ),
             _ => Expression::new(
                 format!(" {} {{}} ON {{}}", self.join_type.as_str()),
                 vec![

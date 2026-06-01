@@ -2,7 +2,7 @@ use vantage_expressions::{Expression, Expressive, ExpressiveEnum, expr_any};
 
 use crate::mysql::types::AnyMysqlType;
 use crate::primitives::identifier::ident;
-use crate::primitives::select::{SelectBuilder, JoinBuilder};
+use crate::primitives::select::{JoinBuilder, SelectBuilder};
 
 type Expr = Expression<AnyMysqlType>;
 

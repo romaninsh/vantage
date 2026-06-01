@@ -118,7 +118,9 @@ fn prepare_typed_query(expr: &Expression<AnyMysqlType>) -> (String, Vec<AnyMysql
                 params.push(value.clone());
             }
             ExpressiveEnum::Nested(_) => {
-                unreachable!("nested expression should have been flattened during query preparation");
+                unreachable!(
+                    "nested expression should have been flattened during query preparation"
+                );
             }
             ExpressiveEnum::Deferred(_) => {
                 unreachable!("deferred expression should have been resolved before prepare");

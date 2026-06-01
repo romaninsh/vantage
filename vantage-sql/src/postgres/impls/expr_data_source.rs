@@ -123,7 +123,9 @@ fn prepare_typed_query(expr: &Expression<AnyPostgresType>) -> (String, Vec<AnyPo
                 params.push(value.clone());
             }
             ExpressiveEnum::Nested(_) => {
-                unreachable!("nested expression should have been flattened during query preparation");
+                unreachable!(
+                    "nested expression should have been flattened during query preparation"
+                );
             }
             ExpressiveEnum::Deferred(_) => {
                 unreachable!("deferred expression should have been resolved before prepare");
