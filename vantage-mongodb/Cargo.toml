@@ -1,6 +1,6 @@
 [package]
 name = "vantage-mongodb"
-version = "0.5.5"
+version = "0.5.6"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "MongoDB persistence backend for Vantage framework"

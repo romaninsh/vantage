@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.3 — 2026-06-02
+
+- Track `vantage-table`'s new `TableSource::Source` associated type (set to `String`; no
+  user-visible change).
+
 ## 0.5.2 — 2026-05-23
 
 - Align all internal dependency versions to 0.5+. No public API changes.

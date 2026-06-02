@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.6 — 2026-06-02
+
+- Tables can now be sourced from a sub-`SELECT` via `vantage-table`'s new `SelectSource`
+  (`type Source = SelectSource<SurrealSelect>`), rendering `FROM (<select>) AS <alias>`.
+
 ## 0.5.5 — 2026-06-02
 
 - Rhai scripting DSL for building SurrealDB queries. Self-contained `rhai_engine` module with
