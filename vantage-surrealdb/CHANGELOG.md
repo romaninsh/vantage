@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.5 — 2026-06-02
+
+- Rhai scripting DSL for building SurrealDB queries. Self-contained `rhai_engine` module with
+  wrapper types, constructors, comparison operators, and select builder methods. Supports basic
+  SELECT, SurrealDB-specific features (ONLY, VALUE, graph traversal via `arrow`/`back`), record IDs
+  (`thing`), `$parent` references, and SurrealDB-namespaced aggregates (`count`, `math::sum`,
+  `math::min`, `math::max`). Gated behind optional `rhai` feature flag. Includes golden file test
+  runner with 4 smoke tests.
+
 ## 0.5.4 — 2026-05-31
 
 - SurrealDB v2 seed defines order lifecycle status and cancellation fields.
