@@ -40,7 +40,27 @@ async fn invalidate_all(w: &mut DioramaWorld) {
 
 #[then(regex = r#"^the cache record "([^"]+)" has (\w+) "([^"]+)"$"#)]
 async fn cache_record_field(w: &mut DioramaWorld, id: String, field: String, expected: String) {
+    // Poll the cache for the expected value. The mirror on_write callback
+    // may still be draining spawn_blocking (redb) ops after drain_write_queue's
+    // virtual-time advances — bounded busy-poll with tiny advances gives the
+    // blocking pool real wall-clock time to catch up.
     let dio = w.dio.as_ref().expect("dio not created");
+    for _ in 0..200 {
+        if let Some(row) = dio.cache().get_value(&id).await.expect("cache get_value") {
+            let got = row
+                .get(&field)
+                .and_then(|v| match v {
+                    CborValue::Text(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .unwrap_or_default();
+            if got == expected {
+                return;
+            }
+        }
+        tokio::time::advance(std::time::Duration::from_micros(1)).await;
+    }
+    // Final attempt — fail with diagnostic if still not converged.
     let row = dio
         .cache()
         .get_value(&id)
@@ -62,7 +82,15 @@ async fn cache_record_field(w: &mut DioramaWorld, id: String, field: String, exp
 
 #[then(regex = r#"^the cache record "([^"]+)" is absent$"#)]
 async fn cache_record_absent(w: &mut DioramaWorld, id: String) {
+    // Poll for absence — same reasoning as cache_record_field.
     let dio = w.dio.as_ref().expect("dio not created");
+    for _ in 0..200 {
+        let row = dio.cache().get_value(&id).await.expect("cache get_value");
+        if row.is_none() {
+            return;
+        }
+        tokio::time::advance(std::time::Duration::from_micros(1)).await;
+    }
     let row = dio.cache().get_value(&id).await.expect("cache get_value");
     assert!(
         row.is_none(),
