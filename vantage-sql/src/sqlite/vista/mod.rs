@@ -10,6 +10,8 @@
 //! translation is a passthrough; ids stringify (matching `TableSource::Id`).
 
 pub mod factory;
+#[cfg(feature = "rhai")]
+pub mod rhai_source;
 pub mod source;
 pub mod spec;
 
