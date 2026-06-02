@@ -62,6 +62,18 @@ where
     s
 }
 
+/// Drop every field collected so far. In transform mode the seeded `base`
+/// carries all of the base vista's columns; aggregations call this first so the
+/// resulting `GROUP BY` is valid on strict backends (PostgreSQL, MySQL), which
+/// reject bare non-grouped columns that SQLite would silently tolerate.
+pub fn select_clear_fields<V, S, J, C>(mut s: RhaiSelect<V, S, J, C>) -> RhaiSelect<V, S, J, C>
+where
+    S: Selectable<V, C>,
+{
+    s.inner.clear_fields();
+    s
+}
+
 pub fn select_expression<V, S, J, C>(
     mut s: RhaiSelect<V, S, J, C>,
     expr: RhaiExpr<V>,
@@ -244,6 +256,10 @@ macro_rules! register_select {
         $engine.register_fn(
             "field",
             $crate::rhai_engine::select_methods::select_field::<$V, $Select, $Join, $Cond>,
+        );
+        $engine.register_fn(
+            "clear_fields",
+            $crate::rhai_engine::select_methods::select_clear_fields::<$V, $Select, $Join, $Cond>,
         );
         $engine.register_fn(
             "expression",

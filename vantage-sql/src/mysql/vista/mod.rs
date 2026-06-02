@@ -10,13 +10,16 @@
 //! translation is a passthrough; ids stringify (matching `TableSource::Id`).
 
 pub mod factory;
+#[cfg(feature = "rhai")]
+pub mod rhai_source;
 pub mod source;
 pub mod spec;
 
-pub use factory::MysqlVistaFactory;
+pub use factory::{MysqlSpecResolver, MysqlVistaFactory};
 pub use source::MysqlTableShell;
 pub use spec::{
-    MysqlColumnBlock, MysqlColumnExtras, MysqlTableBlock, MysqlTableExtras, MysqlVistaSpec,
+    InheritBlock, MysqlColumnBlock, MysqlColumnExtras, MysqlTableBlock, MysqlTableExtras,
+    MysqlVistaSpec,
 };
 
 use crate::mysql::MysqlDB;
