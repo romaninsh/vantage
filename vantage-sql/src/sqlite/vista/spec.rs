@@ -16,6 +16,11 @@ pub struct SqliteTableBlock {
     /// Override for the SQLite table name. Defaults to the spec name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub table: Option<String>,
+    /// A Rhai script that builds the SELECT used as this vista's source,
+    /// instead of a physical table. Produces a read-only vista. Requires the
+    /// `rhai` feature. Mutually exclusive with `table`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rhai: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

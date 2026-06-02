@@ -217,6 +217,44 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
     Ok(())
 }
 
+/// A vista whose source is a Rhai-built SELECT (not a physical table). The
+/// script filters `price > 15`, so only two products surface, and the vista is
+/// read-only.
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn vista_yaml_rhai_source_is_read_only_and_filters() -> TestResult {
+    let db = setup().await;
+
+    let yaml = r#"
+name: expensive_products
+columns:
+  id:
+    type: string
+    flags: [id]
+  name:
+    type: string
+sqlite:
+  rhai: |
+    select().from("product").field("id").field("name").where(expr("price > 15"))
+"#;
+
+    let vista = db.vista_factory().from_yaml(yaml)?;
+    assert_eq!(vista.name(), "expensive_products");
+
+    let caps = vista.capabilities();
+    assert!(caps.can_count);
+    assert!(!caps.can_insert, "rhai-sourced vista is read-only");
+    assert!(!caps.can_update);
+    assert!(!caps.can_delete);
+
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 2, "only products with price > 15");
+    assert!(rows.contains_key("b"));
+    assert!(rows.contains_key("c"));
+    assert!(!rows.contains_key("a"));
+    Ok(())
+}
+
 async fn setup_clients_orders() -> SqliteDB {
     let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
     sqlx::query("CREATE TABLE client (id TEXT PRIMARY KEY, name TEXT NOT NULL)")

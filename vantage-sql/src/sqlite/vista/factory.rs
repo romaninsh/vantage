@@ -34,13 +34,14 @@ impl SqliteVistaFactory {
         E: Entity<AnySqliteType> + 'static,
     {
         let name = table.table_name().to_string();
-        Ok(self.wrap(table, name))
+        Ok(self.wrap(table, name, false))
     }
 
     /// Single source-construction site shared by `from_table` and
     /// `build_from_spec`. Keeps the capability set and `Vista::new` call in
-    /// one place so a future capability flip is a one-line edit.
-    fn wrap<E>(&self, table: Table<SqliteDB, E>, name: String) -> Vista
+    /// one place so a future capability flip is a one-line edit. A query-sourced
+    /// (e.g. `rhai:`) vista is `read_only`, which clears the write capabilities.
+    fn wrap<E>(&self, table: Table<SqliteDB, E>, name: String, read_only: bool) -> Vista
     where
         E: Entity<AnySqliteType> + 'static,
     {
@@ -49,9 +50,9 @@ impl SqliteVistaFactory {
             table,
             VistaCapabilities {
                 can_count: true,
-                can_insert: true,
-                can_update: true,
-                can_delete: true,
+                can_insert: !read_only,
+                can_update: !read_only,
+                can_delete: !read_only,
                 can_order: true,
                 can_search: true,
                 can_set_page_size: true,
@@ -64,16 +65,21 @@ impl SqliteVistaFactory {
         Vista::new(name, Box::new(source))
     }
 
-    /// Build a `Table<SqliteDB, EmptyEntity>` from a spec.
+    /// Build a `Table<SqliteDB, EmptyEntity>` from a spec. The source is either
+    /// a physical table (`sqlite.table` / spec name) or, when `sqlite.rhai` is
+    /// present, the SELECT produced by that script.
     pub fn table_from_spec(&self, spec: &SqliteVistaSpec) -> Result<Table<SqliteDB, EmptyEntity>> {
-        let table_name = spec
-            .driver
-            .sqlite
-            .as_ref()
-            .and_then(|m| m.table.clone())
-            .unwrap_or_else(|| spec.name.clone());
+        let block = spec.driver.sqlite.as_ref();
 
-        let mut table = Table::<SqliteDB, EmptyEntity>::new(table_name, self.db.clone());
+        let mut table = match block.and_then(|m| m.rhai.clone()) {
+            Some(code) => self.table_from_rhai(spec, &code)?,
+            None => {
+                let table_name = block
+                    .and_then(|m| m.table.clone())
+                    .unwrap_or_else(|| spec.name.clone());
+                Table::<SqliteDB, EmptyEntity>::new(table_name, self.db.clone())
+            }
+        };
 
         for (name, col_spec) in &spec.columns {
             table.add_column(build_column(name, col_spec)?);
@@ -94,6 +100,32 @@ impl SqliteVistaFactory {
         let table = table.with_contained_specs(&spec.contained, build_column)?;
         Ok(table)
     }
+
+    /// Build a query-sourced table from a `rhai:` script.
+    #[cfg(feature = "rhai")]
+    fn table_from_rhai(
+        &self,
+        spec: &SqliteVistaSpec,
+        code: &str,
+    ) -> Result<Table<SqliteDB, EmptyEntity>> {
+        let select = crate::sqlite::vista::rhai_source::eval_to_select(code, None)?;
+        Ok(Table::from_select(
+            self.db.clone(),
+            spec.name.clone(),
+            select,
+        ))
+    }
+
+    #[cfg(not(feature = "rhai"))]
+    fn table_from_rhai(
+        &self,
+        _spec: &SqliteVistaSpec,
+        _code: &str,
+    ) -> Result<Table<SqliteDB, EmptyEntity>> {
+        Err(error!(
+            "vista declares a `rhai:` source but vantage-sql was built without the `rhai` feature"
+        ))
+    }
 }
 
 impl VistaFactory for SqliteVistaFactory {
@@ -103,8 +135,13 @@ impl VistaFactory for SqliteVistaFactory {
 
     fn build_from_spec(&self, spec: SqliteVistaSpec) -> Result<Vista> {
         let vista_name = spec.name.clone();
+        let read_only = spec
+            .driver
+            .sqlite
+            .as_ref()
+            .is_some_and(|m| m.rhai.is_some());
         let table = self.table_from_spec(&spec)?;
-        let mut vista = self.wrap(table, vista_name.clone());
+        let mut vista = self.wrap(table, vista_name.clone(), read_only);
         vista.set_name(vista_name);
         Ok(vista)
     }
