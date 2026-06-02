@@ -84,6 +84,8 @@ pub fn make_expr(
                 Ok(ExpressiveEnum::Scalar(AnySurrealType::from(v)))
             } else if let Some(v) = a.clone().try_cast::<rhai::ImmutableString>() {
                 Ok(ExpressiveEnum::Scalar(AnySurrealType::from(v.to_string())))
+            } else if let Some(v) = a.clone().try_cast::<String>() {
+                Ok(ExpressiveEnum::Scalar(AnySurrealType::from(v)))
             } else {
                 Err(super::convert::rhai_err(format!(
                     "expr: unsupported param type '{}'",
@@ -117,11 +119,6 @@ pub fn make_fx(name: &str, args: Array) -> Result<RhaiExpr, Box<rhai::EvalAltRes
 }
 
 // ── Aggregates ─────────────────────────────────────────────────────────
-
-pub fn fn_count(_arg: rhai::Dynamic) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
-    // SurrealDB count() takes no args — counts records
-    Ok(RhaiExpr(Expression::new("count()", vec![])))
-}
 
 pub fn fn_count_expr() -> RhaiExpr {
     RhaiExpr(Expression::new("count()", vec![]))

@@ -2,7 +2,7 @@
 
 use crate::identifier::Identifier;
 use crate::statements::select::select_target::SelectTarget;
-use vantage_expressions::Expressive;
+use vantage_expressions::{Expressive, ExpressiveEnum, Expression};
 
 use super::{RhaiExpr, RhaiIdent, RhaiSelect};
 
@@ -95,13 +95,13 @@ pub fn select_limit(mut s: RhaiSelect, limit: i64, start: i64) -> RhaiSelect {
 
 /// SELECT ONLY — returns a single record
 pub fn select_only(mut s: RhaiSelect) -> RhaiSelect {
-    s.inner.from_only = true;
+    s.inner = s.inner.with_only();
     s
 }
 
 /// SELECT VALUE — returns scalar values instead of objects
 pub fn select_value(mut s: RhaiSelect) -> RhaiSelect {
-    s.inner.single_value = true;
+    s.inner = s.inner.with_value();
     s
 }
 
@@ -109,28 +109,34 @@ pub fn select_value(mut s: RhaiSelect) -> RhaiSelect {
 
 /// Follow outgoing graph edge: ident->relation
 pub fn graph_arrow(id: RhaiIdent, relation: &str) -> RhaiExpr {
-    RhaiExpr(Identifier::new(format!(
+    RhaiExpr(Expression::new(
         "{}->{}",
-        id.0.expr().preview(),
-        relation
-    )).expr())
+        vec![
+            ExpressiveEnum::Nested(id.0.expr()),
+            ExpressiveEnum::Nested(Identifier::new(relation).expr()),
+        ],
+    ))
 }
 
 /// Follow incoming graph edge: ident<-relation
 pub fn graph_back(id: RhaiIdent, relation: &str) -> RhaiExpr {
-    RhaiExpr(Identifier::new(format!(
+    RhaiExpr(Expression::new(
         "{}<-{}",
-        id.0.expr().preview(),
-        relation
-    )).expr())
+        vec![
+            ExpressiveEnum::Nested(id.0.expr()),
+            ExpressiveEnum::Nested(Identifier::new(relation).expr()),
+        ],
+    ))
 }
 
 /// Follow outgoing edge to get target: ident->relation.field
 pub fn graph_arrow_field(id: RhaiIdent, relation: &str, field: &str) -> RhaiExpr {
-    RhaiExpr(Identifier::new(format!(
+    RhaiExpr(Expression::new(
         "{}->{}.{}",
-        id.0.expr().preview(),
-        relation,
-        field
-    )).expr())
+        vec![
+            ExpressiveEnum::Nested(id.0.expr()),
+            ExpressiveEnum::Nested(Identifier::new(relation).expr()),
+            ExpressiveEnum::Nested(Identifier::new(field).expr()),
+        ],
+    ))
 }

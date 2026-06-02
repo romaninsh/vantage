@@ -53,7 +53,7 @@ pub fn to_expr(val: Dynamic) -> Result<Expr, Box<rhai::EvalAltResult>> {
 /// Build a binary comparison expression.
 pub fn cmp_binary(op: &str, a: Expr, b: Expr) -> RhaiExpr {
     RhaiExpr(Expression::new(
-        &format!("{{}} {} {{}}", op),
+        format!("{{}} {} {{}}", op),
         vec![ExpressiveEnum::Nested(a), ExpressiveEnum::Nested(b)],
     ))
 }
