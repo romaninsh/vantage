@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.6 — 2026-06-02
+
+### Added
+
+- A table can now be sourced from an arbitrary sub-`SELECT`, not just a named table.
+  [`Table::from_select(ds, alias, select)`](https://docs.rs/vantage-table/0.5.6/vantage_table/table/struct.Table.html)
+  builds a derived table that renders `FROM (<select>) AS <alias>`.
+- [`SelectSource<S>`](https://docs.rs/vantage-table/0.5.6/vantage_table/source/enum.SelectSource.html) —
+  the source enum (`Name` or `Query { select, alias }`) that SQL/SurrealDB backends use for
+  their new `TableSource::Source` associated type. Other backends keep `String`.
+
+### Changed
+
+- `TableSource` gains a required `type Source: TableSourceSpec`. Built-in backends are updated;
+  out-of-tree `TableSource` impls must add the associated type (use `String` for a plain
+  named source).
+
 ## 0.5.5 — 2026-05-31
 
 ### Added
