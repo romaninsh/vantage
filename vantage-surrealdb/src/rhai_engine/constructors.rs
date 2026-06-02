@@ -1,11 +1,11 @@
 //! Constructor functions for the SurrealDB Rhai DSL.
 
-use crate::identifier::Identifier;
-use crate::sum::Fx;
 use crate::AnySurrealType;
 use crate::Expr;
+use crate::identifier::Identifier;
+use crate::sum::Fx;
 use rhai::Array;
-use vantage_expressions::{Expressive, ExpressiveEnum, Expression};
+use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
 use super::{RhaiExpr, RhaiIdent};
 
@@ -31,7 +31,11 @@ pub fn make_rhai_ident(name: &str) -> RhaiIdent {
 
 pub fn ident_dot(id: Identifier, field: &str) -> RhaiIdent {
     // SurrealDB dot notation: table.field
-    RhaiIdent(Identifier::new(format!("{}.{}", id.expr().preview(), field)))
+    RhaiIdent(Identifier::new(format!(
+        "{}.{}",
+        id.expr().preview(),
+        field
+    )))
 }
 
 pub fn ident_as_alias(id: Identifier, alias: &str) -> Expr {
@@ -65,10 +69,7 @@ pub fn make_expr0(template: &str) -> RhaiExpr {
     RhaiExpr(Expression::new(template, vec![]))
 }
 
-pub fn make_expr(
-    template: &str,
-    args: Array,
-) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
+pub fn make_expr(template: &str, args: Array) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
     let params: Result<Vec<ExpressiveEnum<AnySurrealType>>, _> = args
         .into_iter()
         .map(|a| {
@@ -125,15 +126,21 @@ pub fn fn_count_expr() -> RhaiExpr {
 }
 
 pub fn fn_sum(arg: rhai::Dynamic) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
-    Ok(RhaiExpr(Fx::new("math::sum", vec![unwrap_expr(arg)?]).expr()))
+    Ok(RhaiExpr(
+        Fx::new("math::sum", vec![unwrap_expr(arg)?]).expr(),
+    ))
 }
 
 pub fn fn_min(arg: rhai::Dynamic) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
-    Ok(RhaiExpr(Fx::new("math::min", vec![unwrap_expr(arg)?]).expr()))
+    Ok(RhaiExpr(
+        Fx::new("math::min", vec![unwrap_expr(arg)?]).expr(),
+    ))
 }
 
 pub fn fn_max(arg: rhai::Dynamic) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
-    Ok(RhaiExpr(Fx::new("math::max", vec![unwrap_expr(arg)?]).expr()))
+    Ok(RhaiExpr(
+        Fx::new("math::max", vec![unwrap_expr(arg)?]).expr(),
+    ))
 }
 
 // ── Arithmetic ─────────────────────────────────────────────────────────
@@ -192,9 +199,10 @@ pub fn fn_thing(table: &str, id: &str) -> RhaiExpr {
 
 /// parent("field") → $parent.field
 pub fn fn_parent(field: &str) -> RhaiExpr {
-    RhaiExpr(Expression::new("$parent.{}", vec![
-        ExpressiveEnum::Nested(Identifier::new(field).expr()),
-    ]))
+    RhaiExpr(Expression::new(
+        "$parent.{}",
+        vec![ExpressiveEnum::Nested(Identifier::new(field).expr())],
+    ))
 }
 
 /// parent() → $parent
@@ -205,7 +213,9 @@ pub fn fn_parent_bare() -> RhaiIdent {
 // ── SurrealDB namespaced functions ─────────────────────────────────────
 
 pub fn fn_array_group(arg: rhai::Dynamic) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
-    Ok(RhaiExpr(Fx::new("array::group", vec![unwrap_expr(arg)?]).expr()))
+    Ok(RhaiExpr(
+        Fx::new("array::group", vec![unwrap_expr(arg)?]).expr(),
+    ))
 }
 
 pub fn fn_time_now() -> RhaiExpr {
@@ -213,13 +223,19 @@ pub fn fn_time_now() -> RhaiExpr {
 }
 
 pub fn fn_string_len(arg: rhai::Dynamic) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
-    Ok(RhaiExpr(Fx::new("string::len", vec![unwrap_expr(arg)?]).expr()))
+    Ok(RhaiExpr(
+        Fx::new("string::len", vec![unwrap_expr(arg)?]).expr(),
+    ))
 }
 
 pub fn fn_type_float(arg: rhai::Dynamic) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
-    Ok(RhaiExpr(Fx::new("type::float", vec![unwrap_expr(arg)?]).expr()))
+    Ok(RhaiExpr(
+        Fx::new("type::float", vec![unwrap_expr(arg)?]).expr(),
+    ))
 }
 
 pub fn fn_type_int(arg: rhai::Dynamic) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
-    Ok(RhaiExpr(Fx::new("type::int", vec![unwrap_expr(arg)?]).expr()))
+    Ok(RhaiExpr(
+        Fx::new("type::int", vec![unwrap_expr(arg)?]).expr(),
+    ))
 }

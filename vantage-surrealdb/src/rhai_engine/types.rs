@@ -1,7 +1,7 @@
 //! Rhai wrapper types for the SurrealDB query-building DSL.
 
-use crate::identifier::Identifier;
 use crate::Expr;
+use crate::identifier::Identifier;
 use crate::statements::SurrealSelect;
 use std::fmt;
 

@@ -6,7 +6,7 @@
 use crate::AnySurrealType;
 use crate::Expr;
 use rhai::Dynamic;
-use vantage_expressions::{Expressive, ExpressiveEnum, Expression};
+use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
 use super::{RhaiExpr, RhaiIdent};
 

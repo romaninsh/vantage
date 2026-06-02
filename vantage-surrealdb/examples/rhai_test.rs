@@ -52,9 +52,7 @@ fn main() {
         let has_surql = surql_path.exists();
         let has_err = err_path.exists();
 
-        let result = engine
-            .eval::<RhaiSelect>(&code)
-            .map(|s| s.preview());
+        let result = engine.eval::<RhaiSelect>(&code).map(|s| s.preview());
 
         // --fix mode: generate missing files
         if fix {

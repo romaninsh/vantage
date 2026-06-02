@@ -2,7 +2,7 @@
 
 use crate::identifier::Identifier;
 use crate::statements::select::select_target::SelectTarget;
-use vantage_expressions::{Expressive, ExpressiveEnum, Expression};
+use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
 use super::{RhaiExpr, RhaiIdent, RhaiSelect};
 
