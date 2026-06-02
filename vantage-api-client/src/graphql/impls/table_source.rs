@@ -134,6 +134,7 @@ impl TableSource for GraphqlApi {
     type Value = AnyGraphqlType;
     type Id = String;
     type Condition = GraphqlCondition;
+    type Source = String;
 
     /// Stringy `field == value` helper for callers that only have text
     /// on hand (CLI, generic UIs). The value lands as a JSON string.

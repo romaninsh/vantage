@@ -243,13 +243,40 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
     }
 
     pub(crate) fn add_ref(&mut self, relation: &str, reference: Box<dyn Reference>) {
-        if self.refs.is_none() {
-            self.refs = Some(IndexMap::new());
-        }
+        self.add_ref_arc(relation, Arc::from(reference));
+    }
+
+    /// Insert an already-shared reference. Used to inherit relations when
+    /// deriving a table from another (the same `Arc` is shared, not rebuilt).
+    pub(crate) fn add_ref_arc(&mut self, relation: &str, reference: Arc<dyn Reference>) {
         self.refs
-            .as_mut()
-            .unwrap()
-            .insert(relation.to_string(), Arc::from(reference));
+            .get_or_insert_with(IndexMap::new)
+            .insert(relation.to_string(), reference);
+    }
+
+    /// Borrow this table's relations, if any.
+    pub(crate) fn refs_ref(&self) -> Option<&IndexMap<String, Arc<dyn Reference>>> {
+        self.refs.as_ref()
+    }
+
+    /// Copy relations from another table, sharing the underlying `Arc`s. With
+    /// `names = None`, copies all relations; otherwise only the listed ones.
+    /// An inherited relation keeps working as long as the derived table still
+    /// projects the column its foreign key references.
+    pub fn copy_relations_from<E2: Entity<T::Value> + 'static>(
+        &mut self,
+        other: &Table<T, E2>,
+        names: Option<&[&str]>,
+    ) {
+        let Some(refs) = other.refs_ref() else {
+            return;
+        };
+        for (name, reference) in refs {
+            if names.is_some_and(|ns| !ns.contains(&name.as_str())) {
+                continue;
+            }
+            self.add_ref_arc(name, reference.clone());
+        }
     }
 
     pub fn references(&self) -> Vec<String> {
