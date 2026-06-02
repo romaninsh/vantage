@@ -172,9 +172,17 @@ async fn master_row_count(w: &mut DioramaWorld, n: u64) {
     );
 }
 
-#[then(regex = r"^the cache (?:still )?(?:has|contains) (\d+) rows?$")]
+#[then(regex = r#"^the cache (?:still )?(?:has|contains) (\d+) rows?$"#)]
 async fn cache_row_count(w: &mut DioramaWorld, n: u64) {
+    // Poll for expected count — same reasoning as cache_record_field.
     let dio = w.dio.as_ref().expect("dio not created");
+    for _ in 0..200 {
+        let got = dio.cache().count().await.expect("cache count") as u64;
+        if got == n {
+            return;
+        }
+        tokio::time::advance(std::time::Duration::from_micros(1)).await;
+    }
     let got = dio.cache().count().await.expect("cache count") as u64;
     assert_eq!(got, n, "expected {n} cache rows, got {got}");
 }
