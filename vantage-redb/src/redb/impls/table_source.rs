@@ -33,6 +33,7 @@ impl TableSource for Redb {
     type Value = AnyRedbType;
     type Id = String;
     type Condition = RedbCondition;
+    type Source = String;
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
         Column::new(name)

@@ -26,6 +26,8 @@ mod sqlite {
     mod insert;
     #[path = "2_primitives.rs"]
     mod primitives;
+    #[path = "7_query_source.rs"]
+    mod query_source;
     #[path = "4_readable_data_set.rs"]
     mod readable_data_set;
     #[path = "4_readable_value_set.rs"]

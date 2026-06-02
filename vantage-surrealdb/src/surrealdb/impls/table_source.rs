@@ -82,6 +82,11 @@ impl TableSource for SurrealDB {
     type Value = AnySurrealType;
     type Id = Thing;
     type Condition = vantage_expressions::Expression<Self::Value>;
+    // NOTE: SurrealDB's `add_source` ignores the FROM alias, so a query-sourced
+    // table renders `FROM (subquery)` and its `table_name()` (the alias) is
+    // informational only — alias-qualified correlated subqueries are not wired
+    // for Surreal-derived tables yet.
+    type Source = vantage_table::source::SelectSource<crate::select::SurrealSelect>;
 
     fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
         let column: Column<AnySurrealType> = Column::new(field);

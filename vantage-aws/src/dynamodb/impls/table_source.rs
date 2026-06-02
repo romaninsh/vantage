@@ -88,6 +88,7 @@ impl TableSource for DynamoDB {
     type Value = AnyDynamoType;
     type Id = DynamoId;
     type Condition = DynamoCondition;
+    type Source = String;
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
         Column::new(name)

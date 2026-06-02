@@ -41,6 +41,7 @@ impl TableSource for AwsAccount {
     type Value = CborValue;
     type Id = String;
     type Condition = AwsCondition;
+    type Source = String;
 
     fn eq_condition(field: &str, value: &str) -> DatasetResult<Self::Condition> {
         Ok(AwsCondition::eq(field.to_string(), value.to_string()))

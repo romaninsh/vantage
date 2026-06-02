@@ -56,6 +56,7 @@ impl TableSource for RestApi {
     type Value = CborValue;
     type Id = String;
     type Condition = vantage_expressions::Expression<Self::Value>;
+    type Source = String;
 
     /// Build a stringy `field == value` eq-condition. Stringy callers
     /// (the model-driven CLI) only have text on hand; values arrive as

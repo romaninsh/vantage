@@ -26,6 +26,11 @@ pub trait TableSource: DataSource + Clone + 'static {
     type Value: Clone + Send + Sync + 'static;
     type Id: Send + Sync + Clone + Hash + Eq + 'static;
 
+    /// How this backend names its source. Most backends use `String`;
+    /// SQL/SurrealDB backends use `SelectSource<Self::Select>` so a table can
+    /// be sourced from an arbitrary sub-`SELECT`. See [`crate::source`].
+    type Source: crate::traits::table_source_spec::TableSourceSpec;
+
     /// The condition type stored by `Table`. SQL/SurrealDB backends use
     /// `Expression<Self::Value>`; document-oriented backends like MongoDB
     /// can use a native filter type (e.g. `bson::Document`).

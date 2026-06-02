@@ -81,6 +81,7 @@ impl TableSource for MysqlDB {
     type Value = AnyMysqlType;
     type Id = String;
     type Condition = crate::condition::MysqlCondition;
+    type Source = vantage_table::source::SelectSource<crate::mysql::statements::MysqlSelect>;
 
     fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
         let column: Column<AnyMysqlType> = Column::new(field);

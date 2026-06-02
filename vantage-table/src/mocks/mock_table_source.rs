@@ -108,6 +108,7 @@ impl TableSource for MockTableSource {
     type Value = Value;
     type Id = String;
     type Condition = vantage_expressions::Expression<Self::Value>;
+    type Source = String;
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
         use std::any::TypeId;

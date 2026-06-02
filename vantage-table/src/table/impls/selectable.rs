@@ -4,13 +4,17 @@ use vantage_expressions::{Expression, Expressive, SelectableDataSource, expr_any
 use vantage_types::Entity;
 
 use crate::{
-    column::core::ColumnType, table::Table, traits::column_like::ColumnLike,
+    column::core::ColumnType,
+    source::{SelectSeed, SelectSource},
+    table::Table,
+    traits::column_like::ColumnLike,
     traits::table_source::TableSource,
 };
 
 impl<T, E> Table<T, E>
 where
     T: SelectableDataSource<T::Value, T::Condition> + TableSource,
+    T::Source: SelectSeed<T::Select, T::Value, T::Condition>,
     T::Value: From<String>, // that's because table is specified as a string
     E: Entity<T::Value>,
 {
@@ -19,7 +23,7 @@ where
     /// all expressions.
     pub fn select_empty(&self) -> T::Select {
         let mut select = self.data_source.select();
-        select.add_source(self.table_name(), None);
+        self.source.seed(&mut select);
 
         for condition in self.conditions.values() {
             select.add_where_condition(condition.clone());
@@ -137,12 +141,67 @@ where
     }
 }
 
+// Constructors for tables sourced from an arbitrary query (a derived / sub-SELECT
+// source). Only available to backends whose `Source` is `SelectSource<Select>`
+// (the four subquery-capable SQL/SurrealDB backends). `V`/`C`/`S` are named
+// explicitly rather than projected through `T` to avoid a bound-resolution cycle.
+impl<T, E, V, C, S> Table<T, E>
+where
+    T: SelectableDataSource<V, C, Select = S>
+        + TableSource<Value = V, Condition = C, Source = SelectSource<S>>,
+    V: Clone + Send + Sync + 'static + From<String>,
+    C: Clone + Send + Sync + 'static,
+    S: Expressive<V> + Clone,
+    E: Entity<V>,
+{
+    /// Build a read-only table whose FROM clause is `select`, exposed under
+    /// `alias`. Columns/relations start empty — declare or inherit them.
+    pub fn from_select(data_source: T, alias: impl Into<String>, select: S) -> Self {
+        let alias = alias.into();
+        let mut table = Table::new(alias.clone(), data_source);
+        table.source = SelectSource::query(select, alias);
+        table
+    }
+
+    /// Derive a table from an existing one: transform its select via `modifier`
+    /// and use the result as the (sub-SELECT) source, inheriting the listed
+    /// `columns` and `relations` plus identity/title metadata.
+    ///
+    /// `modifier` receives `source.select()` and decides flat-vs-wrapped — it
+    /// may extend the query in place (joins referencing the base tables) or wrap
+    /// it as a subquery (to filter/sort on a computed alias). Conditions already
+    /// baked into the base select are not re-applied.
+    pub fn derive_from<E2: Entity<V> + 'static>(
+        source: &Table<T, E2>,
+        alias: impl Into<String>,
+        modifier: impl FnOnce(S) -> S,
+        columns: &[&str],
+        relations: &[&str],
+    ) -> Self
+    where
+        T: 'static,
+        E: 'static,
+    {
+        let alias = alias.into();
+        let select = modifier(source.select());
+        let mut table = Table::new(alias.clone(), source.data_source().clone());
+        table.source = SelectSource::query(select, alias);
+        table.copy_columns_from(source, Some(columns));
+        table.copy_relations_from(source, Some(relations));
+        table.id_field = source.id_field.clone();
+        table.title_field = source.title_field.clone();
+        table.title_fields = source.title_fields.clone();
+        table
+    }
+}
+
 // Specific implementation for serde_json::Value that can use QuerySource
 impl<T, E> Table<T, E>
 where
     T: SelectableDataSource<serde_json::Value, T::Condition>
         + TableSource<Value = serde_json::Value>
         + vantage_expressions::traits::datasource::ExprDataSource<serde_json::Value>,
+    T::Source: SelectSeed<T::Select, serde_json::Value, T::Condition>,
     T::Value: From<String>,
     E: Entity<serde_json::Value>,
 {
