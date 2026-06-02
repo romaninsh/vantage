@@ -4869,7 +4869,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "async-trait",
  "bakery_model3",
@@ -4880,6 +4880,7 @@ dependencies = [
  "indexmap",
  "md5",
  "paste",
+ "rhai",
  "rust_decimal",
  "serde",
  "serde_json",

@@ -1,0 +1,1 @@
+SELECT name, user->orders AS order_ids, user->orders.id AS order_list FROM user

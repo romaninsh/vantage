@@ -34,6 +34,9 @@ pub mod thing;
 #[cfg(feature = "vista")]
 pub mod vista;
 
+#[cfg(feature = "rhai")]
+pub mod rhai_engine;
+
 // Re-export statement builders at crate root for convenience
 pub use statements::SurrealDelete;
 pub use statements::SurrealInsert;

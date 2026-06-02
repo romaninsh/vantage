@@ -33,6 +33,11 @@ impl<T: QueryResult> SurrealSelect<T> {
         self
     }
 
+    pub fn with_only(mut self) -> Self {
+        self.from_only = true;
+        self
+    }
+
     pub fn with_expression(mut self, expression: Expr, alias: Option<String>) -> Self {
         let mut field = SelectField::new(expression);
         if let Some(alias) = alias {
