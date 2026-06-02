@@ -274,3 +274,286 @@ async fn contained_json_column_round_trips_on_postgres() -> TestResult {
         .ok();
     Ok(())
 }
+
+/// A vista whose source is a Rhai-built SELECT (not a physical table). The
+/// script filters `price > 15`, so only two products surface, and the vista is
+/// read-only.
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn vista_yaml_rhai_source_is_read_only_and_filters() -> TestResult {
+    let (db, name) = setup("rhai").await;
+
+    let yaml = format!(
+        r#"
+name: expensive_products
+columns:
+  id:
+    type: string
+    flags: [id]
+  name:
+    type: string
+postgres:
+  rhai: |
+    select().from("{name}").field("id").field("name").where(expr("price > 15"))
+"#
+    );
+
+    let vista = db.vista_factory().from_yaml(&yaml)?;
+    assert_eq!(vista.name(), "expensive_products");
+
+    let caps = vista.capabilities();
+    assert!(caps.can_count);
+    assert!(!caps.can_insert, "rhai-sourced vista is read-only");
+    assert!(!caps.can_update);
+    assert!(!caps.can_delete);
+
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 2, "only products with price > 15");
+    assert!(rows.contains_key("b"));
+    assert!(rows.contains_key("c"));
+    assert!(!rows.contains_key("a"));
+    Ok(())
+}
+
+/// Create suffixed `client` and `orders` tables and return their names.
+async fn setup_clients_orders(suffix: &str) -> (PostgresDB, String, String) {
+    let db = PostgresDB::connect(PG_URL).await.unwrap();
+    let client_t = format!("vista_client_{suffix}");
+    let orders_t = format!("vista_orders_{suffix}");
+
+    for t in [&client_t, &orders_t] {
+        sqlx::query(&format!("DROP TABLE IF EXISTS \"{t}\""))
+            .execute(db.pool())
+            .await
+            .unwrap();
+    }
+    sqlx::query(&format!(
+        "CREATE TABLE \"{client_t}\" (id TEXT PRIMARY KEY, name TEXT NOT NULL)"
+    ))
+    .execute(db.pool())
+    .await
+    .unwrap();
+    sqlx::query(&format!(
+        "CREATE TABLE \"{orders_t}\" (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, total BIGINT NOT NULL)"
+    ))
+    .execute(db.pool())
+    .await
+    .unwrap();
+    sqlx::query(&format!(
+        "INSERT INTO \"{client_t}\" VALUES ('alice','Alice'),('bob','Bob')"
+    ))
+    .execute(db.pool())
+    .await
+    .unwrap();
+    sqlx::query(&format!(
+        "INSERT INTO \"{orders_t}\" VALUES ('o1','alice',10),('o2','alice',20),('o3','bob',30)"
+    ))
+    .execute(db.pool())
+    .await
+    .unwrap();
+    (db, client_t, orders_t)
+}
+
+/// YAML-declared `references:` lower to `with_one`/`with_many`, with the target
+/// table resolved by name through a spec resolver attached to the factory.
+#[tokio::test]
+async fn vista_yaml_references_resolve_via_resolver() -> TestResult {
+    use indexmap::IndexMap;
+    use std::sync::Arc;
+    use vantage_sql::postgres::vista::{PostgresSpecResolver, PostgresVistaSpec};
+
+    let (db, client_t, orders_t) = setup_clients_orders("refs").await;
+
+    let client_yaml = format!(
+        r#"
+name: client
+columns:
+  id: {{ type: string, flags: [id] }}
+  name: {{ type: string, flags: [title] }}
+postgres:
+  table: {client_t}
+references:
+  orders:
+    table: orders
+    kind: has_many
+    foreign_key: client_id
+"#
+    );
+    let orders_yaml = format!(
+        r#"
+name: orders
+columns:
+  id: {{ type: string, flags: [id] }}
+  client_id: {{ type: string }}
+  total: {{ type: int }}
+postgres:
+  table: {orders_t}
+"#
+    );
+
+    let client_spec: PostgresVistaSpec = serde_yaml_ng::from_str(&client_yaml)?;
+    let orders_spec: PostgresVistaSpec = serde_yaml_ng::from_str(&orders_yaml)?;
+
+    let map: IndexMap<String, PostgresVistaSpec> =
+        [("orders".to_string(), orders_spec)].into_iter().collect();
+    let map = Arc::new(map);
+    let resolver: PostgresSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
+
+    let factory = db.vista_factory().with_resolver(resolver);
+    let mut clients = factory.build_from_spec(client_spec)?;
+
+    let refs = clients.list_references();
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0].0, "orders");
+    assert_eq!(refs[0].1, vantage_vista::ReferenceKind::HasMany);
+
+    let (_id, alice) = clients
+        .with_id(CborValue::Text("alice".into()))?
+        .get_some_value()
+        .await?
+        .expect("alice exists");
+    let alice_orders = clients.get_ref("orders", &alice)?;
+    let rows = alice_orders.list_values().await?;
+    assert_eq!(rows.len(), 2, "alice has 2 orders");
+    assert!(rows.contains_key("o1"));
+    assert!(rows.contains_key("o2"));
+    assert!(!rows.contains_key("o3"));
+    Ok(())
+}
+
+/// A derived vista: `base: client` resolves eagerly through the resolver, the
+/// base table's `select()` is seeded into the Rhai engine as `base` (transform
+/// mode), and the listed columns are inherited. Query source → read-only.
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn vista_yaml_base_inherits_columns_and_transforms() -> TestResult {
+    use indexmap::IndexMap;
+    use std::sync::Arc;
+    use vantage_sql::postgres::vista::{PostgresSpecResolver, PostgresVistaSpec};
+
+    let (db, client_t, _orders_t) = setup_clients_orders("base").await;
+
+    let client_yaml = format!(
+        r#"
+name: client
+columns:
+  id: {{ type: string, flags: [id] }}
+  name: {{ type: string, flags: [title] }}
+postgres:
+  table: {client_t}
+"#
+    );
+    let vip_yaml = r#"
+name: vip_clients
+columns: {}
+postgres:
+  base: client
+  inherit:
+    columns: [id, name]
+  rhai: |
+    base.where(expr("name = 'Alice'"))
+"#;
+
+    let client_spec: PostgresVistaSpec = serde_yaml_ng::from_str(&client_yaml)?;
+    let vip_spec: PostgresVistaSpec = serde_yaml_ng::from_str(vip_yaml)?;
+
+    let map: IndexMap<String, PostgresVistaSpec> =
+        [("client".to_string(), client_spec)].into_iter().collect();
+    let map = Arc::new(map);
+    let resolver: PostgresSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
+
+    let vista = db
+        .vista_factory()
+        .with_resolver(resolver)
+        .build_from_spec(vip_spec)?;
+
+    let caps = vista.capabilities();
+    assert!(
+        !caps.can_insert,
+        "derived (query-sourced) vista is read-only"
+    );
+    assert!(!caps.can_update);
+    assert!(!caps.can_delete);
+
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 1, "rhai transform filtered to Alice");
+    let alice = rows.get("alice").expect("alice present");
+    assert_eq!(alice.get("name"), Some(&CborValue::Text("Alice".into())));
+    Ok(())
+}
+
+/// The headline "derived aggregate" case: a `debtors`-style vista derived from
+/// `orders`, grouping by client and summing totals into a declared `total_due`
+/// column, with the grouping key inherited and re-keyed via `id_column`.
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn vista_yaml_base_aggregates_into_declared_column() -> TestResult {
+    use indexmap::IndexMap;
+    use std::sync::Arc;
+    use vantage_sql::postgres::vista::{PostgresSpecResolver, PostgresVistaSpec};
+
+    let (db, _client_t, orders_t) = setup_clients_orders("agg").await;
+
+    let orders_yaml = format!(
+        r#"
+name: orders
+columns:
+  id: {{ type: string, flags: [id] }}
+  client_id: {{ type: string }}
+  total: {{ type: int }}
+postgres:
+  table: {orders_t}
+"#
+    );
+    let totals_yaml = r#"
+name: client_totals
+id_column: client_id
+columns:
+  total_due: { type: int }
+postgres:
+  base: orders
+  inherit:
+    columns: [client_id]
+  rhai: |
+    base.clear_fields().field("client_id").expression(expr("SUM(total) AS total_due")).group_by(expr("client_id"))
+"#;
+
+    let orders_spec: PostgresVistaSpec = serde_yaml_ng::from_str(&orders_yaml)?;
+    let totals_spec: PostgresVistaSpec = serde_yaml_ng::from_str(totals_yaml)?;
+
+    let map: IndexMap<String, PostgresVistaSpec> =
+        [("orders".to_string(), orders_spec)].into_iter().collect();
+    let map = Arc::new(map);
+    let resolver: PostgresSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
+
+    let vista = db
+        .vista_factory()
+        .with_resolver(resolver)
+        .build_from_spec(totals_spec)?;
+
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 2, "one row per client");
+    // Postgres `SUM(bigint)` returns `numeric`, which surfaces as a CBOR decimal
+    // rather than the integer SQLite produces — normalise before comparing.
+    assert_eq!(
+        numeric(rows.get("alice").unwrap().get("total_due")),
+        Some(30)
+    );
+    assert_eq!(numeric(rows.get("bob").unwrap().get("total_due")), Some(30));
+    Ok(())
+}
+
+/// Extract an integer from a CBOR scalar regardless of whether the backend
+/// returned an integer or a decimal (numeric → `Tag(_, Text("30"))`).
+#[cfg(feature = "rhai")]
+fn numeric(v: Option<&CborValue>) -> Option<i64> {
+    match v? {
+        CborValue::Integer(i) => i64::try_from(*i).ok(),
+        CborValue::Text(s) => s.parse().ok(),
+        CborValue::Tag(_, inner) => match inner.as_ref() {
+            CborValue::Text(s) => s.parse().ok(),
+            _ => None,
+        },
+        _ => None,
+    }
+}

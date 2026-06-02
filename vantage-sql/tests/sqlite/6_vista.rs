@@ -483,7 +483,7 @@ sqlite:
   inherit:
     columns: [client_id]
   rhai: |
-    base.group_by(expr("client_id")).expression(expr("SUM(total) AS total_due"))
+    base.clear_fields().field("client_id").expression(expr("SUM(total) AS total_due")).group_by(expr("client_id"))
 "#;
 
     let orders_spec: SqliteVistaSpec = serde_yaml_ng::from_str(orders_yaml)?;

@@ -1,6 +1,8 @@
 //! `MysqlVistaFactory` — typed-table and YAML entry points, plus the
 //! `VistaFactory` trait impl. MySQL advertises full read/write/count.
 
+use std::sync::Arc;
+
 use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::column::flags::ColumnFlag;
@@ -8,22 +10,37 @@ use vantage_table::table::Table;
 use vantage_table::traits::column_like::ColumnLike;
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
-    Column as VistaColumn, NoExtras, Vista, VistaCapabilities, VistaFactory, VistaMetadata,
-    flags as vista_flags,
+    Column as VistaColumn, NoExtras, ReferenceKind, Vista, VistaCapabilities, VistaFactory,
+    VistaMetadata, flags as vista_flags,
 };
 
 use crate::mysql::MysqlDB;
+use crate::mysql::statements::MysqlSelect;
 use crate::mysql::types::AnyMysqlType;
 use crate::mysql::vista::source::MysqlTableShell;
 use crate::mysql::vista::spec::{MysqlColumnExtras, MysqlTableExtras, MysqlVistaSpec};
 
+/// Resolves a YAML spec by table name. The factory hands clones of this into
+/// each `with_one` / `with_many` closure so child tables can be rebuilt from
+/// the live spec at traversal time. Mirrors `SqliteSpecResolver`.
+pub type MysqlSpecResolver = Arc<dyn Fn(&str) -> Option<MysqlVistaSpec> + Send + Sync>;
+
 pub struct MysqlVistaFactory {
     db: MysqlDB,
+    resolver: Option<MysqlSpecResolver>,
 }
 
 impl MysqlVistaFactory {
     pub fn new(db: MysqlDB) -> Self {
-        Self { db }
+        Self { db, resolver: None }
+    }
+
+    /// Attach a spec resolver. Required for YAML-declared references to resolve
+    /// their target tables — without it, a traversal yields a column-less target
+    /// `Table` and the next query fails loudly.
+    pub fn with_resolver(mut self, resolver: MysqlSpecResolver) -> Self {
+        self.resolver = Some(resolver);
+        self
     }
 
     pub fn from_table<E>(&self, table: Table<MysqlDB, E>) -> Result<Vista>
@@ -31,10 +48,13 @@ impl MysqlVistaFactory {
         E: Entity<AnyMysqlType> + 'static,
     {
         let name = table.table_name().to_string();
-        Ok(self.wrap(table, name))
+        Ok(self.wrap(table, name, false))
     }
 
-    fn wrap<E>(&self, table: Table<MysqlDB, E>, name: String) -> Vista
+    /// Single source-construction site shared by `from_table` and
+    /// `build_from_spec`. A query-sourced (e.g. `rhai:`) vista is `read_only`,
+    /// which clears the write capabilities.
+    fn wrap<E>(&self, table: Table<MysqlDB, E>, name: String, read_only: bool) -> Vista
     where
         E: Entity<AnyMysqlType> + 'static,
     {
@@ -43,9 +63,9 @@ impl MysqlVistaFactory {
             table,
             VistaCapabilities {
                 can_count: true,
-                can_insert: true,
-                can_update: true,
-                can_delete: true,
+                can_insert: !read_only,
+                can_update: !read_only,
+                can_delete: !read_only,
                 ..VistaCapabilities::default()
             },
             metadata,
@@ -53,34 +73,10 @@ impl MysqlVistaFactory {
         Vista::new(name, Box::new(source))
     }
 
+    /// Build a `Table<MysqlDB, EmptyEntity>` from a spec, resolving any
+    /// `references:` against the attached resolver. See [`build_mysql_table`].
     pub fn table_from_spec(&self, spec: &MysqlVistaSpec) -> Result<Table<MysqlDB, EmptyEntity>> {
-        let table_name = spec
-            .driver
-            .mysql
-            .as_ref()
-            .and_then(|m| m.table.clone())
-            .unwrap_or_else(|| spec.name.clone());
-
-        let mut table = Table::<MysqlDB, EmptyEntity>::new(table_name, self.db.clone());
-
-        for (name, col_spec) in &spec.columns {
-            table.add_column(build_column(name, col_spec)?);
-            if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
-                table.add_title_field(name);
-            }
-        }
-
-        let id_column = resolve_id_column(spec);
-        if !table.columns().contains_key(&id_column) {
-            return Err(error!(
-                "id column not present in spec.columns",
-                id = id_column
-            ));
-        }
-        table.set_id_field(&id_column);
-
-        let table = table.with_contained_specs(&spec.contained, build_column)?;
-        Ok(table)
+        build_mysql_table(spec, self.db.clone(), self.resolver.clone())
     }
 }
 
@@ -91,11 +87,183 @@ impl VistaFactory for MysqlVistaFactory {
 
     fn build_from_spec(&self, spec: MysqlVistaSpec) -> Result<Vista> {
         let vista_name = spec.name.clone();
+        let read_only = spec
+            .driver
+            .mysql
+            .as_ref()
+            .is_some_and(|m| m.rhai.is_some() || m.base.is_some());
         let table = self.table_from_spec(&spec)?;
-        let mut vista = self.wrap(table, vista_name.clone());
+        let mut vista = self.wrap(table, vista_name.clone(), read_only);
         vista.set_name(vista_name);
         Ok(vista)
     }
+}
+
+/// Build a `Table<MysqlDB, EmptyEntity>` from a spec, registering each
+/// `references:` entry as a typed `with_one` / `with_many` on the parent.
+///
+/// Each reference closure captures a clone of the resolver `Arc` and the target
+/// table name; at traversal time it asks the resolver for the target's current
+/// spec and rebuilds the child table. On a resolver miss it falls back to an
+/// empty `Table::new(target_name, db)` — the next query then fails loudly when
+/// it discovers no columns are defined. Mirrors `build_sqlite_table`.
+pub(crate) fn build_mysql_table(
+    spec: &MysqlVistaSpec,
+    db: MysqlDB,
+    resolver: Option<MysqlSpecResolver>,
+) -> Result<Table<MysqlDB, EmptyEntity>> {
+    let block = spec.driver.mysql.as_ref();
+
+    if let Some(base_name) = block.and_then(|m| m.base.clone()) {
+        return build_derived_table(spec, &base_name, db, resolver);
+    }
+
+    let mut table = match block.and_then(|m| m.rhai.clone()) {
+        Some(code) => table_from_rhai(spec, &code, db.clone())?,
+        None => {
+            let table_name = block
+                .and_then(|m| m.table.clone())
+                .unwrap_or_else(|| spec.name.clone());
+            Table::<MysqlDB, EmptyEntity>::new(table_name, db.clone())
+        }
+    };
+
+    for (name, col_spec) in &spec.columns {
+        table.add_column(build_column(name, col_spec)?);
+        if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
+            table.add_title_field(name);
+        }
+    }
+
+    let id_column = resolve_id_column(spec);
+    if !table.columns().contains_key(&id_column) {
+        return Err(error!(
+            "id column not present in spec.columns",
+            id = id_column
+        ));
+    }
+    table.set_id_field(&id_column);
+
+    for (rel_name, ref_spec) in &spec.references {
+        let target_name = ref_spec.table.clone();
+        let fk = ref_spec
+            .foreign_key
+            .clone()
+            .unwrap_or_else(|| rel_name.clone());
+        let resolver_clone = resolver.clone();
+
+        let build_child = move |db: MysqlDB| -> Table<MysqlDB, EmptyEntity> {
+            if let Some(r) = &resolver_clone
+                && let Some(child_spec) = r(&target_name)
+                && let Ok(child) = build_mysql_table(&child_spec, db.clone(), Some(r.clone()))
+            {
+                return child;
+            }
+            Table::<MysqlDB, EmptyEntity>::new(target_name.clone(), db)
+        };
+
+        table = match ref_spec.kind {
+            ReferenceKind::HasOne => table.with_one::<EmptyEntity>(rel_name, &fk, build_child),
+            ReferenceKind::HasMany => table.with_many::<EmptyEntity>(rel_name, &fk, build_child),
+        };
+    }
+
+    let table = table.with_contained_specs(&spec.contained, build_column)?;
+    Ok(table)
+}
+
+/// Build a query-sourced table from a `rhai:` script.
+#[cfg(feature = "rhai")]
+fn table_from_rhai(
+    spec: &MysqlVistaSpec,
+    code: &str,
+    db: MysqlDB,
+) -> Result<Table<MysqlDB, EmptyEntity>> {
+    let select = crate::mysql::vista::rhai_source::eval_to_select(code, None)?;
+    Ok(Table::from_select(db, spec.name.clone(), select))
+}
+
+#[cfg(not(feature = "rhai"))]
+fn table_from_rhai(
+    _spec: &MysqlVistaSpec,
+    _code: &str,
+    _db: MysqlDB,
+) -> Result<Table<MysqlDB, EmptyEntity>> {
+    Err(error!(
+        "vista declares a `rhai:` source but vantage-sql was built without the `rhai` feature"
+    ))
+}
+
+/// Build a derived table: resolve `base_name` eagerly via the resolver, build
+/// the base table, optionally transform its `select()` through a `rhai:` script
+/// (transform mode — `base` is seeded into the engine scope), and inherit the
+/// listed columns/relations via [`Table::derive_from`]. The derived vista's own
+/// `columns:` (e.g. aggregate outputs) are added on top.
+fn build_derived_table(
+    spec: &MysqlVistaSpec,
+    base_name: &str,
+    db: MysqlDB,
+    resolver: Option<MysqlSpecResolver>,
+) -> Result<Table<MysqlDB, EmptyEntity>> {
+    let resolver = resolver.ok_or_else(|| {
+        error!(
+            "vista declares `base:` but no spec resolver is attached to the factory",
+            base = base_name
+        )
+    })?;
+    let base_spec = resolver(base_name)
+        .ok_or_else(|| error!("base vista not found via resolver", base = base_name))?;
+    let base_table = build_mysql_table(&base_spec, db.clone(), Some(resolver.clone()))?;
+
+    let block = spec.driver.mysql.as_ref();
+    let transformed = match block.and_then(|m| m.rhai.clone()) {
+        Some(code) => eval_transform(&code, base_table.select())?,
+        None => base_table.select(),
+    };
+
+    let inherit = block.and_then(|m| m.inherit.clone()).unwrap_or_default();
+    let cols: Vec<&str> = inherit.columns.iter().map(String::as_str).collect();
+    let rels: Vec<&str> = inherit.relations.iter().map(String::as_str).collect();
+
+    let mut table = Table::derive_from(
+        &base_table,
+        spec.name.clone(),
+        move |_| transformed,
+        &cols,
+        &rels,
+    );
+
+    // The derived vista's own declared columns (e.g. aggregate outputs).
+    for (name, col_spec) in &spec.columns {
+        if !table.columns().contains_key(name) {
+            table.add_column(build_column(name, col_spec)?);
+        }
+        if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
+            table.add_title_field(name);
+        }
+    }
+
+    // Explicit id override; otherwise the id inherited from the base stands.
+    if let Some(id) = &spec.id_column {
+        table.set_id_field(id);
+    }
+
+    let table = table.with_contained_specs(&spec.contained, build_column)?;
+    Ok(table)
+}
+
+/// Apply a `rhai:` transform to a base select. Feature-gated like
+/// [`table_from_rhai`].
+#[cfg(feature = "rhai")]
+fn eval_transform(code: &str, base: MysqlSelect) -> Result<MysqlSelect> {
+    crate::mysql::vista::rhai_source::eval_to_select(code, Some(base))
+}
+
+#[cfg(not(feature = "rhai"))]
+fn eval_transform(_code: &str, _base: MysqlSelect) -> Result<MysqlSelect> {
+    Err(error!(
+        "vista declares a `rhai:` transform but vantage-sql was built without the `rhai` feature"
+    ))
 }
 
 pub(crate) fn resolve_id_column(spec: &MysqlVistaSpec) -> String {
