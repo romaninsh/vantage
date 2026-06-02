@@ -4880,6 +4880,7 @@ dependencies = [
  "indexmap",
  "md5",
  "paste",
+ "rhai",
  "rust_decimal",
  "serde",
  "serde_json",

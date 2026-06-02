@@ -1,0 +1,1 @@
+SELECT name, age FROM users WHERE users.active = true ORDER BY users.name LIMIT 10

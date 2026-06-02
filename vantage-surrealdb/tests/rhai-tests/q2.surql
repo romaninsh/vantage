@@ -1,0 +1,1 @@
+SELECT orders.status, count() AS total, math::sum(orders.amount) AS sum_amount FROM orders GROUP BY orders.status ORDER BY sum_amount DESC

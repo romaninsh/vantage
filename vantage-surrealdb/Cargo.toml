@@ -13,6 +13,7 @@ autoexamples = false
 default = ["decimal"]
 decimal = ["surreal-client/decimal", "rust_decimal"]
 vista = ["dep:vantage-vista"]
+rhai = ["dep:rhai"]
 
 [dependencies]
 async-trait = "0.1"
@@ -38,6 +39,7 @@ serde_path_to_error = "0.1"
 rust_decimal = { version = "1.42", optional = true }
 uuid = { version = "1.23", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
+rhai = { version = "1.25", optional = true }
 
 # Disable all tests except queries.rs during 0.3 migration
 [[test]]
@@ -89,3 +91,8 @@ vantage-vista = { version = "0.5", path = "../vantage-vista" }
 [[example]]
 name = "expr"
 path = "examples/expr.rs"
+
+[[example]]
+name = "rhai_test"
+path = "examples/rhai_test.rs"
+required-features = ["rhai"]
