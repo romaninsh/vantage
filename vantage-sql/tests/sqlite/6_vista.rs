@@ -332,6 +332,189 @@ async fn vista_list_references_surfaces_cardinality() -> TestResult {
     Ok(())
 }
 
+/// YAML-declared `references:` lower to `with_one`/`with_many`, with the
+/// target table resolved by name through a spec resolver attached to the
+/// factory. Mirrors the SurrealDB resolver pattern.
+#[tokio::test]
+async fn vista_yaml_references_resolve_via_resolver() -> TestResult {
+    use indexmap::IndexMap;
+    use std::sync::Arc;
+    use vantage_sql::sqlite::vista::{SqliteSpecResolver, SqliteVistaSpec};
+
+    let db = setup_clients_orders().await;
+
+    let client_yaml = r#"
+name: client
+columns:
+  id: { type: string, flags: [id] }
+  name: { type: string, flags: [title] }
+references:
+  orders:
+    table: orders
+    kind: has_many
+    foreign_key: client_id
+"#;
+    let orders_yaml = r#"
+name: orders
+columns:
+  id: { type: string, flags: [id] }
+  client_id: { type: string }
+  total: { type: int }
+"#;
+
+    let client_spec: SqliteVistaSpec = serde_yaml_ng::from_str(client_yaml)?;
+    let orders_spec: SqliteVistaSpec = serde_yaml_ng::from_str(orders_yaml)?;
+
+    let map: IndexMap<String, SqliteVistaSpec> =
+        [("orders".to_string(), orders_spec)].into_iter().collect();
+    let map = Arc::new(map);
+    let resolver: SqliteSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
+
+    let factory = db.vista_factory().with_resolver(resolver);
+    let mut clients = factory.build_from_spec(client_spec)?;
+
+    // Reference metadata surfaces from the wired relation.
+    let refs = clients.list_references();
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0].0, "orders");
+    assert_eq!(refs[0].1, vantage_vista::ReferenceKind::HasMany);
+
+    // Traversal resolves `orders` via the resolver and filters to alice's rows.
+    let (_id, alice) = clients
+        .with_id(CborValue::Text("alice".into()))?
+        .get_some_value()
+        .await?
+        .expect("alice exists");
+    let alice_orders = clients.get_ref("orders", &alice)?;
+    let rows = alice_orders.list_values().await?;
+    assert_eq!(rows.len(), 2, "alice has 2 orders");
+    assert!(rows.contains_key("o1"));
+    assert!(rows.contains_key("o2"));
+    assert!(!rows.contains_key("o3"));
+    Ok(())
+}
+
+/// A derived vista: `base: client` resolves eagerly through the factory's
+/// resolver, the base table's `select()` is seeded into the Rhai engine as
+/// `base` (transform mode), and the listed columns are inherited from the
+/// base. The query source makes it read-only.
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn vista_yaml_base_inherits_columns_and_transforms() -> TestResult {
+    use indexmap::IndexMap;
+    use std::sync::Arc;
+    use vantage_sql::sqlite::vista::{SqliteSpecResolver, SqliteVistaSpec};
+
+    let db = setup_clients_orders().await;
+
+    let client_yaml = r#"
+name: client
+columns:
+  id: { type: string, flags: [id] }
+  name: { type: string, flags: [title] }
+"#;
+    let vip_yaml = r#"
+name: vip_clients
+columns: {}
+sqlite:
+  base: client
+  inherit:
+    columns: [id, name]
+  rhai: |
+    base.where(expr("name = 'Alice'"))
+"#;
+
+    let client_spec: SqliteVistaSpec = serde_yaml_ng::from_str(client_yaml)?;
+    let vip_spec: SqliteVistaSpec = serde_yaml_ng::from_str(vip_yaml)?;
+
+    let map: IndexMap<String, SqliteVistaSpec> =
+        [("client".to_string(), client_spec)].into_iter().collect();
+    let map = Arc::new(map);
+    let resolver: SqliteSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
+
+    let vista = db
+        .vista_factory()
+        .with_resolver(resolver)
+        .build_from_spec(vip_spec)?;
+
+    // Query-sourced → read-only.
+    let caps = vista.capabilities();
+    assert!(
+        !caps.can_insert,
+        "derived (query-sourced) vista is read-only"
+    );
+    assert!(!caps.can_update);
+    assert!(!caps.can_delete);
+
+    // Transform applied (only Alice) and inherited columns surface.
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 1, "rhai transform filtered to Alice");
+    let alice = rows.get("alice").expect("alice present");
+    assert_eq!(alice.get("name"), Some(&CborValue::Text("Alice".into())));
+    Ok(())
+}
+
+/// The headline "derived aggregate" case: a `debtors`-style vista derived from
+/// `orders`, grouping by client and summing totals into a declared `total_due`
+/// column, with the grouping key inherited and re-keyed via `id_column`.
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn vista_yaml_base_aggregates_into_declared_column() -> TestResult {
+    use indexmap::IndexMap;
+    use std::sync::Arc;
+    use vantage_sql::sqlite::vista::{SqliteSpecResolver, SqliteVistaSpec};
+
+    let db = setup_clients_orders().await;
+
+    let orders_yaml = r#"
+name: orders
+columns:
+  id: { type: string, flags: [id] }
+  client_id: { type: string }
+  total: { type: int }
+"#;
+    let totals_yaml = r#"
+name: client_totals
+id_column: client_id
+columns:
+  total_due: { type: int }
+sqlite:
+  base: orders
+  inherit:
+    columns: [client_id]
+  rhai: |
+    base.group_by(expr("client_id")).expression(expr("SUM(total) AS total_due"))
+"#;
+
+    let orders_spec: SqliteVistaSpec = serde_yaml_ng::from_str(orders_yaml)?;
+    let totals_spec: SqliteVistaSpec = serde_yaml_ng::from_str(totals_yaml)?;
+
+    let map: IndexMap<String, SqliteVistaSpec> =
+        [("orders".to_string(), orders_spec)].into_iter().collect();
+    let map = Arc::new(map);
+    let resolver: SqliteSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
+
+    let vista = db
+        .vista_factory()
+        .with_resolver(resolver)
+        .build_from_spec(totals_spec)?;
+
+    // Re-keyed by client_id; one row per client with the summed total.
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 2, "one row per client");
+    let alice = rows.get("alice").expect("alice total");
+    assert_eq!(
+        alice.get("total_due"),
+        Some(&CborValue::Integer(30i64.into()))
+    );
+    let bob = rows.get("bob").expect("bob total");
+    assert_eq!(
+        bob.get("total_due"),
+        Some(&CborValue::Integer(30i64.into()))
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn vista_with_foreign_lazy_no_eager_invocation() -> TestResult {
     use std::sync::Arc;
