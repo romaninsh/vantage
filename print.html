@@ -37,10 +37,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-959ffe55.js";
+            window.path_to_searchindex_js = "searchindex-4150e71c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-3f24ff2a.js"></script>
+        <script src="toc-e08789ca.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -349,8 +349,8 @@ async fn run() -&gt; VantageResult&lt;()&gt; {
 }</code></pre>
 <p>A few things going on here:</p>
 <ul>
-<li><strong><code>use vantage_sql::prelude::*</code></strong> brings in everything we need for this chapter — <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>,
-<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a>, the <code>sqlite_expr!</code> macro, error types, and the traits that make builder and
+<li><strong><code>use vantage_sql::prelude::*</code></strong> brings in everything we need for this chapter — <a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>,
+<a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a>, the <code>sqlite_expr!</code> macro, error types, and the traits that make builder and
 execution methods work.</li>
 <li><strong><code>VantageResult&lt;()&gt;</code></strong> is Vantage’s own Result type. It uses <code>VantageError</code>, which tracks context
 and error chains for readable diagnostics.</li>
@@ -416,9 +416,9 @@ any <code>Result</code> with a standard error type.</p>
 
 <hr>
 <h2 id="build-a-select"><a class="header" href="#build-a-select">Build a SELECT</a></h2>
-<p><a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a> is the query builder for SQLite.
+<p><a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a> is the query builder for SQLite.
 Other persistences have their own —
-<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/postgres/statements/select/struct.PostgresSelect.html"><code>PostgresSelect</code></a>,
+<a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/postgres/statements/select/struct.PostgresSelect.html"><code>PostgresSelect</code></a>,
 <a href="https://docs.rs/vantage_mongodb/0.5.5/vantage_mongodb/select/struct.MongoSelect.html"><code>MongoSelect</code></a> — and they all implement the
 <a href="https://docs.rs/vantage_expressions/0.5.0/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a> trait, so the interface is identical apart from
 vendor-specific extensions. None of them need a database connection — they’re just structs that
@@ -476,7 +476,7 @@ println!("{:?}", result);
 <p>Two steps here: <code>.expr()</code> turns the builder into an <a href="https://docs.rs/vantage_expressions/0.5.0/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a>
 — Vantage’s internal representation that keeps parameters separate from the SQL template. Then
 <a href="https://docs.rs/vantage_expressions/0.5.0/vantage_expressions/traits/datasource/trait.ExprDataSource.html#tymethod.execute"><code>db.execute()</code></a> sends it to the database.</p>
-<p>The result is <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> — a type-tagged wrapper around whatever came back. The <code>Debug</code> output
+<p>The result is <a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> — a type-tagged wrapper around whatever came back. The <code>Debug</code> output
 isn’t pretty, but you should see all 6 product rows in there.</p>
 <div id="admonition-when-does-vantage-hit-the-database" class="admonition admonish-tip" role="note" aria-labelledby="admonition-when-does-vantage-hit-the-database-title">
 <div class="admonition-title">
@@ -543,7 +543,7 @@ See <a href="#persistence-aligned-type-system">Persistence-aligned Type System</
 <h2 id="typed-columns-and-operators"><a class="header" href="#typed-columns-and-operators">Typed columns and operators</a></h2>
 <p>Writing <code>\"is_deleted\"</code> in a raw expression works, but there’s a cleaner way.
 <a href="https://docs.rs/vantage_table/0.5.5/vantage_table/column/core/struct.Column.html"><code>Column&lt;T&gt;</code></a> creates a typed column reference, then chain an
-<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a> like <code>.eq()</code> to build the
+<a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a> like <code>.eq()</code> to build the
 condition:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -553,7 +553,7 @@ let condition = is_deleted.eq(false);
 <p>Same result, but the type parameter <code>&lt;bool&gt;</code> ensures you can only compare against matching types.
 Try <code>is_deleted.eq(42)</code> — it won’t compile. Other operators — <code>.gt()</code>, <code>.lt()</code>, <code>.ne()</code>, <code>.in_()</code> —
 enforce the same type safety.</p>
-<p>The result is a <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/condition/struct.SqliteCondition.html"><code>SqliteCondition</code></a> — the backend’s native condition type — ready to be passed
+<p>The result is a <a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/condition/struct.SqliteCondition.html"><code>SqliteCondition</code></a> — the backend’s native condition type — ready to be passed
 directly to <code>.with_condition()</code>.</p>
 <div id="admonition-type-safety-and-backend-specific-operations" class="admonition admonish-info" role="note" aria-labelledby="admonition-type-safety-and-backend-specific-operations-title">
 <div class="admonition-title">
@@ -651,7 +651,7 @@ its prelude:</p>
 <span class="boring">}</span></code></pre>
 <p>So far we’ve been printing raw <code>AnySqliteType</code> with <code>Debug</code>. That works for verifying queries, but
 it’s useless for real work. When <code>db.execute()</code> returns a multi-row result, the
-<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> holds an array of maps internally. Convert it
+<a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> holds an array of maps internally. Convert it
 to <code>Vec&lt;Record&lt;AnySqliteType&gt;&gt;</code> to work with individual rows:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -823,11 +823,11 @@ async fn run() -&gt; VantageResult&lt;()&gt; {
 <tr><th>Concept</th><th>What it does</th><th>More info</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a></td><td>Builds SELECT queries via builder pattern</td><td><a href="https://docs.rs/vantage_expressions/0.5.0/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a></td></tr>
+<tr><td><a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a></td><td>Builds SELECT queries via builder pattern</td><td><a href="https://docs.rs/vantage_expressions/0.5.0/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a></td></tr>
 <tr><td><a href="https://docs.rs/vantage_table/0.5.5/vantage_table/column/core/struct.Column.html"><code>Column</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
-<tr><td><a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a></td><td>Ext trait giving <code>.eq()</code>, <code>.gt()</code>, etc. → <code>SqliteCondition</code></td><td></td></tr>
+<tr><td><a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a></td><td>Ext trait giving <code>.eq()</code>, <code>.gt()</code>, etc. → <code>SqliteCondition</code></td><td></td></tr>
 <tr><td><code>sqlite_expr!</code></td><td>Creates expressions with typed, bound parameters</td><td><a href="https://docs.rs/vantage_expressions/0.5.0/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a></td></tr>
-<tr><td><code>db.execute()</code></td><td>Runs an expression, returns <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a></td><td><a href="https://docs.rs/vantage_expressions/0.5.0/vantage_expressions/traits/datasource/trait.ExprDataSource.html"><code>ExprDataSource</code></a></td></tr>
+<tr><td><code>db.execute()</code></td><td>Runs an expression, returns <a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a></td><td><a href="https://docs.rs/vantage_expressions/0.5.0/vantage_expressions/traits/datasource/trait.ExprDataSource.html"><code>ExprDataSource</code></a></td></tr>
 <tr><td><a href="https://docs.rs/vantage_types/0.5.0/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a></td><td>Ordered map of column names to values — row-level access</td><td><code>.try_get::&lt;T&gt;()</code></td></tr>
 <tr><td><code>#[entity(SqliteType)]</code></td><td>Generates lossless record-to-struct conversion</td><td><a href="https://docs.rs/vantage_types/0.5.0/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord</code></a></td></tr>
 </tbody>
@@ -1690,7 +1690,7 @@ async fn main() -&gt; VantageResult&lt;()&gt; {
 }</code></pre>
 <p>A few notes on what this is doing:</p>
 <ul>
-<li><strong><code>static DB: OnceLock&lt;</code><a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a><code>&gt;</code>.</strong> The handler needs a
+<li><strong><code>static DB: OnceLock&lt;</code><a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a><code>&gt;</code>.</strong> The handler needs a
 database handle but we don’t want to open a new connection per request. A program-wide <code>OnceLock</code>
 is the simplest possible holder — set once in <code>main</code>, read from anywhere.</li>
 <li><strong>Each request calls <code>Category::table(db())</code></strong> — building the table (columns, relationships) and
@@ -2343,7 +2343,7 @@ already knows how to render a 400.</p>
 databases is a change to the model, not to the routes, handlers, or business logic. Now we
 cash the check. <code>/categories</code>, <code>/categories/{id}</code>, and <code>/categories/{cat_id}/products</code> keep
 their exact URL shape, response bodies, and behaviour — but the data lives in
-<a href="https://docs.rs/vantage_mongodb/0.5.5/vantage_mongodb/mongodb/struct.MongoDB.html"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>.</p>
+<a href="https://docs.rs/vantage_mongodb/0.5.5/vantage_mongodb/mongodb/struct.MongoDB.html"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>.</p>
 <p>Start Mongo — Docker is the easiest way:</p>
 <pre><code class="language-sh">docker run -d --name mongo-learn -p 27017:27017 mongo:7
 </code></pre>
@@ -3096,7 +3096,7 @@ in the next chapter.</li>
 </code></pre>
 <hr>
 <h2 id="building-a-lens"><a class="header" href="#building-a-lens">Building a Lens</a></h2>
-<p>A <a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a> is built once and shared across every Dio you create from it. It
+<p>A <a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a> is built once and shared across every Dio you create from it. It
 holds the cache backend, lifecycle callbacks, and default policies:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -3122,7 +3122,7 @@ let lens = Arc::new(
 <p>Three things happen here:</p>
 <ul>
 <li><strong><code>.cache_at(path)</code></strong> — opens a redb file on disk. Each Dio claims a named table inside it. You
-can also pass a custom <a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a> with
+can also pass a custom <a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a> with
 <code>.cache_source(backend)</code> for in-memory or remote stores.</li>
 <li><strong><code>.on_start(|dio| { ... })</code></strong> — fires once when <code>make_dio</code> is called. The canonical pattern is
 seed the cache from the master: list everything, write it to cache. The <code>dio.clone()</code> inside the
@@ -3158,9 +3158,9 @@ need to spawn a task or hold the Dio across an <code>.await</code>, clone it ins
 
 <hr>
 <h2 id="creating-a-dio"><a class="header" href="#creating-a-dio">Creating a Dio</a></h2>
-<p><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/lens/struct.Lens.html#method.make_dio"><code>make_dio</code></a> binds a Vista to the Lens. It opens the cache table,
+<p><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/lens/struct.Lens.html#method.make_dio"><code>make_dio</code></a> binds a Vista to the Lens. It opens the cache table,
 spawns the write worker and refresh task, fires <code>on_start</code>, and returns a
-<a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a>:</p>
+<a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>let products_dio = lens.make_dio(products_vista).await?;
@@ -3221,7 +3221,7 @@ queue accepts the write even though the master can’t.</p>
 <hr>
 <h2 id="writing-through-the-queue"><a class="header" href="#writing-through-the-queue">Writing through the queue</a></h2>
 <p>Writes don’t hit the master directly. They go into the Dio’s write queue as a
-<a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a>:</p>
+<a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use vantage_types::Record;
@@ -3293,7 +3293,7 @@ metrics, cache warming, or triggering side effects in any consumer.</p>
 <p>The event bus carries <em>internal</em> events (cache writes, refreshes). But what about changes happening
 on the master that you didn’t initiate — other users editing records, a database trigger firing, a
 webhook arriving?</p>
-<p><code>on_event</code> receives <em>upstream</em> <a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a> objects and reconciles
+<p><code>on_event</code> receives <em>upstream</em> <a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a> objects and reconciles
 them into the cache. Add it to the Lens alongside <code>on_start</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -3331,7 +3331,7 @@ them into the cache. Add it to the Lens alongside <code>on_start</code>:</p>
 );
 <span class="boring">}</span></code></pre>
 <p>The typical wiring: a live stream from SurrealDB, a Kafka consumer, or a WebSocket listener feeds
-<a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a>s into <code>dio.handle_event(evt).await</code>, which invokes
+<a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a>s into <code>dio.handle_event(evt).await</code>, which invokes
 your <code>on_event</code> callback. You write the row to cache and publish the matching <code>DioEvent</code> — any
 subscriber (Scenery, logger, metrics) picks it up.</p>
 <div id="admonition-patched-andinvalidate_record" class="admonition admonish-tip" role="note" aria-labelledby="admonition-patched-andinvalidate_record-title">
@@ -3423,13 +3423,13 @@ v.insert(&amp;"muffin".to_string(), &amp;rec).await?;  // enqueued
 <tr><th>Concept</th><th>What it does</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a></td><td>Shared infrastructure: cache, callbacks, defaults</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/lens/struct.LensBuilder.html"><code>LensBuilder</code></a></td><td>Chainable configuration for building a Lens</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a></td><td>Per-entity binding of Vista + Lens; owns cache, queue, events</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a></td><td>Storage backing for cached rows</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a></td><td>One unit of work on the write queue</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/dio/event_bus/enum.DioEvent.html"><code>DioEvent</code></a></td><td>Internal event: record changed, invalidated, write failed</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a></td><td>Upstream event from the master backend</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a></td><td>Shared infrastructure: cache, callbacks, defaults</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/lens/struct.LensBuilder.html"><code>LensBuilder</code></a></td><td>Chainable configuration for building a Lens</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a></td><td>Per-entity binding of Vista + Lens; owns cache, queue, events</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a></td><td>Storage backing for cached rows</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a></td><td>One unit of work on the write queue</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/dio/event_bus/enum.DioEvent.html"><code>DioEvent</code></a></td><td>Internal event: record changed, invalidated, write failed</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a></td><td>Upstream event from the master backend</td></tr>
 <tr><td><code>on_start</code> / <code>on_refresh</code> / <code>on_write</code> / <code>on_event</code></td><td>Lifecycle callbacks</td></tr>
 <tr><td><code>dio.vista()</code></td><td>Facade Vista that reads from cache, writes through queue</td></tr>
 </tbody>
@@ -3461,11 +3461,11 @@ computed value that stays up to date.</p>
 <p><strong>Scenery</strong> is that layer. Each Scenery is a reactive view onto a Dio that exposes a specific access
 pattern:</p>
 <ul>
-<li><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a> — ordered, paginated rows</li>
-<li><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a> — a single record by id</li>
-<li><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a> — a computed scalar (count, sum, custom)</li>
+<li><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a> — ordered, paginated rows</li>
+<li><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a> — a single record by id</li>
+<li><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a> — a computed scalar (count, sum, custom)</li>
 </ul>
-<p>All three share the same reactivity mechanism: a <a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a> counter
+<p>All three share the same reactivity mechanism: a <a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a> counter
 that bumps whenever the view’s state changes. Consumers subscribe via a <code>watch</code> channel and react on
 each bump.</p>
 <div id="admonition-goals-for-this-chapter-3" class="admonition admonish-example" role="note" aria-labelledby="admonition-goals-for-this-chapter-title">
@@ -3774,14 +3774,14 @@ loop {
 <tr><th>Concept</th><th>What it does</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a></td><td>Ordered, paginated row view with sequential or random-access loading</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a></td><td>Reactive single-record view by id</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a></td><td>Reactive aggregate (count, sum, max, min, custom)</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a></td><td>Monotonic counter bumped on every state change</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a></td><td>Ordered, paginated row view with sequential or random-access loading</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a></td><td>Reactive single-record view by id</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a></td><td>Reactive aggregate (count, sum, max, min, custom)</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a></td><td>Monotonic counter bumped on every state change</td></tr>
 <tr><td><code>subscribe()</code></td><td>Returns <code>watch::Receiver&lt;Generation&gt;</code> for reactive updates</td></tr>
 <tr><td><code>set_viewport()</code></td><td>Request a row range for random-access loading</td></tr>
 <tr><td><code>request_load_more()</code></td><td>Append the next page for sequential loading</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/value/enum.Aggregate.html"><code>Aggregate</code></a></td><td>Enum of built-in and custom aggregate operations</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/scenery/value/enum.Aggregate.html"><code>Aggregate</code></a></td><td>Enum of built-in and custom aggregate operations</td></tr>
 </tbody>
 </table>
 </div>
@@ -7198,7 +7198,7 @@ the underlying struct directly.</p>
 
 <h2 id="or_--and_--logical-combinators"><a class="header" href="#or_--and_--logical-combinators"><code>or_()</code> / <code>and_()</code> — Logical Combinators</a></h2>
 <p>By default, multiple calls to <code>.with_condition()</code> combine with <code>AND</code>. When you need <code>OR</code>, use
-<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/logical/fn.or_.html"><code>or_()</code></a>:</p>
+<a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/primitives/logical/fn.or_.html"><code>or_()</code></a>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use vantage_sql::primitives::*;
@@ -7206,7 +7206,7 @@ the underlying struct directly.</p>
 // role = 'admin' OR role = 'superuser'
 let cond = or_(ident("role").eq("admin"), ident("role").eq("superuser"));
 <span class="boring">}</span></code></pre>
-<p>For nested logic, combine with <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/logical/fn.and_.html"><code>and_()</code></a>:</p>
+<p>For nested logic, combine with <a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/primitives/logical/fn.and_.html"><code>and_()</code></a>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>// (price &gt; 100 AND in_stock = 1) OR (featured = 1)
@@ -7225,11 +7225,11 @@ for MySQL).</p>
 let qualified = ident("name").dot_of("u");    // "u"."name"
 let aliased = ident("total").with_alias("t"); // "total" AS "t"
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/identifier/fn.ident.html"><code>ident()</code></a> is a shorthand for
-<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/identifier/struct.Identifier.html#method.new"><code>Identifier::new()</code></a>. Reserved words and
+<p><a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/primitives/identifier/fn.ident.html"><code>ident()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/primitives/identifier/struct.Identifier.html#method.new"><code>Identifier::new()</code></a>. Reserved words and
 names with spaces are quoted automatically.</p>
 <h2 id="fx--function-calls"><a class="header" href="#fx--function-calls"><code>fx!</code> — Function Calls</a></h2>
-<p>The <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/macro.fx.html"><code>fx!</code></a> macro builds a SQL function call. Arguments are passed directly —
+<p>The <a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/macro.fx.html"><code>fx!</code></a> macro builds a SQL function call. Arguments are passed directly —
 <code>.expr()</code> is called on each one automatically:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -7248,7 +7248,7 @@ fx!("round", fx!("avg", ident("price")), 2i64)
 // =&gt; ROUND(AVG("price"), 2)
 <span class="boring">}</span></code></pre>
 <p>If you need to build arguments programmatically (e.g. from a <code>Vec</code>), use
-<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/fx/struct.Fx.html#method.new"><code>Fx::new()</code></a> directly:</p>
+<a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/primitives/fx/struct.Fx.html#method.new"><code>Fx::new()</code></a> directly:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>let args: Vec&lt;Expression&lt;AnySqliteType&gt;&gt; = columns.iter().map(|c| c.expr()).collect();
@@ -7265,10 +7265,10 @@ let f = Fx::new("coalesce", args);
     "sold out",
 );
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/ternary/fn.ternary.html"><code>ternary()</code></a> is a shorthand for
-<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/ternary/struct.Ternary.html#method.new"><code>Ternary::new()</code></a>.</p>
+<p><a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/primitives/ternary/fn.ternary.html"><code>ternary()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/primitives/ternary/struct.Ternary.html#method.new"><code>Ternary::new()</code></a>.</p>
 <h2 id="case--case-expressions"><a class="header" href="#case--case-expressions"><code>Case</code> — CASE Expressions</a></h2>
-<p>For more than two branches, use <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/case/struct.Case.html"><code>Case</code></a> to build a full
+<p>For more than two branches, use <a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/primitives/case/struct.Case.html"><code>Case</code></a> to build a full
 <code>CASE WHEN ... END</code> block:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -7279,12 +7279,12 @@ let f = Fx::new("coalesce", args);
 <span class="boring">}</span></code></pre>
 <h2 id="concat_--string-concatenation"><a class="header" href="#concat_--string-concatenation"><code>concat_!</code> — String Concatenation</a></h2>
 <p>Concatenates expressions. Renders as <code>||</code> on SQLite/Postgres, <code>CONCAT()</code> on MySQL. The
-<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/macro.concat_.html"><code>concat_!</code></a> macro calls <code>.expr()</code> on each argument automatically:</p>
+<a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/macro.concat_.html"><code>concat_!</code></a> macro calls <code>.expr()</code> on each argument automatically:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>concat_!(ident("first_name"), " ", ident("last_name"))
 <span class="boring">}</span></code></pre>
-<p>Use <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/concat/struct.Concat.html#method.ws"><code>.ws()</code></a> for a separator — it accepts any
+<p>Use <a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/primitives/concat/struct.Concat.html#method.ws"><code>.ws()</code></a> for a separator — it accepts any
 <code>Expressive&lt;T&gt;</code>, including string literals:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -7301,7 +7301,7 @@ let f = Fx::new("coalesce", args);
 // MySQL:    INTERVAL 30 DAY
 // Postgres: INTERVAL '30 days'
 <span class="boring">}</span></code></pre>
-<p>See <a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/interval/struct.Interval.html"><code>Interval</code></a> for available constructors (<code>days</code>,
+<p>See <a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/primitives/interval/struct.Interval.html"><code>Interval</code></a> for available constructors (<code>days</code>,
 <code>hours</code>, <code>months</code>, etc.).</p>
 <h2 id="date_format--date-formatting"><a class="header" href="#date_format--date-formatting"><code>date_format()</code> — Date Formatting</a></h2>
 <p>Portable strftime-style formatting. Translates format tokens per backend:</p>
@@ -7312,9 +7312,9 @@ let f = Fx::new("coalesce", args);
 // MySQL:    DATE_FORMAT("created_at", '%Y-%m-%d')
 // Postgres: TO_CHAR("created_at", 'YYYY-MM-DD')
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/date_format/fn.date_format.html"><code>date_format()</code></a> is a shorthand for
-<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/date_format/struct.DateFormat.html#method.new"><code>DateFormat::new()</code></a>. Use
-<a href="https://docs.rs/vantage_sql/0.5.5/vantage_sql/primitives/date_format/struct.DateFormat.html#method.raw_format"><code>.raw_format()</code></a> to skip token
+<p><a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/primitives/date_format/fn.date_format.html"><code>date_format()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/primitives/date_format/struct.DateFormat.html#method.new"><code>DateFormat::new()</code></a>. Use
+<a href="https://docs.rs/vantage_sql/0.5.6/vantage_sql/primitives/date_format/struct.DateFormat.html#method.raw_format"><code>.raw_format()</code></a> to skip token
 translation and pass a native format string.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="type-conversions"><a class="header" href="#type-conversions">Type Conversions</a></h1>
@@ -7453,6 +7453,217 @@ Tested via entity insert + read-back (Table API).</p>
 <li>SQLite infers CBOR type from stored value, not declared column type</li>
 <li>NUMERIC/REAL affinities coerce to float — <code>i64</code> in REAL comes back as Float and fails</li>
 <li>Store Decimal in TEXT for lossless precision</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="surrealdb"><a class="header" href="#surrealdb">SurrealDB</a></h1>
+<p>The <code>vantage-surrealdb</code> crate targets <a href="https://surrealdb.com">SurrealDB</a> — a document-graph database
+whose query language (SurrealQL) is close enough to SQL to share a vocabulary, but diverges where it
+matters: graph traversals instead of joins, embedded arrays with closures, record links, and a
+<code>math::</code>/<code>array::</code>/<code>string::</code> function namespace.</p>
+<p>Behind the <code>rhai</code> feature the crate exposes a scripting surface: a <a href="https://rhai.rs">Rhai</a> engine
+(registered by the <code>register_surreal_engine!</code> macro) that builds <code>SELECT</code> statements from the same
+named primitives as <code>vantage-sql</code> where the two overlap, and surreal-specific ones where they don’t.</p>
+<h2 id="pages"><a class="header" href="#pages">Pages</a></h2>
+<ul>
+<li><a href="#surrealdb-primitives">Primitives</a> — the named expression vocabulary and how each lowers to
+SurrealQL.</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="surrealdb-primitives"><a class="header" href="#surrealdb-primitives">SurrealDB Primitives</a></h1>
+<p>Primitives are the named building blocks for SurrealQL expressions. Each one does a single job and
+lowers to the SurrealQL it’s named for — you call <code>coalesce(a, b)</code> and get <code>a ?? b</code>, not a string you
+had to escape yourself.</p>
+<p>The guiding rule is <strong>one meaningful name per concept, reusing the <code>vantage-sql</code> name wherever the
+concept already exists.</strong> A script that says <code>count()</code>, <code>avg()</code>, <code>round()</code>, <code>coalesce()</code>,
+<code>case_when()</code>, <code>date_format()</code> reads the same against SQLite, Postgres, or SurrealDB; only the
+lowering differs (<code>avg</code> → <code>AVG</code> on SQL, <code>math::mean</code> on SurrealDB). Where SurrealDB has no SQL
+analogue — graph traversals, embedded-array closures, <code>SPLIT</code> — the primitive carries SurrealDB’s own
+term.</p>
+<p>The surface is the Rhai engine built by <code>register_surreal_engine!</code>. The examples below are Rhai; the
+<code>// →</code> comment shows what each renders to.</p>
+<div id="admonition-escape-hatches" class="admonition admonish-note" role="note" aria-labelledby="admonition-escape-hatches-title">
+<div class="admonition-title">
+<div id="admonition-escape-hatches-title">
+<p>Escape hatches</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-escape-hatches"></a>
+</div>
+
+<div>
+<p><code>expr("…")</code> and <code>fx("name", […])</code> drop to raw SurrealQL when no primitive fits — <code>expr("tags")</code>,
+<code>fx("crypto::md5", [ident("email")])</code>. Prefer a named primitive; reach for these only at the edges.</p>
+</div>
+
+</div>
+
+<h2 id="the-shared-vocabulary"><a class="header" href="#the-shared-vocabulary">The shared vocabulary</a></h2>
+<p>Same names as <code>vantage-sql</code>, lowered to SurrealQL:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Primitive</th><th>SurrealQL</th><th>Notes</th></tr>
+</thead>
+<tbody>
+<tr><td><code>count()</code></td><td><code>count()</code></td><td>zero-arg row count</td></tr>
+<tr><td><code>count(expr)</code></td><td><code>count(expr)</code></td><td>count truthy / array values</td></tr>
+<tr><td><code>count_distinct(expr)</code></td><td><code>count(array::distinct(expr))</code></td><td></td></tr>
+<tr><td><code>sum(expr)</code></td><td><code>math::sum(expr)</code></td><td></td></tr>
+<tr><td><code>avg(expr)</code></td><td><code>math::mean(expr)</code></td><td>SQL name, surreal lowering</td></tr>
+<tr><td><code>min(expr)</code> / <code>max(expr)</code></td><td><code>math::min</code> / <code>math::max</code></td><td></td></tr>
+<tr><td><code>round(expr)</code></td><td><code>math::round(expr)</code></td><td>nearest integer</td></tr>
+<tr><td><code>round(expr, n)</code></td><td><code>math::fixed(expr, n)</code></td><td>round to <code>n</code> decimals — <code>math::round</code> has no places arg</td></tr>
+<tr><td><code>coalesce(a, b)</code></td><td><code>a ?? b</code></td><td>null-coalescing</td></tr>
+<tr><td><code>nullif(a, b)</code></td><td><code>IF a = b THEN NONE ELSE a END</code></td><td></td></tr>
+<tr><td><code>cast(expr, "int")</code></td><td><code>type::int(expr)</code></td><td>also <code>float</code>/<code>string</code>/<code>decimal</code>/<code>datetime</code>/<code>number</code>/<code>bool</code></td></tr>
+<tr><td><code>date_format(expr, fmt)</code></td><td><code>time::format(expr, "fmt")</code></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="language-rhai">coalesce(ident("nickname"), "anonymous")      // → nickname ?? "anonymous"
+round(avg(ident("price")), 2)                  // → math::fixed(math::mean(price), 2)
+cast(ident("qty"), "float")                    // → type::float(qty)
+</code></pre>
+<h3 id="case_when--multi-branch-conditional"><a class="header" href="#case_when--multi-branch-conditional"><code>case_when()</code> — multi-branch conditional</a></h3>
+<p>Builds a SurrealQL <code>IF … THEN … ELSE … END</code>. Note SurrealQL uses a single trailing <code>END</code>, not one
+per branch:</p>
+<pre><code class="language-rhai">case_when()
+    .when(avg(ident("price")) &gt;= 250, "premium")
+    .when(avg(ident("price")) &gt;= 150, "mid")
+    .else_("value")
+    .expr()
+// → IF math::mean(price) &gt;= 250 THEN "premium" ELSE IF math::mean(price) &gt;= 150 THEN "mid" ELSE "value" END
+</code></pre>
+<h2 id="surreal-specific-functions"><a class="header" href="#surreal-specific-functions">Surreal-specific functions</a></h2>
+<p>Stats, collection, string, and time helpers — each a single-purpose name over a <code>math::</code>/<code>array::</code>/
+<code>object::</code>/<code>string::</code>/<code>time::</code> function:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Primitive</th><th>SurrealQL</th></tr>
+</thead>
+<tbody>
+<tr><td><code>first(expr)</code></td><td><code>array::first(expr)</code></td></tr>
+<tr><td><code>len(expr)</code></td><td><code>array::len(expr)</code></td></tr>
+<tr><td><code>stddev(expr)</code></td><td><code>math::stddev(expr)</code></td></tr>
+<tr><td><code>median(expr)</code></td><td><code>math::median(expr)</code></td></tr>
+<tr><td><code>lower(expr)</code></td><td><code>string::lowercase(expr)</code></td></tr>
+<tr><td><code>words(expr)</code></td><td><code>string::words(expr)</code></td></tr>
+<tr><td><code>object_entries(expr)</code></td><td><code>object::entries(expr)</code></td></tr>
+<tr><td><code>object_values(expr)</code></td><td><code>object::values(expr)</code></td></tr>
+<tr><td><code>similarity(expr, term)</code></td><td><code>string::similarity::jaro_winkler(expr, 'term')</code></td></tr>
+<tr><td><code>time_group(expr, unit)</code></td><td><code>time::group(expr, 'unit')</code></td></tr>
+</tbody>
+</table>
+</div>
+<p><code>similarity</code> and <code>time_group</code> inline their second argument as a <strong>single-quoted</strong> literal (the search
+term, the bucket unit) to match how SurrealQL writes those fixed tokens — distinct from a scalar
+string operand, which renders double-quoted (<code>coalesce(…, "n/a")</code> → <code>?? "n/a"</code>).</p>
+<h2 id="field-and-element-access"><a class="header" href="#field-and-element-access">Field and element access</a></h2>
+<p>Dotted paths and indexing use the <code>[…]</code> indexer rather than a separate primitive:</p>
+<pre><code class="language-rhai">ident("department")["name"]      // → department.name
+ident("nutrition")["sugar"]      // → nutrition.sugar
+some_subquery[0]                 // → (…)[0]   (integer index)
+</code></pre>
+<p><code>ident("t")["col"].alias("x")</code> projects a path: <code>col_path AS x</code>.</p>
+<h2 id="graph-traversal"><a class="header" href="#graph-traversal">Graph traversal</a></h2>
+<p>SurrealDB replaces joins with graph paths (<code>-&gt;edge-&gt;table</code>, <code>&lt;-edge&lt;-table</code>). One positional
+primitive expresses both directions — exactly one argument is the <strong>anchor</strong> (<code>me</code>, the current
+record, or a nested <code>graph(…)</code>), and its <strong>position</strong> sets direction:</p>
+<pre><code class="language-rhai">graph(me, "placed", "order")            // → -&gt;placed-&gt;order        (anchor left = outward)
+graph("reports_to", me)                 // → &lt;-reports_to           (anchor right = inward)
+graph(me, "reports_to", "employee")["name"]   // → -&gt;reports_to-&gt;employee.name
+</code></pre>
+<p>Mixed direction comes from nesting — each <code>graph()</code> appends one directed hop:</p>
+<pre><code class="language-rhai">graph("client", "placed", graph(me, "placed", "order"))
+// → -&gt;placed-&gt;order&lt;-placed&lt;-client
+</code></pre>
+<p><code>recurse(path, min, max)</code> wraps a path in ranged recursion:</p>
+<pre><code class="language-rhai">recurse(graph("employee", "reports_to", me), 1, 5)["name"]
+// → @.{1..5}(&lt;-reports_to&lt;-employee).name
+</code></pre>
+<div id="admonition-why-position-not-direction-names" class="admonition admonish-note" role="note" aria-labelledby="admonition-why-position-not-direction-names-title">
+<div class="admonition-title">
+<div id="admonition-why-position-not-direction-names-title">
+<p>Why position, not direction names?</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-why-position-not-direction-names"></a>
+</div>
+
+<div>
+<p>An <code>out</code>/<code>in</code>/<code>up</code>/<code>down</code> vocabulary either assumes a hierarchy or names the arrow rather than the
+meaning. Anchoring by position keeps the call reading like the path it produces, and composition
+(nesting) carries mixed direction without per-edge glyph overrides.</p>
+</div>
+
+</div>
+
+<h2 id="select-clauses"><a class="header" href="#select-clauses">Select clauses</a></h2>
+<p>Surreal-only clauses on the select builder:</p>
+<pre><code class="language-rhai">select().value().expression(max(ident("total"))).from("order").group_all()
+// → SELECT VALUE math::max(total) FROM order GROUP ALL
+
+select().field("price").from("product").split("tags")
+// → SELECT price FROM product SPLIT tags
+</code></pre>
+<p><code>.subquery()</code> parenthesizes a select so it composes as a scalar expression — it bridges a select into
+the expression layer, where it pairs with the <code>[n]</code> indexer, <code>.alias()</code>, comparisons, and <code>from()</code>:</p>
+<pre><code class="language-rhai">select().value().expression(max(ident("total")))
+    .from("order").where(ident("client") == parent("id")).group_all()
+    .subquery()[0].alias("biggest_order")
+// → (SELECT VALUE math::max(total) FROM order WHERE client = $parent.id GROUP ALL)[0] AS biggest_order
+</code></pre>
+<h2 id="parameters"><a class="header" href="#parameters">Parameters</a></h2>
+<p><code>param(name)</code> is any SurrealDB <code>$</code>-parameter (<code>$auth</code>, <code>$this</code>, <code>$parent</code>, a <code>LET</code>-bound name).
+“Parameter” is SurrealDB’s own term for <code>$</code>-prefixed names, so the primitive is named for it — and
+<strong>not</strong> <code>var</code>, which Rhai reserves as a keyword.</p>
+<pre><code class="language-rhai">param("auth")["id"]        // → $auth.id
+parent("id")               // → $parent.id   (sugar for the correlated-subquery case)
+</code></pre>
+<h2 id="embedded-array-closures"><a class="header" href="#embedded-array-closures">Embedded-array closures</a></h2>
+<p>SurrealDB’s <code>array.map</code>/<code>fold</code>/<code>filter</code> take an inline closure — the one place it exceeds the SQL
+vocabulary. These are written as <strong>native Rhai closures</strong>, not a closure-as-data constructor: each
+parameter is bound to a placeholder expression and the closure runs <em>symbolically</em>, so every operator
+and indexer in the body builds SurrealQL instead of computing a value. A <code>#{…}</code> map lowers to an
+object literal, <code>[…]</code> to an array literal, and <code>* + - /</code> render parenthesized.</p>
+<pre><code class="language-rhai">ident("lines").map(|l| #{
+    product:  l["product"]["name"],
+    subtotal: l["quantity"] * l["price"]
+})
+// → lines.map(|$value| { product: $value.product.name, subtotal: ($value.quantity * $value.price) })
+
+ident("lines").fold(0, |acc, l| acc + l["quantity"] * l["price"])
+// → lines.fold(0, |$acc, $value| ($acc + ($value.quantity * $value.price)))
+</code></pre>
+<div id="admonition-the-closure-parameter-name-is-engine-chosen" class="admonition admonish-warning" role="note" aria-labelledby="admonition-the-closure-parameter-name-is-engine-chosen-title">
+<div class="admonition-title">
+<div id="admonition-the-closure-parameter-name-is-engine-chosen-title">
+<p>The closure parameter name is engine-chosen</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-the-closure-parameter-name-is-engine-chosen"></a>
+</div>
+
+<div>
+<p>A Rhai local can’t carry a <code>$</code>, so the engine never sees your <code>|l|</code> — it binds its own placeholders
+(<code>$value</code> for the item, <code>$acc</code> for a fold accumulator). The emitted SurrealQL therefore reads
+<code>|$value| …</code>, not <code>|$l| …</code>. This is cosmetic: SurrealQL doesn’t care about the parameter name, and the
+result executes identically.</p>
+</div>
+
+</div>
+
+<h2 id="checklist"><a class="header" href="#checklist">Checklist</a></h2>
+<ul>
+<li>Reach for a <strong>named primitive</strong> first; it handles the lowering, quoting, and escaping.</li>
+<li>Use the <strong><code>vantage-sql</code> name</strong> when the concept overlaps (<code>count</code>, <code>avg</code>, <code>round</code>, <code>coalesce</code>,
+<code>case_when</code>, <code>date_format</code>) — scripts stay portable across backends.</li>
+<li>Build <strong>field paths</strong> with the <code>["col"]</code> indexer, <strong>graph paths</strong> with <code>graph()</code> + <code>me</code>, and
+<strong>mixed direction</strong> by nesting rather than glyphs.</li>
+<li>Write <strong>array closures</strong> as native <code>|l| …</code> Rhai closures; expect engine-chosen <code>$value</code>/<code>$acc</code>
+parameter names in the output.</li>
+<li>Drop to <strong><code>expr("…")</code> / <code>fx(…)</code></strong> only when no primitive fits.</li>
 </ul>
 
                     </main>

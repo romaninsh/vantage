@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-959ffe55.js";
+            window.path_to_searchindex_js = "../searchindex-4150e71c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-3f24ff2a.js"></script>
+        <script src="../toc-e08789ca.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -183,11 +183,11 @@ computed value that stays up to date.</p>
 <p><strong>Scenery</strong> is that layer. Each Scenery is a reactive view onto a Dio that exposes a specific access
 pattern:</p>
 <ul>
-<li><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a> — ordered, paginated rows</li>
-<li><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a> — a single record by id</li>
-<li><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a> — a computed scalar (count, sum, custom)</li>
+<li><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a> — ordered, paginated rows</li>
+<li><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a> — a single record by id</li>
+<li><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a> — a computed scalar (count, sum, custom)</li>
 </ul>
-<p>All three share the same reactivity mechanism: a <a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a> counter
+<p>All three share the same reactivity mechanism: a <a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a> counter
 that bumps whenever the view’s state changes. Consumers subscribe via a <code>watch</code> channel and react on
 each bump.</p>
 <div id="admonition-goals-for-this-chapter" class="admonition admonish-example" role="note" aria-labelledby="admonition-goals-for-this-chapter-title">
@@ -496,14 +496,14 @@ loop {
 <tr><th>Concept</th><th>What it does</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a></td><td>Ordered, paginated row view with sequential or random-access loading</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a></td><td>Reactive single-record view by id</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a></td><td>Reactive aggregate (count, sum, max, min, custom)</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a></td><td>Monotonic counter bumped on every state change</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a></td><td>Ordered, paginated row view with sequential or random-access loading</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a></td><td>Reactive single-record view by id</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a></td><td>Reactive aggregate (count, sum, max, min, custom)</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a></td><td>Monotonic counter bumped on every state change</td></tr>
 <tr><td><code>subscribe()</code></td><td>Returns <code>watch::Receiver&lt;Generation&gt;</code> for reactive updates</td></tr>
 <tr><td><code>set_viewport()</code></td><td>Request a row range for random-access loading</td></tr>
 <tr><td><code>request_load_more()</code></td><td>Append the next page for sequential loading</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.2/vantage_diorama/scenery/value/enum.Aggregate.html"><code>Aggregate</code></a></td><td>Enum of built-in and custom aggregate operations</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/scenery/value/enum.Aggregate.html"><code>Aggregate</code></a></td><td>Enum of built-in and custom aggregate operations</td></tr>
 </tbody>
 </table>
 </div>

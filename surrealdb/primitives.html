@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Step 2: Expressions - Vantage 0.4 Framework</title>
+        <title>Primitives - Vantage 0.4 Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,234 +175,211 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="step-2-make-expressions-work"><a class="header" href="#step-2-make-expressions-work">Step 2: Make Expressions Work</a></h1>
-<p>With the type system in place, you can now use <code>Expression&lt;AnySqliteType&gt;</code> to build and execute
-queries. This step has two deliverables: a convenience macro and the <code>ExprDataSource</code> trait
-implementation.</p>
-<h3 id="the-vendor-macro"><a class="header" href="#the-vendor-macro">The vendor macro</a></h3>
-<p>Define a macro that produces <code>Expression&lt;YourAnyType&gt;</code>. SurrealDB has <code>surreal_expr!</code>, we create
-<code>sqlite_expr!</code>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let expr = sqlite_expr!("SELECT * FROM product WHERE price &gt; {}", 100i64);
-<span class="boring">}</span></code></pre>
-<p>Under the hood, <code>100i64</code> gets wrapped as <code>AnySqliteType::new(100i64)</code> with variant <code>Integer</code>. When
-this expression hits the database, the bind layer knows to call <code>query.bind(100i64)</code> — not
-<code>query.bind("100")</code> or <code>query.bind(100.0)</code>.</p>
-<p>The macro handles three kinds of parameters:</p>
+                        <h1 id="surrealdb-primitives"><a class="header" href="#surrealdb-primitives">SurrealDB Primitives</a></h1>
+<p>Primitives are the named building blocks for SurrealQL expressions. Each one does a single job and
+lowers to the SurrealQL it’s named for — you call <code>coalesce(a, b)</code> and get <code>a ?? b</code>, not a string you
+had to escape yourself.</p>
+<p>The guiding rule is <strong>one meaningful name per concept, reusing the <code>vantage-sql</code> name wherever the
+concept already exists.</strong> A script that says <code>count()</code>, <code>avg()</code>, <code>round()</code>, <code>coalesce()</code>,
+<code>case_when()</code>, <code>date_format()</code> reads the same against SQLite, Postgres, or SurrealDB; only the
+lowering differs (<code>avg</code> → <code>AVG</code> on SQL, <code>math::mean</code> on SurrealDB). Where SurrealDB has no SQL
+analogue — graph traversals, embedded-array closures, <code>SPLIT</code> — the primitive carries SurrealDB’s own
+term.</p>
+<p>The surface is the Rhai engine built by <code>register_surreal_engine!</code>. The examples below are Rhai; the
+<code>// →</code> comment shows what each renders to.</p>
+<div id="admonition-escape-hatches" class="admonition admonish-note" role="note" aria-labelledby="admonition-escape-hatches-title">
+<div class="admonition-title">
+<div id="admonition-escape-hatches-title">
+<p>Escape hatches</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-escape-hatches"></a>
+</div>
+
+<div>
+<p><code>expr("…")</code> and <code>fx("name", […])</code> drop to raw SurrealQL when no primitive fits — <code>expr("tags")</code>,
+<code>fx("crypto::md5", [ident("email")])</code>. Prefer a named primitive; reach for these only at the edges.</p>
+</div>
+
+</div>
+
+<h2 id="the-shared-vocabulary"><a class="header" href="#the-shared-vocabulary">The shared vocabulary</a></h2>
+<p>Same names as <code>vantage-sql</code>, lowered to SurrealQL:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Primitive</th><th>SurrealQL</th><th>Notes</th></tr>
+</thead>
+<tbody>
+<tr><td><code>count()</code></td><td><code>count()</code></td><td>zero-arg row count</td></tr>
+<tr><td><code>count(expr)</code></td><td><code>count(expr)</code></td><td>count truthy / array values</td></tr>
+<tr><td><code>count_distinct(expr)</code></td><td><code>count(array::distinct(expr))</code></td><td></td></tr>
+<tr><td><code>sum(expr)</code></td><td><code>math::sum(expr)</code></td><td></td></tr>
+<tr><td><code>avg(expr)</code></td><td><code>math::mean(expr)</code></td><td>SQL name, surreal lowering</td></tr>
+<tr><td><code>min(expr)</code> / <code>max(expr)</code></td><td><code>math::min</code> / <code>math::max</code></td><td></td></tr>
+<tr><td><code>round(expr)</code></td><td><code>math::round(expr)</code></td><td>nearest integer</td></tr>
+<tr><td><code>round(expr, n)</code></td><td><code>math::fixed(expr, n)</code></td><td>round to <code>n</code> decimals — <code>math::round</code> has no places arg</td></tr>
+<tr><td><code>coalesce(a, b)</code></td><td><code>a ?? b</code></td><td>null-coalescing</td></tr>
+<tr><td><code>nullif(a, b)</code></td><td><code>IF a = b THEN NONE ELSE a END</code></td><td></td></tr>
+<tr><td><code>cast(expr, "int")</code></td><td><code>type::int(expr)</code></td><td>also <code>float</code>/<code>string</code>/<code>decimal</code>/<code>datetime</code>/<code>number</code>/<code>bool</code></td></tr>
+<tr><td><code>date_format(expr, fmt)</code></td><td><code>time::format(expr, "fmt")</code></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="language-rhai">coalesce(ident("nickname"), "anonymous")      // → nickname ?? "anonymous"
+round(avg(ident("price")), 2)                  // → math::fixed(math::mean(price), 2)
+cast(ident("qty"), "float")                    // → type::float(qty)
+</code></pre>
+<h3 id="case_when--multi-branch-conditional"><a class="header" href="#case_when--multi-branch-conditional"><code>case_when()</code> — multi-branch conditional</a></h3>
+<p>Builds a SurrealQL <code>IF … THEN … ELSE … END</code>. Note SurrealQL uses a single trailing <code>END</code>, not one
+per branch:</p>
+<pre><code class="language-rhai">case_when()
+    .when(avg(ident("price")) &gt;= 250, "premium")
+    .when(avg(ident("price")) &gt;= 150, "mid")
+    .else_("value")
+    .expr()
+// → IF math::mean(price) &gt;= 250 THEN "premium" ELSE IF math::mean(price) &gt;= 150 THEN "mid" ELSE "value" END
+</code></pre>
+<h2 id="surreal-specific-functions"><a class="header" href="#surreal-specific-functions">Surreal-specific functions</a></h2>
+<p>Stats, collection, string, and time helpers — each a single-purpose name over a <code>math::</code>/<code>array::</code>/
+<code>object::</code>/<code>string::</code>/<code>time::</code> function:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Primitive</th><th>SurrealQL</th></tr>
+</thead>
+<tbody>
+<tr><td><code>first(expr)</code></td><td><code>array::first(expr)</code></td></tr>
+<tr><td><code>len(expr)</code></td><td><code>array::len(expr)</code></td></tr>
+<tr><td><code>stddev(expr)</code></td><td><code>math::stddev(expr)</code></td></tr>
+<tr><td><code>median(expr)</code></td><td><code>math::median(expr)</code></td></tr>
+<tr><td><code>lower(expr)</code></td><td><code>string::lowercase(expr)</code></td></tr>
+<tr><td><code>words(expr)</code></td><td><code>string::words(expr)</code></td></tr>
+<tr><td><code>object_entries(expr)</code></td><td><code>object::entries(expr)</code></td></tr>
+<tr><td><code>object_values(expr)</code></td><td><code>object::values(expr)</code></td></tr>
+<tr><td><code>similarity(expr, term)</code></td><td><code>string::similarity::jaro_winkler(expr, 'term')</code></td></tr>
+<tr><td><code>time_group(expr, unit)</code></td><td><code>time::group(expr, 'unit')</code></td></tr>
+</tbody>
+</table>
+</div>
+<p><code>similarity</code> and <code>time_group</code> inline their second argument as a <strong>single-quoted</strong> literal (the search
+term, the bucket unit) to match how SurrealQL writes those fixed tokens — distinct from a scalar
+string operand, which renders double-quoted (<code>coalesce(…, "n/a")</code> → <code>?? "n/a"</code>).</p>
+<h2 id="field-and-element-access"><a class="header" href="#field-and-element-access">Field and element access</a></h2>
+<p>Dotted paths and indexing use the <code>[…]</code> indexer rather than a separate primitive:</p>
+<pre><code class="language-rhai">ident("department")["name"]      // → department.name
+ident("nutrition")["sugar"]      // → nutrition.sugar
+some_subquery[0]                 // → (…)[0]   (integer index)
+</code></pre>
+<p><code>ident("t")["col"].alias("x")</code> projects a path: <code>col_path AS x</code>.</p>
+<h2 id="graph-traversal"><a class="header" href="#graph-traversal">Graph traversal</a></h2>
+<p>SurrealDB replaces joins with graph paths (<code>-&gt;edge-&gt;table</code>, <code>&lt;-edge&lt;-table</code>). One positional
+primitive expresses both directions — exactly one argument is the <strong>anchor</strong> (<code>me</code>, the current
+record, or a nested <code>graph(…)</code>), and its <strong>position</strong> sets direction:</p>
+<pre><code class="language-rhai">graph(me, "placed", "order")            // → -&gt;placed-&gt;order        (anchor left = outward)
+graph("reports_to", me)                 // → &lt;-reports_to           (anchor right = inward)
+graph(me, "reports_to", "employee")["name"]   // → -&gt;reports_to-&gt;employee.name
+</code></pre>
+<p>Mixed direction comes from nesting — each <code>graph()</code> appends one directed hop:</p>
+<pre><code class="language-rhai">graph("client", "placed", graph(me, "placed", "order"))
+// → -&gt;placed-&gt;order&lt;-placed&lt;-client
+</code></pre>
+<p><code>recurse(path, min, max)</code> wraps a path in ranged recursion:</p>
+<pre><code class="language-rhai">recurse(graph("employee", "reports_to", me), 1, 5)["name"]
+// → @.{1..5}(&lt;-reports_to&lt;-employee).name
+</code></pre>
+<div id="admonition-why-position-not-direction-names" class="admonition admonish-note" role="note" aria-labelledby="admonition-why-position-not-direction-names-title">
+<div class="admonition-title">
+<div id="admonition-why-position-not-direction-names-title">
+<p>Why position, not direction names?</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-why-position-not-direction-names"></a>
+</div>
+
+<div>
+<p>An <code>out</code>/<code>in</code>/<code>up</code>/<code>down</code> vocabulary either assumes a hierarchy or names the arrow rather than the
+meaning. Anchoring by position keeps the call reading like the path it produces, and composition
+(nesting) carries mixed direction without per-edge glyph overrides.</p>
+</div>
+
+</div>
+
+<h2 id="select-clauses"><a class="header" href="#select-clauses">Select clauses</a></h2>
+<p>Surreal-only clauses on the select builder:</p>
+<pre><code class="language-rhai">select().value().expression(max(ident("total"))).from("order").group_all()
+// → SELECT VALUE math::max(total) FROM order GROUP ALL
+
+select().field("price").from("product").split("tags")
+// → SELECT price FROM product SPLIT tags
+</code></pre>
+<p><code>.subquery()</code> parenthesizes a select so it composes as a scalar expression — it bridges a select into
+the expression layer, where it pairs with the <code>[n]</code> indexer, <code>.alias()</code>, comparisons, and <code>from()</code>:</p>
+<pre><code class="language-rhai">select().value().expression(max(ident("total")))
+    .from("order").where(ident("client") == parent("id")).group_all()
+    .subquery()[0].alias("biggest_order")
+// → (SELECT VALUE math::max(total) FROM order WHERE client = $parent.id GROUP ALL)[0] AS biggest_order
+</code></pre>
+<h2 id="parameters"><a class="header" href="#parameters">Parameters</a></h2>
+<p><code>param(name)</code> is any SurrealDB <code>$</code>-parameter (<code>$auth</code>, <code>$this</code>, <code>$parent</code>, a <code>LET</code>-bound name).
+“Parameter” is SurrealDB’s own term for <code>$</code>-prefixed names, so the primitive is named for it — and
+<strong>not</strong> <code>var</code>, which Rhai reserves as a keyword.</p>
+<pre><code class="language-rhai">param("auth")["id"]        // → $auth.id
+parent("id")               // → $parent.id   (sugar for the correlated-subquery case)
+</code></pre>
+<h2 id="embedded-array-closures"><a class="header" href="#embedded-array-closures">Embedded-array closures</a></h2>
+<p>SurrealDB’s <code>array.map</code>/<code>fold</code>/<code>filter</code> take an inline closure — the one place it exceeds the SQL
+vocabulary. These are written as <strong>native Rhai closures</strong>, not a closure-as-data constructor: each
+parameter is bound to a placeholder expression and the closure runs <em>symbolically</em>, so every operator
+and indexer in the body builds SurrealQL instead of computing a value. A <code>#{…}</code> map lowers to an
+object literal, <code>[…]</code> to an array literal, and <code>* + - /</code> render parenthesized.</p>
+<pre><code class="language-rhai">ident("lines").map(|l| #{
+    product:  l["product"]["name"],
+    subtotal: l["quantity"] * l["price"]
+})
+// → lines.map(|$value| { product: $value.product.name, subtotal: ($value.quantity * $value.price) })
+
+ident("lines").fold(0, |acc, l| acc + l["quantity"] * l["price"])
+// → lines.fold(0, |$acc, $value| ($acc + ($value.quantity * $value.price)))
+</code></pre>
+<div id="admonition-the-closure-parameter-name-is-engine-chosen" class="admonition admonish-warning" role="note" aria-labelledby="admonition-the-closure-parameter-name-is-engine-chosen-title">
+<div class="admonition-title">
+<div id="admonition-the-closure-parameter-name-is-engine-chosen-title">
+<p>The closure parameter name is engine-chosen</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-the-closure-parameter-name-is-engine-chosen"></a>
+</div>
+
+<div>
+<p>A Rhai local can’t carry a <code>$</code>, so the engine never sees your <code>|l|</code> — it binds its own placeholders
+(<code>$value</code> for the item, <code>$acc</code> for a fold accumulator). The emitted SurrealQL therefore reads
+<code>|$value| …</code>, not <code>|$l| …</code>. This is cosmetic: SurrealQL doesn’t care about the parameter name, and the
+result executes identically.</p>
+</div>
+
+</div>
+
+<h2 id="checklist"><a class="header" href="#checklist">Checklist</a></h2>
 <ul>
-<li><code>42i64</code> → scalar with type marker</li>
-<li><code>(sub_expr)</code> → nested expression (composed into the template)</li>
-<li><code>{deferred}</code> → lazy evaluation (resolved at execution time)</li>
+<li>Reach for a <strong>named primitive</strong> first; it handles the lowering, quoting, and escaping.</li>
+<li>Use the <strong><code>vantage-sql</code> name</strong> when the concept overlaps (<code>count</code>, <code>avg</code>, <code>round</code>, <code>coalesce</code>,
+<code>case_when</code>, <code>date_format</code>) — scripts stay portable across backends.</li>
+<li>Build <strong>field paths</strong> with the <code>["col"]</code> indexer, <strong>graph paths</strong> with <code>graph()</code> + <code>me</code>, and
+<strong>mixed direction</strong> by nesting rather than glyphs.</li>
+<li>Write <strong>array closures</strong> as native <code>|l| …</code> Rhai closures; expect engine-chosen <code>$value</code>/<code>$acc</code>
+parameter names in the output.</li>
+<li>Drop to <strong><code>expr("…")</code> / <code>fx(…)</code></strong> only when no primitive fits.</li>
 </ul>
-<h3 id="identifier-quoting"><a class="header" href="#identifier-quoting">Identifier quoting</a></h3>
-<p>SQL identifiers (table names, column names) need quoting to handle reserved words, spaces, and
-special characters. Different databases use different quote styles — PostgreSQL and SQLite use
-double quotes (<code>"name"</code>), MySQL uses backticks (<code>`name`</code>), SurrealDB uses something else
-entirely.</p>
-<p>Vantage centralises this in the <code>Identifier</code> struct (<code>vantage-sql/src/primitives/identifier.rs</code>).
-<code>Identifier</code> is quote-agnostic — it stores the name parts and optional alias, but the actual quoting
-happens in the <code>Expressive&lt;T&gt;</code> implementation for each backend type:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>impl Expressive&lt;AnyMysqlType&gt; for Identifier {
-    fn expr(&amp;self) -&gt; Expression&lt;AnyMysqlType&gt; {
-        Expression::new(self.render_with('`'), vec![])  // `name`
-    }
-}
-<span class="boring">}</span></code></pre>
-<p>When you add a new SQL backend, add an <code>Expressive&lt;YourAnyType&gt;</code> impl with your quote character. The
-compiler picks the right impl based on the expression type context.</p>
-<p>In practice you use the <code>ident()</code> shorthand and pass it into the vendor macro with parentheses — the
-<code>(...)</code> syntax calls <code>.expr()</code> automatically, so quoting is handled by the type context:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use vantage_sql::primitives::identifier::{Identifier, ident};
-
-// The (ident(...)) syntax invokes Expressive — quoting is automatic
-let expr = mysql_expr!("SELECT {} FROM {} WHERE {} = {}",
-    (ident("name")), (ident("product")), (ident("price")), 100i64);
-// → SELECT `name` FROM `product` WHERE `price` = 100
-
-let expr = postgres_expr!("SELECT {} FROM {} WHERE {} = {}",
-    (ident("name")), (ident("product")), (ident("price")), 100i64);
-// → SELECT "name" FROM "product" WHERE "price" = 100
-<span class="boring">}</span></code></pre>
-<p>For qualified identifiers (table.column) and aliases:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let expr = sqlite_expr!("SELECT {}", (Identifier::with_dot("u", "name")));
-// → SELECT "u"."name"
-
-let expr = mysql_expr!("SELECT {}", (ident("name").with_alias("n")));
-// → SELECT `name` AS `n`
-<span class="boring">}</span></code></pre>
-<p>Test identifier quoting in <code>tests/&lt;backend&gt;/2_identifier.rs</code> — cover basic names, reserved words,
-spaces, hyphens, unicode, and names that start with numbers. These are all legal inside quoted
-identifiers in both PostgreSQL and MySQL.</p>
-<h3 id="exprdatasource"><a class="header" href="#exprdatasource">ExprDataSource</a></h3>
-<p>Implement <code>DataSource</code> (marker) and <code>ExprDataSource&lt;AnySqliteType&gt;</code> on your DB struct. The <code>execute</code>
-method takes an expression, flattens nested sub-expressions, converts <code>{}</code> placeholders to your
-driver’s syntax (<code>?N</code> for SQLite, <code>$N</code> for Postgres), binds parameters using type markers, and
-returns results.</p>
-<p>Results come back as <code>AnySqliteType</code> with <code>type_variant: None</code> — the database doesn’t preserve our
-markers, so results are permissive (see Step 1). For SQLite that’s especially natural since it
-doesn’t distinguish boolean from integer on the wire.</p>
-<p>If the persistence layer you’re implementing <em>does</em> preserve type information in responses (like
-SurrealDB with CBOR tags), set the correct <code>type_variant</code> when constructing result values in your
-<code>execute()</code> implementation. That way <code>try_get</code> enforces type boundaries on both sides of the
-round-trip.</p>
-<h3 id="validating-with-insert-expressions"><a class="header" href="#validating-with-insert-expressions">Validating with INSERT expressions</a></h3>
-<p>The best way to test this is INSERT + SELECT round-trips. A single insert exercises all the pieces —
-macro, parameter binding, type markers, and result parsing:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let insert = sqlite_expr!(
-    "INSERT INTO product (id, name, price, is_deleted) VALUES ({}, {}, {}, {})",
-    "cupcake", "Flux Cupcake", 120i64, false
-);
-db.execute(&amp;insert).await?;
-
-let select = sqlite_expr!("SELECT * FROM product WHERE id = {}", "cupcake");
-let result = db.execute(&amp;select).await?;
-<span class="boring">}</span></code></pre>
-<p>Nested expressions let you build multi-row inserts from composable parts:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let row1 = sqlite_expr!("({}, {}, {}, {})", "tart", "Time Tart", 220i64, false);
-let row2 = sqlite_expr!("({}, {}, {}, {})", "pie", "Sea Pie", 299i64, true);
-
-// Expression::from_vec joins sub-expressions with a delimiter
-let rows = Expression::from_vec(vec![row1, row2], ", ");
-
-// Nest into the INSERT — flattener resolves everything into a single query
-let insert = Expression::&lt;AnySqliteType&gt;::new(
-    "INSERT INTO product (id, name, price, is_deleted) VALUES {}",
-    vec![ExpressiveEnum::Nested(rows)],
-);
-db.execute(&amp;insert).await?;
-<span class="boring">}</span></code></pre>
-<p>The <code>ExpressionFlattener</code> collapses all nesting into one flat template with positional parameters —
-each one still carrying its type marker for correct binding.</p>
-<h3 id="deferring-cross-database-value-resolution"><a class="header" href="#deferring-cross-database-value-resolution">Deferring: cross-database value resolution</a></h3>
-<p>Sometimes a query on one database needs a value from another database. That’s what <code>defer()</code> is for
-— it wraps a query as a closure that executes later, when the outer query runs.</p>
-<p>This is not a subquery. The deferred query runs first, produces a concrete value, and that value
-gets bound as a regular parameter in the outer query.</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let (config_db, shop_db) = setup().await;
-
-// This doesn't execute yet — it's a closure
-let threshold_query = sqlite_expr!("SELECT value FROM config WHERE key = {}", "min_price");
-let deferred_threshold = config_db.defer(threshold_query);
-
-// Use the deferred value as a parameter in a different database
-let shop_query = Expression::&lt;AnySqliteType&gt;::new(
-    "SELECT name FROM product WHERE price &gt;= {} ORDER BY price",
-    vec![ExpressiveEnum::Deferred(deferred_threshold)],
-);
-
-// When shop_db.execute() runs:
-// 1. Resolves the deferred → calls config_db, gets 150
-// 2. Replaces the Deferred param with Scalar(150)
-// 3. Flattens and binds: SELECT name FROM product WHERE price &gt;= ?1
-let result = shop_db.execute(&amp;shop_query).await?;
-<span class="boring">}</span></code></pre>
-<p>Your <code>execute()</code> implementation needs to resolve deferred parameters before flattening. Walk the
-parameter list, call <code>.call().await</code> on any <code>Deferred</code>, and leave <code>Scalar</code> and <code>Nested</code> untouched.</p>
-<p>The resolved value comes back as an untyped <code>AnySqliteType</code> (no variant marker), so it gets bound
-via JSON-inference. For SQLite this is fine — the loose type system handles it. For stricter
-databases, you may want <code>defer()</code> to preserve type information from the source query’s result.</p>
-<h3 id="reading-query-results"><a class="header" href="#reading-query-results">Reading query results</a></h3>
-<p>So far we’ve been calling <code>db.execute(&amp;expr).await</code> which returns <code>AnySqliteType</code>. For a SELECT
-query, that value wraps a JSON array of row objects. To work with individual rows, you convert into
-Records:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let result = db.execute(&amp;sqlite_expr!("SELECT * FROM product")).await?;
-
-// Result is AnySqliteType wrapping [{"id":"a","name":"Cheap","price":50}, ...]
-// Convert to records manually:
-let rows: Vec&lt;JsonValue&gt; = match result.into_value() {
-    JsonValue::Array(arr) =&gt; arr,
-    _ =&gt; panic!("expected rows"),
-};
-let record: Record&lt;JsonValue&gt; = rows[0].clone().into();
-<span class="boring">}</span></code></pre>
-<p>That works but it’s verbose. The <code>TryFrom&lt;AnyType&gt;</code> impls from Step 1 make this cleaner through
-<code>AssociatedExpression</code>. When you call <code>db.associate::&lt;R&gt;(expr)</code>, you get an expression that knows
-its return type — <code>.get()</code> executes and converts in one step:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// Scalar — extracts single value from single-row result
-let count = db.associate::&lt;i64&gt;(sqlite_expr!("SELECT COUNT(*) FROM product"));
-assert_eq!(count.get().await?, 3);
-
-// Record — extracts first row
-let record: Record&lt;JsonValue&gt; = db
-    .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
-    .get().await?;
-<span class="boring">}</span></code></pre>
-<p>From a Record, you can deserialize into a struct. For the <code>#[entity]</code> path:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[entity(SqliteType)]
-struct Product { id: String, name: String, price: i64 }
-
-let record: Record&lt;AnySqliteType&gt; = db
-    .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
-    .get().await?;
-let product = Product::from_record(record)?;
-<span class="boring">}</span></code></pre>
-<p>Or for the serde path with <code>Record&lt;JsonValue&gt;</code>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[derive(Deserialize)]
-struct Product { id: String, name: String, price: i64 }
-
-let record: Record&lt;JsonValue&gt; = db
-    .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
-    .get().await?;
-let product: Product = Product::from_record(record)?;
-<span class="boring">}</span></code></pre>
-<p>Testing the failure modes (missing fields, NULL into required field, wrong types) can help spot
-issues in your implementation.</p>
-<h3 id="step-2-conclusion"><a class="header" href="#step-2-conclusion">Step 2 conclusion</a></h3>
-<p>At this point you should have:</p>
-<ol>
-<li>
-<p><strong>A vendor macro</strong> (<code>sqlite_expr!</code>, <code>surreal_expr!</code>, etc.) that produces <code>Expression&lt;AnyType&gt;</code>
-with typed parameters.</p>
-</li>
-<li>
-<p><strong>Trait impls</strong> in <code>src/&lt;backend&gt;/impls/</code> — <code>DataSource</code> (marker) and <code>ExprDataSource&lt;AnyType&gt;</code>
-with <code>execute()</code> and <code>defer()</code>.</p>
-</li>
-<li>
-<p><strong>Tests</strong> in <code>tests/&lt;backend&gt;/2_*.rs</code> covering:</p>
-<ul>
-<li>INSERT with typed parameters, read back and verify</li>
-<li>Multi-row INSERT using nested expressions and <code>from_vec</code></li>
-<li>Type marker verification (bool binds as bool, not as string “true”)</li>
-<li>Cross-database deferred value resolution</li>
-<li>AssociatedExpression with scalar, Record, and entity results</li>
-<li>Identifier quoting: basic names, reserved words, spaces, hyphens, unicode</li>
-</ul>
-</li>
-</ol>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../new-persistence/step1-types.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../surrealdb.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../new-persistence/step3-operators.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
-                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
-                            </a>
 
                         <div style="clear: both"></div>
                     </nav>
@@ -410,13 +387,10 @@ with <code>execute()</code> and <code>defer()</code>.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../new-persistence/step1-types.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../surrealdb.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../new-persistence/step3-operators.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
-                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
-                    </a>
             </nav>
 
         </div>
