@@ -42,12 +42,42 @@ pub fn to_expr(val: Dynamic) -> Result<Expr, Box<rhai::EvalAltResult>> {
             "{}",
             vec![ExpressiveEnum::Scalar(AnySurrealType::from(v))],
         ))
+    } else if let Some(arr) = val.clone().try_cast::<rhai::Array>() {
+        // a native `[…]` literal → SurrealQL array literal
+        let items = arr
+            .into_iter()
+            .map(to_expr)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(crate::primitives::array_literal(items))
+    } else if let Some(map) = val.clone().try_cast::<rhai::Map>() {
+        // a native `#{…}` literal → SurrealQL object literal. Rhai's map is a
+        // BTreeMap, so iteration is key-sorted (deterministic output).
+        let mut entries = Vec::with_capacity(map.len());
+        for (k, v) in map.into_iter() {
+            entries.push((k.to_string(), to_expr(v)?));
+        }
+        Ok(crate::primitives::object_literal(entries))
     } else {
         Err(super::convert::rhai_err(format!(
             "operator: unsupported type '{}'",
             val.type_name()
         )))
     }
+}
+
+/// Lift a scalar value into an Expression (for arithmetic operands).
+pub fn scalar(val: AnySurrealType) -> Expr {
+    Expression::new("{}", vec![ExpressiveEnum::Scalar(val)])
+}
+
+/// Build a binary arithmetic expression, parenthesized: `(a op b)`. Used by the
+/// `*`/`+`/`-`/`/` operators so closure bodies and ad-hoc maths render with
+/// explicit precedence.
+pub fn arith(op: &str, a: Expr, b: Expr) -> RhaiExpr {
+    RhaiExpr(Expression::new(
+        format!("({{}} {} {{}})", op),
+        vec![ExpressiveEnum::Nested(a), ExpressiveEnum::Nested(b)],
+    ))
 }
 
 /// Build a binary comparison expression.

@@ -189,6 +189,49 @@ macro_rules! register_surreal_engine {
             reg_op!("<=", "<=");
             reg_op!(">=", ">=");
 
+            // ── Arithmetic operators on Ex (closure bodies, ad-hoc maths) ──
+            // Only combos involving an Ex are registered, so native numeric
+            // arithmetic (i64*i64, …) is untouched. Each renders parenthesized.
+            macro_rules! reg_arith {
+                ($op:expr) => {{
+                    engine.register_fn($op, |a: Ex, b: Ex| -> Ex {
+                        $crate::rhai_engine::operators::arith($op, a.0, b.0)
+                    });
+                    engine.register_fn($op, |a: Ex, b: i64| -> Ex {
+                        $crate::rhai_engine::operators::arith(
+                            $op,
+                            a.0,
+                            $crate::rhai_engine::operators::scalar(AST::from(b)),
+                        )
+                    });
+                    engine.register_fn($op, |a: i64, b: Ex| -> Ex {
+                        $crate::rhai_engine::operators::arith(
+                            $op,
+                            $crate::rhai_engine::operators::scalar(AST::from(a)),
+                            b.0,
+                        )
+                    });
+                    engine.register_fn($op, |a: Ex, b: f64| -> Ex {
+                        $crate::rhai_engine::operators::arith(
+                            $op,
+                            a.0,
+                            $crate::rhai_engine::operators::scalar(AST::from(b)),
+                        )
+                    });
+                    engine.register_fn($op, |a: f64, b: Ex| -> Ex {
+                        $crate::rhai_engine::operators::arith(
+                            $op,
+                            $crate::rhai_engine::operators::scalar(AST::from(a)),
+                            b.0,
+                        )
+                    });
+                }};
+            }
+            reg_arith!("*");
+            reg_arith!("+");
+            reg_arith!("-");
+            reg_arith!("/");
+
             // ── Select constructor ────────────────────────────────
             engine.register_fn("select", $crate::rhai_engine::select_methods::select_new);
 
@@ -262,6 +305,11 @@ macro_rules! register_surreal_engine {
             engine.register_fn("graph", $crate::rhai_engine::constructors::fn_graph4);
             engine.register_fn("graph", $crate::rhai_engine::constructors::fn_graph5);
             engine.register_fn("recurse", $crate::rhai_engine::constructors::fn_recurse);
+
+            // ── Embedded-array closures: .map / .fold / .filter ───────────
+            engine.register_fn("map", $crate::rhai_engine::constructors::fn_map);
+            engine.register_fn("fold", $crate::rhai_engine::constructors::fn_fold);
+            engine.register_fn("filter", $crate::rhai_engine::constructors::fn_filter);
 
             // `me` — the current-record anchor, available as a bare constant.
             // `on_var` is marked volatile (not deprecated) by rhai; silence the lint.
