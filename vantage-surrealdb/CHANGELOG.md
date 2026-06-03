@@ -1,9 +1,20 @@
 # Changelog
 
-## 0.5.6 — 2026-06-02
+## 0.5.7 — 2026-06-02
 
 - Tables can now be sourced from a sub-`SELECT` via `vantage-table`'s new `SelectSource`
   (`type Source = SelectSource<SurrealSelect>`), rendering `FROM (<select>) AS <alias>`.
+
+## 0.5.6 — 2026-06-03
+
+- Rhai expression primitives for building SurrealDB queries from scripts. Tier 1 shared vocabulary
+  (`count`, `sum`, `avg`, `round`, `coalesce`, `cast`, `nullif`, `case_when`, `date_format`) plus
+  Surreal-specific Tier 2 primitives (stats/collection fns, `graph()`/`recurse()`/`me`,
+  `group_all`/`split`/`subquery`, `param`). Field paths via `ident("t")["col"]` with numeric and
+  string indexers. Q5 closures (`.map`/`.fold`/`.filter`) take native Rhai `|l|` closures that bind
+  to placeholder `$name` expressions and emit SurrealQL symbolically. 10-query golden suite
+  (`v4_q01..v4_q10` + `v4_param`) renders byte-identical to normalized v4 statements via
+  `examples/rhai_test`.
 
 ## 0.5.5 — 2026-06-02
 

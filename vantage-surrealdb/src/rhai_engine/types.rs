@@ -2,6 +2,7 @@
 
 use crate::Expr;
 use crate::identifier::Identifier;
+use crate::primitives::Case;
 use crate::statements::SurrealSelect;
 use std::fmt;
 
@@ -35,6 +36,10 @@ impl RhaiExpr {
         self.0
     }
 }
+
+/// CASE / IF builder wrapper (`case_when().when().else_().expr()`)
+#[derive(Clone, Debug)]
+pub struct RhaiCase(pub Case);
 
 /// Select query builder wrapper
 #[derive(Clone, Debug)]

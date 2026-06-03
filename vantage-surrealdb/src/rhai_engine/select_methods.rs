@@ -92,6 +92,24 @@ pub fn select_distinct(mut s: RhaiSelect) -> RhaiSelect {
     s
 }
 
+/// GROUP ALL — collapse the whole result into a single aggregate row.
+pub fn select_group_all(mut s: RhaiSelect) -> RhaiSelect {
+    s.inner = s.inner.with_group_all();
+    s
+}
+
+/// SPLIT field — unnest an array field into one row per element.
+pub fn select_split(mut s: RhaiSelect, field: &str) -> RhaiSelect {
+    s.inner = s.inner.with_split(field);
+    s
+}
+
+/// SPLIT on a pre-built identifier.
+pub fn select_split_id(mut s: RhaiSelect, id: RhaiIdent) -> RhaiSelect {
+    s.inner = s.inner.with_split(id.0.expr());
+    s
+}
+
 /// SurrealDB: LIMIT n START s
 pub fn select_limit(mut s: RhaiSelect, limit: i64, start: i64) -> RhaiSelect {
     s.inner = s.inner.with_limit(limit);
@@ -113,6 +131,13 @@ pub fn select_only(mut s: RhaiSelect) -> RhaiSelect {
 pub fn select_value(mut s: RhaiSelect) -> RhaiSelect {
     s.inner = s.inner.with_value();
     s
+}
+
+/// Use the select as a scalar subquery expression: `(SELECT …)`. Bridges
+/// `RhaiSelect → RhaiExpr` (wrapping in parens) so the result composes with the
+/// `[n]` indexer, `.alias()`, comparisons, and `from()`.
+pub fn select_subquery(s: RhaiSelect) -> RhaiExpr {
+    RhaiExpr(crate::primitives::subquery(s.inner))
 }
 
 // ── Graph traversal ────────────────────────────────────────────────────

@@ -1,0 +1,1 @@
+SELECT department.name AS department, count() AS headcount, math::sum(salary) AS payroll, math::mean(salary) AS avg_salary, math::max(salary) AS top_salary, math::round(math::stddev(salary)) AS salary_spread FROM employee GROUP BY department ORDER BY payroll DESC
