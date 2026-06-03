@@ -1,0 +1,1 @@
+SELECT name, string::similarity::jaro_winkler(string::lowercase(name), 'marti mcfligh') AS similarity, string::words(name) AS name_parts FROM client ORDER BY similarity DESC LIMIT 4

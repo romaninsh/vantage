@@ -1,0 +1,1 @@
+SELECT name AS manager, @.{1..5}(<-reports_to<-employee).name AS deepest_report FROM employee WHERE count(<-reports_to) > 0 ORDER BY name
