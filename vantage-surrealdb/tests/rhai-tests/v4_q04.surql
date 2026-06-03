@@ -1,0 +1,1 @@
+SELECT name, tier, count(->placed->order) AS num_orders, math::sum(->placed->order.total) AS lifetime_spend, (SELECT VALUE math::max(total) FROM order WHERE client = $parent.id GROUP ALL)[0] AS biggest_order FROM client WHERE count(->placed->order) > 0 ORDER BY lifetime_spend DESC

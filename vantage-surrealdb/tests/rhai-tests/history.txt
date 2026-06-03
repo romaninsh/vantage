@@ -1,0 +1,5 @@
+#V2
+SELECT name, title, salary, department.name AS department, array::first(->reports_to->employee.name) ?? "n/a" AS manager FROM employee ORDER BY salary DESC;
+SELECT name AS manager, @.{1..5}(<-reports_to<-employee).name AS deepest_report FROM employee WHERE count(<-reports_to) > 0 ORDER BY name;
+SELECT name, tier, count(->placed->order) AS num_orders, math::sum(->placed->order.total) AS lifetime_spend, (SELECT VALUE math::max(total) FROM order WHERE client = $parent.id GROUP ALL)[0] AS biggest_order FROM client WHERE count(->placed->order) > 0 ORDER BY lifetime_spend DESC;
+SELECT name, category, count(<-reviewed) AS num_reviews, math::mean(<-reviewed.rating) AS avg_rating, math::max(<-reviewed.rating) AS best, math::min(<-reviewed.rating) AS worst FROM product WHERE count(<-reviewed) > 0 ORDER BY avg_rating DESC;

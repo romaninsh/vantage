@@ -1,0 +1,1 @@
+SELECT time::group(created_at, 'month') AS month, count() AS orders, math::sum(total) AS revenue, math::round(math::mean(total)) AS avg_order_value FROM order GROUP BY month ORDER BY month
