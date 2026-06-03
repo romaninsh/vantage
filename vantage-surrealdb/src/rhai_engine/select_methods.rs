@@ -32,6 +32,16 @@ pub fn select_field(mut s: RhaiSelect, name: &str) -> RhaiSelect {
     s
 }
 
+/// Drop every field collected so far. In transform mode the seeded `base`
+/// carries all of the base vista's fields; aggregations call this first so the
+/// projection is rebuilt from scratch (the grouping key plus the aggregate
+/// expression) rather than inheriting the base's bare columns alongside a
+/// `GROUP BY`.
+pub fn select_clear_fields(mut s: RhaiSelect) -> RhaiSelect {
+    s.inner.fields.clear();
+    s
+}
+
 pub fn select_expression(mut s: RhaiSelect, expr: RhaiExpr) -> RhaiSelect {
     s.inner = s.inner.with_expression(expr.0, None);
     s
