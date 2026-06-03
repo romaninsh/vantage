@@ -10,14 +10,16 @@
 //! translation is a passthrough; ids stringify (matching `TableSource::Id`).
 
 pub mod factory;
+#[cfg(feature = "rhai")]
+pub mod rhai_source;
 pub mod source;
 pub mod spec;
 
-pub use factory::PostgresVistaFactory;
+pub use factory::{PostgresSpecResolver, PostgresVistaFactory};
 pub use source::PostgresTableShell;
 pub use spec::{
-    PostgresColumnBlock, PostgresColumnExtras, PostgresTableBlock, PostgresTableExtras,
-    PostgresVistaSpec,
+    InheritBlock, PostgresColumnBlock, PostgresColumnExtras, PostgresTableBlock,
+    PostgresTableExtras, PostgresVistaSpec,
 };
 
 use crate::postgres::PostgresDB;

@@ -74,6 +74,7 @@ impl TableSource for SqliteDB {
     type Value = AnySqliteType;
     type Id = String;
     type Condition = crate::condition::SqliteCondition;
+    type Source = vantage_table::source::SelectSource<crate::sqlite::statements::SqliteSelect>;
 
     fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
         let column: Column<AnySqliteType> = Column::new(field);

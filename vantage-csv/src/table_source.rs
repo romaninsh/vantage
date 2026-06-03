@@ -29,6 +29,7 @@ impl TableSource for Csv {
     type Value = AnyCsvType;
     type Id = String;
     type Condition = vantage_expressions::Expression<Self::Value>;
+    type Source = String;
 
     fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
         let column: Column<AnyCsvType> = Column::new(field);

@@ -56,7 +56,7 @@ where
 /// Build a binary comparison expression.
 pub fn cmp_binary<V: Clone>(op: &str, a: Expression<V>, b: Expression<V>) -> RhaiExpr<V> {
     RhaiExpr(Expression::new(
-        &format!("{{}} {} {{}}", op),
+        format!("{{}} {} {{}}", op),
         vec![ExpressiveEnum::Nested(a), ExpressiveEnum::Nested(b)],
     ))
 }

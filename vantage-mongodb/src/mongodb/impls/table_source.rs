@@ -80,6 +80,7 @@ impl TableSource for MongoDB {
     type Value = AnyMongoType;
     type Id = MongoId;
     type Condition = MongoCondition;
+    type Source = String;
 
     fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
         Ok(MongoCondition::Doc(doc! { field: value.to_bson() }))

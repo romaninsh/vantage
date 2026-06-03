@@ -10,13 +10,16 @@
 //! translation is a passthrough; ids stringify (matching `TableSource::Id`).
 
 pub mod factory;
+#[cfg(feature = "rhai")]
+pub mod rhai_source;
 pub mod source;
 pub mod spec;
 
-pub use factory::SqliteVistaFactory;
+pub use factory::{SqliteSpecResolver, SqliteVistaFactory};
 pub use source::SqliteTableShell;
 pub use spec::{
-    SqliteColumnBlock, SqliteColumnExtras, SqliteTableBlock, SqliteTableExtras, SqliteVistaSpec,
+    InheritBlock, SqliteColumnBlock, SqliteColumnExtras, SqliteTableBlock, SqliteTableExtras,
+    SqliteVistaSpec,
 };
 
 use crate::sqlite::SqliteDB;
