@@ -10,13 +10,15 @@
 //! translation is a passthrough; `Thing` ids stringify as `"table:id"`.
 
 pub mod factory;
+#[cfg(feature = "rhai")]
+pub mod rhai_source;
 pub mod source;
 pub mod spec;
 
 pub use factory::{SurrealSpecResolver, SurrealVistaFactory};
 pub use source::SurrealTableShell;
 pub use spec::{
-    SurrealColumnBlock, SurrealColumnExtras, SurrealTableBlock, SurrealTableExtras,
+    InheritBlock, SurrealColumnBlock, SurrealColumnExtras, SurrealTableBlock, SurrealTableExtras,
     SurrealVistaSpec,
 };
 

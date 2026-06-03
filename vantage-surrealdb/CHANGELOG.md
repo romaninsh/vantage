@@ -1,9 +1,28 @@
 # Changelog
 
+## 0.5.8 — 2026-06-03
+
+- Query-sourced and derived vistas for SurrealDB, mirroring the SQL-backend features from PR #277:
+  - `Table::from_select(db, alias, select)` creates a read-only table whose `FROM` clause is an
+    arbitrary sub-`SELECT` instead of a physical table name.
+  - `Table::derive_from(&base, alias, modifier, cols, rels)` derives a new table from an existing
+    one, inheriting columns and relations via shared `Arc` refs. The modifier closure transforms the
+    base `select()` (e.g. adding a `WHERE`).
+  - YAML `rhai:` source — a vista backed by a Rhai-built `SurrealSelect` (read-only).
+  - YAML `base:` + `inherit:` — derive from another vista by name, with optional `rhai:` transform
+    (base select seeded into scope as `base` variable).
+  - `clear_fields()` Rhai method — drops inherited fields for valid `GROUP BY` in aggregation
+    transforms.
+  - `SurrealTableBlock` gains `rhai`, `base`, and `inherit` fields; new `InheritBlock` struct for
+    `columns`/`relations` selection.
+  - Read-only flag: rhai-sourced and base-derived vistas have `can_insert`, `can_update`,
+    `can_delete` set to `false`.
+
 ## 0.5.7 — 2026-06-02
 
 - Tables can now be sourced from a sub-`SELECT` via `vantage-table`'s new `SelectSource`
   (`type Source = SelectSource<SurrealSelect>`), rendering `FROM (<select>) AS <alias>`.
+
 ## 0.5.6 — 2026-06-03
 
 - Rhai expression primitives for building SurrealDB queries from scripts. Tier 1 shared vocabulary
