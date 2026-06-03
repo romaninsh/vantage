@@ -131,6 +131,10 @@ macro_rules! register_surreal_engine {
             );
             engine.register_fn("field", $crate::rhai_engine::select_methods::select_field);
             engine.register_fn(
+                "clear_fields",
+                $crate::rhai_engine::select_methods::select_clear_fields,
+            );
+            engine.register_fn(
                 "expression",
                 $crate::rhai_engine::select_methods::select_expression,
             );

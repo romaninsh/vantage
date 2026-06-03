@@ -52,12 +52,20 @@ impl SurrealVistaFactory {
     {
         let name = table.table_name().to_string();
         let metadata = metadata_from_table(&table);
-        Ok(self.wrap(table, name, metadata))
+        Ok(self.wrap(table, name, metadata, false))
     }
 
     /// Single source-construction site shared by `from_table` and
-    /// `build_from_spec`.
-    fn wrap<E>(&self, table: Table<SurrealDB, E>, name: String, metadata: VistaMetadata) -> Vista
+    /// `build_from_spec`. Keeps the capability set and `Vista::new` call in one
+    /// place. A query-sourced (e.g. `rhai:` or `base:`) vista is `read_only`,
+    /// which clears the write capabilities.
+    fn wrap<E>(
+        &self,
+        table: Table<SurrealDB, E>,
+        name: String,
+        metadata: VistaMetadata,
+        read_only: bool,
+    ) -> Vista
     where
         E: Entity<AnySurrealType> + 'static,
     {
@@ -65,9 +73,9 @@ impl SurrealVistaFactory {
             table,
             VistaCapabilities {
                 can_count: true,
-                can_insert: true,
-                can_update: true,
-                can_delete: true,
+                can_insert: !read_only,
+                can_update: !read_only,
+                can_delete: !read_only,
                 can_order: true,
                 can_search: true,
                 can_set_page_size: true,
@@ -97,8 +105,16 @@ impl VistaFactory for SurrealVistaFactory {
 
     fn build_from_spec(&self, spec: SurrealVistaSpec) -> Result<Vista> {
         let vista_name = spec.name.clone();
+        let read_only = spec
+            .driver
+            .surreal
+            .as_ref()
+            .is_some_and(|m| m.rhai.is_some() || m.base.is_some());
         let table = self.table_from_spec(&spec)?;
         let mut metadata = metadata_from_table(&table);
+        // YAML `references:` carry the target table name explicitly; fold them
+        // in here rather than via `table.vista_references()`, whose target is
+        // the (erased) entity type name, not the table name.
         for (rel_name, ref_spec) in &spec.references {
             let fk = ref_spec
                 .foreign_key
@@ -111,7 +127,7 @@ impl VistaFactory for SurrealVistaFactory {
                 fk,
             ));
         }
-        let mut vista = self.wrap(table, vista_name.clone(), metadata);
+        let mut vista = self.wrap(table, vista_name.clone(), metadata, read_only);
         vista.set_name(vista_name);
         Ok(vista)
     }
@@ -130,14 +146,21 @@ pub(crate) fn build_surreal_table(
     db: SurrealDB,
     resolver: Option<SurrealSpecResolver>,
 ) -> Result<Table<SurrealDB, EmptyEntity>> {
-    let table_name = spec
-        .driver
-        .surreal
-        .as_ref()
-        .and_then(|m| m.table.clone())
-        .unwrap_or_else(|| spec.name.clone());
+    let block = spec.driver.surreal.as_ref();
 
-    let mut table = Table::<SurrealDB, EmptyEntity>::new(table_name, db);
+    if let Some(base_name) = block.and_then(|m| m.base.clone()) {
+        return build_derived_table(spec, &base_name, db, resolver);
+    }
+
+    let mut table = match block.and_then(|m| m.rhai.clone()) {
+        Some(code) => table_from_rhai(spec, &code, db.clone())?,
+        None => {
+            let table_name = block
+                .and_then(|m| m.table.clone())
+                .unwrap_or_else(|| spec.name.clone());
+            Table::<SurrealDB, EmptyEntity>::new(table_name, db.clone())
+        }
+    };
 
     for (name, col_spec) in &spec.columns {
         table.add_column(build_column(name, col_spec)?);
@@ -181,6 +204,106 @@ pub(crate) fn build_surreal_table(
 
     let table = table.with_contained_specs(&spec.contained, build_column)?;
     Ok(table)
+}
+
+/// Build a query-sourced table from a `rhai:` script.
+#[cfg(feature = "rhai")]
+fn table_from_rhai(
+    spec: &SurrealVistaSpec,
+    code: &str,
+    db: SurrealDB,
+) -> Result<Table<SurrealDB, EmptyEntity>> {
+    let select = crate::vista::rhai_source::eval_to_select(code, None)?;
+    Ok(Table::from_select(db, spec.name.clone(), select))
+}
+
+#[cfg(not(feature = "rhai"))]
+fn table_from_rhai(
+    _spec: &SurrealVistaSpec,
+    _code: &str,
+    _db: SurrealDB,
+) -> Result<Table<SurrealDB, EmptyEntity>> {
+    Err(error!(
+        "vista declares a `rhai:` source but vantage-surrealdb was built without the `rhai` feature"
+    ))
+}
+
+/// Build a derived table: resolve `base_name` eagerly via the resolver, build
+/// the base table, optionally transform its `select()` through a `rhai:` script
+/// (transform mode — `base` is seeded into the engine scope), and inherit the
+/// listed columns/relations via [`Table::derive_from`]. The derived vista's own
+/// `columns:` (e.g. aggregate outputs) are added on top.
+fn build_derived_table(
+    spec: &SurrealVistaSpec,
+    base_name: &str,
+    db: SurrealDB,
+    resolver: Option<SurrealSpecResolver>,
+) -> Result<Table<SurrealDB, EmptyEntity>> {
+    let resolver = resolver.ok_or_else(|| {
+        error!(
+            "vista declares `base:` but no spec resolver is attached to the factory",
+            base = base_name
+        )
+    })?;
+    let base_spec = resolver(base_name)
+        .ok_or_else(|| error!("base vista not found via resolver", base = base_name))?;
+    let base_table = build_surreal_table(&base_spec, db.clone(), Some(resolver.clone()))?;
+
+    let block = spec.driver.surreal.as_ref();
+    let transformed = match block.and_then(|m| m.rhai.clone()) {
+        Some(code) => eval_transform(&code, base_table.select())?,
+        None => base_table.select(),
+    };
+
+    let inherit = block.and_then(|m| m.inherit.clone()).unwrap_or_default();
+    let cols: Vec<&str> = inherit.columns.iter().map(String::as_str).collect();
+    let rels: Vec<&str> = inherit.relations.iter().map(String::as_str).collect();
+
+    let mut table = Table::derive_from(
+        &base_table,
+        spec.name.clone(),
+        move |_| transformed,
+        &cols,
+        &rels,
+    );
+
+    // The derived vista's own declared columns (e.g. aggregate outputs).
+    for (name, col_spec) in &spec.columns {
+        if !table.columns().contains_key(name) {
+            table.add_column(build_column(name, col_spec)?);
+        }
+        if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
+            table.add_title_field(name);
+        }
+    }
+
+    // Explicit id override; otherwise the id inherited from the base stands.
+    if let Some(id) = &spec.id_column {
+        table.set_id_field(id);
+    }
+
+    let table = table.with_contained_specs(&spec.contained, build_column)?;
+    Ok(table)
+}
+
+/// Apply a `rhai:` transform to a base select. Feature-gated like
+/// [`table_from_rhai`].
+#[cfg(feature = "rhai")]
+fn eval_transform(
+    code: &str,
+    base: crate::statements::SurrealSelect,
+) -> Result<crate::statements::SurrealSelect> {
+    crate::vista::rhai_source::eval_to_select(code, Some(base))
+}
+
+#[cfg(not(feature = "rhai"))]
+fn eval_transform(
+    _code: &str,
+    _base: crate::statements::SurrealSelect,
+) -> Result<crate::statements::SurrealSelect> {
+    Err(error!(
+        "vista declares a `rhai:` transform but vantage-surrealdb was built without the `rhai` feature"
+    ))
 }
 
 pub(crate) fn resolve_id_column(spec: &SurrealVistaSpec) -> String {
