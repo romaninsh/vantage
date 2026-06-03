@@ -1,0 +1,1 @@
+SELECT tag, count() AS product_count, math::round(math::mean(price)) AS avg_price, IF math::mean(price) >= 250 THEN "premium" ELSE IF math::mean(price) >= 150 THEN "mid" ELSE "value" END AS price_band FROM (SELECT tags AS tag, price FROM product SPLIT tags) GROUP BY tag ORDER BY product_count DESC, tag

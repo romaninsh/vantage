@@ -20,6 +20,7 @@ pub mod operation;
 // pub mod protocol;
 pub mod ext;
 pub mod macros;
+pub mod primitives;
 pub mod statements;
 pub mod sum;
 pub mod surreal_return;
@@ -29,7 +30,7 @@ pub mod surrealdb;
 // pub mod table;
 pub mod thing;
 // pub mod typed_expression;
-// pub mod variable;
+pub mod variable;
 
 #[cfg(feature = "vista")]
 pub mod vista;

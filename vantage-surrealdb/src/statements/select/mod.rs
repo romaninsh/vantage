@@ -43,8 +43,14 @@ pub struct SurrealSelect<T = result::Rows> {
     pub from: Vec<SelectTarget>,
     pub from_omit: bool,
     pub where_conditions: Vec<Expr>,
+    /// `SPLIT field [, …]` — unnest array fields into one row each. Rendered
+    /// after `WHERE` and before the `GROUP` clause.
+    pub split: Vec<Expr>,
     pub order_by: Vec<(Expr, bool)>,
     pub group_by: Vec<Expr>,
+    /// `GROUP ALL` — collapses the whole result into one row. Mutually
+    /// exclusive with `group_by`; when set it wins.
+    pub(crate) group_all: bool,
     pub distinct: bool,
     pub limit: Option<i64>,
     pub skip: Option<i64>,
@@ -61,8 +67,10 @@ impl<T> Default for SurrealSelect<T> {
             from_omit: false,
             from_only: false,
             where_conditions: Vec::new(),
+            split: Vec::new(),
             order_by: Vec::new(),
             group_by: Vec::new(),
+            group_all: false,
             distinct: false,
             limit: None,
             skip: None,

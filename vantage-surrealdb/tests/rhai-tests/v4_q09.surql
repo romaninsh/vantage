@@ -1,0 +1,1 @@
+SELECT name, category, object::entries(nutrition) AS facts, math::sum(object::values(nutrition)) AS total_macros, nutrition.sugar AS sugar FROM product WHERE nutrition.sugar > 15 ORDER BY sugar DESC
