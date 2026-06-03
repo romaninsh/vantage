@@ -1,0 +1,1 @@
+SELECT name, category, count(<-reviewed) AS num_reviews, math::mean(<-reviewed.rating) AS avg_rating, math::max(<-reviewed.rating) AS best, math::min(<-reviewed.rating) AS worst FROM product WHERE count(<-reviewed) > 0 ORDER BY avg_rating DESC

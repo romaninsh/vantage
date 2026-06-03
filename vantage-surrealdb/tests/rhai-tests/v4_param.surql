@@ -1,0 +1,1 @@
+SELECT id FROM order WHERE client = $auth.id AND $this.status = "open"

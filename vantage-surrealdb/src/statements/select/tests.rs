@@ -89,6 +89,68 @@ fn test_select_with_group_by() {
 }
 
 #[test]
+fn test_select_with_group_all() {
+    let select = SurrealSelect::new()
+        .with_value()
+        .with_expression(surreal_expr!("math::max(total)"), None)
+        .from("order")
+        .with_group_all();
+
+    assert_eq!(
+        select.preview(),
+        "SELECT VALUE math::max(total) FROM order GROUP ALL"
+    );
+}
+
+#[test]
+fn test_select_with_split() {
+    // SPLIT renders after WHERE and before GROUP/ORDER.
+    let select = SurrealSelect::new()
+        .from("product")
+        .with_expression(surreal_expr!("tags"), Some("tag".to_string()))
+        .field("price")
+        .with_split(surreal_expr!("tags"));
+
+    assert_eq!(
+        select.preview(),
+        "SELECT tags AS tag, price FROM product SPLIT tags"
+    );
+}
+
+#[test]
+fn test_subquery_wraps_and_indexes() {
+    use crate::primitives::{index_at, subquery};
+
+    let inner = SurrealSelect::new()
+        .with_value()
+        .with_expression(surreal_expr!("math::max(total)"), None)
+        .from("order")
+        .with_group_all();
+
+    // (SELECT …) composes with the [n] indexer just like any expression.
+    let wrapped = index_at(subquery(inner), 0);
+    assert_eq!(
+        wrapped.preview(),
+        "(SELECT VALUE math::max(total) FROM order GROUP ALL)[0]"
+    );
+}
+
+#[test]
+fn test_group_all_takes_precedence_over_group_by() {
+    // Both set → GROUP ALL wins (it is the more specific request).
+    let select = SurrealSelect::new()
+        .from("order")
+        .field("total")
+        .with_group_by(surreal_expr!("client"))
+        .with_group_all();
+
+    assert_eq!(
+        select.preview(),
+        "SELECT total FROM order GROUP ALL"
+    );
+}
+
+#[test]
 fn test_select_with_limit() {
     let select = SurrealSelect::new()
         .from("users")
