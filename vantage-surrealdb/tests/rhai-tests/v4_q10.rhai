@@ -1,11 +1,11 @@
 // v4 Q10: SPLIT in a subquery + conditional banding
-// Tier 1: count(), avg, round, case_when().when().else_().expr(). The inner SPLIT subquery is now a
-// nested select().split("tags").subquery() used as the FROM source (the bare `tags AS tag`
-// projection uses the existing expr("col").alias(...) idiom, as in Q2/Q3).
+// Tier 1: count(), avg, round, case_when().when().else_().expr(). The inner SPLIT subquery is a
+// nested select().split("tags").subquery() used as the FROM source; `tags AS tag` and the
+// `product_count` order-by reference columns/aliases by name via ident().
 select()
     .from(
         select()
-            .expression(expr("tags").alias("tag"))
+            .expression(ident("tags").alias("tag"))
             .field("price")
             .from("product")
             .split("tags")
@@ -21,5 +21,5 @@ select()
             .expr()
             .alias("price_band"))
     .group_by(ident("tag"))
-    .order_by(expr("product_count"), "desc")
+    .order_by(ident("product_count"), "desc")
     .order_by(ident("tag"), "asc")
