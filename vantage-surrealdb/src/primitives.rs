@@ -221,6 +221,109 @@ pub fn recurse(path: impl Expressive<AnySurrealType>, min: i64, max: i64) -> Exp
     )
 }
 
+// ── Tier 3: embedded-array closures ─────────────────────────────────────
+//
+// SurrealDB's `array.map`/`fold`/`filter` take an inline closure (`|$l| …`),
+// which is the one place it exceeds the SQL vocabulary. We don't model the
+// closure as data — instead the Rhai engine binds each parameter to a
+// placeholder `$name` expression and *runs the native `|l| …` closure
+// symbolically*, so every operation in the body builds SurrealQL. These
+// helpers only render the surrounding `.method(|$params| body)` shell and the
+// `{…}` / `[…]` literals the body may produce.
+
+/// A closure parameter placeholder: `closure_param("value")` → `$value`. Bound
+/// to the closure's argument so the body renders against it.
+pub fn closure_param(name: &str) -> Expr {
+    crate::variable::Variable::new(name).expr()
+}
+
+/// Render a closure parameter header: `["acc", "value"]` → `|$acc, $value|`.
+fn closure_header(params: &[&str]) -> String {
+    let names = params
+        .iter()
+        .map(|p| format!("${p}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("|{names}|")
+}
+
+/// `expr.map(|$p| body)` → `{expr}.map(|$p| {body})`.
+pub fn array_map(
+    this: impl Expressive<AnySurrealType>,
+    params: &[&str],
+    body: impl Expressive<AnySurrealType>,
+) -> Expr {
+    let header = closure_header(params);
+    Expression::new(
+        format!("{{}}.map({header} {{}})"),
+        vec![
+            ExpressiveEnum::Nested(this.expr()),
+            ExpressiveEnum::Nested(body.expr()),
+        ],
+    )
+}
+
+/// `expr.fold(init, |$acc, $p| body)` → `{expr}.fold({init}, |$acc, $p| {body})`.
+pub fn array_fold(
+    this: impl Expressive<AnySurrealType>,
+    init: impl Expressive<AnySurrealType>,
+    params: &[&str],
+    body: impl Expressive<AnySurrealType>,
+) -> Expr {
+    let header = closure_header(params);
+    Expression::new(
+        format!("{{}}.fold({{}}, {header} {{}})"),
+        vec![
+            ExpressiveEnum::Nested(this.expr()),
+            ExpressiveEnum::Nested(init.expr()),
+            ExpressiveEnum::Nested(body.expr()),
+        ],
+    )
+}
+
+/// `expr.filter(|$p| body)` → `{expr}.filter(|$p| {body})`.
+pub fn array_filter(
+    this: impl Expressive<AnySurrealType>,
+    params: &[&str],
+    body: impl Expressive<AnySurrealType>,
+) -> Expr {
+    let header = closure_header(params);
+    Expression::new(
+        format!("{{}}.filter({header} {{}})"),
+        vec![
+            ExpressiveEnum::Nested(this.expr()),
+            ExpressiveEnum::Nested(body.expr()),
+        ],
+    )
+}
+
+/// Object literal `{ k1: v1, k2: v2 }` — the lowering of a Rhai `#{…}` map.
+/// Keys are inlined verbatim (they arrive sorted from Rhai's map); values are
+/// nested expressions.
+pub fn object_literal(entries: Vec<(String, Expr)>) -> Expr {
+    let mut template = String::from("{ ");
+    let mut params = Vec::with_capacity(entries.len());
+    for (i, (key, value)) in entries.into_iter().enumerate() {
+        if i > 0 {
+            template.push_str(", ");
+        }
+        template.push_str(&key);
+        template.push_str(": {}");
+        params.push(ExpressiveEnum::Nested(value));
+    }
+    template.push_str(" }");
+    Expression::new(template, params)
+}
+
+/// Array literal `[a, b, c]` — the lowering of a Rhai `[…]` array.
+pub fn array_literal(items: Vec<Expr>) -> Expr {
+    let placeholders = vec!["{}"; items.len()].join(", ");
+    Expression::new(
+        format!("[{placeholders}]"),
+        items.into_iter().map(ExpressiveEnum::Nested).collect(),
+    )
+}
+
 /// SurrealQL conditional, the SurrealDB rendering of the shared `case_when`
 /// primitive. Renders as `IF c1 THEN v1 ELSE IF c2 THEN v2 ELSE e END`
 /// (SurrealQL uses a single trailing `END`, not one per branch).
@@ -404,8 +507,14 @@ mod tests {
         assert_eq!(len(Identifier::new("lines")).preview(), "array::len(lines)");
         assert_eq!(stddev(f.clone()).preview(), "math::stddev(salary)");
         assert_eq!(median(f).preview(), "math::median(salary)");
-        assert_eq!(lower(Identifier::new("name")).preview(), "string::lowercase(name)");
-        assert_eq!(words(Identifier::new("name")).preview(), "string::words(name)");
+        assert_eq!(
+            lower(Identifier::new("name")).preview(),
+            "string::lowercase(name)"
+        );
+        assert_eq!(
+            words(Identifier::new("name")).preview(),
+            "string::words(name)"
+        );
         assert_eq!(
             object_entries(Identifier::new("nutrition")).preview(),
             "object::entries(nutrition)"
@@ -413,6 +522,44 @@ mod tests {
         assert_eq!(
             object_values(Identifier::new("nutrition")).preview(),
             "object::values(nutrition)"
+        );
+    }
+
+    #[test]
+    fn closure_literals_and_methods_lower_to_surreal() {
+        let l = closure_param("value");
+        // object literal (keys arrive sorted from Rhai's map)
+        let obj = object_literal(vec![
+            ("product".to_string(), field(l.clone(), "product")),
+            ("subtotal".to_string(), field(l.clone(), "price")),
+        ]);
+        assert_eq!(
+            obj.preview(),
+            "{ product: $value.product, subtotal: $value.price }"
+        );
+        // array literal
+        assert_eq!(
+            array_literal(vec![field(l.clone(), "a"), field(l.clone(), "b")]).preview(),
+            "[$value.a, $value.b]"
+        );
+        // map / fold / filter render the closure shell around a body
+        assert_eq!(
+            array_map(Identifier::new("lines"), &["value"], obj).preview(),
+            "lines.map(|$value| { product: $value.product, subtotal: $value.price })"
+        );
+        assert_eq!(
+            array_fold(
+                Identifier::new("lines"),
+                0i64,
+                &["acc", "value"],
+                field(l.clone(), "price")
+            )
+            .preview(),
+            "lines.fold(0, |$acc, $value| $value.price)"
+        );
+        assert_eq!(
+            array_filter(Identifier::new("lines"), &["value"], field(l, "ok")).preview(),
+            "lines.filter(|$value| $value.ok)"
         );
     }
 

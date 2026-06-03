@@ -5,7 +5,7 @@ use crate::Expr;
 use crate::identifier::Identifier;
 use crate::primitives;
 use crate::sum::Fx;
-use rhai::Array;
+use rhai::{Array, FnPtr, NativeCallContext};
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
 use super::operators::to_expr;
@@ -317,18 +317,12 @@ pub fn fn_object_values(arg: rhai::Dynamic) -> Result<RhaiExpr, Box<rhai::EvalAl
 }
 
 /// `time_group(expr, unit)` → `time::group(expr, 'unit')`.
-pub fn fn_time_group(
-    arg: rhai::Dynamic,
-    unit: &str,
-) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
+pub fn fn_time_group(arg: rhai::Dynamic, unit: &str) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
     Ok(RhaiExpr(primitives::time_group(unwrap_expr(arg)?, unit)))
 }
 
 /// `similarity(expr, term)` → `string::similarity::jaro_winkler(expr, 'term')`.
-pub fn fn_similarity(
-    arg: rhai::Dynamic,
-    term: &str,
-) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
+pub fn fn_similarity(arg: rhai::Dynamic, term: &str) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
     Ok(RhaiExpr(primitives::similarity(unwrap_expr(arg)?, term)))
 }
 
@@ -475,6 +469,63 @@ pub fn fn_recurse(
     max: i64,
 ) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
     Ok(RhaiExpr(primitives::recurse(unwrap_expr(path)?, min, max)))
+}
+
+// ── Tier 3: embedded-array closures via native `|params| body` ──────────
+//
+// `.map`/`.fold`/`.filter` take a *native Rhai closure* and run it
+// symbolically: each parameter is bound to a placeholder `$name` expression,
+// so the body's operators/indexers build SurrealQL instead of computing. The
+// returned value (an `Ex`, or a `#{…}` / `[…]` literal) is lowered by
+// `to_expr`. The emitted `$name` is engine-chosen, not the script's parameter
+// name (Rhai locals can't carry the `$`).
+
+/// `expr.map(|item| body)` → `{expr}.map(|$value| {body})`.
+pub fn fn_map(
+    ctx: NativeCallContext,
+    this: rhai::Dynamic,
+    f: FnPtr,
+) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
+    let item = RhaiExpr(primitives::closure_param("value"));
+    let body: rhai::Dynamic = f.call_within_context(&ctx, (item,))?;
+    Ok(RhaiExpr(primitives::array_map(
+        unwrap_expr(this)?,
+        &["value"],
+        to_expr(body)?,
+    )))
+}
+
+/// `expr.fold(init, |acc, item| body)` → `{expr}.fold({init}, |$acc, $value| {body})`.
+pub fn fn_fold(
+    ctx: NativeCallContext,
+    this: rhai::Dynamic,
+    init: rhai::Dynamic,
+    f: FnPtr,
+) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
+    let acc = RhaiExpr(primitives::closure_param("acc"));
+    let item = RhaiExpr(primitives::closure_param("value"));
+    let body: rhai::Dynamic = f.call_within_context(&ctx, (acc, item))?;
+    Ok(RhaiExpr(primitives::array_fold(
+        unwrap_expr(this)?,
+        to_expr(init)?,
+        &["acc", "value"],
+        to_expr(body)?,
+    )))
+}
+
+/// `expr.filter(|item| body)` → `{expr}.filter(|$value| {body})`.
+pub fn fn_filter(
+    ctx: NativeCallContext,
+    this: rhai::Dynamic,
+    f: FnPtr,
+) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
+    let item = RhaiExpr(primitives::closure_param("value"));
+    let body: rhai::Dynamic = f.call_within_context(&ctx, (item,))?;
+    Ok(RhaiExpr(primitives::array_filter(
+        unwrap_expr(this)?,
+        &["value"],
+        to_expr(body)?,
+    )))
 }
 
 // ── case_when().when().else_().expr() → IF … THEN … ELSE … END ──────────

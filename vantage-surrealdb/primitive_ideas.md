@@ -92,21 +92,41 @@ Still deferred here:
 - Note `me` (graph anchor, renders empty) is **not** `$this` — distinct.
 - Ready for Q5 closure params: `param("acc")`/`param("l")` → `$acc`/`$l`.
 
-## Tier 3 — embedded-array closures (Q5 only)
+## Tier 3 — embedded-array closures — **IMPLEMENTED** (native Rhai closures)
 
 The one place SurrealDB exceeds the SQL vocabulary entirely (`lines.map(|$l| {…})`,
-`lines.fold(0, |$acc,$l| …)`). Proposed meaningful named primitives (still not a general AST):
-- `closure([params], body)` → `|$p1, $p2| body` (params via `var`).
-- `.map(closure)` / `.fold(init, closure)` / `.filter(closure)` methods on an `Expr`.
-- `object([[k, v], …])` → `{ k: v, … }` literal; `array_lit([…])` → `[ … ]`.
+`lines.fold(0, |$acc,$l| …)`). Resolved **not** with a `closure([params], body)` data-constructor but
+by running SurrealDB's own closure syntax — Rhai's native `|l| …` — **symbolically**:
 
-Decision pending: implement these four, or keep Q5's per-line `breakdown` as a raw `expr()` and only
-express `computed_total` via the shared `sum(mul(...))` over a subquery. Recommendation: implement —
-each is a clear single-job primitive.
+- **`.map(|l| …)` / `.fold(init, |acc, l| …)` / `.filter(|l| …)`** are registered on `Ex` (via a
+  `Dynamic` receiver, so `ident("lines")` works too). Each binds the closure's parameters to
+  placeholder `$name` expressions (`closure_param` → `Variable`) and calls the native closure with
+  them (`FnPtr::call_within_context`). Because every operator/indexer on an `Ex` *builds* an
+  expression rather than computing, the returned value **is** the SurrealQL body. Rust:
+  `primitives::array_map`/`array_fold`/`array_filter` render only the `.method(|$p| body)` shell.
+- **`#{ k: v }`** (native Rhai map) → object literal `{ k: v, … }`, and **`[…]`** (native Rhai array)
+  → `[ … ]`, both handled by extending `to_expr` (Rhai's `Map` is a `BTreeMap`, so keys render
+  **sorted** — deterministic). Rust: `primitives::object_literal`/`array_literal`. No separate
+  `object()`/`array_lit()` constructors needed.
+- **Arithmetic operators `* + - /`** are registered on `Ex` (only combos involving an `Ex`, so native
+  numeric maths is untouched); each renders **parenthesized** — `({} * {})`. Rust:
+  `operators::arith`.
+- Field access in a body uses the existing string indexer: `l["product"]["name"]` → `$value.product.name`
+  (Rhai doesn't route `.field` through a custom indexer, so the `["…"]` idiom stands).
+
+**Two accepted consequences** (both cosmetic, both flow into the regenerated Q5 golden):
+1. **The emitted `$name` is engine-chosen, not the script's** — Rhai locals can't carry a `$`, so we
+   never see the user's `|l|`; the placeholders are `$value` (map/filter item), `$acc`/`$value`
+   (fold). Output reads `|$value| …`, not `|$l| …`.
+2. **Operator parens** — `$value.quantity * $value.price` renders `($value.quantity * $value.price)`
+   and `$acc + …` renders `($acc + …)`. Semantically identical; the v4_q05 golden was regenerated to
+   the parenthesized form and **executes byte-for-byte-equivalently against v4** (verified: same rows,
+   same `computed_total`).
 
 ## Open decisions
 
-1. **Q5 closures:** add `closure`/`map`/`fold`/`object`/`array_lit` (recommended) vs leave as `expr()`.
+1. **Q5 closures:** ✅ resolved — native Rhai `|l| …` closures run symbolically (see Tier 3 above),
+   not a `closure(...)` data-constructor. `#{}`/`[]` lower natively; `* + - /` registered on `Ex`.
 2. **`round` arity:** SQL `round(x, n)` vs SurrealQL `math::round(x)` (1-arg). Tier 1 implemented the
    1-arg form; a 2-arg overload would need scale-and-divide. Confirm desired behaviour.
 3. **`avg` vs `mean`:** Tier 1 uses `avg` (SQL parity) → `math::mean`. Add `mean` as a surreal-only
@@ -127,7 +147,10 @@ each is a clear single-job primitive.
 - **Q4** ✅ **fully de-stubbed** (no `expr()`): `count(graph(me, "placed", "order"))`,
   `sum(graph(me, "placed", "order")["total"])`, and the correlated subquery as
   `select().value().expression(max(ident("total"))).from("order").where(ident("client") == parent("id")).group_all().subquery()[0].alias("biggest_order")`.
-- **Q5** all `expr(...)` → Tier 3 closures/`object`/`map`/`fold`/`len`.
+- **Q5** ✅ **fully de-stubbed** (no `expr()`): `len(ident("lines"))`, and native closures
+  `ident("lines").map(|l| #{ product: l["product"]["name"], subtotal: l["quantity"] * l["price"] })`
+  + `ident("lines").fold(0, |acc, l| acc + l["quantity"] * l["price"])`. Emits engine-chosen
+  `$value`/`$acc`; golden regenerated to the parenthesized form (executes equivalently against v4).
 - **Q6** ✅ graph done: `count(graph("reviewed", me))`, `graph("reviewed", me)["rating"]`.
 - **Q7** ✅ **fully de-stubbed** (no `expr()`): `time_group(ident("created_at"), "month")`.
 - **Q8** ✅ `similarity`/`lower`/`words` done: `similarity(lower(ident("name")), "marti mcfligh")`,
