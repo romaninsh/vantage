@@ -7,7 +7,7 @@ use vantage_types::Entity;
 
 use crate::{
     pagination::Pagination, references::Reference, sorting::SortDirection,
-    traits::table_source::TableSource,
+    traits::table_source::TableSource, traits::table_source_spec::TableSourceSpec,
 };
 
 /// Type alias for expression closures stored on Table.
@@ -22,7 +22,7 @@ where
 {
     pub(super) data_source: T,
     pub(super) _phantom: PhantomData<E>,
-    pub(super) table_name: String,
+    pub(super) source: T::Source,
     pub(super) columns: IndexMap<String, T::Column<T::AnyType>>,
     pub(super) conditions: IndexMap<i64, T::Condition>,
     pub(super) next_condition_id: i64,
@@ -43,7 +43,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         Self {
             data_source,
             _phantom: PhantomData,
-            table_name: table_name.into(),
+            source: T::Source::from_name(table_name.into()),
             columns: IndexMap::new(),
             conditions: IndexMap::new(),
             next_condition_id: 1,
@@ -64,7 +64,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         Table {
             data_source: self.data_source,
             _phantom: PhantomData,
-            table_name: self.table_name,
+            source: self.source,
             columns: self.columns,
             conditions: self.conditions,
             next_condition_id: self.next_condition_id,
@@ -127,16 +127,26 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self
     }
 
-    /// Get the table name
+    /// Get the table name.
+    ///
+    /// For a query-sourced table this is its FROM alias.
     pub fn table_name(&self) -> &str {
-        &self.table_name
+        self.source.name()
+    }
+
+    /// The table's source (a name, or a query used as a derived source).
+    pub fn source(&self) -> &T::Source {
+        &self.source
     }
 
     /// Override the table name. Used by REST API drivers to swap a
     /// canonical resource path for a per-reference URI template at
     /// traversal time.
+    ///
+    /// This replaces the source with a name-based one, so it must not be
+    /// called on a query-sourced (derived) table.
     pub fn set_table_name(&mut self, name: impl Into<String>) {
-        self.table_name = name.into();
+        self.source = T::Source::from_name(name.into());
     }
 
     /// Get the underlying data source
@@ -215,7 +225,7 @@ impl<T: TableSource, E: Entity<T::Value>> std::ops::Index<&str> for Table<T, E> 
 impl<T: TableSource, E: Entity<T::Value>> std::fmt::Debug for Table<T, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Table")
-            .field("table_name", &self.table_name)
+            .field("table_name", &self.table_name())
             .field("columns", &self.columns.keys().collect::<Vec<_>>())
             .field("conditions_count", &self.conditions.len())
             .field(

@@ -238,7 +238,7 @@ where
     Identifier: Expressive<V>,
 {
     Ok(RhaiExpr(Expression::new(
-        &format!("CAST({{}} AS {sql_type})"),
+        format!("CAST({{}} AS {sql_type})"),
         vec![ExpressiveEnum::Nested(unwrap_expr::<V>(e)?)],
     )))
 }

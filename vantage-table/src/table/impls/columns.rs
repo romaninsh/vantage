@@ -32,6 +32,26 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self
     }
 
+    /// Copy column definitions from another table, skipping any whose name is
+    /// already present. With `names = None`, copies all columns; otherwise only
+    /// the listed ones. Used to inherit columns when deriving a table from
+    /// another (see `Table::derive_from`).
+    pub fn copy_columns_from<E2: Entity<T::Value>>(
+        &mut self,
+        other: &Table<T, E2>,
+        names: Option<&[&str]>,
+    ) {
+        for col in other.columns().values() {
+            let name = col.name();
+            if names.is_some_and(|ns| !ns.contains(&name)) {
+                continue;
+            }
+            if !self.columns.contains_key(name) {
+                self.add_column(col.clone());
+            }
+        }
+    }
+
     /// Add a typed column to the table (mutable)
     pub fn add_column_of<NewColumnType>(&mut self, name: impl Into<String>)
     where

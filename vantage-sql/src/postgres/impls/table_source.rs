@@ -84,6 +84,7 @@ impl TableSource for PostgresDB {
     type Value = AnyPostgresType;
     type Id = String;
     type Condition = crate::condition::PostgresCondition;
+    type Source = vantage_table::source::SelectSource<crate::postgres::statements::PostgresSelect>;
 
     fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
         let column: Column<AnyPostgresType> = Column::new(field);

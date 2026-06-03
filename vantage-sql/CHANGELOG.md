@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.7 — 2026-06-02
+
+### Added
+
+- Tables can be sourced from a sub-`SELECT` via `vantage-table`'s new `SelectSource`
+  (`type Source = SelectSource<SqliteSelect>`), rendering `FROM (<select>) AS <alias>`.
+- SQLite vista specs accept a `sqlite.rhai:` block: a Rhai script that builds the vista's
+  source `SELECT` instead of pointing at a physical table. The resulting vista is read-only
+  (insert/update/delete capabilities are cleared). Requires the `rhai` feature.
+
 ## 0.5.6 — 2026-06-01
 
 ### New Features

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.6 — 2026-06-02
+
+- Track `vantage-table`'s new `TableSource::Source` associated type (set to `String`; no
+  user-visible change).
+
 ## 0.5.5 — 2026-05-31
 
 - Contained relations backed by native BSON arrays and documents, surfaced as editable sub-Vistas
