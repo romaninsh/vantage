@@ -27,3 +27,5 @@
 - [SQL: PostgreSQL, MySQL & SQLite](./sql.md)
   - [Primitives](./sql/primitives.md)
   - [Type Conversions](./sql/type-conversions.md)
+- [SurrealDB](./surrealdb.md)
+  - [Primitives](./surrealdb/primitives.md)

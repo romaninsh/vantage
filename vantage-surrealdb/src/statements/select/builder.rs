@@ -71,6 +71,18 @@ impl<T: QueryResult> SurrealSelect<T> {
         self
     }
 
+    /// `GROUP ALL` — aggregate the entire result into a single row.
+    pub fn with_group_all(mut self) -> Self {
+        self.group_all = true;
+        self
+    }
+
+    /// `SPLIT field` — unnest an array field into one row per element.
+    pub fn with_split(mut self, field: impl ExpressiveOr<AnySurrealType, Identifier>) -> Self {
+        self.split.push(field.field_expr());
+        self
+    }
+
     pub fn with_limit(mut self, limit: i64) -> Self {
         self.limit = Some(limit);
         self

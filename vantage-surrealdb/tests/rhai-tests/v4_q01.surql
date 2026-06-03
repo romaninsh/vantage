@@ -1,0 +1,1 @@
+SELECT name, title, salary, department.name AS department, array::first(->reports_to->employee.name) ?? "n/a" AS manager FROM employee ORDER BY salary DESC

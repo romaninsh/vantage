@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.4 — 2026-06-02
+
+- BDD cache assertions (`cache_record_field`, `cache_record_absent`, `cache_row_count`) now poll
+  with bounded retry instead of single-shot asserts, fixing flaky mirror-write scenarios on loaded
+  CI where `spawn_blocking` (redb) ops can outlast the virtual-time drain window.
+
 ## 0.5.3 — 2026-05-31
 
 - `Dio::removed(id)` clears cached rows before publishing `RecordRemoved`.

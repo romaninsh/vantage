@@ -1,0 +1,1 @@
+SELECT ->a->b->c->d->e->f AS path FROM employee
