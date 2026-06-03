@@ -47,9 +47,22 @@ impl<T: QueryResult> SurrealSelect<T> {
         }
     }
 
-    /// Renders the GROUP BY clause
-    fn render_group_by(&self) -> Expr {
-        if self.group_by.is_empty() {
+    /// Renders the SPLIT clause (after WHERE, before GROUP).
+    fn render_split(&self) -> Expr {
+        if self.split.is_empty() {
+            surreal_expr!("")
+        } else {
+            let split_expressions: Vec<Expr> = self.split.to_vec();
+            surreal_expr!(" SPLIT {}", (Expression::from_vec(split_expressions, ", ")))
+        }
+    }
+
+    /// Renders the GROUP clause. `GROUP ALL` is mutually exclusive with
+    /// `GROUP BY` and takes precedence when set.
+    fn render_group(&self) -> Expr {
+        if self.group_all {
+            surreal_expr!(" GROUP ALL")
+        } else if self.group_by.is_empty() {
             surreal_expr!("")
         } else {
             let group_expressions: Vec<Expr> = self.group_by.to_vec();
@@ -94,7 +107,7 @@ impl<T: QueryResult> SurrealSelect<T> {
     /// Renders entire statement into an expression
     pub(crate) fn render(&self) -> Expr {
         surreal_expr!(
-            "SELECT {}{}{}{}{}{}{}",
+            "SELECT {}{}{}{}{}{}{}{}",
             (if self.single_value {
                 surreal_expr!("VALUE ")
             } else {
@@ -103,7 +116,8 @@ impl<T: QueryResult> SurrealSelect<T> {
             (self.render_fields()),
             (self.render_from()),
             (self.render_where()),
-            (self.render_group_by()),
+            (self.render_split()),
+            (self.render_group()),
             (self.render_order_by()),
             (self.render_limit())
         )
