@@ -61,8 +61,10 @@ Used live in Q1, Q2, Q4, Q6 (render byte-identical to the v4 goldens, execute ag
   `.rating` and `[0]` → `[0]` coexist. Mirrors SurrealQL 1:1. Rust: `primitives::index_at(expr, n)`.
   Used live in Q4's `(SELECT … GROUP ALL)[0]`.
 
-Still deferred here:
-- **Flat multi-hop arity > 5** and the `(b)` per-edge glyph override — only if real use needs them.
+Flat multi-hop arity now reaches **7** (`fn_graph2`..`fn_graph7`), covering an anchor + 6 segments —
+add further overloads only if a real path needs them. Still deferred: the `(b)` per-edge glyph
+override (mixed direction is already handled by nesting, so this is only worth it for an
+unexpressible case like bidirectional `<->`).
 
 ### Select-builder clauses (surreal-only)
 - **`group_all()`** → `GROUP ALL` — **IMPLEMENTED**. New `group_all: bool` on `SurrealSelect`,
@@ -127,13 +129,14 @@ by running SurrealDB's own closure syntax — Rhai's native `|l| …` — **symb
 
 1. **Q5 closures:** ✅ resolved — native Rhai `|l| …` closures run symbolically (see Tier 3 above),
    not a `closure(...)` data-constructor. `#{}`/`[]` lower natively; `* + - /` registered on `Ex`.
-2. **`round` arity:** SQL `round(x, n)` vs SurrealQL `math::round(x)` (1-arg). Tier 1 implemented the
-   1-arg form; a 2-arg overload would need scale-and-divide. Confirm desired behaviour.
+2. **`round` arity:** ✅ resolved — 2-arg `round(x, n)` → `math::fixed(x, n)` (SurrealDB's
+   round-to-N-decimals builtin; `math::round` stays the 1-arg integer form). No scale-and-divide
+   needed. `primitives::round_to` + a second registered `round` overload.
 3. **`avg` vs `mean`:** Tier 1 uses `avg` (SQL parity) → `math::mean`. Add `mean` as a surreal-only
-   alias? 
-4. **Formalize the vocabulary?** Consider a `docs4/src/…/surreal-primitives.md` mirroring
-   `docs4/src/sql/primitives.md`, listing canonical names + SurrealQL lowerings, so the SQL↔Surreal
-   overlap is documented rather than convention-only.
+   alias? — still open (low priority).
+4. **Formalize the vocabulary?** ✅ done — `docs4/src/surrealdb/primitives.md` (with a
+   `surrealdb.md` landing page, wired into `SUMMARY.md`) documents the canonical names + SurrealQL
+   lowerings as a Rhai-facing reference.
 
 ## Per-query stub → future-primitive map
 
@@ -141,9 +144,9 @@ by running SurrealDB's own closure syntax — Rhai's native `|l| …` — **symb
   and `ident("department")["name"].alias("department")` for the dotted column path.
 - **Q2** ✅ graph + recursion done: `recurse(graph("employee", "reports_to", me), 1, 5)["name"]`,
   `count(graph("reports_to", me))`.
-- **Q3** ✅ `stddev` + column done: `round(stddev(ident("salary")))`,
-  `ident("department")["name"].alias("department")`. Remaining: only `expr("payroll")` (an output-alias
-  reference in `order_by`, not a column).
+- **Q3** ✅ **fully de-stubbed** (no `expr()`): `round(stddev(ident("salary")))`,
+  `ident("department")["name"].alias("department")`; the `order_by` references the `payroll` output
+  alias as `ident("payroll")`.
 - **Q4** ✅ **fully de-stubbed** (no `expr()`): `count(graph(me, "placed", "order"))`,
   `sum(graph(me, "placed", "order")["total"])`, and the correlated subquery as
   `select().value().expression(max(ident("total"))).from("order").where(ident("client") == parent("id")).group_all().subquery()[0].alias("biggest_order")`.
@@ -153,11 +156,11 @@ by running SurrealDB's own closure syntax — Rhai's native `|l| …` — **symb
   `$value`/`$acc`; golden regenerated to the parenthesized form (executes equivalently against v4).
 - **Q6** ✅ graph done: `count(graph("reviewed", me))`, `graph("reviewed", me)["rating"]`.
 - **Q7** ✅ **fully de-stubbed** (no `expr()`): `time_group(ident("created_at"), "month")`.
-- **Q8** ✅ `similarity`/`lower`/`words` done: `similarity(lower(ident("name")), "marti mcfligh")`,
-  `words(ident("name"))`. Remaining `expr()`: only the `similarity` order-by alias reference.
-- **Q9** ✅ `object_entries`/`object_values` + column done: `object_entries(ident("nutrition"))`,
+- **Q8** ✅ **fully de-stubbed** (no `expr()`): `similarity(lower(ident("name")), "marti mcfligh")`,
+  `words(ident("name"))`; the `order_by` references the `similarity` output alias as `ident("similarity")`.
+- **Q9** ✅ **fully de-stubbed** (no `expr()`): `object_entries(ident("nutrition"))`,
   `sum(object_values(ident("nutrition")))`, and `ident("nutrition")["sugar"]` (in the projection +
-  `WHERE`). Remaining: only `expr("sugar")` (an output-alias reference in `order_by`).
+  `WHERE`); the `order_by` references the `sugar` output alias as `ident("sugar")`.
 
 ### Column / field paths — **idiom settled** (`ident("t")["col"]`)
 Dotted column paths use the string indexer: `ident("department")["name"]` → `department.name`
@@ -165,7 +168,11 @@ Dotted column paths use the string indexer: `ident("department")["name"]` → `d
 `ident(...)["col"].alias("x")` → `col_path AS x`: the Rhai `Id.alias` was changed to **lift the ident
 into the expression layer** (`ident_as_alias` → `{ident} AS {alias}`) instead of silently renaming, so
 it composes like `.alias()` on any `Ex`. Output-alias references in `order_by`/`group_by` (e.g.
-`payroll`, `sugar`) are left as `expr("…")`/`ident("…")` — those name a projection alias, not a column.
-- **Q10** ✅ SPLIT subquery done: `from(select().expression(expr("tags").alias("tag")).field("price").from("product").split("tags").subquery())`.
-  Remaining `expr()`: only the bare `tags AS tag` projection, via the standard `expr("col").alias(...)`
-  idiom (same as Q2/Q3) — not a structural stub.
+`payroll`, `sugar`, `avg_rating`, `lifetime_spend`) now use `ident("…")` — they name a projection
+alias, but `ident` renders them identically and reads truer than `expr("…")`.
+- **Q10** ✅ **fully de-stubbed**: `from(select().expression(ident("tags").alias("tag")).field("price").from("product").split("tags").subquery())`;
+  the `tags AS tag` projection and the `product_count` order-by both use `ident(...)`.
+
+**The whole v4 suite (Q1–Q10) is now free of `expr()` constructor stubs** — every query renders
+entirely from named primitives. (Q10 still calls `case_when()…​.expr()`, but that `.expr()` is the
+`Case` terminator, not the raw-SurrealQL escape hatch.)

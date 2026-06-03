@@ -274,6 +274,11 @@ pub fn fn_round(arg: rhai::Dynamic) -> Result<RhaiExpr, Box<rhai::EvalAltResult>
     Ok(RhaiExpr(primitives::round(unwrap_expr(arg)?)))
 }
 
+/// `round(expr, places)` → `math::fixed(expr, places)` (round to N decimals).
+pub fn fn_round_to(arg: rhai::Dynamic, places: i64) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
+    Ok(RhaiExpr(primitives::round_to(unwrap_expr(arg)?, places)))
+}
+
 // ── Tier 2 scalar/collection functions ──────────────────────────────────
 
 /// `first(expr)` → `array::first(expr)`.
@@ -460,6 +465,29 @@ pub fn fn_graph5(
     e: rhai::Dynamic,
 ) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
     graph_impl(vec![a, b, c, d, e])
+}
+
+pub fn fn_graph6(
+    a: rhai::Dynamic,
+    b: rhai::Dynamic,
+    c: rhai::Dynamic,
+    d: rhai::Dynamic,
+    e: rhai::Dynamic,
+    f: rhai::Dynamic,
+) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
+    graph_impl(vec![a, b, c, d, e, f])
+}
+
+pub fn fn_graph7(
+    a: rhai::Dynamic,
+    b: rhai::Dynamic,
+    c: rhai::Dynamic,
+    d: rhai::Dynamic,
+    e: rhai::Dynamic,
+    f: rhai::Dynamic,
+    g: rhai::Dynamic,
+) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
+    graph_impl(vec![a, b, c, d, e, f, g])
 }
 
 /// `recurse(path, min, max)` → `@.{min..max}(path)`.

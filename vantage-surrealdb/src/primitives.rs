@@ -29,9 +29,21 @@ pub fn avg(expr: impl Expressive<AnySurrealType>) -> Expr {
     Fx::new("math::mean", vec![expr.expr()]).expr()
 }
 
-/// `round(expr)` → `math::round(expr)`. SurrealDB `math::round` is 1-arg.
+/// `round(expr)` → `math::round(expr)`. SurrealDB `math::round` is 1-arg
+/// (rounds to the nearest integer).
 pub fn round(expr: impl Expressive<AnySurrealType>) -> Expr {
     Fx::new("math::round", vec![expr.expr()]).expr()
+}
+
+/// `round(expr, places)` → `math::fixed(expr, places)`. SurrealDB's `math::round`
+/// has no decimal-places arg; `math::fixed` is the builtin that rounds to N
+/// decimals (e.g. `math::fixed(3.146, 2)` → `3.15`). `places` is inlined as a
+/// bare integer literal.
+pub fn round_to(expr: impl Expressive<AnySurrealType>, places: i64) -> Expr {
+    Expression::new(
+        format!("math::fixed({{}}, {places})"),
+        vec![ExpressiveEnum::Nested(expr.expr())],
+    )
 }
 
 /// `coalesce(a, b)` → `a ?? b` (SurrealDB null-coalescing operator).
@@ -400,6 +412,10 @@ mod tests {
         assert_eq!(
             round(avg(Identifier::new("total"))).preview(),
             "math::round(math::mean(total))"
+        );
+        assert_eq!(
+            round_to(avg(Identifier::new("price")), 2).preview(),
+            "math::fixed(math::mean(price), 2)"
         );
         assert_eq!(
             count_distinct(Identifier::new("id")).preview(),

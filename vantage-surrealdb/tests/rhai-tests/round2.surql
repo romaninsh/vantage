@@ -1,0 +1,1 @@
+SELECT math::fixed(math::mean(price), 2) AS avg_price FROM product

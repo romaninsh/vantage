@@ -144,10 +144,7 @@ fn test_group_all_takes_precedence_over_group_by() {
         .with_group_by(surreal_expr!("client"))
         .with_group_all();
 
-    assert_eq!(
-        select.preview(),
-        "SELECT total FROM order GROUP ALL"
-    );
+    assert_eq!(select.preview(), "SELECT total FROM order GROUP ALL");
 }
 
 #[test]

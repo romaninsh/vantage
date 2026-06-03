@@ -55,6 +55,7 @@ macro_rules! register_surreal_engine {
 
             // ── Tier 1 shared scalar/conditional primitives ───────
             engine.register_fn("round", $crate::rhai_engine::constructors::fn_round);
+            engine.register_fn("round", $crate::rhai_engine::constructors::fn_round_to);
             engine.register_fn("coalesce", $crate::rhai_engine::constructors::fn_coalesce);
             engine.register_fn("nullif", $crate::rhai_engine::constructors::fn_nullif);
             engine.register_fn("cast", $crate::rhai_engine::constructors::fn_cast);
@@ -304,6 +305,8 @@ macro_rules! register_surreal_engine {
             engine.register_fn("graph", $crate::rhai_engine::constructors::fn_graph3);
             engine.register_fn("graph", $crate::rhai_engine::constructors::fn_graph4);
             engine.register_fn("graph", $crate::rhai_engine::constructors::fn_graph5);
+            engine.register_fn("graph", $crate::rhai_engine::constructors::fn_graph6);
+            engine.register_fn("graph", $crate::rhai_engine::constructors::fn_graph7);
             engine.register_fn("recurse", $crate::rhai_engine::constructors::fn_recurse);
 
             // ── Embedded-array closures: .map / .fold / .filter ───────────
