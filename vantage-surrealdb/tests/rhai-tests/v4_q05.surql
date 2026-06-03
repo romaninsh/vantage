@@ -1,0 +1,1 @@
+SELECT id, array::len(lines) AS line_count, lines.map(|$value| { product: $value.product.name, subtotal: ($value.quantity * $value.price) }) AS breakdown, lines.fold(0, |$acc, $value| ($acc + ($value.quantity * $value.price))) AS computed_total FROM order ORDER BY computed_total DESC LIMIT 5
