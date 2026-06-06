@@ -21,8 +21,8 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_like::TableLike;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Column as VistaColumn, Reference as VistaReference, TableShell, Vista, VistaCapabilities,
-    VistaMetadata,
+    Column as VistaColumn, JoinKey, Reference as VistaReference, TableShell, Vista,
+    VistaCapabilities, VistaMetadata,
 };
 
 use super::factory::{ModelResolver, RestApiVistaFactory};
@@ -37,6 +37,12 @@ pub(crate) struct YamlReference {
     pub target: String,
     pub kind: YamlReferenceKind,
     pub foreign_key: String,
+    /// Multi-key join. When non-empty it fully describes the join (each
+    /// pair reads a parent-row column and constrains a child column),
+    /// superseding `foreign_key`. Lets a child be narrowed by more than
+    /// one parent field — e.g. a deployment by both product_id and
+    /// version_id.
+    pub keys: Vec<JoinKey>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -143,6 +149,25 @@ impl TableShell for RestApiTableShell {
             })?;
 
             let mut child = resolver(&yref.target)?;
+
+            // Multi-key join: read each parent-row column and constrain the
+            // matching child column. Every key becomes an eq-condition on
+            // the child; how each one is applied (URL path placeholder,
+            // query param, or in-memory row filter) is the child data
+            // source's concern at fetch time.
+            if !yref.keys.is_empty() {
+                for key in &yref.keys {
+                    let value = row.get(&key.from).cloned().ok_or_else(|| {
+                        error!(
+                            "YAML reference: parent row missing join field",
+                            relation = relation,
+                            source_column = key.from.as_str()
+                        )
+                    })?;
+                    child.add_condition_eq(key.to.clone(), value)?;
+                }
+                return Ok(child);
+            }
 
             // For `has_many` the parent's id flows onto the child's FK
             // column; for `has_one` the parent's FK column value becomes

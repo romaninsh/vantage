@@ -36,4 +36,14 @@ pub struct VistaCapabilities {
     /// the weakest of the three pagination primitives. DynamoDB and
     /// most token-paginated REST APIs only support this.
     pub can_fetch_next: bool,
+    /// Record-level reference traversal via `get_ref(relation, row)` — read
+    /// the join value out of a known row and narrow the target with a plain
+    /// eq-condition. Every backend that can filter by equality supports this
+    /// (SQL, CSV, Mongo, Surreal, REST/GraphQL).
+    pub can_traverse_to_record: bool,
+    /// Set-level reference traversal — narrow the target with an
+    /// `IN (subquery)` derived from the parent's own conditions (the
+    /// `get_ref_as` / reports path). Requires the backend to support
+    /// subqueries; SQL and SurrealDB do, CSV/Mongo/REST do not.
+    pub can_traverse_to_set: bool,
 }
