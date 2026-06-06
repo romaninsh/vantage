@@ -9,7 +9,7 @@
 //! - `HasOne` — foreign key on source table (e.g. Client.bakery_id → Bakery)
 //! - `HasMany` — foreign key on target table (e.g. Bakery → Client.bakery_id)
 //!
-//! Cross-persistence references live at the Vista layer (`Vista::with_foreign`),
+//! Cross-persistence references live in `vantage-vista-factory`'s `VistaCatalog`,
 //! not here. Typed `Table<T, E>` is single-backend by construction.
 
 use std::any::Any;

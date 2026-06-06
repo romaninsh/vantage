@@ -276,9 +276,9 @@ pub trait TableShell: Send + Sync + 'static {
     /// Drivers override by forwarding into the wrapped typed `Table`'s
     /// `get_ref_from_row::<EmptyEntity>(relation, &native_row)` and then
     /// wrapping the result back as a `Vista` through the driver's factory.
-    /// The default returns `Unimplemented`; cross-persistence refs are
-    /// handled at the `Vista` layer via `Vista::with_foreign` before this
-    /// trait method is reached.
+    /// The default returns `Unimplemented`. Cross-persistence refs are
+    /// handled one layer up by `vantage-vista-factory`'s `VistaCatalog`,
+    /// never here.
     fn get_ref(&self, relation: &str, _row: &Record<CborValue>) -> Result<Vista> {
         Err(error!(
             format!(

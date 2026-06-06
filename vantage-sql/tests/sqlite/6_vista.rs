@@ -516,42 +516,6 @@ sqlite:
 }
 
 #[tokio::test]
-async fn vista_with_foreign_lazy_no_eager_invocation() -> TestResult {
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, Ordering};
-
-    let db = setup_clients_orders().await;
-    let mut clients = db.vista_factory().from_table(clients_table(db.clone()))?;
-
-    let fired = Arc::new(AtomicBool::new(false));
-    let fired_clone = fired.clone();
-    let db_for_closure = db.clone();
-    clients.with_foreign(
-        "external",
-        vantage_vista::ReferenceKind::HasMany,
-        move |_row| {
-            fired_clone.store(true, Ordering::SeqCst);
-            db_for_closure
-                .vista_factory()
-                .from_table(orders_table(db_for_closure.clone()))
-        },
-    );
-    assert!(
-        !fired.load(Ordering::SeqCst),
-        "with_foreign must not invoke the closure at registration"
-    );
-
-    // Verify list_references picks it up with the declared cardinality.
-    let refs = clients.list_references();
-    assert!(
-        refs.iter().any(
-            |(name, kind)| name == "external" && *kind == vantage_vista::ReferenceKind::HasMany
-        )
-    );
-    Ok(())
-}
-
-#[tokio::test]
 async fn vista_add_order_ascending_descending_and_clear() -> TestResult {
     use vantage_vista::SortDirection;
 

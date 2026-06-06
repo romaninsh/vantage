@@ -98,6 +98,37 @@ impl Relation {
             narrow_via: String::new(),
         }
     }
+
+    /// Narrow an already-built target [`Vista`] by this relation's join,
+    /// reading each parent value out of `parent_row`.
+    ///
+    /// Single-key relations push `foreign_key == parent_row[narrow_via]`;
+    /// multi-key relations push one eq-condition per `(child, parent)` pair.
+    /// How each eq-condition is honoured (SQL `WHERE`, in-memory filter,
+    /// REST path/query param) is the target driver's concern at fetch time.
+    ///
+    /// This is the single home for reference narrowing — consumers that
+    /// resolve the target themselves (e.g. a driver-aware loader) can call
+    /// this directly instead of going through [`VistaCatalog::traverse`].
+    pub fn narrow(&self, target: &mut Vista, parent_row: &Record<CborValue>) -> Result<()> {
+        if self.keys.is_empty() {
+            let value = parent_row.get(&self.narrow_via).cloned().ok_or_else(|| {
+                error!(
+                    "parent row missing narrow_via field",
+                    field = self.narrow_via.as_str()
+                )
+            })?;
+            target.add_condition_eq(self.foreign_key.clone(), value)?;
+        } else {
+            for (child_col, parent_col) in &self.keys {
+                let value = parent_row.get(parent_col).cloned().ok_or_else(|| {
+                    error!("parent row missing join field", field = parent_col.as_str())
+                })?;
+                target.add_condition_eq(child_col.clone(), value)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// A name → [`Vista`] catalog spanning many datasources, plus
@@ -170,22 +201,7 @@ impl VistaCatalog {
     /// driver's concern at fetch time.
     pub fn traverse(&self, relation: &Relation, parent_row: &Record<CborValue>) -> Result<Vista> {
         let mut target = self.build_vista(&relation.target_model)?;
-        if relation.keys.is_empty() {
-            let value = parent_row.get(&relation.narrow_via).cloned().ok_or_else(|| {
-                error!(
-                    "parent row missing narrow_via field",
-                    field = relation.narrow_via.as_str()
-                )
-            })?;
-            target.add_condition_eq(relation.foreign_key.clone(), value)?;
-        } else {
-            for (child_col, parent_col) in &relation.keys {
-                let value = parent_row.get(parent_col).cloned().ok_or_else(|| {
-                    error!("parent row missing join field", field = parent_col.as_str())
-                })?;
-                target.add_condition_eq(child_col.clone(), value)?;
-            }
-        }
+        relation.narrow(&mut target, parent_row)?;
         Ok(target)
     }
 
@@ -256,7 +272,10 @@ mod tests {
                     .with_id_column("id");
                 let source = MockShell::new()
                     .with_metadata(meta)
-                    .with_record("b1", record(&[("id", text("b1")), ("name", text("Marty's"))]))
+                    .with_record(
+                        "b1",
+                        record(&[("id", text("b1")), ("name", text("Marty's"))]),
+                    )
                     .with_record("b2", record(&[("id", text("b2")), ("name", text("Other"))]));
                 Ok(Vista::new("bakery", Box::new(source)))
             }),

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.7 — 2026-06-06
+
+### Changed
+
+- Formatting only (`cargo fmt`): no functional or API change.
+
 ## 0.5.6 — 2026-06-02
 
 - Track `vantage-table`'s new `TableSource::Source` associated type (set to `String`; no
