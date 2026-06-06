@@ -1,0 +1,42 @@
+name: Cmd Backend Tests
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "vantage-cmd/**"
+      - ".github/workflows/cmd.yaml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          cache-workspace-crates: false
+          cache-all-crates: true
+          shared-key: "vantage-cmd"
+          workspaces: |
+            vantage-cmd -> target
+
+      - name: Build vantage-cmd
+        working-directory: vantage-cmd
+        run: cargo build --all-targets
+
+      - name: Run tests
+        working-directory: vantage-cmd
+        run: cargo test
+
+      - name: Check formatting
+        working-directory: vantage-cmd
+        run: cargo fmt -- --check
+
+      - name: Run clippy
+        working-directory: vantage-cmd
+        run: cargo clippy --all-targets -- -D warnings

@@ -1,0 +1,21 @@
+name: iam.roles
+columns:
+  RoleName:
+    type: string
+    flags: [id, title, searchable]
+  RoleId:
+    type: string
+  Arn:
+    type: string
+  Path:
+    type: string
+  CreateDate:
+    type: string
+  Description:
+    type: string
+cmd:
+  rhai: |
+    let args = ["iam", "list-roles", "--output", "json"];
+    let out = run(args);
+    if out.exit_code != 0 { throw out.stderr; }
+    parse_json(out.stdout).Roles

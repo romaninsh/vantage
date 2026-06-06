@@ -1,0 +1,21 @@
+name: iam.policies
+columns:
+  PolicyName:
+    type: string
+    flags: [id, title, searchable]
+  PolicyId:
+    type: string
+  Arn:
+    type: string
+  Path:
+    type: string
+  AttachmentCount:
+    type: int
+  CreateDate:
+    type: string
+cmd:
+  rhai: |
+    let args = ["iam", "list-policies", "--scope", "Local", "--output", "json"];
+    let out = run(args);
+    if out.exit_code != 0 { throw out.stderr; }
+    parse_json(out.stdout).Policies
