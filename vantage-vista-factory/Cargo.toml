@@ -1,0 +1,21 @@
+[package]
+name = "vantage-vista-factory"
+version = "0.5.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Multi-datasource Vista catalog and cross-persistence reference traversal for the Vantage data framework"
+repository = "https://github.com/romaninsh/vantage"
+
+[lib]
+doctest = false
+
+[dependencies]
+vantage-core = { version = "0.5", path = "../vantage-core" }
+vantage-types = { version = "0.5", path = "../vantage-types" }
+vantage-vista = { version = "0.5", path = "../vantage-vista" }
+ciborium = { version = "0.2", features = ["std"] }
+indexmap = { version = "2.14" }
+
+[dev-dependencies]
+vantage-dataset = { version = "0.5", path = "../vantage-dataset" }
+tokio = { version = "1.52", features = ["macros", "rt-multi-thread"] }
