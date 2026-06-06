@@ -81,6 +81,25 @@ impl Default for PaginationParams {
 /// [`ResponseShape`] for the supported variants.
 ///
 /// Currently read-only — write operations return errors.
+/// How a table's conditions are applied to a request.
+///
+/// URL `{placeholder}` path segments are always filled from matching
+/// eq-conditions regardless of strategy; this governs what happens to
+/// the *remaining* (non-path) eq-conditions.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FilterStrategy {
+    /// Append remaining eq-conditions as `?field=value` query params
+    /// (JSON-Server semantics). The default.
+    #[default]
+    Query,
+    /// Apply remaining eq-conditions as in-memory row filters after the
+    /// fetch, never as query params. For APIs whose only server-side
+    /// filters are path segments and that reject (or ignore) unknown
+    /// query params — e.g. the Mercury control-API, whose CLI likewise
+    /// filters version/env client-side after fetching by product path.
+    Client,
+}
+
 #[derive(Clone, Debug)]
 pub struct RestApi {
     base_url: String,
@@ -95,6 +114,9 @@ pub struct RestApi {
     /// first chunk. Useful for FastAPI/Pydantic services that treat
     /// unknown query params as strict filters.
     no_pagination: bool,
+    /// How non-path eq-conditions are applied — query params vs.
+    /// in-memory post-fetch filtering. See [`FilterStrategy`].
+    filter_strategy: FilterStrategy,
 }
 
 impl RestApi {
@@ -267,10 +289,29 @@ impl RestApi {
         }
         let conds: Vec<&Expression<CborValue>> = resolved.iter().collect();
         let (endpoint, consumed) = self.endpoint_url(table_name, &conds)?;
+
+        // Under `FilterStrategy::Client`, non-path eq-conditions are
+        // applied to the fetched rows in memory rather than sent as query
+        // params (the API rejects/ignores unknown params). Collect them,
+        // and keep them out of the query string by marking every
+        // condition as consumed for query-building purposes.
+        let (query_consumed, client_filters): (Vec<usize>, Vec<(String, String)>) =
+            if self.filter_strategy == FilterStrategy::Client {
+                let filters = conds
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| !consumed.contains(i))
+                    .filter_map(|(_, c)| crate::condition_to_query_param(c))
+                    .collect();
+                ((0..conds.len()).collect(), filters)
+            } else {
+                (consumed, Vec::new())
+            };
+
         let url = format!(
             "{}{}",
             endpoint,
-            self.build_query_string(pagination, &conds, &consumed)
+            self.build_query_string(pagination, &conds, &query_consumed)
         );
 
         let mut request = self.client.get(&url);
@@ -330,6 +371,22 @@ impl RestApi {
             }
 
             records.insert(id, record);
+        }
+
+        // Client-side filtering (FilterStrategy::Client): drop rows that
+        // don't match the non-path eq-conditions. A condition whose field
+        // is absent from a row is treated as a pass (it was a path/request
+        // param, not a record field) — mirroring the AWS connector and the
+        // Mercury CLI's own post-fetch `_filter_deployments`.
+        if !client_filters.is_empty() {
+            records.retain(|_id, record| {
+                client_filters.iter().all(|(field, want)| {
+                    match record.get(field) {
+                        Some(v) => crate::cbor_to_query_string(v).as_deref() == Some(want.as_str()),
+                        None => true,
+                    }
+                })
+            });
         }
 
         Ok(records)
@@ -419,6 +476,7 @@ pub struct RestApiBuilder {
     response_shape: ResponseShape,
     pagination: PaginationParams,
     no_pagination: bool,
+    filter_strategy: FilterStrategy,
 }
 
 impl RestApiBuilder {
@@ -429,6 +487,7 @@ impl RestApiBuilder {
             response_shape: ResponseShape::default(),
             pagination: PaginationParams::default(),
             no_pagination: false,
+            filter_strategy: FilterStrategy::default(),
         }
     }
 
@@ -462,6 +521,15 @@ impl RestApiBuilder {
         self
     }
 
+    /// Choose how non-path eq-conditions are applied. Default is
+    /// [`FilterStrategy::Query`]; use [`FilterStrategy::Client`] for
+    /// APIs that only filter via path segments and reject/ignore unknown
+    /// query params (the conditions are then applied in memory).
+    pub fn filter_strategy(mut self, strategy: FilterStrategy) -> Self {
+        self.filter_strategy = strategy;
+        self
+    }
+
     pub fn build(self) -> RestApi {
         RestApi {
             base_url: self.base_url,
@@ -470,6 +538,7 @@ impl RestApiBuilder {
             response_shape: self.response_shape,
             pagination: self.pagination,
             no_pagination: self.no_pagination,
+            filter_strategy: self.filter_strategy,
         }
     }
 }

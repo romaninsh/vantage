@@ -66,6 +66,8 @@ impl MysqlVistaFactory {
                 can_insert: !read_only,
                 can_update: !read_only,
                 can_delete: !read_only,
+                can_traverse_to_record: true,
+                can_traverse_to_set: true,
                 ..VistaCapabilities::default()
             },
             metadata,

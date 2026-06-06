@@ -23,9 +23,9 @@ pub use graphql::{
     GraphqlSelect, GraphqlTableExtras, GraphqlType, GraphqlTypeVariants, NoGraphqlExtras,
     RenderedQuery,
 };
-pub(crate) use rest::condition_to_query_param;
+pub(crate) use rest::{cbor_to_query_string, condition_to_query_param};
 pub use rest::{
-    ApiColumnExtras, ApiReferenceExtras, ApiTableBlock, ApiTableExtras, ModelResolver, NoApiExtras,
-    PaginationParams, ResponseShape, RestApi, RestApiBuilder, RestApiTableShell,
-    RestApiVistaFactory, RestApiVistaSpec, eq_condition,
+    ApiColumnExtras, ApiReferenceExtras, ApiTableBlock, ApiTableExtras, FilterStrategy,
+    ModelResolver, NoApiExtras, PaginationParams, ResponseShape, RestApi, RestApiBuilder,
+    RestApiTableShell, RestApiVistaFactory, RestApiVistaSpec, eq_condition,
 };

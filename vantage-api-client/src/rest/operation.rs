@@ -63,7 +63,7 @@ pub(crate) fn condition_to_query_param(cond: &Expression<CborValue>) -> Option<(
 /// query parameter. Compound values (arrays, maps) have no single-key
 /// representation, so they fall through as `None` and the condition
 /// is dropped from the query string.
-fn cbor_to_query_string(v: &CborValue) -> Option<String> {
+pub(crate) fn cbor_to_query_string(v: &CborValue) -> Option<String> {
     match v {
         CborValue::Bool(b) => Some(b.to_string()),
         CborValue::Integer(i) => Some(i128::from(*i).to_string()),
