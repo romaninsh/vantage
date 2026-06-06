@@ -14,8 +14,8 @@ pub mod table_source;
 pub mod vista;
 
 pub use api::{FilterStrategy, PaginationParams, ResponseShape, RestApi, RestApiBuilder};
-pub(crate) use operation::{cbor_to_query_string, condition_to_query_param};
 pub use operation::eq_condition;
+pub(crate) use operation::{cbor_to_query_string, condition_to_query_param};
 pub use vista::{
     ApiColumnExtras, ApiReferenceExtras, ApiTableBlock, ApiTableExtras, ModelResolver, NoApiExtras,
     RestApiTableShell, RestApiVistaFactory, RestApiVistaSpec,
