@@ -4842,7 +4842,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4900,7 +4900,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -4950,7 +4950,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -4968,7 +4968,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista-factory"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "ciborium",
  "indexmap",

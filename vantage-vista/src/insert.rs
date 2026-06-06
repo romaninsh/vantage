@@ -353,5 +353,4 @@ mod tests {
             client_vista().classify_insert(&record(&[("orders", map(&[("total", text("x"))]))]));
         assert!(err.is_err());
     }
-
 }
