@@ -272,7 +272,10 @@ mod tests {
                     .with_id_column("id");
                 let source = MockShell::new()
                     .with_metadata(meta)
-                    .with_record("b1", record(&[("id", text("b1")), ("name", text("Marty's"))]))
+                    .with_record(
+                        "b1",
+                        record(&[("id", text("b1")), ("name", text("Marty's"))]),
+                    )
                     .with_record("b2", record(&[("id", text("b2")), ("name", text("Other"))]));
                 Ok(Vista::new("bakery", Box::new(source)))
             }),
