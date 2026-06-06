@@ -1,0 +1,31 @@
+name: s3.objects
+columns:
+  Key:
+    type: string
+    flags: [id, title, searchable]
+  Bucket:
+    type: string
+    flags: [hidden]
+  Size:
+    type: int
+  LastModified:
+    type: string
+  StorageClass:
+    type: string
+cmd:
+  rhai: |
+    let args = ["s3api", "list-objects-v2", "--output", "json"];
+    let bucket = "";
+    for c in conditions {
+        if c.field == "Bucket" { args += ["--bucket", c.value]; bucket = c.value; }
+    }
+    if type_of(limit) != "()" {
+        args += ["--max-items", limit.to_string()];
+    }
+    let out = run(args);
+    if out.exit_code != 0 { throw out.stderr; }
+    let parsed = parse_json(out.stdout);
+    // `Contents` is absent for an empty bucket.
+    let contents = if type_of(parsed.Contents) == "array" { parsed.Contents } else { [] };
+    for r in contents { r.Bucket = bucket; }
+    contents

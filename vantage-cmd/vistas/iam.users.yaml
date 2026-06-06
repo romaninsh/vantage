@@ -1,0 +1,32 @@
+name: iam.users
+columns:
+  UserName:
+    type: string
+    flags: [id, title, searchable]
+  UserId:
+    type: string
+  Arn:
+    type: string
+  Path:
+    type: string
+  CreateDate:
+    type: string
+references:
+  groups:
+    table: iam.user_groups
+    kind: has_many
+    foreign_key: UserName
+  access_keys:
+    table: iam.access_keys
+    kind: has_many
+    foreign_key: UserName
+  policies:
+    table: iam.user_policies
+    kind: has_many
+    foreign_key: UserName
+cmd:
+  rhai: |
+    let args = ["iam", "list-users", "--output", "json"];
+    let out = run(args);
+    if out.exit_code != 0 { throw out.stderr; }
+    parse_json(out.stdout).Users

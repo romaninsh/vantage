@@ -1,0 +1,20 @@
+name: iam.user_groups
+columns:
+  GroupName:
+    type: string
+    flags: [id, title, searchable]
+  GroupId:
+    type: string
+  Arn:
+    type: string
+  Path:
+    type: string
+cmd:
+  rhai: |
+    let args = ["iam", "list-groups-for-user", "--output", "json"];
+    for c in conditions {
+        if c.field == "UserName" { args += ["--user-name", c.value]; }
+    }
+    let out = run(args);
+    if out.exit_code != 0 { throw out.stderr; }
+    parse_json(out.stdout).Groups

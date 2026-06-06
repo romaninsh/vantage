@@ -1,0 +1,31 @@
+name: lambda.functions
+columns:
+  FunctionName:
+    type: string
+    flags: [id, title, searchable]
+  Runtime:
+    type: string
+  Handler:
+    type: string
+  CodeSize:
+    type: int
+  LastModified:
+    type: string
+references:
+  aliases:
+    table: lambda.aliases
+    kind: has_many
+    foreign_key: FunctionName
+  versions:
+    table: lambda.versions
+    kind: has_many
+    foreign_key: FunctionName
+cmd:
+  rhai: |
+    let args = ["lambda", "list-functions", "--output", "json"];
+    if type_of(limit) != "()" {
+        args += ["--max-items", limit.to_string()];
+    }
+    let out = run(args);
+    if out.exit_code != 0 { throw out.stderr; }
+    parse_json(out.stdout).Functions

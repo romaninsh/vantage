@@ -1,0 +1,34 @@
+name: log.groups
+columns:
+  logGroupName:
+    type: string
+    flags: [id, title, searchable]
+  creationTime:
+    type: int
+  storedBytes:
+    type: int
+  retentionInDays:
+    type: int
+references:
+  streams:
+    table: log.streams
+    kind: has_many
+    foreign_key: logGroupName
+  events:
+    table: log.events
+    kind: has_many
+    foreign_key: logGroupName
+cmd:
+  rhai: |
+    let args = ["logs", "describe-log-groups", "--output", "json"];
+    for c in conditions {
+        if c.field == "logGroupNamePrefix" {
+            args += ["--log-group-name-prefix", c.value];
+        }
+    }
+    if type_of(limit) != "()" {
+        args += ["--max-items", limit.to_string()];
+    }
+    let out = run(args);
+    if out.exit_code != 0 { throw out.stderr; }
+    parse_json(out.stdout).logGroups
