@@ -51,7 +51,10 @@ impl CmdVistaFactory {
     /// title flags and the spec's `cmd.rhai` script. References are *not*
     /// added here — the caller (which knows how to resolve target model
     /// names to specs) lowers them via `with_many` / `with_one`.
-    pub(crate) fn build_columns_table(&self, spec: &CmdVistaSpec) -> Result<Table<Cmd, EmptyEntity>> {
+    pub(crate) fn build_columns_table(
+        &self,
+        spec: &CmdVistaSpec,
+    ) -> Result<Table<Cmd, EmptyEntity>> {
         let cmd_spec = {
             let mut cs = CmdSpec::new(spec.driver.cmd.rhai.clone());
             cs.command = spec.driver.cmd.command.clone();
