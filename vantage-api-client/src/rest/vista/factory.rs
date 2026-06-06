@@ -103,6 +103,7 @@ impl RestApiVistaFactory {
             any_table,
             VistaCapabilities {
                 can_count: true,
+                can_traverse_to_record: true,
                 ..VistaCapabilities::default()
             },
             metadata,
@@ -179,6 +180,7 @@ impl VistaFactory for RestApiVistaFactory {
                         .foreign_key
                         .clone()
                         .unwrap_or_else(|| rel_name.clone()),
+                    keys: ref_spec.keys.clone(),
                 },
             );
         }
@@ -187,6 +189,7 @@ impl VistaFactory for RestApiVistaFactory {
             table,
             VistaCapabilities {
                 can_count: true,
+                can_traverse_to_record: true,
                 ..VistaCapabilities::default()
             },
             metadata,

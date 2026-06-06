@@ -9,6 +9,7 @@ members = [
     "vantage-csv",
     "vantage-types", "learn-1", "learn-2", "learn-3",
     "vantage-vista",
+    "vantage-vista-factory",
     "vantage-diorama",
     "vantage-log-writer",
     "vantage-sql",
@@ -31,5 +32,6 @@ exclude = [
     "example_*",
     "vantage-ui-adapters",
     "test-api-server",
+    "vantage-cmd",
 ]
 resolver = "2"

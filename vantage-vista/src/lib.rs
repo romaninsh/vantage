@@ -27,7 +27,9 @@ pub use metadata::VistaMetadata;
 pub use reference::{ContainedKind, ContainedSpec, Reference, ReferenceKind};
 pub use sort::SortDirection;
 pub use source::TableShell;
-pub use spec::{ColumnSpec, ContainedYaml, NoExtras, ReferenceSpec, ReferenceSugar, VistaSpec};
+pub use spec::{
+    ColumnSpec, ContainedYaml, JoinKey, NoExtras, ReferenceSpec, ReferenceSugar, VistaSpec,
+};
 pub use vista::Vista;
 
 /// Convenience alias for the carrier type used at the `TableShell` boundary.

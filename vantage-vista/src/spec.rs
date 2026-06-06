@@ -132,8 +132,27 @@ pub struct ReferenceSpec<R = NoExtras> {
     pub kind: ReferenceKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub foreign_key: Option<String>,
+    /// Extra join keys for row-supplied traversal. When non-empty these
+    /// fully describe the join: each maps a parent (locked-row) column to
+    /// a child column, and the child is constrained by all of them. This
+    /// lets a child be narrowed by more than one parent field (e.g. a
+    /// deployment narrowed by both `product_id` and `version_id`). When
+    /// empty, the single `foreign_key` sugar applies.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keys: Vec<JoinKey>,
     #[serde(flatten, default)]
     pub driver: R,
+}
+
+/// One condition contributed by a reference during row-supplied
+/// traversal: read the parent (locked) row's `from` column and constrain
+/// the child's `to` column to that value.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct JoinKey {
+    /// Child column to constrain.
+    pub to: String,
+    /// Parent column whose value (from the locked source row) is used.
+    pub from: String,
 }
 
 /// Sugar form for inline column references.

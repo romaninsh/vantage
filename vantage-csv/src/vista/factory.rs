@@ -41,6 +41,7 @@ impl CsvVistaFactory {
             any_table,
             VistaCapabilities {
                 can_count: true,
+                can_traverse_to_record: true,
                 ..VistaCapabilities::default()
             },
             metadata,
