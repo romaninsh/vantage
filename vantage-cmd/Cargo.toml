@@ -10,6 +10,11 @@ homepage = "https://romaninsh.github.io/vantage"
 repository = "https://github.com/romaninsh/vantage"
 readme = "README.md"
 
+# Standalone crate: it's excluded from the parent vantage workspace, so an
+# empty workspace table detaches it (otherwise cargo errors when run from
+# this directory — e.g. `cd vantage-cmd && cargo publish`).
+[workspace]
+
 [dependencies]
 vantage-core = { version = "0.5", path = "../vantage-core" }
 vantage-types = { version = "0.5", path = "../vantage-types", features = ["serde"] }
