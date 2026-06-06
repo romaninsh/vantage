@@ -13,10 +13,9 @@
 //! Vista does **no** field validation — the underlying table validates every
 //! record it receives. Vista's only job here is to order the inserts and fill
 //! the reference (FK) values. The sequence is **best-effort / non-atomic**: a
-//! failure mid-way leaves earlier writes committed. Only **native**
-//! (same-persistence) relations are supported; cross-persistence
-//! ([`Vista::with_foreign`](crate::vista::Vista::with_foreign)) relations are
-//! rejected.
+//! failure mid-way leaves earlier writes committed. Every Vista reference is
+//! same-persistence, so all relations are insertable; a relation name that
+//! resolves to no reference at all is rejected before any write.
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
@@ -135,7 +134,7 @@ impl Vista {
         for (relation, payload) in collected {
             let reference = self.get_reference(&relation).ok_or_else(|| {
                 error!(
-                    "cross-persistence nested insert is not supported",
+                    "relation has no insertable reference",
                     relation = relation.as_str()
                 )
             })?;
@@ -355,15 +354,4 @@ mod tests {
         assert!(err.is_err());
     }
 
-    #[test]
-    fn cross_persistence_relation_is_rejected() {
-        let mut vista = client_vista();
-        vista.with_foreign("warehouse", ReferenceKind::HasOne, |_row| {
-            Err(vantage_core::error!("unused in this test"))
-        });
-        // `warehouse` resolves via list_references but has no same-persistence
-        // Reference, so classify must reject it before any write.
-        let err = vista.classify_insert(&record(&[("warehouse", map(&[("name", text("w1"))]))]));
-        assert!(err.is_err());
-    }
 }
