@@ -1,0 +1,19 @@
+name: ecs.task_definitions
+columns:
+  taskDefinitionArn:
+    type: string
+    flags: [id, title, searchable]
+cmd:
+  rhai: |
+    let args = ["ecs", "list-task-definitions", "--output", "json"];
+    if type_of(limit) != "()" {
+        args += ["--max-items", limit.to_string()];
+    }
+    let out = run(args);
+    if out.exit_code != 0 { throw out.stderr; }
+    let arns = parse_json(out.stdout).taskDefinitionArns;
+    let rows = [];
+    for a in arns {
+        rows.push(#{ "taskDefinitionArn": a });
+    }
+    rows

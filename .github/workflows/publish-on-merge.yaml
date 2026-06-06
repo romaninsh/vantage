@@ -86,6 +86,7 @@ jobs:
             surreal-client
             vantage-expressions
             vantage-table
+            vantage-cmd
             vantage-csv
             vantage-surrealdb
             vantage-sql

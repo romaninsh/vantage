@@ -1,0 +1,19 @@
+name: iam.groups
+columns:
+  GroupName:
+    type: string
+    flags: [id, title, searchable]
+  GroupId:
+    type: string
+  Arn:
+    type: string
+  Path:
+    type: string
+  CreateDate:
+    type: string
+cmd:
+  rhai: |
+    let args = ["iam", "list-groups", "--output", "json"];
+    let out = run(args);
+    if out.exit_code != 0 { throw out.stderr; }
+    parse_json(out.stdout).Groups

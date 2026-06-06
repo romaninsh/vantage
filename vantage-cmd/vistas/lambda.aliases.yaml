@@ -1,0 +1,25 @@
+name: lambda.aliases
+columns:
+  Name:
+    type: string
+    flags: [id, title, searchable]
+  FunctionName:
+    type: string
+    flags: [hidden]
+  FunctionVersion:
+    type: string
+  Description:
+    type: string
+cmd:
+  rhai: |
+    let args = ["lambda", "list-aliases", "--output", "json"];
+    let fn_name = "";
+    for c in conditions {
+        if c.field == "FunctionName" { args += ["--function-name", c.value]; fn_name = c.value; }
+    }
+    let out = run(args);
+    if out.exit_code != 0 { throw out.stderr; }
+    let parsed = parse_json(out.stdout);
+    let aliases = if type_of(parsed.Aliases) == "array" { parsed.Aliases } else { [] };
+    for r in aliases { r.FunctionName = fn_name; }
+    aliases

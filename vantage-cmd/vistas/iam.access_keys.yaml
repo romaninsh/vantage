@@ -1,0 +1,21 @@
+name: iam.access_keys
+columns:
+  AccessKeyId:
+    type: string
+    flags: [id, title]
+  UserName:
+    type: string
+    flags: [hidden]
+  Status:
+    type: string
+  CreateDate:
+    type: string
+cmd:
+  rhai: |
+    let args = ["iam", "list-access-keys", "--output", "json"];
+    for c in conditions {
+        if c.field == "UserName" { args += ["--user-name", c.value]; }
+    }
+    let out = run(args);
+    if out.exit_code != 0 { throw out.stderr; }
+    parse_json(out.stdout).AccessKeyMetadata

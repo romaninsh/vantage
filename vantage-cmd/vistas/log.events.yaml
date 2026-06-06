@@ -1,0 +1,30 @@
+name: log.events
+columns:
+  eventId:
+    type: string
+    flags: [id]
+  logStreamName:
+    type: string
+    flags: [title]
+  logGroupName:
+    type: string
+    flags: [hidden]
+  timestamp:
+    type: int
+  message:
+    type: string
+    flags: [searchable]
+cmd:
+  rhai: |
+    let args = ["logs", "filter-log-events", "--output", "json"];
+    for c in conditions {
+        if c.field == "logGroupName" {
+            args += ["--log-group-name", c.value];
+        }
+    }
+    if type_of(limit) != "()" {
+        args += ["--max-items", limit.to_string()];
+    }
+    let out = run(args);
+    if out.exit_code != 0 { throw out.stderr; }
+    parse_json(out.stdout).events

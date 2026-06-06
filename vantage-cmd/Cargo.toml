@@ -1,0 +1,45 @@
+[package]
+name = "vantage-cmd"
+version = "0.5.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+authors = ["Romans Malinovskis <me@nearly.guru>"]
+description = "Local command-execution persistence backend for Vantage, scripted with Rhai — incubating"
+documentation = "https://docs.rs/vantage-cmd"
+homepage = "https://romaninsh.github.io/vantage"
+repository = "https://github.com/romaninsh/vantage"
+readme = "README.md"
+
+[dependencies]
+vantage-core = { version = "0.5", path = "../vantage-core" }
+vantage-types = { version = "0.5", path = "../vantage-types", features = ["serde"] }
+vantage-expressions = { version = "0.5", path = "../vantage-expressions" }
+vantage-table = { version = "0.5", path = "../vantage-table" }
+vantage-dataset = { version = "0.5", path = "../vantage-dataset" }
+vantage-vista = { version = "0.5", path = "../vantage-vista" }
+
+# Rhai builds the argv and parses the output. "serde" gives us the
+# serde_json::Value <-> Dynamic bridge used by `parse_json`.
+rhai = { version = "1.21", features = ["serde"] }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde_yaml_ng = "0.10"
+indexmap = { version = "2", features = ["serde"] }
+async-trait = "0.1"
+
+# Universal value carrier across the type-erased Vista boundary.
+ciborium = "0.2"
+
+# The Rhai eval (including the synchronous subprocess call) runs on a
+# blocking thread so the async runtime is never blocked.
+tokio = { version = "1", features = ["rt", "macros"] }
+
+[dev-dependencies]
+vantage-cli-util = { version = "0.5", path = "../vantage-cli-util" }
+anyhow = "1"
+tokio = { version = "1", features = ["full"] }
+
+[[example]]
+name = "aws-cli"
+path = "examples/aws-cli.rs"

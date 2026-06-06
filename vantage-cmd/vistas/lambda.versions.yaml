@@ -1,0 +1,28 @@
+name: lambda.versions
+columns:
+  Version:
+    type: string
+    flags: [id, title]
+  FunctionName:
+    type: string
+    flags: [hidden]
+  Runtime:
+    type: string
+  LastModified:
+    type: string
+cmd:
+  rhai: |
+    let args = ["lambda", "list-versions-by-function", "--output", "json"];
+    let fn_name = "";
+    for c in conditions {
+        if c.field == "FunctionName" { args += ["--function-name", c.value]; fn_name = c.value; }
+    }
+    if type_of(limit) != "()" {
+        args += ["--max-items", limit.to_string()];
+    }
+    let out = run(args);
+    if out.exit_code != 0 { throw out.stderr; }
+    let parsed = parse_json(out.stdout);
+    let versions = if type_of(parsed.Versions) == "array" { parsed.Versions } else { [] };
+    for r in versions { r.FunctionName = fn_name; }
+    versions
