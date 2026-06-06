@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.8 — 2026-06-06
+
+### Changed
+
+- Tracks the `vantage-vista` thin refactor (0.5.3): dropped the obsolete `with_foreign`
+  vista integration test now that cross-persistence traversal lives in
+  `vantage-vista-factory`. No functional change to the SQL backends.
+
 ## 0.5.7 — 2026-06-02
 
 ### Added

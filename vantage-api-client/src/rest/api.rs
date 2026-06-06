@@ -380,12 +380,12 @@ impl RestApi {
         // Mercury CLI's own post-fetch `_filter_deployments`.
         if !client_filters.is_empty() {
             records.retain(|_id, record| {
-                client_filters.iter().all(|(field, want)| {
-                    match record.get(field) {
+                client_filters
+                    .iter()
+                    .all(|(field, want)| match record.get(field) {
                         Some(v) => crate::cbor_to_query_string(v).as_deref() == Some(want.as_str()),
                         None => true,
-                    }
-                })
+                    })
             });
         }
 

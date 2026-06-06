@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.3 — 2026-06-06
+
+### Removed
+
+- **Breaking:** cross-persistence traversal is no longer a `Vista` concern. Removed
+  `Vista::with_foreign`, the `ForeignResolver` / `ForeignRef` types, and the internal
+  `foreign_resolvers` registry. A `Vista` is now strictly single-persistence: `get_ref`
+  routes contained relations to the embedded sub-`Vista` and forwards everything else to
+  the underlying shell. Resolving a reference that crosses persistence boundaries is now
+  the job of [`vantage-vista-factory`](https://crates.io/crates/vantage-vista-factory)'s
+  `VistaCatalog`.
+
 ## 0.5.2 — 2026-05-31
 
 ### Added

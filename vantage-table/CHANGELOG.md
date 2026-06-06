@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.7 — 2026-06-06
+
+### Changed
+
+- Docs only: reference-traversal documentation now points to
+  [`vantage-vista-factory`](https://crates.io/crates/vantage-vista-factory)'s `VistaCatalog`
+  for cross-persistence traversal. No functional or API change.
+
 ## 0.5.6 — 2026-06-02
 
 ### Added
