@@ -193,8 +193,8 @@ async fn main() -> Result<()> {
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         if let Some(value) = arg.strip_prefix("--format=") {
-            format =
-                OutputFormat::parse(value).with_context(|| format!("unknown --format `{value}`"))?;
+            format = OutputFormat::parse(value)
+                .with_context(|| format!("unknown --format `{value}`"))?;
         } else if arg == "--region" {
             region = it.next();
         } else if let Some(value) = arg.strip_prefix("--region=") {

@@ -95,9 +95,7 @@ impl TableShell for CmdTableShell {
         // `Cmd::Value` is `CborValue`, so the row passes through unchanged.
         // The table's reference machinery reads the join value out of the
         // parent row and pins the target with a plain eq-condition.
-        let target = self
-            .table
-            .get_ref_from_row::<EmptyEntity>(relation, row)?;
+        let target = self.table.get_ref_from_row::<EmptyEntity>(relation, row)?;
         CmdVistaFactory::new(self.table.data_source().clone()).from_table(target)
     }
 
