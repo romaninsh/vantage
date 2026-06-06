@@ -1,0 +1,16 @@
+name: iam.user_policies
+columns:
+  PolicyName:
+    type: string
+    flags: [id, title, searchable]
+  PolicyArn:
+    type: string
+cmd:
+  rhai: |
+    let args = ["iam", "list-attached-user-policies", "--output", "json"];
+    for c in conditions {
+        if c.field == "UserName" { args += ["--user-name", c.value]; }
+    }
+    let out = run(args);
+    if out.exit_code != 0 { throw out.stderr; }
+    parse_json(out.stdout).AttachedPolicies

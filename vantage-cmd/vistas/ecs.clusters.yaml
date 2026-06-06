@@ -1,0 +1,25 @@
+name: ecs.clusters
+columns:
+  clusterArn:
+    type: string
+    flags: [id, title, searchable]
+references:
+  services:
+    table: ecs.services
+    kind: has_many
+    foreign_key: cluster
+  tasks:
+    table: ecs.tasks
+    kind: has_many
+    foreign_key: cluster
+cmd:
+  rhai: |
+    let args = ["ecs", "list-clusters", "--output", "json"];
+    let out = run(args);
+    if out.exit_code != 0 { throw out.stderr; }
+    let arns = parse_json(out.stdout).clusterArns;
+    let rows = [];
+    for a in arns {
+        rows.push(#{ "clusterArn": a });
+    }
+    rows

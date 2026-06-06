@@ -1,0 +1,34 @@
+name: log.streams
+columns:
+  logStreamName:
+    type: string
+    flags: [id, title, searchable]
+  logGroupName:
+    type: string
+    flags: [hidden]
+  creationTime:
+    type: int
+  firstEventTimestamp:
+    type: int
+  lastEventTimestamp:
+    type: int
+  storedBytes:
+    type: int
+cmd:
+  rhai: |
+    let args = ["logs", "describe-log-streams", "--output", "json"];
+    for c in conditions {
+        if c.field == "logGroupName" {
+            args += ["--log-group-name", c.value];
+        }
+    }
+    let out = run(args);
+    if out.exit_code != 0 { throw out.stderr; }
+    let group = "";
+    for c in conditions {
+        if c.field == "logGroupName" { group = c.value; }
+    }
+    let rows = parse_json(out.stdout).logStreams;
+    // Stamp the parent group so the id / hidden column is populated.
+    for r in rows { r.logGroupName = group; }
+    rows

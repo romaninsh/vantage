@@ -1,0 +1,23 @@
+name: ecs.services
+columns:
+  serviceArn:
+    type: string
+    flags: [id, title, searchable]
+  cluster:
+    type: string
+    flags: [hidden]
+cmd:
+  rhai: |
+    let args = ["ecs", "list-services", "--output", "json"];
+    let cluster = "";
+    for c in conditions {
+        if c.field == "cluster" { args += ["--cluster", c.value]; cluster = c.value; }
+    }
+    let out = run(args);
+    if out.exit_code != 0 { throw out.stderr; }
+    let arns = parse_json(out.stdout).serviceArns;
+    let rows = [];
+    for a in arns {
+        rows.push(#{ "serviceArn": a, "cluster": cluster });
+    }
+    rows
