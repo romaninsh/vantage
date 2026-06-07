@@ -57,7 +57,11 @@ impl QueryIndex {
     /// that a page was fetched. `page_len` is the number of rows the source
     /// returned; a page shorter than `requested_limit` (including empty) marks
     /// the index [`complete`](Self::is_complete) — there is no next page.
-    pub(crate) fn append_page(&self, ids: impl IntoIterator<Item = String>, requested_limit: usize) {
+    pub(crate) fn append_page(
+        &self,
+        ids: impl IntoIterator<Item = String>,
+        requested_limit: usize,
+    ) {
         let mut guard = self.ids.write().unwrap();
         let before = guard.len();
         guard.extend(ids);

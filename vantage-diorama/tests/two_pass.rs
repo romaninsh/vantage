@@ -38,7 +38,10 @@ const LIST: &str = r#"
 const DETAIL: &str = r#"parse_json(run(["detail", id]).stdout)"#;
 
 fn fixture() -> String {
-    format!("{}/tests/fixtures/two_pass_runs.sh", env!("CARGO_MANIFEST_DIR"))
+    format!(
+        "{}/tests/fixtures/two_pass_runs.sh",
+        env!("CARGO_MANIFEST_DIR")
+    )
 }
 
 /// A `Cmd` over the fixture, with the list + detail scripts and the log path
@@ -174,12 +177,23 @@ async fn list_pass_creates_incomplete_rows_and_no_detail_calls() {
     // First list page already ran (open awaits it): r0, r1 as Incomplete.
     assert_eq!(scenery.estimated_total(), Some(2));
     assert!(scenery.has_more(), "a full first page implies more pages");
-    assert_eq!(status_of(&scenery, 0).map(|s| matches!(s, RowStatus::Incomplete)), Some(true));
+    assert_eq!(
+        status_of(&scenery, 0).map(|s| matches!(s, RowStatus::Incomplete)),
+        Some(true)
+    );
     assert_eq!(branch_of(&scenery, 0).as_deref(), Some("main"));
-    assert!(detail_of(&scenery, 0).is_none(), "no detail before the detail pass");
+    assert!(
+        detail_of(&scenery, 0).is_none(),
+        "no detail before the detail pass"
+    );
 
     // Exactly one list call, no detail calls.
-    assert_eq!(count_with_prefix(&log, "list"), 1, "log: {:?}", log_lines(&log));
+    assert_eq!(
+        count_with_prefix(&log, "list"),
+        1,
+        "log: {:?}",
+        log_lines(&log)
+    );
     assert_eq!(count_with_prefix(&log, "detail"), 0);
 }
 
@@ -203,7 +217,11 @@ async fn detail_pass_hydrates_visible_rows_once_in_order() {
 
     assert_eq!(detail_of(&scenery, 0).as_deref(), Some("full-r0"));
     assert_eq!(detail_of(&scenery, 1).as_deref(), Some("full-r1"));
-    assert_eq!(branch_of(&scenery, 0).as_deref(), Some("main"), "merge keeps cheap cols");
+    assert_eq!(
+        branch_of(&scenery, 0).as_deref(),
+        Some("main"),
+        "merge keeps cheap cols"
+    );
 
     // Two detail calls, in row order.
     let details: Vec<String> = log_lines(&log)
@@ -246,9 +264,17 @@ async fn sequential_paging_stops_on_short_page() {
     let lists_before = count_with_prefix(&log, "list");
     scenery.request_load_more();
     tokio::time::sleep(Duration::from_millis(20)).await;
-    assert_eq!(count_with_prefix(&log, "list"), lists_before, "no paging past the end");
+    assert_eq!(
+        count_with_prefix(&log, "list"),
+        lists_before,
+        "no paging past the end"
+    );
     assert_eq!(scenery.estimated_total(), Some(5));
-    assert_eq!(count_with_prefix(&log, "detail"), 0, "paging never triggers detail");
+    assert_eq!(
+        count_with_prefix(&log, "detail"),
+        0,
+        "paging never triggers detail"
+    );
 }
 
 /// Switching filter variants reuses the shared detail cache: a filtered variant
@@ -272,7 +298,11 @@ async fn shared_detail_across_filter_variants() {
         (0..5).all(|i| matches!(status_of(&all, i), Some(RowStatus::Fresh)))
     })
     .await;
-    assert_eq!(count_with_prefix(&log, "detail"), 5, "five rows hydrated once each");
+    assert_eq!(
+        count_with_prefix(&log, "detail"),
+        5,
+        "five rows hydrated once each"
+    );
     let lists_after_unfiltered = count_with_prefix(&log, "list");
 
     // Filtered to branch=main: a new index (list runs for the main variant),
@@ -292,7 +322,11 @@ async fn shared_detail_across_filter_variants() {
         "filtered rows reuse the shared detail cache"
     );
     assert_eq!(detail_of(&main, 0).as_deref(), Some("full-r0"));
-    assert_eq!(count_with_prefix(&log, "detail"), 5, "no detail re-fetch across variants");
+    assert_eq!(
+        count_with_prefix(&log, "detail"),
+        5,
+        "no detail re-fetch across variants"
+    );
     assert!(
         count_with_prefix(&log, "list") > lists_after_unfiltered,
         "filtered variant builds its own index"
@@ -311,7 +345,11 @@ async fn shared_detail_across_filter_variants() {
         lists_before_switchback,
         "reused index ⇒ zero list calls"
     );
-    assert_eq!(count_with_prefix(&log, "detail"), 5, "reused index ⇒ zero detail calls");
+    assert_eq!(
+        count_with_prefix(&log, "detail"),
+        5,
+        "reused index ⇒ zero detail calls"
+    );
 }
 
 /// Persisted completeness survives a restart: reopening against the same cache
@@ -459,5 +497,9 @@ async fn no_detail_callback_uses_single_pass() {
             "row {i} should be Fresh in single-pass mode"
         );
     }
-    assert_eq!(count_with_prefix(&log, "detail"), 0, "no detail script in single-pass");
+    assert_eq!(
+        count_with_prefix(&log, "detail"),
+        0,
+        "no detail script in single-pass"
+    );
 }

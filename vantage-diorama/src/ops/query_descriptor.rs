@@ -68,7 +68,10 @@ mod tests {
             .with_window(50, 25);
 
         assert_eq!(q.conditions, vec![("branch".to_string(), t("main"))]);
-        assert_eq!(q.sort, Some(("status".to_string(), SortDirection::Descending)));
+        assert_eq!(
+            q.sort,
+            Some(("status".to_string(), SortDirection::Descending))
+        );
         assert_eq!(q.search.as_deref(), Some("flux"));
         assert_eq!(q.offset, 50);
         assert_eq!(q.limit, 25);

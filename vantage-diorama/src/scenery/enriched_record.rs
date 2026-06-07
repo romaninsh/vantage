@@ -43,7 +43,11 @@ impl EnrichedRecord {
     /// Mark a row whose detail pass failed. Keeps the partial (list-pass)
     /// `record` so the row stays visible, but records the error so the UI can
     /// surface it. Carries over the previous `fetched_at`.
-    pub fn detail_failed(record: Record<CborValue>, error: String, fetched_at: Option<SystemTime>) -> Self {
+    pub fn detail_failed(
+        record: Record<CborValue>,
+        error: String,
+        fetched_at: Option<SystemTime>,
+    ) -> Self {
         Self {
             record,
             status: RowStatus::LoadFailed { error },
@@ -62,10 +66,14 @@ pub enum RowStatus {
     Stale,
     Loading,
     PendingWrite,
-    WriteFailed { error: String },
+    WriteFailed {
+        error: String,
+    },
     /// The two-pass detail fetch for this row failed; the partial list-pass
     /// columns remain visible. Distinct from [`WriteFailed`](RowStatus::WriteFailed),
     /// which is a write-back error.
-    LoadFailed { error: String },
+    LoadFailed {
+        error: String,
+    },
     NotFound,
 }

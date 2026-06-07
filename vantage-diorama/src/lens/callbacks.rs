@@ -57,9 +57,8 @@ pub type DioListPageFuture<'a> =
 /// detail table as [`Incomplete`](crate::lens::CacheStatus::Incomplete) and
 /// appends their ids to the per-query index. A page shorter than `limit` ends
 /// sequential paging.
-pub type DioListPageCallback = Box<
-    dyn for<'a> Fn(&'a Dio, QueryDescriptor) -> DioListPageFuture<'a> + Send + Sync + 'static,
->;
+pub type DioListPageCallback =
+    Box<dyn for<'a> Fn(&'a Dio, QueryDescriptor) -> DioListPageFuture<'a> + Send + Sync + 'static>;
 
 /// Future returned by a [`DioLoadDetailCallback`]. Yields the fully-hydrated
 /// record for a single id.

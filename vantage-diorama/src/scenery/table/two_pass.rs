@@ -123,7 +123,12 @@ pub(crate) async fn run_list_page(state: Arc<TableSceneryState>) {
             for (id, rec) in &rows {
                 // Never demote a record the detail pass already completed.
                 let already_complete = matches!(
-                    dio_inner.cache.get_value_with_status(id).await.ok().flatten(),
+                    dio_inner
+                        .cache
+                        .get_value_with_status(id)
+                        .await
+                        .ok()
+                        .flatten(),
                     Some((_, CacheStatus::Complete))
                 );
                 if !already_complete {

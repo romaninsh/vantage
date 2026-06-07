@@ -139,9 +139,12 @@ impl CompiledScript {
             },
         );
 
-        let ast = engine
-            .compile(script)
-            .map_err(|e| error!("command rhai script failed to compile", detail = e.to_string()))?;
+        let ast = engine.compile(script).map_err(|e| {
+            error!(
+                "command rhai script failed to compile",
+                detail = e.to_string()
+            )
+        })?;
 
         Ok(Self { engine, ast })
     }
