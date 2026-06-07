@@ -74,6 +74,21 @@ impl TableShell for CmdTableShell {
         self.table.get_value(id).await
     }
 
+    async fn get_vista_value_with_row(
+        &self,
+        _vista: &Vista,
+        id: &String,
+        row: &Record<CborValue>,
+    ) -> Result<Option<Record<CborValue>>> {
+        // The detail pass hands us the cheap list-pass row so the detail script
+        // can read columns it carries (e.g. step numbers painted from the
+        // reference conditions).
+        self.table
+            .data_source()
+            .get_table_value_with_row(&self.table, id, row)
+            .await
+    }
+
     async fn get_vista_some_value(
         &self,
         _vista: &Vista,
