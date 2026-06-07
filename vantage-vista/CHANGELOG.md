@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.5 — 2026-06-07
+
+### Added
+
+- `Vista::index_key(conditions, sort)` — a stable per-query identity string
+  (name + normalized conditions + sort). Two-pass loading keys its ordered index
+  by this, so filter/sort variants of the same entity get distinct indexes while
+  sharing the name-keyed detail store.
+
 ## 0.5.4 — 2026-06-07
 
 ### Added
