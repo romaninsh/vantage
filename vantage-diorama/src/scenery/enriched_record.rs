@@ -27,14 +27,53 @@ impl EnrichedRecord {
             fetched_at: Some(SystemTime::now()),
         }
     }
+
+    /// Wrap a row that has only been partially loaded by the list pass —
+    /// its id and cheap columns are present, but the expensive detail
+    /// columns are still pending hydration.
+    pub fn incomplete(record: Record<CborValue>) -> Self {
+        Self {
+            record,
+            status: RowStatus::Incomplete,
+            dirty_fields: None,
+            fetched_at: Some(SystemTime::now()),
+        }
+    }
+
+    /// Mark a row whose detail pass failed. Keeps the partial (list-pass)
+    /// `record` so the row stays visible, but records the error so the UI can
+    /// surface it. Carries over the previous `fetched_at`.
+    pub fn detail_failed(
+        record: Record<CborValue>,
+        error: String,
+        fetched_at: Option<SystemTime>,
+    ) -> Self {
+        Self {
+            record,
+            status: RowStatus::LoadFailed { error },
+            dirty_fields: None,
+            fetched_at,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum RowStatus {
     Fresh,
+    /// Only the list pass has run — cheap columns present, detail columns
+    /// awaiting hydration by the detail pass.
+    Incomplete,
     Stale,
     Loading,
     PendingWrite,
-    WriteFailed { error: String },
+    WriteFailed {
+        error: String,
+    },
+    /// The two-pass detail fetch for this row failed; the partial list-pass
+    /// columns remain visible. Distinct from [`WriteFailed`](RowStatus::WriteFailed),
+    /// which is a write-back error.
+    LoadFailed {
+        error: String,
+    },
     NotFound,
 }

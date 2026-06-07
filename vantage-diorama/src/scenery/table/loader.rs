@@ -161,6 +161,14 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
         range: visible.clone(),
     });
 
+    // Two-pass: a viewport drives the detail pass over the visible rows, not a
+    // random-access chunk load. Hydration dedups against already-`Complete`
+    // ids, so re-entering the same viewport is a no-op.
+    if state.two_pass {
+        super::two_pass::run_detail_for_range(state.clone(), visible).await;
+        return;
+    }
+
     let total = *state.total.read().unwrap();
     let visible_len = visible.end.saturating_sub(visible.start);
     let visible_cached = {

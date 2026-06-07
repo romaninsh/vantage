@@ -28,8 +28,92 @@ use vantage_types::{Entity, Record};
 
 use crate::cmd::Cmd;
 use crate::condition::CmdCondition;
-use crate::rhai_engine::{QueryContext, eval_rows};
+use crate::rhai_engine::QueryContext;
 use crate::types::{cbor_to_string, json_to_cbor};
+
+/// Convert script-produced JSON rows into id-keyed records. The id comes
+/// from the `id_field` value on each row, falling back to the row index.
+fn rows_to_records(
+    rows: Vec<JsonValue>,
+    id_field: Option<&str>,
+) -> IndexMap<String, Record<CborValue>> {
+    let mut records: IndexMap<String, Record<CborValue>> = IndexMap::new();
+    for (idx, row) in rows.into_iter().enumerate() {
+        let mut record = Record::new();
+        match row {
+            JsonValue::Object(map) => {
+                for (k, v) in map {
+                    record.insert(k, json_to_cbor(&v));
+                }
+            }
+            other => {
+                record.insert("value".to_string(), json_to_cbor(&other));
+            }
+        }
+        let id = id_field
+            .and_then(|f| record.get(f))
+            .map(cbor_to_string)
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| idx.to_string());
+        records.insert(id, record);
+    }
+    records
+}
+
+impl Cmd {
+    /// Detail-script hydration for one id, with the existing list-pass `row`
+    /// injected into the script scope as `row`. Falls back to the normal
+    /// list-and-pick path when the table has no detail script.
+    pub async fn get_table_value_with_row<E>(
+        &self,
+        table: &Table<Self, E>,
+        id: &String,
+        row: &Record<CborValue>,
+    ) -> Result<Option<Record<CborValue>>>
+    where
+        E: Entity<CborValue>,
+        Self: Sized,
+    {
+        let table_name = table.table_name().to_string();
+        if !self.has_detail_script(&table_name) {
+            let mut all = self.list_table_values(table).await?;
+            return Ok(all.shift_remove(id));
+        }
+
+        let id_field = table.id_field().map(|c| c.name().to_string());
+        let columns: Vec<String> = table.columns().keys().cloned().collect();
+        let row_map = ciborium::value::Value::Map(
+            row.iter()
+                .map(|(k, v)| (ciborium::value::Value::Text(k.clone()), v.clone()))
+                .collect(),
+        );
+        let ctx = QueryContext {
+            conditions: Vec::new(),
+            columns,
+            limit: None,
+            offset: None,
+            id_column: id_field.clone(),
+            id: Some(id.clone()),
+            row: row_map,
+        };
+        let cmd = self.clone();
+        let name = table_name.clone();
+        let rows: Vec<JsonValue> = tokio::task::spawn_blocking(move || {
+            let compiled = cmd
+                .compiled_detail_script(&name)?
+                .ok_or_else(|| error!("detail script vanished"))?;
+            compiled.eval(ctx)
+        })
+        .await
+        .map_err(|e| error!("command task failed to join", detail = e.to_string()))??;
+
+        let mut records = rows_to_records(rows, id_field.as_deref());
+        // Prefer the row matching the requested id; else the first row.
+        Ok(records
+            .shift_remove(id)
+            .or_else(|| records.into_iter().next().map(|(_, r)| r)))
+    }
+}
 
 #[async_trait]
 impl TableSource for Cmd {
@@ -100,12 +184,6 @@ impl TableSource for Cmd {
         Self: Sized,
     {
         let table_name = table.table_name().to_string();
-        let spec = self.spec_for(&table_name)?.clone();
-        let command = self.effective_command(&spec);
-        let env = self.effective_env(&spec);
-        let pass_path = self.pass_path();
-        let base_dir = self.base_dir();
-        let script = spec.script.clone();
 
         let id_field = table.id_field().map(|c| c.name().to_string());
 
@@ -142,35 +220,19 @@ impl TableSource for Cmd {
             limit,
             offset,
             id_column: id_field.clone(),
+            id: None,
+            row: ciborium::value::Value::Map(vec![]),
         };
 
+        let cmd = self.clone();
         let rows: Vec<JsonValue> = tokio::task::spawn_blocking(move || {
-            eval_rows(command, env, pass_path, base_dir, &script, ctx)
+            let compiled = cmd.compiled_list_script(&table_name)?;
+            compiled.eval(ctx)
         })
         .await
         .map_err(|e| error!("command task failed to join", detail = e.to_string()))??;
 
-        let mut records: IndexMap<String, Record<CborValue>> = IndexMap::new();
-        for (idx, row) in rows.into_iter().enumerate() {
-            let mut record = Record::new();
-            match row {
-                JsonValue::Object(map) => {
-                    for (k, v) in map {
-                        record.insert(k, json_to_cbor(&v));
-                    }
-                }
-                other => {
-                    record.insert("value".to_string(), json_to_cbor(&other));
-                }
-            }
-            let id = id_field
-                .as_ref()
-                .and_then(|f| record.get(f))
-                .map(cbor_to_string)
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| idx.to_string());
-            records.insert(id, record);
-        }
+        let mut records = rows_to_records(rows, id_field.as_deref());
 
         // Client-side safety net: re-apply `Eq` conditions naming real
         // record fields. Fields the script consumed as request flags won't
@@ -197,8 +259,9 @@ impl TableSource for Cmd {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        let mut all = self.list_table_values(table).await?;
-        Ok(all.shift_remove(id))
+        // Detail hydration with no caller-supplied row (id-only path).
+        let empty: Record<CborValue> = Record::new();
+        self.get_table_value_with_row(table, id, &empty).await
     }
 
     async fn get_table_some_value<E>(

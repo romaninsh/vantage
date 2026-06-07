@@ -92,6 +92,26 @@ impl TableSceneryBuilder {
         let (viewport_tx, viewport_rx) = mpsc::unbounded_channel();
 
         let master_capabilities = dio.master.capabilities().clone();
+
+        // Two-pass engages only when the Lens registers an `on_load_detail`
+        // callback. The shared per-query index is keyed by the master Vista's
+        // index_key over the scenery's conditions + sort, so reopening the same
+        // variant reuses the already-built index.
+        let two_pass = dio.lens.callbacks.on_load_detail.is_some();
+        let index = if two_pass {
+            let vista_sort = sort.as_ref().map(|(col, dir)| {
+                let dir = match dir {
+                    SortDir::Asc => vantage_vista::SortDirection::Ascending,
+                    SortDir::Desc => vantage_vista::SortDirection::Descending,
+                };
+                (col.as_str(), dir)
+            });
+            let key = dio.master.index_key(&conditions, vista_sort);
+            Some(dio.query_index(&key))
+        } else {
+            None
+        };
+
         let state = Arc::new(TableSceneryState {
             dio_weak: Arc::downgrade(&dio),
             conditions: RwLock::new(conditions),
@@ -108,6 +128,10 @@ impl TableSceneryBuilder {
             viewport_queue_depth: AtomicUsize::new(0),
             load_in_flight: Mutex::new(None),
             master_capabilities,
+            two_pass,
+            index,
+            detail_in_flight: Mutex::new(std::collections::HashSet::new()),
+            list_in_flight: Mutex::new(false),
         });
 
         // 1. total_provider runs once per open, result cached.
@@ -117,9 +141,24 @@ impl TableSceneryBuilder {
             *state.total.write().unwrap() = Some(total);
         }
 
-        // 2. Seed the sparse map from whatever's in the cache.
-        state.reseed_from_cache().await?;
-        state.bump_generation();
+        // 2. Seed the sparse map.
+        if state.two_pass {
+            // Two-pass: seed from the shared per-query index if it is already
+            // populated (reused variant — no list call); otherwise run the
+            // first list page. The detail pass stays dormant until a viewport
+            // is set, so opening yields `Incomplete` rows with zero detail
+            // calls.
+            let index_empty = state.index.as_ref().map(|i| i.is_empty()).unwrap_or(true);
+            if index_empty {
+                super::two_pass::run_list_page(state.clone()).await;
+            } else {
+                super::two_pass::seed_from_index(&state).await;
+                state.bump_generation();
+            }
+        } else {
+            state.reseed_from_cache().await?;
+            state.bump_generation();
+        }
 
         // 3. Spawn reactor.
         let bus_rx = dio.event_bus.subscribe();
@@ -137,8 +176,13 @@ impl TableSceneryBuilder {
 
         // 5. Optional refresh-on-open: schedule a viewport for the
         //    initial range so the configured on_load_chunk re-fetches
-        //    the first page in the background.
-        if dio.lens.defaults.refresh_on_open && dio.lens.callbacks.on_load_chunk.is_some() {
+        //    the first page in the background. Skipped for two-pass — its
+        //    detail pass must wait for an explicit viewport so that opening
+        //    never triggers detail fetches.
+        if !two_pass
+            && dio.lens.defaults.refresh_on_open
+            && dio.lens.callbacks.on_load_chunk.is_some()
+        {
             let range = initial_range.unwrap_or(0..page_size);
             enqueue_viewport(
                 &state,

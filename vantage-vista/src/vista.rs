@@ -131,10 +131,56 @@ impl Vista {
         Ok(self)
     }
 
+    // ---- index key ---------------------------------------------------------
+
+    /// Stable string identifying one query variant — the vista's name plus the
+    /// given conditions and sort. Two variants with the same name, the same set
+    /// of conditions (order-insensitive), and the same sort produce the same
+    /// key; any difference produces a different key.
+    ///
+    /// Diorama uses this to cache one ordered index per variant: switching
+    /// filters/sort selects (or builds) the matching index, while the
+    /// id→record detail table is shared across all variants by vista name.
+    /// Deliberately simple — a readable, deterministic rendering rather than a
+    /// hash; collision-resistance is not a goal at this layer.
+    pub fn index_key(
+        &self,
+        conditions: &[(String, CborValue)],
+        sort: Option<(&str, SortDirection)>,
+    ) -> String {
+        let mut conds: Vec<String> = conditions
+            .iter()
+            .map(|(field, value)| format!("{}={}", field, cbor_repr(value)))
+            .collect();
+        // Normalize away condition order so the key is set-stable.
+        conds.sort();
+
+        let sort_repr = match sort {
+            Some((col, SortDirection::Ascending)) => format!("{}:asc", col),
+            Some((col, SortDirection::Descending)) => format!("{}:desc", col),
+            None => String::new(),
+        };
+
+        format!("{}|c:{}|s:{}", self.name, conds.join(";"), sort_repr)
+    }
+
     // ---- aggregates (not part of ValueSet) ---------------------------------
 
     pub async fn get_count(&self) -> Result<i64> {
         self.source.get_vista_count(self).await
+    }
+
+    /// Fetch one record by id, passing the caller's existing record down to the
+    /// driver. Pairs with the two-pass detail pass, which holds the cheap
+    /// list-pass row and lets the detail script read its columns. Drivers that
+    /// don't use it fall back to plain id lookup (see
+    /// [`TableShell::get_vista_value_with_row`]).
+    pub async fn get_value_with_row(
+        &self,
+        id: &String,
+        row: &Record<CborValue>,
+    ) -> Result<Option<Record<CborValue>>> {
+        self.source.get_vista_value_with_row(self, id, row).await
     }
 
     /// Push a driver-native condition into the wrapped table. The
@@ -278,5 +324,44 @@ impl Vista {
     /// [`TableShell::get_ref_target`].
     pub fn get_ref_target(&self, relation: &str) -> Result<Vista> {
         self.source.get_ref_target(relation)
+    }
+}
+
+/// Deterministic, type-tagged rendering of a [`CborValue`] for
+/// [`Vista::index_key`]. The type tag prevents collisions between values that
+/// stringify alike (e.g. the text `"1"` vs the integer `1`). Containers recurse
+/// so nested condition values stay distinguishable.
+fn cbor_repr(value: &CborValue) -> String {
+    match value {
+        CborValue::Null => "nul".to_string(),
+        CborValue::Bool(b) => format!("b:{b}"),
+        CborValue::Integer(n) => {
+            let n: i128 = (*n).into();
+            format!("i:{n}")
+        }
+        CborValue::Float(f) => format!("f:{f}"),
+        CborValue::Text(s) => format!("t:{s}"),
+        CborValue::Bytes(bytes) => {
+            use std::fmt::Write;
+            let mut s = String::from("x:");
+            for byte in bytes {
+                let _ = write!(s, "{byte:02x}");
+            }
+            s
+        }
+        CborValue::Array(items) => {
+            let inner: Vec<String> = items.iter().map(cbor_repr).collect();
+            format!("a:[{}]", inner.join(","))
+        }
+        CborValue::Map(pairs) => {
+            // Sort by rendered key so map ordering never affects the result.
+            let mut inner: Vec<String> = pairs
+                .iter()
+                .map(|(k, v)| format!("{}={}", cbor_repr(k), cbor_repr(v)))
+                .collect();
+            inner.sort();
+            format!("m:{{{}}}", inner.join(","))
+        }
+        other => format!("?:{other:?}"),
     }
 }

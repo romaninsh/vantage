@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.7 — 2026-06-07
+
+Two-pass progressive loading for slow data sources: a cheap **list pass** renders
+immediately and expensive per-row **detail** hydrates lazily as rows scroll into
+view, without blocking the UI. Engages only when a `detail` callback exists —
+SQL/CSV/single-pass paths are unchanged.
+
+- Persist `RowStatus` in the detail cache (envelope of `status + cbor body`) and
+  add the `Incomplete` variant. The detail table is keyed by Vista name and shared
+  across all filter/sort variants, so hydration resumes after restart and a
+  `Fresh` id is never re-fetched.
+- Per-query ordered index built by the list pass, keyed by `Vista::index_key`,
+  decoupled from the detail store; cached per-key on the `Dio` and shared across
+  its sceneries.
+- Viewport-driven detail pass hydrates absent/`Incomplete` ids per id, merges the
+  detail onto the cached list row (list columns survive), flips it to `Fresh`, and
+  bumps the generation; ids already `Fresh` are skipped.
+- Sequential no-total paging: pages until a short or empty page, which ends paging
+  and freezes the estimated total.
+- `QueryDescriptor` carries conditions/sort/pagination into the load callback, so a
+  server-side filtered/ordered list pass works.
+
 ## 0.5.6 — 2026-06-07
 
 - Pass the new `VistaCapabilities::can_build_ref_via_script` flag through the `Dio` cache
