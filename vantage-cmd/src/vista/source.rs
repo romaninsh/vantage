@@ -69,8 +69,24 @@ impl TableShell for CmdTableShell {
         _vista: &Vista,
         id: &String,
     ) -> Result<Option<Record<CborValue>>> {
-        let mut data = self.table.list_values().await?;
-        Ok(data.shift_remove(id))
+        // Route through the typed table so detail-script tables hydrate via
+        // the DETAIL script (Cmd::get_table_value), not the list script.
+        self.table.get_value(id).await
+    }
+
+    async fn get_vista_value_with_row(
+        &self,
+        _vista: &Vista,
+        id: &String,
+        row: &Record<CborValue>,
+    ) -> Result<Option<Record<CborValue>>> {
+        // The detail pass hands us the cheap list-pass row so the detail script
+        // can read columns it carries (e.g. step numbers painted from the
+        // reference conditions).
+        self.table
+            .data_source()
+            .get_table_value_with_row(&self.table, id, row)
+            .await
     }
 
     async fn get_vista_some_value(

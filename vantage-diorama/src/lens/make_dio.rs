@@ -37,6 +37,7 @@ impl Lens {
             refresh_task: Mutex::new(None),
             write_worker: Mutex::new(None),
             hot_tier: Arc::new(HotTier::new()),
+            query_indexes: std::sync::Mutex::new(std::collections::HashMap::new()),
         });
         let dio = Dio { inner };
 

@@ -22,6 +22,7 @@ mod helpers;
 mod loader;
 mod reactor;
 mod state;
+mod two_pass;
 
 use std::ops::Range;
 use std::sync::Arc;
@@ -82,6 +83,9 @@ pub(crate) struct TableSceneryImpl {
 
 impl TableScenery for TableSceneryImpl {
     fn row_count(&self) -> usize {
+        if let Some(index) = self.inner.index.as_ref() {
+            return index.len();
+        }
         if let Some(t) = *self.inner.total.read().unwrap() {
             return t;
         }
@@ -89,6 +93,11 @@ impl TableScenery for TableSceneryImpl {
     }
 
     fn has_more(&self) -> bool {
+        // Two-pass / sequential no-total: more pages exist until the list pass
+        // sees a short or empty page.
+        if let Some(index) = self.inner.index.as_ref() {
+            return !index.is_complete();
+        }
         let total = *self.inner.total.read().unwrap();
         let loaded = self.inner.rows.read().unwrap().len();
         match total {
@@ -98,6 +107,11 @@ impl TableScenery for TableSceneryImpl {
     }
 
     fn estimated_total(&self) -> Option<usize> {
+        // Two-pass: the running index length is the best estimate; it grows as
+        // pages load and freezes once the list pass completes.
+        if let Some(index) = self.inner.index.as_ref() {
+            return Some(index.len());
+        }
         let stored = *self.inner.total.read().unwrap();
         stored.or_else(|| Some(self.inner.rows.read().unwrap().len()))
     }
@@ -122,6 +136,19 @@ impl TableScenery for TableSceneryImpl {
     }
 
     fn request_load_more(&self) {
+        // Two-pass: load the next *list* page (append cheap rows to the index).
+        // Detail hydration is driven separately by `set_viewport`.
+        if self.inner.two_pass {
+            let Some(dio_inner) = self.inner.dio_weak.upgrade() else {
+                return;
+            };
+            let state = self.inner.clone();
+            dio_inner.lens.runtime.spawn(async move {
+                two_pass::run_list_page(state).await;
+            });
+            return;
+        }
+
         let start = self.inner.next_load_more_start();
         let mut end = start + self.inner.page_size;
         if let Some(t) = *self.inner.total.read().unwrap() {

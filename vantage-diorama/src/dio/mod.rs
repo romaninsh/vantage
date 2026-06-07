@@ -1,6 +1,7 @@
 pub mod event_bus;
 pub mod hot_tier;
 pub mod impls;
+pub(crate) mod query_index;
 pub mod refresh;
 pub mod shell;
 pub mod worker;
@@ -63,6 +64,25 @@ pub(crate) struct DioInner {
     pub(crate) refresh_task: Mutex<Option<JoinHandle<()>>>,
     pub(crate) write_worker: Mutex<Option<JoinHandle<()>>>,
     pub(crate) hot_tier: Arc<HotTier>,
+    /// Per-query ordered indexes, keyed by [`Vista::index_key`]. Shared across
+    /// every two-pass scenery of this Dio so reopening the same filter/sort
+    /// reuses the already-built index. Not persisted — re-listing rebuilds it.
+    pub(crate) query_indexes: std::sync::Mutex<
+        std::collections::HashMap<String, Arc<crate::dio::query_index::QueryIndex>>,
+    >,
+}
+
+impl DioInner {
+    /// Fetch (or lazily create) the [`QueryIndex`](crate::dio::query_index::QueryIndex)
+    /// for `key`. Repeated calls with the same key return the same `Arc`, so
+    /// all sceneries on a query variant share one ordered index.
+    pub(crate) fn query_index(&self, key: &str) -> Arc<crate::dio::query_index::QueryIndex> {
+        let mut guard = self.query_indexes.lock().unwrap();
+        guard
+            .entry(key.to_string())
+            .or_insert_with(|| Arc::new(crate::dio::query_index::QueryIndex::new()))
+            .clone()
+    }
 }
 
 impl Dio {
