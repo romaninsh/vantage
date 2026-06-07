@@ -229,3 +229,28 @@ cmd:
         "Vista::get_value must run the detail script"
     );
 }
+
+#[tokio::test]
+async fn detail_script_reads_the_injected_row() {
+    // The detail pass injects the existing (list-pass) row. The detail script
+    // reads a field off `row` and passes it through; the fixture echoes it.
+    const LIST: &str = r#"parse_json(run(["list"]).stdout)"#;
+    const DETAIL: &str = r#"parse_json(run(["detail", id, row.extra]).stdout)"#;
+    let cmd = Cmd::new(format!("{}/role.sh", fixtures_dir()))
+        .with_table("items", CmdSpec::new(LIST).with_detail(DETAIL));
+    let table = Table::<Cmd, EmptyEntity>::new("items", cmd.clone())
+        .with_id_column("id")
+        .with_column_of::<String>("detail")
+        .with_column_of::<String>("echoed");
+
+    let mut row: Record<CborValue> = Record::new();
+    row.insert("extra".to_string(), CborValue::from("XYZ"));
+
+    let rec = cmd
+        .get_table_value_with_row(&table, &"a".to_string(), &row)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(rec.get("echoed"), Some(&CborValue::from("XYZ")));
+    assert_eq!(rec.get("detail"), Some(&CborValue::from("full-a")));
+}
