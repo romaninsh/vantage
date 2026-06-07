@@ -14,6 +14,29 @@ fn fixtures_dir() -> String {
 }
 
 #[tokio::test]
+async fn base_dir_resolves_relative_command_and_sets_cwd() {
+    // A relative command path resolves against `base_dir`, and the child runs
+    // with `base_dir` as its cwd — so the fixture can read its sibling file by
+    // a relative path and echo it back as a row.
+    let script = r#"
+        let out = run([]);
+        if out.exit_code != 0 { throw out.stderr; }
+        parse_json(out.stdout).items
+    "#;
+    let cmd = Cmd::new("./read_sibling.sh")
+        .with_base_dir(fixtures_dir())
+        .with_script("items", script);
+    let table = Table::<Cmd, EmptyEntity>::new("items", cmd).with_id_column("name");
+
+    let rows = table.list_values().await.unwrap();
+    assert!(
+        rows.contains_key("cwd-sibling"),
+        "got: {:?}",
+        rows.keys().collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
 async fn lists_rows_from_command_output() {
     let script = r#"
         let out = run([]);
