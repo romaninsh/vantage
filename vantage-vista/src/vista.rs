@@ -174,7 +174,7 @@ impl Vista {
     /// driver. Pairs with the two-pass detail pass, which holds the cheap
     /// list-pass row and lets the detail script read its columns. Drivers that
     /// don't use it fall back to plain id lookup (see
-    /// [`TableShell::get_vista_value_with_row`](crate::TableShell::get_vista_value_with_row)).
+    /// [`TableShell::get_vista_value_with_row`]).
     pub async fn get_value_with_row(
         &self,
         id: &String,
