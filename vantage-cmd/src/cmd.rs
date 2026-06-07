@@ -1,11 +1,14 @@
 //! The [`Cmd`] datasource — a locked command, declared env, and a
 //! registry of per-table Rhai scripts.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
+
+use crate::rhai_engine::CompiledScript;
 
 /// Per-table configuration registered on a [`Cmd`]: the Rhai script that
 /// builds the argv and parses the output, plus optional command / env
@@ -13,6 +16,12 @@ use vantage_core::{Result, error};
 #[derive(Clone, Debug)]
 pub struct CmdSpec {
     pub script: Arc<str>,
+    /// Optional per-row detail script. When set, the table loads in two
+    /// passes: `script` lists id stubs, and `detail` hydrates one record at
+    /// a time (with `id` in scope) via `get_value`. Both run the same locked
+    /// command — only the argv the script builds differs (e.g. gh's `runs`
+    /// vs `stats`). When `None`, the table is single-pass as before.
+    pub detail: Option<Arc<str>>,
     pub command: Option<String>,
     pub env: IndexMap<String, String>,
 }
@@ -21,9 +30,16 @@ impl CmdSpec {
     pub fn new(script: impl Into<Arc<str>>) -> Self {
         Self {
             script: script.into(),
+            detail: None,
             command: None,
             env: IndexMap::new(),
         }
+    }
+
+    /// Register a per-row detail script (opt into two-pass loading).
+    pub fn with_detail(mut self, detail: impl Into<Arc<str>>) -> Self {
+        self.detail = Some(detail.into());
+        self
     }
 
     /// Override the locked command for this table only.
@@ -45,13 +61,32 @@ impl CmdSpec {
 /// Cheap to clone (everything is `Arc`-backed). The `command` and `env`
 /// here are the locked defaults; individual tables can be registered with
 /// their own [`CmdSpec`] overrides via [`Cmd::with_table`].
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Cmd {
     command: Arc<str>,
     env: Arc<IndexMap<String, String>>,
     pass_path: bool,
     base_dir: Option<Arc<Path>>,
     scripts: Arc<IndexMap<String, CmdSpec>>,
+    /// Memoized compiled scripts, keyed by script name. Shared across
+    /// clones so a per-row detail loop reuses one engine + AST. Built
+    /// lazily on first use (see [`Cmd::compiled_script`]).
+    compiled: Arc<Mutex<HashMap<String, Arc<CompiledScript>>>>,
+    /// How many times each named script has actually been compiled —
+    /// diagnostics / test instrumentation for the reuse guarantee.
+    compile_counts: Arc<Mutex<HashMap<String, usize>>>,
+}
+
+impl std::fmt::Debug for Cmd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Cmd")
+            .field("command", &self.command)
+            .field("env", &self.env)
+            .field("pass_path", &self.pass_path)
+            .field("base_dir", &self.base_dir)
+            .field("scripts", &self.scripts)
+            .finish()
+    }
 }
 
 impl Cmd {
@@ -63,6 +98,8 @@ impl Cmd {
             pass_path: true,
             base_dir: None,
             scripts: Arc::new(IndexMap::new()),
+            compiled: Arc::new(Mutex::new(HashMap::new())),
+            compile_counts: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -143,6 +180,77 @@ impl Cmd {
             env.insert(k.clone(), v.clone());
         }
         env
+    }
+
+    /// Get (building on first use) the compiled engine + AST for the named
+    /// table's list script. Reused across calls.
+    pub(crate) fn compiled_list_script(&self, name: &str) -> Result<Arc<CompiledScript>> {
+        let spec = self.spec_for(name)?.clone();
+        self.compiled_for(name.to_string(), &spec, &spec.script)
+    }
+
+    /// Get the compiled detail script for the named table, or `None` if the
+    /// table has no detail script (single-pass). Reused across calls so a
+    /// per-row detail loop pays the parse/registration cost once.
+    pub(crate) fn compiled_detail_script(&self, name: &str) -> Result<Option<Arc<CompiledScript>>> {
+        let spec = self.spec_for(name)?.clone();
+        let Some(detail) = spec.detail.clone() else {
+            return Ok(None);
+        };
+        Ok(Some(self.compiled_for(
+            format!("{name}::detail"),
+            &spec,
+            &detail,
+        )?))
+    }
+
+    /// Compile (once) and memoize a script under `cache_key`, using the
+    /// spec's effective command + env. Shared across `Cmd` clones.
+    fn compiled_for(
+        &self,
+        cache_key: String,
+        spec: &CmdSpec,
+        script: &str,
+    ) -> Result<Arc<CompiledScript>> {
+        let mut cache = self.compiled.lock().unwrap();
+        if let Some(existing) = cache.get(&cache_key) {
+            return Ok(existing.clone());
+        }
+        let command = self.effective_command(spec);
+        let env = self.effective_env(spec);
+        let compiled = Arc::new(CompiledScript::compile(
+            command,
+            env,
+            self.pass_path(),
+            self.base_dir(),
+            script,
+        )?);
+        *self
+            .compile_counts
+            .lock()
+            .unwrap()
+            .entry(cache_key.clone())
+            .or_insert(0) += 1;
+        cache.insert(cache_key, compiled.clone());
+        Ok(compiled)
+    }
+
+    /// True if the named table has a detail script (two-pass loading).
+    pub(crate) fn has_detail_script(&self, name: &str) -> bool {
+        self.spec_for(name)
+            .map(|s| s.detail.is_some())
+            .unwrap_or(false)
+    }
+
+    /// How many times the named script has been compiled. Reuse means this
+    /// stays at 1 no matter how many reads run.
+    pub fn compile_count(&self, name: &str) -> usize {
+        self.compile_counts
+            .lock()
+            .unwrap()
+            .get(name)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// A Vista factory bound to this datasource.

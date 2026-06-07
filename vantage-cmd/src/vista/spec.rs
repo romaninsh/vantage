@@ -26,6 +26,10 @@ pub struct CmdBlock {
     pub env: IndexMap<String, String>,
     /// The Rhai script: builds the argv, calls `run(args)`, parses output.
     pub rhai: String,
+    /// Optional per-row detail script (opt into two-pass loading). Runs the
+    /// same locked command with `id` in scope to hydrate one record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
