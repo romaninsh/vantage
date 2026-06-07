@@ -104,6 +104,7 @@ impl TableSource for Cmd {
         let command = self.effective_command(&spec);
         let env = self.effective_env(&spec);
         let pass_path = self.pass_path();
+        let base_dir = self.base_dir();
         let script = spec.script.clone();
 
         let id_field = table.id_field().map(|c| c.name().to_string());
@@ -143,10 +144,11 @@ impl TableSource for Cmd {
             id_column: id_field.clone(),
         };
 
-        let rows: Vec<JsonValue> =
-            tokio::task::spawn_blocking(move || eval_rows(command, env, pass_path, &script, ctx))
-                .await
-                .map_err(|e| error!("command task failed to join", detail = e.to_string()))??;
+        let rows: Vec<JsonValue> = tokio::task::spawn_blocking(move || {
+            eval_rows(command, env, pass_path, base_dir, &script, ctx)
+        })
+        .await
+        .map_err(|e| error!("command task failed to join", detail = e.to_string()))??;
 
         let mut records: IndexMap<String, Record<CborValue>> = IndexMap::new();
         for (idx, row) in rows.into_iter().enumerate() {

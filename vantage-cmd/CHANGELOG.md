@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.1 — 2026-06-07
+
+- `Cmd::with_base_dir` — set a base directory for the data source. A relative
+  `command` path containing a separator (e.g. `./scripts/gh-stats.py`) is
+  resolved against it; bare names (`gh`) stay on `PATH` and absolute paths pass
+  through. When set, every table's child process also runs with this directory
+  as its working directory, so a script can resolve sibling files relative to
+  it. Lets an inventory ship its own helper scripts and reference them by a
+  path relative to the inventory root.
+
 ## 0.5.0 — 2026-06-06
 
 First release — incubating. A read-only persistence backend that fetches data by **running a local
