@@ -53,6 +53,23 @@ pub(crate) struct TableSceneryState {
     /// page requests through the right primitive (`set_viewport` for
     /// `can_fetch_page`, `request_load_more` for `can_fetch_next`).
     pub(crate) master_capabilities: VistaCapabilities,
+
+    // ---- two-pass loading -------------------------------------------------
+    //
+    // Populated only when the Lens registers an `on_load_detail` callback.
+    // `two_pass == false` leaves every field below inert and the scenery on
+    // the legacy single-pass path.
+    /// Whether this scenery drives two-pass (list + detail) loading.
+    pub(crate) two_pass: bool,
+    /// The shared per-query ordered index for this scenery's conditions/sort,
+    /// keyed by [`Vista::index_key`]. `None` in single-pass mode.
+    pub(crate) index: Option<Arc<crate::dio::query_index::QueryIndex>>,
+    /// Ids whose detail fetch is currently dispatched — guards against
+    /// re-hydrating the same row while a fetch is in flight.
+    pub(crate) detail_in_flight: Mutex<std::collections::HashSet<String>>,
+    /// True while a list-page fetch is dispatched, so overlapping
+    /// `request_load_more` calls don't double-page.
+    pub(crate) list_in_flight: Mutex<bool>,
 }
 
 impl TableSceneryState {

@@ -2,7 +2,9 @@ use std::future::Future;
 use std::ops::Range;
 use std::pin::Pin;
 
+use ciborium::Value as CborValue;
 use vantage_core::Result;
+use vantage_types::Record;
 
 use crate::dio::Dio;
 use crate::lens::chunk_sink::ChunkSink;
@@ -44,6 +46,33 @@ pub type DioLoadChunkCallback = Box<
         + 'static,
 >;
 
+/// Future returned by a [`DioListPageCallback`]. Yields one page of
+/// `(id, cheap-record)` rows for the two-pass list pass.
+pub type DioListPageFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Vec<(String, Record<CborValue>)>>> + Send + 'a>>;
+
+/// Two-pass **list pass**. Given a [`QueryDescriptor`] (conditions, sort, and
+/// the `offset`/`limit` window), fetch one page of rows carrying only the
+/// cheap/list columns and return them in order. The scenery writes them to the
+/// detail table as [`Incomplete`](crate::lens::CacheStatus::Incomplete) and
+/// appends their ids to the per-query index. A page shorter than `limit` ends
+/// sequential paging.
+pub type DioListPageCallback = Box<
+    dyn for<'a> Fn(&'a Dio, QueryDescriptor) -> DioListPageFuture<'a> + Send + Sync + 'static,
+>;
+
+/// Future returned by a [`DioLoadDetailCallback`]. Yields the fully-hydrated
+/// record for a single id.
+pub type DioLoadDetailFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Record<CborValue>>> + Send + 'a>>;
+
+/// Two-pass **detail pass**. Given one id, fetch its expensive detail columns
+/// and return the complete record. The scenery merges it into the detail table
+/// as [`Complete`](crate::lens::CacheStatus::Complete) and flips the row to
+/// `Fresh`. Registering this callback is what opts a Dio into two-pass loading.
+pub type DioLoadDetailCallback =
+    Box<dyn for<'a> Fn(&'a Dio, String) -> DioLoadDetailFuture<'a> + Send + Sync + 'static>;
+
 /// The callback slots a Lens may hold. Each is independently
 /// optional; the Lens treats absent slots as "use the default path"
 /// (read from cache, write to master, etc.).
@@ -56,6 +85,8 @@ pub struct LensCallbacks {
     pub on_query: Option<DioQueryCallback>,
     pub total_provider: Option<DioTotalProviderCallback>,
     pub on_load_chunk: Option<DioLoadChunkCallback>,
+    pub on_list_page: Option<DioListPageCallback>,
+    pub on_load_detail: Option<DioLoadDetailCallback>,
 }
 
 /// Wrap a user closure into a [`DioCallback`].
@@ -116,4 +147,22 @@ where
     Fut: Future<Output = Result<()>> + Send + 'static,
 {
     Box::new(move |dio, range, sink| Box::pin(f(dio, range, sink)))
+}
+
+/// Wrap a user closure into a [`DioListPageCallback`].
+pub fn boxed_list_page_callback<F, Fut>(f: F) -> DioListPageCallback
+where
+    F: for<'a> Fn(&'a Dio, QueryDescriptor) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<Vec<(String, Record<CborValue>)>>> + Send + 'static,
+{
+    Box::new(move |dio, q| Box::pin(f(dio, q)))
+}
+
+/// Wrap a user closure into a [`DioLoadDetailCallback`].
+pub fn boxed_load_detail_callback<F, Fut>(f: F) -> DioLoadDetailCallback
+where
+    F: for<'a> Fn(&'a Dio, String) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<Record<CborValue>>> + Send + 'static,
+{
+    Box::new(move |dio, id| Box::pin(f(dio, id)))
 }
