@@ -254,3 +254,37 @@ async fn detail_script_reads_the_injected_row() {
     assert_eq!(rec.get("echoed"), Some(&CborValue::from("XYZ")));
     assert_eq!(rec.get("detail"), Some(&CborValue::from("full-a")));
 }
+
+#[tokio::test]
+async fn vista_get_value_with_row_feeds_the_detail_script() {
+    // The path the two-pass lens uses: Vista::get_value_with_row → cmd override
+    // → detail script with `row` in scope.
+    let yaml = r#"
+name: items
+columns:
+  id:
+    type: string
+    flags: [id, title]
+  detail:
+    type: string
+  echoed:
+    type: string
+cmd:
+  rhai: |
+    parse_json(run(["list"]).stdout)
+  detail: |
+    parse_json(run(["detail", id, row.extra]).stdout)
+"#;
+    let cmd = Cmd::new(format!("{}/role.sh", fixtures_dir()));
+    let vista = cmd.vista_factory().from_yaml(yaml).unwrap();
+
+    let mut row: Record<CborValue> = Record::new();
+    row.insert("extra".to_string(), CborValue::from("PQR"));
+
+    let rec = vista
+        .get_value_with_row(&"a".to_string(), &row)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(rec.get("echoed"), Some(&CborValue::from("PQR")));
+}
