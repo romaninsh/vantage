@@ -57,6 +57,20 @@ pub trait TableShell: Send + Sync + 'static {
         id: &String,
     ) -> Result<Option<Record<CborValue>>>;
 
+    /// Fetch one record by id, with the caller's existing (cheap) record
+    /// available to drivers that can use it (e.g. a cmd detail script reading
+    /// list-pass columns). The default ignores `row` and delegates to
+    /// [`get_vista_value`](Self::get_vista_value); only drivers that benefit
+    /// override it.
+    async fn get_vista_value_with_row(
+        &self,
+        vista: &Vista,
+        id: &String,
+        _row: &Record<CborValue>,
+    ) -> Result<Option<Record<CborValue>>> {
+        self.get_vista_value(vista, id).await
+    }
+
     async fn get_vista_some_value(
         &self,
         vista: &Vista,

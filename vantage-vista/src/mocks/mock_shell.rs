@@ -524,6 +524,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn default_get_value_with_row_ignores_row_and_delegates() {
+        // A driver that does not override `get_vista_value_with_row` must behave
+        // exactly like `get_value` — the extra `row` is ignored.
+        let source = MockShell::new().with_record(
+            "x",
+            record(&[("id", cbor_text("x")), ("name", cbor_text("Xavier"))]),
+        );
+        let vista = build_user_vista(source);
+
+        let mut row: Record<CborValue> = Record::new();
+        row.insert("extra".into(), cbor_text("ignored"));
+
+        let got = vista
+            .get_value_with_row(&"x".to_string(), &row)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(got.get("name"), Some(&cbor_text("Xavier")));
+    }
+
+    #[tokio::test]
     async fn insertable_value_set_assigns_ids() {
         let vista = build_user_vista(MockShell::new());
 
