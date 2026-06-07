@@ -1,7 +1,7 @@
 [package]
 edition = "2024"
 name = "vantage-surrealdb"
-version = "0.5.8"
+version = "0.5.9"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
 description = "Vantage extension for SurrealDB"
@@ -13,7 +13,11 @@ autoexamples = false
 default = ["decimal"]
 decimal = ["surreal-client/decimal", "rust_decimal"]
 vista = ["dep:vantage-vista"]
-rhai = ["dep:rhai"]
+# `rhai` powers both the standalone query DSL and (with `vista`) scripted
+# reference traversal, so it pulls in the vista layer and its conventional
+# engine. Keeping them coupled means `register_rhai_extensions` always has the
+# `vantage-vista` rhai vocabulary to layer onto.
+rhai = ["dep:rhai", "vista", "vantage-vista/rhai"]
 
 [dependencies]
 async-trait = "0.1"

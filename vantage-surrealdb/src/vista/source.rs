@@ -35,7 +35,7 @@ use crate::surreal_expr;
 use crate::surrealdb::SurrealDB;
 use crate::thing::Thing;
 use crate::types::{AnySurrealType, SurrealType};
-use crate::vista::factory::SurrealSpecResolver;
+use crate::vista::factory::{SurrealSpecResolver, SurrealVistaFactory};
 
 pub struct SurrealTableShell<E = EmptyEntity>
 where
@@ -226,13 +226,42 @@ where
         Ok(())
     }
 
+    /// Route a boxed driver-native condition onto the wrapped table. The boxed
+    /// value must be a SurrealDB [`crate::Expr`] (`Expression<AnySurrealType>`,
+    /// the table's `Condition` type) — the type a Rhai `with_condition(...)`
+    /// expression lowers to. Used by scripted reference traversal.
+    fn add_raw_condition(
+        &mut self,
+        condition: Box<dyn std::any::Any + Send + Sync>,
+    ) -> Result<()> {
+        let condition = condition.downcast::<crate::Expr>().map_err(|_| {
+            error!(
+                "add_raw_condition expected a SurrealDB Expression<AnySurrealType>",
+                source_type = std::any::type_name::<Self>()
+            )
+        })?;
+        self.table.add_condition(*condition);
+        Ok(())
+    }
+
     fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
+        // A reference carrying a Rhai `build_script` resolves through the script
+        // engine instead of the fixed FK eq-condition path below.
+        #[cfg(feature = "rhai")]
+        if let Some(script) = self
+            .metadata
+            .references
+            .get(relation)
+            .and_then(|r| r.build_script.clone())
+        {
+            return self.get_ref_via_script(&script, row);
+        }
+
         let native_row = to_native_record(row);
         let target = self
             .table
             .get_ref_from_row::<EmptyEntity>(relation, &native_row)?;
-        let mut factory =
-            crate::vista::factory::SurrealVistaFactory::new(self.table.data_source().clone());
+        let mut factory = SurrealVistaFactory::new(self.table.data_source().clone());
         if let Some(resolver) = &self.resolver {
             factory = factory.with_resolver(resolver.clone());
         }
@@ -394,5 +423,61 @@ where
 
     fn driver_name(&self) -> &'static str {
         "surrealdb"
+    }
+
+    /// Layer SurrealDB's expression vocabulary on top of vantage-vista's
+    /// conventional `Vista` verbs, plus a `with_condition(<expr>)` builder that
+    /// routes a native `Expression` through [`add_raw_condition`](Self::add_raw_condition).
+    #[cfg(feature = "rhai")]
+    fn register_rhai_extensions(&self, engine: &mut rhai::Engine) {
+        use vantage_vista::RhaiVista;
+
+        crate::rhai_engine::register_surreal_onto(engine);
+
+        engine.register_fn(
+            "with_condition",
+            |v: &mut RhaiVista,
+             cond: crate::rhai_engine::RhaiExpr|
+             -> std::result::Result<RhaiVista, Box<rhai::EvalAltResult>> {
+                v.apply(|vista| vista.add_raw_condition(cond.0))
+            },
+        );
+    }
+}
+
+#[cfg(feature = "rhai")]
+impl<E> SurrealTableShell<E>
+where
+    E: Entity<AnySurrealType> + 'static,
+{
+    /// Build a reference's traversal target by evaluating its Rhai
+    /// `build_script`. The conventional `Vista` vocabulary plus SurrealDB's
+    /// vendor extensions are registered onto a fresh engine; `table(name)`
+    /// resolves a fresh target through the shell's spec resolver, and the parent
+    /// `row` is exposed to the script.
+    fn get_ref_via_script(&self, script: &str, row: &Record<CborValue>) -> Result<Vista> {
+        use vantage_vista::VistaFactory;
+
+        let db = self.table.data_source().clone();
+        let resolver = self.resolver.clone();
+        let target_resolver: vantage_vista::TargetResolver = std::sync::Arc::new(move |name| {
+            let resolver = resolver.as_ref().ok_or_else(|| {
+                error!("scripted reference traversal requires a spec resolver on the factory")
+            })?;
+            let spec = resolver(name)
+                .ok_or_else(|| error!("scripted reference traversal: unknown table", table = name))?;
+            SurrealVistaFactory::new(db.clone())
+                .with_resolver(resolver.clone())
+                .build_from_spec(spec)
+        });
+
+        // Vendor vocab first, conventional second: this makes the conventional
+        // `table(name) -> Vista` win over SurrealDB's `table` alias for `ident`
+        // (which stays reachable as `ident(...)`), so a build-script's
+        // `table("order")` resolves a Vista rather than an identifier.
+        let mut engine = rhai::Engine::new();
+        self.register_rhai_extensions(&mut engine);
+        vantage_vista::register_conventional_onto(&mut engine, target_resolver);
+        vantage_vista::eval_ref_script(&engine, script, row)
     }
 }

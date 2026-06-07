@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.5 — 2026-06-07
+
+- Pass the new `VistaCapabilities::can_build_ref_via_script` flag through the `Dio` cache
+  shell, so a scripted-reference-capable master Vista keeps advertising the capability when
+  wrapped for caching. Tracks `vantage-vista` 0.5.4.
+
 ## 0.5.4 — 2026-06-02
 
 - BDD cache assertions (`cache_record_field`, `cache_record_absent`, `cache_row_count`) now poll
