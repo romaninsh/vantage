@@ -170,6 +170,19 @@ impl Vista {
         self.source.get_vista_count(self).await
     }
 
+    /// Fetch one record by id, passing the caller's existing record down to the
+    /// driver. Pairs with the two-pass detail pass, which holds the cheap
+    /// list-pass row and lets the detail script read its columns. Drivers that
+    /// don't use it fall back to plain id lookup (see
+    /// [`TableShell::get_vista_value_with_row`](crate::TableShell::get_vista_value_with_row)).
+    pub async fn get_value_with_row(
+        &self,
+        id: &String,
+        row: &Record<CborValue>,
+    ) -> Result<Option<Record<CborValue>>> {
+        self.source.get_vista_value_with_row(self, id, row).await
+    }
+
     /// Push a driver-native condition into the wrapped table. The
     /// boxed value must match the driver's `T::Condition`. Used by
     /// YAML-driven relation factories that need to inject deferred
