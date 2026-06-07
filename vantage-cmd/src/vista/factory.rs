@@ -59,6 +59,7 @@ impl CmdVistaFactory {
             let mut cs = CmdSpec::new(spec.driver.cmd.rhai.clone());
             cs.command = spec.driver.cmd.command.clone();
             cs.env = spec.driver.cmd.env.clone();
+            cs.detail = spec.driver.cmd.detail.clone().map(Into::into);
             cs
         };
         let cmd = self.cmd.clone().with_table(&spec.name, cmd_spec);
