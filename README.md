@@ -7,6 +7,21 @@ Vantage is an **Entity Framework** for Rust. With Vantage you can represent your
 Rust is type-safe and very ergonomic for large code-bases. Ideal for creating facade services,
 middlewares and microservices or low-code backend UI.
 
+## Looking for the app? Meet Vantage UI
+
+If you want a finished product rather than a library, start with
+**[Vantage UI](https://romaninsh.github.io/vantage-web/)** — a native, local-first admin console you
+configure by talking to an AI coding agent. Point it at your databases, APIs, cloud infrastructure or
+CLI tools; describe the tool you need; the agent writes the config — declarative YAML for structure
+and Rhai scripts for logic — in a folder you own, and the app renders tables, forms, dashboards and
+dialogs on top of your data.
+
+Vantage UI is built directly on the crates in this repository — it is one expression of this
+framework, not a separate codebase. The framework gives the app its persistence abstraction, query
+builders, references and type system; the app adds the GPU-accelerated UI, the agent/MCP layer and
+hot-reload. It's a **free download for macOS** today. If you'd rather build your own service, CLI or
+UI on the same foundation, the rest of this README is for you.
+
 Given your client record:
 
 ```rust
@@ -67,7 +82,8 @@ implement generic UI or API component:
   Cursive, GPUI, RatatUI and Slint frameworks.
 - vantage-axum`*` - Implements builder for Axum supporting use of typed or generic tables.
 - vantage-config - Reads Entity definitions from `yaml` file, creating type-erased `AnyTable`s.
-- Vantage Admin`*` - Desktop Application for Entity management based on `yaml` config.
+- **[Vantage UI](https://romaninsh.github.io/vantage-web/)** - Native, local-first desktop admin
+  console built on these crates and configured by an AI agent over MCP. Free for macOS today.
 
 (`*` indicate commercial component)
 
