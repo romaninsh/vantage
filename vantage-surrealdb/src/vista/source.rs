@@ -230,10 +230,7 @@ where
     /// value must be a SurrealDB [`crate::Expr`] (`Expression<AnySurrealType>`,
     /// the table's `Condition` type) — the type a Rhai `with_condition(...)`
     /// expression lowers to. Used by scripted reference traversal.
-    fn add_raw_condition(
-        &mut self,
-        condition: Box<dyn std::any::Any + Send + Sync>,
-    ) -> Result<()> {
+    fn add_raw_condition(&mut self, condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()> {
         let condition = condition.downcast::<crate::Expr>().map_err(|_| {
             error!(
                 "add_raw_condition expected a SurrealDB Expression<AnySurrealType>",
@@ -464,8 +461,9 @@ where
             let resolver = resolver.as_ref().ok_or_else(|| {
                 error!("scripted reference traversal requires a spec resolver on the factory")
             })?;
-            let spec = resolver(name)
-                .ok_or_else(|| error!("scripted reference traversal: unknown table", table = name))?;
+            let spec = resolver(name).ok_or_else(|| {
+                error!("scripted reference traversal: unknown table", table = name)
+            })?;
             SurrealVistaFactory::new(db.clone())
                 .with_resolver(resolver.clone())
                 .build_from_spec(spec)

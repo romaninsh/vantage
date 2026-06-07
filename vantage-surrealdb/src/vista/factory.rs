@@ -128,9 +128,18 @@ impl VistaFactory for SurrealVistaFactory {
                 .foreign_key
                 .clone()
                 .unwrap_or_else(|| rel_name.clone());
-            let mut reference =
-                VistaReferenceMeta::new(rel_name.clone(), ref_spec.table.clone(), ref_spec.kind, fk);
-            if let Some(script) = ref_spec.driver.surreal.as_ref().and_then(|b| b.rhai.clone()) {
+            let mut reference = VistaReferenceMeta::new(
+                rel_name.clone(),
+                ref_spec.table.clone(),
+                ref_spec.kind,
+                fk,
+            );
+            if let Some(script) = ref_spec
+                .driver
+                .surreal
+                .as_ref()
+                .and_then(|b| b.rhai.clone())
+            {
                 reference = reference.with_build_script(script);
             }
             metadata = metadata.with_reference(reference);
