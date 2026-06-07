@@ -62,7 +62,7 @@ pub(crate) struct TableSceneryState {
     /// Whether this scenery drives two-pass (list + detail) loading.
     pub(crate) two_pass: bool,
     /// The shared per-query ordered index for this scenery's conditions/sort,
-    /// keyed by [`Vista::index_key`]. `None` in single-pass mode.
+    /// keyed by [`Vista::index_key`](vantage_vista::Vista::index_key). `None` in single-pass mode.
     pub(crate) index: Option<Arc<crate::dio::query_index::QueryIndex>>,
     /// Ids whose detail fetch is currently dispatched — guards against
     /// re-hydrating the same row while a fetch is in flight.

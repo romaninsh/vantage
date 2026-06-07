@@ -83,7 +83,7 @@ pub(crate) async fn seed_from_index(state: &Arc<TableSceneryState>) {
 /// append their ids to the index, and seed the new sparse-map slots.
 ///
 /// Sequential / no-total: a page shorter than the requested limit marks the
-/// index complete (see [`QueryIndex::append_page`]).
+/// index complete (see [`QueryIndex::append_page`](crate::dio::query_index::QueryIndex::append_page)).
 pub(crate) async fn run_list_page(state: Arc<TableSceneryState>) {
     let Some(dio_inner) = state.dio_weak.upgrade() else {
         return;
