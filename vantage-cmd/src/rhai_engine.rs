@@ -108,6 +108,29 @@ impl CompiledScript {
                 let argv: Vec<String> = args.into_iter().map(dynamic_to_arg).collect();
                 let out = run_command(&command, &argv, &env, pass_path, base_dir.as_deref())
                     .map_err(|e| runtime_err(e.to_string()))?;
+                // Surface the child's stderr into the host app's log so tool
+                // diagnostics (e.g. "stats requires both step lists", "HTTP
+                // 410") are visible. Non-zero exits log at WARN (visible by
+                // default); chatter on success logs at DEBUG.
+                let err = out.stderr.trim();
+                if !err.is_empty() {
+                    if out.exit_code != 0 {
+                        tracing::warn!(
+                            target: "vantage_cmd",
+                            command = %command,
+                            args = ?argv,
+                            exit_code = out.exit_code,
+                            "command stderr: {err}",
+                        );
+                    } else {
+                        tracing::debug!(
+                            target: "vantage_cmd",
+                            command = %command,
+                            args = ?argv,
+                            "command stderr: {err}",
+                        );
+                    }
+                }
                 let mut map = Map::new();
                 map.insert("stdout".into(), out.stdout.into());
                 map.insert("stderr".into(), out.stderr.into());

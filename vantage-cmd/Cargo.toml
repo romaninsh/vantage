@@ -36,6 +36,9 @@ async-trait = "0.1"
 # Universal value carrier across the type-erased Vista boundary.
 ciborium = "0.2"
 
+# Surface command stderr/exit into the host app's tracing log.
+tracing = "0.1"
+
 # The Rhai eval (including the synchronous subprocess call) runs on a
 # blocking thread so the async runtime is never blocked.
 tokio = { version = "1", features = ["rt", "macros"] }
