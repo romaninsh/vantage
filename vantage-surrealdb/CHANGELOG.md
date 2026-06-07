@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.5.9 — 2026-06-07
+
+### Added
+
+- SurrealDB vendor vocabulary for the new Rhai-scripted reference traversal (requires the
+  `rhai` feature, which now also implies `vista` + `vantage-vista/rhai`).
+  - Per-reference `surreal: { rhai: "…" }` block (`SurrealReferenceExtras` / `SurrealRefBlock`):
+    a script that builds the traversal target — conditions (including vendor expressions like
+    `ident("client") == row.id`), order, and search — evaluated lazily with the parent `row`
+    in scope, instead of the default foreign-key eq-condition path.
+  - `surreal: { modify: "…" }` on a table block: a Rhai script applied to the *built* vista as
+    a final step (exposed as `self`), so a script can narrow it with vendor expressions YAML
+    can't represent. Composes with `table`/`rhai`/`base` and runs last.
+  - `SurrealTableShell` overrides `register_rhai_extensions` (registers the Surreal engine
+    vocabulary plus a `with_condition(<expr>)` builtin) and implements `add_raw_condition`,
+    routing a boxed backend-native `Expr` through the type-erased condition path.
+
+### Changed
+
+- `register_surreal_engine!` is split so its registrations live in a reusable
+  `register_surreal_onto(&mut Engine)`; the macro and `__create_engine` call it (no behavior
+  change for existing engine call sites).
+
 ## 0.5.8 — 2026-06-03
 
 - Query-sourced and derived vistas for SurrealDB, mirroring the SQL-backend features from PR #277:

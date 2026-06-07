@@ -45,6 +45,7 @@ impl DioShell {
             // Dio cache does not add or remove traversal modes.
             can_traverse_to_record: master_caps.can_traverse_to_record,
             can_traverse_to_set: master_caps.can_traverse_to_set,
+            can_build_ref_via_script: master_caps.can_build_ref_via_script,
         };
         Self { dio, capabilities }
     }
