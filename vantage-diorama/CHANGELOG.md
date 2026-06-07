@@ -1,10 +1,11 @@
 # Changelog
 
-## 0.5.5 — 2026-06-07
+## 0.5.6 — 2026-06-07
 
 - Pass the new `VistaCapabilities::can_build_ref_via_script` flag through the `Dio` cache
   shell, so a scripted-reference-capable master Vista keeps advertising the capability when
-  wrapped for caching. Tracks `vantage-vista` 0.5.4.
+  wrapped for caching. Tracks `vantage-vista` 0.5.4. (Version 0.5.5 was already on crates.io
+  without this change; 0.5.6 is the release that actually ships it.)
 
 ## 0.5.4 — 2026-06-02
 
