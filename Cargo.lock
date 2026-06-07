@@ -4716,7 +4716,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4842,7 +4842,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4869,7 +4869,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "async-trait",
  "bakery_model3",
@@ -4950,13 +4950,14 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "async-stream",
  "async-trait",
  "ciborium",
  "futures-core",
  "indexmap",
+ "rhai",
  "serde",
  "serde_yaml_ng",
  "thiserror 2.0.18",

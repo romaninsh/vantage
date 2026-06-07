@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.9 — 2026-06-07
+
+### Changed
+
+- `register_engine!` is split so its registrations live in a reusable
+  `__register_engine_onto(&mut Engine)`; the macro and `__create_engine` call it. Prepares the
+  SQL backend for the conventional Rhai-scripted reference traversal added in
+  `vantage-vista` 0.5.4. No behavior change for existing engine call sites.
+
 ## 0.5.8 — 2026-06-06
 
 ### Changed
