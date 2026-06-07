@@ -76,10 +76,7 @@ impl DioInner {
     /// Fetch (or lazily create) the [`QueryIndex`](crate::dio::query_index::QueryIndex)
     /// for `key`. Repeated calls with the same key return the same `Arc`, so
     /// all sceneries on a query variant share one ordered index.
-    pub(crate) fn query_index(
-        &self,
-        key: &str,
-    ) -> Arc<crate::dio::query_index::QueryIndex> {
+    pub(crate) fn query_index(&self, key: &str) -> Arc<crate::dio::query_index::QueryIndex> {
         let mut guard = self.query_indexes.lock().unwrap();
         guard
             .entry(key.to_string())
