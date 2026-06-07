@@ -28,6 +28,10 @@ pub(crate) struct QueryContext {
     /// The target id for a per-row detail fetch, seeded as the `id` scope
     /// variable. `None` for list reads.
     pub id: Option<String>,
+    /// The existing (list-pass) record for a detail fetch, seeded as the `row`
+    /// scope variable so the detail script can read cheap columns it carries.
+    /// An empty map for list reads and id-only detail reads.
+    pub row: ciborium::value::Value,
 }
 
 fn runtime_err(msg: impl Into<String>) -> Box<EvalAltResult> {
@@ -129,6 +133,7 @@ impl CompiledScript {
         scope.push_dynamic("offset", opt_int(ctx.offset));
         scope.push_dynamic("id_column", opt_string(ctx.id_column));
         scope.push_dynamic("id", opt_string(ctx.id));
+        scope.push_dynamic("row", to_dynamic(&ctx.row)?);
 
         let result: Dynamic = self
             .engine
