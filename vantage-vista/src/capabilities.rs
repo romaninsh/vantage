@@ -47,9 +47,9 @@ pub struct VistaCapabilities {
     /// subqueries; SQL and SurrealDB do, CSV/Mongo/REST do not.
     pub can_traverse_to_set: bool,
     /// Per-reference Rhai-scripted traversal — a reference carrying a
-    /// `build_script` resolves through the script engine
-    /// ([`TableShell::register_rhai_extensions`](crate::TableShell::register_rhai_extensions))
-    /// rather than the fixed FK eq-condition path. Backends with a script
+    /// `build_script` resolves through the script engine (the
+    /// `TableShell::register_rhai_extensions` hook, available with the `rhai`
+    /// feature) rather than the fixed FK eq-condition path. Backends with a script
     /// engine *and* a by-name target resolver advertise `true`; others leave
     /// it `false` and ignore any `build_script` (the FK path still works).
     pub can_build_ref_via_script: bool,

@@ -10,8 +10,9 @@ pub struct Reference {
     pub foreign_key: String,
     /// Optional Rhai script that *builds* the traversal target itself, in place
     /// of the default foreign-key eq-condition path. Evaluated lazily at
-    /// traversal time with the parent `row` in scope (see
-    /// [`crate::rhai_conventional`]). `None` keeps the conventional FK path.
+    /// traversal time with the parent `row` in scope (see the
+    /// `rhai_conventional` module, available with the `rhai` feature). `None`
+    /// keeps the conventional FK path.
     /// Lowered from the per-reference YAML extras slot by each backend factory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub build_script: Option<String>,

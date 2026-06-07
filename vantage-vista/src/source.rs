@@ -365,7 +365,7 @@ pub trait TableShell: Send + Sync + 'static {
 
     /// Contribute backend-specific vocabulary to a Rhai engine that
     /// vantage-vista has already seeded with the conventional `Vista` verbs
-    /// (see [`crate::rhai_conventional`]). Backends with an expression engine
+    /// (see the `rhai_conventional` module). Backends with an expression engine
     /// (SurrealDB, SQL) override this to register `ident`/`==`/`fx`/graph
     /// constructors plus a `with_condition(<backend expr>)` builder that routes
     /// a boxed native condition through [`add_raw_condition`](Self::add_raw_condition).
