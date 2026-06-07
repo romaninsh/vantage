@@ -60,6 +60,61 @@ fn rows_to_records(
     records
 }
 
+impl Cmd {
+    /// Detail-script hydration for one id, with the existing list-pass `row`
+    /// injected into the script scope as `row`. Falls back to the normal
+    /// list-and-pick path when the table has no detail script.
+    pub async fn get_table_value_with_row<E>(
+        &self,
+        table: &Table<Self, E>,
+        id: &String,
+        row: &Record<CborValue>,
+    ) -> Result<Option<Record<CborValue>>>
+    where
+        E: Entity<CborValue>,
+        Self: Sized,
+    {
+        let table_name = table.table_name().to_string();
+        if !self.has_detail_script(&table_name) {
+            let mut all = self.list_table_values(table).await?;
+            return Ok(all.shift_remove(id));
+        }
+
+        let id_field = table.id_field().map(|c| c.name().to_string());
+        let columns: Vec<String> = table.columns().keys().cloned().collect();
+        let row_map = ciborium::value::Value::Map(
+            row.iter()
+                .map(|(k, v)| (ciborium::value::Value::Text(k.clone()), v.clone()))
+                .collect(),
+        );
+        let ctx = QueryContext {
+            conditions: Vec::new(),
+            columns,
+            limit: None,
+            offset: None,
+            id_column: id_field.clone(),
+            id: Some(id.clone()),
+            row: row_map,
+        };
+        let cmd = self.clone();
+        let name = table_name.clone();
+        let rows: Vec<JsonValue> = tokio::task::spawn_blocking(move || {
+            let compiled = cmd
+                .compiled_detail_script(&name)?
+                .ok_or_else(|| error!("detail script vanished"))?;
+            compiled.eval(ctx)
+        })
+        .await
+        .map_err(|e| error!("command task failed to join", detail = e.to_string()))??;
+
+        let mut records = rows_to_records(rows, id_field.as_deref());
+        // Prefer the row matching the requested id; else the first row.
+        Ok(records
+            .shift_remove(id)
+            .or_else(|| records.into_iter().next().map(|(_, r)| r)))
+    }
+}
+
 #[async_trait]
 impl TableSource for Cmd {
     type Column<Type>
@@ -204,42 +259,9 @@ impl TableSource for Cmd {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        let table_name = table.table_name().to_string();
-
-        // Two-pass tables hydrate one record at a time via the detail script
-        // (with `id` in scope) instead of re-listing every row.
-        if self.has_detail_script(&table_name) {
-            let id_field = table.id_field().map(|c| c.name().to_string());
-            let columns: Vec<String> = table.columns().keys().cloned().collect();
-            let ctx = QueryContext {
-                conditions: Vec::new(),
-                columns,
-                limit: None,
-                offset: None,
-                id_column: id_field.clone(),
-                id: Some(id.clone()),
-                row: ciborium::value::Value::Map(vec![]),
-            };
-            let cmd = self.clone();
-            let name = table_name.clone();
-            let rows: Vec<JsonValue> = tokio::task::spawn_blocking(move || {
-                let compiled = cmd
-                    .compiled_detail_script(&name)?
-                    .ok_or_else(|| error!("detail script vanished"))?;
-                compiled.eval(ctx)
-            })
-            .await
-            .map_err(|e| error!("command task failed to join", detail = e.to_string()))??;
-
-            let mut records = rows_to_records(rows, id_field.as_deref());
-            // Prefer the row matching the requested id; else the first row.
-            return Ok(records
-                .shift_remove(id)
-                .or_else(|| records.into_iter().next().map(|(_, r)| r)));
-        }
-
-        let mut all = self.list_table_values(table).await?;
-        Ok(all.shift_remove(id))
+        // Detail hydration with no caller-supplied row (id-only path).
+        let empty: Record<CborValue> = Record::new();
+        self.get_table_value_with_row(table, id, &empty).await
     }
 
     async fn get_table_some_value<E>(
