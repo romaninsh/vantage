@@ -1,6 +1,7 @@
 //! The [`Cmd`] datasource — a locked command, declared env, and a
 //! registry of per-table Rhai scripts.
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use indexmap::IndexMap;
@@ -49,6 +50,7 @@ pub struct Cmd {
     command: Arc<str>,
     env: Arc<IndexMap<String, String>>,
     pass_path: bool,
+    base_dir: Option<Arc<Path>>,
     scripts: Arc<IndexMap<String, CmdSpec>>,
 }
 
@@ -59,6 +61,7 @@ impl Cmd {
             command: command.into(),
             env: Arc::new(IndexMap::new()),
             pass_path: true,
+            base_dir: None,
             scripts: Arc::new(IndexMap::new()),
         }
     }
@@ -75,6 +78,20 @@ impl Cmd {
     /// an absolute command path and a fully-declared environment.
     pub fn with_pass_path(mut self, pass_path: bool) -> Self {
         self.pass_path = pass_path;
+        self
+    }
+
+    /// Set the base directory used to resolve a relative `command` *path*
+    /// and as the child process's working directory.
+    ///
+    /// A `command` that contains a path separator but isn't absolute (e.g.
+    /// `./scripts/gh-stats.py`) is resolved against this directory; bare
+    /// names (e.g. `gh`) are left untouched for `PATH` lookup, and absolute
+    /// paths pass through. When set, every table's child process also runs
+    /// with this directory as its working directory, so a script can resolve
+    /// sibling files relative to it.
+    pub fn with_base_dir(mut self, base_dir: impl Into<PathBuf>) -> Self {
+        self.base_dir = Some(Arc::from(base_dir.into()));
         self
     }
 
@@ -96,6 +113,10 @@ impl Cmd {
 
     pub(crate) fn pass_path(&self) -> bool {
         self.pass_path
+    }
+
+    pub(crate) fn base_dir(&self) -> Option<Arc<Path>> {
+        self.base_dir.clone()
     }
 
     pub(crate) fn spec_for(&self, name: &str) -> Result<&CmdSpec> {

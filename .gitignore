@@ -9,3 +9,8 @@ vantage-sql-old
 tmp-*
 vantage-mongodb-old
 agents
+
+# Local PR-authoring artifacts (not part of the published repo)
+pr-archive/
+PR-DESCRIPTION.md
+PR-REWRITE-LIST.md
