@@ -200,3 +200,32 @@ cmd:
     let vista = cmd.vista_factory().from_yaml(yaml).unwrap();
     assert_eq!(vista.get_id_column(), Some("id"));
 }
+
+#[tokio::test]
+async fn vista_get_value_runs_the_detail_script() {
+    // Regression: `Vista::get_value(id)` (used by the two-pass detail pass)
+    // must route through the cmd DETAIL script, not re-run the list script.
+    let yaml = r#"
+name: items
+columns:
+  id:
+    type: string
+    flags: [id, title]
+  detail:
+    type: string
+cmd:
+  rhai: |
+    parse_json(run(["list"]).stdout)
+  detail: |
+    parse_json(run(["detail", id]).stdout)
+"#;
+    let cmd = Cmd::new(format!("{}/role.sh", fixtures_dir()));
+    let vista = cmd.vista_factory().from_yaml(yaml).unwrap();
+
+    let rec = vista.get_value(&"a".to_string()).await.unwrap().unwrap();
+    assert_eq!(
+        rec.get("detail"),
+        Some(&CborValue::from("full-a")),
+        "Vista::get_value must run the detail script"
+    );
+}

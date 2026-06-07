@@ -69,8 +69,9 @@ impl TableShell for CmdTableShell {
         _vista: &Vista,
         id: &String,
     ) -> Result<Option<Record<CborValue>>> {
-        let mut data = self.table.list_values().await?;
-        Ok(data.shift_remove(id))
+        // Route through the typed table so detail-script tables hydrate via
+        // the DETAIL script (Cmd::get_table_value), not the list script.
+        self.table.get_value(id).await
     }
 
     async fn get_vista_some_value(
