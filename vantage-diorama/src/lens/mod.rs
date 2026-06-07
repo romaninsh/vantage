@@ -19,12 +19,13 @@ use crate::dio::Dio;
 use crate::error::LensBuildError;
 use crate::ops::{ChangeEvent, QueryDescriptor, WriteOp};
 
-pub use cache_backend::{CacheBackend, CacheTable};
+pub use cache_backend::{CacheBackend, CacheStatus, CacheTable};
 pub use callbacks::{
-    DioCallback, DioEventCallback, DioLoadChunkCallback, DioQueryCallback,
-    DioTotalProviderCallback, DioWriteCallback, LensCallbacks, boxed_dio_callback,
-    boxed_dio_event_callback, boxed_dio_query_callback, boxed_dio_write_callback,
-    boxed_load_chunk_callback, boxed_total_provider_callback,
+    DioCallback, DioEventCallback, DioListPageCallback, DioLoadChunkCallback,
+    DioLoadDetailCallback, DioQueryCallback, DioTotalProviderCallback, DioWriteCallback,
+    LensCallbacks, boxed_dio_callback, boxed_dio_event_callback, boxed_dio_query_callback,
+    boxed_dio_write_callback, boxed_list_page_callback, boxed_load_chunk_callback,
+    boxed_load_detail_callback, boxed_total_provider_callback,
 };
 pub use chunk_sink::{ChunkRow, ChunkSink, SceneryChunkTarget};
 pub use defaults::LensDefaults;
@@ -80,6 +81,8 @@ pub struct LensBuilder {
     pub(crate) on_query: Option<DioQueryCallback>,
     pub(crate) total_provider: Option<DioTotalProviderCallback>,
     pub(crate) on_load_chunk: Option<DioLoadChunkCallback>,
+    pub(crate) on_list_page: Option<DioListPageCallback>,
+    pub(crate) on_load_detail: Option<DioLoadDetailCallback>,
     pub(crate) defaults: LensDefaults,
     pub(crate) runtime: Option<Handle>,
 }
@@ -102,6 +105,8 @@ impl LensBuilder {
             on_query: None,
             total_provider: None,
             on_load_chunk: None,
+            on_list_page: None,
+            on_load_detail: None,
             defaults: LensDefaults::default(),
             runtime: None,
         }
@@ -217,6 +222,39 @@ impl LensBuilder {
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
         self.on_load_chunk = Some(callbacks::boxed_load_chunk_callback(f));
+        self
+    }
+
+    /// Register the two-pass **list pass**. The Scenery calls this to fetch one
+    /// page of cheap/list rows for its query variant (conditions + sort +
+    /// `offset`/`limit` arrive via the [`QueryDescriptor`]). Returned rows are
+    /// written to the detail table as `Incomplete` and their ids appended to
+    /// the per-query index. A page shorter than `limit` ends paging.
+    ///
+    /// Pairs with [`on_load_detail`](Self::on_load_detail); registering
+    /// `on_load_detail` is what engages two-pass loading.
+    pub fn on_list_page<F, Fut>(mut self, f: F) -> Self
+    where
+        F: for<'a> Fn(&'a Dio, QueryDescriptor) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Vec<(String, vantage_types::Record<ciborium::Value>)>>>
+            + Send
+            + 'static,
+    {
+        self.on_list_page = Some(callbacks::boxed_list_page_callback(f));
+        self
+    }
+
+    /// Register the two-pass **detail pass**. The Scenery calls this once per
+    /// visible `Incomplete` row to fetch its expensive columns; the returned
+    /// record is merged into the detail table as `Complete` and the row flips
+    /// to `Fresh`. **Registering this callback opts the Dio into two-pass
+    /// loading** — without it, sceneries use the legacy single-pass path.
+    pub fn on_load_detail<F, Fut>(mut self, f: F) -> Self
+    where
+        F: for<'a> Fn(&'a Dio, String) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<vantage_types::Record<ciborium::Value>>> + Send + 'static,
+    {
+        self.on_load_detail = Some(callbacks::boxed_load_detail_callback(f));
         self
     }
 

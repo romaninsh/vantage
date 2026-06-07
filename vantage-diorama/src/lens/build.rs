@@ -31,6 +31,8 @@ impl LensBuilder {
             on_query: self.on_query,
             total_provider: self.total_provider,
             on_load_chunk: self.on_load_chunk,
+            on_list_page: self.on_list_page,
+            on_load_detail: self.on_load_detail,
         };
 
         Ok(Lens {
