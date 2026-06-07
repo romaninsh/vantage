@@ -1384,6 +1384,7 @@ dependencies = [
  "serde_json",
  "serde_yaml_ng",
  "tokio",
+ "tracing",
  "vantage-cli-util",
  "vantage-core",
  "vantage-dataset",
