@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.2 — 2026-06-07
+
+- Reuse the rhai `Engine` and compiled `AST` across calls instead of rebuilding
+  and re-parsing per call (removes the N re-parses a per-row detail loop incurred).
+- Two-role scripts: a table can declare a `list` script (the default) and a
+  separate `detail` script. `get_table_value(id)` runs the detail script with the
+  id — and the cached list-pass row — injected into scope (`row` map in
+  `QueryContext`), so the detail script can read cheap columns already fetched.
+  `Vista::get_value` routes through the detail script; `get_table_value_with_row` /
+  `get_vista_value_with_row` feed the cached row down.
+- Surface child-process stderr into the tracing log (WARN on non-zero exit, DEBUG
+  otherwise) so tool diagnostics are visible to the host app.
+
 ## 0.5.1 — 2026-06-07
 
 - `Cmd::with_base_dir` — set a base directory for the data source. A relative

@@ -1373,7 +1373,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cmd"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1484,7 +1484,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "async-stream",
  "async-trait",
