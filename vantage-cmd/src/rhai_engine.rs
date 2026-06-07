@@ -6,6 +6,9 @@
 //! `tokio::task::spawn_blocking` — the engine and the subprocess call
 //! never cross a thread boundary, so the async runtime stays unblocked.
 
+use std::path::Path;
+use std::sync::Arc;
+
 use indexmap::IndexMap;
 use rhai::{Dynamic, Engine, EvalAltResult, Map, Position, Scope};
 use serde_json::Value as JsonValue;
@@ -46,6 +49,7 @@ pub(crate) fn eval_rows(
     command: String,
     env: IndexMap<String, String>,
     pass_path: bool,
+    base_dir: Option<Arc<Path>>,
     script: &str,
     ctx: QueryContext,
 ) -> Result<Vec<JsonValue>> {
@@ -82,7 +86,7 @@ pub(crate) fn eval_rows(
         "run",
         move |args: rhai::Array| -> std::result::Result<Map, Box<EvalAltResult>> {
             let argv: Vec<String> = args.into_iter().map(dynamic_to_arg).collect();
-            let out = run_command(&command, &argv, &env, pass_path)
+            let out = run_command(&command, &argv, &env, pass_path, base_dir.as_deref())
                 .map_err(|e| runtime_err(e.to_string()))?;
             let mut map = Map::new();
             map.insert("stdout".into(), out.stdout.into());
