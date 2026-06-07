@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.5.4 — 2026-06-07
+
+### Added
+
+- Rhai-scripted reference traversal (escape hatch over the fixed foreign-key path). YAML
+  stays the primary table-definition format; a per-reference Rhai script is a targeted,
+  serializable override that builds the relationship's target `Vista` at traversal time.
+  Gated behind the new optional `rhai` feature.
+  - `Reference::build_script: Option<String>` plus `Reference::with_build_script(..)`, carrying
+    the per-reference script lowered from the backend extras slot. Lazy: it only evaluates on
+    traversal, so self/cyclic relations cost nothing until walked.
+  - `VistaCapabilities::can_build_ref_via_script` advertises the capability, mirroring the
+    `can_traverse_to_set` precedent.
+  - `TableShell::register_rhai_extensions(&self, &mut rhai::Engine)` — default no-op hook
+    backends override to contribute vendor vocabulary (expression syntax, `with_condition`).
+  - New `rhai_conventional` module owns the engine with a *conventional, uniform* vocabulary
+    over the type-erased `Vista` (`table`, `with_id`, `add_condition_eq`, `add_order`,
+    `add_search`, `set_page_size`, `get_ref`), so any datasource — even engine-less ones —
+    supports the script vocabulary and only loses vendor expression syntax (graceful
+    degradation). Exposes `RhaiVista`, `TargetResolver`, `register_conventional_onto`,
+    `eval_ref_script`, and `eval_modify_script` (the last applies a script to an
+    already-built vista).
+
 ## 0.5.3 — 2026-06-06
 
 ### Removed

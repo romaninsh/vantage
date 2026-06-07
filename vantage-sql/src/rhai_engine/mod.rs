@@ -43,9 +43,14 @@ macro_rules! register_engine {
         type Win = $crate::rhai_engine::RhaiWindow<$V>;
         type Cas = $crate::rhai_engine::RhaiCase<$V>;
 
-        fn __create_engine() -> rhai::Engine {
-            let mut engine = rhai::Engine::new();
-
+        // Register the full SQL vocabulary onto an existing engine. Split out of
+        // `__create_engine` so the same registrations can later be layered onto
+        // vantage-vista's conventional engine for scripted reference traversal
+        // (mirrors SurrealDB's `register_surreal_onto`). Wiring a per-shell
+        // target resolver is the follow-up that flips SQL's
+        // `can_build_ref_via_script` on; until then this only backs
+        // `__create_engine`.
+        fn __register_engine_onto(engine: &mut rhai::Engine) {
             $crate::register_types!(engine, value: $V, select: $Select, join: $Join, cond: $Cond);
             $crate::register_convert!(value: $V);
             $crate::register_constructors!(engine, value: $V);
@@ -56,9 +61,13 @@ macro_rules! register_engine {
 
             // Future phases:
             // $crate::register_aggregates!(engine, value: $V);
-            // $crate::register_window_case!(engine, value: $V);
 
             engine.set_max_expr_depths(256, 256);
+        }
+
+        fn __create_engine() -> rhai::Engine {
+            let mut engine = rhai::Engine::new();
+            __register_engine_onto(&mut engine);
             engine
         }
     };

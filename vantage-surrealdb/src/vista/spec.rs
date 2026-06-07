@@ -1,7 +1,7 @@
 //! YAML-facing types for the SurrealDB Vista driver.
 
 use serde::{Deserialize, Serialize};
-use vantage_vista::{NoExtras, VistaSpec};
+use vantage_vista::VistaSpec;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -35,6 +35,14 @@ pub struct SurrealTableBlock {
     /// alongside `base`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inherit: Option<InheritBlock>,
+    /// A Rhai script applied to the *built* vista as a final step, after the
+    /// YAML table (columns/references/source) is constructed. The vista is
+    /// exposed as `self`; the script narrows or tweaks it with the conventional
+    /// verbs plus vendor expression conditions YAML can't express, e.g.
+    /// `self.with_condition(ident("is_paying_client") == true)`. Composes with
+    /// `table`/`rhai`/`base` (it runs last). Requires the `rhai` feature.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modify: Option<String>,
 }
 
 /// Selects which parts of a `base` vista a derived vista inherits.
@@ -66,7 +74,30 @@ pub struct SurrealColumnBlock {
     pub field: Option<String>,
 }
 
-pub type SurrealVistaSpec = VistaSpec<SurrealTableExtras, SurrealColumnExtras, NoExtras>;
+/// Per-reference SurrealDB block. Mirrors [`SurrealTableExtras`]/
+/// [`SurrealColumnExtras`]: the vendor block nests under a `surreal:` key so it
+/// rides in `ReferenceSpec`'s flattened `driver` slot without colliding with the
+/// uniform `table`/`kind`/`foreign_key` keys.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurrealReferenceExtras {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surreal: Option<SurrealRefBlock>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurrealRefBlock {
+    /// Rhai script that builds the traversal target for this reference, instead
+    /// of the default foreign-key eq-condition path. Evaluated lazily at
+    /// traversal time with the parent `row` in scope. Requires the `rhai`
+    /// feature; ignored by builds without it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rhai: Option<String>,
+}
+
+pub type SurrealVistaSpec =
+    VistaSpec<SurrealTableExtras, SurrealColumnExtras, SurrealReferenceExtras>;
 
 #[cfg(test)]
 mod tests {

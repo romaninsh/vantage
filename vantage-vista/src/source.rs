@@ -361,6 +361,21 @@ pub trait TableShell: Send + Sync + 'static {
         "unknown"
     }
 
+    // ---- Scripting ---------------------------------------------------------
+
+    /// Contribute backend-specific vocabulary to a Rhai engine that
+    /// vantage-vista has already seeded with the conventional `Vista` verbs
+    /// (see the `rhai_conventional` module). Backends with an expression engine
+    /// (SurrealDB, SQL) override this to register `ident`/`==`/`fx`/graph
+    /// constructors plus a `with_condition(<backend expr>)` builder that routes
+    /// a boxed native condition through [`add_raw_condition`](Self::add_raw_condition).
+    ///
+    /// Default is a no-op: engine-less datasources (CSV/Mongo/REST) still get
+    /// the conventional verbs and only lose the vendor expression syntax —
+    /// graceful degradation, not all-or-nothing.
+    #[cfg(feature = "rhai")]
+    fn register_rhai_extensions(&self, _engine: &mut rhai::Engine) {}
+
     // ---- Capability advertisement -----------------------------------------
 
     fn capabilities(&self) -> &VistaCapabilities;
@@ -382,6 +397,9 @@ pub trait TableShell: Send + Sync + 'static {
             "can_set_page_size" => caps.can_set_page_size,
             "can_fetch_page" => caps.can_fetch_page,
             "can_fetch_next" => caps.can_fetch_next,
+            "can_traverse_to_record" => caps.can_traverse_to_record,
+            "can_traverse_to_set" => caps.can_traverse_to_set,
+            "can_build_ref_via_script" => caps.can_build_ref_via_script,
             _ => false,
         }
     }

@@ -1,6 +1,6 @@
 [package]
 name = "vantage-vista"
-version = "0.5.3"
+version = "0.5.4"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Universal, schema-bearing data handle for the Vantage data framework"
@@ -21,6 +21,14 @@ futures-core = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml_ng = "0.10"
 thiserror = "2.0"
+rhai = { version = "1.25", optional = true }
+
+[features]
+# Conventional Rhai vocabulary over the type-erased `Vista` (the engine and
+# builder verbs that back scripted reference traversal). Backends opt in and
+# layer their vendor-specific expression vocabulary on top via
+# `TableShell::register_rhai_extensions`.
+rhai = ["dep:rhai"]
 
 [dev-dependencies]
 tokio = { version = "1.52", features = ["macros", "rt-multi-thread"] }

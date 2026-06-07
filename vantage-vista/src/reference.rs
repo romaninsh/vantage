@@ -8,6 +8,14 @@ pub struct Reference {
     pub target: String,
     pub kind: ReferenceKind,
     pub foreign_key: String,
+    /// Optional Rhai script that *builds* the traversal target itself, in place
+    /// of the default foreign-key eq-condition path. Evaluated lazily at
+    /// traversal time with the parent `row` in scope (see the
+    /// `rhai_conventional` module, available with the `rhai` feature). `None`
+    /// keeps the conventional FK path.
+    /// Lowered from the per-reference YAML extras slot by each backend factory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_script: Option<String>,
 }
 
 /// Schema for a **contained** relation — records embedded in a column of the
@@ -73,7 +81,16 @@ impl Reference {
             target: target.into(),
             kind,
             foreign_key: foreign_key.into(),
+            build_script: None,
         }
+    }
+
+    /// Attach a Rhai build script that constructs the traversal target,
+    /// overriding the default foreign-key eq-condition path. See
+    /// [`build_script`](Self::build_script).
+    pub fn with_build_script(mut self, script: impl Into<String>) -> Self {
+        self.build_script = Some(script.into());
+        self
     }
 }
 
