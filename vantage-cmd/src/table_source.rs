@@ -166,6 +166,7 @@ impl TableSource for Cmd {
             offset,
             id_column: id_field.clone(),
             id: None,
+            row: ciborium::value::Value::Map(vec![]),
         };
 
         let cmd = self.clone();
@@ -217,6 +218,7 @@ impl TableSource for Cmd {
                 offset: None,
                 id_column: id_field.clone(),
                 id: Some(id.clone()),
+                row: ciborium::value::Value::Map(vec![]),
             };
             let cmd = self.clone();
             let name = table_name.clone();
