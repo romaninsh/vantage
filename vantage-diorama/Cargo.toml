@@ -29,6 +29,7 @@ tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "test-util", "sync", "time"] }
 vantage-csv = { path = "../vantage-csv", features = ["vista"] }
 vantage-sql = { path = "../vantage-sql", features = ["sqlite", "vista"] }
+vantage-cmd = { path = "../vantage-cmd" }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite"] }
 cucumber = { version = "0.21", default-features = false, features = ["macros"] }
 insta = { version = "1.41", features = ["yaml", "filters"] }
