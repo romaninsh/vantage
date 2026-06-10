@@ -11,7 +11,7 @@ doctest = false
 
 [dependencies]
 vantage-core = { version = "0.5", path = "../vantage-core" }
-vantage-types = { version = "0.5", path = "../vantage-types" }
+vantage-types = { version = "0.6", path = "../vantage-types" }
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
 ciborium = { version = "0.2", features = ["std"] }
 indexmap = { version = "2.14", features = ["serde"] }

@@ -31,7 +31,7 @@ tracing = "0.1"
 futures = "0.3.32"
 url = "2.5.8"
 uuid = { version = "1.23", features = ["v4"] }
-vantage-types = { version = "0.5", path = "../vantage-types" }
+vantage-types = { version = "0.6", path = "../vantage-types" }
 vantage-core = { version = "0.5", path = "../vantage-core" }
 paste = "1.0"
 indexmap = "2.14"

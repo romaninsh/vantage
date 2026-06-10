@@ -25,6 +25,7 @@ impl Product {
                 t.get_subquery_as::<Category>("category")
                     .unwrap()
                     .select_column("title")
+                    .expect("Category has a 'title' column")
             })
     }
 }
