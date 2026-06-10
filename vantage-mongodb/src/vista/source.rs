@@ -213,8 +213,6 @@ impl TableShell for MongoTableShell {
     }
 
     async fn get_vista_count(&self, _vista: &Vista) -> Result<i64> {
-        // MongoDb is not a SelectableDataSource, so reach the count via the
-        // TableSource method directly (previously routed through TableLike).
         self.table.data_source().get_table_count(&self.table).await
     }
 

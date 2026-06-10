@@ -67,7 +67,7 @@ impl Cmd {
     pub async fn get_table_value_with_row<E>(
         &self,
         table: &Table<Self, E>,
-        id: &String,
+        id: &str,
         row: &Record<CborValue>,
     ) -> Result<Option<Record<CborValue>>>
     where
@@ -77,7 +77,7 @@ impl Cmd {
         let table_name = table.table_name().to_string();
         if !self.has_detail_script(&table_name) {
             let mut all = self.list_table_values(table).await?;
-            return Ok(all.shift_remove(id));
+            return Ok(all.shift_remove(&id.to_string()));
         }
 
         let id_field = table.id_field().map(|c| c.name().to_string());
@@ -93,7 +93,7 @@ impl Cmd {
             limit: None,
             offset: None,
             id_column: id_field.clone(),
-            id: Some(id.clone()),
+            id: Some(id.to_string()),
             row: row_map,
         };
         let cmd = self.clone();

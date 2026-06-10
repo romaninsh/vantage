@@ -42,10 +42,7 @@ async fn try_round_trip(
     id: &str,
     entity: &ValDecimal,
 ) -> Result<ValDecimal, String> {
-    table
-        .replace(&id.to_string(), entity)
-        .await
-        .map_err(|e| e.to_string())?;
+    table.replace(id, entity).await.map_err(|e| e.to_string())?;
     table
         .get(id)
         .await
@@ -246,10 +243,7 @@ async fn try_i64(
     id: &str,
     entity: &ValI64,
 ) -> Result<ValI64, String> {
-    table
-        .replace(&id.to_string(), entity)
-        .await
-        .map_err(|e| e.to_string())?;
+    table.replace(id, entity).await.map_err(|e| e.to_string())?;
     table
         .get(id)
         .await
@@ -360,10 +354,7 @@ async fn try_f64(
     id: &str,
     entity: &ValF64,
 ) -> Result<ValF64, String> {
-    table
-        .replace(&id.to_string(), entity)
-        .await
-        .map_err(|e| e.to_string())?;
+    table.replace(id, entity).await.map_err(|e| e.to_string())?;
     table
         .get(id)
         .await

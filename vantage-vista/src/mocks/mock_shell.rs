@@ -516,11 +516,7 @@ mod tests {
         let mut row: Record<CborValue> = Record::new();
         row.insert("extra".into(), cbor_text("ignored"));
 
-        let got = vista
-            .get_value_with_row(&"x".to_string(), &row)
-            .await
-            .unwrap()
-            .unwrap();
+        let got = vista.get_value_with_row("x", &row).await.unwrap().unwrap();
         assert_eq!(got.get("name"), Some(&cbor_text("Xavier")));
     }
 
