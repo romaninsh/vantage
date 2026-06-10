@@ -15,7 +15,7 @@ impl vantage_expressions::ExprDataSource<AnyPostgresType> for PostgresDB {
         let resolved = resolve_deferred(expr).await?;
 
         // 2. Flatten nested expressions + convert {} to $N (PostgreSQL uses $1, $2, ...)
-        let (sql, params) = prepare_typed_query(&resolved);
+        let (sql, params) = prepare_typed_query(&resolved)?;
 
         // 3. Bind and execute
         let mut query = sqlx::query(&sql);
@@ -96,7 +96,9 @@ async fn resolve_deferred(
 
 /// Flatten an Expression<AnyPostgresType> and convert `{}` placeholders to `$N`.
 /// PostgreSQL uses $1, $2, ... for positional parameters (not ?N like SQLite).
-fn prepare_typed_query(expr: &Expression<AnyPostgresType>) -> (String, Vec<AnyPostgresType>) {
+fn prepare_typed_query(
+    expr: &Expression<AnyPostgresType>,
+) -> vantage_core::Result<(String, Vec<AnyPostgresType>)> {
     let flattener = ExpressionFlattener::new();
     let flattened = flattener.flatten(expr);
 
@@ -105,13 +107,13 @@ fn prepare_typed_query(expr: &Expression<AnyPostgresType>) -> (String, Vec<AnyPo
     let template_parts: Vec<&str> = flattened.template.split("{}").collect();
     let mut param_counter = 0;
 
-    assert_eq!(
-        template_parts.len(),
-        flattened.parameters.len() + 1,
-        "template placeholder count ({}) doesn't match parameter count ({})",
-        template_parts.len() - 1,
-        flattened.parameters.len()
-    );
+    if template_parts.len() != flattened.parameters.len() + 1 {
+        return Err(vantage_core::error!(
+            "template placeholder count doesn't match parameter count",
+            placeholders = template_parts.len() - 1,
+            parameters = flattened.parameters.len()
+        ));
+    }
 
     sql.push_str(template_parts[0]);
 
@@ -137,5 +139,5 @@ fn prepare_typed_query(expr: &Expression<AnyPostgresType>) -> (String, Vec<AnyPo
         }
     }
 
-    (sql, params)
+    Ok((sql, params))
 }

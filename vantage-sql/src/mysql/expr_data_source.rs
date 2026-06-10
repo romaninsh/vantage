@@ -12,7 +12,7 @@ impl vantage_expressions::ExprDataSource<AnyMysqlType> for MysqlDB {
         let resolved = resolve_deferred(expr).await?;
 
         // 2. Flatten nested expressions + convert {} to ? (MySQL uses ? placeholders)
-        let (sql, params) = prepare_typed_query(&resolved);
+        let (sql, params) = prepare_typed_query(&resolved)?;
 
         // 3. Bind and execute
         let mut query = sqlx::query(&sql);
@@ -93,7 +93,9 @@ async fn resolve_deferred(
 }
 
 /// Flatten an Expression<AnyMysqlType> and convert `{}` placeholders to `?`.
-fn prepare_typed_query(expr: &Expression<AnyMysqlType>) -> (String, Vec<AnyMysqlType>) {
+fn prepare_typed_query(
+    expr: &Expression<AnyMysqlType>,
+) -> vantage_core::Result<(String, Vec<AnyMysqlType>)> {
     let flattener = ExpressionFlattener::new();
     let flattened = flattener.flatten(expr);
 
@@ -101,13 +103,13 @@ fn prepare_typed_query(expr: &Expression<AnyMysqlType>) -> (String, Vec<AnyMysql
     let mut params = Vec::new();
     let template_parts: Vec<&str> = flattened.template.split("{}").collect();
 
-    assert_eq!(
-        template_parts.len(),
-        flattened.parameters.len() + 1,
-        "template placeholder count ({}) doesn't match parameter count ({})",
-        template_parts.len() - 1,
-        flattened.parameters.len()
-    );
+    if template_parts.len() != flattened.parameters.len() + 1 {
+        return Err(vantage_core::error!(
+            "template placeholder count doesn't match parameter count",
+            placeholders = template_parts.len() - 1,
+            parameters = flattened.parameters.len()
+        ));
+    }
 
     sql.push_str(template_parts[0]);
 
@@ -132,5 +134,5 @@ fn prepare_typed_query(expr: &Expression<AnyMysqlType>) -> (String, Vec<AnyMysql
         }
     }
 
-    (sql, params)
+    Ok((sql, params))
 }

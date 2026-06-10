@@ -69,7 +69,16 @@ impl TableSource for Redb {
     where
         E: Entity<Self::Value>,
     {
-        panic!("vantage-redb: full-table search is not supported — use indexed eq() instead")
+        // redb cannot do full-table search — return a deferred condition that
+        // errors when resolved, matching how get_table_sum/max/min surface
+        // unsupported features.
+        RedbCondition::Deferred(DeferredFn::from_fn(|| {
+            Box::pin(async {
+                Err::<AnyRedbType, _>(vantage_core::error!(
+                    "redb does not support full-table search — use indexed eq() instead"
+                ))
+            })
+        }))
     }
 
     // ── Read ─────────────────────────────────────────────────────────

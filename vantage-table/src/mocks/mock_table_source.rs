@@ -169,7 +169,8 @@ impl TableSource for MockTableSource {
     where
         E: Entity<Self::Value>,
     {
-        expr_any!("name LIKE '%{}%'", search_value)
+        let pattern = format!("%{}%", search_value);
+        expr_any!("name LIKE {}", pattern)
     }
 
     async fn list_table_values<E>(
