@@ -23,7 +23,7 @@ vantage-types = { version = "0.5", path = "../vantage-types", features = ["serde
 vantage-expressions = { version = "0.5", path = "../vantage-expressions" }
 paste = "1.0"
 
-vantage-dataset = { version = "0.5", path = "../vantage-dataset" }
+vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
 vantage-table = { version = "0.5", path = "../vantage-table" }
 vantage-vista = { version = "0.5", path = "../vantage-vista", optional = true }
 async-trait = "0.1"
