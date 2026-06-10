@@ -20,7 +20,7 @@ async-trait = "0.1"
 indexmap = { version = "2", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 vantage-core = { version = "0.5", path = "../vantage-core" }
-vantage-dataset = { version = "0.5", path = "../vantage-dataset" }
+vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
 vantage-expressions = { version = "0.5", path = "../vantage-expressions" }
 vantage-table = { version = "0.5", path = "../vantage-table" }
 vantage-types = { version = "0.5", path = "../vantage-types", features = ["serde"] }
