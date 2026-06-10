@@ -20,8 +20,8 @@ urlencoding = "2.1"
 uuid = { version = "1", features = ["serde"] }
 vantage-core = { version = "0.5", path = "../vantage-core" }
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
-vantage-expressions = { version = "0.5", path = "../vantage-expressions" }
-vantage-table = { version = "0.5", path = "../vantage-table" }
+vantage-expressions = { version = "0.6", path = "../vantage-expressions" }
+vantage-table = { version = "0.6", path = "../vantage-table" }
 vantage-types = { version = "0.5", path = "../vantage-types", features = ["serde"] }
 vantage-vista = { version = "0.5", path = "../vantage-vista" }
 
