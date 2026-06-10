@@ -177,10 +177,12 @@ impl Vista {
     /// [`TableShell::get_vista_value_with_row`]).
     pub async fn get_value_with_row(
         &self,
-        id: &String,
+        id: &str,
         row: &Record<CborValue>,
     ) -> Result<Option<Record<CborValue>>> {
-        self.source.get_vista_value_with_row(self, id, row).await
+        self.source
+            .get_vista_value_with_row(self, &id.to_string(), row)
+            .await
     }
 
     /// Push a driver-native condition into the wrapped table. The
