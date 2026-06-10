@@ -2,9 +2,7 @@ use async_trait::async_trait;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde_json::Value;
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use vantage_dataset::InsertableValueSet;
 use vantage_dataset::{
     ReadableValueSet, WritableValueSet,
@@ -29,9 +27,19 @@ use crate::{
     traits::{column_like::ColumnLike, table_source::TableSource},
 };
 
+/// A deliberately strict, in-memory `TableSource` for tests.
+///
+/// All row storage lives in a single [`ImDataSource`] — there is no second
+/// count store to drift out of sync, so `get_table_count` always agrees with
+/// what `list`/`get` return, including after writes.
+///
+/// Unlike the production [`ImTable`] (which honours the idempotent trait
+/// contracts), this mock is intentionally *fail-loud* so tests can exercise
+/// error paths: `insert_table_value` errors on a duplicate id, and
+/// `delete_table_value` errors on a missing id. Treat divergence from the
+/// documented idempotency as a feature of this test tool, not a bug.
 #[derive(Clone)]
 pub struct MockTableSource {
-    data: Arc<Mutex<HashMap<String, Vec<Value>>>>,
     im_data_source: ImDataSource,
     select_source: Option<MockSelectableDataSource>,
     query_source: Option<Arc<Mutex<vantage_expressions::mocks::mock_builder::MockBuilder>>>,
@@ -40,7 +48,6 @@ pub struct MockTableSource {
 impl MockTableSource {
     pub fn new() -> Self {
         Self {
-            data: Arc::new(Mutex::new(HashMap::new())),
             im_data_source: ImDataSource::new(),
             select_source: None,
             query_source: None,
@@ -48,29 +55,27 @@ impl MockTableSource {
     }
 
     pub async fn with_data(self, table_name: &str, data: Vec<Value>) -> Self {
-        // Store in HashMap for count operations
-        self.data
-            .lock()
-            .await
-            .insert(table_name.to_string(), data.clone());
-
-        // Also store in ImDataSource for value operations
+        // Single store: seed rows straight into the ImDataSource. Every row must
+        // carry a scalar `id` — fail loudly on test setup that doesn't, rather
+        // than silently dropping rows (which used to make count and list
+        // disagree).
         let im_table = ImTable::<vantage_types::EmptyEntity>::new(&self.im_data_source, table_name);
         for value in data.iter() {
-            if let Some(id_value) = value.get("id") {
-                let id_str = match id_value {
-                    Value::String(s) => s.clone(),
-                    Value::Number(n) => n.to_string(),
-                    _ => {
-                        panic!("[DEBUG] ID field is not a string or number: {:?}", id_value);
-                    }
-                };
-                let record = Record::from(value.clone());
-                let _ = im_table
-                    .replace_value(&id_str, &record)
-                    .await
-                    .expect("Unable to replace value in im_table");
-            }
+            let id_str = match value.get("id") {
+                Some(Value::String(s)) => s.clone(),
+                Some(Value::Number(n)) => n.to_string(),
+                Some(other) => panic!(
+                    "MockTableSource::with_data: row in '{table_name}' has a non-scalar `id` ({other:?}); ids must be a string or number"
+                ),
+                None => panic!(
+                    "MockTableSource::with_data: row in '{table_name}' has no `id` field; every seed row must carry a scalar id"
+                ),
+            };
+            let record = Record::from(value.clone());
+            im_table
+                .replace_value(&id_str, &record)
+                .await
+                .expect("Unable to replace value in im_table");
         }
 
         self
@@ -209,10 +214,7 @@ impl TableSource for MockTableSource {
         E: Entity,
         Self: Sized,
     {
-        match self.data.lock().await.get(table.table_name()) {
-            Some(data) => Ok(data.len() as i64),
-            None => Ok(0),
-        }
+        Ok(self.im_data_source.table_len(table.table_name()) as i64)
     }
 
     async fn get_table_sum<E>(
@@ -421,7 +423,7 @@ impl ExprDataSource<Value> for MockTableSource {
     async fn execute(&self, expr: &Expression<Value>) -> vantage_core::Result<Value> {
         if let Some(ref query_source) = self.query_source {
             let source = {
-                let guard = query_source.lock().await;
+                let guard = query_source.lock().unwrap();
                 guard.clone()
             };
             source.execute(expr).await
@@ -444,7 +446,10 @@ impl ExprDataSource<Value> for MockTableSource {
                 let query_source = query_source_clone.clone();
                 let expr = expr_clone.clone();
                 Box::pin(async move {
-                    let source = query_source.lock().await;
+                    let source = {
+                        let guard = query_source.lock().unwrap();
+                        guard.clone()
+                    };
                     match source.execute(&expr).await {
                         Ok(value) => Ok(ExpressiveEnum::Scalar(value)),
                         Err(e) => Err(e),
@@ -488,38 +493,22 @@ impl TableExprSource for MockTableSource {
     ) -> vantage_expressions::AssociatedExpression<'_, Self, Self::Value, usize> {
         let table_name = table.table_name();
 
-        // Pre-calculate the count from our data
-        let count = tokio::runtime::Handle::try_current()
-            .map(|handle| {
-                // TODO: we shouldn't use block_on here
-                handle.block_on(async {
-                    self.data
-                        .lock()
-                        .await
-                        .get(table_name)
-                        .map(|data| data.len())
-                        .unwrap_or(0)
-                })
-            })
-            .unwrap_or_else(|_| {
-                // Fallback if no runtime is available
-                0
-            });
-
-        // Configure the query source to return this count for the exact query
-        let query_str = format!("select count() from {}", table_name);
-        if let Some(ref query_source) = self.query_source
-            && let Ok(handle) = tokio::runtime::Handle::try_current()
-        {
-            handle.block_on(async {
-                let mut source = query_source.lock().await;
-                *source = source
-                    .clone()
-                    .on_exact_select(&query_str, serde_json::json!(count));
-            });
-        }
+        // Read the count synchronously from the single store — no block_on, no
+        // separate count cache to go stale.
+        let count = self.im_data_source.table_len(table_name);
 
         let expr = expr_any!("select count() from {}", table_name);
+
+        // Seed the query source so executing `expr` resolves to this count.
+        // The key must be the expression's rendered form (what the mock matches
+        // on at execute time), not a hand-built string.
+        if let Some(ref query_source) = self.query_source {
+            let mut source = query_source.lock().unwrap();
+            *source = source
+                .clone()
+                .on_exact_select(expr.preview(), serde_json::json!(count));
+        }
+
         vantage_expressions::AssociatedExpression::new(expr, self)
     }
 
@@ -588,5 +577,54 @@ mod tests {
             Table::<MockTableSource, TestUser>::new("users", mock).into_entity::<TestUser>();
         let count = table.data_source().get_table_count(&table).await.unwrap();
         assert_eq!(count, 2);
+    }
+
+    #[tokio::test]
+    async fn test_count_reflects_writes_and_count_expr_no_block_on() {
+        use vantage_expressions::traits::datasource::ExprDataSource;
+
+        let mock = MockTableSource::new()
+            .with_data(
+                "users",
+                vec![
+                    json!({"id": "1", "name": "Alice"}),
+                    json!({"id": "2", "name": "Bob"}),
+                ],
+            )
+            .await
+            .with_query_source(vantage_expressions::mocks::mock_builder::new());
+        let table = Table::<MockTableSource, TestUser>::new("users", mock);
+
+        // Insert a third row; count derives from the single store, so it must
+        // reflect the write (the old side-store left count stuck at 2).
+        let mut rec = Record::new();
+        rec.insert("name".to_string(), json!("Carol"));
+        table
+            .data_source()
+            .insert_table_value(&table, &"3".to_string(), &rec)
+            .await
+            .unwrap();
+        assert_eq!(table.data_source().get_table_count(&table).await.unwrap(), 3);
+
+        // get_expr_count() used to call Handle::block_on from inside the runtime
+        // and panic. It now reads synchronously and seeds the query source, so
+        // building and executing it under a runtime returns the live count.
+        let count_expr = table.get_expr_count();
+        let raw = table
+            .data_source()
+            .execute(count_expr.expression())
+            .await
+            .unwrap();
+        assert_eq!(raw, json!(3));
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "has no `id` field")]
+    async fn test_with_data_panics_on_idless_row() {
+        // Seed setup that drops the id used to silently vanish from reads while
+        // still being counted; now it fails loudly.
+        let _ = MockTableSource::new()
+            .with_data("users", vec![json!({"name": "NoId"})])
+            .await;
     }
 }

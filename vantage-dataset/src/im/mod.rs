@@ -62,6 +62,14 @@ impl<V: Clone> ImDataSource<V> {
         }
     }
 
+    /// Number of rows currently stored in the named table (`0` if it has never
+    /// been written to). Synchronous and clone-free — reads the row count under
+    /// the storage lock. Lets sync callers (e.g. `MockTableSource`) derive a
+    /// count from the single source of truth instead of a side store.
+    pub fn table_len(&self, table_name: &str) -> usize {
+        self.with_table(table_name, |table| table.len())
+    }
+
     /// Run `f` against a mutable view of the named table (created on demand),
     /// holding the lock across the whole read-modify-write so concurrent
     /// writers can't clobber each other's changes.
