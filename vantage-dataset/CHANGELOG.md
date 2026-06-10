@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.0 — 2026-06-10
+
+- `ImTable` now supports mutability: `insert`, `update`, and `delete` operations through
+  `WritableDataSet`/`WritableValueSet` trait implementations, replacing the previous read-only
+  clone-on-every-op model.
+- `ImDataSource` read-modify-write race fixed — concurrent updates are no longer silently lost.
+- Eliminated full-table clone on every operation; writes now acquire a write lock and apply changes
+  in-place.
+- Added `DatasetInsertable`, `DatasetReadable`, `DatasetWritable`, `ValuesetInsertable`,
+  `ValuesetReadable`, `ValuesetWritable` trait impls for `ImTable`.
+
 ## 0.5.2 — 2026-05-31
 
 - `ImTable::seed` synchronously replaces a table's rows from a known collection, without the async

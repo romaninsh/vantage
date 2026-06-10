@@ -14,17 +14,17 @@ where
         id: &Self::Id,
         record: &Record<Self::Value>,
     ) -> crate::traits::Result<Record<Self::Value>> {
-        let mut table = self.data_source.get_or_create_table(&self.table_name);
+        let stored = self.data_source.with_table_mut(&self.table_name, |table| {
+            // Check if record already exists (idempotent behavior)
+            if let Some(existing_record) = table.get(id) {
+                return existing_record.clone();
+            }
 
-        // Check if record already exists (idempotent behavior)
-        if let Some(existing_record) = table.get(id) {
-            return Ok(existing_record.clone());
-        }
+            table.insert(id.clone(), record.clone());
+            record.clone()
+        });
 
-        table.insert(id.clone(), record.clone());
-        self.data_source.update_table(&self.table_name, table);
-
-        Ok(record.clone())
+        Ok(stored)
     }
 
     async fn replace_value(
@@ -32,10 +32,9 @@ where
         id: &Self::Id,
         record: &Record<Self::Value>,
     ) -> crate::traits::Result<Record<Self::Value>> {
-        let mut table = self.data_source.get_or_create_table(&self.table_name);
-
-        table.insert(id.clone(), record.clone());
-        self.data_source.update_table(&self.table_name, table);
+        self.data_source.with_table_mut(&self.table_name, |table| {
+            table.insert(id.clone(), record.clone());
+        });
 
         Ok(record.clone())
     }
@@ -45,41 +44,37 @@ where
         id: &Self::Id,
         partial: &Record<Self::Value>,
     ) -> crate::traits::Result<Record<Self::Value>> {
-        let mut table = self.data_source.get_or_create_table(&self.table_name);
+        self.data_source.with_table_mut(&self.table_name, |table| {
+            // Check if record exists
+            let mut existing_record = table
+                .get(id)
+                .ok_or_else(|| {
+                    vantage_core::util::error::vantage_error!("Record with id '{}' not found", id)
+                })?
+                .clone();
 
-        // Check if record exists
-        let mut existing_record = table
-            .get(id)
-            .ok_or_else(|| {
-                vantage_core::util::error::vantage_error!("Record with id '{}' not found", id)
-            })?
-            .clone();
+            // Merge the partial fields into the existing record
+            for (key, value) in partial.iter() {
+                existing_record.insert(key.clone(), value.clone());
+            }
 
-        // Merge the partial fields into the existing record
-        for (key, value) in partial.iter() {
-            existing_record.insert(key.clone(), value.clone());
-        }
+            table.insert(id.clone(), existing_record.clone());
 
-        table.insert(id.clone(), existing_record.clone());
-        self.data_source.update_table(&self.table_name, table);
-
-        Ok(existing_record)
+            Ok(existing_record)
+        })
     }
 
     async fn delete(&self, id: &Self::Id) -> crate::traits::Result<()> {
-        let mut table = self.data_source.get_or_create_table(&self.table_name);
-
         // Delete is idempotent - success even if record doesn't exist
-        table.shift_remove(id);
-
-        self.data_source.update_table(&self.table_name, table);
+        self.data_source.with_table_mut(&self.table_name, |table| {
+            table.shift_remove(id);
+        });
         Ok(())
     }
 
     async fn delete_all(&self) -> crate::traits::Result<()> {
-        let mut table = self.data_source.get_or_create_table(&self.table_name);
-        table.clear();
-        self.data_source.update_table(&self.table_name, table);
+        self.data_source
+            .with_table_mut(&self.table_name, |table| table.clear());
         Ok(())
     }
 }

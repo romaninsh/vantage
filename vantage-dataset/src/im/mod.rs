@@ -47,14 +47,32 @@ impl<V> ImDataSource<V> {
 }
 
 impl<V: Clone> ImDataSource<V> {
-    pub(super) fn get_or_create_table(&self, table_name: &str) -> IndexMap<String, Record<V>> {
-        let mut tables = self.tables.lock().unwrap();
-        tables.entry(table_name.to_string()).or_default().clone()
+    /// Run `f` against an immutable view of the named table, holding the lock
+    /// for its duration. Missing tables present as empty (without being
+    /// created). Clone only what you need to return — the borrow ends with `f`.
+    pub(super) fn with_table<R>(
+        &self,
+        table_name: &str,
+        f: impl FnOnce(&IndexMap<String, Record<V>>) -> R,
+    ) -> R {
+        let tables = self.tables.lock().unwrap();
+        match tables.get(table_name) {
+            Some(table) => f(table),
+            None => f(&IndexMap::new()),
+        }
     }
 
-    pub(super) fn update_table(&self, table_name: &str, table: IndexMap<String, Record<V>>) {
+    /// Run `f` against a mutable view of the named table (created on demand),
+    /// holding the lock across the whole read-modify-write so concurrent
+    /// writers can't clobber each other's changes.
+    pub(super) fn with_table_mut<R>(
+        &self,
+        table_name: &str,
+        f: impl FnOnce(&mut IndexMap<String, Record<V>>) -> R,
+    ) -> R {
         let mut tables = self.tables.lock().unwrap();
-        tables.insert(table_name.to_string(), table);
+        let table = tables.entry(table_name.to_string()).or_default();
+        f(table)
     }
 }
 

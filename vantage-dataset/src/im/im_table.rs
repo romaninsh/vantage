@@ -42,7 +42,8 @@ impl<E, V> ImTable<E, V> {
     where
         V: Clone,
     {
-        self.data_source.update_table(&self.table_name, records);
+        self.data_source
+            .with_table_mut(&self.table_name, |table| *table = records);
     }
 }
 
