@@ -231,28 +231,51 @@ impl VantageError {
         self.kind
     }
 
-    /// Mark as [`ErrorKind::Unsupported`] and emit a `tracing::error!`
-    /// event with the error's message and context.
-    pub fn is_unsupported(mut self) -> Self {
+    /// Classify this error as [`ErrorKind::Unsupported`] (builder).
+    ///
+    /// Marking no longer emits a trace on its own — chain [`traced`](Self::traced)
+    /// when you want the `tracing::error!` event: `error!(...).mark_unsupported().traced()`.
+    pub fn mark_unsupported(mut self) -> Self {
         self.kind = ErrorKind::Unsupported;
-        self.emit_trace();
         self
     }
 
-    /// Mark as [`ErrorKind::Unimplemented`] and emit a `tracing::error!`
-    /// event with the error's message and context.
-    pub fn is_unimplemented(mut self) -> Self {
+    /// Classify this error as [`ErrorKind::Unimplemented`] (builder). See
+    /// [`mark_unsupported`](Self::mark_unsupported) on tracing.
+    pub fn mark_unimplemented(mut self) -> Self {
         self.kind = ErrorKind::Unimplemented;
+        self
+    }
+
+    /// Classify this error as [`ErrorKind::IncorrectUsage`] (builder). See
+    /// [`mark_unsupported`](Self::mark_unsupported) on tracing.
+    pub fn mark_incorrect_usage(mut self) -> Self {
+        self.kind = ErrorKind::IncorrectUsage;
+        self
+    }
+
+    /// Emit a `tracing::error!` event with this error's kind, location,
+    /// message and context, then return `self` so it can be chained:
+    /// `error!(...).mark_unsupported().traced()`. Classification and logging
+    /// are deliberately decoupled — marking a kind no longer traces implicitly.
+    pub fn traced(self) -> Self {
         self.emit_trace();
         self
     }
 
-    /// Mark as [`ErrorKind::IncorrectUsage`] and emit a `tracing::error!`
-    /// event with the error's message and context.
-    pub fn is_incorrect_usage(mut self) -> Self {
-        self.kind = ErrorKind::IncorrectUsage;
-        self.emit_trace();
-        self
+    /// `true` if this error is classified as [`ErrorKind::Unsupported`].
+    pub fn is_unsupported(&self) -> bool {
+        self.kind == ErrorKind::Unsupported
+    }
+
+    /// `true` if this error is classified as [`ErrorKind::Unimplemented`].
+    pub fn is_unimplemented(&self) -> bool {
+        self.kind == ErrorKind::Unimplemented
+    }
+
+    /// `true` if this error is classified as [`ErrorKind::IncorrectUsage`].
+    pub fn is_incorrect_usage(&self) -> bool {
+        self.kind == ErrorKind::IncorrectUsage
     }
 
     fn emit_trace(&self) {
@@ -289,7 +312,7 @@ impl VantageError {
 
     /// Create a "capability not implemented" error with method and type information
     #[deprecated(
-        note = "Use `error!(...).is_unsupported()` or `is_unimplemented()` modifier API instead"
+        note = "Use `error!(...).mark_unsupported().traced()` or `.mark_unimplemented().traced()` modifier API instead"
     )]
     pub fn no_capability(method: impl Into<String>, type_name: impl Into<String>) -> Self {
         Self {

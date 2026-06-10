@@ -28,7 +28,11 @@ where
         &self.id
     }
 
-    /// Save the current state of the record back to the dataset
+    /// Save the current state of the entity back to the dataset.
+    ///
+    /// This is a full **replace** (idempotent overwrite): it creates the row if
+    /// missing and removes any fields absent from the in-memory copy. Matches
+    /// [`ActiveRecord::save`], which also replaces.
     pub async fn save(&self) -> Result<E> {
         self.dataset.replace(&self.id, &self.data).await
     }
@@ -110,9 +114,14 @@ where
         &self.id
     }
 
-    /// Save the current state of the record back to the dataset
+    /// Save the current state of the record back to the dataset.
+    ///
+    /// This is a full **replace** (idempotent overwrite), matching
+    /// [`ActiveEntity::save`]: it creates the row if missing and drops any keys
+    /// absent from the in-memory record. (Previously this patched — merging
+    /// fields and never removing any, and erroring if the row had been deleted.)
     pub async fn save(&self) -> Result<Record<D::Value>> {
-        self.dataset.patch_value(&self.id, &self.data).await
+        self.dataset.replace_value(&self.id, &self.data).await
     }
 }
 

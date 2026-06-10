@@ -270,7 +270,7 @@ impl Vista {
                 format!("column '{}' is not orderable", column),
                 column = column
             )
-            .is_unsupported());
+            .mark_unsupported().traced());
         }
         self.source.add_order(column, dir)
     }

@@ -11,10 +11,8 @@
 //! Table<_, S: QuerySource> and Table<_, S: SelectSource> will define
 //! additional properties.
 //!
-//!
-//! Additionally this crate defines the [`TableLike`](crate::traits::table_like::TableLike)
-//! trait — a dyn-safe interface for table-shaped backends. Type erasure for
-//! cross-driver work lives at the Vista layer in `vantage-vista`.
+//! Type erasure for cross-driver work lives at the Vista layer in
+//! `vantage-vista`.
 //! A table abstraction defined over a datasource and entity
 
 pub mod base;

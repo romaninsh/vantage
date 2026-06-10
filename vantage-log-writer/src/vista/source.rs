@@ -111,7 +111,7 @@ impl TableShell for LogWriterTableShell {
     }
 
     fn add_eq_condition(&mut self, _field: &str, _value: &CborValue) -> Result<()> {
-        Err(error!("log-writer is insert-only; conditions are not supported").is_unsupported())
+        Err(error!("log-writer is insert-only; conditions are not supported").mark_unsupported().traced())
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
