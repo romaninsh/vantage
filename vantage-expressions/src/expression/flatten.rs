@@ -33,9 +33,6 @@ pub trait Flatten<T> {
     /// Flatten an expression by resolving all deferred parameters and nested expressions
     fn flatten(&self, expr: &T) -> T;
 
-    /// Resolve deferred parameters in the expression
-    fn resolve_deferred(&self, expr: &T) -> T;
-
     /// Flatten nested expressions into the parent template
     fn flatten_nested(&self, expr: &T) -> T;
 }
@@ -58,15 +55,10 @@ impl Default for ExpressionFlattener {
 
 impl<T: Clone> Flatten<Expression<T>> for ExpressionFlattener {
     fn flatten(&self, expr: &Expression<T>) -> Expression<T> {
-        let resolved = self.resolve_deferred(expr);
-        self.flatten_nested(&resolved)
-    }
-
-    fn resolve_deferred(&self, expr: &Expression<T>) -> Expression<T> {
-        // Note: This is a sync implementation that doesn't actually execute deferred closures
-        // For testing purposes, deferred parameters are left as-is
-        // In real usage, this would be handled by the DataSource execute method
-        expr.clone()
+        // Deferred-parameter resolution is a separate, async phase owned by the
+        // DataSource execute path (see each backend's `resolve_deferred`); it
+        // cannot happen in this sync flattener, so we only flatten nesting here.
+        self.flatten_nested(expr)
     }
 
     fn flatten_nested(&self, expr: &Expression<T>) -> Expression<T> {
