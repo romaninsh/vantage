@@ -190,7 +190,7 @@ impl TableSource for SurrealDB {
 
     async fn get_table_value<E>(
         &self,
-        _table: &Table<Self, E>,
+        table: &Table<Self, E>,
         id: &Self::Id,
     ) -> Result<Option<Record<Self::Value>>>
     where
@@ -213,7 +213,11 @@ impl TableSource for SurrealDB {
             )
         })?;
 
-        let (_thing, record) = parse_cbor_row(map, "id");
+        let id_field_name = table
+            .id_field()
+            .map(|c| c.name().to_string())
+            .unwrap_or_else(|| "id".to_string());
+        let (_thing, record) = parse_cbor_row(map, &id_field_name);
         Ok(Some(record))
     }
 
