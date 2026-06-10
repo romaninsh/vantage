@@ -34,12 +34,8 @@ where
         // Remove id from the stored record since it's in the key
         record.shift_remove("id");
 
-        // Get current table and insert record
-        let mut table = self.data_source.get_or_create_table(&self.table_name);
-        table.insert(id.clone(), record);
-
-        // Update the table in data source
-        self.data_source.update_table(&self.table_name, table);
+        self.data_source
+            .with_table_mut(&self.table_name, |table| table.insert(id.clone(), record));
 
         Ok(id)
     }

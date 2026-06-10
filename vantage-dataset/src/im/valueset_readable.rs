@@ -11,25 +11,26 @@ where
     E: Send + Sync,
 {
     async fn list_values(&self) -> crate::traits::Result<IndexMap<Self::Id, Record<Self::Value>>> {
-        let table = self.data_source.get_or_create_table(&self.table_name);
-        Ok(table)
+        Ok(self
+            .data_source
+            .with_table(&self.table_name, |table| table.clone()))
     }
 
     async fn get_value(&self, id: &Self::Id) -> crate::traits::Result<Option<Record<Self::Value>>> {
-        let table = self.data_source.get_or_create_table(&self.table_name);
-        Ok(table.get(id).cloned())
+        Ok(self
+            .data_source
+            .with_table(&self.table_name, |table| table.get(id).cloned()))
     }
 
     async fn get_some_value(
         &self,
     ) -> crate::traits::Result<Option<(Self::Id, Record<Self::Value>)>> {
-        let table = self.data_source.get_or_create_table(&self.table_name);
-
-        if let Some((id, record)) = table.iter().next() {
-            Ok(Some((id.clone(), record.clone())))
-        } else {
-            Ok(None)
-        }
+        Ok(self.data_source.with_table(&self.table_name, |table| {
+            table
+                .iter()
+                .next()
+                .map(|(id, record)| (id.clone(), record.clone()))
+        }))
     }
 }
 
