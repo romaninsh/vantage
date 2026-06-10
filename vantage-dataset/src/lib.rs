@@ -1,7 +1,7 @@
 #![doc = include_str!("../README.md")]
 
-pub mod traits;
 pub mod record;
+pub mod traits;
 
 pub mod im;
 pub mod mocks;

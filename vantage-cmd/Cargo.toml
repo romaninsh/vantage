@@ -20,7 +20,7 @@ vantage-core = { version = "0.5", path = "../vantage-core" }
 vantage-types = { version = "0.5", path = "../vantage-types", features = ["serde"] }
 vantage-expressions = { version = "0.5", path = "../vantage-expressions" }
 vantage-table = { version = "0.5", path = "../vantage-table" }
-vantage-dataset = { version = "0.5", path = "../vantage-dataset" }
+vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
 vantage-vista = { version = "0.5", path = "../vantage-vista" }
 
 # Rhai builds the argv and parses the output. "serde" gives us the
