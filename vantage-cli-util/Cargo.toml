@@ -17,7 +17,7 @@ serde_json = "1"
 vantage-core = { version = "0.5", path = "../vantage-core" }
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
 vantage-table = { version = "0.6", path = "../vantage-table" }
-vantage-types = { version = "0.5", path = "../vantage-types" }
+vantage-types = { version = "0.6", path = "../vantage-types" }
 vantage-vista = { version = "0.5", path = "../vantage-vista" }
 
 [dev-dependencies]

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0 — 2026-06-10
+
+- `IntoRecord` blanket impls now return `Result` instead of panicking on entity serialization
+  failure.
+
 ## 0.5.0 — 2026-05-23
 
 - Align all internal dependency versions to 0.5+. No public API changes.

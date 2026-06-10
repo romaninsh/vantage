@@ -119,25 +119,28 @@ where
     /// Create a subquery expression that selects a single column from this table.
     ///
     /// Builds `SELECT field FROM table WHERE conditions` — useful as a correlated
-    /// subquery inside `with_expression`:
+    /// subquery inside `with_expression`. Returns `None` if `field` is not a
+    /// column on this table (mirroring [`get_column_expr`](Self::get_column_expr));
+    /// when the caller hardcodes a known column name, `.expect(...)` is fine:
     ///
     /// ```rust,ignore
     /// .with_expression("category", |t| {
     ///     t.get_subquery_as::<Category>("category").unwrap()
     ///         .select_column("name")
+    ///         .expect("Category has a 'name' column")
     /// })
     /// ```
-    pub fn select_column(&self, field: &str) -> Expression<T::Value>
+    pub fn select_column(&self, field: &str) -> Option<Expression<T::Value>>
     where
         T::Column<T::AnyType>: Expressive<T::Value>,
         T::Select: Expressive<T::Value>,
     {
-        let expr = self.get_column_expr(field).unwrap();
+        let expr = self.get_column_expr(field)?;
         let mut select = self.select_empty();
         select.clear_fields();
         select.clear_order_by();
         select.add_expression(expr);
-        select.expr()
+        Some(select.expr())
     }
 }
 
