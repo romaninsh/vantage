@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 — unreleased
+
+- **Breaking:** the error-kind annotators `VantageError::is_unsupported` /
+  `is_unimplemented` / `is_incorrect_usage` are renamed to `mark_unsupported` /
+  `mark_unimplemented` / `mark_incorrect_usage`. The `is_*` names now denote
+  real `&self -> bool` predicates. Trace emission is decoupled from
+  classification: `mark_*` no longer logs implicitly — chain the new
+  `.traced()` to emit the `tracing::error!` event
+  (e.g. `error!(...).mark_unsupported().traced()`).
+
 ## 0.5.0 — 2026-05-23
 
 - Align all internal dependency versions to 0.5+. No public API changes.

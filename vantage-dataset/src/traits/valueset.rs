@@ -48,12 +48,12 @@ use vantage_types::Record;
 ///         // Implementation details...
 ///     }
 ///
-///     async fn get_value(&self, id: &Self::Id) -> Result<Self::Value> {
+///     async fn get_value(&self, id: &Self::Id) -> Result<Option<Record<Self::Value>>> {
 ///         // Find specific record by ID
 ///         // Implementation details...
 ///     }
 ///
-///     async fn get_some_value(&self) -> Result<Option<(Self::Id, Self::Value)>> {
+///     async fn get_some_value(&self) -> Result<Option<(Self::Id, Record<Self::Value>)>> {
 ///         // Return first record if any exists
 ///         // Implementation details...
 ///     }

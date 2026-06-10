@@ -178,7 +178,7 @@ pub trait TableShell: Send + Sync + 'static {
             method = "add_eq_condition",
             source_type = std::any::type_name::<Self>()
         )
-        .is_unimplemented())
+        .mark_unimplemented().traced())
     }
 
     /// Push a driver-native condition into the wrapped table. The
@@ -200,7 +200,7 @@ pub trait TableShell: Send + Sync + 'static {
             method = "add_raw_condition",
             source_type = std::any::type_name::<Self>()
         )
-        .is_unimplemented())
+        .mark_unimplemented().traced())
     }
 
     // ---- Pagination --------------------------------------------------------
@@ -303,7 +303,7 @@ pub trait TableShell: Send + Sync + 'static {
             relation = relation,
             source_type = std::any::type_name::<Self>()
         )
-        .is_unimplemented())
+        .mark_unimplemented().traced())
     }
 
     /// Build the **bare** target of a same-persistence relation as a `Vista` —
@@ -327,7 +327,7 @@ pub trait TableShell: Send + Sync + 'static {
             relation = relation,
             source_type = std::any::type_name::<Self>()
         )
-        .is_unimplemented())
+        .mark_unimplemented().traced())
     }
 
     /// Contained (embedded-in-row) relations this shell exposes, keyed by name.
@@ -353,7 +353,7 @@ pub trait TableShell: Send + Sync + 'static {
             relation = relation,
             source_type = std::any::type_name::<Self>()
         )
-        .is_unimplemented())
+        .mark_unimplemented().traced())
     }
 
     /// Names + cardinalities of the shell's same-persistence references.
@@ -439,7 +439,7 @@ pub trait TableShell: Send + Sync + 'static {
                 capability = capability,
                 source_type = source_type
             )
-            .is_unimplemented()
+            .mark_unimplemented().traced()
         } else {
             error!(
                 format!(
@@ -450,7 +450,7 @@ pub trait TableShell: Send + Sync + 'static {
                 capability = capability,
                 source_type = source_type
             )
-            .is_unsupported()
+            .mark_unsupported().traced()
         }
     }
 }

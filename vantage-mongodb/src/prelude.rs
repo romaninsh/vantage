@@ -12,7 +12,6 @@ pub use vantage_expressions::{Expression, Expressive};
 pub use vantage_table::column::core::Column;
 pub use vantage_table::pagination::Pagination;
 pub use vantage_table::table::Table;
-pub use vantage_table::traits::table_like::TableLike;
 pub use vantage_table::traits::table_source::TableSource;
 pub use vantage_types::{Entity, entity};
 

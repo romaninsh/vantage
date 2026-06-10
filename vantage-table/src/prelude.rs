@@ -12,7 +12,6 @@ pub use crate::column::flags::ColumnFlag;
 
 // Traits
 pub use crate::traits::column_like::ColumnLike;
-pub use crate::traits::table_like::TableLike;
 pub use crate::traits::table_source::TableSource;
 
 // Ordering functionality
