@@ -189,6 +189,13 @@ impl From<Record<ciborium::Value>> for ciborium::Value {
 
 // Clean record conversion traits
 pub trait IntoRecord<T> {
+    /// Convert `self` into a [`Record`].
+    ///
+    /// This is intentionally infallible. The serde-backed blanket impls
+    /// (`T: Serialize`) call `into_record` on a value the caller already holds,
+    /// so serialization failure means a broken `Serialize` impl — a programming
+    /// error, not a runtime condition — and is reported via panic rather than a
+    /// `Result` the caller would have to handle on every conversion.
     fn into_record(self) -> Record<T>;
 }
 
