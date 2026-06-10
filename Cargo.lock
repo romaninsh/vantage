@@ -4800,7 +4800,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-expressions"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4943,7 +4943,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.5.7"
+version = "0.6.0"
 dependencies = [
  "async-stream",
  "async-trait",

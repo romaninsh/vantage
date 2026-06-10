@@ -166,10 +166,16 @@ impl<T: Clone> Expressive<T> for Expression<T> {
 
 impl<T: std::fmt::Display + std::fmt::Debug> Expression<T> {
     pub fn preview(&self) -> String {
-        let mut preview = self.template.clone();
+        // Single pass: split the template on `{}` and interleave rendered
+        // params between the segments. Rendering this way (rather than
+        // repeated `replacen`) means a `{}` *inside* a rendered value can
+        // never be mistaken for the next placeholder.
+        let mut parts = self.template.split("{}");
+        let mut preview = String::new();
+        preview.push_str(parts.next().unwrap_or(""));
         for param in &self.parameters {
-            let param_str = param.preview();
-            preview = preview.replacen("{}", &param_str, 1);
+            preview.push_str(&param.preview());
+            preview.push_str(parts.next().unwrap_or(""));
         }
         preview
     }
@@ -230,5 +236,20 @@ mod tests {
         assert_eq!(expr.template, "SELECT * FROM table WHERE id = {}");
         assert_eq!(expr.parameters.len(), 1);
         assert_eq!(expr.preview(), "SELECT * FROM table WHERE id = 42");
+    }
+
+    #[test]
+    fn test_preview_param_value_containing_placeholder() {
+        // A rendered value that itself contains `{}` must not swallow the
+        // following placeholder. Single-pass interleaving handles this;
+        // the old repeated-`replacen` approach produced "weird{x} = " here.
+        let expr = Expression::new(
+            "{} = {}",
+            vec![
+                ExpressiveEnum::Scalar("weird{}".to_string()),
+                ExpressiveEnum::Scalar("x".to_string()),
+            ],
+        );
+        assert_eq!(expr.preview(), "weird{} = x");
     }
 }
