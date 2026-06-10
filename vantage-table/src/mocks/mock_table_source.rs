@@ -604,7 +604,10 @@ mod tests {
             .insert_table_value(&table, &"3".to_string(), &rec)
             .await
             .unwrap();
-        assert_eq!(table.data_source().get_table_count(&table).await.unwrap(), 3);
+        assert_eq!(
+            table.data_source().get_table_count(&table).await.unwrap(),
+            3
+        );
 
         // get_expr_count() used to call Handle::block_on from inside the runtime
         // and panic. It now reads synchronously and seeds the query source, so
