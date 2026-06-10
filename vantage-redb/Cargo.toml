@@ -15,7 +15,7 @@ vantage-core = { version = "0.5", path = "../vantage-core" }
 vantage-types = { version = "0.5", path = "../vantage-types" }
 vantage-expressions = { version = "0.5", path = "../vantage-expressions" }
 vantage-table = { version = "0.5", path = "../vantage-table" }
-vantage-dataset = { version = "0.5", path = "../vantage-dataset" }
+vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
 
 redb = "2.6"
 ciborium = { version = "0.2", features = ["std"] }
