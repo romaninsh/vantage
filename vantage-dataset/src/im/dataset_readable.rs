@@ -20,14 +20,12 @@ where
 {
     async fn list(&self) -> Result<IndexMap<Self::Id, E>> {
         // Snapshot id+record pairs under the lock; convert outside it.
-        let rows = self
-            .data_source
-            .with_table(&self.table_name, |table| {
-                table
-                    .iter()
-                    .map(|(id, record)| (id.clone(), record.clone()))
-                    .collect::<Vec<_>>()
-            });
+        let rows = self.data_source.with_table(&self.table_name, |table| {
+            table
+                .iter()
+                .map(|(id, record)| (id.clone(), record.clone()))
+                .collect::<Vec<_>>()
+        });
 
         let mut records = IndexMap::new();
         for (id, record) in rows {
