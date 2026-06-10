@@ -19,17 +19,23 @@ where
     <E as TryFromRecord<serde_json::Value>>::Error: std::fmt::Debug,
 {
     async fn list(&self) -> Result<IndexMap<Self::Id, E>> {
-        let table = self.data_source.get_or_create_table(&self.table_name);
-        let mut records = IndexMap::new();
+        // Snapshot id+record pairs under the lock; convert outside it.
+        let rows = self.data_source.with_table(&self.table_name, |table| {
+            table
+                .iter()
+                .map(|(id, record)| (id.clone(), record.clone()))
+                .collect::<Vec<_>>()
+        });
 
-        for (id, record) in table.iter() {
+        let mut records = IndexMap::new();
+        for (id, record) in rows {
             // Add the id field to the record for conversion
-            let mut record_with_id = record.clone();
+            let mut record_with_id = record;
             record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
 
             let entity: E = E::try_from_record(&record_with_id)
                 .map_err(|e| vantage_error!("Failed to convert record to entity: {:?}", e))?;
-            records.insert(id.clone(), entity);
+            records.insert(id, entity);
         }
 
         Ok(records)
@@ -37,13 +43,15 @@ where
 
     async fn get(&self, id: impl Into<Self::Id> + Send) -> Result<Option<E>> {
         let id = id.into();
-        let table = self.data_source.get_or_create_table(&self.table_name);
 
-        let Some(record) = table.get(&id) else {
+        let Some(record) = self
+            .data_source
+            .with_table(&self.table_name, |table| table.get(&id).cloned())
+        else {
             return Ok(None);
         };
 
-        let mut record_with_id = record.clone();
+        let mut record_with_id = record;
         record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
 
         let entity = E::try_from_record(&record_with_id)
@@ -52,19 +60,22 @@ where
     }
 
     async fn get_some(&self) -> Result<Option<(Self::Id, E)>> {
-        let table = self.data_source.get_or_create_table(&self.table_name);
+        let Some((id, record)) = self.data_source.with_table(&self.table_name, |table| {
+            table
+                .iter()
+                .next()
+                .map(|(id, record)| (id.clone(), record.clone()))
+        }) else {
+            return Ok(None);
+        };
 
-        if let Some((id, record)) = table.iter().next() {
-            // Add the id field to the record for conversion
-            let mut record_with_id = record.clone();
-            record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
+        // Add the id field to the record for conversion
+        let mut record_with_id = record;
+        record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
 
-            let entity: E = E::try_from_record(&record_with_id)
-                .map_err(|e| vantage_error!("Failed to convert record to entity: {:?}", e))?;
-            Ok(Some((id.clone(), entity)))
-        } else {
-            Ok(None)
-        }
+        let entity: E = E::try_from_record(&record_with_id)
+            .map_err(|e| vantage_error!("Failed to convert record to entity: {:?}", e))?;
+        Ok(Some((id, entity)))
     }
 }
 

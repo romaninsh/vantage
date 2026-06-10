@@ -304,3 +304,34 @@ async fn test_multiple_tables() {
     assert_eq!(users_after.len(), 0);
     assert_eq!(products_after.len(), 1); // Should be unaffected
 }
+
+// Regression: concurrent writers to the same table must not lose each other's
+// rows. Before the lock-held-across-read-modify-write fix, each writer cloned a
+// snapshot, mutated it, and wrote it back — so racing inserts of distinct ids
+// would clobber one another and only the last writer's row survived.
+#[tokio::test]
+async fn test_concurrent_inserts_no_lost_update() {
+    let ds = ImDataSource::new();
+
+    const N: usize = 200;
+    let mut handles = Vec::with_capacity(N);
+    for i in 0..N {
+        let table = ImTable::<User>::new(&ds, "users");
+        handles.push(tokio::spawn(async move {
+            let user = User {
+                id: Some(format!("user{i}")),
+                name: format!("u{i}"),
+                age: i as i32,
+                active: true,
+            };
+            table.insert(&format!("user{i}"), &user).await.unwrap();
+        }));
+    }
+    for h in handles {
+        h.await.unwrap();
+    }
+
+    let table = ImTable::<User>::new(&ds, "users");
+    let all = table.list().await.unwrap();
+    assert_eq!(all.len(), N, "every concurrent insert must survive");
+}
