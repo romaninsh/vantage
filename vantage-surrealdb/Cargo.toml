@@ -22,8 +22,8 @@ rhai = ["dep:rhai", "vista", "vantage-vista/rhai"]
 [dependencies]
 async-trait = "0.1"
 vantage-core = { version = "0.5", path = "../vantage-core" }
-vantage-expressions = { version = "0.5", path = "../vantage-expressions", features = ["chrono"] }
-vantage-table = { version = "0.5", path = "../vantage-table" }
+vantage-expressions = { version = "0.6", path = "../vantage-expressions", features = ["chrono"] }
+vantage-table = { version = "0.6", path = "../vantage-table" }
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
 vantage-types = { version = "0.5", path = "../vantage-types", features = ["serde"] }
 vantage-vista = { version = "0.5", path = "../vantage-vista", optional = true }

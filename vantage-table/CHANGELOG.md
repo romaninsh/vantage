@@ -1,12 +1,18 @@
 # Changelog
 
+## 0.6.0 — 2026-06-10
+
+- `get_count_via_query` now unwraps single-element arrays (`[{"count": N}]`), matching how
+  SQL/Surreal count queries commonly return results.
+- Unrecognized result shapes are now surfaced as errors instead of silently returning 0.
+
 ## 0.5.7 — 2026-06-06
 
 ### Changed
 
 - Docs only: reference-traversal documentation now points to
-  [`vantage-vista-factory`](https://crates.io/crates/vantage-vista-factory)'s `VistaCatalog`
-  for cross-persistence traversal. No functional or API change.
+  [`vantage-vista-factory`](https://crates.io/crates/vantage-vista-factory)'s `VistaCatalog` for
+  cross-persistence traversal. No functional or API change.
 
 ## 0.5.6 — 2026-06-02
 
@@ -15,15 +21,15 @@
 - A table can now be sourced from an arbitrary sub-`SELECT`, not just a named table.
   [`Table::from_select(ds, alias, select)`](https://docs.rs/vantage-table/0.5.6/vantage_table/table/struct.Table.html)
   builds a derived table that renders `FROM (<select>) AS <alias>`.
-- [`SelectSource<S>`](https://docs.rs/vantage-table/0.5.6/vantage_table/source/enum.SelectSource.html) —
-  the source enum (`Name` or `Query { select, alias }`) that SQL/SurrealDB backends use for
-  their new `TableSource::Source` associated type. Other backends keep `String`.
+- [`SelectSource<S>`](https://docs.rs/vantage-table/0.5.6/vantage_table/source/enum.SelectSource.html)
+  — the source enum (`Name` or `Query { select, alias }`) that SQL/SurrealDB backends use for their
+  new `TableSource::Source` associated type. Other backends keep `String`.
 
 ### Changed
 
 - `TableSource` gains a required `type Source: TableSourceSpec`. Built-in backends are updated;
-  out-of-tree `TableSource` impls must add the associated type (use `String` for a plain
-  named source).
+  out-of-tree `TableSource` impls must add the associated type (use `String` for a plain named
+  source).
 
 ## 0.5.5 — 2026-05-31
 
@@ -32,26 +38,28 @@
 - `Table::with_contained_one` / `with_contained_many` — declare an embedded object/array column as a
   contained relation, surfaced through Vista as an editable sub-table. The closure builds the
   contained record's schema, reusing the normal `Table` column machinery.
-- `Table::get_contained_ref` — the generic, driver-agnostic resolution of a contained relation from a
-  parent row (each backend supplies only its host-column encode/decode pair).
+- `Table::get_contained_ref` — the generic, driver-agnostic resolution of a contained relation from
+  a parent row (each backend supplies only its host-column encode/decode pair).
 - `Table::with_contained_specs` — lowers a YAML `contained:` section into the same registrations,
   reusing the driver's existing column builder.
 - `ContainedRelation<T>`, plus `Table::vista_contained()` / `contained_relation()` for driver
-  factories. See the [contained relations guide](https://romaninsh.github.io/vantage/new-persistence/step9-contained-relations.html).
+  factories. See the
+  [contained relations guide](https://romaninsh.github.io/vantage/new-persistence/step9-contained-relations.html).
 
 ## 0.5.4 — 2026-05-30
 
-Support for [vantage-vista 0.5.1](https://docs.rs/vantage-vista/0.5.1/vantage_vista/)'s nested insert.
+Support for [vantage-vista 0.5.1](https://docs.rs/vantage-vista/0.5.1/vantage_vista/)'s nested
+insert.
 
 ### Added
 
 - `Table::get_ref_target::<E2>(relation)` — builds a relation's target table with **no** join
   condition (the bare table a new related row is inserted into), complementing the row-conditioned
   `get_ref_from_row` / `get_ref_as`.
-- `Table::vista_references()` — snapshots the table's relations as `vantage_vista::Reference`s (name,
-  target, cardinality, foreign key) for driver factories to fold into `VistaMetadata`.
-- `Reference::foreign_key()` on the `Reference` trait — exposes the relation's FK column. **Note:** a
-  new required trait method; external `Reference` impls (beyond the built-in `HasOne` / `HasMany`)
+- `Table::vista_references()` — snapshots the table's relations as `vantage_vista::Reference`s
+  (name, target, cardinality, foreign key) for driver factories to fold into `VistaMetadata`.
+- `Reference::foreign_key()` on the `Reference` trait — exposes the relation's FK column. **Note:**
+  a new required trait method; external `Reference` impls (beyond the built-in `HasOne` / `HasMany`)
   must add it.
 
 ## 0.5.3 — 2026-05-23

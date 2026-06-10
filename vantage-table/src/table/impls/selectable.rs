@@ -210,13 +210,24 @@ where
         let count_query = self.get_count_query();
         let result = self.data_source.execute(&count_query).await?;
 
-        // Extract count from result - could be {"count": 42} or just 42
+        // Unwrap a single-element array, e.g. `[{"count": 42}]` or `[42]`,
+        // which is how SQL/Surreal count queries commonly come back.
+        let result = match result.as_array().map(Vec::as_slice) {
+            Some([single]) => single,
+            _ => &result,
+        };
+
+        // Extract count from result - could be {"count": 42} or just 42.
+        // Anything else is an unexpected shape: surface it rather than
+        // silently reporting zero rows.
         if let Some(count) = result.get("count").and_then(|v| v.as_i64()) {
             Ok(count)
         } else if let Some(count) = result.as_i64() {
             Ok(count)
         } else {
-            Ok(0)
+            Err(vantage_core::util::error::vantage_error!(
+                "count query returned an unexpected result shape: {result}"
+            ))
         }
     }
 }
@@ -273,6 +284,32 @@ mod tests {
         // Test actual count/sum methods - get_count should return 42 from mock query source
         let count = table.get_count_via_query().await.unwrap();
         assert_eq!(count, 42);
+    }
+
+    async fn count_table_returning(
+        count_result: serde_json::Value,
+    ) -> Table<MockTableSource, vantage_types::EmptyEntity> {
+        let mock_select_source = MockSelectableDataSource::new(json!([]));
+        let mock_query_source = vantage_expressions::mocks::mock_builder::new()
+            .on_exact_select("(SELECT COUNT(*) FROM \"users\")", count_result);
+        let source = MockTableSource::new()
+            .with_select_source(mock_select_source)
+            .with_query_source(mock_query_source);
+        Table::<_, vantage_types::EmptyEntity>::new("users", source)
+    }
+
+    #[tokio::test]
+    async fn test_count_unwraps_single_element_array() {
+        // SQL/Surreal count queries commonly return `[{"count": N}]`.
+        let table = count_table_returning(json!([{"count": 7}])).await;
+        assert_eq!(table.get_count_via_query().await.unwrap(), 7);
+    }
+
+    #[tokio::test]
+    async fn test_count_errors_on_unexpected_shape() {
+        // An unrecognized result must surface as an error, not a silent zero.
+        let table = count_table_returning(json!({"total": 5})).await;
+        assert!(table.get_count_via_query().await.is_err());
     }
 
     #[tokio::test]
