@@ -90,7 +90,10 @@ pub trait ReadableValueSet: ValueSet {
     ///
     /// Returns `Ok(None)` when no record exists with the given ID. Returns an
     /// error only if the lookup itself fails.
-    async fn get_value(&self, id: &Self::Id) -> Result<Option<Record<Self::Value>>>;
+    async fn get_value(
+        &self,
+        id: impl Into<Self::Id> + Send,
+    ) -> Result<Option<Record<Self::Value>>>;
 
     /// Retrieve one single record from the set. If records are ordered - return first record.
     /// will return Ok(None).
@@ -140,7 +143,7 @@ pub trait WritableValueSet: ValueSet {
     /// Generate unique ID and store record while avoiding duplicates.
     async fn insert_value(
         &self,
-        id: &Self::Id,
+        id: impl Into<Self::Id> + Send,
         record: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>>;
 
@@ -158,7 +161,7 @@ pub trait WritableValueSet: ValueSet {
     /// Replace with a new version of a record.
     async fn replace_value(
         &self,
-        id: &Self::Id,
+        id: impl Into<Self::Id> + Send,
         record: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>>;
 
@@ -173,7 +176,7 @@ pub trait WritableValueSet: ValueSet {
     /// Update only the modified fields of a record.
     async fn patch_value(
         &self,
-        id: &Self::Id,
+        id: impl Into<Self::Id> + Send,
         partial: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>>;
 
@@ -181,7 +184,7 @@ pub trait WritableValueSet: ValueSet {
     ///
     /// **Idempotent**: Always succeeds, even if the record doesn't exist.
     /// This allows safe cleanup operations without checking existence first.
-    async fn delete(&self, id: &Self::Id) -> Result<()>;
+    async fn delete(&self, id: impl Into<Self::Id> + Send) -> Result<()>;
 
     /// Delete all records in the set (HTTP DELETE without ID)
     ///
@@ -223,7 +226,10 @@ pub trait ActiveRecordSet: ReadableValueSet + WritableValueSet {
     /// - `Ok(Some(RecordValue))`: Record wrapper with change tracking
     /// - `Ok(None)`: No record with this ID
     /// - `Err`: If the lookup itself fails
-    async fn get_value_record(&self, id: &Self::Id) -> Result<Option<ActiveRecord<'_, Self>>>;
+    async fn get_value_record(
+        &self,
+        id: impl Into<Self::Id> + Send,
+    ) -> Result<Option<ActiveRecord<'_, Self>>>;
 
     /// Retrieve all records wrapped for change tracking.
     ///
@@ -243,11 +249,15 @@ impl<T> ActiveRecordSet for T
 where
     T: ReadableValueSet + WritableValueSet + Sync,
 {
-    async fn get_value_record(&self, id: &Self::Id) -> Result<Option<ActiveRecord<'_, Self>>> {
+    async fn get_value_record(
+        &self,
+        id: impl Into<Self::Id> + Send,
+    ) -> Result<Option<ActiveRecord<'_, Self>>> {
+        let id = id.into();
         Ok(self
-            .get_value(id)
+            .get_value(id.clone())
             .await?
-            .map(|record| ActiveRecord::new(id.clone(), record, self)))
+            .map(|record| ActiveRecord::new(id, record, self)))
     }
 
     async fn list_value_records(&self) -> Result<Vec<ActiveRecord<'_, Self>>> {

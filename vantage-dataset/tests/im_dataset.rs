@@ -90,7 +90,7 @@ async fn test_writable_dataset() {
     };
 
     // Test insert (idempotent)
-    let result = table.insert(&"user-1".to_string(), &user).await.unwrap();
+    let result = table.insert("user-1", &user).await.unwrap();
     assert_eq!(result, user);
 
     // Test insert again - should return existing
@@ -100,7 +100,7 @@ async fn test_writable_dataset() {
         age: 25,
         active: false,
     };
-    let result = table.insert(&"user-1".to_string(), &user2).await.unwrap();
+    let result = table.insert("user-1", &user2).await.unwrap();
     assert_eq!(result, user); // Should return original, not new data
 
     // Test replace
@@ -110,10 +110,7 @@ async fn test_writable_dataset() {
         age: 31,
         active: false,
     };
-    let result = table
-        .replace(&"user-1".to_string(), &updated_user)
-        .await
-        .unwrap();
+    let result = table.replace("user-1", &updated_user).await.unwrap();
     assert_eq!(result, updated_user);
 
     // Test patch
@@ -123,21 +120,18 @@ async fn test_writable_dataset() {
         age: 32,
         active: true,
     };
-    let result = table
-        .patch(&"user-1".to_string(), &patch_user)
-        .await
-        .unwrap();
+    let result = table.patch("user-1", &patch_user).await.unwrap();
     assert_eq!(result.name, "Alice Patched");
     assert_eq!(result.age, 32);
     assert!(result.active);
 
     // Test delete
-    table.delete(&"user-1".to_string()).await.unwrap();
-    let result = table.get("user-1".to_string()).await.unwrap();
+    table.delete("user-1").await.unwrap();
+    let result = table.get("user-1").await.unwrap();
     assert!(result.is_none());
 
     // Test delete_all
-    let _ = table.insert(&"user-2".to_string(), &user).await.unwrap();
+    let _ = table.insert("user-2", &user).await.unwrap();
     let _ = table.insert(&"user-3".to_string(), &user).await.unwrap();
 
     table.delete_all().await.unwrap();

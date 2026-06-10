@@ -175,7 +175,7 @@ async fn handle_commands(vista: Vista, commands: Vec<String>) -> vantage_core::R
                     vantage_core::error!("Invalid JSON for CBOR", details = e.to_string())
                 })?;
                 let record = vantage_types::Record::from(cbor_val);
-                vista.insert_value(&id, &record).await?;
+                vista.insert_value(id.clone(), &record).await?;
                 println!("Inserted: {}", id);
             }
             "delete" => {
@@ -194,7 +194,7 @@ async fn handle_commands(vista: Vista, commands: Vec<String>) -> vantage_core::R
                     continue;
                 }
 
-                vista.delete(&id).await?;
+                vista.delete(id.clone()).await?;
                 println!("Deleted: {}", id);
             }
             "caps" => {

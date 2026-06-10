@@ -16,10 +16,14 @@ where
             .with_table(&self.table_name, |table| table.clone()))
     }
 
-    async fn get_value(&self, id: &Self::Id) -> crate::traits::Result<Option<Record<Self::Value>>> {
+    async fn get_value(
+        &self,
+        id: impl Into<Self::Id> + Send,
+    ) -> crate::traits::Result<Option<Record<Self::Value>>> {
+        let id = id.into();
         Ok(self
             .data_source
-            .with_table(&self.table_name, |table| table.get(id).cloned()))
+            .with_table(&self.table_name, |table| table.get(&id).cloned()))
     }
 
     async fn get_some_value(
@@ -59,7 +63,7 @@ mod tests {
         let ds = ImDataSource::new();
         let table = ImTable::<User>::new(&ds, "users");
 
-        let result = table.get_value(&"nonexistent".to_string()).await.unwrap();
+        let result = table.get_value("nonexistent").await.unwrap();
         assert!(result.is_none());
     }
 

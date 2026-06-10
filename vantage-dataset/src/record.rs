@@ -34,7 +34,7 @@ where
     /// missing and removes any fields absent from the in-memory copy. Matches
     /// [`ActiveRecord::save`], which also replaces.
     pub async fn save(&self) -> Result<E> {
-        self.dataset.replace(&self.id, &self.data).await
+        self.dataset.replace(self.id.clone(), &self.data).await
     }
 }
 
@@ -45,7 +45,7 @@ where
 {
     /// Delete this entity from the dataset.
     pub async fn delete(&self) -> Result<()> {
-        self.dataset.delete(&self.id).await
+        self.dataset.delete(self.id.clone()).await
     }
 }
 
@@ -121,7 +121,9 @@ where
     /// absent from the in-memory record. (Previously this patched — merging
     /// fields and never removing any, and erroring if the row had been deleted.)
     pub async fn save(&self) -> Result<Record<D::Value>> {
-        self.dataset.replace_value(&self.id, &self.data).await
+        self.dataset
+            .replace_value(self.id.clone(), &self.data)
+            .await
     }
 }
 

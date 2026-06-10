@@ -13,36 +13,39 @@ where
     T: TableSource,
     E: Entity<T::Value>,
 {
-    async fn insert(&self, id: &Self::Id, entity: &E) -> Result<E> {
+    async fn insert(&self, id: impl Into<Self::Id> + Send, entity: &E) -> Result<E> {
+        let id = id.into();
         let record = entity.clone().into_record();
 
         let result_record = self
             .data_source()
-            .insert_table_value(self, id, &record)
+            .insert_table_value(self, &id, &record)
             .await?;
 
         E::try_from_record(&result_record)
             .map_err(|_| vantage_core::error!("Failed to convert record to entity"))
     }
 
-    async fn replace(&self, id: &Self::Id, entity: &E) -> Result<E> {
+    async fn replace(&self, id: impl Into<Self::Id> + Send, entity: &E) -> Result<E> {
+        let id = id.into();
         let record = entity.clone().into_record();
 
         let result_record = self
             .data_source()
-            .replace_table_value(self, id, &record)
+            .replace_table_value(self, &id, &record)
             .await?;
 
         E::try_from_record(&result_record)
             .map_err(|_| vantage_core::error!("Failed to convert record to entity"))
     }
 
-    async fn patch(&self, id: &Self::Id, partial: &E) -> Result<E> {
+    async fn patch(&self, id: impl Into<Self::Id> + Send, partial: &E) -> Result<E> {
+        let id = id.into();
         let partial_record = partial.clone().into_record();
 
         let result_record = self
             .data_source()
-            .patch_table_value(self, id, &partial_record)
+            .patch_table_value(self, &id, &partial_record)
             .await?;
 
         E::try_from_record(&result_record)
@@ -84,7 +87,7 @@ mod tests {
             name: "Charlie".to_string(),
             age: 35,
         };
-        let inserted = table.insert(&"3".to_string(), &new_user).await.unwrap();
+        let inserted = table.insert("3", &new_user).await.unwrap();
         assert_eq!(inserted.id, Some("3".to_string()));
         assert_eq!(inserted.name, "Charlie");
         assert_eq!(inserted.age, 35);
@@ -95,7 +98,7 @@ mod tests {
             name: "David".to_string(),
             age: 40,
         };
-        let result = table.insert(&"1".to_string(), &duplicate_user).await;
+        let result = table.insert("1", &duplicate_user).await;
         assert!(result.is_err());
 
         // Test replace with existing ID
@@ -104,10 +107,7 @@ mod tests {
             name: "Bob Updated".to_string(),
             age: 26,
         };
-        let replaced = table
-            .replace(&"2".to_string(), &updated_user)
-            .await
-            .unwrap();
+        let replaced = table.replace("2", &updated_user).await.unwrap();
         assert_eq!(replaced.id, Some("2".to_string()));
         assert_eq!(replaced.name, "Bob Updated");
         assert_eq!(replaced.age, 26);
@@ -118,7 +118,7 @@ mod tests {
             name: "Eve".to_string(),
             age: 28,
         };
-        let replaced2 = table.replace(&"4".to_string(), &new_user2).await.unwrap();
+        let replaced2 = table.replace("4", &new_user2).await.unwrap();
         assert_eq!(replaced2.id, Some("4".to_string()));
         assert_eq!(replaced2.name, "Eve");
 
@@ -132,7 +132,7 @@ mod tests {
             name: "Alice Updated".to_string(), // Update name only
             age: 30,                           // Keep original age - patch should preserve this
         };
-        let patched = table.patch(&"1".to_string(), &patch_user).await.unwrap();
+        let patched = table.patch("1", &patch_user).await.unwrap();
         assert_eq!(patched.name, "Alice Updated"); // Name updated
         assert_eq!(patched.age, 30); // Age remains unchanged
 
@@ -142,16 +142,16 @@ mod tests {
             name: "NonExistent".to_string(),
             age: 50,
         };
-        let result2 = table.patch(&"999".to_string(), &patch_user2).await;
+        let result2 = table.patch("999", &patch_user2).await;
         assert!(result2.is_err());
 
         // Test delete
-        table.delete(&"2".to_string()).await.unwrap();
-        let result3 = table.get("2".to_string()).await.unwrap();
+        table.delete("2").await.unwrap();
+        let result3 = table.get("2").await.unwrap();
         assert!(result3.is_none()); // Should be deleted
 
         // Test delete non-existing ID should fail
-        let result4 = table.delete(&"999".to_string()).await;
+        let result4 = table.delete("999").await;
         assert!(result4.is_err());
 
         // Test delete_all
@@ -179,7 +179,7 @@ mod tests {
         };
 
         // The actual conversion should work fine with our TestUser
-        let result = table.insert(&"test".to_string(), &user).await;
+        let result = table.insert("test", &user).await;
         assert!(result.is_ok());
     }
 }

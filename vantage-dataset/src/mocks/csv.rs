@@ -150,7 +150,7 @@ where
 
     async fn get(&self, id: impl Into<Self::Id> + Send) -> Result<Option<T>> {
         let id = id.into();
-        let Some(record) = self.get_value(&id).await? else {
+        let Some(record) = self.get_value(id).await? else {
             return Ok(None);
         };
         let entity = T::try_from_record(&record)
@@ -205,7 +205,11 @@ where
         Ok(records)
     }
 
-    async fn get_value(&self, id: &Self::Id) -> Result<Option<Record<Self::Value>>> {
+    async fn get_value(
+        &self,
+        id: impl Into<Self::Id> + Send,
+    ) -> Result<Option<Record<Self::Value>>> {
+        let id = id.into();
         let content = self
             .csv_ds
             .get_file_content(&self.filename)
@@ -219,7 +223,7 @@ where
             .clone();
 
         for (idx, result) in reader.records().enumerate() {
-            if idx == *id {
+            if idx == id {
                 let csv_record = result.context("Failed to read CSV record")?;
 
                 // Convert CSV record to Record<AnyCsvType>

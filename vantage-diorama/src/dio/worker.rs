@@ -54,10 +54,10 @@ async fn dispatch(dio: &Dio, op: WriteOp) -> Result<()> {
 async fn default_write(dio: &Dio, op: WriteOp) -> Result<()> {
     let master = dio.master();
     match op {
-        WriteOp::Insert { id, record } => master.insert_value(&id, &record).await.map(|_| ()),
-        WriteOp::Replace { id, record } => master.replace_value(&id, &record).await.map(|_| ()),
-        WriteOp::Patch { id, partial } => master.patch_value(&id, &partial).await.map(|_| ()),
-        WriteOp::Delete { id } => master.delete(&id).await,
+        WriteOp::Insert { id, record } => master.insert_value(id, &record).await.map(|_| ()),
+        WriteOp::Replace { id, record } => master.replace_value(id, &record).await.map(|_| ()),
+        WriteOp::Patch { id, partial } => master.patch_value(id, &partial).await.map(|_| ()),
+        WriteOp::Delete { id } => master.delete(id).await,
         WriteOp::DeleteAll => master.delete_all().await,
     }
     .map_err(|e| error!("default write failed", detail = e.to_string()))
