@@ -129,10 +129,7 @@ async fn has_many_traversal_lists_related_rows() -> TestResult {
     let factory = SurrealVistaFactory::new(db.clone()).with_resolver(resolver);
 
     let bakery = factory.build_from_spec(bakery_spec)?;
-    let bakery_row = bakery
-        .get_value(&"hill_valley".to_string())
-        .await?
-        .expect("bakery row");
+    let bakery_row = bakery.get_value("hill_valley").await?.expect("bakery row");
 
     let clients = bakery.get_ref("clients", &bakery_row)?;
     let rows = clients.list_values().await?;
@@ -164,10 +161,7 @@ async fn has_one_traversal_returns_parent_row() -> TestResult {
     let factory = SurrealVistaFactory::new(db.clone()).with_resolver(resolver);
 
     let client = factory.build_from_spec(client_spec)?;
-    let client_row = client
-        .get_value(&"marty".to_string())
-        .await?
-        .expect("client row");
+    let client_row = client.get_value("marty").await?.expect("client row");
 
     let bakery = client.get_ref("bakery", &client_row)?;
     let rows = bakery.list_values().await?;
@@ -197,10 +191,7 @@ async fn many_to_many_via_chained_has_many_through_has_one() -> TestResult {
     let factory = SurrealVistaFactory::new(db.clone()).with_resolver(resolver);
 
     let client = factory.build_from_spec(client_spec)?;
-    let marty = client
-        .get_value(&"marty".to_string())
-        .await?
-        .expect("marty");
+    let marty = client.get_value("marty").await?.expect("marty");
 
     let bakery_for_marty = client.get_ref("bakery", &marty)?;
     let bakery_rows = bakery_for_marty.list_values().await?;

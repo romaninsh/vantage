@@ -93,12 +93,8 @@ async fn main() -> Result<()> {
     let dio = lens.make_dio(master()).await?;
     let facade = dio.vista();
 
-    facade
-        .insert_value(&"t1".to_string(), &record("write docs"))
-        .await?;
-    facade
-        .insert_value(&"t2".to_string(), &record("ship stage 3"))
-        .await?;
+    facade.insert_value("t1", &record("write docs")).await?;
+    facade.insert_value("t2", &record("ship stage 3")).await?;
 
     // Worker drains the queue.
     tokio::time::sleep(Duration::from_millis(50)).await;

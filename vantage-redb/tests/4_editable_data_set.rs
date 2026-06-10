@@ -25,7 +25,7 @@ fn record(fields: &[(&str, AnyRedbType)]) -> Record<AnyRedbType> {
 async fn seed(table: &Table<Redb, EmptyEntity>) {
     table
         .insert_value(
-            &"a".to_string(),
+            "a",
             &record(&[
                 ("name", AnyRedbType::new("Alpha".to_string())),
                 ("price", AnyRedbType::new(10i64)),
@@ -35,7 +35,7 @@ async fn seed(table: &Table<Redb, EmptyEntity>) {
         .unwrap();
     table
         .insert_value(
-            &"b".to_string(),
+            "b",
             &record(&[
                 ("name", AnyRedbType::new("Beta".to_string())),
                 ("price", AnyRedbType::new(20i64)),
@@ -54,15 +54,11 @@ async fn test_insert() {
         ("name", AnyRedbType::new("Gamma".to_string())),
         ("price", AnyRedbType::new(30i64)),
     ]);
-    let result = table.insert_value(&"c".to_string(), &rec).await.unwrap();
+    let result = table.insert_value("c", &rec).await.unwrap();
     assert_eq!(result["name"].try_get::<String>(), Some("Gamma".into()));
     assert_eq!(result["price"].try_get::<i64>(), Some(30));
 
-    let fetched = table
-        .get_value(&"c".to_string())
-        .await
-        .unwrap()
-        .expect("row exists");
+    let fetched = table.get_value("c").await.unwrap().expect("row exists");
     assert_eq!(fetched["name"].try_get::<String>(), Some("Gamma".into()));
 }
 
@@ -75,13 +71,9 @@ async fn test_replace_overwrites_all_fields() {
         ("name", AnyRedbType::new("Alpha Replaced".to_string())),
         ("price", AnyRedbType::new(99i64)),
     ]);
-    table.replace_value(&"a".to_string(), &rec).await.unwrap();
+    table.replace_value("a", &rec).await.unwrap();
 
-    let fetched = table
-        .get_value(&"a".to_string())
-        .await
-        .unwrap()
-        .expect("row a exists");
+    let fetched = table.get_value("a").await.unwrap().expect("row a exists");
     assert_eq!(
         fetched["name"].try_get::<String>(),
         Some("Alpha Replaced".into())
@@ -95,13 +87,9 @@ async fn test_patch_merges_fields() {
     seed(&table).await;
 
     let partial = record(&[("price", AnyRedbType::new(55i64))]);
-    table.patch_value(&"a".to_string(), &partial).await.unwrap();
+    table.patch_value("a", &partial).await.unwrap();
 
-    let fetched = table
-        .get_value(&"a".to_string())
-        .await
-        .unwrap()
-        .expect("row a exists");
+    let fetched = table.get_value("a").await.unwrap().expect("row a exists");
     assert_eq!(fetched["price"].try_get::<i64>(), Some(55));
     // name untouched
     assert_eq!(fetched["name"].try_get::<String>(), Some("Alpha".into()));
@@ -113,7 +101,7 @@ async fn test_patch_missing_row_errors() {
     seed(&table).await;
 
     let partial = record(&[("price", AnyRedbType::new(55i64))]);
-    let result = table.patch_value(&"nope".to_string(), &partial).await;
+    let result = table.patch_value("nope", &partial).await;
     assert!(result.is_err());
 }
 
@@ -122,9 +110,7 @@ async fn test_delete_one() {
     let (_tmp, table) = fresh_table("del");
     seed(&table).await;
 
-    WritableValueSet::delete(&table, &"a".to_string())
-        .await
-        .unwrap();
+    WritableValueSet::delete(&table, "a").await.unwrap();
 
     let all = table.list_values().await.unwrap();
     assert_eq!(all.len(), 1);
@@ -167,10 +153,10 @@ async fn test_replace_creates_if_missing() {
         ("name", AnyRedbType::new("Brand new".to_string())),
         ("price", AnyRedbType::new(7i64)),
     ]);
-    table.replace_value(&"new".to_string(), &rec).await.unwrap();
+    table.replace_value("new", &rec).await.unwrap();
 
     let fetched = table
-        .get_value(&"new".to_string())
+        .get_value("new")
         .await
         .unwrap()
         .expect("upserted row exists");

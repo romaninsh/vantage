@@ -55,7 +55,7 @@ async fn seed() -> (tempfile::NamedTempFile, Redb) {
     ] {
         clients
             .insert(
-                &id.to_string(),
+                id,
                 &Client {
                     name: name.into(),
                     is_paying,
@@ -74,7 +74,7 @@ async fn seed() -> (tempfile::NamedTempFile, Redb) {
     ] {
         orders
             .insert(
-                &id.to_string(),
+                id,
                 &Order {
                     client_id: client_id.into(),
                     total,

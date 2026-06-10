@@ -63,7 +63,7 @@ async fn test_insert() {
         name: "Gamma".into(),
         price: 30,
     };
-    let result = table.insert(&"c".to_string(), &item).await.unwrap();
+    let result = table.insert("c", &item).await.unwrap();
     assert_eq!(result.name, "Gamma");
     assert_eq!(result.price, 30);
 
@@ -79,7 +79,7 @@ async fn test_replace() {
         name: "Alpha Replaced".into(),
         price: 99,
     };
-    table.replace(&"a".to_string(), &item).await.unwrap();
+    table.replace("a", &item).await.unwrap();
 
     let fetched = table.get("a").await.unwrap().expect("row a");
     assert_eq!(fetched.name, "Alpha Replaced");
@@ -94,7 +94,7 @@ async fn test_patch() {
         name: "".into(),
         price: 55,
     };
-    table.patch(&"a".to_string(), &partial).await.unwrap();
+    table.patch("a", &partial).await.unwrap();
 
     let fetched = table.get("a").await.unwrap().expect("row a");
     assert_eq!(fetched.price, 55);
@@ -104,7 +104,7 @@ async fn test_patch() {
 async fn test_delete() {
     let (_db, table) = setup("delete").await;
 
-    table.delete(&"a".to_string()).await.unwrap();
+    table.delete("a").await.unwrap();
 
     let all = table.list().await.unwrap();
     assert_eq!(all.len(), 1);

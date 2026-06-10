@@ -59,13 +59,13 @@ async fn test_get_some_record_modify_workflow() {
         Table::<MockTableSource, EmptyEntity>::new("users", mock.await).into_entity::<TestUser>();
 
     // Test get_entity by ID - existing entity
-    let alice = table.get_entity(&"1".to_string()).await.unwrap().unwrap();
+    let alice = table.get_entity("1").await.unwrap().unwrap();
     assert_eq!(alice.name, "Alice");
     assert_eq!(alice.id(), "1");
     assert!(!alice.active);
 
     // Test get_entity by ID - non-existent entity
-    let missing = table.get_entity(&"999".to_string()).await.unwrap();
+    let missing = table.get_entity("999").await.unwrap();
     assert!(missing.is_none());
 
     // Test get_some_entity (any entity)
@@ -92,7 +92,7 @@ async fn test_get_some_record_modify_workflow() {
     record.save().await.unwrap();
 
     // Verify changes persisted by fetching the record again using get_entity
-    let updated_record = table.get_entity(&"1".to_string()).await.unwrap().unwrap();
+    let updated_record = table.get_entity("1").await.unwrap().unwrap();
     assert_eq!(updated_record.name, "Alice Updated");
     assert_eq!(updated_record.email, "alice.new@test.com");
     assert!(updated_record.active);
@@ -207,14 +207,14 @@ async fn test_active_entity_delete() {
     let table =
         Table::<MockTableSource, EmptyEntity>::new("users", mock.await).into_entity::<TestUser>();
 
-    let alice = table.get_entity(&"1".to_string()).await.unwrap().unwrap();
+    let alice = table.get_entity("1").await.unwrap().unwrap();
     alice.delete().await.unwrap();
 
-    let missing = table.get_entity(&"1".to_string()).await.unwrap();
+    let missing = table.get_entity("1").await.unwrap();
     assert!(missing.is_none());
 
     // Other rows untouched.
-    let bob = table.get_entity(&"2".to_string()).await.unwrap();
+    let bob = table.get_entity("2").await.unwrap();
     assert!(bob.is_some());
 }
 
@@ -230,13 +230,13 @@ async fn test_active_entity_reload() {
     let table =
         Table::<MockTableSource, EmptyEntity>::new("users", mock.await).into_entity::<TestUser>();
 
-    let mut alice = table.get_entity(&"1".to_string()).await.unwrap().unwrap();
+    let mut alice = table.get_entity("1").await.unwrap().unwrap();
     assert!(!alice.active);
 
     // Simulate an external write
     table
         .replace(
-            &"1".to_string(),
+            "1",
             &TestUser {
                 id: Some("1".to_string()),
                 name: "Alice".into(),
@@ -266,12 +266,10 @@ async fn test_active_entity_reload_missing() {
     let table =
         Table::<MockTableSource, EmptyEntity>::new("users", mock.await).into_entity::<TestUser>();
 
-    let mut alice = table.get_entity(&"1".to_string()).await.unwrap().unwrap();
+    let mut alice = table.get_entity("1").await.unwrap().unwrap();
 
     // Delete via the table — the ActiveEntity's id is now orphaned.
-    WritableValueSet::delete(&table, &"1".to_string())
-        .await
-        .unwrap();
+    WritableValueSet::delete(&table, "1").await.unwrap();
 
     let result = alice.reload().await;
     assert!(result.is_err());
@@ -293,7 +291,7 @@ async fn test_empty_table_record_methods() {
 
     // Test get_entity or new_entity pattern
     let mut user = table
-        .get_entity(&"new_user".to_string())
+        .get_entity("new_user")
         .await
         .unwrap()
         .unwrap_or_else(|| {
@@ -316,11 +314,7 @@ async fn test_empty_table_record_methods() {
     user.save().await.unwrap();
 
     // Verify it was created and saved
-    let saved_user = table
-        .get_entity(&"new_user".to_string())
-        .await
-        .unwrap()
-        .unwrap();
+    let saved_user = table.get_entity("new_user").await.unwrap().unwrap();
     assert_eq!(saved_user.name, "New User");
     assert_eq!(saved_user.email, "updated@example.com");
     assert!(saved_user.active);

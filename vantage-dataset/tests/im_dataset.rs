@@ -132,7 +132,7 @@ async fn test_writable_dataset() {
 
     // Test delete_all
     let _ = table.insert("user-2", &user).await.unwrap();
-    let _ = table.insert(&"user-3".to_string(), &user).await.unwrap();
+    let _ = table.insert("user-3", &user).await.unwrap();
 
     table.delete_all().await.unwrap();
     let result = table.list().await.unwrap();
@@ -151,7 +151,7 @@ async fn test_full_crud_cycle() {
         price: 1200,
         available: true,
     };
-    let result = table.insert(&"prod-1".to_string(), &product).await.unwrap();
+    let result = table.insert("prod-1", &product).await.unwrap();
     assert_eq!(result, product);
 
     // Read
@@ -169,10 +169,7 @@ async fn test_full_crud_cycle() {
         price: 1500,
         available: true,
     };
-    let result = table
-        .replace(&"prod-1".to_string(), &updated_product)
-        .await
-        .unwrap();
+    let result = table.replace("prod-1", &updated_product).await.unwrap();
     assert_eq!(result, updated_product);
 
     // Verify update
@@ -185,7 +182,7 @@ async fn test_full_crud_cycle() {
     assert_eq!(retrieved.price, 1500);
 
     // Delete
-    table.delete(&"prod-1".to_string()).await.unwrap();
+    table.delete("prod-1").await.unwrap();
     let result = table.get("prod-1".to_string()).await.unwrap();
     assert!(result.is_none());
 }
@@ -204,7 +201,7 @@ async fn test_record_field_handling() {
     };
 
     // Insert user
-    table.insert(&"test-user".to_string(), &user).await.unwrap();
+    table.insert("test-user", &user).await.unwrap();
 
     // Retrieve and verify ID is properly restored
     let retrieved = table
@@ -225,7 +222,7 @@ async fn test_record_field_handling() {
         active: false,
     };
 
-    let patched = table.patch(&"test-user".to_string(), &patch).await.unwrap();
+    let patched = table.patch("test-user", &patch).await.unwrap();
     assert_eq!(patched.id, Some("test-user".to_string())); // ID should remain unchanged
     assert_eq!(patched.name, "Patched Name");
     assert_eq!(patched.age, 43);
@@ -244,7 +241,7 @@ async fn test_error_conditions() {
         age: 30,
         active: true,
     };
-    let result = table.patch(&"nonexistent".to_string(), &user).await;
+    let result = table.patch("nonexistent", &user).await;
     assert!(result.is_err());
 
     // Test get on non-existent record
@@ -273,14 +270,8 @@ async fn test_multiple_tables() {
         available: true,
     };
 
-    user_table
-        .insert(&"user-1".to_string(), &user)
-        .await
-        .unwrap();
-    product_table
-        .insert(&"prod-1".to_string(), &product)
-        .await
-        .unwrap();
+    user_table.insert("user-1", &user).await.unwrap();
+    product_table.insert("prod-1", &product).await.unwrap();
 
     // Verify isolation
     let users = user_table.list().await.unwrap();
@@ -318,7 +309,7 @@ async fn test_concurrent_inserts_no_lost_update() {
                 age: i as i32,
                 active: true,
             };
-            table.insert(&format!("user{i}"), &user).await.unwrap();
+            table.insert(format!("user{i}"), &user).await.unwrap();
         }));
     }
     for h in handles {
