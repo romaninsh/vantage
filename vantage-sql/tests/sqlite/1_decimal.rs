@@ -72,7 +72,7 @@ async fn test_text_decimal() {
         name: "d".into(),
         value: dec("123456.789012"),
     };
-    let inserted = t.insert(&"t1".to_string(), &orig).await.unwrap();
+    let inserted = t.insert("t1", &orig).await.unwrap();
     assert_eq!(inserted, orig);
     let fetched = t.get("t1").await.unwrap().expect("row exists");
     assert_eq!(fetched, orig);
@@ -86,7 +86,7 @@ async fn test_text_high_precision() {
         name: "hp".into(),
         value: dec("99999999999999999.123456789012345"),
     };
-    let inserted = t.insert(&"t2".to_string(), &orig).await.unwrap();
+    let inserted = t.insert("t2", &orig).await.unwrap();
     assert_eq!(inserted, orig);
     let fetched = t.get("t2").await.unwrap().expect("row exists");
     assert_eq!(fetched, orig);
@@ -104,7 +104,7 @@ async fn test_numeric_decimal() {
         name: "d".into(),
         value: dec("123456.789012"),
     };
-    let inserted = t.insert(&"n1".to_string(), &orig).await.unwrap();
+    let inserted = t.insert("n1", &orig).await.unwrap();
     assert_eq!(inserted, orig);
     let fetched = t.get("n1").await.unwrap().expect("row exists");
     assert_eq!(fetched, orig);
@@ -119,7 +119,7 @@ async fn test_numeric_high_precision_lossy() {
         name: "hp".into(),
         value: dec("99999999999999999.123456789012345"),
     };
-    let inserted = t.insert(&"n2".to_string(), &orig).await.unwrap();
+    let inserted = t.insert("n2", &orig).await.unwrap();
     // NUMERIC affinity rounds to f64: 1e17
     assert_ne!(inserted, orig);
 }
@@ -136,7 +136,7 @@ async fn test_real_simple() {
         name: "d".into(),
         value: dec("123.456"),
     };
-    let inserted = t.insert(&"r1".to_string(), &orig).await.unwrap();
+    let inserted = t.insert("r1", &orig).await.unwrap();
     let diff = (inserted.value - orig.value).abs();
     assert!(diff < dec("0.001"), "diff too large: {}", diff);
 }
@@ -153,7 +153,7 @@ async fn test_integer_whole() {
         name: "d".into(),
         value: dec("42"),
     };
-    let inserted = t.insert(&"i1".to_string(), &orig).await.unwrap();
+    let inserted = t.insert("i1", &orig).await.unwrap();
     assert_eq!(inserted.value, dec("42"));
 }
 
@@ -165,7 +165,7 @@ async fn test_integer_truncates() {
         name: "frac".into(),
         value: dec("123.999"),
     };
-    let inserted = t.insert(&"i2".to_string(), &orig).await.unwrap();
+    let inserted = t.insert("i2", &orig).await.unwrap();
     // SQLite INTEGER affinity — the tag string "123.999" is bound as text,
     // SQLite may store as-is or convert depending on affinity rules
     let v = inserted.value;

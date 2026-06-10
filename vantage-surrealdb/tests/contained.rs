@@ -102,7 +102,7 @@ async fn contains_many_eager_writeback_on_real_surreal() {
 
     // Patch the first line; re-read the parent and confirm it landed.
     lines
-        .patch_value(&"0".to_string(), &rec(&[("a", int(99))]))
+        .patch_value("0", &rec(&[("a", int(99))]))
         .await
         .unwrap();
     let after2 = vista.get_value(&id).await.unwrap().unwrap();
@@ -167,7 +167,7 @@ async fn contained_record_traverses_out_to_product() {
     // line -> product traversal resolves to the real product row.
     let row = vista.get_value(&id).await.unwrap().unwrap();
     let lines = vista.get_ref("lines", &row).unwrap();
-    let line0 = lines.get_value(&"0".to_string()).await.unwrap().unwrap();
+    let line0 = lines.get_value("0").await.unwrap().unwrap();
     let product = lines.get_ref("product", &line0).unwrap();
     let (_pid, prod) = product.get_some_value().await.unwrap().unwrap();
     assert_eq!(prod.get("name"), Some(&text("Flux Capacitor Cupcake")));

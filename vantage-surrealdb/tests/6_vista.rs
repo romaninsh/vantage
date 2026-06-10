@@ -112,7 +112,7 @@ async fn vista_get_value_by_id() -> TestResult {
     let vista = db.vista_factory().from_table(table)?;
 
     // Bare id — shell prefixes with table name.
-    let row = vista.get_value(&"alpha".to_string()).await?.expect("found");
+    let row = vista.get_value("alpha").await?.expect("found");
     assert_eq!(row.get("name"), Some(&CborValue::Text("Alpha".to_string())));
 
     // Full record id also works.
@@ -123,7 +123,7 @@ async fn vista_get_value_by_id() -> TestResult {
         Some(&CborValue::Text("Alpha".to_string()))
     );
 
-    let missing = vista.get_value(&"nope".to_string()).await?;
+    let missing = vista.get_value("nope").await?;
     assert!(missing.is_none());
 
     Ok(())
@@ -201,20 +201,17 @@ async fn vista_writes_round_trip_via_cbor() -> TestResult {
     .into_iter()
     .collect();
 
-    vista.insert_value(&"delta".to_string(), &record).await?;
+    vista.insert_value("delta", &record).await?;
 
-    let fetched = vista
-        .get_value(&"delta".to_string())
-        .await?
-        .expect("inserted");
+    let fetched = vista.get_value("delta").await?.expect("inserted");
     assert_eq!(fetched.get("name"), Some(&CborValue::Text("Delta".into())));
     assert_eq!(
         fetched.get("price"),
         Some(&CborValue::Integer(99i64.into()))
     );
 
-    vista.delete(&"delta".to_string()).await?;
-    assert!(vista.get_value(&"delta".to_string()).await?.is_none());
+    vista.delete("delta").await?;
+    assert!(vista.get_value("delta").await?.is_none());
 
     Ok(())
 }

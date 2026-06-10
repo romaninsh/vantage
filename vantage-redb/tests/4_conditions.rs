@@ -29,15 +29,15 @@ async fn seeded_with_status_indexed() -> (tempfile::NamedTempFile, Table<Redb, E
         .with_column(Column::<String>::new("status").with_flag(ColumnFlag::Indexed));
 
     table
-        .insert_value(&"a".to_string(), &product("Alpha", 10, "active"))
+        .insert_value("a", &product("Alpha", 10, "active"))
         .await
         .unwrap();
     table
-        .insert_value(&"b".to_string(), &product("Beta", 20, "active"))
+        .insert_value("b", &product("Beta", 20, "active"))
         .await
         .unwrap();
     table
-        .insert_value(&"c".to_string(), &product("Gamma", 30, "archived"))
+        .insert_value("c", &product("Gamma", 30, "archived"))
         .await
         .unwrap();
     (path, table)
@@ -106,7 +106,7 @@ async fn test_id_eq_short_circuits_without_index() {
 
     let mut r: Record<AnyRedbType> = Record::new();
     r.insert("body".into(), AnyRedbType::new("hi".to_string()));
-    table.insert_value(&"n1".to_string(), &r).await.unwrap();
+    table.insert_value("n1", &r).await.unwrap();
 
     let mut q = table.clone();
     let id_col = q["id"].clone();
@@ -128,7 +128,7 @@ async fn test_id_eq_missing_returns_empty() {
     // Insert and remove to force the table to be created.
     let mut r: Record<AnyRedbType> = Record::new();
     r.insert("body".into(), AnyRedbType::new("seed".to_string()));
-    table.insert_value(&"seed".to_string(), &r).await.unwrap();
+    table.insert_value("seed", &r).await.unwrap();
 
     let mut q = table.clone();
     let id_col = q["id"].clone();
@@ -149,7 +149,7 @@ async fn test_id_in_short_circuits() {
     for n in ["one", "two", "three"] {
         let mut r: Record<AnyRedbType> = Record::new();
         r.insert("body".into(), AnyRedbType::new(n.to_string()));
-        table.insert_value(&n.to_string(), &r).await.unwrap();
+        table.insert_value(n, &r).await.unwrap();
     }
 
     let mut q = table.clone();

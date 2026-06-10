@@ -409,7 +409,7 @@ mod tests {
         assert!(rows.contains_key("1"));
         assert_eq!(rows["2"].get("name"), Some(&cbor_text("Bob")));
 
-        let alice = vista.get_value(&"1".to_string()).await.unwrap().unwrap();
+        let alice = vista.get_value("1").await.unwrap().unwrap();
         assert_eq!(alice.get("name"), Some(&cbor_text("Alice")));
 
         assert_eq!(vista.get_count().await.unwrap(), 2);
@@ -457,66 +457,46 @@ mod tests {
 
         // insert_value with explicit id
         let inserted = vista
-            .insert_value(
-                &"alice".to_string(),
-                &record(&[("name", cbor_text("Alice"))]),
-            )
+            .insert_value("alice", &record(&[("name", cbor_text("Alice"))]))
             .await
             .unwrap();
         assert_eq!(inserted.get("id"), Some(&cbor_text("alice")));
 
         // duplicate insert_value fails
-        let dup = vista.insert_value(&"alice".to_string(), &record(&[])).await;
+        let dup = vista.insert_value("alice", &record(&[])).await;
         assert!(dup.is_err());
 
         // replace_value upserts
         vista
-            .replace_value(
-                &"alice".to_string(),
-                &record(&[("name", cbor_text("Alicia"))]),
-            )
+            .replace_value("alice", &record(&[("name", cbor_text("Alicia"))]))
             .await
             .unwrap();
-        let renamed = vista
-            .get_value(&"alice".to_string())
-            .await
-            .unwrap()
-            .unwrap();
+        let renamed = vista.get_value("alice").await.unwrap().unwrap();
         assert_eq!(renamed.get("name"), Some(&cbor_text("Alicia")));
 
         // patch_value merges
         vista
             .patch_value(
-                &"alice".to_string(),
+                "alice",
                 &record(&[("email", cbor_text("alice@example.com"))]),
             )
             .await
             .unwrap();
-        let patched = vista
-            .get_value(&"alice".to_string())
-            .await
-            .unwrap()
-            .unwrap();
+        let patched = vista.get_value("alice").await.unwrap().unwrap();
         assert_eq!(patched.get("name"), Some(&cbor_text("Alicia")));
         assert_eq!(patched.get("email"), Some(&cbor_text("alice@example.com")));
 
         // delete
-        vista.delete(&"alice".to_string()).await.unwrap();
-        assert!(
-            vista
-                .get_value(&"alice".to_string())
-                .await
-                .unwrap()
-                .is_none()
-        );
+        vista.delete("alice").await.unwrap();
+        assert!(vista.get_value("alice").await.unwrap().is_none());
 
         // delete_all
         vista
-            .insert_value(&"a".to_string(), &record(&[("name", cbor_text("A"))]))
+            .insert_value("a", &record(&[("name", cbor_text("A"))]))
             .await
             .unwrap();
         vista
-            .insert_value(&"b".to_string(), &record(&[("name", cbor_text("B"))]))
+            .insert_value("b", &record(&[("name", cbor_text("B"))]))
             .await
             .unwrap();
         vista.delete_all().await.unwrap();

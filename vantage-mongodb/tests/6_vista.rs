@@ -107,9 +107,7 @@ async fn vista_get_value_by_id() -> TestResult {
     let row = vista.get_value(id.to_string()).await?.expect("found");
     assert_eq!(row.get("name"), Some(&CborValue::Text("Tart".to_string())));
 
-    let missing = vista
-        .get_value(&"nonexistenthex000000000000".to_string())
-        .await?;
+    let missing = vista.get_value("nonexistenthex000000000000").await?;
     assert!(missing.is_none());
 
     teardown(&db, &name).await;
@@ -556,10 +554,10 @@ async fn contained_array_round_trips_on_mongo() -> TestResult {
         "lines".to_string(),
         CborValue::Array(vec![line("a", 1), line("b", 2)]),
     );
-    vista.insert_value(&"o1".to_string(), &order).await?;
+    vista.insert_value("o1", &order).await?;
 
     // The embedded array reads back natively (not a string).
-    let doc = vista.get_value(&"o1".to_string()).await?.unwrap();
+    let doc = vista.get_value("o1").await?.unwrap();
     assert!(matches!(doc.get("lines"), Some(CborValue::Array(_))));
     let lines = vista.get_ref("lines", &doc)?;
     assert_eq!(lines.list_values().await?.len(), 2);
@@ -571,7 +569,7 @@ async fn contained_array_round_trips_on_mongo() -> TestResult {
     let id = lines.insert_return_id_value(&new).await?;
     assert_eq!(id, "2");
 
-    let doc2 = vista.get_value(&"o1".to_string()).await?.unwrap();
+    let doc2 = vista.get_value("o1").await?.unwrap();
     let CborValue::Array(stored) = doc2.get("lines").unwrap() else {
         panic!("lines should be a BSON array");
     };
@@ -580,15 +578,11 @@ async fn contained_array_round_trips_on_mongo() -> TestResult {
     // Patch one line; confirm it persisted.
     let mut patch = Record::new();
     patch.insert("qty".to_string(), CborValue::Integer(99i64.into()));
-    lines.patch_value(&"0".to_string(), &patch).await?;
-    let doc3 = vista.get_value(&"o1".to_string()).await?.unwrap();
+    lines.patch_value("0", &patch).await?;
+    let doc3 = vista.get_value("o1").await?.unwrap();
     let lines3 = vista.get_ref("lines", &doc3)?;
     assert_eq!(
-        lines3
-            .get_value(&"0".to_string())
-            .await?
-            .unwrap()
-            .get("qty"),
+        lines3.get_value("0").await?.unwrap().get("qty"),
         Some(&CborValue::Integer(99i64.into()))
     );
 
@@ -621,7 +615,7 @@ contained:
     let vista = db.vista_factory().from_yaml(yaml)?;
     assert_eq!(vista.list_contained().len(), 1);
 
-    let doc = vista.get_value(&"o1".to_string()).await?.unwrap();
+    let doc = vista.get_value("o1").await?.unwrap();
     let lines = vista.get_ref("lines", &doc)?;
     assert_eq!(lines.list_values().await?.len(), 1);
 
@@ -630,7 +624,7 @@ contained:
     line.insert("qty".to_string(), CborValue::Integer(2i64.into()));
     lines.insert_return_id_value(&line).await?;
 
-    let doc2 = vista.get_value(&"o1".to_string()).await?.unwrap();
+    let doc2 = vista.get_value("o1").await?.unwrap();
     let lines2 = vista.get_ref("lines", &doc2)?;
     assert_eq!(lines2.list_values().await?.len(), 2);
 

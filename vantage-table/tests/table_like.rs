@@ -75,12 +75,12 @@ async fn vista_value_round_trip() {
     record.insert("available".to_string(), CborValue::Bool(true));
 
     vista
-        .insert_value(&"item1".to_string(), &record)
+        .insert_value("item1", &record)
         .await
         .expect("insert_value should succeed");
 
     let retrieved = vista
-        .get_value(&"item1".to_string())
+        .get_value("item1")
         .await
         .expect("get_value should not error")
         .expect("item1 should exist");
@@ -97,17 +97,11 @@ async fn vista_count_and_some_value() {
 
     let mut a = Record::new();
     a.insert("name".to_string(), CborValue::Text("Alpha".into()));
-    vista
-        .insert_value(&"a".to_string(), &a)
-        .await
-        .expect("insert a");
+    vista.insert_value("a", &a).await.expect("insert a");
 
     let mut b = Record::new();
     b.insert("name".to_string(), CborValue::Text("Bravo".into()));
-    vista
-        .insert_value(&"b".to_string(), &b)
-        .await
-        .expect("insert b");
+    vista.insert_value("b", &b).await.expect("insert b");
 
     assert_eq!(vista.get_count().await.expect("count"), 2);
     let some = vista
