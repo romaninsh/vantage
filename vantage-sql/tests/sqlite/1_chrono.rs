@@ -72,7 +72,7 @@ async fn test_chrono_text_columns() {
     let table = setup().await;
     let original = test_event();
 
-    let inserted = table.insert(&"evt1".to_string(), &original).await.unwrap();
+    let inserted = table.insert("evt1", &original).await.unwrap();
     assert_eq!(inserted, original);
 
     let fetched = table.get("evt1").await.unwrap().expect("row exists");
@@ -136,7 +136,7 @@ async fn test_chrono_text_fixed_offset() {
             .unwrap(),
     };
 
-    let inserted = table.insert(&"fix1".to_string(), &original).await.unwrap();
+    let inserted = table.insert("fix1", &original).await.unwrap();
     assert_eq!(inserted, original);
 
     let fetched = table.get("fix1").await.unwrap().expect("row exists");
@@ -171,10 +171,7 @@ async fn test_chrono_text_subsec() {
     let table = setup().await;
     let original = test_event_subsec();
 
-    let inserted = table
-        .insert(&"evt_sub".to_string(), &original)
-        .await
-        .unwrap();
+    let inserted = table.insert("evt_sub", &original).await.unwrap();
     assert_eq!(inserted, original);
 
     let fetched = table.get("evt_sub").await.unwrap().expect("row exists");

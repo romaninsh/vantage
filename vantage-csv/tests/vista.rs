@@ -60,16 +60,13 @@ async fn vista_get_value_by_id() -> Result<()> {
         .with_column_of::<bool>("is_paying_client");
     let vista = csv.vista_factory().from_table(table)?;
 
-    let doc = vista
-        .get_value(&"doc".to_string())
-        .await?
-        .expect("doc exists");
+    let doc = vista.get_value("doc").await?.expect("doc exists");
     assert_eq!(
         doc.get("name"),
         Some(&CborValue::Text("Doc Brown".to_string()))
     );
 
-    let missing = vista.get_value(&"nonexistent".to_string()).await?;
+    let missing = vista.get_value("nonexistent").await?;
     assert!(missing.is_none());
     Ok(())
 }
@@ -113,7 +110,7 @@ async fn vista_writes_return_read_only_error() -> Result<()> {
     // CSV doesn't advertise can_insert/can_delete → Unsupported, not the
     // Unimplemented placeholder that would mean a driver bug.
     let insert_err = vista
-        .insert_value(&"x".to_string(), &empty)
+        .insert_value("x", &empty)
         .await
         .expect_err("insert should be unsupported");
     assert_eq!(insert_err.kind(), ErrorKind::Unsupported);
@@ -124,7 +121,7 @@ async fn vista_writes_return_read_only_error() -> Result<()> {
     );
 
     let delete_err = vista
-        .delete(&"x".to_string())
+        .delete("x")
         .await
         .expect_err("delete should be unsupported");
     assert_eq!(delete_err.kind(), ErrorKind::Unsupported);

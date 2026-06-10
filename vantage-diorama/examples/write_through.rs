@@ -58,15 +58,15 @@ async fn main() -> Result<()> {
                     }
                     match op {
                         WriteOp::Insert { id, record } => {
-                            dio.master().insert_value(&id, &record).await?;
+                            dio.master().insert_value(id.clone(), &record).await?;
                             dio.cache().insert_value(&id, &record).await?;
                         }
                         WriteOp::Replace { id, record } => {
-                            dio.master().replace_value(&id, &record).await?;
+                            dio.master().replace_value(id.clone(), &record).await?;
                             dio.cache().insert_value(&id, &record).await?;
                         }
                         WriteOp::Patch { id, partial } => {
-                            dio.master().patch_value(&id, &partial).await?;
+                            dio.master().patch_value(id.clone(), &partial).await?;
                             // Patch on cache: read-modify-write.
                             let mut merged = dio.cache().get_value(&id).await?.unwrap_or_default();
                             for (k, v) in &partial {
@@ -75,7 +75,7 @@ async fn main() -> Result<()> {
                             dio.cache().insert_value(&id, &merged).await?;
                         }
                         WriteOp::Delete { id } => {
-                            dio.master().delete(&id).await?;
+                            dio.master().delete(id.clone()).await?;
                             dio.cache().delete_value(&id).await?;
                         }
                         WriteOp::DeleteAll => {
@@ -93,12 +93,8 @@ async fn main() -> Result<()> {
     let dio = lens.make_dio(master()).await?;
     let facade = dio.vista();
 
-    facade
-        .insert_value(&"t1".to_string(), &record("write docs"))
-        .await?;
-    facade
-        .insert_value(&"t2".to_string(), &record("ship stage 3"))
-        .await?;
+    facade.insert_value("t1", &record("write docs")).await?;
+    facade.insert_value("t2", &record("ship stage 3")).await?;
 
     // Worker drains the queue.
     tokio::time::sleep(Duration::from_millis(50)).await;

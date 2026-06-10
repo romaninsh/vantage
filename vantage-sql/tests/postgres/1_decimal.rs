@@ -42,10 +42,7 @@ async fn try_round_trip(
     id: &str,
     entity: &ValDecimal,
 ) -> Result<ValDecimal, String> {
-    table
-        .replace(&id.to_string(), entity)
-        .await
-        .map_err(|e| e.to_string())?;
+    table.replace(id, entity).await.map_err(|e| e.to_string())?;
     table
         .get(id)
         .await

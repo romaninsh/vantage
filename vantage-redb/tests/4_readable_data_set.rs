@@ -27,23 +27,20 @@ async fn seeded_table() -> (tempfile::NamedTempFile, Table<Redb, EmptyEntity>) {
 
     table
         .insert_value(
-            &"flux_cupcake".to_string(),
+            "flux_cupcake",
             &product_record("Flux Capacitor Cupcake", 120, 300),
         )
         .await
         .unwrap();
     table
         .insert_value(
-            &"delorean_donut".to_string(),
+            "delorean_donut",
             &product_record("DeLorean Doughnut", 135, 250),
         )
         .await
         .unwrap();
     table
-        .insert_value(
-            &"time_tart".to_string(),
-            &product_record("Time Tart", 220, 200),
-        )
+        .insert_value("time_tart", &product_record("Time Tart", 220, 200))
         .await
         .unwrap();
 
@@ -71,7 +68,7 @@ async fn test_get_product_by_id() {
     let (_tmp, table) = seeded_table().await;
 
     let record = table
-        .get_value(&"delorean_donut".to_string())
+        .get_value("delorean_donut")
         .await
         .unwrap()
         .expect("delorean_donut exists");
@@ -86,7 +83,7 @@ async fn test_get_product_by_id() {
 async fn test_get_missing_id_returns_none() {
     let (_tmp, table) = seeded_table().await;
 
-    let result = table.get_value(&"nonexistent".to_string()).await.unwrap();
+    let result = table.get_value("nonexistent").await.unwrap();
     assert!(result.is_none());
 }
 
@@ -115,10 +112,8 @@ async fn test_get_some_on_empty_table_returns_none() {
     // empty (redb refuses to scan a never-opened table).
     let mut r: Record<AnyRedbType> = Record::new();
     r.insert("name".into(), AnyRedbType::new("seed".to_string()));
-    table.insert_value(&"seed".to_string(), &r).await.unwrap();
-    WritableValueSet::delete(&table, &"seed".to_string())
-        .await
-        .unwrap();
+    table.insert_value("seed", &r).await.unwrap();
+    WritableValueSet::delete(&table, "seed").await.unwrap();
 
     let result = table.get_some_value().await.unwrap();
     assert!(result.is_none());

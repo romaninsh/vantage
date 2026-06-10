@@ -6,8 +6,4 @@ impl ConditionHandle {
     pub(crate) fn new(id: i64) -> Self {
         Self(id)
     }
-
-    pub(crate) fn id(&self) -> i64 {
-        self.0
-    }
 }

@@ -28,8 +28,8 @@ use vantage_aws::AwsAccount;
 use vantage_aws::dynamodb::DynamoDB;
 use vantage_aws::models::dynamodb::tables_table;
 use vantage_dataset::traits::ReadableValueSet;
+use vantage_table::prelude::TableSource;
 use vantage_table::table::Table;
-use vantage_table::traits::table_like::TableLike;
 use vantage_types::EmptyEntity;
 
 #[derive(Parser)]
@@ -86,7 +86,11 @@ async fn main() -> Result<()> {
     let db = DynamoDB::new(aws);
     for name in &names {
         let count_table: Table<DynamoDB, EmptyEntity> = Table::new(name.as_str(), db.clone());
-        let count = match count_table.get_count().await {
+        let count = match count_table
+            .data_source()
+            .get_table_count(&count_table)
+            .await
+        {
             Ok(n) => format!("{} items", n),
             Err(e) => format!("count failed: {}", e),
         };

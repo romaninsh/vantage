@@ -198,7 +198,7 @@ impl TableShell for MongoTableShell {
         id: &String,
     ) -> Result<Option<Record<CborValue>>> {
         let mongo_id = self.parse_id(id);
-        let Some(record) = self.table.get_value(&mongo_id).await? else {
+        let Some(record) = self.table.get_value(mongo_id.clone()).await? else {
             return Ok(None);
         };
         Ok(Some(self.unflatten_to_cbor(record)))
@@ -213,7 +213,7 @@ impl TableShell for MongoTableShell {
     }
 
     async fn get_vista_count(&self, _vista: &Vista) -> Result<i64> {
-        self.table.get_count().await
+        self.table.data_source().get_table_count(&self.table).await
     }
 
     async fn insert_vista_value(
@@ -224,7 +224,10 @@ impl TableShell for MongoTableShell {
     ) -> Result<Record<CborValue>> {
         let mongo_id = self.parse_id(id);
         let mongo_record = self.flatten_for_write(record);
-        let inserted = self.table.insert_value(&mongo_id, &mongo_record).await?;
+        let inserted = self
+            .table
+            .insert_value(mongo_id.clone(), &mongo_record)
+            .await?;
         Ok(self.unflatten_to_cbor(inserted))
     }
 
@@ -236,7 +239,10 @@ impl TableShell for MongoTableShell {
     ) -> Result<Record<CborValue>> {
         let mongo_id = self.parse_id(id);
         let mongo_record = self.flatten_for_write(record);
-        let replaced = self.table.replace_value(&mongo_id, &mongo_record).await?;
+        let replaced = self
+            .table
+            .replace_value(mongo_id.clone(), &mongo_record)
+            .await?;
         Ok(self.unflatten_to_cbor(replaced))
     }
 
@@ -248,13 +254,16 @@ impl TableShell for MongoTableShell {
     ) -> Result<Record<CborValue>> {
         let mongo_id = self.parse_id(id);
         let mongo_partial = self.flatten_for_write(partial);
-        let patched = self.table.patch_value(&mongo_id, &mongo_partial).await?;
+        let patched = self
+            .table
+            .patch_value(mongo_id.clone(), &mongo_partial)
+            .await?;
         Ok(self.unflatten_to_cbor(patched))
     }
 
     async fn delete_vista_value(&self, _vista: &Vista, id: &String) -> Result<()> {
         let mongo_id = self.parse_id(id);
-        self.table.delete(&mongo_id).await
+        self.table.delete(mongo_id.clone()).await
     }
 
     async fn delete_vista_all_values(&self, _vista: &Vista) -> Result<()> {

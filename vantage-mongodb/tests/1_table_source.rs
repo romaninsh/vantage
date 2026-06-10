@@ -72,7 +72,7 @@ async fn test_insert_and_list() {
         ("is_deleted", AnyMongoType::new(false)),
     ]);
 
-    table.insert_value(&id, &rec).await.unwrap();
+    table.insert_value(id.clone(), &rec).await.unwrap();
 
     let values = table.list_values().await.unwrap();
     assert_eq!(values.len(), 1);
@@ -97,9 +97,13 @@ async fn test_get_value_by_id() {
         ("calories", AnyMongoType::new(200i64)),
         ("is_deleted", AnyMongoType::new(false)),
     ]);
-    table.insert_value(&id, &rec).await.unwrap();
+    table.insert_value(id.clone(), &rec).await.unwrap();
 
-    let fetched = table.get_value(&id).await.unwrap().expect("row exists");
+    let fetched = table
+        .get_value(id.clone())
+        .await
+        .unwrap()
+        .expect("row exists");
     assert_eq!(fetched["name"].try_get::<String>(), Some("Tart".into()));
 
     teardown(&db, &db_name).await;
@@ -115,7 +119,7 @@ async fn test_get_some_value() {
 
     let id = MongoId::from(bson::oid::ObjectId::new());
     let rec = record(&[("name", AnyMongoType::new("Pie".to_string()))]);
-    table.insert_value(&id, &rec).await.unwrap();
+    table.insert_value(id.clone(), &rec).await.unwrap();
 
     let (got_id, got_rec) = table.get_some_value().await.unwrap().unwrap();
     assert_eq!(got_id, id);
@@ -136,7 +140,7 @@ async fn test_count() {
     for i in 0..3 {
         let rec = record(&[("name", AnyMongoType::new(format!("Item {}", i)))]);
         table
-            .insert_value(&MongoId::from(bson::oid::ObjectId::new()), &rec)
+            .insert_value(MongoId::from(bson::oid::ObjectId::new()), &rec)
             .await
             .unwrap();
     }
@@ -160,7 +164,7 @@ async fn test_sum_max_min() {
             ("price", AnyMongoType::new(p)),
         ]);
         table
-            .insert_value(&MongoId::from(bson::oid::ObjectId::new()), &rec)
+            .insert_value(MongoId::from(bson::oid::ObjectId::new()), &rec)
             .await
             .unwrap();
     }
@@ -191,15 +195,19 @@ async fn test_replace() {
         ("name", AnyMongoType::new("Old".to_string())),
         ("price", AnyMongoType::new(10i64)),
     ]);
-    table.insert_value(&id, &rec).await.unwrap();
+    table.insert_value(id.clone(), &rec).await.unwrap();
 
     let replacement = record(&[
         ("name", AnyMongoType::new("New".to_string())),
         ("price", AnyMongoType::new(99i64)),
     ]);
-    table.replace_value(&id, &replacement).await.unwrap();
+    table.replace_value(id.clone(), &replacement).await.unwrap();
 
-    let fetched = table.get_value(&id).await.unwrap().expect("row exists");
+    let fetched = table
+        .get_value(id.clone())
+        .await
+        .unwrap()
+        .expect("row exists");
     assert_eq!(fetched["name"].try_get::<String>(), Some("New".into()));
     assert_eq!(fetched["price"].try_get::<i64>(), Some(99));
 
@@ -217,13 +225,17 @@ async fn test_patch() {
         ("price", AnyMongoType::new(50i64)),
         ("calories", AnyMongoType::new(200i64)),
     ]);
-    table.insert_value(&id, &rec).await.unwrap();
+    table.insert_value(id.clone(), &rec).await.unwrap();
 
     // Patch only the price — name and calories should be untouched
     let patch = record(&[("price", AnyMongoType::new(75i64))]);
-    table.patch_value(&id, &patch).await.unwrap();
+    table.patch_value(id.clone(), &patch).await.unwrap();
 
-    let fetched = table.get_value(&id).await.unwrap().expect("row exists");
+    let fetched = table
+        .get_value(id.clone())
+        .await
+        .unwrap()
+        .expect("row exists");
     assert_eq!(fetched["name"].try_get::<String>(), Some("Original".into()));
     assert_eq!(fetched["price"].try_get::<i64>(), Some(75));
     assert_eq!(fetched["calories"].try_get::<i64>(), Some(200));
@@ -238,10 +250,10 @@ async fn test_delete() {
 
     let id = MongoId::from(bson::oid::ObjectId::new());
     let rec = record(&[("name", AnyMongoType::new("Gone".to_string()))]);
-    table.insert_value(&id, &rec).await.unwrap();
+    table.insert_value(id.clone(), &rec).await.unwrap();
     assert_eq!(table.get_count().await.unwrap(), 1);
 
-    WritableValueSet::delete(&table, &id).await.unwrap();
+    WritableValueSet::delete(&table, id.clone()).await.unwrap();
     assert_eq!(table.get_count().await.unwrap(), 0);
 
     teardown(&db, &db_name).await;
@@ -255,7 +267,7 @@ async fn test_delete_all() {
     for i in 0..4 {
         let rec = record(&[("name", AnyMongoType::new(format!("X{}", i)))]);
         table
-            .insert_value(&MongoId::from(bson::oid::ObjectId::new()), &rec)
+            .insert_value(MongoId::from(bson::oid::ObjectId::new()), &rec)
             .await
             .unwrap();
     }
@@ -278,7 +290,11 @@ async fn test_insert_return_id() {
     ]);
     let id = table.insert_return_id_value(&rec).await.unwrap();
 
-    let fetched = table.get_value(&id).await.unwrap().expect("row exists");
+    let fetched = table
+        .get_value(id.clone())
+        .await
+        .unwrap()
+        .expect("row exists");
     assert_eq!(fetched["name"].try_get::<String>(), Some("Auto".into()));
 
     teardown(&db, &db_name).await;
@@ -298,7 +314,7 @@ async fn test_condition_filter() {
             ("is_deleted", AnyMongoType::new(deleted)),
         ]);
         table
-            .insert_value(&MongoId::from(bson::oid::ObjectId::new()), &rec)
+            .insert_value(MongoId::from(bson::oid::ObjectId::new()), &rec)
             .await
             .unwrap();
     }
@@ -331,7 +347,7 @@ async fn test_condition_gt() {
             ("price", AnyMongoType::new(price)),
         ]);
         table
-            .insert_value(&MongoId::from(bson::oid::ObjectId::new()), &rec)
+            .insert_value(MongoId::from(bson::oid::ObjectId::new()), &rec)
             .await
             .unwrap();
     }
@@ -369,7 +385,7 @@ async fn test_multiple_conditions() {
             ("is_deleted", AnyMongoType::new(deleted)),
         ]);
         table
-            .insert_value(&MongoId::from(bson::oid::ObjectId::new()), &rec)
+            .insert_value(MongoId::from(bson::oid::ObjectId::new()), &rec)
             .await
             .unwrap();
     }

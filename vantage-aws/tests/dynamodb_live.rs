@@ -76,7 +76,7 @@ async fn insert_get_delete_round_trip() -> vantage_core::Result<()> {
     let id = DynamoId::new(format!("{}-cupcake", prefix));
     let rec = build_record(id.as_str(), "Cupcake", 120);
 
-    let written = table.insert_value(&id, &rec).await?;
+    let written = table.insert_value(id.clone(), &rec).await?;
     assert_eq!(
         written["name"].try_get::<String>(),
         Some("Cupcake".to_string()),
@@ -89,13 +89,13 @@ async fn insert_get_delete_round_trip() -> vantage_core::Result<()> {
     );
 
     let fetched = table
-        .get_value(&id)
+        .get_value(id.clone())
         .await?
         .expect("just-inserted item should be found");
     assert_eq!(fetched["name"].try_get::<String>(), Some("Cupcake".into()));
 
-    table.delete(&id).await?;
-    let after_delete = table.get_value(&id).await?;
+    table.delete(id.clone()).await?;
+    let after_delete = table.get_value(id.clone()).await?;
     assert!(after_delete.is_none(), "item should be gone after delete");
 
     Ok(())
@@ -117,7 +117,7 @@ async fn list_returns_inserted_items() -> vantage_core::Result<()> {
 
     for (i, id) in ids.iter().enumerate() {
         let rec = build_record(id.as_str(), &format!("Item-{}", i), (i as i64) * 10);
-        table.insert_value(id, &rec).await?;
+        table.insert_value(id.clone(), &rec).await?;
     }
 
     let all: IndexMap<DynamoId, Record<AnyDynamoType>> = table.list_values().await?;
@@ -133,7 +133,7 @@ async fn list_returns_inserted_items() -> vantage_core::Result<()> {
 
     // Cleanup.
     for id in &ids {
-        table.delete(id).await?;
+        table.delete(id.clone()).await?;
     }
     Ok(())
 }
@@ -150,21 +150,21 @@ async fn replace_overwrites_existing_item() -> vantage_core::Result<()> {
     let id = DynamoId::new(format!("{}-replace", run_prefix()));
 
     table
-        .insert_value(&id, &build_record(id.as_str(), "Original", 100))
+        .insert_value(id.clone(), &build_record(id.as_str(), "Original", 100))
         .await?;
 
     table
-        .replace_value(&id, &build_record(id.as_str(), "Updated", 200))
+        .replace_value(id.clone(), &build_record(id.as_str(), "Updated", 200))
         .await?;
 
     let fetched = table
-        .get_value(&id)
+        .get_value(id.clone())
         .await?
         .expect("item should exist after replace");
     assert_eq!(fetched["name"].try_get::<String>(), Some("Updated".into()));
     assert_eq!(fetched["price"].try_get::<i64>(), Some(200));
 
-    table.delete(&id).await?;
+    table.delete(id.clone()).await?;
     Ok(())
 }
 
@@ -178,7 +178,7 @@ async fn get_value_returns_none_for_missing_id() -> vantage_core::Result<()> {
     let table = products_table(db);
 
     let missing = DynamoId::new(format!("{}-does-not-exist", run_prefix()));
-    let result = table.get_value(&missing).await?;
+    let result = table.get_value(missing.clone()).await?;
     assert!(result.is_none(), "missing id should return None, not error");
     Ok(())
 }

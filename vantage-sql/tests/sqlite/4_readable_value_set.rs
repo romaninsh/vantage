@@ -67,7 +67,7 @@ async fn test_get_value_product() {
     let table = Product::sqlite_table(db);
 
     let record = table
-        .get_value(&"delorean_donut".to_string())
+        .get_value("delorean_donut")
         .await
         .unwrap()
         .expect("delorean_donut exists");

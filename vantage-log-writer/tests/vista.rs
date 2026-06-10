@@ -92,7 +92,7 @@ async fn read_methods_return_unsupported() {
         vantage_core::ErrorKind::Unsupported
     );
 
-    let res = vista.get_value(&"any".to_string()).await;
+    let res = vista.get_value("any").await;
     assert!(res.is_err());
     assert_eq!(
         res.unwrap_err().kind(),

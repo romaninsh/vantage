@@ -11,12 +11,13 @@ where
 {
     async fn insert_value(
         &self,
-        id: &Self::Id,
+        id: impl Into<Self::Id> + Send,
         record: &Record<Self::Value>,
     ) -> crate::traits::Result<Record<Self::Value>> {
+        let id = id.into();
         let stored = self.data_source.with_table_mut(&self.table_name, |table| {
             // Check if record already exists (idempotent behavior)
-            if let Some(existing_record) = table.get(id) {
+            if let Some(existing_record) = table.get(&id) {
                 return existing_record.clone();
             }
 
@@ -29,9 +30,10 @@ where
 
     async fn replace_value(
         &self,
-        id: &Self::Id,
+        id: impl Into<Self::Id> + Send,
         record: &Record<Self::Value>,
     ) -> crate::traits::Result<Record<Self::Value>> {
+        let id = id.into();
         self.data_source.with_table_mut(&self.table_name, |table| {
             table.insert(id.clone(), record.clone());
         });
@@ -41,13 +43,14 @@ where
 
     async fn patch_value(
         &self,
-        id: &Self::Id,
+        id: impl Into<Self::Id> + Send,
         partial: &Record<Self::Value>,
     ) -> crate::traits::Result<Record<Self::Value>> {
+        let id = id.into();
         self.data_source.with_table_mut(&self.table_name, |table| {
             // Check if record exists
             let mut existing_record = table
-                .get(id)
+                .get(&id)
                 .ok_or_else(|| {
                     vantage_core::util::error::vantage_error!("Record with id '{}' not found", id)
                 })?
@@ -64,10 +67,11 @@ where
         })
     }
 
-    async fn delete(&self, id: &Self::Id) -> crate::traits::Result<()> {
+    async fn delete(&self, id: impl Into<Self::Id> + Send) -> crate::traits::Result<()> {
+        let id = id.into();
         // Delete is idempotent - success even if record doesn't exist
         self.data_source.with_table_mut(&self.table_name, |table| {
-            table.shift_remove(id);
+            table.shift_remove(&id);
         });
         Ok(())
     }
@@ -100,10 +104,7 @@ mod tests {
             "name".to_string(),
             serde_json::Value::String("Alice".to_string()),
         );
-        table
-            .replace_value(&"user1".to_string(), &record)
-            .await
-            .unwrap();
+        table.replace_value("user1", &record).await.unwrap();
     }
 
     #[tokio::test]
@@ -117,7 +118,7 @@ mod tests {
             "name".to_string(),
             serde_json::Value::String("Updated".to_string()),
         );
-        let result = table.patch_value(&"nonexistent".to_string(), &patch).await;
+        let result = table.patch_value("nonexistent", &patch).await;
         assert!(result.is_err());
     }
 
@@ -127,7 +128,7 @@ mod tests {
         let table = ImTable::<User>::new(&ds, "users");
 
         // Delete non-existent record should succeed (idempotent)
-        table.delete(&"nonexistent".to_string()).await.unwrap();
+        table.delete("nonexistent").await.unwrap();
     }
 
     #[tokio::test]

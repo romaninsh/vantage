@@ -379,11 +379,7 @@ mod tests {
             .with_column_of::<String>("name")
             .with_column_of::<String>("email");
 
-        let record = table
-            .get_value(&"doc".to_string())
-            .await
-            .unwrap()
-            .expect("doc exists");
+        let record = table.get_value("doc").await.unwrap().expect("doc exists");
         assert_eq!(record["name"].try_get::<String>().unwrap(), "Doc Brown");
         assert_eq!(
             record["email"].try_get::<String>().unwrap(),
@@ -396,7 +392,7 @@ mod tests {
         let csv = test_csv();
         let table = Table::<Csv, EmptyEntity>::new("client", csv);
 
-        let result = table.get_value(&"nonexistent".to_string()).await.unwrap();
+        let result = table.get_value("nonexistent").await.unwrap();
         assert!(result.is_none());
     }
 
@@ -431,15 +427,11 @@ mod tests {
 
         let record = Record::new();
         assert!(
-            WritableValueSet::insert_value(&table, &"test".to_string(), &record)
+            WritableValueSet::insert_value(&table, "test", &record)
                 .await
                 .is_err()
         );
-        assert!(
-            WritableValueSet::delete(&table, &"test".to_string())
-                .await
-                .is_err()
-        );
+        assert!(WritableValueSet::delete(&table, "test").await.is_err());
         assert!(WritableValueSet::delete_all(&table).await.is_err());
     }
 

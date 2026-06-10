@@ -115,7 +115,7 @@ where
                 let f = f.clone();
                 move |Path(params): Path<Params>, Json(partial): Json<E>| async move {
                     let id: MongoId = params["id"].clone().into();
-                    let updated = f(db(), &params).patch(&id, &partial).await?;
+                    let updated = f(db(), &params).patch(id.clone(), &partial).await?;
                     ApiResult::Ok(Json(updated))
                 }
             })
@@ -123,7 +123,7 @@ where
                 let f = f;
                 move |Path(params): Path<Params>| async move {
                     let id: MongoId = params["id"].clone().into();
-                    f(db(), &params).delete(&id).await?;
+                    f(db(), &params).delete(id.clone()).await?;
                     ApiResult::Ok(StatusCode::NO_CONTENT)
                 }
             }),

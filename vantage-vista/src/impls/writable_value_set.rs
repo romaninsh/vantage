@@ -10,30 +10,34 @@ use crate::vista::Vista;
 impl WritableValueSet for Vista {
     async fn insert_value(
         &self,
-        id: &String,
+        id: impl Into<String> + Send,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.insert_nested_value(id, record).await
+        let id = id.into();
+        self.insert_nested_value(&id, record).await
     }
 
     async fn replace_value(
         &self,
-        id: &String,
+        id: impl Into<String> + Send,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.source.replace_vista_value(self, id, record).await
+        let id = id.into();
+        self.source.replace_vista_value(self, &id, record).await
     }
 
     async fn patch_value(
         &self,
-        id: &String,
+        id: impl Into<String> + Send,
         partial: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.source.patch_vista_value(self, id, partial).await
+        let id = id.into();
+        self.source.patch_vista_value(self, &id, partial).await
     }
 
-    async fn delete(&self, id: &String) -> Result<()> {
-        self.source.delete_vista_value(self, id).await
+    async fn delete(&self, id: impl Into<String> + Send) -> Result<()> {
+        let id = id.into();
+        self.source.delete_vista_value(self, &id).await
     }
 
     async fn delete_all(&self) -> Result<()> {

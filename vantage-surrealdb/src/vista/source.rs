@@ -131,7 +131,7 @@ where
         id: &String,
     ) -> Result<Option<Record<CborValue>>> {
         let thing = self.parse_id(id);
-        let Some(record) = self.table.get_value(&thing).await? else {
+        let Some(record) = self.table.get_value(thing.clone()).await? else {
             return Ok(None);
         };
         Ok(Some(to_cbor_record(record)))
@@ -160,7 +160,7 @@ where
         let thing = self.parse_id(id);
         let inserted = self
             .table
-            .insert_value(&thing, &to_native_record(record))
+            .insert_value(thing.clone(), &to_native_record(record))
             .await?;
         Ok(to_cbor_record(inserted))
     }
@@ -174,7 +174,7 @@ where
         let thing = self.parse_id(id);
         let replaced = self
             .table
-            .replace_value(&thing, &to_native_record(record))
+            .replace_value(thing.clone(), &to_native_record(record))
             .await?;
         Ok(to_cbor_record(replaced))
     }
@@ -188,14 +188,14 @@ where
         let thing = self.parse_id(id);
         let patched = self
             .table
-            .patch_value(&thing, &to_native_record(partial))
+            .patch_value(thing.clone(), &to_native_record(partial))
             .await?;
         Ok(to_cbor_record(patched))
     }
 
     async fn delete_vista_value(&self, _vista: &Vista, id: &String) -> Result<()> {
         let thing = self.parse_id(id);
-        self.table.delete(&thing).await
+        self.table.delete(thing.clone()).await
     }
 
     async fn delete_vista_all_values(&self, _vista: &Vista) -> Result<()> {

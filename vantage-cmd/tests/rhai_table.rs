@@ -144,7 +144,7 @@ async fn detail_script_hydrates_a_single_record_by_id() {
 
     // Detail pass: the detail script runs with `id` in scope and returns the
     // full record.
-    let rec = table.get_value(&"a".to_string()).await.unwrap().unwrap();
+    let rec = table.get_value("a").await.unwrap().unwrap();
     assert_eq!(rec.get("detail"), Some(&CborValue::from("full-a")));
 }
 
@@ -154,7 +154,7 @@ async fn writes_are_rejected() {
     let table = Table::<Cmd, EmptyEntity>::new("items", cmd);
     let record: Record<CborValue> = Record::new();
     assert!(
-        WritableValueSet::insert_value(&table, &"x".to_string(), &record)
+        WritableValueSet::insert_value(&table, "x", &record)
             .await
             .is_err()
     );
@@ -222,7 +222,7 @@ cmd:
     let cmd = Cmd::new(format!("{}/role.sh", fixtures_dir()));
     let vista = cmd.vista_factory().from_yaml(yaml).unwrap();
 
-    let rec = vista.get_value(&"a".to_string()).await.unwrap().unwrap();
+    let rec = vista.get_value("a").await.unwrap().unwrap();
     assert_eq!(
         rec.get("detail"),
         Some(&CborValue::from("full-a")),
@@ -247,7 +247,7 @@ async fn detail_script_reads_the_injected_row() {
     row.insert("extra".to_string(), CborValue::from("XYZ"));
 
     let rec = cmd
-        .get_table_value_with_row(&table, &"a".to_string(), &row)
+        .get_table_value_with_row(&table, "a", &row)
         .await
         .unwrap()
         .unwrap();
@@ -281,10 +281,6 @@ cmd:
     let mut row: Record<CborValue> = Record::new();
     row.insert("extra".to_string(), CborValue::from("PQR"));
 
-    let rec = vista
-        .get_value_with_row(&"a".to_string(), &row)
-        .await
-        .unwrap()
-        .unwrap();
+    let rec = vista.get_value_with_row("a", &row).await.unwrap().unwrap();
     assert_eq!(rec.get("echoed"), Some(&CborValue::from("PQR")));
 }
