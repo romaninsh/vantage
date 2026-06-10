@@ -12,7 +12,6 @@ pub use vantage_dataset::{
 pub use vantage_expressions::{ExprDataSource, Expression, Expressive, Order, Selectable};
 pub use vantage_table::column::core::Column;
 pub use vantage_table::table::Table;
-pub use vantage_table::traits::table_like::TableLike;
 
 pub use crate::primitives::identifier::{Identifier, ident};
 

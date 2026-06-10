@@ -76,11 +76,7 @@ async fn list_contained_reports_the_relation() {
 #[tokio::test]
 async fn contains_many_traversal_reads_embedded_lines() {
     let vista = order_vista();
-    let order = vista
-        .get_value(&"order1".to_string())
-        .await
-        .unwrap()
-        .unwrap();
+    let order = vista.get_value("order1").await.unwrap().unwrap();
 
     let lines = vista.get_ref("lines", &order).unwrap();
     let rows = lines.list_values().await.unwrap();
@@ -92,11 +88,7 @@ async fn contains_many_traversal_reads_embedded_lines() {
 #[tokio::test]
 async fn inserting_a_line_eagerly_patches_the_parent_order() {
     let vista = order_vista();
-    let order = vista
-        .get_value(&"order1".to_string())
-        .await
-        .unwrap()
-        .unwrap();
+    let order = vista.get_value("order1").await.unwrap().unwrap();
     let lines = vista.get_ref("lines", &order).unwrap();
 
     let new_id = lines
@@ -114,11 +106,7 @@ async fn inserting_a_line_eagerly_patches_the_parent_order() {
 
     // The writeback landed: re-read the parent order from the store and check
     // its `lines` column is a 3-element array ending with the new line.
-    let reread = vista
-        .get_value(&"order1".to_string())
-        .await
-        .unwrap()
-        .unwrap();
+    let reread = vista.get_value("order1").await.unwrap().unwrap();
     let CborValue::Array(stored) = reread.get("lines").unwrap() else {
         panic!("lines should be an array");
     };
@@ -150,7 +138,7 @@ async fn contains_one_patch_updates_the_embedded_object() {
         ),
     );
 
-    let row = vista.get_value(&"flux".to_string()).await.unwrap().unwrap();
+    let row = vista.get_value("flux").await.unwrap().unwrap();
     let inventory = vista.get_ref("inventory", &row).unwrap();
 
     // One embedded record, addressed by the fixed id "0".
@@ -159,11 +147,11 @@ async fn contains_one_patch_updates_the_embedded_object() {
     assert_eq!(seeded["0"].get("stock"), Some(&i(50)));
 
     inventory
-        .patch_value(&"0".to_string(), &rec(&[("stock", i(100))]))
+        .patch_value("0", &rec(&[("stock", i(100))]))
         .await
         .unwrap();
 
     // Writeback patched the product's embedded inventory object.
-    let reread = vista.get_value(&"flux".to_string()).await.unwrap().unwrap();
+    let reread = vista.get_value("flux").await.unwrap().unwrap();
     assert_eq!(reread.get("inventory"), Some(&cmap(&[("stock", i(100))])));
 }

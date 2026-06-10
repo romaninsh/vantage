@@ -31,7 +31,9 @@ impl ExprDataSource<Value> for LogWriter {
 }
 
 fn unsupported(method: &'static str) -> vantage_core::VantageError {
-    error!("log-writer is insert-only", method = method).is_unsupported()
+    error!("log-writer is insert-only", method = method)
+        .mark_unsupported()
+        .traced()
 }
 
 #[async_trait]

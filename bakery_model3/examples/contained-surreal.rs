@@ -39,23 +39,21 @@ async fn main() -> Result<()> {
     let products =
         SurrealVistaFactory::new(db.clone()).from_table(Product::surreal_table(db.clone()))?;
     let pid = "product:flux_cupcake".to_string();
-    let product = products.get_value(&pid).await?.expect("product exists");
+    let product = products
+        .get_value(pid.clone())
+        .await?
+        .expect("product exists");
     println!(
         "product.inventory (raw column) = {:?}",
         product.get("inventory")
     );
 
     let inventory = products.get_ref("inventory", &product)?;
-    let stock_before = inventory
-        .get_value(&"0".to_string())
-        .await?
-        .expect("inventory record");
+    let stock_before = inventory.get_value("0").await?.expect("inventory record");
     println!("inventory sub-Vista record = {stock_before:?}");
 
-    inventory
-        .patch_value(&"0".to_string(), &field("stock", int(60)))
-        .await?;
-    let product_after = products.get_value(&pid).await?.unwrap();
+    inventory.patch_value("0", &field("stock", int(60))).await?;
+    let product_after = products.get_value(pid.clone()).await?.unwrap();
     println!(
         "after patching stock -> product.inventory = {:?}\n",
         product_after.get("inventory")
@@ -65,15 +63,13 @@ async fn main() -> Result<()> {
     let orders =
         SurrealVistaFactory::new(db.clone()).from_table(Order::surreal_table(db.clone()))?;
     let oid = "order:order1".to_string();
-    let order = orders.get_value(&oid).await?.expect("order exists");
+    let order = orders.get_value(oid.clone()).await?.expect("order exists");
 
     let lines = orders.get_ref("lines", &order)?;
     println!("order has {} lines", lines.list_values().await?.len());
 
     // Patch the first line's quantity (preserves its product record link).
-    lines
-        .patch_value(&"0".to_string(), &field("quantity", int(99)))
-        .await?;
+    lines.patch_value("0", &field("quantity", int(99))).await?;
 
     // Add a brand-new line with a real product record link.
     let product_thing = AnySurrealType::new(Thing::new("product", "time_tart")).into_value();
@@ -84,22 +80,18 @@ async fn main() -> Result<()> {
     let added = lines.insert_return_id_value(&new_line).await?;
     println!("added line at index {added}");
 
-    let order_after = orders.get_value(&oid).await?.unwrap();
+    let order_after = orders.get_value(oid.clone()).await?.unwrap();
     let CborValue::Array(stored) = order_after.get("lines").unwrap() else {
         panic!("lines should be an array");
     };
     println!(
         "after edits -> order has {} lines; line[0].quantity = {:?}",
         stored.len(),
-        lines
-            .get_value(&"0".to_string())
-            .await?
-            .unwrap()
-            .get("quantity")
+        lines.get_value("0").await?.unwrap().get("quantity")
     );
 
     // ---- traverse OUT of a contained record: line.product -> product -----
-    let line0 = lines.get_value(&"0".to_string()).await?.unwrap();
+    let line0 = lines.get_value("0").await?.unwrap();
     let product_of_line = lines.get_ref("product", &line0)?;
     let (_id, prod) = product_of_line
         .get_some_value()

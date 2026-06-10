@@ -16,8 +16,9 @@ impl ReadableValueSet for Vista {
         self.source.list_vista_values(self).await
     }
 
-    async fn get_value(&self, id: &String) -> Result<Option<Record<CborValue>>> {
-        self.source.get_vista_value(self, id).await
+    async fn get_value(&self, id: impl Into<String> + Send) -> Result<Option<Record<CborValue>>> {
+        let id = id.into();
+        self.source.get_vista_value(self, &id).await
     }
 
     async fn get_some_value(&self) -> Result<Option<(String, Record<CborValue>)>> {

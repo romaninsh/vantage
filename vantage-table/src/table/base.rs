@@ -154,16 +154,6 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         &self.data_source
     }
 
-    /// Get mutable access to conditions (pub(crate) for TableLike impl)
-    pub(crate) fn conditions_mut(&mut self) -> &mut IndexMap<i64, T::Condition> {
-        &mut self.conditions
-    }
-
-    /// Get mutable access to next_condition_id (pub(crate) for TableLike impl)
-    pub(crate) fn next_condition_id_mut(&mut self) -> &mut i64 {
-        &mut self.next_condition_id
-    }
-
     /// Get the title field column if set
     pub fn title_field(&self) -> Option<&T::Column<T::AnyType>> {
         self.title_field

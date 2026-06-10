@@ -90,7 +90,7 @@ async fn test_writable_dataset() {
     };
 
     // Test insert (idempotent)
-    let result = table.insert(&"user-1".to_string(), &user).await.unwrap();
+    let result = table.insert("user-1", &user).await.unwrap();
     assert_eq!(result, user);
 
     // Test insert again - should return existing
@@ -100,7 +100,7 @@ async fn test_writable_dataset() {
         age: 25,
         active: false,
     };
-    let result = table.insert(&"user-1".to_string(), &user2).await.unwrap();
+    let result = table.insert("user-1", &user2).await.unwrap();
     assert_eq!(result, user); // Should return original, not new data
 
     // Test replace
@@ -110,10 +110,7 @@ async fn test_writable_dataset() {
         age: 31,
         active: false,
     };
-    let result = table
-        .replace(&"user-1".to_string(), &updated_user)
-        .await
-        .unwrap();
+    let result = table.replace("user-1", &updated_user).await.unwrap();
     assert_eq!(result, updated_user);
 
     // Test patch
@@ -123,22 +120,19 @@ async fn test_writable_dataset() {
         age: 32,
         active: true,
     };
-    let result = table
-        .patch(&"user-1".to_string(), &patch_user)
-        .await
-        .unwrap();
+    let result = table.patch("user-1", &patch_user).await.unwrap();
     assert_eq!(result.name, "Alice Patched");
     assert_eq!(result.age, 32);
     assert!(result.active);
 
     // Test delete
-    table.delete(&"user-1".to_string()).await.unwrap();
-    let result = table.get("user-1".to_string()).await.unwrap();
+    table.delete("user-1").await.unwrap();
+    let result = table.get("user-1").await.unwrap();
     assert!(result.is_none());
 
     // Test delete_all
-    let _ = table.insert(&"user-2".to_string(), &user).await.unwrap();
-    let _ = table.insert(&"user-3".to_string(), &user).await.unwrap();
+    let _ = table.insert("user-2", &user).await.unwrap();
+    let _ = table.insert("user-3", &user).await.unwrap();
 
     table.delete_all().await.unwrap();
     let result = table.list().await.unwrap();
@@ -157,7 +151,7 @@ async fn test_full_crud_cycle() {
         price: 1200,
         available: true,
     };
-    let result = table.insert(&"prod-1".to_string(), &product).await.unwrap();
+    let result = table.insert("prod-1", &product).await.unwrap();
     assert_eq!(result, product);
 
     // Read
@@ -175,10 +169,7 @@ async fn test_full_crud_cycle() {
         price: 1500,
         available: true,
     };
-    let result = table
-        .replace(&"prod-1".to_string(), &updated_product)
-        .await
-        .unwrap();
+    let result = table.replace("prod-1", &updated_product).await.unwrap();
     assert_eq!(result, updated_product);
 
     // Verify update
@@ -191,7 +182,7 @@ async fn test_full_crud_cycle() {
     assert_eq!(retrieved.price, 1500);
 
     // Delete
-    table.delete(&"prod-1".to_string()).await.unwrap();
+    table.delete("prod-1").await.unwrap();
     let result = table.get("prod-1".to_string()).await.unwrap();
     assert!(result.is_none());
 }
@@ -210,7 +201,7 @@ async fn test_record_field_handling() {
     };
 
     // Insert user
-    table.insert(&"test-user".to_string(), &user).await.unwrap();
+    table.insert("test-user", &user).await.unwrap();
 
     // Retrieve and verify ID is properly restored
     let retrieved = table
@@ -231,7 +222,7 @@ async fn test_record_field_handling() {
         active: false,
     };
 
-    let patched = table.patch(&"test-user".to_string(), &patch).await.unwrap();
+    let patched = table.patch("test-user", &patch).await.unwrap();
     assert_eq!(patched.id, Some("test-user".to_string())); // ID should remain unchanged
     assert_eq!(patched.name, "Patched Name");
     assert_eq!(patched.age, 43);
@@ -250,7 +241,7 @@ async fn test_error_conditions() {
         age: 30,
         active: true,
     };
-    let result = table.patch(&"nonexistent".to_string(), &user).await;
+    let result = table.patch("nonexistent", &user).await;
     assert!(result.is_err());
 
     // Test get on non-existent record
@@ -279,14 +270,8 @@ async fn test_multiple_tables() {
         available: true,
     };
 
-    user_table
-        .insert(&"user-1".to_string(), &user)
-        .await
-        .unwrap();
-    product_table
-        .insert(&"prod-1".to_string(), &product)
-        .await
-        .unwrap();
+    user_table.insert("user-1", &user).await.unwrap();
+    product_table.insert("prod-1", &product).await.unwrap();
 
     // Verify isolation
     let users = user_table.list().await.unwrap();
@@ -324,7 +309,7 @@ async fn test_concurrent_inserts_no_lost_update() {
                 age: i as i32,
                 active: true,
             };
-            table.insert(&format!("user{i}"), &user).await.unwrap();
+            table.insert(format!("user{i}"), &user).await.unwrap();
         }));
     }
     for h in handles {

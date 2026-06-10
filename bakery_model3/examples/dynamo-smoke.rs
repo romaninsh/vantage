@@ -43,7 +43,7 @@ async fn main() -> Result<()> {
     };
 
     println!("→ insert {} ({})", product.name, id);
-    table.insert(&id, &product).await?;
+    table.insert(id.clone(), &product).await?;
 
     println!("→ get back {}", id);
     let fetched = table
@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
     );
 
     println!("→ delete {}", id);
-    table.delete(&id).await?;
+    table.delete(id.clone()).await?;
 
     let gone = table.get(id.clone()).await?;
     assert!(gone.is_none(), "Product should be gone after delete");

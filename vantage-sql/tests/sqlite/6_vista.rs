@@ -79,13 +79,10 @@ async fn vista_get_value_by_id() -> TestResult {
     let table = product_table(db.clone());
     let vista = db.vista_factory().from_table(table)?;
 
-    let row = vista
-        .get_value(&"b".to_string())
-        .await?
-        .expect("row b exists");
+    let row = vista.get_value("b").await?.expect("row b exists");
     assert_eq!(row.get("name"), Some(&CborValue::Text("Beta".to_string())));
 
-    let missing = vista.get_value(&"nope".to_string()).await?;
+    let missing = vista.get_value("nope").await?;
     assert!(missing.is_none());
     Ok(())
 }
@@ -154,13 +151,13 @@ async fn vista_writes_round_trip_via_cbor() -> TestResult {
     .into_iter()
     .collect();
 
-    vista.insert_value(&"d".to_string(), &record).await?;
+    vista.insert_value("d", &record).await?;
 
-    let fetched = vista.get_value(&"d".to_string()).await?.expect("inserted");
+    let fetched = vista.get_value("d").await?.expect("inserted");
     assert_eq!(fetched.get("name"), Some(&CborValue::Text("Delta".into())));
 
-    vista.delete(&"d".to_string()).await?;
-    assert!(vista.get_value(&"d".to_string()).await?.is_none());
+    vista.delete("d").await?;
+    assert!(vista.get_value("d").await?.is_none());
     Ok(())
 }
 
@@ -818,7 +815,7 @@ async fn contained_json_column_round_trips_on_sqlite() -> TestResult {
     assert_eq!(vista.list_contained().len(), 1);
 
     // The host column reads back as a JSON string; the sub-Vista parses it.
-    let cart = vista.get_value(&"c1".to_string()).await?.unwrap();
+    let cart = vista.get_value("c1").await?.unwrap();
     assert!(matches!(cart.get("items"), Some(CborValue::Text(_))));
     let items = vista.get_ref("items", &cart)?;
     assert_eq!(items.list_values().await?.len(), 2);
@@ -831,7 +828,7 @@ async fn contained_json_column_round_trips_on_sqlite() -> TestResult {
     assert_eq!(new_id, "2");
 
     // Fresh read + re-traverse re-parses the persisted JSON → three items.
-    let cart2 = vista.get_value(&"c1".to_string()).await?.unwrap();
+    let cart2 = vista.get_value("c1").await?.unwrap();
     let items2 = vista.get_ref("items", &cart2)?;
     let rows = items2.list_values().await?;
     assert_eq!(rows.len(), 3);
@@ -839,19 +836,12 @@ async fn contained_json_column_round_trips_on_sqlite() -> TestResult {
 
     // Patch one item; confirm it persisted through the JSON column.
     items2
-        .patch_value(
-            &"0".to_string(),
-            &field("qty", CborValue::Integer(99i64.into())),
-        )
+        .patch_value("0", &field("qty", CborValue::Integer(99i64.into())))
         .await?;
-    let cart3 = vista.get_value(&"c1".to_string()).await?.unwrap();
+    let cart3 = vista.get_value("c1").await?.unwrap();
     let items3 = vista.get_ref("items", &cart3)?;
     assert_eq!(
-        items3
-            .get_value(&"0".to_string())
-            .await?
-            .unwrap()
-            .get("qty"),
+        items3.get_value("0").await?.unwrap().get("qty"),
         Some(&CborValue::Integer(99i64.into()))
     );
     Ok(())
@@ -893,7 +883,7 @@ contained:
         )]
     );
 
-    let cart = vista.get_value(&"c1".to_string()).await?.unwrap();
+    let cart = vista.get_value("c1").await?.unwrap();
     let items = vista.get_ref("items", &cart)?;
     assert_eq!(items.list_values().await?.len(), 1);
 
@@ -902,15 +892,11 @@ contained:
     line.insert("qty".to_string(), CborValue::Integer(2i64.into()));
     items.insert_return_id_value(&line).await?;
 
-    let cart2 = vista.get_value(&"c1".to_string()).await?.unwrap();
+    let cart2 = vista.get_value("c1").await?.unwrap();
     let items2 = vista.get_ref("items", &cart2)?;
     assert_eq!(items2.list_values().await?.len(), 2);
     assert_eq!(
-        items2
-            .get_value(&"1".to_string())
-            .await?
-            .unwrap()
-            .get("sku"),
+        items2.get_value("1").await?.unwrap().get("sku"),
         Some(&CborValue::Text("b".into()))
     );
     Ok(())

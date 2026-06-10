@@ -51,15 +51,11 @@ async fn test_insert_value() {
     let (_db, table) = setup().await;
 
     let rec = record(&[("name", "Gamma".into()), ("price", 30i64.into())]);
-    let result = table.insert_value(&"c".to_string(), &rec).await.unwrap();
+    let result = table.insert_value("c", &rec).await.unwrap();
     assert_eq!(result["name"].try_get::<String>().unwrap(), "Gamma");
 
     // Verify it's actually there
-    let fetched = table
-        .get_value(&"c".to_string())
-        .await
-        .unwrap()
-        .expect("c exists");
+    let fetched = table.get_value("c").await.unwrap().expect("c exists");
     assert_eq!(fetched["price"].try_get::<i64>().unwrap(), 30);
 }
 
@@ -68,13 +64,9 @@ async fn test_replace_value() {
     let (_db, table) = setup().await;
 
     let rec = record(&[("name", "Alpha Replaced".into()), ("price", 99i64.into())]);
-    table.replace_value(&"a".to_string(), &rec).await.unwrap();
+    table.replace_value("a", &rec).await.unwrap();
 
-    let fetched = table
-        .get_value(&"a".to_string())
-        .await
-        .unwrap()
-        .expect("a exists");
+    let fetched = table.get_value("a").await.unwrap().expect("a exists");
     assert_eq!(
         fetched["name"].try_get::<String>().unwrap(),
         "Alpha Replaced"
@@ -88,13 +80,9 @@ async fn test_patch_value() {
 
     // Patch only the price
     let partial = record(&[("price", 55i64.into())]);
-    table.patch_value(&"a".to_string(), &partial).await.unwrap();
+    table.patch_value("a", &partial).await.unwrap();
 
-    let fetched = table
-        .get_value(&"a".to_string())
-        .await
-        .unwrap()
-        .expect("a exists");
+    let fetched = table.get_value("a").await.unwrap().expect("a exists");
     assert_eq!(fetched["name"].try_get::<String>().unwrap(), "Alpha"); // unchanged
     assert_eq!(fetched["price"].try_get::<i64>().unwrap(), 55); // updated
 }
@@ -103,7 +91,7 @@ async fn test_patch_value() {
 async fn test_delete() {
     let (_db, table) = setup().await;
 
-    table.delete(&"a".to_string()).await.unwrap();
+    table.delete("a").await.unwrap();
 
     let all = table.list_values().await.unwrap();
     assert_eq!(all.len(), 1);

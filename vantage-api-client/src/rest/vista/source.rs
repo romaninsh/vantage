@@ -18,7 +18,7 @@ use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::table::Table;
-use vantage_table::traits::table_like::TableLike;
+use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
     Column as VistaColumn, JoinKey, Reference as VistaReference, TableShell, Vista,
@@ -124,7 +124,7 @@ impl TableShell for RestApiTableShell {
     }
 
     async fn get_vista_count(&self, _vista: &Vista) -> Result<i64> {
-        self.table.get_count().await
+        self.table.data_source().get_table_count(&self.table).await
     }
 
     fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {

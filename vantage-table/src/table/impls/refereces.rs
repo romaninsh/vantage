@@ -180,7 +180,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
                 Box::pin(async move {
                     let mut patch: Record<T::Value> = Record::new();
                     patch.insert(host_column, value);
-                    parent_table.patch_value(&parent_id, &patch).await?;
+                    parent_table.patch_value(parent_id.clone(), &patch).await?;
                     Ok(())
                 })
             });

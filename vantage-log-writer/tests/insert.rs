@@ -98,7 +98,7 @@ async fn read_methods_return_unsupported() {
         vantage_core::ErrorKind::Unsupported
     );
 
-    let res = table.get_value(&"any".to_string()).await;
+    let res = table.get_value("any").await;
     assert!(res.is_err());
     assert_eq!(
         res.unwrap_err().kind(),
@@ -116,7 +116,7 @@ async fn insert_with_explicit_id_uses_it() {
     use vantage_dataset::traits::WritableValueSet;
     let mut record = vantage_types::Record::<serde_json::Value>::new();
     record.insert("name".into(), serde_json::Value::String("hello".into()));
-    let stored = WritableValueSet::insert_value(&table, &"my-id".to_string(), &record)
+    let stored = WritableValueSet::insert_value(&table, "my-id", &record)
         .await
         .unwrap();
     assert_eq!(stored["id"], "my-id");

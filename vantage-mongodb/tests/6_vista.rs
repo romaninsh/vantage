@@ -61,7 +61,7 @@ async fn vista_lists_typed_mongo_as_cbor() -> TestResult {
     let id = MongoId::from(ObjectId::new());
     table
         .insert_value(
-            &id,
+            id.clone(),
             &rec(&[
                 ("name", AnyMongoType::new("Cupcake".to_string())),
                 ("price", AnyMongoType::new(250i64)),
@@ -97,19 +97,17 @@ async fn vista_get_value_by_id() -> TestResult {
     let id = MongoId::from(ObjectId::new());
     table
         .insert_value(
-            &id,
+            id.clone(),
             &rec(&[("name", AnyMongoType::new("Tart".to_string()))]),
         )
         .await?;
 
     let vista = db.vista_factory().from_table(table)?;
 
-    let row = vista.get_value(&id.to_string()).await?.expect("found");
+    let row = vista.get_value(id.to_string()).await?.expect("found");
     assert_eq!(row.get("name"), Some(&CborValue::Text("Tart".to_string())));
 
-    let missing = vista
-        .get_value(&"nonexistenthex000000000000".to_string())
-        .await?;
+    let missing = vista.get_value("nonexistenthex000000000000").await?;
     assert!(missing.is_none());
 
     teardown(&db, &name).await;
@@ -124,7 +122,7 @@ async fn vista_count_with_eq_condition() -> TestResult {
     for (n, deleted) in [("A", false), ("B", true), ("C", false)] {
         table
             .insert_value(
-                &MongoId::from(ObjectId::new()),
+                MongoId::from(ObjectId::new()),
                 &rec(&[
                     ("name", AnyMongoType::new(n.to_string())),
                     ("is_deleted", AnyMongoType::new(deleted)),
@@ -203,17 +201,17 @@ async fn vista_writes_round_trip_via_cbor() -> TestResult {
     .into_iter()
     .collect();
 
-    vista.insert_value(&id, &record).await?;
+    vista.insert_value(id.clone(), &record).await?;
 
-    let fetched = vista.get_value(&id).await?.expect("inserted");
+    let fetched = vista.get_value(id.clone()).await?.expect("inserted");
     assert_eq!(fetched.get("name"), Some(&CborValue::Text("Pie".into())));
     assert_eq!(
         fetched.get("price"),
         Some(&CborValue::Integer(99i64.into()))
     );
 
-    vista.delete(&id).await?;
-    assert!(vista.get_value(&id).await?.is_none());
+    vista.delete(id.clone()).await?;
+    assert!(vista.get_value(id.clone()).await?.is_none());
 
     teardown(&db, &name).await;
     Ok(())
@@ -314,7 +312,7 @@ mongo:
     ]
     .into_iter()
     .collect();
-    vista.insert_value(&new_id, &record).await?;
+    vista.insert_value(new_id.clone(), &record).await?;
 
     // Verify the raw BSON has the nested structure (not flattened keys).
     let raw = db
@@ -330,7 +328,7 @@ mongo:
     assert!(raw.get("zip").is_none());
 
     // And reading it back through the vista surfaces the spec names again.
-    let read = vista.get_value(&new_id).await?.expect("read");
+    let read = vista.get_value(new_id.clone()).await?.expect("read");
     assert_eq!(
         read.get("full_name"),
         Some(&CborValue::Text("Biff Tannen".into()))
@@ -351,7 +349,7 @@ async fn vista_add_order_filters_results_with_replace_semantics() -> TestResult 
     for (n, p) in [("Beta", 20i64), ("Alpha", 10), ("Gamma", 30)] {
         table
             .insert_value(
-                &MongoId::from(ObjectId::new()),
+                MongoId::from(ObjectId::new()),
                 &rec(&[
                     ("name", AnyMongoType::new(n.to_string())),
                     ("price", AnyMongoType::new(p)),
@@ -406,7 +404,7 @@ async fn vista_add_search_uses_regex() -> TestResult {
     for n in ["Alpha", "Beta", "Gamma"] {
         table
             .insert_value(
-                &MongoId::from(ObjectId::new()),
+                MongoId::from(ObjectId::new()),
                 &rec(&[("name", AnyMongoType::new(n.to_string()))]),
             )
             .await?;
@@ -441,7 +439,7 @@ async fn vista_fetch_page_offset_pagination() -> TestResult {
     for n in ["A", "B", "C", "D", "E"] {
         table
             .insert_value(
-                &MongoId::from(ObjectId::new()),
+                MongoId::from(ObjectId::new()),
                 &rec(&[("name", AnyMongoType::new(n.to_string()))]),
             )
             .await?;
@@ -490,7 +488,7 @@ async fn vista_fetch_next_chains_pages_until_exhausted() -> TestResult {
     for n in ["A", "B", "C"] {
         table
             .insert_value(
-                &MongoId::from(ObjectId::new()),
+                MongoId::from(ObjectId::new()),
                 &rec(&[("name", AnyMongoType::new(n.to_string()))]),
             )
             .await?;
@@ -556,10 +554,10 @@ async fn contained_array_round_trips_on_mongo() -> TestResult {
         "lines".to_string(),
         CborValue::Array(vec![line("a", 1), line("b", 2)]),
     );
-    vista.insert_value(&"o1".to_string(), &order).await?;
+    vista.insert_value("o1", &order).await?;
 
     // The embedded array reads back natively (not a string).
-    let doc = vista.get_value(&"o1".to_string()).await?.unwrap();
+    let doc = vista.get_value("o1").await?.unwrap();
     assert!(matches!(doc.get("lines"), Some(CborValue::Array(_))));
     let lines = vista.get_ref("lines", &doc)?;
     assert_eq!(lines.list_values().await?.len(), 2);
@@ -571,7 +569,7 @@ async fn contained_array_round_trips_on_mongo() -> TestResult {
     let id = lines.insert_return_id_value(&new).await?;
     assert_eq!(id, "2");
 
-    let doc2 = vista.get_value(&"o1".to_string()).await?.unwrap();
+    let doc2 = vista.get_value("o1").await?.unwrap();
     let CborValue::Array(stored) = doc2.get("lines").unwrap() else {
         panic!("lines should be a BSON array");
     };
@@ -580,15 +578,11 @@ async fn contained_array_round_trips_on_mongo() -> TestResult {
     // Patch one line; confirm it persisted.
     let mut patch = Record::new();
     patch.insert("qty".to_string(), CborValue::Integer(99i64.into()));
-    lines.patch_value(&"0".to_string(), &patch).await?;
-    let doc3 = vista.get_value(&"o1".to_string()).await?.unwrap();
+    lines.patch_value("0", &patch).await?;
+    let doc3 = vista.get_value("o1").await?.unwrap();
     let lines3 = vista.get_ref("lines", &doc3)?;
     assert_eq!(
-        lines3
-            .get_value(&"0".to_string())
-            .await?
-            .unwrap()
-            .get("qty"),
+        lines3.get_value("0").await?.unwrap().get("qty"),
         Some(&CborValue::Integer(99i64.into()))
     );
 
@@ -621,7 +615,7 @@ contained:
     let vista = db.vista_factory().from_yaml(yaml)?;
     assert_eq!(vista.list_contained().len(), 1);
 
-    let doc = vista.get_value(&"o1".to_string()).await?.unwrap();
+    let doc = vista.get_value("o1").await?.unwrap();
     let lines = vista.get_ref("lines", &doc)?;
     assert_eq!(lines.list_values().await?.len(), 1);
 
@@ -630,7 +624,7 @@ contained:
     line.insert("qty".to_string(), CborValue::Integer(2i64.into()));
     lines.insert_return_id_value(&line).await?;
 
-    let doc2 = vista.get_value(&"o1".to_string()).await?.unwrap();
+    let doc2 = vista.get_value("o1").await?.unwrap();
     let lines2 = vista.get_ref("lines", &doc2)?;
     assert_eq!(lines2.list_values().await?.len(), 2);
 

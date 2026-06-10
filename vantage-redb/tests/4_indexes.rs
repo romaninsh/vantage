@@ -37,7 +37,7 @@ fn user(name: &str, email: &str, group: &str) -> Record<AnyRedbType> {
 async fn test_insert_creates_index_entries() {
     let (_tmp, table) = user_table();
     table
-        .insert_value(&"a".to_string(), &user("Alice", "alice@x.com", "admin"))
+        .insert_value("a", &user("Alice", "alice@x.com", "admin"))
         .await
         .unwrap();
 
@@ -52,7 +52,7 @@ async fn test_insert_creates_index_entries() {
 async fn test_insert_indexes_on_each_indexed_column() {
     let (_tmp, table) = user_table();
     table
-        .insert_value(&"a".to_string(), &user("Alice", "alice@x.com", "admin"))
+        .insert_value("a", &user("Alice", "alice@x.com", "admin"))
         .await
         .unwrap();
 
@@ -70,15 +70,15 @@ async fn test_insert_indexes_on_each_indexed_column() {
 async fn test_non_unique_column_returns_all_matches() {
     let (_tmp, table) = user_table();
     table
-        .insert_value(&"a".to_string(), &user("Alice", "alice@x.com", "admin"))
+        .insert_value("a", &user("Alice", "alice@x.com", "admin"))
         .await
         .unwrap();
     table
-        .insert_value(&"b".to_string(), &user("Bob", "bob@x.com", "admin"))
+        .insert_value("b", &user("Bob", "bob@x.com", "admin"))
         .await
         .unwrap();
     table
-        .insert_value(&"c".to_string(), &user("Carol", "carol@x.com", "user"))
+        .insert_value("c", &user("Carol", "carol@x.com", "user"))
         .await
         .unwrap();
 
@@ -96,17 +96,15 @@ async fn test_non_unique_column_returns_all_matches() {
 async fn test_delete_removes_index_entries() {
     let (_tmp, table) = user_table();
     table
-        .insert_value(&"a".to_string(), &user("Alice", "alice@x.com", "admin"))
+        .insert_value("a", &user("Alice", "alice@x.com", "admin"))
         .await
         .unwrap();
     table
-        .insert_value(&"b".to_string(), &user("Bob", "bob@x.com", "admin"))
+        .insert_value("b", &user("Bob", "bob@x.com", "admin"))
         .await
         .unwrap();
 
-    WritableValueSet::delete(&table, &"a".to_string())
-        .await
-        .unwrap();
+    WritableValueSet::delete(&table, "a").await.unwrap();
 
     // Alice's email no longer indexed.
     let mut q = table.clone();
@@ -125,16 +123,13 @@ async fn test_delete_removes_index_entries() {
 async fn test_replace_swaps_index_entries() {
     let (_tmp, table) = user_table();
     table
-        .insert_value(&"a".to_string(), &user("Alice", "alice@x.com", "admin"))
+        .insert_value("a", &user("Alice", "alice@x.com", "admin"))
         .await
         .unwrap();
 
     // Replace with new email and group.
     table
-        .replace_value(
-            &"a".to_string(),
-            &user("Alice Updated", "alice2@x.com", "user"),
-        )
+        .replace_value("a", &user("Alice Updated", "alice2@x.com", "user"))
         .await
         .unwrap();
 
@@ -160,14 +155,14 @@ async fn test_replace_swaps_index_entries() {
 async fn test_patch_updates_only_changed_index() {
     let (_tmp, table) = user_table();
     table
-        .insert_value(&"a".to_string(), &user("Alice", "alice@x.com", "admin"))
+        .insert_value("a", &user("Alice", "alice@x.com", "admin"))
         .await
         .unwrap();
 
     // Patch only the email — group should stay indexed under "admin".
     let mut partial: Record<AnyRedbType> = Record::new();
     partial.insert("email".into(), AnyRedbType::new("new@x.com".to_string()));
-    table.patch_value(&"a".to_string(), &partial).await.unwrap();
+    table.patch_value("a", &partial).await.unwrap();
 
     // Old email gone.
     let mut q = table.clone();
@@ -193,7 +188,7 @@ async fn test_delete_all_drops_indexes() {
     for (id, name) in [("a", "Alice"), ("b", "Bob")] {
         table
             .insert_value(
-                &id.to_string(),
+                id,
                 &user(name, &format!("{}@x.com", name.to_lowercase()), "admin"),
             )
             .await
@@ -215,11 +210,11 @@ async fn test_delete_all_drops_indexes() {
 async fn test_conditional_delete_only_drops_matching_indexes() {
     let (_tmp, table) = user_table();
     table
-        .insert_value(&"a".to_string(), &user("Alice", "alice@x.com", "admin"))
+        .insert_value("a", &user("Alice", "alice@x.com", "admin"))
         .await
         .unwrap();
     table
-        .insert_value(&"b".to_string(), &user("Bob", "bob@x.com", "user"))
+        .insert_value("b", &user("Bob", "bob@x.com", "user"))
         .await
         .unwrap();
 
@@ -245,7 +240,7 @@ async fn test_conditional_delete_only_drops_matching_indexes() {
 async fn test_unflagged_column_has_no_index_table() {
     let (_tmp, table) = user_table();
     table
-        .insert_value(&"a".to_string(), &user("Alice", "alice@x.com", "admin"))
+        .insert_value("a", &user("Alice", "alice@x.com", "admin"))
         .await
         .unwrap();
 

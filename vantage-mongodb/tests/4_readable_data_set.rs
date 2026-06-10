@@ -50,7 +50,7 @@ async fn test_get_product() {
     let table = product_table(db);
 
     let record = table
-        .get_value(&MongoId::from("delorean_donut"))
+        .get_value(MongoId::from("delorean_donut"))
         .await
         .unwrap()
         .expect("delorean_donut exists");
