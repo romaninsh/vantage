@@ -126,7 +126,7 @@ async fn writes_return_unsupported() -> Result<()> {
     let id = "anyone".to_string();
 
     let insert_err = vista
-        .insert_value(&id, &empty)
+        .insert_value(id.clone(), &empty)
         .await
         .expect_err("insert should be unsupported on a read-only driver");
     assert_eq!(insert_err.kind(), ErrorKind::Unsupported);
@@ -136,14 +136,14 @@ async fn writes_return_unsupported() -> Result<()> {
     );
 
     let replace_err = vista
-        .replace_value(&id, &empty)
+        .replace_value(id.clone(), &empty)
         .await
         .expect_err("replace should be unsupported");
     assert_eq!(replace_err.kind(), ErrorKind::Unsupported);
     assert!(replace_err.to_string().contains("can_update"));
 
     let delete_err = vista
-        .delete(&id)
+        .delete(id.clone())
         .await
         .expect_err("delete should be unsupported");
     assert_eq!(delete_err.kind(), ErrorKind::Unsupported);

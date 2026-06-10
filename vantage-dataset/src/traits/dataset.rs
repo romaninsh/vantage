@@ -164,12 +164,12 @@ where
 /// };
 ///
 /// // Idempotent insert
-/// users.insert(&"user-123".to_string(), user.clone()).await?;
+/// users.insert("user-123", user.clone()).await?;
 ///
 /// // Update specific fields
 /// let mut updated_user = user;
 /// updated_user.age = 31;
-/// users.replace(&"user-123".to_string(), updated_user).await?;
+/// users.replace("user-123", updated_user).await?;
 /// ```
 #[async_trait]
 pub trait WritableDataSet<E>: DataSet<E>
@@ -186,7 +186,7 @@ where
     ///
     /// # Use Case
     /// Generate unique ID and store centity while avoiding duplicates.
-    async fn insert(&self, id: &Self::Id, entity: &E) -> Result<E>;
+    async fn insert(&self, id: impl Into<Self::Id> + Send, entity: &E) -> Result<E>;
 
     /// Replace the entire entity at the specified ID (HTTP PUT)
     ///
@@ -200,7 +200,7 @@ where
     ///
     /// # Use Case
     /// Replace with a new version of a entity.
-    async fn replace(&self, id: &Self::Id, entity: &E) -> Result<E>;
+    async fn replace(&self, id: impl Into<Self::Id> + Send, entity: &E) -> Result<E>;
 
     /// Partially update an entity by merging with the provided data (HTTP PATCH)
     ///
@@ -211,7 +211,7 @@ where
     ///
     /// # Use Case
     /// Update only the modified fields of a entity.
-    async fn patch(&self, id: &Self::Id, partial: &E) -> Result<E>;
+    async fn patch(&self, id: impl Into<Self::Id> + Send, partial: &E) -> Result<E>;
 }
 
 /// Append-only operations with automatic ID generation.
@@ -332,11 +332,15 @@ where
     /// - `Ok(Some(entity))`: Entity wrapper with change tracking
     /// - `Ok(None)`: entity doesn't exist
     /// - `Err`: Storage or deserialization error
-    async fn get_entity(&self, id: &Self::Id) -> Result<Option<ActiveEntity<'_, Self, E>>> {
+    async fn get_entity(
+        &self,
+        id: impl Into<Self::Id> + Send,
+    ) -> Result<Option<ActiveEntity<'_, Self, E>>> {
+        let id = id.into();
         Ok(self
             .get(id.clone())
             .await?
-            .map(|data| ActiveEntity::new(id.clone(), data, self)))
+            .map(|data| ActiveEntity::new(id, data, self)))
     }
 
     /// Retrieve all entities wrapped for change tracking.

@@ -50,12 +50,12 @@ async fn test_insert() {
         ("name", AnyMongoType::new("Gamma".to_string())),
         ("price", AnyMongoType::new(30i64)),
     ]);
-    let result = table.insert_value(&MongoId::from("c"), &rec).await.unwrap();
+    let result = table.insert_value(MongoId::from("c"), &rec).await.unwrap();
     assert_eq!(result["name"].try_get::<String>(), Some("Gamma".into()));
     assert_eq!(result["price"].try_get::<i64>(), Some(30));
 
     let fetched = table
-        .get_value(&MongoId::from("c"))
+        .get_value(MongoId::from("c"))
         .await
         .unwrap()
         .expect("row exists");
@@ -70,13 +70,10 @@ async fn test_replace() {
         ("name", AnyMongoType::new("Alpha Replaced".to_string())),
         ("price", AnyMongoType::new(99i64)),
     ]);
-    table
-        .replace_value(&MongoId::from("a"), &rec)
-        .await
-        .unwrap();
+    table.replace_value(MongoId::from("a"), &rec).await.unwrap();
 
     let fetched = table
-        .get_value(&MongoId::from("a"))
+        .get_value(MongoId::from("a"))
         .await
         .unwrap()
         .expect("row a exists");
@@ -93,12 +90,12 @@ async fn test_patch() {
 
     let partial = record(&[("price", AnyMongoType::new(55i64))]);
     table
-        .patch_value(&MongoId::from("a"), &partial)
+        .patch_value(MongoId::from("a"), &partial)
         .await
         .unwrap();
 
     let fetched = table
-        .get_value(&MongoId::from("a"))
+        .get_value(MongoId::from("a"))
         .await
         .unwrap()
         .expect("row a exists");
@@ -111,7 +108,7 @@ async fn test_patch() {
 async fn test_delete() {
     let (_db, table) = setup("delete").await;
 
-    WritableValueSet::delete(&table, &MongoId::from("a"))
+    WritableValueSet::delete(&table, MongoId::from("a"))
         .await
         .unwrap();
 
@@ -147,7 +144,11 @@ async fn test_insert_return_id() {
     let id = table.insert_return_id_value(&rec).await.unwrap();
     assert!(!id.to_string().is_empty());
 
-    let fetched = table.get_value(&id).await.unwrap().expect("row exists");
+    let fetched = table
+        .get_value(id.clone())
+        .await
+        .unwrap()
+        .expect("row exists");
     assert_eq!(fetched["name"].try_get::<String>(), Some("Auto".into()));
     assert_eq!(fetched["price"].try_get::<i64>(), Some(42));
 }
