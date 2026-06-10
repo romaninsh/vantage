@@ -28,7 +28,7 @@ impl_into_value! {
     i32 => |v| Value::Number(serde_json::Number::from(v)),
     i64 => |v| Value::Number(serde_json::Number::from(v)),
     u64 => |v| Value::Number(serde_json::Number::from(v)),
-    f64 => |v| Value::Number(serde_json::Number::from_f64(v).unwrap()),
+    f64 => |v| serde_json::Number::from_f64(v).map(Value::Number).unwrap_or(Value::Null),
     bool => Value::Bool,
     String => Value::String,
     &str => |v:&str| Value::String(v.to_string()),
@@ -74,5 +74,20 @@ mod tests {
         fx(());
         fx(["some", "slice"]);
         fx(vec!["some", "slice"]);
+    }
+
+    #[test]
+    fn test_finite_f64_into_value() {
+        let v = IntoValue::into_value(Box::new(1.5f64));
+        assert_eq!(v, Value::Number(serde_json::Number::from_f64(1.5).unwrap()));
+    }
+
+    #[test]
+    fn test_non_finite_f64_into_value_is_null() {
+        // `into_value` is infallible, and JSON has no NaN/Infinity, so
+        // non-finite floats degrade to Null rather than panicking.
+        for v in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(IntoValue::into_value(Box::new(v)), Value::Null);
+        }
     }
 }
