@@ -1,5 +1,11 @@
 # SurrealQL injection via Thing/record-id rendered into query text
 
+- **Status:** DISMISSED (2026-06-13) — no live attacker-controlled path. `Thing` ids
+  originate from internal construction (relationship traversal, typed record ids), not
+  from raw untrusted user input reaching `Thing::expr()`. The escaping divergence that
+  *did* matter (`Identifier`) is already fixed via the shared `escape_identifier`
+  (PR #297 / `data-surreal-identifier-escaping.md`). Re-open only if a code path is
+  added that builds a `Thing` directly from unvalidated external input.
 - **Severity:** critical
 - **Category:** security
 - **Location:** `vantage-surrealdb/src/thing.rs:132`, `vantage-surrealdb/src/surrealdb/impls/table_source.rs:199`
