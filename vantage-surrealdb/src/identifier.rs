@@ -42,21 +42,6 @@ impl Identifier {
     pub fn dot(self, other: impl Into<String>) -> crate::Expr {
         surreal_expr!("{}.{}", (self), (Identifier::new(other.into())))
     }
-
-    /// Determines if identifier needs escaping
-    ///
-    /// doc wip
-    fn needs_escaping(&self) -> bool {
-        let reserved_keywords = [
-            "DEFINE", "CREATE", "SELECT", "UPDATE", "DELETE", "FROM", "RETURN", "WHERE", "SET",
-            "ONLY", "TABLE",
-        ];
-
-        let upper_identifier = self.identifier.to_uppercase();
-
-        // Check if it contains spaces or is a reserved keyword
-        self.identifier.contains(' ') || reserved_keywords.contains(&upper_identifier.as_str())
-    }
 }
 
 impl From<Identifier> for crate::Expr {
@@ -68,18 +53,18 @@ impl From<Identifier> for crate::Expr {
 impl Expressive<crate::AnySurrealType> for Identifier {
     fn expr(&self) -> crate::Expr {
         use vantage_expressions::Expression;
-        if self.needs_escaping() {
-            Expression::new(format!("⟨{}⟩", self.identifier), vec![])
-        } else {
-            Expression::new(self.identifier.clone(), vec![])
-        }
+        // Single escaping authority lives in `surreal-client` so the rules
+        // can't drift between the two query builders.
+        Expression::new(surreal_client::escape_identifier(&self.identifier), vec![])
     }
 }
 
 pub struct Parent {}
 impl Parent {
-    pub fn identifier() -> Identifier {
-        Identifier::new("$parent")
+    /// `$parent` is a SurrealQL built-in subquery parameter — not a user
+    /// identifier — so it must be emitted verbatim, not through `escape_identifier`.
+    pub fn dot(field: impl Into<String>) -> crate::Expr {
+        crate::surreal_expr!("$parent.{}", (Identifier::new(field.into())))
     }
 }
 
@@ -120,5 +105,30 @@ impl ExpressiveOr<crate::AnySurrealType, Identifier> for crate::field::Field {
 impl<T: ColumnType> ExpressiveOr<crate::AnySurrealType, Identifier> for Column<T> {
     fn field_expr(&self) -> Expr {
         Identifier::new(self.name()).expr()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn embedded_close_bracket_cannot_break_out_of_quoting() {
+        // An identifier carrying the ⟨…⟩ closing bracket must have it
+        // backslash-escaped, otherwise it could terminate the quoting early.
+        let expr = Identifier::new("a⟩b").expr();
+        assert_eq!(expr.preview(), "⟨a\\⟩b⟩");
+    }
+
+    #[test]
+    fn reserved_keyword_is_escaped() {
+        let expr = Identifier::new("SELECT").expr();
+        assert_eq!(expr.preview(), "⟨SELECT⟩");
+    }
+
+    #[test]
+    fn plain_identifier_is_unquoted() {
+        let expr = Identifier::new("user_name").expr();
+        assert_eq!(expr.preview(), "user_name");
     }
 }

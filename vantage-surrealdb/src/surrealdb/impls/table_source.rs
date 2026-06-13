@@ -442,7 +442,7 @@ impl TableSource for SurrealDB {
         crate::surreal_expr!(
             "{} = {}",
             (Identifier::new(target_field)),
-            (Parent::identifier().dot(source_column))
+            (Parent::dot(source_column))
         )
     }
 

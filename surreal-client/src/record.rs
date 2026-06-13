@@ -349,20 +349,37 @@ impl fmt::Display for RecordParseError {
 
 impl std::error::Error for RecordParseError {}
 
-/// Escape a SurrealDB identifier if needed
-fn escape_identifier(ident: &str) -> String {
-    // Check if identifier needs escaping
+/// SurrealQL keywords that must be escaped when used as bare identifiers,
+/// even though they are otherwise valid identifier characters.
+const RESERVED_KEYWORDS: &[&str] = &[
+    "DEFINE", "CREATE", "SELECT", "UPDATE", "DELETE", "FROM", "RETURN", "WHERE", "SET", "ONLY",
+    "TABLE",
+];
+
+/// Escape a SurrealDB identifier so it is safe to embed in a query.
+///
+/// This is the single escaping authority for the crate — record/table/range
+/// rendering and `vantage-surrealdb`'s `Identifier` both route through it, so
+/// the rules cannot drift between query builders.
+///
+/// The identifier is wrapped in `⟨…⟩` when it is empty, numeric, starts with a
+/// digit, contains a character outside `[A-Za-z0-9_]`, or collides with a
+/// reserved keyword. Any embedded `⟩` is backslash-escaped so it cannot
+/// terminate the quoting early. Plain identifiers pass through unchanged.
+pub fn escape_identifier(ident: &str) -> String {
     if ident.is_empty() {
         return "⟨⟩".to_string();
     }
 
-    // Check if it's numeric
+    // Numeric identifiers are always quoted (they can't contain `⟩`).
     if ident.parse::<i64>().is_ok() || ident.parse::<f64>().is_ok() {
         return format!("⟨{}⟩", ident);
     }
 
-    // Check if it contains special characters or starts with a number
-    if ident.chars().next().unwrap().is_ascii_digit()
+    let is_reserved = RESERVED_KEYWORDS.contains(&ident.to_uppercase().as_str());
+
+    if is_reserved
+        || ident.chars().next().unwrap().is_ascii_digit()
         || ident.chars().any(|c| !c.is_alphanumeric() && c != '_')
     {
         return format!("⟨{}⟩", ident.replace('⟩', "\\⟩"));
@@ -415,6 +432,11 @@ mod tests {
         assert_eq!(escape_identifier("123"), "⟨123⟩");
         assert_eq!(escape_identifier("with-dash"), "⟨with-dash⟩");
         assert_eq!(escape_identifier(""), "⟨⟩");
+        // Reserved keywords must be escaped even though they are alphanumeric.
+        assert_eq!(escape_identifier("SELECT"), "⟨SELECT⟩");
+        assert_eq!(escape_identifier("from"), "⟨from⟩");
+        // An embedded closing bracket cannot be allowed to terminate quoting.
+        assert_eq!(escape_identifier("a⟩b"), "⟨a\\⟩b⟩");
     }
 
     #[test]
