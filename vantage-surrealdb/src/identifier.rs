@@ -61,8 +61,10 @@ impl Expressive<crate::AnySurrealType> for Identifier {
 
 pub struct Parent {}
 impl Parent {
-    pub fn identifier() -> Identifier {
-        Identifier::new("$parent")
+    /// `$parent` is a SurrealQL built-in subquery parameter — not a user
+    /// identifier — so it must be emitted verbatim, not through `escape_identifier`.
+    pub fn dot(field: impl Into<String>) -> crate::Expr {
+        crate::surreal_expr!("$parent.{}", (Identifier::new(field.into())))
     }
 }
 
