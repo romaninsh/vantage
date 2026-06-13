@@ -1,5 +1,20 @@
 # SurrealDB Identifier escaping is incomplete and bypassable
 
+- **Status:** FIXED (2026-06-13). Two parts:
+  - The keyword-allowlist bypass was closed earlier (#297, commit `e9d44ae4`): the allowlist is gone
+    and a single `surreal-client::escape_identifier` authority now quotes anything outside
+    `[A-Za-z0-9_]` / leading digit / reserved keyword / empty.
+  - That fix's *escaping* was itself broken and injectable on SurrealDB 3.x — it emitted `\⟩` for an
+    embedded `⟩`, but `\⟩` is an invalid escape inside `⟨…⟩` (verified live), and backslashes weren't
+    doubled, so a crafted `\⟩` collapsed and closed the quoting early (live-verified injection running
+    a smuggled `RETURN 999`). Fixed in surreal-client 0.5.2 / vantage-surrealdb 0.5.12: backslash →
+    `\\` first, then `⟩` → `\u{27E9}`. Regression tests: `record::tests::test_escape_identifier`
+    (surreal-client) and `identifier::tests::{embedded_close_bracket_cannot_break_out_of_quoting,
+    crafted_backslash_bracket_cannot_break_out_of_quoting}` (vantage-surrealdb).
+- **Related regression (already fixed on main, separately):** #297's quote-everything rule also
+  wrapped the `$parent` *variable* as `⟨$parent⟩` (a literal field name, not the parent-row variable).
+  Fixed by `4d20148e` — `Parent::dot()` now emits `$parent.<field>` verbatim, bypassing
+  `escape_identifier`. Noted here only because it was discovered while verifying this finding.
 - **Severity:** high
 - **Category:** security
 - **Location:** `vantage-surrealdb/src/identifier.rs:49`

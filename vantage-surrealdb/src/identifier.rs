@@ -114,10 +114,19 @@ mod tests {
 
     #[test]
     fn embedded_close_bracket_cannot_break_out_of_quoting() {
-        // An identifier carrying the ⟨…⟩ closing bracket must have it
-        // backslash-escaped, otherwise it could terminate the quoting early.
+        // `\⟩` is an invalid escape inside ⟨…⟩, so a `⟩` must be emitted as the
+        // `\u{27E9}` unicode escape — the only form the SurrealDB lexer accepts.
         let expr = Identifier::new("a⟩b").expr();
-        assert_eq!(expr.preview(), "⟨a\\⟩b⟩");
+        assert_eq!(expr.preview(), "⟨a\\u{27E9}b⟩");
+    }
+
+    #[test]
+    fn crafted_backslash_bracket_cannot_break_out_of_quoting() {
+        // A raw `\⟩` would collapse (via `\\`) and let the `⟩` close the
+        // identifier early, injecting whatever follows. The backslash must be
+        // doubled so the whole sequence stays one identifier.
+        let expr = Identifier::new("a\\⟩: 1 }; RETURN 999; x").expr();
+        assert_eq!(expr.preview(), "⟨a\\\\\\u{27E9}: 1 }; RETURN 999; x⟩");
     }
 
     #[test]
