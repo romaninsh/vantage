@@ -162,7 +162,7 @@ pub fn subquery(inner: impl Expressive<AnySurrealType>) -> Expr {
 // ── Tier 2: surreal-specific scalar/collection functions ────────────────────
 // Each mirrors a `math::`/`array::`/`object::`/`string::`/`time::` function under
 // a single-purpose name. The plain ones are `Fx` one-liners (like `avg`/`round`);
-// `time_group`/`similarity` inline a fixed config/search token single-quoted.
+// `time_group`/`similarity` bind their config/search token as a parameter.
 
 /// `first(expr)` → `array::first(expr)`.
 pub fn first(expr: impl Expressive<AnySurrealType>) -> Expr {
@@ -204,22 +204,29 @@ pub fn object_values(expr: impl Expressive<AnySurrealType>) -> Expr {
     Fx::new("object::values", vec![expr.expr()]).expr()
 }
 
-/// `time_group(expr, unit)` → `time::group(expr, 'unit')`. `unit` is a fixed
-/// bucket token (`'year'`/`'month'`/`'day'`/…), inlined single-quoted to match
-/// SurrealQL's literal form.
+/// `time_group(expr, unit)` → `time::group(expr, $unit)`. `unit` is the bucket
+/// token (`year`/`month`/`day`/…), bound as a parameter so it cannot break out of
+/// the SurrealQL string literal.
 pub fn time_group(expr: impl Expressive<AnySurrealType>, unit: &str) -> Expr {
     Expression::new(
-        format!("time::group({{}}, '{unit}')"),
-        vec![ExpressiveEnum::Nested(expr.expr())],
+        "time::group({}, {})",
+        vec![
+            ExpressiveEnum::Nested(expr.expr()),
+            ExpressiveEnum::Scalar(AnySurrealType::from(unit.to_string())),
+        ],
     )
 }
 
-/// `similarity(expr, term)` → `string::similarity::jaro_winkler(expr, 'term')`.
-/// `term` is the literal search string, inlined single-quoted.
+/// `similarity(expr, term)` → `string::similarity::jaro_winkler(expr, $term)`.
+/// `term` is the literal search string, bound as a parameter so an embedded quote
+/// cannot escape the literal and inject SurrealQL.
 pub fn similarity(expr: impl Expressive<AnySurrealType>, term: &str) -> Expr {
     Expression::new(
-        format!("string::similarity::jaro_winkler({{}}, '{term}')"),
-        vec![ExpressiveEnum::Nested(expr.expr())],
+        "string::similarity::jaro_winkler({}, {})",
+        vec![
+            ExpressiveEnum::Nested(expr.expr()),
+            ExpressiveEnum::Scalar(AnySurrealType::from(term.to_string())),
+        ],
     )
 }
 
@@ -580,15 +587,51 @@ mod tests {
     }
 
     #[test]
-    fn tier2_literal_tokens_are_single_quoted() {
-        // time unit and search term are inlined single-quoted to match SurrealQL.
+    fn tier2_literal_tokens_are_bound_params() {
+        // time unit and search term are bound parameters (rendered as double-quoted
+        // strings, routed through prepare_query → CBOR $_arg at execution), not
+        // interpolated into a single-quoted SurrealQL literal.
         assert_eq!(
             time_group(Identifier::new("created_at"), "month").preview(),
-            "time::group(created_at, 'month')"
+            r#"time::group(created_at, "month")"#
         );
         assert_eq!(
             similarity(lower(Identifier::new("name")), "marti mcfligh").preview(),
-            "string::similarity::jaro_winkler(string::lowercase(name), 'marti mcfligh')"
+            r#"string::similarity::jaro_winkler(string::lowercase(name), "marti mcfligh")"#
+        );
+    }
+
+    #[test]
+    fn tier2_literal_tokens_cannot_break_out_of_query() {
+        // Regression for SurrealQL injection: a term/unit containing a quote must not
+        // escape its literal. The token is carried as a bound Scalar parameter — never
+        // interpolated into the template — so it cannot alter query structure.
+        let evil = "x') OR true OR ('";
+
+        let s = similarity(Identifier::new("name"), evil);
+        assert!(
+            !s.template.contains(evil),
+            "term leaked into template (injectable): {}",
+            s.template
+        );
+        assert!(
+            s.parameters
+                .iter()
+                .any(|p| matches!(p, ExpressiveEnum::Scalar(v) if format!("{v}").contains(evil))),
+            "term must be a bound Scalar parameter"
+        );
+
+        let t = time_group(Identifier::new("created_at"), evil);
+        assert!(
+            !t.template.contains(evil),
+            "unit leaked into template (injectable): {}",
+            t.template
+        );
+        assert!(
+            t.parameters
+                .iter()
+                .any(|p| matches!(p, ExpressiveEnum::Scalar(v) if format!("{v}").contains(evil))),
+            "unit must be a bound Scalar parameter"
         );
     }
 }

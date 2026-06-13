@@ -321,12 +321,12 @@ pub fn fn_object_values(arg: rhai::Dynamic) -> Result<RhaiExpr, Box<rhai::EvalAl
     Ok(RhaiExpr(primitives::object_values(unwrap_expr(arg)?)))
 }
 
-/// `time_group(expr, unit)` → `time::group(expr, 'unit')`.
+/// `time_group(expr, unit)` → `time::group(expr, $unit)` (unit bound as a parameter).
 pub fn fn_time_group(arg: rhai::Dynamic, unit: &str) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
     Ok(RhaiExpr(primitives::time_group(unwrap_expr(arg)?, unit)))
 }
 
-/// `similarity(expr, term)` → `string::similarity::jaro_winkler(expr, 'term')`.
+/// `similarity(expr, term)` → `string::similarity::jaro_winkler(expr, $term)` (term bound).
 pub fn fn_similarity(arg: rhai::Dynamic, term: &str) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
     Ok(RhaiExpr(primitives::similarity(unwrap_expr(arg)?, term)))
 }
