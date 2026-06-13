@@ -65,12 +65,14 @@ impl TableSource for Csv {
     fn search_table_condition<E>(
         &self,
         _table: &Table<Self, E>,
-        search_value: &str,
+        _search_value: &str,
     ) -> Expression<Self::Value>
     where
         E: Entity<Self::Value>,
     {
-        Expression::new(format!("SEARCH '{}'", search_value), vec![])
+        // CSV cannot search server-side; this sentinel makes `apply_condition`
+        // surface an Unsupported error instead of silently matching every row.
+        Expression::new(crate::operation::OP_SEARCH, vec![])
     }
 
     async fn list_table_values<E>(
@@ -442,5 +444,27 @@ mod tests {
 
         let result = table.list_values().await;
         assert!(result.is_err());
+    }
+
+    // CSV has no query engine, so it cannot perform full-table search. Asking it
+    // to must surface an `Unsupported` error — never the old silent match-all,
+    // which masqueraded a "no filter applied" as a successful search and leaked
+    // every row. In-memory search belongs to the Lens/Diorama layer.
+    #[tokio::test]
+    async fn search_is_unsupported_not_silent_match_all() {
+        let csv = test_csv();
+        let mut table =
+            Table::<Csv, EmptyEntity>::new("client", csv).with_column_of::<String>("name");
+
+        table.add_search("marty");
+
+        let err = table
+            .list_values()
+            .await
+            .expect_err("CSV search must error, not silently return all rows");
+        assert!(
+            err.is_unsupported(),
+            "CSV search error must be classified Unsupported, got: {err:?}"
+        );
     }
 }

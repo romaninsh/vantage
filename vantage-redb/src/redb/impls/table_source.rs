@@ -74,9 +74,13 @@ impl TableSource for Redb {
         // unsupported features.
         RedbCondition::Deferred(DeferredFn::from_fn(|| {
             Box::pin(async {
-                Err::<AnyRedbType, _>(vantage_core::error!(
-                    "redb does not support full-table search — use indexed eq() instead"
-                ))
+                Err::<AnyRedbType, _>(
+                    vantage_core::error!(
+                        "redb does not support full-table search — use indexed eq() instead"
+                    )
+                    .mark_unsupported()
+                    .traced(),
+                )
             })
         }))
     }
