@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1 — 2026-06-13
+
+- [`escape_identifier`](https://docs.rs/surreal-client/0.5.1/surreal_client/fn.escape_identifier.html)
+  is now public and is the single SurrealQL identifier-escaping authority. It also escapes reserved
+  keywords (e.g. `SELECT`), so `vantage-surrealdb` can share it instead of carrying a weaker second
+  copy. An embedded `⟩` is still backslash-escaped so it cannot terminate `⟨…⟩` quoting early.
+
 ## 0.5.0 — 2026-05-23
 
 - Align all internal dependency versions to 0.5+. No public API changes.

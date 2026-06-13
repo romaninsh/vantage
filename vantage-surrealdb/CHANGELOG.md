@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.10 — 2026-06-13
+
+- `Identifier` escaping now routes through `surreal-client`'s shared `escape_identifier`, removing a
+  weaker duplicate that didn't escape an embedded `⟩` (which could break out of `⟨…⟩` quoting) and
+  only handled spaces and a short keyword list. Column/field names with special characters, leading
+  digits, or empty names are now escaped consistently with record-id rendering.
+- `Fx` now emits its built-in function name (e.g. `string::lowercase`) verbatim instead of through
+  `Identifier`, so the qualifying `::` is no longer mistakenly `⟨…⟩`-quoted.
+
 ## 0.5.9 — 2026-06-07
 
 ### Added
