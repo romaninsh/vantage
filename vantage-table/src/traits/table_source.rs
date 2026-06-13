@@ -89,14 +89,20 @@ pub trait TableSource: DataSource + Clone + 'static {
         parameters: Vec<ExpressiveEnum<Self::Value>>,
     ) -> Expression<Self::Value>;
 
-    /// Create a search condition for a table (e.g., searches across searchable fields)
+    /// Create a search condition matching `search_value` across the table's
+    /// searchable fields. This is a *server-side* capability — it pushes the
+    /// match down to the backend's query engine.
     ///
     /// Different vendors implement search differently:
     /// - SQL: `field LIKE '%value%'` (returns Expression)
     /// - SurrealDB: `field CONTAINS 'value'` (returns Expression)
     /// - MongoDB: `{ field: { $regex: 'value' } }` (returns MongoCondition)
     ///
-    /// The implementation should search across appropriate fields in the table.
+    /// **Contract for backends that cannot search server-side** (e.g. CSV, redb):
+    /// return a condition that yields an `ErrorKind::Unsupported` error when it is
+    /// *resolved* — never a silent match-all (which leaks every row as if filtered)
+    /// and never a panic. Searching loaded/in-memory data is the Lens/Diorama
+    /// layer's responsibility, not the backend's.
     fn search_table_condition<E>(
         &self,
         table: &Table<Self, E>,

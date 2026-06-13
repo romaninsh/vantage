@@ -10,7 +10,7 @@ use vantage_expressions::Expression;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_types::Record;
 
-use crate::operation::{OP_EQ, OP_IN};
+use crate::operation::{OP_EQ, OP_IN, OP_SEARCH};
 use crate::type_system::AnyCsvType;
 
 /// Evaluate a single condition expression against a set of records,
@@ -22,6 +22,14 @@ pub(crate) async fn apply_condition(
     records: IndexMap<String, Record<AnyCsvType>>,
     condition: &Expression<AnyCsvType>,
 ) -> Result<IndexMap<String, Record<AnyCsvType>>> {
+    if condition.template == OP_SEARCH {
+        return Err(vantage_core::error!(
+            "CSV does not support full-table search; load into memory (Lens/Diorama) to search"
+        )
+        .mark_unsupported()
+        .traced());
+    }
+
     let params = &condition.parameters;
     if params.len() < 2 {
         return Ok(records); // Unknown condition shape, skip
