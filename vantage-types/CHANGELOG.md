@@ -2,8 +2,16 @@
 
 ## 0.6.0 — 2026-06-10
 
-- `IntoRecord` blanket impls now return `Result` instead of panicking on entity serialization
-  failure.
+- New `TryIntoRecord` trait, the fallible counterpart to `TryFromRecord`. Serializing a serde
+  entity into a `Record` now goes through `TryIntoRecord` and returns `Result` instead of
+  panicking — so a failing `Serialize` (non-string map keys under JSON, a non-text CBOR key, an
+  out-of-range number) becomes a recoverable error rather than a process abort deep inside a write
+  path. CBOR map entries with non-text keys now error instead of being silently dropped.
+- `IntoRecord` is now reserved for infallible conversions: type-system reshaping
+  (`Record<T>` → `Record<U>`) and `#[entity]`-generated impls. The serde blanket impls moved to
+  `TryIntoRecord`.
+- `Entity` now requires `TryIntoRecord<Value>` instead of `IntoRecord<Value>`; the write paths
+  (`insert` / `replace` / `patch` / `insert_return_id`) propagate the serialization error.
 
 ## 0.5.0 — 2026-05-23
 

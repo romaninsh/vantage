@@ -102,6 +102,16 @@ fn generate_impls(
             }
         }
 
+        impl vantage_types::TryIntoRecord<#any_type> for #name {
+            type Error = ::core::convert::Infallible;
+
+            fn try_into_record(
+                self,
+            ) -> ::core::result::Result<vantage_types::Record<#any_type>, Self::Error> {
+                Ok(<Self as vantage_types::IntoRecord<#any_type>>::into_record(self))
+            }
+        }
+
         impl vantage_types::TryFromRecord<#any_type> for #name {
             type Error = vantage_core::VantageError;
 

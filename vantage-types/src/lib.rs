@@ -7,7 +7,7 @@ pub mod record;
 pub mod terminal_render;
 pub mod type_system;
 
-pub use record::{IntoRecord, Record, TryFromRecord};
+pub use record::{IntoRecord, Record, TryFromRecord, TryIntoRecord};
 pub use terminal_render::{RichText, Span, Style, TerminalRender};
 
 /// Empty entity type for testing and dynamic table scenarios
@@ -21,7 +21,7 @@ pub struct EmptyEntity;
 /// serde_json::Value as the value type for convenience.
 #[cfg(feature = "serde")]
 pub trait Entity<Value: Clone = serde_json::Value>:
-    IntoRecord<Value> + TryFromRecord<Value> + Send + Sync + Clone
+    TryIntoRecord<Value> + TryFromRecord<Value> + Send + Sync + Clone
 {
 }
 
@@ -30,14 +30,14 @@ pub trait Entity<Value: Clone = serde_json::Value>:
 impl<T, Value> Entity<Value> for T
 where
     Value: Clone,
-    T: IntoRecord<Value> + TryFromRecord<Value> + Send + Sync + Clone,
+    T: TryIntoRecord<Value> + TryFromRecord<Value> + Send + Sync + Clone,
 {
 }
 
 /// Entity trait without serde feature - no default Value type
 #[cfg(not(feature = "serde"))]
 pub trait Entity<Value: Clone>:
-    IntoRecord<Value> + TryFromRecord<Value> + Send + Sync + Clone
+    TryIntoRecord<Value> + TryFromRecord<Value> + Send + Sync + Clone
 {
 }
 
@@ -46,7 +46,7 @@ pub trait Entity<Value: Clone>:
 impl<T, Value> Entity<Value> for T
 where
     Value: Clone,
-    T: IntoRecord<Value> + TryFromRecord<Value> + Send + Sync + Clone,
+    T: TryIntoRecord<Value> + TryFromRecord<Value> + Send + Sync + Clone,
 {
 }
 
@@ -54,6 +54,14 @@ where
 impl<V: Clone> IntoRecord<V> for EmptyEntity {
     fn into_record(self) -> Record<V> {
         Record::new()
+    }
+}
+
+impl<V: Clone> TryIntoRecord<V> for EmptyEntity {
+    type Error = std::convert::Infallible; // No conversion can fail for empty entity
+
+    fn try_into_record(self) -> Result<Record<V>, Self::Error> {
+        Ok(Record::new())
     }
 }
 

@@ -2,7 +2,7 @@ use async_trait::async_trait;
 
 use vantage_core::Result;
 use vantage_dataset::prelude::InsertableDataSet;
-use vantage_types::Entity;
+use vantage_types::{Entity, TryIntoRecord};
 
 use crate::{table::Table, traits::table_source::TableSource};
 
@@ -12,9 +12,13 @@ impl<T, E> InsertableDataSet<E> for Table<T, E>
 where
     T: TableSource,
     E: Entity<T::Value>,
+    <E as TryIntoRecord<T::Value>>::Error: std::fmt::Debug,
 {
     async fn insert_return_id(&self, entity: &E) -> Result<Self::Id> {
-        let record = entity.clone().into_record();
+        let record = entity
+            .clone()
+            .try_into_record()
+            .map_err(|e| vantage_core::error!("Failed to serialize entity to record", error = e))?;
 
         self.data_source()
             .insert_table_return_id_value(self, &record)
