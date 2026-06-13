@@ -4,7 +4,7 @@
 
 use vantage_expressions::{Expression, Expressive};
 
-use crate::{AnySurrealType, Expr, identifier::Identifier, surreal_expr};
+use crate::{AnySurrealType, Expr, surreal_expr};
 
 /// SurrealDB identifier with automatic escaping
 ///
@@ -75,9 +75,12 @@ impl Fx {
 
 impl Expressive<AnySurrealType> for Fx {
     fn expr(&self) -> Expr {
+        // The function name is a trusted, qualified built-in path (e.g.
+        // `string::lowercase`) — it is not a column identifier and must not be
+        // ⟨…⟩-escaped, so it is emitted verbatim rather than through `Identifier`.
         surreal_expr!(
             "{}({})",
-            (Identifier::new(self.name.clone())),
+            (Expression::new(self.name.clone(), vec![])),
             (Expression::from_vec(self.expr.clone(), ", "))
         )
     }
