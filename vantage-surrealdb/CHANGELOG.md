@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.11 — 2026-06-13
+
+- `similarity(expr, term)` and `time_group(expr, unit)` now bind their literal token as a query
+  parameter instead of interpolating it into a single-quoted SurrealQL literal. A `term`/`unit`
+  containing a `'` previously broke out of the literal and could inject SurrealQL — relevant because
+  `similarity` is typically fed a runtime search term and both are exposed through the Rhai config
+  layer. The token is now routed through the same CBOR `$_arg` binding as every other scalar.
+
 ## 0.5.10 — 2026-06-13
 
 - `Identifier` escaping now routes through `surreal-client`'s shared `escape_identifier`, removing a
