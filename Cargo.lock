@@ -4717,7 +4717,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-csv"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4863,7 +4863,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-redb"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4943,7 +4943,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-stream",
  "async-trait",
