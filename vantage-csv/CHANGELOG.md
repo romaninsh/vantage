@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.4 — 2026-06-13
+
+- Searching a CSV table now returns an `Unsupported` error instead of silently matching every row.
+  CSV has no query engine, so full-table search must be done in memory via the Lens/Diorama layer;
+  pushing a search down to CSV is a no-op and previously leaked the whole table as if filtered.
+
 ## 0.5.3 — 2026-06-02
 
 - Track `vantage-table`'s new `TableSource::Source` associated type (set to `String`; no
