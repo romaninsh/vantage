@@ -1,13 +1,13 @@
 use crate::traits::{ReadableDataSet, Result, WritableDataSet, WritableValueSet};
 use std::ops::{Deref, DerefMut};
 use vantage_core::util::error::vantage_error;
-use vantage_types::{Entity, IntoRecord, Record, TryFromRecord};
+use vantage_types::{Entity, Record, TryFromRecord, TryIntoRecord};
 
 /// A record represents a single entity with its ID, providing save functionality
 pub struct ActiveEntity<'a, D, E>
 where
     D: WritableDataSet<E> + ?Sized,
-    E: IntoRecord<D::Value> + TryFromRecord<D::Value> + Send + Sync + Clone,
+    E: TryIntoRecord<D::Value> + TryFromRecord<D::Value> + Send + Sync + Clone,
 {
     id: D::Id,
     data: E,
@@ -17,7 +17,7 @@ where
 impl<'a, D, E> ActiveEntity<'a, D, E>
 where
     D: WritableDataSet<E> + ?Sized,
-    E: IntoRecord<D::Value> + TryFromRecord<D::Value> + Send + Sync + Clone,
+    E: TryIntoRecord<D::Value> + TryFromRecord<D::Value> + Send + Sync + Clone,
 {
     pub fn new(id: D::Id, data: E, dataset: &'a D) -> Self {
         Self { id, data, dataset }
@@ -71,7 +71,7 @@ where
 impl<'a, D, E> Deref for ActiveEntity<'a, D, E>
 where
     D: WritableDataSet<E> + ?Sized,
-    E: IntoRecord<D::Value> + TryFromRecord<D::Value> + Send + Sync + Clone,
+    E: TryIntoRecord<D::Value> + TryFromRecord<D::Value> + Send + Sync + Clone,
 {
     type Target = E;
 
@@ -83,7 +83,7 @@ where
 impl<'a, D, E> DerefMut for ActiveEntity<'a, D, E>
 where
     D: WritableDataSet<E> + ?Sized,
-    E: IntoRecord<D::Value> + TryFromRecord<D::Value> + Send + Sync + Clone,
+    E: TryIntoRecord<D::Value> + TryFromRecord<D::Value> + Send + Sync + Clone,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.data

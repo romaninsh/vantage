@@ -66,6 +66,7 @@ pub fn crud<E, F>(make_table: F) -> Router
 where
     F: Fn(MongoDB, &Params) -> Table<MongoDB, E> + Send + Sync + 'static,
     E: Entity<AnyMongoType> + Serialize + DeserializeOwned + Send + Sync + 'static,
+    <E as vantage_types::TryIntoRecord<AnyMongoType>>::Error: std::fmt::Debug,
 {
     let f = Arc::new(make_table);
     Router::new()
