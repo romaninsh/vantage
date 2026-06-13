@@ -37,12 +37,12 @@ fn main() {
     println!("Original company: {:?}", company);
 
     // Test: Person -> Record<serde_json::Value>
-    let person_record: Record<serde_json::Value> = person.clone().into_record();
+    let person_record: Record<serde_json::Value> = person.clone().try_into_record().unwrap();
     println!("\nPerson -> Record<serde_json::Value>: SUCCESS");
     println!("Person record: {:?}", person_record);
 
     // Test: Company -> Record<serde_json::Value>
-    let company_record: Record<serde_json::Value> = company.clone().into_record();
+    let company_record: Record<serde_json::Value> = company.clone().try_into_record().unwrap();
     println!("\nCompany -> Record<serde_json::Value>: SUCCESS");
     println!("Company record: {:?}", company_record);
 
@@ -112,7 +112,7 @@ fn main() {
     println!("Original department: {:?}", department);
 
     // Department -> Record<serde_json::Value> -> Department
-    let dept_record: Record<serde_json::Value> = department.clone().into_record();
+    let dept_record: Record<serde_json::Value> = department.clone().try_into_record().unwrap();
     println!("\nDepartment -> Record<serde_json::Value>: SUCCESS");
 
     let dept_back: Result<Department, _> = Department::from_record(dept_record);

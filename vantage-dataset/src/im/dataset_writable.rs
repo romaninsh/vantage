@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use vantage_types::{Entity, Record, TryFromRecord};
+use vantage_types::{Entity, Record, TryFromRecord, TryIntoRecord};
 
 use crate::{
     im::ImTable,
@@ -11,6 +11,7 @@ impl<E> WritableDataSet<E> for ImTable<E>
 where
     E: Entity + Clone + Send + Sync,
     <E as TryFromRecord<serde_json::Value>>::Error: std::fmt::Debug,
+    <E as TryIntoRecord<serde_json::Value>>::Error: std::fmt::Debug,
 {
     async fn insert(&self, id: impl Into<Self::Id> + Send, entity: &E) -> Result<E> {
         let id = id.into();
@@ -30,7 +31,13 @@ where
             }
 
             // Convert entity to record for storage (remove id field since it's in the key)
-            let mut record: Record<serde_json::Value> = entity.clone().into_record();
+            let mut record: Record<serde_json::Value> =
+                entity.clone().try_into_record().map_err(|e| {
+                    vantage_core::util::error::vantage_error!(
+                        "Failed to serialize entity to record: {:?}",
+                        e
+                    )
+                })?;
             record.shift_remove("id");
 
             table.insert(id.clone(), record);
@@ -41,7 +48,13 @@ where
     async fn replace(&self, id: impl Into<Self::Id> + Send, entity: &E) -> Result<E> {
         let id = id.into();
         // Convert entity to record for storage (remove id field since it's in the key)
-        let mut record: Record<serde_json::Value> = entity.clone().into_record();
+        let mut record: Record<serde_json::Value> =
+            entity.clone().try_into_record().map_err(|e| {
+                vantage_core::util::error::vantage_error!(
+                    "Failed to serialize entity to record: {:?}",
+                    e
+                )
+            })?;
         record.shift_remove("id");
 
         self.data_source.with_table_mut(&self.table_name, |table| {
@@ -54,7 +67,13 @@ where
     async fn patch(&self, id: impl Into<Self::Id> + Send, partial: &E) -> Result<E> {
         let id = id.into();
         // Convert partial entity to record
-        let partial_record: Record<serde_json::Value> = partial.clone().into_record();
+        let partial_record: Record<serde_json::Value> =
+            partial.clone().try_into_record().map_err(|e| {
+                vantage_core::util::error::vantage_error!(
+                    "Failed to serialize entity to record: {:?}",
+                    e
+                )
+            })?;
 
         self.data_source.with_table_mut(&self.table_name, |table| {
             // Check if record exists

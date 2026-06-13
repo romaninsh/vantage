@@ -98,10 +98,11 @@ fn utc_val() -> DateTime<Utc> {
 async fn try_round_trip<E>(table: &Table<MysqlDB, E>, id: &str, entity: &E) -> Result<E, String>
 where
     E: Clone
-        + vantage_types::IntoRecord<AnyMysqlType>
+        + vantage_types::TryIntoRecord<AnyMysqlType>
         + vantage_types::TryFromRecord<AnyMysqlType, Error = vantage_core::VantageError>
         + Send
         + Sync,
+    <E as vantage_types::TryIntoRecord<AnyMysqlType>>::Error: std::fmt::Debug,
 {
     table
         .replace(&id.to_string(), entity)

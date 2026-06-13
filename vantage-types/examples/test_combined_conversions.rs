@@ -107,7 +107,8 @@ fn main() {
     println!("   Original: {:?}", serde_struct);
 
     // SerdeStruct -> Record<serde_json::Value> (via serde methods)
-    let serde_json_record: Record<serde_json::Value> = serde_struct.clone().into_record();
+    let serde_json_record: Record<serde_json::Value> =
+        serde_struct.clone().try_into_record().unwrap();
     println!("   ✅ SerdeStruct -> Record<serde_json::Value>");
     println!("   JSON record: {:?}", serde_json_record);
 
@@ -142,7 +143,7 @@ fn main() {
     println!("   Via type system: {:?}", hybrid_string_via_ts);
 
     // Path 2: via Serde
-    let hybrid_json: Record<serde_json::Value> = hybrid.clone().into_record();
+    let hybrid_json: Record<serde_json::Value> = hybrid.clone().try_into_record().unwrap();
 
     // Convert serde_json::Value to String (need manual conversion for this)
     let hybrid_string_via_serde: Record<String> = hybrid_json
@@ -173,7 +174,8 @@ fn main() {
 
     // Show that the same struct can go through different conversion paths
     let path1: Record<AnyMyType> = flexible_struct.clone().into_record(); // Type system path
-    let path2_record: Record<serde_json::Value> = flexible_struct.clone().into_record(); // Serde path
+    let path2_record: Record<serde_json::Value> =
+        flexible_struct.clone().try_into_record().unwrap(); // Serde path
 
     println!("   Same struct, different paths:");
     println!("   Type system path: {:?}", path1);

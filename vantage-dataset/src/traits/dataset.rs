@@ -302,7 +302,7 @@ where
 pub trait ActiveEntitySet<E>: ReadableDataSet<E> + WritableDataSet<E>
 where
     E: Entity<Self::Value>
-        + vantage_types::IntoRecord<Self::Value>
+        + vantage_types::TryIntoRecord<Self::Value>
         + vantage_types::TryFromRecord<Self::Value>
         + Send
         + Sync
@@ -418,7 +418,7 @@ impl<T, E> ActiveEntitySet<E> for T
 where
     T: ReadableDataSet<E> + WritableDataSet<E>,
     E: Entity<T::Value>
-        + vantage_types::IntoRecord<T::Value>
+        + vantage_types::TryIntoRecord<T::Value>
         + vantage_types::TryFromRecord<T::Value>
         + Send
         + Sync
