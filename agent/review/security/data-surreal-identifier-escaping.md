@@ -11,10 +11,10 @@
     `\\` first, then `⟩` → `\u{27E9}`. Regression tests: `record::tests::test_escape_identifier`
     (surreal-client) and `identifier::tests::{embedded_close_bracket_cannot_break_out_of_quoting,
     crafted_backslash_bracket_cannot_break_out_of_quoting}` (vantage-surrealdb).
-- **Related regression found while fixing (NOT addressed here):** #297's quote-everything rule also
-  wraps the `$parent` *variable* (`Parent::identifier()`) as `⟨$parent⟩`, which is a literal field
-  name, not the parent-row variable — `vantage-surrealdb` test `select::query11` fails on the base
-  branch because of this. Variable-like identifiers (`$…`) should bypass quoting. Tracked separately.
+- **Related regression (already fixed on main, separately):** #297's quote-everything rule also
+  wrapped the `$parent` *variable* as `⟨$parent⟩` (a literal field name, not the parent-row variable).
+  Fixed by `4d20148e` — `Parent::dot()` now emits `$parent.<field>` verbatim, bypassing
+  `escape_identifier`. Noted here only because it was discovered while verifying this finding.
 - **Severity:** high
 - **Category:** security
 - **Location:** `vantage-surrealdb/src/identifier.rs:49`
