@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use vantage_types::{IntoRecord, Record, TryFromRecord};
+use vantage_types::{Record, TryFromRecord, TryIntoRecord};
 
 // Test structs - using automatic serde conversions (no macro needed)
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
@@ -28,7 +28,7 @@ mod tests {
         };
 
         // Direct conversion using automatic serde implementation
-        let json_record: Record<JsonValue> = user.into_record();
+        let json_record: Record<JsonValue> = user.try_into_record().unwrap();
 
         assert_eq!(json_record.len(), 2);
         assert_eq!(json_record["name"], JsonValue::String("Alice".to_string()));
@@ -46,7 +46,7 @@ mod tests {
         };
 
         // Round-trip: struct -> record -> struct using automatic serde implementations
-        let record: Record<JsonValue> = user.clone().into_record();
+        let record: Record<JsonValue> = user.clone().try_into_record().unwrap();
         let restored_user: User = User::from_record(record).unwrap();
 
         assert_eq!(restored_user, user);
@@ -60,7 +60,7 @@ mod tests {
         };
 
         // Convert to typed record using automatic serde implementation
-        let record: Record<JsonValue> = user.into_record();
+        let record: Record<JsonValue> = user.try_into_record().unwrap();
 
         // Direct access to raw values
         assert_eq!(record["name"], JsonValue::String("David".to_string()));
@@ -90,7 +90,7 @@ mod tests {
         };
 
         // Convert nested structure using automatic serde implementation
-        let record: Record<JsonValue> = person.clone().into_record();
+        let record: Record<JsonValue> = person.clone().try_into_record().unwrap();
 
         assert_eq!(record["name"], JsonValue::String("Bob".to_string()));
         assert!(record["address"].is_object());
@@ -122,7 +122,7 @@ mod tests {
         };
 
         // Struct -> Record -> JSON Value -> Record -> Struct
-        let record: Record<JsonValue> = user.clone().into_record();
+        let record: Record<JsonValue> = user.clone().try_into_record().unwrap();
         let json_value: JsonValue = record.into();
         let record_again: Record<JsonValue> = json_value.into();
         let user_again: User = User::from_record(record_again).unwrap();

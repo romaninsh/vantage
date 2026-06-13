@@ -100,10 +100,11 @@ fn utc_val() -> DateTime<Utc> {
 async fn try_round_trip<E>(table: &Table<PostgresDB, E>, id: &str, entity: &E) -> Result<E, String>
 where
     E: Clone
-        + vantage_types::IntoRecord<AnyPostgresType>
+        + vantage_types::TryIntoRecord<AnyPostgresType>
         + vantage_types::TryFromRecord<AnyPostgresType, Error = vantage_core::VantageError>
         + Send
         + Sync,
+    <E as vantage_types::TryIntoRecord<AnyPostgresType>>::Error: std::fmt::Debug,
 {
     table
         .replace(&id.to_string(), entity)

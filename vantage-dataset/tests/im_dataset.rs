@@ -22,6 +22,26 @@ struct Product {
     available: bool,
 }
 
+/// An entity whose serialization always fails. Used to prove write paths surface
+/// the error as a `Result` instead of panicking — a regression guard for the old
+/// `IntoRecord` `.expect()`.
+#[derive(Debug, Clone)]
+struct Unserializable;
+
+impl Serialize for Unserializable {
+    fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+        Err(serde::ser::Error::custom(
+            "serialization deliberately failed",
+        ))
+    }
+}
+
+impl<'de> Deserialize<'de> for Unserializable {
+    fn deserialize<D: serde::Deserializer<'de>>(_deserializer: D) -> Result<Self, D::Error> {
+        Ok(Unserializable)
+    }
+}
+
 #[tokio::test]
 async fn test_readable_dataset() {
     let ds = ImDataSource::new();
@@ -319,4 +339,17 @@ async fn test_concurrent_inserts_no_lost_update() {
     let table = ImTable::<User>::new(&ds, "users");
     let all = table.list().await.unwrap();
     assert_eq!(all.len(), N, "every concurrent insert must survive");
+}
+
+#[tokio::test]
+async fn insert_surfaces_serialization_error_instead_of_panicking() {
+    let ds = ImDataSource::new();
+    let table = ImTable::<Unserializable>::new(&ds, "boom");
+
+    let result = table.insert("k", &Unserializable).await;
+
+    assert!(
+        result.is_err(),
+        "a serialization failure must be a recoverable error, not a panic"
+    );
 }

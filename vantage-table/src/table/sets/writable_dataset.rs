@@ -2,7 +2,7 @@ use async_trait::async_trait;
 
 use vantage_core::Result;
 use vantage_dataset::prelude::WritableDataSet;
-use vantage_types::Entity;
+use vantage_types::{Entity, TryIntoRecord};
 
 use crate::{table::Table, traits::table_source::TableSource};
 
@@ -12,10 +12,14 @@ impl<T, E> WritableDataSet<E> for Table<T, E>
 where
     T: TableSource,
     E: Entity<T::Value>,
+    <E as TryIntoRecord<T::Value>>::Error: std::fmt::Debug,
 {
     async fn insert(&self, id: impl Into<Self::Id> + Send, entity: &E) -> Result<E> {
         let id = id.into();
-        let record = entity.clone().into_record();
+        let record = entity
+            .clone()
+            .try_into_record()
+            .map_err(|e| vantage_core::error!("Failed to serialize entity to record", error = e))?;
 
         let result_record = self
             .data_source()
@@ -28,7 +32,10 @@ where
 
     async fn replace(&self, id: impl Into<Self::Id> + Send, entity: &E) -> Result<E> {
         let id = id.into();
-        let record = entity.clone().into_record();
+        let record = entity
+            .clone()
+            .try_into_record()
+            .map_err(|e| vantage_core::error!("Failed to serialize entity to record", error = e))?;
 
         let result_record = self
             .data_source()
@@ -41,7 +48,10 @@ where
 
     async fn patch(&self, id: impl Into<Self::Id> + Send, partial: &E) -> Result<E> {
         let id = id.into();
-        let partial_record = partial.clone().into_record();
+        let partial_record = partial
+            .clone()
+            .try_into_record()
+            .map_err(|e| vantage_core::error!("Failed to serialize entity to record", error = e))?;
 
         let result_record = self
             .data_source()

@@ -8,7 +8,7 @@
 //! ```
 
 // Re-export core types
-pub use crate::record::{IntoRecord, Record, TryFromRecord};
+pub use crate::record::{IntoRecord, Record, TryFromRecord, TryIntoRecord};
 pub use crate::terminal_render::{RichText, Span, Style, TerminalRender};
 
 // Re-export macros

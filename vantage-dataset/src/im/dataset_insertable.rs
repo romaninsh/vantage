@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use vantage_types::{Entity, Record};
+use vantage_types::{Entity, Record, TryIntoRecord};
 
 use crate::{im::ImTable, traits::InsertableDataSet};
 
@@ -7,10 +7,17 @@ use crate::{im::ImTable, traits::InsertableDataSet};
 impl<E> InsertableDataSet<E> for ImTable<E>
 where
     E: Entity,
+    <E as TryIntoRecord<serde_json::Value>>::Error: std::fmt::Debug,
 {
     async fn insert_return_id(&self, entity: &E) -> crate::traits::Result<Self::Id> {
         // Convert entity to record
-        let mut record: Record<serde_json::Value> = entity.clone().into_record();
+        let mut record: Record<serde_json::Value> =
+            entity.clone().try_into_record().map_err(|e| {
+                vantage_core::util::error::vantage_error!(
+                    "Failed to serialize entity to record: {:?}",
+                    e
+                )
+            })?;
 
         // Extract ID from record if present, otherwise generate random ID
         let id = if let Some(record_id) = record.get("id") {
