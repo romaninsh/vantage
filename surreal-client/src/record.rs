@@ -364,8 +364,12 @@ const RESERVED_KEYWORDS: &[&str] = &[
 ///
 /// The identifier is wrapped in `⟨…⟩` when it is empty, numeric, starts with a
 /// digit, contains a character outside `[A-Za-z0-9_]`, or collides with a
-/// reserved keyword. Any embedded `⟩` is backslash-escaped so it cannot
-/// terminate the quoting early. Plain identifiers pass through unchanged.
+/// reserved keyword. Inside the brackets SurrealDB applies C-style escapes, so
+/// backslashes are doubled (otherwise `\b`/`\n` would become control chars, or
+/// a crafted `\⟩` would collapse and close the quoting early) and any `⟩` is
+/// emitted as `\u{27E9}` — `\⟩` is itself an invalid escape there, so the
+/// unicode escape is the only representation that survives. Plain identifiers
+/// pass through unchanged.
 pub fn escape_identifier(ident: &str) -> String {
     if ident.is_empty() {
         return "⟨⟩".to_string();
@@ -382,7 +386,9 @@ pub fn escape_identifier(ident: &str) -> String {
         || ident.chars().next().unwrap().is_ascii_digit()
         || ident.chars().any(|c| !c.is_alphanumeric() && c != '_')
     {
-        return format!("⟨{}⟩", ident.replace('⟩', "\\⟩"));
+        // Backslash first, so the `\u{27E9}` we emit for `⟩` isn't re-escaped.
+        let escaped = ident.replace('\\', "\\\\").replace('⟩', "\\u{27E9}");
+        return format!("⟨{}⟩", escaped);
     }
 
     ident.to_string()
@@ -435,8 +441,16 @@ mod tests {
         // Reserved keywords must be escaped even though they are alphanumeric.
         assert_eq!(escape_identifier("SELECT"), "⟨SELECT⟩");
         assert_eq!(escape_identifier("from"), "⟨from⟩");
-        // An embedded closing bracket cannot be allowed to terminate quoting.
-        assert_eq!(escape_identifier("a⟩b"), "⟨a\\⟩b⟩");
+        // `⟩` cannot be backslash-escaped inside ⟨…⟩ — SurrealDB treats `\⟩` as
+        // an invalid escape sequence — so it must be emitted as the `\u{27E9}`
+        // unicode escape, the only representation that survives the lexer.
+        assert_eq!(escape_identifier("a⟩b"), "⟨a\\u{27E9}b⟩");
+        // A backslash must be doubled. Left raw it would either form a control
+        // escape (`\b` → backspace, `\n` → newline) or, as `\⟩`, collapse so a
+        // following `⟩` closes the quoting early — an identifier-injection vector.
+        assert_eq!(escape_identifier("a\\b"), "⟨a\\\\b⟩");
+        // Combined: a crafted `\⟩` must stay inside the identifier, not break out.
+        assert_eq!(escape_identifier("a\\⟩b"), "⟨a\\\\\\u{27E9}b⟩");
     }
 
     #[test]
