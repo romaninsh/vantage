@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.12 — 2026-06-13
+
+- `Identifier` escaping is now correct on SurrealDB 3.x. It picks up the `surreal-client` 0.5.2 fix:
+  a `⟩` inside a column/field name is emitted as `\u{27E9}` (the previous `\⟩` was an invalid escape
+  that failed to parse) and backslashes are doubled, closing an identifier-injection hole where a
+  crafted `\⟩` could break out of `⟨…⟩` quoting. Verified against a live SurrealDB.
+
 ## 0.5.11 — 2026-06-13
 
 - `similarity(expr, term)` and `time_group(expr, unit)` now bind their literal token as a query
