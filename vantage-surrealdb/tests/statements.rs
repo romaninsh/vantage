@@ -306,7 +306,7 @@ fn select_complex_query() {
             Some("total".to_string()),
         )
         .with_expression(surreal_expr!("count()"), Some("cnt".to_string()))
-        .with_where(Field::new("order.status").eq("confirmed"))
+        .with_where(Field::new("order").dot("status").eq("confirmed"))
         .with_group_by(Field::new("product"))
         .with_order_by(Field::new("total"), Order::Desc)
         .with_limit(10);
