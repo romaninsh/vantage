@@ -11,6 +11,11 @@ use crate::type_system::AnyCsvType;
 pub const OP_EQ: &str = "{} = {}";
 pub const OP_IN: &str = "{} IN ({})";
 
+/// Sentinel for a full-table search request. CSV has no query engine, so the
+/// evaluator rejects this marker with an `Unsupported` error rather than
+/// filtering — search of loaded data is the Lens/Diorama layer's job.
+pub const OP_SEARCH: &str = "SEARCH";
+
 /// CSV-specific comparison operations.
 ///
 /// Blanket-implemented for all `Expressive<AnyCsvType>` so columns, fields,

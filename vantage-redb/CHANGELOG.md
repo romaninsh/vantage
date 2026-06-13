@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.4 — 2026-06-13
+
+- Full-table search now reports the canonical `Unsupported` error kind, matching how the other
+  non-searchable backend (CSV) signals the same limitation. No behavior change beyond error
+  classification.
+
 ## 0.5.3 — 2026-06-02
 
 - Track `vantage-table`'s new `TableSource::Source` associated type (set to `String`; no

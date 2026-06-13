@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1 — 2026-06-13
+
+- Documented the contract for `TableSource::search_table_condition`: search is a server-side
+  capability, and backends that cannot search must surface an `Unsupported` error when the
+  condition resolves — never a silent match-all, never a panic.
+
 ## 0.6.0 — 2026-06-10
 
 - `get_count_via_query` now unwraps single-element arrays (`[{"count": N}]`), matching how
