@@ -1,6 +1,6 @@
 [package]
 name = "vantage-aws"
-version = "0.5.4"
+version = "0.6.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -11,12 +11,12 @@ repository = "https://github.com/romaninsh/vantage"
 readme = "README.md"
 
 [dependencies]
-vantage-core = { version = "0.5", path = "../vantage-core" }
+vantage-core = { version = "0.6", path = "../vantage-core" }
 vantage-types = { version = "0.6", path = "../vantage-types", features = ["serde"] }
 vantage-expressions = { version = "0.6", path = "../vantage-expressions" }
 vantage-table = { version = "0.6", path = "../vantage-table" }
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
-vantage-vista = { version = "0.5", path = "../vantage-vista" }
+vantage-vista = { version = "0.6", path = "../vantage-vista" }
 
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
@@ -42,8 +42,8 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "serd
 
 [dev-dependencies]
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
-vantage-cli-util = { version = "0.5", path = "../vantage-cli-util" }
-vantage-vista = { version = "0.5", path = "../vantage-vista" }
+vantage-cli-util = { version = "0.6", path = "../vantage-cli-util" }
+vantage-vista = { version = "0.6", path = "../vantage-vista" }
 
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }
