@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0 — unreleased
+
+- Coordinated 0.6 release; internal dependencies realigned to 0.6. No changes beyond 0.5.2.
+
 ## 0.5.2 — 2026-06-13
 
 - Fixed [`escape_identifier`](https://docs.rs/surreal-client/0.5.2/surreal_client/fn.escape_identifier.html)

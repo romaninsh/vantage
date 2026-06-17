@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2 — unreleased
+
+- Internal dependency realignment for the coordinated 0.6 release; no public API changes.
+
 ## 0.6.1 — 2026-06-13
 
 - Documented the contract for `TableSource::search_table_condition`: search is a server-side

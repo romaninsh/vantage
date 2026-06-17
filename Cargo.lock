@@ -4738,7 +4738,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -4800,7 +4800,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-expressions"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4943,7 +4943,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -4967,7 +4967,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "ciborium",
  "csv",
