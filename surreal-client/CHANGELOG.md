@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.2 — 2026-06-13
+
+- Fixed [`escape_identifier`](https://docs.rs/surreal-client/0.5.2/surreal_client/fn.escape_identifier.html)
+  emitting `\⟩` for an embedded closing bracket. On SurrealDB 3.x `\⟩` is an *invalid* escape inside
+  `⟨…⟩`, so that output failed to parse — and because backslashes weren't doubled, a crafted `\⟩`
+  collapsed and let the bracket close early, injecting arbitrary SurrealQL from an identifier (verified
+  live). Backslashes are now doubled and `⟩` is emitted as the `\u{27E9}` unicode escape, the only form
+  the lexer accepts. Identifier and record-id rendering both benefit, since they share this function.
+
 ## 0.5.1 — 2026-06-13
 
 - [`escape_identifier`](https://docs.rs/surreal-client/0.5.1/surreal_client/fn.escape_identifier.html)
