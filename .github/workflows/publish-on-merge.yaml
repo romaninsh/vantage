@@ -70,17 +70,21 @@ jobs:
           CRATES: ${{ steps.detect.outputs.crates }}
         run: |
           set -euo pipefail
-          # Canonical topological publish order. `cargo publish` checks
-          # each crate's [dependencies] against crates.io at packaging
-          # time, so a downstream crate's bumped version must already be
-          # on the registry before its dependent publishes. Alphabetical
-          # iteration fails when api-client (depends on vista) runs
-          # before vista. New publishable crates must be appended here
-          # at the right layer; the unknown-crate tail is a safety net,
-          # not a substitute.
+          # Canonical topological publish order. `cargo publish` resolves
+          # each crate's full graph against crates.io at packaging time —
+          # including dev-dependencies — so every internal crate a package
+          # depends on (normal OR dev) must already be on the registry
+          # before that package publishes. Alphabetical iteration fails
+          # when api-client (depends on vista) runs before vista.
+          #
+          # Entries are DIRECTORY paths, matched against the dirs of
+          # changed Cargo.toml files — so nested crates use their path
+          # (e.g. vantage-types/entity, not vantage-types-entity). New
+          # publishable crates must be inserted here at the right layer;
+          # the unknown-crate tail is a safety net, not a substitute.
           PUBLISH_ORDER=(
             vantage-core
-            vantage-types-entity
+            vantage-types/entity
             vantage-types
             vantage-dataset
             vantage-vista
@@ -88,17 +92,17 @@ jobs:
             surreal-client
             vantage-expressions
             vantage-table
-            vantage-cmd
+            vantage-cli-util
             vantage-csv
-            vantage-surrealdb
-            vantage-sql
+            vantage-log-writer
             vantage-mongodb
             vantage-redb
-            vantage-cli-util
+            vantage-sql
+            vantage-surrealdb
             vantage-api-client
             vantage-api-pool
             vantage-aws
-            vantage-log-writer
+            vantage-cmd
             vantage-diorama
           )
 
