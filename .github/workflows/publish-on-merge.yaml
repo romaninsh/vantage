@@ -80,9 +80,11 @@ jobs:
           # not a substitute.
           PUBLISH_ORDER=(
             vantage-core
+            vantage-types-entity
             vantage-types
             vantage-dataset
             vantage-vista
+            vantage-vista-factory
             surreal-client
             vantage-expressions
             vantage-table

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0 — unreleased
+
+- Coordinated 0.6 release; internal dependencies realigned to 0.6. No changes beyond 0.5.12.
+
 ## 0.5.12 — 2026-06-13
 
 - `Identifier` escaping is now correct on SurrealDB 3.x. It picks up the `surreal-client` 0.5.2 fix:

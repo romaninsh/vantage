@@ -1,6 +1,6 @@
 [package]
 name = "vantage-sql"
-version = "0.5.9"
+version = "0.6.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -18,14 +18,14 @@ vista = ["dep:vantage-vista"]
 rhai = ["dep:rhai"]
 
 [dependencies]
-vantage-core = { version = "0.5", path = "../vantage-core" }
+vantage-core = { version = "0.6", path = "../vantage-core" }
 vantage-types = { version = "0.6", path = "../vantage-types", features = ["serde"] }
 vantage-expressions = { version = "0.6", path = "../vantage-expressions" }
 paste = "1.0"
 
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
 vantage-table = { version = "0.6", path = "../vantage-table" }
-vantage-vista = { version = "0.5", path = "../vantage-vista", optional = true }
+vantage-vista = { version = "0.6", path = "../vantage-vista", optional = true }
 async-trait = "0.1"
 sqlx = { version = "0.8", features = ["runtime-tokio", "rust_decimal", "uuid", "chrono"] }
 rust_decimal = "1"
@@ -42,7 +42,7 @@ rhai = { version = "1.25", optional = true }
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 serde_yaml_ng = "0.10"
-vantage-vista = { version = "0.5", path = "../vantage-vista" }
+vantage-vista = { version = "0.6", path = "../vantage-vista" }
 sqlformat = "0.3"
 
 [[example]]

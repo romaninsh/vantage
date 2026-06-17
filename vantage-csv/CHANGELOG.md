@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0 — unreleased
+
+- Coordinated 0.6 release; internal dependencies realigned to 0.6. No public API changes.
+
 ## 0.5.4 — 2026-06-13
 
 - Searching a CSV table now returns an `Unsupported` error instead of silently matching every row.

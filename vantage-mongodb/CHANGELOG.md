@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0 — unreleased
+
+- Coordinated 0.6 release; internal dependencies realigned to 0.6. No public API changes.
+
 ## 0.5.6 — 2026-06-02
 
 - Track `vantage-table`'s new `TableSource::Source` associated type (set to `String`; no
