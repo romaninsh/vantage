@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0 — unreleased
+
+- Coordinated 0.6 release; internal dependencies realigned to 0.6. No public API changes.
+
 ## 0.5.3 — 2026-05-23
 
 - Align all internal dependency versions to 0.5+. No public API changes.

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0 — unreleased
+
+- Coordinated 0.6 release; internal dependencies realigned to 0.6. No public API changes.
+
 ## 0.5.2 — 2026-06-07
 
 - Reuse the rhai `Engine` and compiled `AST` across calls instead of rebuilding

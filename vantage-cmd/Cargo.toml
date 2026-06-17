@@ -1,6 +1,6 @@
 [package]
 name = "vantage-cmd"
-version = "0.5.2"
+version = "0.6.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -16,12 +16,12 @@ readme = "README.md"
 [workspace]
 
 [dependencies]
-vantage-core = { version = "0.5", path = "../vantage-core" }
+vantage-core = { version = "0.6", path = "../vantage-core" }
 vantage-types = { version = "0.6", path = "../vantage-types", features = ["serde"] }
 vantage-expressions = { version = "0.6", path = "../vantage-expressions" }
 vantage-table = { version = "0.6", path = "../vantage-table" }
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
-vantage-vista = { version = "0.5", path = "../vantage-vista" }
+vantage-vista = { version = "0.6", path = "../vantage-vista" }
 
 # Rhai builds the argv and parses the output. "serde" gives us the
 # serde_json::Value <-> Dynamic bridge used by `parse_json`.
@@ -44,7 +44,7 @@ tracing = "0.1"
 tokio = { version = "1", features = ["rt", "macros"] }
 
 [dev-dependencies]
-vantage-cli-util = { version = "0.5", path = "../vantage-cli-util" }
+vantage-cli-util = { version = "0.6", path = "../vantage-cli-util" }
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }
 

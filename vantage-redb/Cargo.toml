@@ -1,6 +1,6 @@
 [package]
 name = "vantage-redb"
-version = "0.5.4"
+version = "0.6.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -11,7 +11,7 @@ repository = "https://github.com/romaninsh/vantage"
 readme = "../README.md"
 
 [dependencies]
-vantage-core = { version = "0.5", path = "../vantage-core" }
+vantage-core = { version = "0.6", path = "../vantage-core" }
 vantage-types = { version = "0.6", path = "../vantage-types" }
 vantage-expressions = { version = "0.6", path = "../vantage-expressions" }
 vantage-table = { version = "0.6", path = "../vantage-table" }
