@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1 — unreleased
+
+- Internal dependency realignment for the coordinated 0.6 release; no public API changes.
+
 ## 0.6.0 — 2026-06-10
 
 - New `TryIntoRecord` trait, the fallible counterpart to `TryFromRecord`. Serializing a serde

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1 — unreleased
+
+- Internal dependency realignment for the coordinated 0.6 release; no public API changes.
+
 ## 0.6.0 — 2026-06-10
 
 - `IntoValue` for `f64` no longer panics on NaN/Infinity — non-finite floats degrade to
