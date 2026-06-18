@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1 — unreleased
+
+- REST lazy-load: `RestApiBuilder::total_key`/`debug`, `RestApi::fetch_window_records`/`fetch_total`,
+  a `RestApiTableShell::fetch_window` impl + envelope-total count, and `can_fetch_window` advertised
+  when a `total_key` is configured. Windows map onto skip-based (raw offset) or page-based
+  (`offset/limit+1`) pagination.
+
 ## 0.6.0 — unreleased
 
 - Coordinated 0.6 release; internal dependencies realigned to 0.6. No public API changes.

@@ -12,7 +12,7 @@ pub mod metadata;
 pub mod mocks;
 pub mod reference;
 #[cfg(feature = "rhai")]
-pub mod rhai_conventional;
+pub mod rhai;
 pub mod sort;
 pub mod source;
 pub mod spec;
@@ -28,8 +28,9 @@ pub use factory::VistaFactory;
 pub use metadata::VistaMetadata;
 pub use reference::{ContainedKind, ContainedSpec, Reference, ReferenceKind};
 #[cfg(feature = "rhai")]
-pub use rhai_conventional::{
-    RhaiVista, TargetResolver, eval_modify_script, eval_ref_script, register_conventional_onto,
+pub use rhai::{
+    DEFAULT_LIMIT, MAX_LIMIT, MIN_LIMIT, RhaiVista, TargetResolver, eval_modify_script,
+    eval_ref_script, register_conventional_onto, register_fetch_verbs, run_script,
 };
 pub use sort::SortDirection;
 pub use source::TableShell;

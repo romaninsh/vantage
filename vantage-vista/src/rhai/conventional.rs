@@ -21,6 +21,7 @@ use rhai::{Dynamic, Engine, EvalAltResult, Map as RhaiMap, Scope};
 use vantage_core::{Result, error};
 use vantage_types::Record;
 
+use super::convert::{dynamic_to_cbor, map_to_record, record_to_dynamic};
 use crate::{sort::SortDirection, vista::Vista};
 
 /// A [`Vista`] handle usable from Rhai: `Clone + Send + Sync + 'static` via
@@ -245,74 +246,6 @@ fn parse_dir(dir: &str) -> std::result::Result<SortDirection, Box<EvalAltResult>
 
 fn to_rhai_err(e: vantage_core::VantageError) -> Box<EvalAltResult> {
     Box::<EvalAltResult>::from(e.to_string())
-}
-
-/// Convert a scalar Rhai value into the universal CBOR carrier.
-fn dynamic_to_cbor(d: Dynamic) -> std::result::Result<CborValue, Box<EvalAltResult>> {
-    if d.is_unit() {
-        Ok(CborValue::Null)
-    } else if d.is::<bool>() {
-        Ok(CborValue::Bool(d.cast::<bool>()))
-    } else if d.is::<i64>() {
-        Ok(CborValue::Integer(d.cast::<i64>().into()))
-    } else if d.is::<f64>() {
-        Ok(CborValue::Float(d.cast::<f64>()))
-    } else if d.is::<String>() {
-        Ok(CborValue::Text(d.cast::<String>()))
-    } else {
-        Err(format!(
-            "cannot convert rhai value of type '{}' into a condition value",
-            d.type_name()
-        )
-        .into())
-    }
-}
-
-/// Convert a CBOR value into a Rhai `Dynamic` (used when seeding the parent
-/// `row` map for the script).
-fn cbor_to_dynamic(v: &CborValue) -> Dynamic {
-    match v {
-        CborValue::Null => Dynamic::UNIT,
-        CborValue::Bool(b) => Dynamic::from_bool(*b),
-        CborValue::Integer(i) => {
-            let n: i128 = (*i).into();
-            Dynamic::from_int(n as i64)
-        }
-        CborValue::Float(f) => Dynamic::from_float(*f),
-        CborValue::Text(s) => Dynamic::from(s.clone()),
-        CborValue::Bytes(b) => Dynamic::from_blob(b.clone()),
-        CborValue::Array(a) => {
-            let arr: rhai::Array = a.iter().map(cbor_to_dynamic).collect();
-            Dynamic::from_array(arr)
-        }
-        CborValue::Map(m) => {
-            let mut map = RhaiMap::new();
-            for (k, val) in m {
-                if let CborValue::Text(key) = k {
-                    map.insert(key.as_str().into(), cbor_to_dynamic(val));
-                }
-            }
-            Dynamic::from_map(map)
-        }
-        // ciborium::Value is non-exhaustive (tags, etc.); unknowns become unit.
-        _ => Dynamic::UNIT,
-    }
-}
-
-fn record_to_dynamic(row: &Record<CborValue>) -> Dynamic {
-    let mut map = RhaiMap::new();
-    for (k, v) in row.iter() {
-        map.insert(k.as_str().into(), cbor_to_dynamic(v));
-    }
-    Dynamic::from_map(map)
-}
-
-fn map_to_record(map: RhaiMap) -> std::result::Result<Record<CborValue>, Box<EvalAltResult>> {
-    let mut out: Vec<(String, CborValue)> = Vec::with_capacity(map.len());
-    for (k, v) in map {
-        out.push((k.to_string(), dynamic_to_cbor(v)?));
-    }
-    Ok(out.into_iter().collect())
 }
 
 #[cfg(test)]

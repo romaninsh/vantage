@@ -124,7 +124,38 @@ impl TableShell for RestApiTableShell {
     }
 
     async fn get_vista_count(&self, _vista: &Vista) -> Result<i64> {
-        self.table.data_source().get_table_count(&self.table).await
+        let api = self.table.data_source();
+        // Prefer the envelope total (`total_key`) — one cheap request that
+        // reflects the active conditions. Falls back to counting fetched rows
+        // when no `total_key` is configured.
+        if let Some(total) = api
+            .fetch_total(self.table.table_name(), self.table.conditions())
+            .await?
+        {
+            return Ok(total);
+        }
+        api.get_table_count(&self.table).await
+    }
+
+    async fn fetch_window(
+        &self,
+        _vista: &Vista,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<(String, Record<CborValue>)>> {
+        let id_field = self.table.id_field().map(|c| c.name().to_string());
+        let records = self
+            .table
+            .data_source()
+            .fetch_window_records(
+                self.table.table_name(),
+                id_field.as_deref(),
+                offset as i64,
+                limit as i64,
+                self.table.conditions(),
+            )
+            .await?;
+        Ok(records.into_iter().collect())
     }
 
     fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
