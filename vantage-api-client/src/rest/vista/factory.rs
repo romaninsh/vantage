@@ -97,6 +97,9 @@ impl RestApiVistaFactory {
     {
         let metadata = metadata_from_table(&table);
         let name = table.table_name().to_string();
+        // A configured `total_key` lets the shell serve absolute-offset
+        // windows (and an exact count) — advertise it before erasing the table.
+        let can_fetch_window = table.data_source().total_key().is_some();
         let any_table = table.into_entity::<EmptyEntity>();
 
         let source = RestApiTableShell::new(
@@ -104,6 +107,7 @@ impl RestApiVistaFactory {
             VistaCapabilities {
                 can_count: true,
                 can_traverse_to_record: true,
+                can_fetch_window,
                 ..VistaCapabilities::default()
             },
             metadata,
@@ -185,11 +189,13 @@ impl VistaFactory for RestApiVistaFactory {
             );
         }
 
+        let can_fetch_window = table.data_source().total_key().is_some();
         let source = RestApiTableShell::new(
             table,
             VistaCapabilities {
                 can_count: true,
                 can_traverse_to_record: true,
+                can_fetch_window,
                 ..VistaCapabilities::default()
             },
             metadata,

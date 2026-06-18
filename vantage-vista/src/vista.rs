@@ -229,6 +229,19 @@ impl Vista {
         self.source.fetch_next(self, token).await
     }
 
+    /// Fetch the half-open row window `[offset, offset + limit)` in the
+    /// source's natural order. Addressed by absolute row index (unlike the
+    /// page-indexed [`fetch_page`](Self::fetch_page)), so it maps directly
+    /// onto a lazily-loaded grid's scroll range. Returns `Unsupported` when
+    /// the driver does not advertise `can_fetch_window`.
+    pub async fn fetch_window(
+        &self,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<(String, Record<CborValue>)>> {
+        self.source.fetch_window(self, offset, limit).await
+    }
+
     // ---- quicksearch -------------------------------------------------------
 
     /// Apply a quicksearch filter. The driver decides which columns participate;

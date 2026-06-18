@@ -36,6 +36,13 @@ pub struct VistaCapabilities {
     /// the weakest of the three pagination primitives. DynamoDB and
     /// most token-paginated REST APIs only support this.
     pub can_fetch_next: bool,
+    /// Random-access pagination via `fetch_window(offset, limit)` —
+    /// addressed by absolute row index rather than page number, so it
+    /// maps directly onto a diorama `on_load_chunk` `Range<usize>` (which
+    /// is not page-aligned). Distinct from [`can_fetch_page`](Self::can_fetch_page),
+    /// which is page-indexed. Offset-style REST APIs that also report a
+    /// grand total advertise this for true lazy/scroll loading.
+    pub can_fetch_window: bool,
     /// Record-level reference traversal via `get_ref(relation, row)` — read
     /// the join value out of a known row and narrow the target with a plain
     /// eq-condition. Every backend that can filter by equality supports this
