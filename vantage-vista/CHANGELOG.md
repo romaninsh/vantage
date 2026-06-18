@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.1 — unreleased
+
+- Folded the read-only Rhai data-fetch surface (formerly the standalone `vantage-data-script` crate)
+  into the `rhai` feature: terminal `list`/`get_some`/`count`/`capabilities`/`columns`/`references`
+  verbs plus a `run_script` runner, alongside the existing builder vocabulary. The feature now pulls
+  `serde_json` + `tokio` for the sync↔async bridge.
+- Added random-access pagination: `VistaCapabilities::can_fetch_window`, `Vista::fetch_window`, and
+  the `TableShell::fetch_window` default.
+
 ## 0.6.0 — unreleased
 
 - Coordinated 0.6 release; internal dependencies realigned to 0.6. No public API changes.

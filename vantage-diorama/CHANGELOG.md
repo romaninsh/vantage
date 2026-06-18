@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1 — unreleased
+
+- The cache shell now passes `can_fetch_window` through from its master Vista, so a cached REST/SQL
+  source still advertises random-access windowing.
+
 ## 0.6.0 — unreleased
 
 - Coordinated 0.6 release; internal dependencies realigned to 0.6. No public API changes.
