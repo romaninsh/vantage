@@ -41,6 +41,7 @@ impl DioShell {
             can_set_page_size: master_caps.can_set_page_size,
             can_fetch_page: master_caps.can_fetch_page,
             can_fetch_next: master_caps.can_fetch_next,
+            can_fetch_window: master_caps.can_fetch_window,
             // Traversal capabilities pass through from the master vista; the
             // Dio cache does not add or remove traversal modes.
             can_traverse_to_record: master_caps.can_traverse_to_record,
