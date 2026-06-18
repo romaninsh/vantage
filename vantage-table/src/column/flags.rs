@@ -13,4 +13,8 @@ pub enum ColumnFlag {
     Searchable,
     /// Indexed marks this column as cheap to sort or filter on, hinting to generic UIs that they can offer sort headers and filter inputs without a performance penalty
     Indexed,
+    /// Label hints to generic UIs that this column is better shown as a
+    /// small status tag attached to the record's title than as its own
+    /// column (e.g. a status / state field with a per-value color map)
+    Label,
 }

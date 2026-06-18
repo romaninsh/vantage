@@ -4589,7 +4589,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vantage-api-client"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4602,6 +4602,7 @@ dependencies = [
  "serde_json",
  "serde_yaml_ng",
  "tokio",
+ "tracing",
  "urlencoding",
  "uuid",
  "vantage-cli-util",
@@ -4758,7 +4759,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4943,7 +4944,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -4993,7 +4994,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -5002,6 +5003,7 @@ dependencies = [
  "indexmap",
  "rhai",
  "serde",
+ "serde_json",
  "serde_yaml_ng",
  "thiserror 2.0.18",
  "tokio",

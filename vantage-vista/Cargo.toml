@@ -1,6 +1,6 @@
 [package]
 name = "vantage-vista"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Universal, schema-bearing data handle for the Vantage data framework"
@@ -22,13 +22,19 @@ serde = { version = "1.0", features = ["derive"] }
 serde_yaml_ng = "0.10"
 thiserror = "2.0"
 rhai = { version = "1.25", optional = true }
+serde_json = { version = "1", optional = true }
+# `rt`/`rt-multi-thread` for the spawn_blocking + Handle::block_on bridge that
+# drives the async Vista fetches from the synchronous Rhai engine.
+tokio = { version = "1.52", features = ["rt", "rt-multi-thread"], optional = true }
 
 [features]
-# Conventional Rhai vocabulary over the type-erased `Vista` (the engine and
-# builder verbs that back scripted reference traversal). Backends opt in and
-# layer their vendor-specific expression vocabulary on top via
-# `TableShell::register_rhai_extensions`.
-rhai = ["dep:rhai"]
+# Rhai scripting over the type-erased `Vista`: the conventional builder verbs
+# (`table`/`add_condition_eq`/`add_order`/`get_ref`…) that back scripted
+# reference traversal, plus the read-only terminal fetch verbs
+# (`list`/`get_some`/`count`/`capabilities`/`columns`/`references`) and the
+# `run_script` runner. Backends layer their vendor expression vocabulary on top
+# via `TableShell::register_rhai_extensions`.
+rhai = ["dep:rhai", "dep:serde_json", "dep:tokio"]
 
 [dev-dependencies]
 tokio = { version = "1.52", features = ["macros", "rt-multi-thread"] }

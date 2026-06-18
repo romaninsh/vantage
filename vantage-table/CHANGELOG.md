@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.3 — unreleased
+
+- Added `ColumnFlag::Label` — hints a column is better shown as a small status tag attached to the
+  record's title than as its own column (e.g. a status/state field with a per-value color map).
+
 ## 0.6.2 — unreleased
 
 - Internal dependency realignment for the coordinated 0.6 release; no public API changes.

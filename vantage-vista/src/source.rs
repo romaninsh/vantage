@@ -247,6 +247,26 @@ pub trait TableShell: Send + Sync + 'static {
         Err(self.default_error("fetch_next", "can_fetch_next"))
     }
 
+    /// Fetch the half-open row window `[offset, offset + limit)` in the
+    /// source's natural order. Offset-style like [`fetch_page`](Self::fetch_page)
+    /// but addressed by absolute row index rather than page number, so it
+    /// maps directly onto a diorama `on_load_chunk` `Range<usize>` — which
+    /// is *not* guaranteed page-aligned. This is the primitive a paged,
+    /// lazily-loaded grid drives on scroll.
+    ///
+    /// Drivers leave the default in place (producing `Unsupported`) until
+    /// they implement it; callers branch on
+    /// `vista.capabilities().can_fetch_window` first. Default returns
+    /// `default_error("fetch_window", "can_fetch_window")`.
+    async fn fetch_window(
+        &self,
+        _vista: &Vista,
+        _offset: usize,
+        _limit: usize,
+    ) -> Result<Vec<(String, Record<CborValue>)>> {
+        Err(self.default_error("fetch_window", "can_fetch_window"))
+    }
+
     // ---- Quicksearch -------------------------------------------------------
 
     /// Apply a quicksearch filter — a single string the driver fans out across

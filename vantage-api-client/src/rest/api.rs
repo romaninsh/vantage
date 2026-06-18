@@ -117,6 +117,13 @@ pub struct RestApi {
     /// How non-path eq-conditions are applied — query params vs.
     /// in-memory post-fetch filtering. See [`FilterStrategy`].
     filter_strategy: FilterStrategy,
+    /// Response-envelope key carrying the grand total of matching rows
+    /// (e.g. `count`). When set, the shell reports an exact count and
+    /// advertises `can_fetch_window` for lazy/scroll loading; when `None`
+    /// it falls back to counting fetched rows.
+    total_key: Option<String>,
+    /// Emit `tracing` events for window/count requests.
+    debug: bool,
 }
 
 impl RestApi {
@@ -138,6 +145,12 @@ impl RestApi {
     pub fn with_auth(mut self, auth: impl Into<String>) -> Self {
         self.auth_header = Some(auth.into());
         self
+    }
+
+    /// The configured response-envelope total key, if any. When set, the
+    /// REST shell can report an exact count and serve `fetch_window`.
+    pub fn total_key(&self) -> Option<&str> {
+        self.total_key.as_deref()
     }
 
     /// Build the endpoint path for `table_name`, substituting any
@@ -199,7 +212,7 @@ impl RestApi {
     /// stance as before.
     fn build_query_string(
         &self,
-        pagination: Option<&Pagination>,
+        window: Option<(i64, i64)>,
         conditions: &[&Expression<CborValue>],
         consumed: &[usize],
     ) -> String {
@@ -209,16 +222,23 @@ impl RestApi {
         // When `no_pagination` is set the API doesn't accept page/limit
         // query params (and may treat them as strict filters that
         // return empty), so we leave them off.
+        //
+        // `window` is a half-open `[offset, offset+limit)` band. Skip-based
+        // APIs take the offset verbatim; page-based APIs are addressed by
+        // 1-based page, derived from the offset (the loader may hand
+        // non-page-aligned windows, so it rounds down to the containing page).
         if !self.no_pagination
-            && let Some(p) = pagination
+            && let Some((offset, limit)) = window
         {
+            let offset = offset.max(0);
+            let limit = limit.max(1);
             let page_value = if self.pagination.skip_based {
-                p.skip().to_string()
+                offset.to_string()
             } else {
-                p.get_page().to_string()
+                (offset / limit + 1).to_string()
             };
             params.push((self.pagination.page.clone(), page_value));
-            params.push((self.pagination.limit.clone(), p.limit().to_string()));
+            params.push((self.pagination.limit.clone(), limit.to_string()));
         }
 
         // Conditions: each `eq` becomes `?field=value`. Multiple
@@ -253,8 +273,9 @@ impl RestApi {
     /// Fetch data from the API endpoint and return parsed records.
     ///
     /// `id_field` selects which JSON field is treated as the record ID;
-    /// if `None`, row indices are used. `pagination` and `conditions`
-    /// are pushed into the URL query string — eq-conditions become
+    /// if `None`, row indices are used. The page-based `pagination` is
+    /// lowered to a `[offset, offset+limit)` window; `conditions` are
+    /// pushed into the URL query string — eq-conditions become
     /// `?field=value`. Conditions that can't be peeled into a simple
     /// eq are silently skipped (caller-side filtering still applies if
     /// needed).
@@ -265,23 +286,71 @@ impl RestApi {
         pagination: Option<&Pagination>,
         conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
     ) -> Result<IndexMap<String, Record<CborValue>>> {
-        // Non-paginating endpoints return the whole list on page 1; a
-        // page-2 fetch would just re-deliver the same rows and the
-        // perpetual grid would never mark itself exhausted. Short-
-        // circuit page > 1 to empty so the grid sees the chunk shrink
-        // and stops asking for more.
-        if self.no_pagination
-            && let Some(p) = pagination
-            && p.get_page() > 1
-        {
-            return Ok(IndexMap::new());
-        }
+        let window = pagination.map(|p| (p.skip(), p.limit()));
+        self.fetch_windowed(table_name, id_field, window, conditions)
+            .await
+    }
 
+    /// Fetch a single half-open row window `[offset, offset+limit)` — the
+    /// primitive a paged, lazily-loaded grid drives on scroll (offset is
+    /// an absolute row index, not a page number).
+    pub(crate) async fn fetch_window_records<'a>(
+        &self,
+        table_name: &str,
+        id_field: Option<&str>,
+        offset: i64,
+        limit: i64,
+        conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
+    ) -> Result<IndexMap<String, Record<CborValue>>> {
+        self.fetch_windowed(table_name, id_field, Some((offset, limit)), conditions)
+            .await
+    }
+
+    /// Read the grand total of matching rows from the response envelope's
+    /// configured `total_key` (e.g. `count`). Returns `None` when no
+    /// `total_key` is set — the caller then falls back to counting fetched
+    /// rows. Issues a cheap `limit=1` request so the body carries the count
+    /// without paying for the rows.
+    pub(crate) async fn fetch_total<'a>(
+        &self,
+        table_name: &str,
+        conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
+    ) -> Result<Option<i64>> {
+        let Some(total_key) = self.total_key.clone() else {
+            return Ok(None);
+        };
+        let (body, _client_filters) = self
+            .fetch_raw_body(table_name, Some((0, 1)), conditions)
+            .await?;
+        let total = body
+            .get(total_key.as_str())
+            .and_then(|v| v.as_i64())
+            .ok_or_else(|| {
+                error!(
+                    "total_key missing or not an integer in API response",
+                    total_key = total_key.as_str()
+                )
+            })?;
+        if self.debug {
+            tracing::info!(target: "vantage_api_client::rest", total, "REST count");
+        }
+        Ok(Some(total))
+    }
+
+    /// Resolve conditions, build the windowed request URL, GET it (with the
+    /// auth header if configured), and return the parsed JSON body together
+    /// with any client-side filters that still need applying (under
+    /// [`FilterStrategy::Client`]).
+    async fn fetch_raw_body<'a>(
+        &self,
+        table_name: &str,
+        window: Option<(i64, i64)>,
+        conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
+    ) -> Result<(serde_json::Value, Vec<(String, String)>)> {
         // Conditions may carry `DeferredFn` values — typically from
-        // `related_in_condition` for `with_one`-style traversals where
-        // the FK lives in a parent record we haven't fetched yet.
-        // Resolve them once, up front, so the rest of the pipeline
-        // sees only sync, peelable scalars.
+        // `related_in_condition` for `with_one`-style traversals where the FK
+        // lives in a parent record we haven't fetched yet. Resolve them once,
+        // up front, so the rest of the pipeline sees only sync scalars.
         let raw: Vec<&Expression<CborValue>> = conditions.into_iter().collect();
         let mut resolved: Vec<Expression<CborValue>> = Vec::with_capacity(raw.len());
         for cond in raw {
@@ -290,11 +359,10 @@ impl RestApi {
         let conds: Vec<&Expression<CborValue>> = resolved.iter().collect();
         let (endpoint, consumed) = self.endpoint_url(table_name, &conds)?;
 
-        // Under `FilterStrategy::Client`, non-path eq-conditions are
-        // applied to the fetched rows in memory rather than sent as query
-        // params (the API rejects/ignores unknown params). Collect them,
-        // and keep them out of the query string by marking every
-        // condition as consumed for query-building purposes.
+        // Under `FilterStrategy::Client`, non-path eq-conditions are applied
+        // to the fetched rows in memory rather than sent as query params (the
+        // API rejects/ignores unknown params). Collect them, and keep them out
+        // of the query string by marking every condition as consumed.
         let (query_consumed, client_filters): (Vec<usize>, Vec<(String, String)>) =
             if self.filter_strategy == FilterStrategy::Client {
                 let filters = conds
@@ -311,7 +379,7 @@ impl RestApi {
         let url = format!(
             "{}{}",
             endpoint,
-            self.build_query_string(pagination, &conds, &query_consumed)
+            self.build_query_string(window, &conds, &query_consumed)
         );
 
         let mut request = self.client.get(&url);
@@ -337,6 +405,26 @@ impl RestApi {
             .await
             .map_err(|e| error!("Failed to parse API response as JSON", detail = e))?;
 
+        Ok((body, client_filters))
+    }
+
+    async fn fetch_windowed<'a>(
+        &self,
+        table_name: &str,
+        id_field: Option<&str>,
+        window: Option<(i64, i64)>,
+        conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
+    ) -> Result<IndexMap<String, Record<CborValue>>> {
+        // Non-paginating endpoints return the whole list on the first
+        // window; a later window would just re-deliver the same rows and the
+        // perpetual grid would never mark itself exhausted. Short-circuit any
+        // window past the start to empty so the grid sees the chunk shrink
+        // and stops asking for more.
+        if self.no_pagination && window.is_some_and(|(offset, _)| offset > 0) {
+            return Ok(IndexMap::new());
+        }
+
+        let (body, client_filters) = self.fetch_raw_body(table_name, window, conditions).await?;
         let data = self.extract_array(&body, table_name)?;
 
         let mut records = IndexMap::new();
@@ -477,6 +565,8 @@ pub struct RestApiBuilder {
     pagination: PaginationParams,
     no_pagination: bool,
     filter_strategy: FilterStrategy,
+    total_key: Option<String>,
+    debug: bool,
 }
 
 impl RestApiBuilder {
@@ -488,6 +578,8 @@ impl RestApiBuilder {
             pagination: PaginationParams::default(),
             no_pagination: false,
             filter_strategy: FilterStrategy::default(),
+            total_key: None,
+            debug: false,
         }
     }
 
@@ -530,6 +622,20 @@ impl RestApiBuilder {
         self
     }
 
+    /// Name the response-envelope key carrying the grand total of matching
+    /// rows (e.g. `count`). Setting it lets the shell report an exact count
+    /// and advertise `can_fetch_window` for lazy/scroll loading.
+    pub fn total_key(mut self, key: impl Into<String>) -> Self {
+        self.total_key = Some(key.into());
+        self
+    }
+
+    /// Emit `tracing` events for window/count requests.
+    pub fn debug(mut self, debug: bool) -> Self {
+        self.debug = debug;
+        self
+    }
+
     pub fn build(self) -> RestApi {
         RestApi {
             base_url: self.base_url,
@@ -539,6 +645,46 @@ impl RestApiBuilder {
             pagination: self.pagination,
             no_pagination: self.no_pagination,
             filter_strategy: self.filter_strategy,
+            total_key: self.total_key,
+            debug: self.debug,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `build_query_string` with no conditions, exercising only the
+    /// window → pagination-param mapping.
+    fn qs(api: &RestApi, window: Option<(i64, i64)>) -> String {
+        api.build_query_string(window, &[], &[])
+    }
+
+    #[test]
+    fn skip_based_window_uses_offset_verbatim() {
+        let api = RestApi::builder("http://x")
+            .pagination_params(PaginationParams::skip_limit("skip", "limit"))
+            .build();
+        assert_eq!(qs(&api, Some((20, 10))), "?skip=20&limit=10");
+    }
+
+    #[test]
+    fn page_based_window_derives_one_based_page() {
+        let api = RestApi::builder("http://x").build(); // default _page/_limit
+        // offset 20 / limit 10 → page 3 (1-based).
+        assert_eq!(qs(&api, Some((20, 10))), "?_page=3&_limit=10");
+    }
+
+    #[test]
+    fn no_window_emits_no_pagination_params() {
+        let api = RestApi::builder("http://x").build();
+        assert_eq!(qs(&api, None), "");
+    }
+
+    #[test]
+    fn no_pagination_suppresses_window_params() {
+        let api = RestApi::builder("http://x").no_pagination().build();
+        assert_eq!(qs(&api, Some((20, 10))), "");
     }
 }
