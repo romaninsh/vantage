@@ -30,6 +30,12 @@ pub(crate) struct TableSceneryState {
     pub(crate) id_to_idx: RwLock<HashMap<String, usize>>,
     pub(crate) total: RwLock<Option<usize>>,
 
+    /// The most recent viewport range handed to the loader. A refresh on a
+    /// chunk-loaded scenery re-fetches exactly this range in place (see
+    /// [`refresh_loaded_viewport`](Self::refresh_loaded_viewport)). `None`
+    /// until the first viewport is set.
+    pub(crate) last_viewport: RwLock<Option<Range<usize>>>,
+
     pub(crate) page_size: usize,
 
     pub(crate) generation: AtomicU64,
@@ -147,6 +153,39 @@ impl TableSceneryState {
     pub(crate) fn range_fully_cached(&self, range: &Range<usize>) -> bool {
         let rows = self.rows.read().unwrap();
         range.clone().all(|i| rows.contains_key(&i))
+    }
+
+    /// True for a single-pass, chunk-loaded scenery (paged/lazy via
+    /// `on_load_chunk`). This is the variant whose refresh re-fetches the
+    /// visible window in place instead of reseeding from cache — reseeding
+    /// would only re-show whatever happens to be cached (and shows nothing
+    /// if the cache was just cleared).
+    pub(crate) fn is_chunk_loaded(&self) -> bool {
+        if self.two_pass {
+            return false;
+        }
+        self.dio_weak
+            .upgrade()
+            .map(|d| d.lens.callbacks.on_load_chunk.is_some())
+            .unwrap_or(false)
+    }
+
+    /// Re-fetch the last viewport in place so a refresh updates the visible
+    /// rows without blanking them: `force_load` overwrites each slot as the
+    /// fresh rows land, and a failed refetch leaves the existing rows
+    /// untouched (the loader never clears on error). No-op until a viewport
+    /// has been set.
+    pub(crate) fn refresh_loaded_viewport(&self) {
+        let range = self.last_viewport.read().unwrap().clone();
+        if let Some(range) = range {
+            super::loader::enqueue_viewport(
+                self,
+                ViewportRequest {
+                    range,
+                    force_load: true,
+                },
+            );
+        }
     }
 
     /// Largest cached index, +1 — the natural start for the next
