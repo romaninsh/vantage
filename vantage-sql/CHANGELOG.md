@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1 — unreleased
+
+- SQLite Vista now implements `fetch_window` (advertised via `can_fetch_window`), serving an
+  arbitrary `[offset, offset + limit)` row window through `Pagination::window`. Previously only
+  page-indexed `fetch_page` was available, so random-access window fetches were refused.
+
 ## 0.6.0 — unreleased
 
 - Coordinated 0.6 release; internal dependencies realigned to 0.6. No public API changes.

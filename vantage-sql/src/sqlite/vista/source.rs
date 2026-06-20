@@ -277,6 +277,24 @@ where
             .collect())
     }
 
+    async fn fetch_window(
+        &self,
+        _vista: &Vista,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<(String, Record<CborValue>)>> {
+        // Clone the wrapped table so this call's window doesn't disturb the
+        // shell's own condition / order / search state.
+        let mut window_table = self.table.clone();
+        window_table.set_pagination(Some(Pagination::window(offset as i64, limit as i64)));
+
+        let raw = window_table.list_values().await?;
+        Ok(raw
+            .into_iter()
+            .map(|(id, record)| (id, to_cbor_record(record)))
+            .collect())
+    }
+
     async fn fetch_next(
         &self,
         _vista: &Vista,
