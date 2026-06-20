@@ -4759,7 +4759,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4769,6 +4769,7 @@ dependencies = [
  "insta",
  "redb",
  "rstest",
+ "serde",
  "sqlx",
  "tempfile",
  "thiserror 2.0.18",
@@ -4782,6 +4783,7 @@ dependencies = [
  "vantage-table",
  "vantage-types",
  "vantage-vista",
+ "vantage-vista-factory",
 ]
 
 [[package]]
@@ -4994,7 +4996,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-stream",
  "async-trait",

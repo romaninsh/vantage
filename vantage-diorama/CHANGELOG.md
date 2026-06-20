@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.6.2 — unreleased
+
+Generic augmentation: wire a **second** Vista into a `Dio` to enrich each master row,
+loaded one-at-a-time and merged on top. The master is listed cheaply; each visible row
+resolves a detail Vista from a `VistaCatalog`, fetches its record, and merges chosen
+columns. The detail source may be the same Vista (the former cmd two-pass) or a
+different backend entirely (REST master enriched by a cmd script, or vice versa).
+
+- New `augment` module: `Augmentation { table, source, fetch, merge }`, with
+  `Source::{Id, Column, Build}` (closures — Rhai is one factory via `lower_augment`) and
+  `Fetch::{PerRow, Batched, Custom}`. `AugmentSpec`/`SourceSpec`/`FetchSpec` are the serde
+  (YAML) forms; `lower_augment` lowers them.
+- `LensBuilder::augment(...)` + `.catalog(...)`. Registering augmentations engages two-pass
+  and synthesizes the list, detail, and refresh-reconciliation passes (the reconciliation
+  formerly hand-written in the vantage-ui app now lives here). Each pass is synthesized only
+  if the caller didn't supply one.
+- The synthesized list pass is capability-aware: it pushes the window down via
+  `fetch_window` when the master advertises `can_fetch_window`, else lists and windows
+  locally — no more whole-set over-fetch on every page where the backend can window.
+- Now depends on `vantage-vista-factory` (catalog resolution + per-row narrowing reuse) and
+  adds an optional `rhai` feature (forwards to `vantage-vista/rhai`).
+
 ## 0.6.1 — unreleased
 
 - The cache shell now passes `can_fetch_window` through from its master Vista, so a cached REST/SQL

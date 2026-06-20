@@ -83,6 +83,8 @@ pub struct LensBuilder {
     pub(crate) on_load_chunk: Option<DioLoadChunkCallback>,
     pub(crate) on_list_page: Option<DioListPageCallback>,
     pub(crate) on_load_detail: Option<DioLoadDetailCallback>,
+    pub(crate) augmentations: Vec<crate::augment::Augmentation>,
+    pub(crate) catalog: Option<std::sync::Arc<vantage_vista_factory::VistaCatalog>>,
     pub(crate) defaults: LensDefaults,
     pub(crate) runtime: Option<Handle>,
 }
@@ -107,6 +109,8 @@ impl LensBuilder {
             on_load_chunk: None,
             on_list_page: None,
             on_load_detail: None,
+            augmentations: Vec::new(),
+            catalog: None,
             defaults: LensDefaults::default(),
             runtime: None,
         }
@@ -293,6 +297,30 @@ impl LensBuilder {
 
     pub fn runtime(mut self, handle: Handle) -> Self {
         self.runtime = Some(handle);
+        self
+    }
+
+    /// Provide the cross-persistence [`VistaCatalog`](vantage_vista_factory::VistaCatalog)
+    /// used to resolve augmentation `table:` names into base detail Vistas.
+    /// Required whenever [`augment`](Self::augment) is used.
+    pub fn catalog(mut self, catalog: std::sync::Arc<vantage_vista_factory::VistaCatalog>) -> Self {
+        self.catalog = Some(catalog);
+        self
+    }
+
+    /// Register augmentations — detail sources merged onto each master row.
+    ///
+    /// Registering at least one engages two-pass loading: the master is listed
+    /// cheaply, then each visible row is augmented one at a time from its detail
+    /// source (the same Vista or a different backend, resolved via the
+    /// [`catalog`](Self::catalog)). [`build`](Self::build) synthesizes the list
+    /// and detail passes unless explicit `on_list_page`/`on_load_detail`
+    /// callbacks were supplied.
+    ///
+    /// Lower [`AugmentSpec`](crate::augment::AugmentSpec)s with
+    /// [`lower_augment`](crate::augment::lower_augment) first.
+    pub fn augment(mut self, augmentations: Vec<crate::augment::Augmentation>) -> Self {
+        self.augmentations = augmentations;
         self
     }
 }
