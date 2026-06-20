@@ -270,7 +270,7 @@ Two boundary conventions you must honour:
 ### Optional overrides
 
 `TableShell` ships defaults for several methods beyond the read/write quartet the example above
-overrides. The defaults are honest — each either returns the right error kind or falls back to a
+overrides. The defaults are safe — each either returns the right error kind or falls back to a
 slow-but-correct path — but most drivers can do better:
 
 - **`get_vista_count`** defaults to `list_vista_values(...).await?.len()`. Override with the
@@ -292,7 +292,7 @@ The defaults exist for cases where the override would be a no-op or a net pessim
 override. Leaving `get_vista_count` defaulted on a real table is the same shape of bug as not
 pushing down conditions — it works, but it works the wrong way.
 
-### Capabilities — the honesty contract
+### Capabilities — the explicit contract
 
 `VistaCapabilities` is six booleans plus a `PaginateKind`. They're the contract a generic UI relies
 on to decide which buttons to draw:

@@ -114,7 +114,7 @@ you a record set with ids, not a bag of dotted columns.
 
 Because there's no other table to point at, and no foreign key to join on. The data is in the row.
 Forcing it into `with_many` would mean inventing a synthetic table and writing a join that the
-storage engine can't honour. Contained relations are the honest model: traversal is a column
+storage engine can't honour. Contained relations are the natural model: traversal is a column
 projection, not a query.
 
 ### Eager writeback

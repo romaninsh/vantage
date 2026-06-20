@@ -9,6 +9,7 @@
   - [Scenery — Reactive Views](./intro/step6-scenery.md)
 - [Historical Timeline](./history.md)
   - [What's New in 0.4](./whats-new-04.md)
+  - [What's New in 0.5](./whats-new-in-05.md)
 - [Expressions & Queries](./expressions.md)
 - [Model-Driven Architecture](./mda.md)
   - [Three Paths for Developers](./three-paths.md)
