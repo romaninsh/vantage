@@ -30,7 +30,7 @@ pub use lower::lower_augment;
 pub use spec::{AugmentSpec, FetchSpec, SetOp, SourceSpec};
 
 /// Narrow a freshly resolved `base` detail Vista for one master `row`. Produced
-/// by hand or by Rhai (via [`vantage_vista::augment_source_closure`]).
+/// by hand or by Rhai (via `vantage_vista::augment_source_closure`, rhai feature).
 pub type BuildFn = Arc<dyn Fn(&Record<CborValue>, Vista) -> Result<Vista> + Send + Sync>;
 
 /// Pull records from a narrowed detail Vista.

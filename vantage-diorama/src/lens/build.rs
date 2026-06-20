@@ -22,8 +22,8 @@ impl LensBuilder {
     ///
     /// When [`augment`](Self::augment) registered any augmentations and no
     /// explicit two-pass callbacks were supplied, this synthesizes them: a
-    /// capability-aware list pass and an augmentation detail pass (see
-    /// [`synth_list_page`] / [`synth_load_detail`]). Registering the detail pass
+    /// capability-aware list pass and an augmentation detail pass
+    /// (`synth_list_page` / `synth_load_detail`). Registering the detail pass
     /// is what engages two-pass loading downstream.
     pub fn build(self) -> Result<Lens, LensBuildError> {
         if let Some(err) = self.deferred_cache_error {
