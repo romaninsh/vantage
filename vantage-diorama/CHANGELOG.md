@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.3 — unreleased
+
+- Non-blanking refresh for chunk-loaded (paged/lazy) table sceneries. A refresh now
+  re-fetches the last viewport in place — fresh rows overwrite the cached slots, and a
+  failed refetch leaves the existing rows untouched — instead of clearing the cache and
+  waiting for a refill. Previously any refill lag or error (e.g. a slow/`504` page) left
+  the visible rows blank while their count survived.
+
 ## 0.6.2 — unreleased
 
 Generic augmentation: wire a **second** Vista into a `Dio` to enrich each master row,

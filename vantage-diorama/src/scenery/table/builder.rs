@@ -120,6 +120,7 @@ impl TableSceneryBuilder {
             rows: RwLock::new(Default::default()),
             id_to_idx: RwLock::new(HashMap::new()),
             total: RwLock::new(None),
+            last_viewport: RwLock::new(None),
             page_size,
             generation: AtomicU64::new(0),
             generation_tx: gen_tx,

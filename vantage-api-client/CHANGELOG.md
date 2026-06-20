@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.2 — unreleased
+
+- REST: fix URL construction when a table path already carries a query string
+  (e.g. `launches/?mode=detailed`). Pagination and condition params now join with
+  `&` instead of emitting a second `?`, which the server rejected (HTTP 500).
+
 ## 0.6.1 — unreleased
 
 - REST lazy-load: `RestApiBuilder::total_key`/`debug`, `RestApi::fetch_window_records`/`fetch_total`,

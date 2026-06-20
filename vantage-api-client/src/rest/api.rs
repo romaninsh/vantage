@@ -376,11 +376,8 @@ impl RestApi {
                 (consumed, Vec::new())
             };
 
-        let url = format!(
-            "{}{}",
-            endpoint,
-            self.build_query_string(window, &conds, &query_consumed)
-        );
+        let query = self.build_query_string(window, &conds, &query_consumed);
+        let url = join_query(&endpoint, &query);
 
         let mut request = self.client.get(&url);
         if let Some(ref auth) = self.auth_header {
@@ -483,6 +480,17 @@ impl RestApi {
 
 fn urlencode(s: &str) -> String {
     urlencoding::encode(s).into_owned()
+}
+
+/// Append a `build_query_string` result (always opening with `?`, or empty)
+/// to an endpoint URL. The table path may itself carry a query string (e.g.
+/// `launches/?mode=detailed`), in which case the appended params must join
+/// with `&` — otherwise the URL gets two `?` and the API rejects it.
+fn join_query(endpoint: &str, query: &str) -> String {
+    match query.strip_prefix('?') {
+        Some(rest) if endpoint.contains('?') => format!("{endpoint}&{rest}"),
+        _ => format!("{endpoint}{query}"),
+    }
 }
 
 /// Walk an `Expression`'s parameter tree and force any `Deferred`
@@ -686,5 +694,61 @@ mod tests {
     fn no_pagination_suppresses_window_params() {
         let api = RestApi::builder("http://x").no_pagination().build();
         assert_eq!(qs(&api, Some((20, 10))), "");
+    }
+
+    #[test]
+    fn query_string_joins_plain_endpoint_with_question_mark() {
+        assert_eq!(
+            join_query("http://x/launches/", "?_page=1&_limit=10"),
+            "http://x/launches/?_page=1&_limit=10"
+        );
+    }
+
+    #[test]
+    fn query_string_joins_templated_endpoint_with_ampersand() {
+        // Endpoint already carries `?mode=detailed`; pagination must append
+        // with `&`, not a second `?`.
+        assert_eq!(
+            join_query("http://x/launches/?mode=detailed", "?offset=0&limit=1"),
+            "http://x/launches/?mode=detailed&offset=0&limit=1"
+        );
+    }
+
+    #[test]
+    fn empty_query_string_leaves_endpoint_untouched() {
+        assert_eq!(
+            join_query("http://x/launches/?mode=detailed", ""),
+            "http://x/launches/?mode=detailed"
+        );
+    }
+
+    /// Live regression for the double-`?` bug: a real fetch against the
+    /// Launch Library 2 dev API using a table path that already carries a
+    /// query string (`launches/?mode=detailed`). Before the `join_query`
+    /// fix the request URL was `…/launches/?mode=detailed?offset=0&limit=1`
+    /// and the server answered 500. Network-gated, so `#[ignore]`d:
+    /// `cargo test -p vantage-api-client -- --ignored query_string`.
+    #[tokio::test]
+    #[ignore = "hits the live Launch Library 2 dev API"]
+    async fn live_templated_table_path_fetches_rows() {
+        let api = RestApi::builder("https://lldev.thespacedevs.com/2.3.0")
+            .pagination_params(PaginationParams::skip_limit("offset", "limit"))
+            .response_shape(ResponseShape::Wrapped {
+                array_key: "results".into(),
+            })
+            .total_key("count")
+            .build();
+
+        let total = api
+            .fetch_total("launches/?mode=detailed", [])
+            .await
+            .expect("fetch_total");
+        assert!(total.is_some_and(|n| n > 0), "expected a positive count");
+
+        let rows = api
+            .fetch_window_records("launches/?mode=detailed", Some("id"), 0, 3, [])
+            .await
+            .expect("fetch_window_records");
+        assert_eq!(rows.len(), 3, "expected the requested 3-row window");
     }
 }
