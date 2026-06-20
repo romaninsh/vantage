@@ -23,7 +23,8 @@ mod introspect;
 mod runtime;
 
 pub use conventional::{
-    RhaiVista, TargetResolver, eval_modify_script, eval_ref_script, register_conventional_onto,
+    AugmentSourceFn, RhaiVista, TargetResolver, augment_source_closure, eval_augment_source,
+    eval_modify_script, eval_ref_script, register_conventional_onto,
 };
 pub use fetch::register_fetch_verbs;
 pub use runtime::{DEFAULT_LIMIT, MAX_LIMIT, MIN_LIMIT, run_script};

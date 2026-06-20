@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.2 — unreleased
+
+### Added
+
+- `augment_source_closure(resolver, code)` and `eval_augment_source(engine, code, base, row)` (rhai
+  feature): build a reusable closure that narrows a pre-built `base` Vista in place from a master
+  `row`, exposing the base as `self` and the row as `row`. Backs `vantage-diorama`'s scripted
+  augmentation sources — all Rhai engine assembly stays here, so consumers only flip the `rhai`
+  feature. Re-exported alongside the existing conventional/fetch vocabulary.
+
 ## 0.6.1 — unreleased
 
 - Folded the read-only Rhai data-fetch surface (formerly the standalone `vantage-data-script` crate)
