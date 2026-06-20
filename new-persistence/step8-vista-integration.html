@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-4150e71c.js";
+            window.path_to_searchindex_js = "../searchindex-8a058479.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-e08789ca.js"></script>
+        <script src="../toc-c63e78ae.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -413,7 +413,7 @@ signed 64-bit type (<code>i128</code>, big BigInts) should stringify rather than
 </ul>
 <h3 id="optional-overrides"><a class="header" href="#optional-overrides">Optional overrides</a></h3>
 <p><code>TableShell</code> ships defaults for several methods beyond the read/write quartet the example above
-overrides. The defaults are honest — each either returns the right error kind or falls back to a
+overrides. The defaults are safe — each either returns the right error kind or falls back to a
 slow-but-correct path — but most drivers can do better:</p>
 <ul>
 <li><strong><code>get_vista_count</code></strong> defaults to <code>list_vista_values(...).await?.len()</code>. Override with the
@@ -434,7 +434,7 @@ output and diagnostics, and there’s no reason not to.</li>
 <p>The defaults exist for cases where the override would be a no-op or a net pessimisation. Otherwise:
 override. Leaving <code>get_vista_count</code> defaulted on a real table is the same shape of bug as not
 pushing down conditions — it works, but it works the wrong way.</p>
-<h3 id="capabilities--the-honesty-contract"><a class="header" href="#capabilities--the-honesty-contract">Capabilities — the honesty contract</a></h3>
+<h3 id="capabilities--the-explicit-contract"><a class="header" href="#capabilities--the-explicit-contract">Capabilities — the explicit contract</a></h3>
 <p><code>VistaCapabilities</code> is six booleans plus a <code>PaginateKind</code>. They’re the contract a generic UI relies
 on to decide which buttons to draw:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]

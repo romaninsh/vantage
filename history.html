@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-4150e71c.js";
+            window.path_to_searchindex_js = "searchindex-8a058479.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-e08789ca.js"></script>
+        <script src="toc-c63e78ae.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -189,7 +189,17 @@ from raw Postgres queries to a universal persistence layer.</p>
 <li><a href="#01--vantage-is-born-december-2024">0.1 — Vantage is born (December 2024)</a></li>
 <li><a href="#02--entity-framework--mda-february-2025">0.2 — Entity Framework &amp; MDA (February 2025)</a></li>
 <li><a href="#03--the-great-separation-julyoctober-2025">0.3 — The Great Separation (July–October 2025)</a></li>
-<li><a href="#04--the-type-system-rewrite-november-2025present">0.4 — The Type System Rewrite (November 2025–present)</a></li>
+<li><a href="#04--the-type-system-rewrite-november-2025april-2026">0.4 — The Type System Rewrite (November 2025–April 2026)</a></li>
+<li><a href="#05--the-vista-era-mayjune-2026">0.5 — The Vista Era (May–June 2026)</a>
+<ul>
+<li><a href="#capabilities--the-explicit-contract">Capabilities — the explicit contract</a></li>
+<li><a href="#config-driven-yaml-specs-and-rhai-scripting">Config-driven: YAML specs and Rhai scripting</a></li>
+<li><a href="#contained-relations-and-nested-writes">Contained relations and nested writes</a></li>
+<li><a href="#diorama--caching-events-and-reactive-views">Diorama — caching, events, and reactive views</a></li>
+<li><a href="#more-backends-more-reach">More backends, more reach</a></li>
+</ul>
+</li>
+<li><a href="#06--hardening-june-2026">0.6 — Hardening (June 2026)</a></li>
 <li><a href="#the-bigger-picture">The bigger picture</a></li>
 </ul>
 <pre class="mermaid">graph LR
@@ -197,11 +207,15 @@ from raw Postgres queries to a universal persistence layer.</p>
     V1 --&gt;|entity framework| V2[0.2 MDA]
     V2 --&gt;|crate split| V3[0.3 UI Adapters]
     V3 --&gt;|type rewrite| V4[0.4 Type System]
+    V4 --&gt;|universal handle| V5[0.5 Vista]
+    V5 --&gt;|hardening| V6[0.6 Robustness]
     style D fill:#555,color:#fff
     style V1 fill:#4a7c59,color:#fff
     style V2 fill:#2d6a8f,color:#fff
     style V3 fill:#8f5a2d,color:#fff
     style V4 fill:#7c2d8f,color:#fff
+    style V5 fill:#2d8f6a,color:#fff
+    style V6 fill:#8f2d4a,color:#fff
 </pre>
 
 <hr>
@@ -429,14 +443,14 @@ dashboard (Ratatui), and three more — without changing a single line of busine
 
 <p><img src="images/ui-slideshow.gif" alt="egui, GPUI, Slint, Tauri, Cursive, Ratatui — same data, six frameworks"></p>
 <hr>
-<h2 id="04--the-type-system-rewrite-november-2025present"><a class="header" href="#04--the-type-system-rewrite-november-2025present">0.4 — The Type System Rewrite (November 2025–present)</a></h2>
-<div id="admonition-vantage-04--the-current-release" class="admonition admonish-info" role="note" aria-labelledby="admonition-vantage-04--the-current-release-title">
+<h2 id="04--the-type-system-rewrite-november-2025april-2026"><a class="header" href="#04--the-type-system-rewrite-november-2025april-2026">0.4 — The Type System Rewrite (November 2025–April 2026)</a></h2>
+<div id="admonition-vantage-04--the-type-system" class="admonition admonish-info" role="note" aria-labelledby="admonition-vantage-04--the-type-system-title">
 <div class="admonition-title">
-<div id="admonition-vantage-04--the-current-release-title">
-<p>Vantage 0.4 — the current release</p>
+<div id="admonition-vantage-04--the-type-system-title">
+<p>Vantage 0.4 — the type system</p>
 </div>
 
-<a class="admonition-anchor-link" href="#admonition-vantage-04--the-current-release"></a>
+<a class="admonition-anchor-link" href="#admonition-vantage-04--the-type-system"></a>
 </div>
 
 <div>
@@ -449,6 +463,189 @@ trait model where each persistence only implements what its engine supports.</p>
 
 </div>
 
+<hr>
+<h2 id="05--the-vista-era-mayjune-2026"><a class="header" href="#05--the-vista-era-mayjune-2026">0.5 — The Vista Era (May–June 2026)</a></h2>
+<p>Version 0.4 made the type system precise. Version 0.5 asks the next question: how does code that
+<em>doesn’t know your entity type</em> talk to your data? A CLI that lists any table, a web admin that draws
+forms from a YAML schema, a UI data grid pointed at whatever you give it — none of them know your
+<code>Product</code> struct.</p>
+<p>0.4’s answer was <code>AnyTable</code>: type-erasure that funnelled everything through JSON. 0.5 replaces it
+with <strong><code>Vista</code></strong> — a universal, schema-bearing data handle. A Vista wraps any typed <code>Table&lt;DB, E&gt;</code>,
+erases both backend and entity, and carries its own schema (columns, references, capabilities) while
+delegating execution to a per-driver <code>TableShell</code>.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Wrap any typed table — SQLite, MongoDB, AWS, all the same shape
+let vista = SqliteVistaFactory::new(db).from_table(Product::table(db.clone()))?;
+
+// Everything is now runtime introspection — no generics, no entity type
+for name in vista.get_column_names() {
+    let col = vista.get_column(name).unwrap();
+    println!("{}: {}", col.name, col.original_type);
+}
+
+let mut v = vista.clone();
+v.add_condition_eq("category_id", 1.into())?;     // driver translates to native condition
+v.add_search("tart")?;                            // fans across SEARCHABLE columns
+v.add_order("price", SortDirection::Descending)?;
+let rows = v.fetch_page(1).await?;
+<span class="boring">}</span></code></pre>
+<div id="admonition-cbor-not-json" class="admonition admonish-info" role="note" aria-labelledby="admonition-cbor-not-json-title">
+<div class="admonition-title">
+<div id="admonition-cbor-not-json-title">
+<p>CBOR, not JSON</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-cbor-not-json"></a>
+</div>
+
+<div>
+<p>Where <code>AnyTable</code> narrowed every value to <code>serde_json::Value</code>, Vista carries
+<a href="https://docs.rs/ciborium"><code>ciborium::Value</code></a> end to end — preserving integer-vs-float, binary
+blobs, and precise decimals. JSON conversion happens only at the boundary, when you actually need it
+(an HTTP response, say).</p>
+</div>
+
+</div>
+
+<p>The <code>AnyTable</code> carrier was deleted outright in <code>vantage-table 0.5.2</code> — type erasure now lives one
+layer up, in <code>Vista</code>. That decommission is what the 0.5 version bump marks.</p>
+<h3 id="capabilities--the-explicit-contract"><a class="header" href="#capabilities--the-explicit-contract">Capabilities — the explicit contract</a></h3>
+<p>Not every backend can do everything. A CSV file can’t sort server-side; DynamoDB can only order by
+its sort key; a REST API may paginate by cursor but not by page number. Vista makes this explicit
+with a struct of capability flags, and each driver declares exactly what it supports:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let caps = vista.capabilities();
+if caps.can_search { v.add_search("query")?; }
+if caps.can_fetch_page { /* random-access pager */ } else { /* load-more button */ }
+<span class="boring">}</span></code></pre>
+<p>Calling a method the driver doesn’t advertise returns an <code>Unsupported</code> error — never a silent
+match-all, never a panic. UI adapters branch on these flags to decide which controls to render.</p>
+<h3 id="config-driven-yaml-specs-and-rhai-scripting"><a class="header" href="#config-driven-yaml-specs-and-rhai-scripting">Config-driven: YAML specs and Rhai scripting</a></h3>
+<p>A Vista no longer needs a hand-written Rust definition. Tables, columns, and relations can be
+declared in a <strong>YAML spec</strong> (<code>VistaSpec</code>) and loaded by the driver’s factory. For anything YAML
+can’t express — vendor-specific expressions, derived sources, scripted reference traversal — there’s
+an optional <strong>Rhai</strong> DSL that compiles to native queries:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let users = table("users").alias("u");
+select()
+    .from(users)
+    .expression(users["name"])
+    .where(users["age"] &gt;= 18)
+    .order_by(users["name"], "asc")
+<span class="boring">}</span></code></pre>
+<p>The same script renders dialect-correct SQL for SQLite, Postgres, and MySQL — automatic identifier
+quoting, <code>date_format()</code> mapping to <code>strftime</code>/<code>TO_CHAR</code>/<code>DATE_FORMAT</code>, <code>group_concat()</code> becoming
+<code>GROUP_CONCAT</code>/<code>STRING_AGG</code>. SurrealDB gets its own vocabulary (graph traversal, <code>RELATE</code>, record
+ids). YAML stays the primary format; Rhai is the targeted, serializable escape hatch.</p>
+<h3 id="contained-relations-and-nested-writes"><a class="header" href="#contained-relations-and-nested-writes">Contained relations and nested writes</a></h3>
+<p>Embedded objects and arrays — an order’s <code>lines</code>, a row’s JSON column — now surface as a fully
+<strong>editable sub-Vista</strong>. SurrealDB backs them with native nested objects; SQL backends store them as
+JSON columns and patch the host column on writeback. And <code>insert_value</code> learned to walk relations:
+hand it a record whose keys name a relation and it sequences the writes, stamping foreign keys
+automatically.</p>
+<h3 id="diorama--caching-events-and-reactive-views"><a class="header" href="#diorama--caching-events-and-reactive-views">Diorama — caching, events, and reactive views</a></h3>
+<p>The biggest new subsystem is <strong><code>vantage-diorama</code></strong> — a layer that sits between a Vista and whatever
+consumes it. Three concepts:</p>
+<ul>
+<li><strong>Lens</strong> — long-lived shared infrastructure: a cache backend, lifecycle callbacks, refresh policy.
+Built once per application.</li>
+<li><strong>Dio</strong> — a Vista bound to a Lens. Owns the cache table, a write queue, an event bus, and a
+refresh task.</li>
+<li><strong>Scenery</strong> — a reactive view onto a Dio (ordered tables, individual records, aggregates) that a
+UI binds to.</li>
+</ul>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let lens = Arc::new(
+    Lens::new()
+        .cache_at("./cache.redb")
+        .on_start(|dio| { let dio = dio.clone(); async move {
+            let rows = dio.master().list_values().await?;
+            dio.cache().insert_values(rows).await?;
+            Ok(())
+        }})
+        .refresh_every(Duration::from_secs(300))
+        .build()?,
+);
+let products = lens.make_dio(products_vista).await?;
+let mut v = products.vista();          // facade: reads from cache, writes through the queue
+<span class="boring">}</span></code></pre>
+<div id="admonition-capability-injection" class="admonition admonish-success" role="note" aria-labelledby="admonition-capability-injection-title">
+<div class="admonition-title">
+<div id="admonition-capability-injection-title">
+<p>Capability injection</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-capability-injection"></a>
+</div>
+
+<div>
+<p>Diorama caches the full dataset locally, so a read-only CSV Vista that <em>can’t</em> paginate, sort, or
+search server-side becomes one that can — the consumer sees a richer Vista than the backend
+actually supports. Two-pass progressive loading renders a cheap list immediately and hydrates
+expensive per-row detail lazily as rows scroll into view.</p>
+</div>
+
+</div>
+
+<h3 id="more-backends-more-reach"><a class="header" href="#more-backends-more-reach">More backends, more reach</a></h3>
+<p>0.5 also widened the backend roster around the Vista abstraction: <strong>redb</strong> (embedded key-value
+store), <strong>AWS</strong> (DynamoDB and friends, all returning Vistas directly), a <strong>Cmd</strong> source that turns a
+shell script into a queryable table, and an <strong>API pool</strong>. Cross-persistence reference traversal —
+categories in Postgres, products in MongoDB — moved out of <code>Vista</code> and into
+<strong><code>vantage-vista-factory</code></strong>’s <code>VistaCatalog</code>, keeping each <code>Vista</code> strictly single-backend.</p>
+<div id="admonition-a-new-introduction" class="admonition admonish-note" role="note" aria-labelledby="admonition-a-new-introduction-title">
+<div class="admonition-title">
+<div id="admonition-a-new-introduction-title">
+<p>A new introduction</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-a-new-introduction"></a>
+</div>
+
+<div>
+<p>The getting-started guide was rewritten around these concepts — chapters on
+<a href="./intro/step4-vista.html">Vista</a>, <a href="./intro/step5-dio-lens.html">Dio &amp; Lens</a>, and
+<a href="./intro/step6-scenery.html">Scenery</a> build a CLI up from a single SQLite query to a reactive,
+cached, multi-backend handle.</p>
+<p><strong><a href="./whats-new-in-05.html">Read the full 0.5 feature guide →</a></strong></p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="06--hardening-june-2026"><a class="header" href="#06--hardening-june-2026">0.6 — Hardening (June 2026)</a></h2>
+<p>If 0.5 was about reach, 0.6 is about trust. The release is a coordinated, workspace-wide sweep with
+a single theme: <strong>no panics, no silent failures.</strong> Every path that could abort the process deep
+inside a write, or quietly return a wrong answer, was made fallible and explicit.</p>
+<ul>
+<li><strong>Serialization is fallible.</strong> A new <code>TryIntoRecord</code> trait replaces the infallible blanket: a
+failing <code>Serialize</code> (non-string map keys, an out-of-range number) now becomes a recoverable error
+instead of a process abort mid-write. <code>Entity</code> write paths (<code>insert</code> / <code>replace</code> / <code>patch</code>)
+propagate it.</li>
+<li><strong>No silent zeros.</strong> <code>get_count</code> unwraps the common <code>[{"count": N}]</code> shape and surfaces
+unrecognized result shapes as errors instead of returning <code>0</code>.</li>
+<li><strong>No silent match-all.</strong> Search on a backend that can’t search server-side (CSV, redb) returns an
+<code>Unsupported</code> error — never a quietly unfiltered result set.</li>
+<li><strong>Expression safety.</strong> <code>f64::IntoValue</code> degrades NaN/Infinity to <code>Null</code> instead of panicking;
+<code>Expression::preview()</code> uses single-pass interleaving so a <code>{}</code> inside a rendered value can’t
+corrupt the output. <code>select_column</code> became fallible.</li>
+<li><strong>Clearer error classification.</strong> <code>vantage-core</code>’s error-kind annotators were renamed to
+<code>mark_unsupported</code> / <code>mark_unimplemented</code> (the <code>is_*</code> names are now real predicates), and trace
+emission was decoupled — <code>mark_*</code> no longer logs implicitly; chain <code>.traced()</code> when you want the
+<code>tracing::error!</code> event.</li>
+<li><strong>Security: SurrealDB identifier injection.</strong> Identifier escaping was unified into
+<code>surreal-client</code>’s single <code>escape_identifier</code> authority and fixed for SurrealDB 3.x — a crafted
+<code>⟩</code> inside a column name could previously break out of <code>⟨…⟩</code> quoting and inject arbitrary
+SurrealQL. <code>similarity()</code> and <code>time_group()</code> literals are now bound as parameters rather than
+interpolated, closing the same hole on the Rhai-exposed search path.</li>
+</ul>
+<p>Alongside the hardening, 0.6 folded the standalone <code>vantage-data-script</code> crate into <code>vantage-vista</code>’s
+<code>rhai</code> feature, added random-access windowing (<code>fetch_window</code>) with REST lazy-loading, and introduced
+<code>ColumnFlag::Label</code> for status-tag display hints.</p>
 <hr>
 <h2 id="the-bigger-picture"><a class="header" href="#the-bigger-picture">The bigger picture</a></h2>
 <p>Looking at the trajectory:</p>
@@ -463,11 +660,14 @@ trait model where each persistence only implements what its engine supports.</p>
 <tr><td>0.2</td><td>Entity Framework for Rust</td><td>Postgres</td><td>1</td></tr>
 <tr><td>0.3</td><td>Traits, not inheritance</td><td>SurrealDB, SQLite</td><td>10+</td></tr>
 <tr><td>0.4</td><td>Strict types, any persistence</td><td>SurrealDB, SQLite, Postgres, MySQL, MongoDB, CSV, REST API</td><td>20+</td></tr>
+<tr><td>0.5</td><td>A universal data handle</td><td>+ redb, AWS (DynamoDB), Cmd (shell scripts)</td><td>25+</td></tr>
+<tr><td>0.6</td><td>No panics, no silent failures</td><td>(same — hardening release)</td><td>25+</td></tr>
 </tbody>
 </table>
 </div>
-<p>What started as 16 commits in April 2024 is now <strong>470+ commits</strong>, <strong>189+ pull requests</strong>, and a
-framework that can drive the same business logic across five backends and six UI frameworks.</p>
+<p>What started as 16 commits in April 2024 is now <strong>800+ commits</strong>, <strong>300+ pull requests</strong>, and a
+framework that can drive the same business logic across a dozen backends and six UI frameworks —
+typed when you know the entity, universal (via <code>Vista</code>) when you don’t.</p>
 <p>The destination hasn’t changed since day one: <strong>describe your data once, use it everywhere.</strong> Each
 version just made “everywhere” a little bigger.</p>
 

@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-4150e71c.js";
+            window.path_to_searchindex_js = "../searchindex-8a058479.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-e08789ca.js"></script>
+        <script src="../toc-c63e78ae.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -231,7 +231,7 @@ in the next chapter.</li>
 </code></pre>
 <hr>
 <h2 id="building-a-lens"><a class="header" href="#building-a-lens">Building a Lens</a></h2>
-<p>A <a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a> is built once and shared across every Dio you create from it. It
+<p>A <a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a> is built once and shared across every Dio you create from it. It
 holds the cache backend, lifecycle callbacks, and default policies:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -257,7 +257,7 @@ let lens = Arc::new(
 <p>Three things happen here:</p>
 <ul>
 <li><strong><code>.cache_at(path)</code></strong> — opens a redb file on disk. Each Dio claims a named table inside it. You
-can also pass a custom <a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a> with
+can also pass a custom <a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a> with
 <code>.cache_source(backend)</code> for in-memory or remote stores.</li>
 <li><strong><code>.on_start(|dio| { ... })</code></strong> — fires once when <code>make_dio</code> is called. The canonical pattern is
 seed the cache from the master: list everything, write it to cache. The <code>dio.clone()</code> inside the
@@ -293,9 +293,9 @@ need to spawn a task or hold the Dio across an <code>.await</code>, clone it ins
 
 <hr>
 <h2 id="creating-a-dio"><a class="header" href="#creating-a-dio">Creating a Dio</a></h2>
-<p><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/lens/struct.Lens.html#method.make_dio"><code>make_dio</code></a> binds a Vista to the Lens. It opens the cache table,
+<p><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/lens/struct.Lens.html#method.make_dio"><code>make_dio</code></a> binds a Vista to the Lens. It opens the cache table,
 spawns the write worker and refresh task, fires <code>on_start</code>, and returns a
-<a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a>:</p>
+<a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>let products_dio = lens.make_dio(products_vista).await?;
@@ -338,7 +338,7 @@ lives on the Dio/Scenery layer.</p>
 
 <div>
 <p>Direct cache access works, but there’s a more ergonomic path. <code>dio.vista()</code> returns a
-<a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/vista/struct.Vista.html">Vista</a> backed by the Dio — reads go through cache, writes go through
+<a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/vista/struct.Vista.html">Vista</a> backed by the Dio — reads go through cache, writes go through
 the queue, schema comes from the master. Consumers can’t tell the difference:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -356,7 +356,7 @@ queue accepts the write even though the master can’t.</p>
 <hr>
 <h2 id="writing-through-the-queue"><a class="header" href="#writing-through-the-queue">Writing through the queue</a></h2>
 <p>Writes don’t hit the master directly. They go into the Dio’s write queue as a
-<a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a>:</p>
+<a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use vantage_types::Record;
@@ -428,7 +428,7 @@ metrics, cache warming, or triggering side effects in any consumer.</p>
 <p>The event bus carries <em>internal</em> events (cache writes, refreshes). But what about changes happening
 on the master that you didn’t initiate — other users editing records, a database trigger firing, a
 webhook arriving?</p>
-<p><code>on_event</code> receives <em>upstream</em> <a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a> objects and reconciles
+<p><code>on_event</code> receives <em>upstream</em> <a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a> objects and reconciles
 them into the cache. Add it to the Lens alongside <code>on_start</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -466,7 +466,7 @@ them into the cache. Add it to the Lens alongside <code>on_start</code>:</p>
 );
 <span class="boring">}</span></code></pre>
 <p>The typical wiring: a live stream from SurrealDB, a Kafka consumer, or a WebSocket listener feeds
-<a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a>s into <code>dio.handle_event(evt).await</code>, which invokes
+<a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a>s into <code>dio.handle_event(evt).await</code>, which invokes
 your <code>on_event</code> callback. You write the row to cache and publish the matching <code>DioEvent</code> — any
 subscriber (Scenery, logger, metrics) picks it up.</p>
 <div id="admonition-patched-andinvalidate_record" class="admonition admonish-tip" role="note" aria-labelledby="admonition-patched-andinvalidate_record-title">
@@ -558,13 +558,13 @@ v.insert(&amp;"muffin".to_string(), &amp;rec).await?;  // enqueued
 <tr><th>Concept</th><th>What it does</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a></td><td>Shared infrastructure: cache, callbacks, defaults</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/lens/struct.LensBuilder.html"><code>LensBuilder</code></a></td><td>Chainable configuration for building a Lens</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a></td><td>Per-entity binding of Vista + Lens; owns cache, queue, events</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a></td><td>Storage backing for cached rows</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a></td><td>One unit of work on the write queue</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/dio/event_bus/enum.DioEvent.html"><code>DioEvent</code></a></td><td>Internal event: record changed, invalidated, write failed</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.5.4/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a></td><td>Upstream event from the master backend</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a></td><td>Shared infrastructure: cache, callbacks, defaults</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/lens/struct.LensBuilder.html"><code>LensBuilder</code></a></td><td>Chainable configuration for building a Lens</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a></td><td>Per-entity binding of Vista + Lens; owns cache, queue, events</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a></td><td>Storage backing for cached rows</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a></td><td>One unit of work on the write queue</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/dio/event_bus/enum.DioEvent.html"><code>DioEvent</code></a></td><td>Internal event: record changed, invalidated, write failed</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a></td><td>Upstream event from the master backend</td></tr>
 <tr><td><code>on_start</code> / <code>on_refresh</code> / <code>on_write</code> / <code>on_event</code></td><td>Lifecycle callbacks</td></tr>
 <tr><td><code>dio.vista()</code></td><td>Facade Vista that reads from cache, writes through queue</td></tr>
 </tbody>

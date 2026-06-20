@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-4150e71c.js";
+            window.path_to_searchindex_js = "../searchindex-8a058479.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-e08789ca.js"></script>
+        <script src="../toc-c63e78ae.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -207,7 +207,7 @@ should be able to edit as records.</p>
 same type system, evaluated lazily. <code>vista_contained()</code> surfaces these as <code>ContainedSpec</code>s.</p>
 </li>
 <li>
-<p><strong>The sub-Vista</strong> is <a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/contained/fn.build_contained_vista.html" title="vantage_vista::build_contained_vista"><code>vantage_vista::build_contained_vista</code></a>. It materializes the column’s
+<p><strong>The sub-Vista</strong> is <a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/contained/fn.build_contained_vista.html" title="vantage_vista::build_contained_vista"><code>vantage_vista::build_contained_vista</code></a>. It materializes the column’s
 records into an in-memory <code>ImTable</code>, serves reads from it, and on every write re-serializes the
 whole collection and calls a <strong>writeback</strong> closure. That writeback — patch the parent row’s host
 column — is the only persistence-specific part you supply.</p>
@@ -277,7 +277,7 @@ you a record set with ids, not a bag of dotted columns.</p>
 <h3 id="why-not-model-it-as-a-foreign-key-relation"><a class="header" href="#why-not-model-it-as-a-foreign-key-relation">Why not model it as a foreign-key relation?</a></h3>
 <p>Because there’s no other table to point at, and no foreign key to join on. The data is in the row.
 Forcing it into <code>with_many</code> would mean inventing a synthetic table and writing a join that the
-storage engine can’t honour. Contained relations are the honest model: traversal is a column
+storage engine can’t honour. Contained relations are the natural model: traversal is a column
 projection, not a query.</p>
 <h3 id="eager-writeback"><a class="header" href="#eager-writeback">Eager writeback</a></h3>
 <p>Every mutation on the sub-Vista patches the parent row immediately — there’s no <code>flush</code>. This keeps

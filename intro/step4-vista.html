@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-4150e71c.js";
+            window.path_to_searchindex_js = "../searchindex-8a058479.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-e08789ca.js"></script>
+        <script src="../toc-c63e78ae.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -184,7 +184,7 @@ already showed the limitation — it could only exist because we erased the enti
 data grid that works with whatever you point it at — none of these know your <code>Product</code> struct. They
 need a handle that carries its own schema, speaks a single value type, and works regardless of which
 database sits underneath.</p>
-<p>That handle is <a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a>.</p>
+<p>That handle is <a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a>.</p>
 <div id="admonition-goals-for-this-chapter" class="admonition admonish-example" role="note" aria-labelledby="admonition-goals-for-this-chapter-title">
 <div class="admonition-title">
 <div id="admonition-goals-for-this-chapter-title">
@@ -202,7 +202,7 @@ database sits underneath.</p>
 <li>Add conditions, search, and ordering through the Vista API</li>
 <li>Fetch paginated results with <code>fetch_page</code> and <code>fetch_next</code></li>
 <li>Traverse relationships and cross-backend references</li>
-<li>Understand capabilities — the honesty contract between Vista and its driver</li>
+<li>Understand capabilities — the explicit contract between Vista and its driver</li>
 </ol>
 </div>
 
@@ -281,7 +281,7 @@ for (name, kind) in vista.list_references() {
 }
 // ref: products (HasMany)
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/column/struct.Column.html"><code>Column</code></a> carries an <code>original_type</code> string (preserved from the typed column
+<p><a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/column/struct.Column.html"><code>Column</code></a> carries an <code>original_type</code> string (preserved from the typed column
 definition) and a set of flags. The standard flag vocabulary:</p>
 <div class="table-wrapper">
 <table>
@@ -337,7 +337,7 @@ pushes it onto the wrapped table.</p>
 v.with_id("7")?;
 let row = v.get_some_value().await?;
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/vista/struct.Vista.html#method.with_id"><code>with_id</code></a> reads the id column name from the schema and calls
+<p><a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/vista/struct.Vista.html#method.with_id"><code>with_id</code></a> reads the id column name from the schema and calls
 <code>add_condition_eq</code> for you. Returns <code>&amp;mut Self</code> so you can chain.</p>
 <hr>
 <h2 id="search-and-ordering"><a class="header" href="#search-and-ordering">Search and ordering</a></h2>
@@ -365,7 +365,7 @@ if the driver doesn’t support them. Check capabilities first (or just try and 
 </div>
 
 <div>
-<p>A CSV file can’t sort or search server-side — it loads everything into memory. DynamoDB can only order by its declared sort key. The driver sets capability flags honestly:</p>
+<p>A CSV file can’t sort or search server-side — it loads everything into memory. DynamoDB can only order by its declared sort key. Each driver declares its capability flags accordingly:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>let caps = vista.capabilities();
@@ -485,8 +485,8 @@ cross-persistence resolver:</p>
 </div>
 
 <hr>
-<h2 id="capabilities--the-honesty-contract"><a class="header" href="#capabilities--the-honesty-contract">Capabilities — the honesty contract</a></h2>
-<p><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a> is a struct of booleans. The driver sets
+<h2 id="capabilities--the-explicit-contract"><a class="header" href="#capabilities--the-explicit-contract">Capabilities — the explicit contract</a></h2>
+<p><a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a> is a struct of booleans. The driver sets
 each flag to reflect what it actually implements:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -568,10 +568,10 @@ MongoDB Vista, an AWS Vista — anything the framework can produce.</p>
 <tr><th>Concept</th><th>What it does</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a></td><td>Universal schema-bearing data handle, wraps any <code>Table</code></td></tr>
-<tr><td><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/source/trait.TableShell.html"><code>TableShell</code></a></td><td>Per-driver executor that Vista delegates to</td></tr>
-<tr><td><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a></td><td>Honest contract of what the driver supports</td></tr>
-<tr><td><a href="https://docs.rs/vantage_vista/0.5.2/vantage_vista/column/struct.Column.html"><code>Column</code></a></td><td>Column metadata with name, type, and flags</td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a></td><td>Universal schema-bearing data handle, wraps any <code>Table</code></td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/source/trait.TableShell.html"><code>TableShell</code></a></td><td>Per-driver executor that Vista delegates to</td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a></td><td>Explicit contract of what the driver supports</td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/column/struct.Column.html"><code>Column</code></a></td><td>Column metadata with name, type, and flags</td></tr>
 <tr><td><code>add_condition_eq</code></td><td>Narrow results to field == value</td></tr>
 <tr><td><code>with_id</code></td><td>Convenience: narrow by primary key</td></tr>
 <tr><td><code>add_search</code> / <code>add_order</code></td><td>Quicksearch and sorting (replace semantics)</td></tr>
