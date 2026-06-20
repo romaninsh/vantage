@@ -317,6 +317,56 @@ async fn vista_get_ref_has_many_via_row() -> TestResult {
     Ok(())
 }
 
+/// Regression: `with_expression` columns must survive reference traversal.
+/// `get_ref` resolves the child through `get_ref_from_row`, which erases the
+/// entity to `EmptyEntity`. Before the fix, `Table::into_entity` dropped the
+/// expression closures, so computed aggregates vanished from nested / drilldown
+/// rows while still appearing on the top-level table — silently returning
+/// fewer columns than the parent vista.
+#[tokio::test]
+async fn vista_get_ref_preserves_with_expression_columns() -> TestResult {
+    #[entity(SqliteType)]
+    #[derive(Debug, Clone, PartialEq, Default)]
+    struct Order {
+        client_id: String,
+        total: i64,
+    }
+
+    let db = setup_clients_orders().await;
+
+    let db_for_child = db.clone();
+    let clients = Table::<SqliteDB, EmptyEntity>::new("client", db.clone())
+        .with_id_column("id")
+        .with_column_of::<String>("name")
+        .with_many("orders", "client_id", move |_| {
+            // A *typed* child (entity = Order, not EmptyEntity) carrying a
+            // computed expression — get_ref will erase it to EmptyEntity.
+            Table::<SqliteDB, Order>::new("orders", db_for_child.clone())
+                .with_id_column("id")
+                .with_column_of::<String>("client_id")
+                .with_column_of::<i64>("total")
+                .with_expression("total_with_tax", |_| sqlite_expr!("\"total\" * 2"))
+        });
+
+    let mut clients = db.vista_factory().from_table(clients)?;
+    let (_, alice) = clients
+        .with_id(CborValue::Text("alice".into()))?
+        .get_some_value()
+        .await?
+        .expect("alice exists");
+
+    let alice_orders = clients.get_ref("orders", &alice)?;
+    let rows = alice_orders.list_values().await?;
+    assert_eq!(rows.len(), 2, "alice has 2 orders");
+    let o1 = rows.get("o1").expect("order o1");
+    assert_eq!(
+        o1.get("total_with_tax"),
+        Some(&CborValue::Integer(20i64.into())),
+        "computed expression must survive get_ref entity erasure"
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn vista_list_references_surfaces_cardinality() -> TestResult {
     let db = setup_clients_orders().await;
