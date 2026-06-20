@@ -157,6 +157,10 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
         return;
     };
 
+    // Remember the window the grid last asked for so a refresh can re-fetch
+    // exactly it in place (see `TableSceneryState::refresh_loaded_viewport`).
+    *state.last_viewport.write().unwrap() = Some(visible.clone());
+
     let _ = dio_inner.event_bus.send(DioEvent::ViewportChanged {
         range: visible.clone(),
     });
