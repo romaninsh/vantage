@@ -211,6 +211,65 @@ pub fn eval_modify_script(engine: &Engine, code: &str, vista: Vista) -> Result<V
         .ok_or_else(|| error!("rhai modify script consumed `self`"))
 }
 
+/// A diorama augmentation *source* closure: given a master `row` and a freshly
+/// resolved `base` detail [`Vista`], return the `base` narrowed for that row.
+/// Hand-written Rust and Rhai both produce this same shape.
+pub type AugmentSourceFn = Arc<dyn Fn(&Record<CborValue>, Vista) -> Result<Vista> + Send + Sync>;
+
+/// Evaluate an augmentation *source* script: narrow a pre-built `base` Vista in
+/// place using values from the master `row`, and return it. The base is exposed
+/// to the script as `self`, the master row as `row` — so a one-liner like
+///
+/// ```rhai
+/// self.add_condition_eq("key", row.key)
+/// ```
+///
+/// is the canonical form. Mirrors [`eval_modify_script`] but with the parent row
+/// in scope; the engine must already carry the conventional vocabulary (via
+/// [`register_conventional_onto`]) plus any vendor extensions.
+pub fn eval_augment_source(
+    engine: &Engine,
+    code: &str,
+    base: Vista,
+    row: &Record<CborValue>,
+) -> Result<Vista> {
+    let handle = RhaiVista::wrap(base);
+    let mut scope = Scope::new();
+    scope.push("self", handle.clone());
+    scope.push_dynamic("row", record_to_dynamic(row));
+
+    engine
+        .run_with_scope(&mut scope, code)
+        .map_err(|e| error!(format!("rhai augment source script failed: {e}")))?;
+
+    handle
+        .0
+        .lock()
+        .map_err(|_| error!("rhai augment source: result mutex poisoned"))?
+        .take()
+        .ok_or_else(|| error!("rhai augment source consumed `self`"))
+}
+
+/// Build a reusable [`AugmentSourceFn`] from a Rhai `code` string and a
+/// `resolver` for `table(name)`. Keeps all Rhai engine assembly inside
+/// vantage-vista: a consumer (diorama's augmentation lowering) only flips the
+/// `rhai` feature and calls this — it never touches the `rhai` crate directly.
+///
+/// The engine is rebuilt per call (cheap; `rhai`'s `sync` feature is not assumed,
+/// so an [`Engine`] cannot be stored in a `Send + Sync` closure). Vendor
+/// extensions come from the supplied `base`'s shell, so scripted narrowing can
+/// use a backend's expression syntax when present.
+pub fn augment_source_closure(resolver: TargetResolver, code: String) -> AugmentSourceFn {
+    Arc::new(
+        move |row: &Record<CborValue>, base: Vista| -> Result<Vista> {
+            let mut engine = Engine::new();
+            base.source.register_rhai_extensions(&mut engine);
+            register_conventional_onto(&mut engine, resolver.clone());
+            eval_augment_source(&engine, code.as_str(), base, row)
+        },
+    )
+}
+
 // ---- helpers --------------------------------------------------------------
 
 type Guard<'a> = std::sync::MutexGuard<'a, Option<Vista>>;
