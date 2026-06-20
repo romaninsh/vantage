@@ -29,8 +29,9 @@ pub use metadata::VistaMetadata;
 pub use reference::{ContainedKind, ContainedSpec, Reference, ReferenceKind};
 #[cfg(feature = "rhai")]
 pub use rhai::{
-    DEFAULT_LIMIT, MAX_LIMIT, MIN_LIMIT, RhaiVista, TargetResolver, eval_modify_script,
-    eval_ref_script, register_conventional_onto, register_fetch_verbs, run_script,
+    AugmentSourceFn, DEFAULT_LIMIT, MAX_LIMIT, MIN_LIMIT, RhaiVista, TargetResolver,
+    augment_source_closure, eval_augment_source, eval_modify_script, eval_ref_script,
+    register_conventional_onto, register_fetch_verbs, run_script,
 };
 pub use sort::SortDirection;
 pub use source::TableShell;
