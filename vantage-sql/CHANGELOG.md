@@ -5,6 +5,9 @@
 - SQLite Vista now implements `fetch_window` (advertised via `can_fetch_window`), serving an
   arbitrary `[offset, offset + limit)` row window through `Pagination::window`. Previously only
   page-indexed `fetch_page` was available, so random-access window fetches were refused.
+- Regression test `vista_get_ref_preserves_with_expression_columns` covers `vantage-table` 0.6.4's
+  fix for computed columns surviving `get_ref` entity erasure — a typed child with a
+  `with_expression` now keeps that column when reached through a parent vista's `get_ref`.
 
 ## 0.6.0 — unreleased
 
