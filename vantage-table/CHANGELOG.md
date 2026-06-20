@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.4 — unreleased
+
+- `Pagination::window(offset, limit)` for random-access `[offset, offset + limit)` windows whose
+  offset need not be a multiple of the page size (`skip()` returns the offset verbatim). Backs
+  `Vista::fetch_window` on offset/limit-addressable drivers.
+
 ## 0.6.3 — unreleased
 
 - Added `ColumnFlag::Label` — hints a column is better shown as a small status tag attached to the
