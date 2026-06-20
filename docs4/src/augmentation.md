@@ -168,3 +168,10 @@ To augment a master with a second source:
    engages the two-pass passes automatically.
 4. **Show the columns** — the lifted detail columns appear on hydrated rows
    alongside the master's.
+
+A runnable end-to-end example (two in-memory Vistas, list pass then detail pass)
+lives in `vantage-diorama/examples/augmentation.rs`:
+
+```console
+cargo run -p vantage-diorama --example augmentation
+```
