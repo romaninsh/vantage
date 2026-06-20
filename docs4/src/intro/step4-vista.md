@@ -20,7 +20,7 @@ By the end of this page you'll be able to:
 3. Add conditions, search, and ordering through the Vista API
 4. Fetch paginated results with `fetch_page` and `fetch_next`
 5. Traverse relationships and cross-backend references
-6. Understand capabilities — the honesty contract between Vista and its driver
+6. Understand capabilities — the explicit contract between Vista and its driver
 ```
 
 ---
@@ -171,7 +171,7 @@ Both are **replace semantics** — calling again drops the previous filter/order
 if the driver doesn't support them. Check capabilities first (or just try and handle the error).
 
 ```admonish warning title="Not every driver supports these"
-A CSV file can't sort or search server-side — it loads everything into memory. DynamoDB can only order by its declared sort key. The driver sets capability flags honestly:
+A CSV file can't sort or search server-side — it loads everything into memory. DynamoDB can only order by its declared sort key. Each driver declares its capability flags accordingly:
 
 ~~~rust
 let caps = vista.capabilities();
@@ -287,7 +287,7 @@ Because `with_foreign` closures are lazy, you can register mutual references bet
 
 ---
 
-## Capabilities — the honesty contract
+## Capabilities — the explicit contract
 
 [`VistaCapabilities`](vantage_vista::VistaCapabilities) is a struct of booleans. The driver sets
 each flag to reflect what it actually implements:
@@ -367,7 +367,7 @@ MongoDB Vista, an AWS Vista — anything the framework can produce.
 | ------------------------------------------------------- | ------------------------------------------------------- |
 | [`Vista`](vantage_vista::Vista)                         | Universal schema-bearing data handle, wraps any `Table` |
 | [`TableShell`](vantage_vista::TableShell)               | Per-driver executor that Vista delegates to             |
-| [`VistaCapabilities`](vantage_vista::VistaCapabilities) | Honest contract of what the driver supports             |
+| [`VistaCapabilities`](vantage_vista::VistaCapabilities) | Explicit contract of what the driver supports           |
 | [`Column`](vantage_vista::Column)                       | Column metadata with name, type, and flags              |
 | `add_condition_eq`                                      | Narrow results to field == value                        |
 | `with_id`                                               | Convenience: narrow by primary key                      |
