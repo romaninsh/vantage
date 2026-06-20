@@ -37,10 +37,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-8a058479.js";
+            window.path_to_searchindex_js = "searchindex-228ae3e4.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-c63e78ae.js"></script>
+        <script src="toc-82c1d7c4.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -2626,7 +2626,7 @@ already showed the limitation — it could only exist because we erased the enti
 data grid that works with whatever you point it at — none of these know your <code>Product</code> struct. They
 need a handle that carries its own schema, speaks a single value type, and works regardless of which
 database sits underneath.</p>
-<p>That handle is <a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a>.</p>
+<p>That handle is <a href="https://docs.rs/vantage_vista/0.6.2/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a>.</p>
 <div id="admonition-goals-for-this-chapter-1" class="admonition admonish-example" role="note" aria-labelledby="admonition-goals-for-this-chapter-title">
 <div class="admonition-title">
 <div id="admonition-goals-for-this-chapter-title-1">
@@ -2723,7 +2723,7 @@ for (name, kind) in vista.list_references() {
 }
 // ref: products (HasMany)
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/column/struct.Column.html"><code>Column</code></a> carries an <code>original_type</code> string (preserved from the typed column
+<p><a href="https://docs.rs/vantage_vista/0.6.2/vantage_vista/column/struct.Column.html"><code>Column</code></a> carries an <code>original_type</code> string (preserved from the typed column
 definition) and a set of flags. The standard flag vocabulary:</p>
 <div class="table-wrapper">
 <table>
@@ -2779,7 +2779,7 @@ pushes it onto the wrapped table.</p>
 v.with_id("7")?;
 let row = v.get_some_value().await?;
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/vista/struct.Vista.html#method.with_id"><code>with_id</code></a> reads the id column name from the schema and calls
+<p><a href="https://docs.rs/vantage_vista/0.6.2/vantage_vista/vista/struct.Vista.html#method.with_id"><code>with_id</code></a> reads the id column name from the schema and calls
 <code>add_condition_eq</code> for you. Returns <code>&amp;mut Self</code> so you can chain.</p>
 <hr>
 <h2 id="search-and-ordering"><a class="header" href="#search-and-ordering">Search and ordering</a></h2>
@@ -2928,7 +2928,7 @@ cross-persistence resolver:</p>
 
 <hr>
 <h2 id="capabilities--the-explicit-contract"><a class="header" href="#capabilities--the-explicit-contract">Capabilities — the explicit contract</a></h2>
-<p><a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a> is a struct of booleans. The driver sets
+<p><a href="https://docs.rs/vantage_vista/0.6.2/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a> is a struct of booleans. The driver sets
 each flag to reflect what it actually implements:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -3010,10 +3010,10 @@ MongoDB Vista, an AWS Vista — anything the framework can produce.</p>
 <tr><th>Concept</th><th>What it does</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a></td><td>Universal schema-bearing data handle, wraps any <code>Table</code></td></tr>
-<tr><td><a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/source/trait.TableShell.html"><code>TableShell</code></a></td><td>Per-driver executor that Vista delegates to</td></tr>
-<tr><td><a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a></td><td>Explicit contract of what the driver supports</td></tr>
-<tr><td><a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/column/struct.Column.html"><code>Column</code></a></td><td>Column metadata with name, type, and flags</td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/0.6.2/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a></td><td>Universal schema-bearing data handle, wraps any <code>Table</code></td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/0.6.2/vantage_vista/source/trait.TableShell.html"><code>TableShell</code></a></td><td>Per-driver executor that Vista delegates to</td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/0.6.2/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a></td><td>Explicit contract of what the driver supports</td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/0.6.2/vantage_vista/column/struct.Column.html"><code>Column</code></a></td><td>Column metadata with name, type, and flags</td></tr>
 <tr><td><code>add_condition_eq</code></td><td>Narrow results to field == value</td></tr>
 <tr><td><code>with_id</code></td><td>Convenience: narrow by primary key</td></tr>
 <tr><td><code>add_search</code> / <code>add_order</code></td><td>Quicksearch and sorting (replace semantics)</td></tr>
@@ -3096,7 +3096,7 @@ in the next chapter.</li>
 </code></pre>
 <hr>
 <h2 id="building-a-lens"><a class="header" href="#building-a-lens">Building a Lens</a></h2>
-<p>A <a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a> is built once and shared across every Dio you create from it. It
+<p>A <a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a> is built once and shared across every Dio you create from it. It
 holds the cache backend, lifecycle callbacks, and default policies:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -3122,7 +3122,7 @@ let lens = Arc::new(
 <p>Three things happen here:</p>
 <ul>
 <li><strong><code>.cache_at(path)</code></strong> — opens a redb file on disk. Each Dio claims a named table inside it. You
-can also pass a custom <a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a> with
+can also pass a custom <a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a> with
 <code>.cache_source(backend)</code> for in-memory or remote stores.</li>
 <li><strong><code>.on_start(|dio| { ... })</code></strong> — fires once when <code>make_dio</code> is called. The canonical pattern is
 seed the cache from the master: list everything, write it to cache. The <code>dio.clone()</code> inside the
@@ -3158,9 +3158,9 @@ need to spawn a task or hold the Dio across an <code>.await</code>, clone it ins
 
 <hr>
 <h2 id="creating-a-dio"><a class="header" href="#creating-a-dio">Creating a Dio</a></h2>
-<p><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/lens/struct.Lens.html#method.make_dio"><code>make_dio</code></a> binds a Vista to the Lens. It opens the cache table,
+<p><a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/lens/struct.Lens.html#method.make_dio"><code>make_dio</code></a> binds a Vista to the Lens. It opens the cache table,
 spawns the write worker and refresh task, fires <code>on_start</code>, and returns a
-<a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a>:</p>
+<a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>let products_dio = lens.make_dio(products_vista).await?;
@@ -3203,7 +3203,7 @@ lives on the Dio/Scenery layer.</p>
 
 <div>
 <p>Direct cache access works, but there’s a more ergonomic path. <code>dio.vista()</code> returns a
-<a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/vista/struct.Vista.html">Vista</a> backed by the Dio — reads go through cache, writes go through
+<a href="https://docs.rs/vantage_vista/0.6.2/vantage_vista/vista/struct.Vista.html">Vista</a> backed by the Dio — reads go through cache, writes go through
 the queue, schema comes from the master. Consumers can’t tell the difference:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -3221,7 +3221,7 @@ queue accepts the write even though the master can’t.</p>
 <hr>
 <h2 id="writing-through-the-queue"><a class="header" href="#writing-through-the-queue">Writing through the queue</a></h2>
 <p>Writes don’t hit the master directly. They go into the Dio’s write queue as a
-<a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a>:</p>
+<a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use vantage_types::Record;
@@ -3293,7 +3293,7 @@ metrics, cache warming, or triggering side effects in any consumer.</p>
 <p>The event bus carries <em>internal</em> events (cache writes, refreshes). But what about changes happening
 on the master that you didn’t initiate — other users editing records, a database trigger firing, a
 webhook arriving?</p>
-<p><code>on_event</code> receives <em>upstream</em> <a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a> objects and reconciles
+<p><code>on_event</code> receives <em>upstream</em> <a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a> objects and reconciles
 them into the cache. Add it to the Lens alongside <code>on_start</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -3331,7 +3331,7 @@ them into the cache. Add it to the Lens alongside <code>on_start</code>:</p>
 );
 <span class="boring">}</span></code></pre>
 <p>The typical wiring: a live stream from SurrealDB, a Kafka consumer, or a WebSocket listener feeds
-<a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a>s into <code>dio.handle_event(evt).await</code>, which invokes
+<a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a>s into <code>dio.handle_event(evt).await</code>, which invokes
 your <code>on_event</code> callback. You write the row to cache and publish the matching <code>DioEvent</code> — any
 subscriber (Scenery, logger, metrics) picks it up.</p>
 <div id="admonition-patched-andinvalidate_record" class="admonition admonish-tip" role="note" aria-labelledby="admonition-patched-andinvalidate_record-title">
@@ -3423,13 +3423,13 @@ v.insert(&amp;"muffin".to_string(), &amp;rec).await?;  // enqueued
 <tr><th>Concept</th><th>What it does</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a></td><td>Shared infrastructure: cache, callbacks, defaults</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/lens/struct.LensBuilder.html"><code>LensBuilder</code></a></td><td>Chainable configuration for building a Lens</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a></td><td>Per-entity binding of Vista + Lens; owns cache, queue, events</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a></td><td>Storage backing for cached rows</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a></td><td>One unit of work on the write queue</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/dio/event_bus/enum.DioEvent.html"><code>DioEvent</code></a></td><td>Internal event: record changed, invalidated, write failed</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a></td><td>Upstream event from the master backend</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a></td><td>Shared infrastructure: cache, callbacks, defaults</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/lens/struct.LensBuilder.html"><code>LensBuilder</code></a></td><td>Chainable configuration for building a Lens</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a></td><td>Per-entity binding of Vista + Lens; owns cache, queue, events</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a></td><td>Storage backing for cached rows</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a></td><td>One unit of work on the write queue</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/dio/event_bus/enum.DioEvent.html"><code>DioEvent</code></a></td><td>Internal event: record changed, invalidated, write failed</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a></td><td>Upstream event from the master backend</td></tr>
 <tr><td><code>on_start</code> / <code>on_refresh</code> / <code>on_write</code> / <code>on_event</code></td><td>Lifecycle callbacks</td></tr>
 <tr><td><code>dio.vista()</code></td><td>Facade Vista that reads from cache, writes through queue</td></tr>
 </tbody>
@@ -3461,11 +3461,11 @@ computed value that stays up to date.</p>
 <p><strong>Scenery</strong> is that layer. Each Scenery is a reactive view onto a Dio that exposes a specific access
 pattern:</p>
 <ul>
-<li><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a> — ordered, paginated rows</li>
-<li><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a> — a single record by id</li>
-<li><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a> — a computed scalar (count, sum, custom)</li>
+<li><a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a> — ordered, paginated rows</li>
+<li><a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a> — a single record by id</li>
+<li><a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a> — a computed scalar (count, sum, custom)</li>
 </ul>
-<p>All three share the same reactivity mechanism: a <a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a> counter
+<p>All three share the same reactivity mechanism: a <a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a> counter
 that bumps whenever the view’s state changes. Consumers subscribe via a <code>watch</code> channel and react on
 each bump.</p>
 <div id="admonition-goals-for-this-chapter-3" class="admonition admonish-example" role="note" aria-labelledby="admonition-goals-for-this-chapter-title">
@@ -3774,14 +3774,14 @@ loop {
 <tr><th>Concept</th><th>What it does</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a></td><td>Ordered, paginated row view with sequential or random-access loading</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a></td><td>Reactive single-record view by id</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a></td><td>Reactive aggregate (count, sum, max, min, custom)</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a></td><td>Monotonic counter bumped on every state change</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a></td><td>Ordered, paginated row view with sequential or random-access loading</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a></td><td>Reactive single-record view by id</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a></td><td>Reactive aggregate (count, sum, max, min, custom)</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a></td><td>Monotonic counter bumped on every state change</td></tr>
 <tr><td><code>subscribe()</code></td><td>Returns <code>watch::Receiver&lt;Generation&gt;</code> for reactive updates</td></tr>
 <tr><td><code>set_viewport()</code></td><td>Request a row range for random-access loading</td></tr>
 <tr><td><code>request_load_more()</code></td><td>Append the next page for sequential loading</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.1/vantage_diorama/scenery/value/enum.Aggregate.html"><code>Aggregate</code></a></td><td>Enum of built-in and custom aggregate operations</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.2/vantage_diorama/scenery/value/enum.Aggregate.html"><code>Aggregate</code></a></td><td>Enum of built-in and custom aggregate operations</td></tr>
 </tbody>
 </table>
 </div>
@@ -4662,11 +4662,11 @@ data handle, and builds an entire reactive stack on top of it.</p>
 </ul>
 <hr>
 <h2 id="vista--the-universal-data-handle-1"><a class="header" href="#vista--the-universal-data-handle-1">Vista — the universal data handle</a></h2>
-<p>A <a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a> wraps any typed <code>Table&lt;DB, E&gt;</code> and erases <strong>both</strong> the backend and
+<p>A <a href="https://docs.rs/vantage_vista/0.6.2/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a> wraps any typed <code>Table&lt;DB, E&gt;</code> and erases <strong>both</strong> the backend and
 the entity. All data flows through <code>Record&lt;CborValue&gt;</code> — an ordered map of string keys to CBOR
 values. All schema lives on the Vista itself: columns (with types and flags), references, the id
 column, and a set of capability flags. Execution is delegated to a per-driver
-<a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/source/trait.TableShell.html"><code>TableShell</code></a>.</p>
+<a href="https://docs.rs/vantage_vista/0.6.2/vantage_vista/source/trait.TableShell.html"><code>TableShell</code></a>.</p>
 <pre><code class="language-text">Table&lt;SqliteDB, Product&gt;   — typed entity, typed backend, compile-time safe
 Vista                      — fully erased: schema-bearing, CborValue, no generics
 </code></pre>
@@ -4734,7 +4734,7 @@ stores BSON), so wrapping a typed table into a Vista no longer crosses a JSON fu
 <p>Not every backend can do everything. A CSV file can’t sort or search server-side; DynamoDB orders
 only by its declared sort key; a token-paginated REST API offers a forward cursor but no page
 numbers. Vista makes this explicit with
-<a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a> — a struct of booleans where each driver
+<a href="https://docs.rs/vantage_vista/0.6.2/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a> — a struct of booleans where each driver
 declares exactly what it supports:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -4770,7 +4770,7 @@ scrollbar (random access) and a “load more” button (cursor-based).</p>
 <hr>
 <h2 id="config-driven-yaml-specs-and-rhai-scripting-1"><a class="header" href="#config-driven-yaml-specs-and-rhai-scripting-1">Config-driven: YAML specs and Rhai scripting</a></h2>
 <p>A Vista no longer needs a hand-written Rust definition. Tables, columns, and relations can be
-declared in a <strong>YAML spec</strong> (<a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/spec/struct.VistaSpec.html"><code>VistaSpec</code></a>) and materialized by the
+declared in a <strong>YAML spec</strong> (<a href="https://docs.rs/vantage_vista/0.6.2/vantage_vista/spec/struct.VistaSpec.html"><code>VistaSpec</code></a>) and materialized by the
 driver’s factory:</p>
 <pre><code class="language-yaml">table: product
 columns:
@@ -7522,7 +7522,7 @@ should be able to edit as records.</p>
 same type system, evaluated lazily. <code>vista_contained()</code> surfaces these as <code>ContainedSpec</code>s.</p>
 </li>
 <li>
-<p><strong>The sub-Vista</strong> is <a href="https://docs.rs/vantage_vista/0.6.1/vantage_vista/contained/fn.build_contained_vista.html" title="vantage_vista::build_contained_vista"><code>vantage_vista::build_contained_vista</code></a>. It materializes the column’s
+<p><strong>The sub-Vista</strong> is <a href="https://docs.rs/vantage_vista/0.6.2/vantage_vista/contained/fn.build_contained_vista.html" title="vantage_vista::build_contained_vista"><code>vantage_vista::build_contained_vista</code></a>. It materializes the column’s
 records into an in-memory <code>ImTable</code>, serves reads from it, and on every write re-serializes the
 whole collection and calls a <strong>writeback</strong> closure. That writeback — patch the parent row’s host
 column — is the only persistence-specific part you supply.</p>
@@ -7676,6 +7676,175 @@ re-read the parent row to prove the writeback landed.</p>
 </ol>
 <p>Native and JSON-blob backends differ only in two closures — how the host value enters and how the
 writeback leaves. Everything between is shared.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="augmentation"><a class="header" href="#augmentation">Augmentation</a></h1>
+<p>A <code>Vista</code> reads one table from one backend. But a row is often only half the
+story: an S3 bucket listing tells you a file’s key and size, not how many
+resources the terraform state inside it declares. A REST list of repositories
+doesn’t carry the CI status that lives behind a shell command. The data you want
+to show lives in a <em>second</em> source, keyed off the first.</p>
+<p><strong>Augmentation wires two Vistas into one <code>Dio</code></strong>: a <em>master</em> that is listed, and
+a <em>detail</em> source that is loaded one row at a time and merged on top. The two can
+be the same Vista (a backend whose list and detail are separate operations) or
+entirely different backends — a REST master enriched by a <code>cmd</code> detail, or the
+reverse. The detail source is resolved by name through the
+<a href="#step-7-vista-integration"><code>VistaCatalog</code></a>, so it is
+persistence-agnostic.</p>
+<h2 id="why-this-lives-in-the-dio-not-the-vista"><a class="header" href="#why-this-lives-in-the-dio-not-the-vista">Why this lives in the Dio, not the Vista</a></h2>
+<p>This is a join, and joins are governed by the capability contract. A SQL Vista
+can join its own tables; a REST Vista cannot; two <em>different</em> backends can never
+push a join down to either engine. Where the backend can’t, the layer above fills
+the gap — that is the whole job of the Dio.</p>
+<p>So augmentation is deliberately a <code>Dio</code>-layer feature. A <code>Vista</code> honestly
+describes one backend and has no cache, no viewport, and no catalog; declaring
+“enrich from another Vista, loaded lazily and cached” on it would be a promise it
+can’t keep. The <code>Dio</code> has all three, so it owns the augmentation: it lists the
+master cheaply, and for each row the user actually scrolls to, it fetches the
+detail and stitches the columns together. It is a per-row join, executed
+client-side, exactly where a push-down is impossible.</p>
+<div id="admonition-it-reduces-to-the-old-two-pass" class="admonition admonish-note" role="note" aria-labelledby="admonition-it-reduces-to-the-old-two-pass-title">
+<div class="admonition-title">
+<div id="admonition-it-reduces-to-the-old-two-pass-title">
+<p>It reduces to the old two-pass</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-it-reduces-to-the-old-two-pass"></a>
+</div>
+
+<div>
+<p>The previous progressive-loading path — a <code>cmd</code> table with a <code>detail</code> script —
+is just the special case where the detail source <em>is</em> the master and the key is
+the id. Expressed as augmentation it is <code>table: &lt;self&gt;, source: id, fetch: per_row</code>. Nothing about that behaviour changed; it stopped being a backend quirk.</p>
+</div>
+
+</div>
+
+<h2 id="how-it-runs"><a class="header" href="#how-it-runs">How it runs</a></h2>
+<p>Augmentation engages the two-pass machinery:</p>
+<ol>
+<li><strong>List pass</strong> — the master is listed cheaply (a page at a time). Each row is
+written to the cache as <code>Incomplete</code>, carrying only the columns the list
+returns. When the master can serve windows (<code>can_fetch_window</code>) the page is
+pushed down; otherwise the set is listed and windowed locally.</li>
+<li><strong>Detail pass</strong> — viewport-driven. For each visible <code>Incomplete</code> row, every
+augmentation resolves its detail Vista, fetches the matching record, and
+merges the chosen columns onto the cached row, which flips to <code>Fresh</code>. Rows
+off-screen are never fetched; rows already hydrated are never re-fetched.</li>
+</ol>
+<p>A failed detail fetch marks only that row, leaving its cheap columns intact — the
+rest of the page hydrates normally.</p>
+<h2 id="declaring-it"><a class="header" href="#declaring-it">Declaring it</a></h2>
+<p>On the <code>Lens</code>, supply the catalog and one or more augmentations:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let lens = Lens::new()
+    .cache_at(cache_path)
+    .catalog(catalog)                       // resolves `table:` names
+    .augment(vec![augmentation])            // ≥1 engages two-pass
+    .build()?;
+<span class="boring">}</span></code></pre>
+<p>Each <code>Augmentation</code> has four parts:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>Augmentation {
+    table:  "tfstate_detail".into(),  // catalog name of the detail Vista
+    source: Source::Column { from: "key".into(), to: None },
+    fetch:  Fetch::PerRow,
+    merge:  MergeRule { columns: vec!["resources".into(), "serial".into()] },
+}
+<span class="boring">}</span></code></pre>
+<p><code>source</code> and <code>fetch</code> are two orthogonal axes:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th><code>Source</code></th><th>how a master row selects its detail</th></tr>
+</thead>
+<tbody>
+<tr><td><code>Id</code></td><td><code>master.id → detail.id</code></td></tr>
+<tr><td><code>Column { from, to }</code></td><td><code>master[from] → detail[to</code> <em>or</em> <code>detail.id]</code></td></tr>
+<tr><td><code>Build(closure)</code></td><td>arbitrary narrowing from the whole row — per-row only</td></tr>
+</tbody>
+</table>
+</div>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th><code>Fetch</code></th><th>how the detail is read</th></tr>
+</thead>
+<tbody>
+<tr><td><code>PerRow</code></td><td>one record per master row (<code>get_value</code>, or narrow-and-take-first)</td></tr>
+<tr><td><code>Custom(closure)</code></td><td>a caller-supplied async fetch</td></tr>
+<tr><td><code>Batched</code></td><td>one set query across the window’s keys — <em>planned</em></td></tr>
+</tbody>
+</table>
+</div>
+<p><code>Id</code> and id-keyed <code>Column</code> sources read by key through <code>get_value</code> — the uniform
+“one record by key” primitive (a <code>cmd</code> detail script, a SQL <code>WHERE id =</code>, a REST
+<code>GET /{id}</code>). They can name a target column, so they are the batchable shapes.
+<code>Build</code> returns an arbitrary narrowed Vista that can’t be coalesced into a set, so
+it is per-row only — the type enforces what can and can’t batch, rather than a
+runtime check.</p>
+<h3 id="from-yaml-1"><a class="header" href="#from-yaml-1">From YAML</a></h3>
+<p>The same declaration is data, lowered with <code>lower_augment</code>:</p>
+<pre><code class="language-yaml">augment:
+  - table: tfstate_detail
+    source: { kind: column, from: key }
+    fetch:  { kind: per_row }
+    merge:  [resources, serial, outputs]
+</code></pre>
+<h3 id="rhai-as-a-closure-factory"><a class="header" href="#rhai-as-a-closure-factory">Rhai as a closure factory</a></h3>
+<p>The runtime types carry <strong>closures</strong>, not script strings — <code>Source::Build</code> is a
+<code>Fn(&amp;row, base) -&gt; Vista</code>. Rhai is one factory that produces such a closure;
+hand-written Rust is another. A <code>{ kind: script, code: "..." }</code> source lowers (under
+the <code>rhai</code> feature) to a <code>Build</code> closure that narrows the base detail Vista using
+the master <code>row</code>:</p>
+<pre><code class="language-rhai">self.add_condition_eq("key", row.key)
+</code></pre>
+<p>This is the same machinery a reference build-script uses, pointed at a possibly
+different persistence. The diorama core never sees a script string; all engine
+assembly stays in <code>vantage-vista</code>.</p>
+<h2 id="merging"><a class="header" href="#merging">Merging</a></h2>
+<p><code>merge.columns</code> lists the detail columns to lift; an empty list lifts all of
+them. The detail record is the authoritative hydration of the row, so on a name
+clash its value wins — it overwrites the cheap list-pass value and adds its new
+columns. (An empty list plus overwrite is exactly the old cmd two-pass: the
+detail script returns the full record, which replaces the stub.) The augmented
+<code>Dio</code> therefore advertises the union of the master’s columns and the lifted
+detail columns — the “Dio advertises a superset” principle: below it, sources are
+partial; above it, the view is whole.</p>
+<h2 id="anticipated-objections"><a class="header" href="#anticipated-objections">Anticipated objections</a></h2>
+<p><strong>Why not model the detail as a foreign-key relation?</strong> A relation resolves
+<em>within</em> one persistence and can be pushed down as a join. The detail here may be
+a different backend entirely; there is nothing to join on and no engine that could
+honour it. Augmentation is the cross-Vista form, stitched by the Dio.</p>
+<p><strong>Why one row at a time?</strong> Because the expensive work should follow the user’s
+attention. The list pass is cheap and immediate; only rows that reach the viewport
+pay for their detail, and they pay once.</p>
+<h2 id="whats-next"><a class="header" href="#whats-next">What’s next</a></h2>
+<p>Three things are planned but not yet implemented; each fails honestly today rather
+than degrading silently:</p>
+<ul>
+<li><strong><code>Batched</code> fetch</strong> — collect the window’s distinct keys into one set query and
+scatter the results back, for <code>Id</code>/<code>Column</code> sources.</li>
+<li><strong>Detail-key cache</strong> — dedupe fetches across master rows that share a key
+(non-unique <code>Column</code> sources).</li>
+<li><strong>Scripted fetch</strong> — Rhai fetch verbs choosing how to pull.</li>
+</ul>
+<h2 id="checklist"><a class="header" href="#checklist">Checklist</a></h2>
+<p>To augment a master with a second source:</p>
+<ol>
+<li><strong>Register the detail model</strong> in the <code>VistaCatalog</code> by name.</li>
+<li><strong>Build the <code>Augmentation</code></strong> — pick a <code>Source</code> (id, column, or a closure) and a
+<code>Fetch</code> (<code>PerRow</code> for now), and list the <code>merge</code> columns.</li>
+<li><strong>Wire the Lens</strong> — <code>.catalog(...)</code> then <code>.augment(vec![...])</code>; building it
+engages the two-pass passes automatically.</li>
+<li><strong>Show the columns</strong> — the lifted detail columns appear on hydrated rows
+alongside the master’s.</li>
+</ol>
+<p>A runnable end-to-end example (two in-memory Vistas, list pass then detail pass)
+lives in <code>vantage-diorama/examples/augmentation.rs</code>:</p>
+<pre><code class="language-console">cargo run -p vantage-diorama --example augmentation
+</code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="persistence-aligned-type-system"><a class="header" href="#persistence-aligned-type-system">Persistence-aligned Type System</a></h1>
 <p>Every Vantage persistence defines its own type trait — <code>SqliteType</code>, <code>PostgresType</code>, <code>SurrealType</code>,
@@ -8240,7 +8409,7 @@ result executes identically.</p>
 
 </div>
 
-<h2 id="checklist"><a class="header" href="#checklist">Checklist</a></h2>
+<h2 id="checklist-1"><a class="header" href="#checklist-1">Checklist</a></h2>
 <ul>
 <li>Reach for a <strong>named primitive</strong> first; it handles the lowering, quoting, and escaping.</li>
 <li>Use the <strong><code>vantage-sql</code> name</strong> when the concept overlaps (<code>count</code>, <code>avg</code>, <code>round</code>, <code>coalesce</code>,

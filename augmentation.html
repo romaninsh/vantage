@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Introduction - Vantage 0.4 Framework</title>
+        <title>Augmentation - Vantage 0.4 Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,67 +175,184 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="vantage-framework"><a class="header" href="#vantage-framework">Vantage Framework</a></h1>
-<p>Vantage is a data entity persistence and abstraction framework for Rust.</p>
-<p>Rather than being a traditional ORM, Vantage introduces the concept of a <strong>DataSet</strong> — an abstract,
-composable handle to records living in a remote data store. You define structure, conditions,
-relations, and operations without loading data eagerly, and Vantage translates your intent into
-efficient queries for whichever backend you’re using.</p>
-<p>This documentation covers Vantage <strong>0.4</strong>.</p>
-<h2 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h2>
-<p>Vantage covers a lot of ground — multiple databases, type systems, entity frameworks, UI adapters —
-but none of that matters until you’ve seen it do something useful.</p>
-<p>This guide introduces Vantage concepts one at a time, each building on the last. We’ll start with
-something you already know — SQL — and work our way up to the bigger abstractions. Along the way
-we’ll build a small CLI tool that grows with each chapter.</p>
-<p>You’ll need basic Rust experience (structs, traits, async/await, cargo). No prior Vantage knowledge
-required.</p>
-<p><strong>Start here:</strong> <a href="./intro/step1-first-query.html">SQLite and the Query Builder</a></p>
-<hr><!-- internal use: concept coverage tracker — once covered in introduction, cross out here -->
-<h2 id="todo-concept-coverage"><a class="header" href="#todo-concept-coverage">TODO: Concept Coverage</a></h2>
+                        <h1 id="augmentation"><a class="header" href="#augmentation">Augmentation</a></h1>
+<p>A <code>Vista</code> reads one table from one backend. But a row is often only half the
+story: an S3 bucket listing tells you a file’s key and size, not how many
+resources the terraform state inside it declares. A REST list of repositories
+doesn’t carry the CI status that lives behind a shell command. The data you want
+to show lives in a <em>second</em> source, keyed off the first.</p>
+<p><strong>Augmentation wires two Vistas into one <code>Dio</code></strong>: a <em>master</em> that is listed, and
+a <em>detail</em> source that is loaded one row at a time and merged on top. The two can
+be the same Vista (a backend whose list and detail are separate operations) or
+entirely different backends — a REST master enriched by a <code>cmd</code> detail, or the
+reverse. The detail source is resolved by name through the
+<a href="./new-persistence/step8-vista-integration.html"><code>VistaCatalog</code></a>, so it is
+persistence-agnostic.</p>
+<h2 id="why-this-lives-in-the-dio-not-the-vista"><a class="header" href="#why-this-lives-in-the-dio-not-the-vista">Why this lives in the Dio, not the Vista</a></h2>
+<p>This is a join, and joins are governed by the capability contract. A SQL Vista
+can join its own tables; a REST Vista cannot; two <em>different</em> backends can never
+push a join down to either engine. Where the backend can’t, the layer above fills
+the gap — that is the whole job of the Dio.</p>
+<p>So augmentation is deliberately a <code>Dio</code>-layer feature. A <code>Vista</code> honestly
+describes one backend and has no cache, no viewport, and no catalog; declaring
+“enrich from another Vista, loaded lazily and cached” on it would be a promise it
+can’t keep. The <code>Dio</code> has all three, so it owns the augmentation: it lists the
+master cheaply, and for each row the user actually scrolls to, it fetches the
+detail and stitches the columns together. It is a per-row join, executed
+client-side, exactly where a push-down is impossible.</p>
+<div id="admonition-it-reduces-to-the-old-two-pass" class="admonition admonish-note" role="note" aria-labelledby="admonition-it-reduces-to-the-old-two-pass-title">
+<div class="admonition-title">
+<div id="admonition-it-reduces-to-the-old-two-pass-title">
+<p>It reduces to the old two-pass</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-it-reduces-to-the-old-two-pass"></a>
+</div>
+
+<div>
+<p>The previous progressive-loading path — a <code>cmd</code> table with a <code>detail</code> script —
+is just the special case where the detail source <em>is</em> the master and the key is
+the id. Expressed as augmentation it is <code>table: &lt;self&gt;, source: id, fetch: per_row</code>. Nothing about that behaviour changed; it stopped being a backend quirk.</p>
+</div>
+
+</div>
+
+<h2 id="how-it-runs"><a class="header" href="#how-it-runs">How it runs</a></h2>
+<p>Augmentation engages the two-pass machinery:</p>
+<ol>
+<li><strong>List pass</strong> — the master is listed cheaply (a page at a time). Each row is
+written to the cache as <code>Incomplete</code>, carrying only the columns the list
+returns. When the master can serve windows (<code>can_fetch_window</code>) the page is
+pushed down; otherwise the set is listed and windowed locally.</li>
+<li><strong>Detail pass</strong> — viewport-driven. For each visible <code>Incomplete</code> row, every
+augmentation resolves its detail Vista, fetches the matching record, and
+merges the chosen columns onto the cached row, which flips to <code>Fresh</code>. Rows
+off-screen are never fetched; rows already hydrated are never re-fetched.</li>
+</ol>
+<p>A failed detail fetch marks only that row, leaving its cheap columns intact — the
+rest of the page hydrates normally.</p>
+<h2 id="declaring-it"><a class="header" href="#declaring-it">Declaring it</a></h2>
+<p>On the <code>Lens</code>, supply the catalog and one or more augmentations:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let lens = Lens::new()
+    .cache_at(cache_path)
+    .catalog(catalog)                       // resolves `table:` names
+    .augment(vec![augmentation])            // ≥1 engages two-pass
+    .build()?;
+<span class="boring">}</span></code></pre>
+<p>Each <code>Augmentation</code> has four parts:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>Augmentation {
+    table:  "tfstate_detail".into(),  // catalog name of the detail Vista
+    source: Source::Column { from: "key".into(), to: None },
+    fetch:  Fetch::PerRow,
+    merge:  MergeRule { columns: vec!["resources".into(), "serial".into()] },
+}
+<span class="boring">}</span></code></pre>
+<p><code>source</code> and <code>fetch</code> are two orthogonal axes:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th><code>Source</code></th><th>how a master row selects its detail</th></tr>
+</thead>
+<tbody>
+<tr><td><code>Id</code></td><td><code>master.id → detail.id</code></td></tr>
+<tr><td><code>Column { from, to }</code></td><td><code>master[from] → detail[to</code> <em>or</em> <code>detail.id]</code></td></tr>
+<tr><td><code>Build(closure)</code></td><td>arbitrary narrowing from the whole row — per-row only</td></tr>
+</tbody>
+</table>
+</div>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th><code>Fetch</code></th><th>how the detail is read</th></tr>
+</thead>
+<tbody>
+<tr><td><code>PerRow</code></td><td>one record per master row (<code>get_value</code>, or narrow-and-take-first)</td></tr>
+<tr><td><code>Custom(closure)</code></td><td>a caller-supplied async fetch</td></tr>
+<tr><td><code>Batched</code></td><td>one set query across the window’s keys — <em>planned</em></td></tr>
+</tbody>
+</table>
+</div>
+<p><code>Id</code> and id-keyed <code>Column</code> sources read by key through <code>get_value</code> — the uniform
+“one record by key” primitive (a <code>cmd</code> detail script, a SQL <code>WHERE id =</code>, a REST
+<code>GET /{id}</code>). They can name a target column, so they are the batchable shapes.
+<code>Build</code> returns an arbitrary narrowed Vista that can’t be coalesced into a set, so
+it is per-row only — the type enforces what can and can’t batch, rather than a
+runtime check.</p>
+<h3 id="from-yaml"><a class="header" href="#from-yaml">From YAML</a></h3>
+<p>The same declaration is data, lowered with <code>lower_augment</code>:</p>
+<pre><code class="language-yaml">augment:
+  - table: tfstate_detail
+    source: { kind: column, from: key }
+    fetch:  { kind: per_row }
+    merge:  [resources, serial, outputs]
+</code></pre>
+<h3 id="rhai-as-a-closure-factory"><a class="header" href="#rhai-as-a-closure-factory">Rhai as a closure factory</a></h3>
+<p>The runtime types carry <strong>closures</strong>, not script strings — <code>Source::Build</code> is a
+<code>Fn(&amp;row, base) -&gt; Vista</code>. Rhai is one factory that produces such a closure;
+hand-written Rust is another. A <code>{ kind: script, code: "..." }</code> source lowers (under
+the <code>rhai</code> feature) to a <code>Build</code> closure that narrows the base detail Vista using
+the master <code>row</code>:</p>
+<pre><code class="language-rhai">self.add_condition_eq("key", row.key)
+</code></pre>
+<p>This is the same machinery a reference build-script uses, pointed at a possibly
+different persistence. The diorama core never sees a script string; all engine
+assembly stays in <code>vantage-vista</code>.</p>
+<h2 id="merging"><a class="header" href="#merging">Merging</a></h2>
+<p><code>merge.columns</code> lists the detail columns to lift; an empty list lifts all of
+them. The detail record is the authoritative hydration of the row, so on a name
+clash its value wins — it overwrites the cheap list-pass value and adds its new
+columns. (An empty list plus overwrite is exactly the old cmd two-pass: the
+detail script returns the full record, which replaces the stub.) The augmented
+<code>Dio</code> therefore advertises the union of the master’s columns and the lifted
+detail columns — the “Dio advertises a superset” principle: below it, sources are
+partial; above it, the view is whole.</p>
+<h2 id="anticipated-objections"><a class="header" href="#anticipated-objections">Anticipated objections</a></h2>
+<p><strong>Why not model the detail as a foreign-key relation?</strong> A relation resolves
+<em>within</em> one persistence and can be pushed down as a join. The detail here may be
+a different backend entirely; there is nothing to join on and no engine that could
+honour it. Augmentation is the cross-Vista form, stitched by the Dio.</p>
+<p><strong>Why one row at a time?</strong> Because the expensive work should follow the user’s
+attention. The list pass is cheap and immediate; only rows that reach the viewport
+pay for their detail, and they pay once.</p>
+<h2 id="whats-next"><a class="header" href="#whats-next">What’s next</a></h2>
+<p>Three things are planned but not yet implemented; each fails honestly today rather
+than degrading silently:</p>
 <ul>
-<li><input disabled="" type="checkbox" checked=""> Expression basics (<code>sqlite_expr!</code>, parameter binding, injection safety)</li>
-<li><input disabled="" type="checkbox" checked=""> Identifier quoting (<code>ident()</code>, dialect-aware)</li>
-<li><input disabled="" type="checkbox"> SqliteSelect via Selectable trait (with_source, with_field, with_condition, with_order,
-with_limit) — partial, missing with_order, with_limit</li>
-<li><input disabled="" type="checkbox" checked=""> Executing queries (ExprDataSource, <code>db.execute()</code>) — <code>db.associate()</code> not covered</li>
-<li><input disabled="" type="checkbox"> Aggregates on select (as_count, as_sum) — covered via <code>db.aggregate()</code> not <code>.as_count()</code> directly</li>
-<li><input disabled="" type="checkbox" checked=""> Table definition (Table::new, with_column_of, with_id_column, builder pattern)</li>
-<li><input disabled="" type="checkbox" checked=""> Table → select query (table.select() returns vendor-specific builder)</li>
-<li><input disabled="" type="checkbox" checked=""> DataSource concept (what it is, how you pass it to Table::new)</li>
-<li><input disabled="" type="checkbox" checked=""> Entity struct (plain Rust struct, no id field, <code>#[entity]</code> macro)</li>
-<li><input disabled="" type="checkbox" checked=""> Record&lt;V&gt; (persistence-native value bags)</li>
-<li><input disabled="" type="checkbox"> Type system (vantage_type_system! macro, AnySqliteType, typed vs untyped values) — AnySqliteType mentioned, macro not shown</li>
-<li><input disabled="" type="checkbox" checked=""> ReadableDataSet (list, get, get_some, get_count)</li>
-<li><input disabled="" type="checkbox" checked=""> WritableDataSet (insert, delete)</li>
-<li><input disabled="" type="checkbox"> ActiveEntity (get_entity, modify via DerefMut, save)</li>
-<li><input disabled="" type="checkbox" checked=""> Conditions (table[“field”], .eq/.gt/.lt, with_condition returns new table)</li>
-<li><input disabled="" type="checkbox"> Sync vs async — defining table is sync, hitting DB is async</li>
-<li><input disabled="" type="checkbox" checked=""> Relationships (with_one, with_many, declared on table not entity)</li>
-<li><input disabled="" type="checkbox" checked=""> Reference traversal (get_ref_as, subquery-based conditions)</li>
-<li><input disabled="" type="checkbox" checked=""> Computed fields (with_expression, correlated subqueries)</li>
-<li><input disabled="" type="checkbox" checked=""> AnyTable (from_table, JSON boundary, type-erased generic code)</li>
-<li><input disabled="" type="checkbox"> Model crate pattern (entities + table constructors + relationships in one crate)</li>
-<li><input disabled="" type="checkbox"> Multiple backends per entity (surreal_table, sqlite_table, csv_table)</li>
-<li><input disabled="" type="checkbox"> DataSet trait hierarchy (ReadableDataSet, InsertableDataSet, WritableDataSet) — partial, ReadableDataSet only</li>
-<li><input disabled="" type="checkbox"> ValueSet traits (schema-less Record-based access)</li>
-<li><input disabled="" type="checkbox" checked=""> Vendor-specific query builders (SqliteSelect, PostgresSelect, SurrealSelect)</li>
-<li><input disabled="" type="checkbox"> Deferred expressions (cross-database defer/map)</li>
-<li><input disabled="" type="checkbox"> Progressive persistence model (implement only what your backend supports)</li>
-<li><input disabled="" type="checkbox" checked=""> Error handling (VantageError, context, with_context) — partial (VantageError + context shown)</li>
-<li><input disabled="" type="checkbox"> Connection management (DSN pattern, OnceLock)</li>
-<li><input disabled="" type="checkbox"> Pagination (with_pagination)</li>
-<li><input disabled="" type="checkbox" checked=""> Search expressions (search_expression, vendor-specific LIKE/CONTAINS) — via <code>with_search</code></li>
-<li><input disabled="" type="checkbox"> models! macro (all_tables() generation)</li>
-<li><input disabled="" type="checkbox" checked=""> Extension traits (trait CategoryTable, ref_products, adding custom methods like print)</li>
+<li><strong><code>Batched</code> fetch</strong> — collect the window’s distinct keys into one set query and
+scatter the results back, for <code>Id</code>/<code>Column</code> sources.</li>
+<li><strong>Detail-key cache</strong> — dedupe fetches across master rows that share a key
+(non-unique <code>Column</code> sources).</li>
+<li><strong>Scripted fetch</strong> — Rhai fetch verbs choosing how to pull.</li>
 </ul>
+<h2 id="checklist"><a class="header" href="#checklist">Checklist</a></h2>
+<p>To augment a master with a second source:</p>
+<ol>
+<li><strong>Register the detail model</strong> in the <code>VistaCatalog</code> by name.</li>
+<li><strong>Build the <code>Augmentation</code></strong> — pick a <code>Source</code> (id, column, or a closure) and a
+<code>Fetch</code> (<code>PerRow</code> for now), and list the <code>merge</code> columns.</li>
+<li><strong>Wire the Lens</strong> — <code>.catalog(...)</code> then <code>.augment(vec![...])</code>; building it
+engages the two-pass passes automatically.</li>
+<li><strong>Show the columns</strong> — the lifted detail columns appear on hydrated rows
+alongside the master’s.</li>
+</ol>
+<p>A runnable end-to-end example (two in-memory Vistas, list pass then detail pass)
+lives in <code>vantage-diorama/examples/augmentation.rs</code>:</p>
+<pre><code class="language-console">cargo run -p vantage-diorama --example augmentation
+</code></pre>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="new-persistence/step9-contained-relations.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
 
-                            <a rel="next prefetch" href="intro/step1-first-query.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="type-system.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -245,8 +362,11 @@ with_limit) — partial, missing with_order, with_limit</li>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="new-persistence/step9-contained-relations.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
 
-                    <a rel="next prefetch" href="intro/step1-first-query.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="type-system.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
