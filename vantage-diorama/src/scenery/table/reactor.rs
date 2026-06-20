@@ -25,43 +25,58 @@ pub(crate) async fn reload_loop(
 
         tokio::select! {
             _ = state.reload_notify.notified() => {
-                if let Err(e) = state.reseed_from_cache().await {
-                    tracing::error!(error = %e, "TableScenery reseed failed");
-                } else {
-                    state.bump_generation();
-                }
+                reseed(&state).await;
             }
             recv = bus.recv() => {
                 match recv {
+                    // `Refreshing` is the leading edge of `dio.refresh()`; the
+                    // refetch happens on the trailing `Invalidated`. Reseeding
+                    // here would only re-show the current cache, so a
+                    // chunk-loaded scenery ignores it.
+                    Ok(DioEvent::Refreshing) => {
+                        if !state.is_chunk_loaded() {
+                            reseed(&state).await;
+                        }
+                    }
                     Ok(DioEvent::RecordChanged { .. })
                     | Ok(DioEvent::RecordInserted { .. })
                     | Ok(DioEvent::RecordRemoved { .. })
-                    | Ok(DioEvent::Invalidated)
-                    | Ok(DioEvent::Refreshing) => {
-                        // v2 starts with full reseed — preserves the cache as
-                        // the source of truth for index assignments. Targeted
-                        // single-row updates (preserving chunk-loaded indices)
-                        // land in a follow-up iteration.
-                        if let Err(e) = state.reseed_from_cache().await {
-                            tracing::error!(error = %e, "TableScenery reseed failed");
-                        } else {
-                            state.bump_generation();
-                        }
+                    | Ok(DioEvent::Invalidated) => {
+                        refresh(&state).await;
                     }
                     Ok(DioEvent::WriteFailed { .. })
                     | Ok(DioEvent::ViewportChanged { .. })
                     | Ok(DioEvent::RangeLoaded { .. })
                     | Ok(DioEvent::LoadFailed { .. }) => {}
                     Err(broadcast::error::RecvError::Lagged(_)) => {
-                        if let Err(e) = state.reseed_from_cache().await {
-                            tracing::error!(error = %e, "TableScenery reseed failed");
-                        } else {
-                            state.bump_generation();
-                        }
+                        refresh(&state).await;
                     }
                     Err(broadcast::error::RecvError::Closed) => return,
                 }
             }
         }
+    }
+}
+
+/// Whole-set refresh. A chunk-loaded (paged/lazy) scenery re-fetches its
+/// last viewport in place — `force_load` overwrites each slot as fresh rows
+/// land and a failed refetch keeps the existing rows, so the grid never
+/// blanks. Other sceneries reseed the sparse map from the cache (which their
+/// `on_refresh` has already restaged).
+async fn refresh(state: &Arc<TableSceneryState>) {
+    if state.is_chunk_loaded() {
+        state.refresh_loaded_viewport();
+    } else {
+        reseed(state).await;
+    }
+}
+
+/// Rebuild the sparse map from a fresh cache snapshot, bumping generation on
+/// success. Preserves the cache as the source of truth for index assignments.
+async fn reseed(state: &Arc<TableSceneryState>) {
+    if let Err(e) = state.reseed_from_cache().await {
+        tracing::error!(error = %e, "TableScenery reseed failed");
+    } else {
+        state.bump_generation();
     }
 }
