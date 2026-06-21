@@ -463,8 +463,23 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         mut self,
         name: &str,
         expr_fn: impl Fn(&Table<T, E>) -> Expression<T::Value> + Send + Sync + 'static,
-    ) -> Self {
-        self.expressions.insert(name.to_string(), Arc::new(expr_fn));
+    ) -> Self
+    where
+        T: 'static,
+        E: 'static,
+    {
+        // Adapt the caller's `Fn(&Table<T, E>)` into the entity-erased
+        // `ExpressionFn<T>` we store, so it survives `into_entity`. The closure
+        // never touches entity-typed fields, only name-keyed table state.
+        let wrapped: crate::table::base::ExpressionFn<T> =
+            Arc::new(move |erased: &Table<T, vantage_types::EmptyEntity>| {
+                // SAFETY: layout-identical (E is PhantomData only); shared borrow.
+                let typed: &Table<T, E> = unsafe {
+                    &*(erased as *const Table<T, vantage_types::EmptyEntity> as *const Table<T, E>)
+                };
+                expr_fn(typed)
+            });
+        self.expressions.insert(name.to_string(), wrapped);
         self
     }
 

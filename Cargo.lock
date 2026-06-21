@@ -4888,7 +4888,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.6.0"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4946,7 +4946,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "async-stream",
  "async-trait",

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use indexmap::IndexMap;
 use vantage_expressions::Expression;
-use vantage_types::Entity;
+use vantage_types::{EmptyEntity, Entity};
 
 use crate::{
     pagination::Pagination, references::Reference, sorting::SortDirection,
@@ -11,8 +11,15 @@ use crate::{
 };
 
 /// Type alias for expression closures stored on Table.
-pub type ExpressionFn<T, E> =
-    Arc<dyn Fn(&Table<T, E>) -> Expression<<T as TableSource>::Value> + Send + Sync>;
+///
+/// Stored against the entity-erased `Table<T, EmptyEntity>` rather than the
+/// concrete `Table<T, E>` so the closures survive [`Table::into_entity`] — an
+/// expression only ever reads entity-agnostic table state (columns and
+/// relations by name, conditions, subqueries), never the entity's typed fields.
+/// [`Table::with_expression`] adapts the caller's `Fn(&Table<T, E>)` into this
+/// shape; see [`Table::as_entity_erased`] for the soundness of the cast.
+pub type ExpressionFn<T> =
+    Arc<dyn Fn(&Table<T, EmptyEntity>) -> Expression<<T as TableSource>::Value> + Send + Sync>;
 
 #[derive(Clone)]
 pub struct Table<T, E>
@@ -30,7 +37,7 @@ where
     pub(super) next_order_id: i64,
     pub(super) refs: Option<IndexMap<String, Arc<dyn Reference>>>,
     pub(super) contained: Vec<crate::references::ContainedRelation<T>>,
-    pub(super) expressions: IndexMap<String, ExpressionFn<T, E>>,
+    pub(super) expressions: IndexMap<String, ExpressionFn<T>>,
     pub(super) pagination: Option<Pagination>,
     pub(super) title_field: Option<String>,
     pub(super) title_fields: Vec<String>,
@@ -59,7 +66,11 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         }
     }
 
-    /// Convert this table to use a different entity type
+    /// Convert this table to use a different entity type.
+    ///
+    /// Computed expressions are carried over — they're stored entity-erased
+    /// (see [`ExpressionFn`]), so aggregates survive reference traversal that
+    /// erases the entity to `EmptyEntity` (e.g. `get_ref_from_row`).
     pub fn into_entity<E2: Entity<T::Value>>(self) -> Table<T, E2> {
         Table {
             data_source: self.data_source,
@@ -72,12 +83,24 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             next_order_id: self.next_order_id,
             refs: self.refs,
             contained: self.contained,
-            expressions: IndexMap::new(),
+            expressions: self.expressions,
             pagination: self.pagination,
             title_field: self.title_field,
             title_fields: self.title_fields,
             id_field: self.id_field,
         }
+    }
+
+    /// Borrow this table as its entity-erased form `Table<T, EmptyEntity>`.
+    ///
+    /// `E` appears in `Table` only as `PhantomData<E>` (a zero-sized field), so
+    /// `Table<T, E>` and `Table<T, EmptyEntity>` are layout-identical and this
+    /// reinterpret is sound. Used to feed `self` to the entity-erased
+    /// [`ExpressionFn`] closures at evaluation time.
+    pub(crate) fn as_entity_erased(&self) -> &Table<T, EmptyEntity> {
+        // SAFETY: identical layout (E is PhantomData only); lifetime is tied to
+        // `&self`, and the borrow is shared/read-only.
+        unsafe { &*(self as *const Table<T, E> as *const Table<T, EmptyEntity>) }
     }
 
     /// Snapshot the table's relations as Vista references (name, target type,

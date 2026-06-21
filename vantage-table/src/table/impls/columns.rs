@@ -132,7 +132,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         T::Column<T::AnyType>: vantage_expressions::Expressive<T::Value>,
     {
         if let Some(expr_fn) = self.expressions.get(name) {
-            Some(expr_fn(self))
+            Some(expr_fn(self.as_entity_erased()))
         } else {
             use vantage_expressions::Expressive;
             self.columns.get(name).map(|c| c.expr())

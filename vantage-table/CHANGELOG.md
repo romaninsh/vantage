@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.4 — unreleased
+
+- `Pagination::window(offset, limit)` for random-access `[offset, offset + limit)` windows whose
+  offset need not be a multiple of the page size (`skip()` returns the offset verbatim). Backs
+  `Vista::fetch_window` on offset/limit-addressable drivers.
+- `with_expression` computed columns now survive `into_entity` (and therefore reference traversal
+  that erases the entity to `EmptyEntity`, such as `get_ref_from_row`). Previously `into_entity`
+  dropped all expressions, so computed aggregates were present on a top-level table but silently
+  missing from its nested/drilldown rows. `ExpressionFn` is now stored entity-erased; `with_expression`
+  adapts the caller's `Fn(&Table<T, E>)` into it. Fixes the `get_ref_from_row` doc claim that
+  expressions are preserved.
+
 ## 0.6.3 — unreleased
 
 - Added `ColumnFlag::Label` — hints a column is better shown as a small status tag attached to the

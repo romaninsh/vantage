@@ -51,7 +51,7 @@ where
         // Add all columns as fields (or expressions if defined)
         for column in self.columns.values() {
             if let Some(expr_fn) = self.expressions.get(column.name()) {
-                let expr = expr_fn(self);
+                let expr = expr_fn(self.as_entity_erased());
                 self.data_source.add_select_column(
                     &mut select,
                     expr_any!("({})", (expr)),
@@ -69,7 +69,7 @@ where
         // Add expressions that don't correspond to any column
         for (name, expr_fn) in &self.expressions {
             if !self.columns.contains_key(name) {
-                let expr = expr_fn(self);
+                let expr = expr_fn(self.as_entity_erased());
                 self.data_source.add_select_column(
                     &mut select,
                     expr_any!("({})", (expr)),
