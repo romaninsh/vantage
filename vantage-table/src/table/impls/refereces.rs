@@ -474,8 +474,9 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         let wrapped: crate::table::base::ExpressionFn<T> =
             Arc::new(move |erased: &Table<T, vantage_types::EmptyEntity>| {
                 // SAFETY: layout-identical (E is PhantomData only); shared borrow.
-                let typed: &Table<T, E> =
-                    unsafe { &*(erased as *const Table<T, vantage_types::EmptyEntity> as *const Table<T, E>) };
+                let typed: &Table<T, E> = unsafe {
+                    &*(erased as *const Table<T, vantage_types::EmptyEntity> as *const Table<T, E>)
+                };
                 expr_fn(typed)
             });
         self.expressions.insert(name.to_string(), wrapped);
