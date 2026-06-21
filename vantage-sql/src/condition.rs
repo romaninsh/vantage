@@ -268,6 +268,40 @@ macro_rules! define_sql_operation {
                 $condition::from_typed(expr)
             }
 
+            /// `field NOT IN (values_expression)`
+            fn not_in(&self, values: impl $crate::vantage_expressions::Expressive<T>) -> $condition
+            where
+                Self: Sized,
+            {
+                $crate::condition::build_sql_binary::<T, $any_type, $condition>(
+                    self,
+                    values,
+                    "{} NOT IN ({})",
+                )
+            }
+
+            /// `field NOT IN (a, b, c)` from a slice of scalar values
+            fn not_in_list<V: Into<T> + Clone>(&self, values: &[V]) -> $condition
+            where
+                Self: Sized,
+                T: Clone,
+            {
+                use $crate::vantage_expressions::Expression;
+                use $crate::vantage_expressions::traits::expressive::ExpressiveEnum;
+                let params: Vec<Expression<T>> = values
+                    .iter()
+                    .map(|v| Expression::new("{}", vec![ExpressiveEnum::Scalar(v.clone().into())]))
+                    .collect();
+                let expr: Expression<T> = Expression::new(
+                    "{} NOT IN ({})",
+                    vec![
+                        ExpressiveEnum::Nested(self.expr()),
+                        ExpressiveEnum::Nested(Expression::from_vec(params, ", ")),
+                    ],
+                );
+                $condition::from_typed(expr)
+            }
+
             /// `CAST(expr AS type_name)`
             fn cast(&self, type_name: &str) -> $condition
             where

@@ -5,6 +5,10 @@ use vantage_expressions::traits::selectable::Selectable;
 pub struct Pagination {
     page: i64,
     items_per_page: i64,
+    /// Explicit skip for a random-access `[offset, offset+limit)` window. When
+    /// set, `skip()` returns it verbatim instead of deriving it from `page` —
+    /// so the offset need not be a multiple of the page size.
+    offset: Option<i64>,
 }
 
 impl Pagination {
@@ -13,6 +17,18 @@ impl Pagination {
         Self {
             page: page.max(1),
             items_per_page: items_per_page.max(1),
+            offset: None,
+        }
+    }
+
+    /// Create pagination for an explicit `[offset, offset + limit)` window
+    /// (random access). Unlike [`new`](Self::new), the offset is independent of
+    /// the page size, so any absolute row range maps directly onto a query.
+    pub fn window(offset: i64, limit: i64) -> Self {
+        Self {
+            page: 1,
+            items_per_page: limit.max(1),
+            offset: Some(offset.max(0)),
         }
     }
 
@@ -51,7 +67,7 @@ impl Pagination {
 
     /// Calculate skip/offset value for queries
     pub fn skip(&self) -> i64 {
-        (self.page - 1) * self.items_per_page
+        self.offset.unwrap_or((self.page - 1) * self.items_per_page)
     }
 
     /// Apply pagination to a select query
@@ -68,6 +84,7 @@ impl Default for Pagination {
         Self {
             page: 1,
             items_per_page: 50,
+            offset: None,
         }
     }
 }

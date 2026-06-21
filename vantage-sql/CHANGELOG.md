@@ -1,6 +1,22 @@
 # Changelog
 
-## 0.6.0 — unreleased
+## 0.6.2
+
+### Added
+
+- `SqliteOperation`, `PostgresOperation` and `MysqlOperation` gained `not_in` and `not_in_list`,
+  mirroring the existing `in_` / `in_list` pair.
+
+## 0.6.1
+
+- SQLite Vista now implements `fetch_window` (advertised via `can_fetch_window`), serving an
+  arbitrary `[offset, offset + limit)` row window through `Pagination::window`. Previously only
+  page-indexed `fetch_page` was available, so random-access window fetches were refused.
+- Regression test `vista_get_ref_preserves_with_expression_columns` covers `vantage-table` 0.6.4's
+  fix for computed columns surviving `get_ref` entity erasure — a typed child with a
+  `with_expression` now keeps that column when reached through a parent vista's `get_ref`.
+
+## 0.6.2 — 2026-06-21
 
 - Coordinated 0.6 release; internal dependencies realigned to 0.6. No public API changes.
 
@@ -9,17 +25,17 @@
 ### Changed
 
 - `register_engine!` is split so its registrations live in a reusable
-  `__register_engine_onto(&mut Engine)`; the macro and `__create_engine` call it. Prepares the
-  SQL backend for the conventional Rhai-scripted reference traversal added in
-  `vantage-vista` 0.5.4. No behavior change for existing engine call sites.
+  `__register_engine_onto(&mut Engine)`; the macro and `__create_engine` call it. Prepares the SQL
+  backend for the conventional Rhai-scripted reference traversal added in `vantage-vista` 0.5.4. No
+  behavior change for existing engine call sites.
 
 ## 0.5.8 — 2026-06-06
 
 ### Changed
 
-- Tracks the `vantage-vista` thin refactor (0.5.3): dropped the obsolete `with_foreign`
-  vista integration test now that cross-persistence traversal lives in
-  `vantage-vista-factory`. No functional change to the SQL backends.
+- Tracks the `vantage-vista` thin refactor (0.5.3): dropped the obsolete `with_foreign` vista
+  integration test now that cross-persistence traversal lives in `vantage-vista-factory`. No
+  functional change to the SQL backends.
 
 ## 0.5.7 — 2026-06-02
 
@@ -27,8 +43,8 @@
 
 - Tables can be sourced from a sub-`SELECT` via `vantage-table`'s new `SelectSource`
   (`type Source = SelectSource<SqliteSelect>`), rendering `FROM (<select>) AS <alias>`.
-- SQLite vista specs accept a `sqlite.rhai:` block: a Rhai script that builds the vista's
-  source `SELECT` instead of pointing at a physical table. The resulting vista is read-only
+- SQLite vista specs accept a `sqlite.rhai:` block: a Rhai script that builds the vista's source
+  `SELECT` instead of pointing at a physical table. The resulting vista is read-only
   (insert/update/delete capabilities are cleared). Requires the `rhai` feature.
 
 ## 0.5.6 — 2026-06-01
