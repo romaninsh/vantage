@@ -190,14 +190,18 @@ where
     }
 
     fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
-        let column = self
-            .table
-            .columns()
-            .get(field)
-            .ok_or_else(|| error!("Unknown column for eq condition", field = field))?
-            .clone();
         let sql_value = AnySqliteType::untyped(value.clone());
-        self.table.add_condition(column.eq(sql_value));
+        if let Some(column) = self.table.columns().get(field).cloned() {
+            self.table.add_condition(column.eq(sql_value));
+        } else if let Some(expr) = self.table.get_column_expr(field) {
+            // Computed (`with_expression`) column: filter on the rendered
+            // expression — `(<expr>) = <value>` — so the server can narrow by
+            // values that aren't stored (e.g. `has_rockets`).
+            self.table
+                .add_condition(sqlite_expr!("({}) = {}", (expr), sql_value));
+        } else {
+            return Err(error!("Unknown column for eq condition", field = field));
+        }
         Ok(())
     }
 
@@ -398,5 +402,48 @@ where
 
     fn driver_name(&self) -> &'static str {
         "sqlite"
+    }
+}
+
+#[cfg(test)]
+mod expr_condition_tests {
+    use crate::sqlite::vista::factory::SqliteVistaFactory;
+    use crate::sqlite::SqliteDB;
+    use crate::sqlite_expr;
+    use ciborium::Value as CborValue;
+    use vantage_dataset::traits::ReadableValueSet;
+    use vantage_table::table::Table;
+    use vantage_types::EmptyEntity;
+
+    // An equality condition on a `with_expression` (computed) column filters
+    // rows by the rendered expression, not a stored column.
+    #[tokio::test]
+    async fn eq_condition_on_expression_column_filters() {
+        let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
+        sqlx::query("CREATE TABLE items (id TEXT PRIMARY KEY, qty INTEGER)")
+            .execute(db.pool())
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO items VALUES ('a', 5), ('b', 0), ('c', 3)")
+            .execute(db.pool())
+            .await
+            .unwrap();
+
+        let table = Table::<SqliteDB, EmptyEntity>::new("items", db.clone())
+            .with_id_column("id")
+            .with_column_of::<i64>("qty")
+            .with_expression("has_qty", |t| {
+                sqlite_expr!("CASE WHEN {} > 0 THEN 'true' ELSE 'false' END", (t["qty"]))
+            });
+
+        let mut vista = SqliteVistaFactory::new(db).from_table(table).unwrap();
+        vista
+            .add_condition_eq("has_qty", CborValue::Text("true".into()))
+            .unwrap();
+        let rows = vista.list_values().await.unwrap();
+
+        assert_eq!(rows.len(), 2, "only qty>0 rows match has_qty='true'");
+        assert!(rows.contains_key("a") && rows.contains_key("c"));
+        assert!(!rows.contains_key("b"));
     }
 }
