@@ -1,0 +1,6 @@
+---
+source: vantage-diorama/tests/bdd_support/steps/assertions.rs
+expression: events
+---
+- "ViewportChanged { range: 500..600 }"
+- "RangeLoaded { range: 500..600 }"
