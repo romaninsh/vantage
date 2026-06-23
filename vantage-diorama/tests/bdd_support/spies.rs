@@ -25,4 +25,12 @@ pub struct Spies {
     /// invocation returns `Err` and clears the flag. Drives the
     /// `LoadFailed` scenarios without rebuilding the lens.
     pub on_load_chunk_error_once: Arc<AtomicBool>,
+    /// Virtual-time latency (ms) the scriptable source sleeps before each
+    /// gated read (currently `on_load_chunk`). `0` = none. Lets a scenario
+    /// model a slow upstream deterministically under the paused clock.
+    pub source_latency_ms: Arc<AtomicU64>,
+    /// Count of upcoming gated source reads to fail. Decremented on each
+    /// gated read — a self-clearing, countable fault, distinct from the
+    /// one-shot [`on_load_chunk_error_once`](Self::on_load_chunk_error_once).
+    pub source_fail_reads: Arc<AtomicU64>,
 }

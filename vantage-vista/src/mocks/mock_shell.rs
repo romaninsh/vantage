@@ -67,6 +67,38 @@ impl MockShell {
         self
     }
 
+    // ---- Live dataset mutation ---------------------------------------------
+    //
+    // The store is `Arc<Mutex<…>>`, so a clone of this shell taken *before*
+    // it is boxed into a `Vista` keeps a handle to the same rows. These
+    // by-ref helpers let a test or example mutate the dataset mid-run —
+    // simulating an upstream that changed between reads — and have the next
+    // `list`/`get`/refresh observe it. They are additive and opt-in; an
+    // untouched shell behaves exactly as before.
+
+    /// Insert or replace a record by id through the shared store.
+    pub fn set_record(&self, id: impl Into<String>, record: Record<CborValue>) {
+        self.data.lock().unwrap().insert(id.into(), record);
+    }
+
+    /// Overwrite a single field of an existing record (read-modify-write).
+    /// No-op if the record is absent.
+    pub fn set_field(&self, id: &str, field: &str, value: CborValue) {
+        if let Some(rec) = self.data.lock().unwrap().get_mut(id) {
+            rec.insert(field.to_string(), value);
+        }
+    }
+
+    /// Remove a record by id. No-op if absent.
+    pub fn remove_record(&self, id: &str) {
+        self.data.lock().unwrap().shift_remove(id);
+    }
+
+    /// Drop every record.
+    pub fn clear_records(&self) {
+        self.data.lock().unwrap().clear();
+    }
+
     fn matches_filters(&self, record: &Record<CborValue>) -> bool {
         self.filters
             .lock()
