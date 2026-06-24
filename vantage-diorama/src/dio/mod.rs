@@ -16,7 +16,9 @@ use vantage_vista::Vista;
 use crate::lens::{CacheTable, Lens};
 use crate::ops::{ChangeEvent, WriteOp};
 use crate::scenery::record::spawn_record_scenery;
-use crate::scenery::{RecordScenery, RecordStatus, TableSceneryBuilder, ValueSceneryBuilder};
+use crate::scenery::{
+    RecordScenery, RecordStatus, TableScenery, TableSceneryBuilder, ValueSceneryBuilder,
+};
 
 use ciborium::Value as CborValue;
 use vantage_types::Record;
@@ -70,6 +72,15 @@ pub(crate) struct DioInner {
     pub(crate) query_indexes: std::sync::Mutex<
         std::collections::HashMap<String, Arc<crate::dio::query_index::QueryIndex>>,
     >,
+    /// Deduplicating registry of live table sceneries, keyed by
+    /// `(shape, conditions, sort, search)`. Holds `Weak` handles so it
+    /// never keeps a scenery alive: opening the same query twice returns
+    /// the one shared `Arc` (one reactor, one cache window, one in-flight
+    /// `JoinSet`), and the entry self-heals once the last widget releases
+    /// it. This is what makes "scenery must be cheap" true and what lets a
+    /// closing grid stop pulling — see [`TableSceneryImpl`]'s drop guard.
+    pub(crate) table_sceneries:
+        std::sync::Mutex<std::collections::HashMap<String, std::sync::Weak<dyn TableScenery>>>,
 }
 
 impl DioInner {
@@ -82,6 +93,33 @@ impl DioInner {
             .entry(key.to_string())
             .or_insert_with(|| Arc::new(crate::dio::query_index::QueryIndex::new()))
             .clone()
+    }
+
+    /// Return the live shared table scenery for `key`, or `None` if none is
+    /// open (or the last handle was just released — a dead `Weak`).
+    pub(crate) fn lookup_table_scenery(&self, key: &str) -> Option<Arc<dyn TableScenery>> {
+        self.table_sceneries
+            .lock()
+            .unwrap()
+            .get(key)
+            .and_then(std::sync::Weak::upgrade)
+    }
+
+    /// Publish a freshly-built scenery under `key`. If a concurrent open won
+    /// the race for the same key, returns that shared scenery instead and lets
+    /// `built` drop — its guard aborts the now-redundant tasks. Otherwise
+    /// inserts a `Weak` to `built` and hands it back.
+    pub(crate) fn register_table_scenery(
+        &self,
+        key: String,
+        built: Arc<dyn TableScenery>,
+    ) -> Arc<dyn TableScenery> {
+        let mut guard = self.table_sceneries.lock().unwrap();
+        if let Some(existing) = guard.get(&key).and_then(std::sync::Weak::upgrade) {
+            return existing;
+        }
+        guard.insert(key, Arc::downgrade(&built));
+        built
     }
 }
 
@@ -126,6 +164,19 @@ impl Dio {
     /// reactive view.
     pub fn table_scenery(&self) -> TableSceneryBuilder {
         TableSceneryBuilder::new(self.inner.clone())
+    }
+
+    /// Number of distinct table sceneries currently held open on this Dio.
+    ///
+    /// Prunes dead registry entries as a side effect, so the count reflects
+    /// only sceneries with at least one live handle. Two widgets sharing one
+    /// deduplicated `(conditions, sort, search)` count as **one**; once every
+    /// handle is released the count drops back, proving no leak. A read-only
+    /// window onto the dedup registry — the seed for the diagnostics surface.
+    pub fn live_table_scenery_count(&self) -> usize {
+        let mut guard = self.inner.table_sceneries.lock().unwrap();
+        guard.retain(|_, weak| weak.strong_count() > 0);
+        guard.len()
     }
 
     /// Open a reactive view onto a single record by id. Reads the

@@ -7,6 +7,7 @@ pub mod event_path;
 pub mod lifecycle;
 pub mod multi_dio;
 pub mod refresh;
+pub mod registry;
 pub mod skeleton;
 pub mod source;
 pub mod table_v2;

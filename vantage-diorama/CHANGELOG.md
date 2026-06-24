@@ -2,6 +2,15 @@
 
 ## 0.6.3 — unreleased
 
+- Deduplicating scenery registry. Opening a `TableScenery` for a
+  `(conditions, sort, search)` that is already live now returns the **same**
+  shared `Arc` — one reactor, one cache window, one in-flight fetch — instead of
+  standing up a parallel copy, so many widgets over the same query (a grid plus
+  its dropdowns, a row shown twice) cost one scenery. Lifecycle is refcounted:
+  when the last handle drops, the scenery's tasks are aborted, cancelling any
+  outstanding chunk load or two-pass detail hydration — a closing grid stops
+  pulling — and the registry entry is evicted. New `Dio::live_table_scenery_count()`
+  exposes the registry (seed for the diagnostics surface).
 - Scriptable test source. `MockShell` gained live, by-ref dataset mutation
   (`set_record` / `set_field` / `remove_record` / `clear_records`) so a test or
   example can edit the upstream mid-run and have the next read/refresh observe
