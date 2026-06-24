@@ -52,6 +52,17 @@ pub(crate) async fn reload_loop(
                     | Ok(DioEvent::Invalidated) => {
                         refresh(&state).await;
                     }
+                    // Optimistic-write affordance: stamp just the affected row
+                    // rather than reseeding the whole map. On success the
+                    // trailing `RecordChanged` settles it back to `Fresh`.
+                    Ok(DioEvent::WritePending { id }) => {
+                        state.mark_row(&id, crate::scenery::RowStatus::PendingWrite).await;
+                    }
+                    Ok(DioEvent::WriteReverted { id, error }) => {
+                        state
+                            .mark_row(&id, crate::scenery::RowStatus::WriteFailed { error })
+                            .await;
+                    }
                     Ok(DioEvent::WriteFailed { .. })
                     | Ok(DioEvent::ViewportChanged { .. })
                     | Ok(DioEvent::RangeLoaded { .. })

@@ -1,6 +1,7 @@
 pub mod event_bus;
 pub mod hot_tier;
 pub mod impls;
+mod optimistic;
 pub(crate) mod query_index;
 pub mod refresh;
 pub mod shell;
