@@ -197,6 +197,42 @@ println!("Population: {}", rosario.population);
 Pagination is driven by `total_pages` from the first response. Pages are fetched as `?page=N` query
 parameters.
 
+## `ResilientClient` — the async-native transport
+
+`ResilientClient` is the structured-concurrency replacement for the
+`AwwPool` / `HttpClientPool` / `EventualRequest` worker-pool + oneshot-matcher
+machinery. Instead of detaching requests onto a pool and matching responses back
+by id, you just `.await` a request; concurrency is bounded by a semaphore and the
+resilience policies are inline middleware.
+
+```rust
+use std::sync::Arc;
+use std::time::Duration;
+use vantage_api_pool::{ResilientClient, RetryPolicy};
+use vantage_api_pool::resilient::AuthRefresher;
+
+let refresher: AuthRefresher = Arc::new(|| Box::pin(async { Ok(fetch_token().await?) }));
+
+let client = ResilientClient::builder()
+    .max_parallel(8)                                   // per-API parallelism cap
+    .retry(RetryPolicy::default())                     // 429/5xx/network → backoff + jitter
+    .bearer_auth(refresher)                            // 401 → re-acquire token + replay
+    .circuit_breaker(5, Duration::from_secs(30))       // fail fast after repeated failures
+    .build();
+
+// `build` is called once per attempt, so retries/auth re-apply on a fresh builder:
+let resp = client.execute(|http| http.get("https://api.example.com/cities")).await?;
+```
+
+Fan out with the cap respected automatically — e.g. load many pages or augment
+many rows in parallel via `futures::stream::iter(reqs).map(|r| client.execute(r)).buffer_unordered(n)`;
+the semaphore keeps in-flight requests ≤ `max_parallel`. Cancellation is
+structural: drop the future and the in-flight request goes with it.
+
+This is what a Vantage REST datasource (and Diorama's `on_load_chunk` /
+augmentation fan-out) should run through. The older `AwwPool` path remains for
+now and will be retired once consumers migrate.
+
 ## License
 
 MIT OR Apache-2.0
