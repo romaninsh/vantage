@@ -586,6 +586,41 @@ Bus publishes `RecordRemoved { id }`; the Scenery's reload finds nothing in
 cache and flips to `RecordStatus::NotFound`. Your render branch handles it
 (close the sheet, show a banner, whatever).
 
+### Editing — optimistic writes
+
+A form saves through `dio.write_optimistic(op)` (or the `dio.patch_optimistic(id,
+partial)` shorthand). The value is staged in the cache and shown **immediately**
+— the row's `EnrichedRecord.status` flips to `RowStatus::PendingWrite` — while
+the write-through runs in the background. On success it settles to `Fresh`; on
+failure the cache pre-image is restored and the row flips to
+`RowStatus::WriteFailed { error }`, so the form reverts rather than lying about a
+value that didn't save.
+
+```rust
+// On the form's save button:
+let edited = self.form.changed_fields();          // Record<CborValue> of edits
+let dio = self.dio.clone();
+let id = self.id.clone();
+cx.spawn(async move {
+    // Returns Err after a successful rollback — surface it if you like, but the
+    // scenery already flipped the row to WriteFailed for the UI to render.
+    let _ = dio.patch_optimistic(id, edited).await;
+});
+```
+
+Because every view reads the one cache row, the edit reflects across **every**
+bound scenery at once — the grid row, a second detail sheet, a KPI badge — via
+the same `RecordChanged` fan-out, with no extra wiring. Render the row's
+`status` to show a "saving…" affordance and an error badge:
+
+```rust
+match record.status {
+    RowStatus::PendingWrite      => spinner("saving…"),
+    RowStatus::WriteFailed { .. } => error_badge("couldn't save — reverted"),
+    _                            => normal_cell(record),
+}
+```
+
 ## `ValueScenery` — counters and badges
 
 ```rust

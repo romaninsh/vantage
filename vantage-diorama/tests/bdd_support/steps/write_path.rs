@@ -5,6 +5,7 @@
 use ciborium::Value as CborValue;
 use cucumber::{gherkin::Step, given, then, when};
 use vantage_dataset::traits::{ReadableValueSet, WritableValueSet};
+use vantage_diorama::WriteOp;
 use vantage_types::Record;
 
 use crate::bdd_support::{
@@ -104,6 +105,17 @@ async fn patch_via_facade(w: &mut DioramaWorld, step: &Step) {
             .await
             .expect("facade patch enqueue");
     }
+    w.settle().await;
+}
+
+#[when(regex = r#"^I optimistically patch "([^"]+)" with (\w+) "([^"]+)"$"#)]
+async fn optimistic_patch(w: &mut DioramaWorld, id: String, field: String, value: String) {
+    let dio = w.dio.as_ref().expect("dio not created");
+    let mut partial: Record<CborValue> = Record::new();
+    partial.insert(field, CborValue::Text(value));
+    // Drives the whole optimistic flow (stage → write-through → commit/rollback).
+    // A rollback returns Err; the scenario asserts the reverted state, so swallow it.
+    let _ = dio.write_optimistic(WriteOp::Patch { id, partial }).await;
     w.settle().await;
 }
 

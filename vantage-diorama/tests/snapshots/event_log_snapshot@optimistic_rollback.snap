@@ -1,0 +1,6 @@
+---
+source: vantage-diorama/tests/bdd_support/steps/assertions.rs
+expression: events
+---
+- "WritePending { id: \"a\" }"
+- "WriteReverted { id: \"a\", error: \"on_write rejected\" }"
