@@ -2,6 +2,13 @@
 
 ## 0.6.3 — unreleased
 
+- Diagnostics surface. `dio.diagnostics().await` returns a `DioDiagnostics`
+  snapshot — cache row count, query-index count, and one `SceneryDiagnostic` per
+  open table scenery (its registry key, refcount, row count, and a
+  `RowStatusSummary` of fresh/incomplete/pending/failed). New
+  `TableScenery::status_summary()` backs it. Reads off the dedup registry
+  (nearly free) and prunes dead entries, so a released scenery vanishes from the
+  report — the basis for a "Diorama inspector" panel and leak assertions.
 - Adaptive polling via an app-activity signal. A new `ActivitySignal`
   (`Active`/`Standby`/`Offline`), shared into a Lens with `.activity_signal(..)`,
   drives the refresh cadence: `refresh_every` is the active interval,

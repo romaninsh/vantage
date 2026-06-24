@@ -393,3 +393,27 @@ cache fresh against upstream changes.
 
 No reactive code. No Sceneries. No UI concerns. Diorama just made the slow
 backend usable.
+
+## Inspecting a live Dio
+
+`dio.diagnostics().await` snapshots what a Dio is doing right now — handy for a
+debug panel, a `/healthz`-style endpoint, or a test assertion:
+
+```rust
+let d = dio.diagnostics().await;
+println!("cache: {} rows, {} query indexes", d.cache_rows, d.query_indexes);
+for s in &d.sceneries {
+    // key = (shape, conditions, sort, search, titles_only); refcount = widgets holding it
+    println!(
+        "{}  x{}  rows={}  fresh={}/{} pending={} failed={}",
+        s.key, s.refcount, s.row_count,
+        s.status.fresh, s.status.loaded, s.status.pending_write, s.status.failed,
+    );
+}
+println!("augmented rows on screen: {}", d.augmented_rows());
+```
+
+It reads straight off the dedup registry, so it's nearly free and prunes dead
+entries as it goes — a released scenery disappears from the report, which is
+exactly how you confirm nothing leaked. `dio.live_table_scenery_count()` is the
+one-number version.
