@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.1 — unreleased
+
+- `ResilientClient` — async-native HTTP transport that replaces the worker-pool
+  + oneshot-matcher model (`AwwPool` / `HttpClientPool` / `EventualRequest`).
+  Concurrency is bounded by a semaphore (per-API parallelism cap), and the
+  genuinely-valuable policies are inline middleware: retry with exponential
+  backoff + jitter on 429/5xx/network (honoring `Retry-After`, bounded by
+  `max_retries`), auth-token refresh on 401 (re-acquire + replay), and a circuit
+  breaker (fail fast after N consecutive failures, half-open probe after a
+  cooldown). Cancellation is structural — drop the future, drop the request.
+  Covered by wiremock contract tests. The old `AwwPool` path is unchanged and
+  will be retired once consumers (the Vantage REST datasource, the desktop app)
+  migrate onto `ResilientClient`.
+
 ## 0.6.0 — unreleased
 
 - Coordinated 0.6 release; internal dependencies realigned to 0.6. No public API changes.
