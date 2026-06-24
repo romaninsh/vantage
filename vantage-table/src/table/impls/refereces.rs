@@ -298,8 +298,11 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
             .ok_or_else(|| error!("id field not set on table"))?
             .name()
             .to_string();
-        let condition = self.data_source().eq_value_condition(&id_name, id.into())?;
+        let id = id.into();
+        let condition = self.data_source().eq_value_condition(&id_name, id.clone())?;
         self.add_condition(condition);
+        // A row inserted into "this id" should conform to it.
+        self.add_default(id_name, id);
         Ok(self)
     }
 

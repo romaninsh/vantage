@@ -17,6 +17,30 @@ use crate::sqlite::SqliteDB;
 use crate::sqlite::types::AnySqliteType;
 use vantage_expressions::expr_any;
 
+/// Fill a record's null/absent columns from the table's insert defaults, so a
+/// new row conforms to the set it is inserted into (e.g. a has-many child picks
+/// up the parent's foreign key). A caller-supplied non-null value always wins.
+fn apply_defaults<E: Entity<AnySqliteType>>(
+    table: &Table<SqliteDB, E>,
+    record: &Record<AnySqliteType>,
+) -> Record<AnySqliteType> {
+    let defaults = table.defaults();
+    if defaults.is_empty() {
+        return record.clone();
+    }
+    let mut merged = record.clone();
+    for (col, value) in defaults {
+        let needs_default = match merged.get(col) {
+            None => true,
+            Some(existing) => matches!(existing.value(), CborValue::Null),
+        };
+        if needs_default {
+            merged.insert(col.clone(), value.clone());
+        }
+    }
+    merged
+}
+
 /// Parse the CBOR array result from execute() into an IndexMap of id → Record.
 fn parse_rows(
     result: AnySqliteType,
@@ -256,9 +280,10 @@ impl TableSource for SqliteDB {
             .map(|c| c.name().to_string())
             .unwrap_or_else(|| "id".to_string());
 
+        let record = apply_defaults(table, record);
         let insert = crate::sqlite::statements::SqliteInsert::new(table.table_name())
             .with_field(&id_field_name, AnySqliteType::from(id.clone()))
-            .with_record(record);
+            .with_record(&record);
         self.execute(&insert.expr()).await?;
 
         self.get_table_value(table, id)
@@ -363,8 +388,9 @@ impl TableSource for SqliteDB {
             .map(|c| c.name().to_string())
             .unwrap_or_else(|| "id".to_string());
 
+        let record = apply_defaults(table, record);
         let insert =
-            crate::sqlite::statements::SqliteInsert::new(table.table_name()).with_record(record);
+            crate::sqlite::statements::SqliteInsert::new(table.table_name()).with_record(&record);
 
         // Append RETURNING id_field to get the generated ID back
         let base = insert.expr();
