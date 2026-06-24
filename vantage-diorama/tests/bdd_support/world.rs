@@ -123,6 +123,11 @@ pub struct DioramaWorld {
     /// to different masters, each claiming its own cache table.
     pub named_masters: std::collections::HashMap<String, Vista>,
     pub named_dios: std::collections::HashMap<String, Dio>,
+    /// The Mock backend's shell, retained as a live, mutable dataset
+    /// handle — its store is `Arc`-shared with the master Vista, so
+    /// `source.set_field(...)` mid-scenario is observed by the next read.
+    /// `None` for CSV/SQLite backends.
+    pub source: Option<vantage_vista::mocks::MockShell>,
 }
 
 impl std::fmt::Debug for DioramaWorld {
@@ -158,6 +163,7 @@ impl DioramaWorld {
             scenery: None,
             named_masters: std::collections::HashMap::new(),
             named_dios: std::collections::HashMap::new(),
+            source: None,
         }
     }
 
@@ -461,15 +467,30 @@ impl LensBuilderState {
                 let master_list_counter = spies.master_list_calls.clone();
                 let last_range = spies.last_load_chunk_range.clone();
                 let error_once = spies.on_load_chunk_error_once.clone();
+                let source_latency = spies.source_latency_ms.clone();
+                let source_fail_reads = spies.source_fail_reads.clone();
                 b = b.on_load_chunk(move |dio, range, sink| {
                     let counter = counter.clone();
                     let master_list_counter = master_list_counter.clone();
                     let last_range = last_range.clone();
                     let error_once = error_once.clone();
+                    let source_latency = source_latency.clone();
+                    let source_fail_reads = source_fail_reads.clone();
                     let dio = dio.clone();
                     async move {
                         counter.fetch_add(1, Ordering::SeqCst);
                         *last_range.lock().await = Some(range.clone());
+                        // Scriptable-source gate: virtual-time latency, then
+                        // a self-clearing counted fault. Both default to 0,
+                        // so an unscripted scenario is unaffected.
+                        let latency_ms = source_latency.load(Ordering::SeqCst);
+                        if latency_ms > 0 {
+                            tokio::time::sleep(Duration::from_millis(latency_ms)).await;
+                        }
+                        if source_fail_reads.load(Ordering::SeqCst) > 0 {
+                            source_fail_reads.fetch_sub(1, Ordering::SeqCst);
+                            return Err(vantage_core::error!("source read failed (injected)"));
+                        }
                         if error_once.swap(false, Ordering::SeqCst) {
                             return Err(vantage_core::error!("on_load_chunk rejected (one-shot)"));
                         }

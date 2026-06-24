@@ -2,6 +2,13 @@
 
 ## 0.6.3 — unreleased
 
+- Scriptable test source. `MockShell` gained live, by-ref dataset mutation
+  (`set_record` / `set_field` / `remove_record` / `clear_records`) so a test or
+  example can edit the upstream mid-run and have the next read/refresh observe
+  it. The BDD harness builds on this with virtual-time latency and counted
+  fault injection (`tests/features/source_control.feature`), giving the diorama
+  machinery a deterministic stand-in for a slow/failing/mutating transport —
+  no network required. Foundation for the upcoming async-native transport.
 - Non-blanking refresh for chunk-loaded (paged/lazy) table sceneries. A refresh now
   re-fetches the last viewport in place — fresh rows overwrite the cached slots, and a
   failed refetch leaves the existing rows untouched — instead of clearing the cache and

@@ -106,13 +106,20 @@ impl MasterRows {
     /// (CSV temp directory, SQLite in-memory connection).
     pub async fn build_master_for(&self, w: &mut DioramaWorld) -> Result<Vista> {
         match w.backend {
-            BackendKind::Mock => Ok(self.build_mock()),
+            BackendKind::Mock => {
+                let shell = self.build_mock();
+                // Retain a clone as the live, mutable dataset handle — its
+                // store is Arc-shared with the Vista we box below, so a
+                // scenario can edit rows mid-run via `w.source`.
+                w.source = Some(shell.clone());
+                Ok(Vista::new(self.name.clone(), Box::new(shell)))
+            }
             BackendKind::Csv => self.build_csv(w),
             BackendKind::Sqlite => self.build_sqlite(w).await,
         }
     }
 
-    fn build_mock(&self) -> Vista {
+    fn build_mock(&self) -> MockShell {
         let mut meta = VistaMetadata::new().with_id_column(&self.id_column);
         for col in &self.columns {
             let mut c = Column::new(col, "String");
@@ -145,7 +152,7 @@ impl MasterRows {
             }
             shell = shell.with_record(&row.id, rec);
         }
-        Vista::new(self.name.clone(), Box::new(shell))
+        shell
     }
 
     fn build_csv(&self, w: &mut DioramaWorld) -> Result<Vista> {
