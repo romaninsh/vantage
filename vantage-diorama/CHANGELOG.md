@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.3 — unreleased
+## 0.6.4 — unreleased
 
 - Diagnostics surface. `dio.diagnostics().await` returns a `DioDiagnostics`
   snapshot — cache row count, query-index count, and one `SceneryDiagnostic` per

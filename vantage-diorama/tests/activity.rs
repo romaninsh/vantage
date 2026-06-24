@@ -21,7 +21,9 @@ fn master() -> Vista {
         .with_id_column("id");
     let mut rec = Record::new();
     rec.insert("name".to_string(), CborValue::Text("alpha".into()));
-    let shell = MockShell::new().with_metadata(metadata).with_record("a", rec);
+    let shell = MockShell::new()
+        .with_metadata(metadata)
+        .with_record("a", rec);
     Vista::new("items", Box::new(shell))
 }
 
