@@ -26,7 +26,7 @@ pub use lens::{
 pub use ops::{ChangeEvent, QueryDescriptor, WriteOp};
 pub use scenery::{
     Aggregate, CustomAggregate, EnrichedRecord, RecordScenery, RecordStatus, RowStatus,
-    RowStatusSummary, SortDir, TableScenery, TableSceneryBuilder, ValueScenery, ValueSceneryBuilder,
-    ValueStatus, boxed_custom_aggregate,
+    RowStatusSummary, SortDir, TableScenery, TableSceneryBuilder, ValueScenery,
+    ValueSceneryBuilder, ValueStatus, boxed_custom_aggregate,
 };
 pub use vantage_vista::VistaCapabilities;

@@ -253,9 +253,21 @@ async fn optimistic_patch_shows_pending_then_fresh() -> Result<()> {
 
     wait_for_gen(&mut gen_rx, g0).await;
     let r = scenery.record().expect("record present");
-    assert_eq!(r.record.get("name"), Some(&cbor_text("edited")), "value staged");
-    assert_eq!(r.record.get("price"), Some(&CborValue::Integer(30.into())), "patch merges");
-    assert!(matches!(r.status, RowStatus::PendingWrite), "got {:?}", r.status);
+    assert_eq!(
+        r.record.get("name"),
+        Some(&cbor_text("edited")),
+        "value staged"
+    );
+    assert_eq!(
+        r.record.get("price"),
+        Some(&CborValue::Integer(30.into())),
+        "patch merges"
+    );
+    assert!(
+        matches!(r.status, RowStatus::PendingWrite),
+        "got {:?}",
+        r.status
+    );
 
     // Release the write-through → confirms → Fresh.
     let g1 = u64::from(*gen_rx.borrow_and_update());
@@ -280,7 +292,10 @@ async fn optimistic_patch_rolls_back_to_write_failed() -> Result<()> {
     let scenery = dio.record_scenery("a").await?;
 
     let outcome = dio.patch_optimistic("a", partial_name("edited")).await;
-    assert!(outcome.is_err(), "a rejecting write-through must surface the error");
+    assert!(
+        outcome.is_err(),
+        "a rejecting write-through must surface the error"
+    );
 
     // The reactor processes WritePending then WriteReverted; wait for the row to
     // settle on the failure.

@@ -1,8 +1,8 @@
 //! Contract tests for `ResilientClient` against a wiremock server — retry,
 //! backoff, auth refresh, circuit breaker, and the parallelism cap.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use vantage_api_pool::resilient::AuthRefresher;
@@ -36,9 +36,16 @@ async fn retries_429_then_succeeds() {
 
     let client = ResilientClient::builder().retry(fast_retry(5)).build();
     let url = format!("{}/x", server.uri());
-    let resp = client.execute(|h| h.get(&url)).await.expect("succeeds after retries");
+    let resp = client
+        .execute(|h| h.get(&url))
+        .await
+        .expect("succeeds after retries");
     assert_eq!(resp.status().as_u16(), 200);
-    assert_eq!(server.received_requests().await.unwrap().len(), 3, "2×429 + 1×200");
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        3,
+        "2×429 + 1×200"
+    );
 }
 
 #[tokio::test]
@@ -57,7 +64,10 @@ async fn retries_500_then_succeeds() {
 
     let client = ResilientClient::builder().retry(fast_retry(5)).build();
     let url = server.uri();
-    let resp = client.execute(|h| h.get(&url)).await.expect("succeeds after 503");
+    let resp = client
+        .execute(|h| h.get(&url))
+        .await
+        .expect("succeeds after 503");
     assert_eq!(resp.status().as_u16(), 200);
     assert_eq!(server.received_requests().await.unwrap().len(), 2);
 }
@@ -74,7 +84,11 @@ async fn does_not_retry_4xx() {
     let url = server.uri();
     let r = client.execute(|h| h.get(&url)).await;
     assert!(r.is_err(), "404 is terminal");
-    assert_eq!(server.received_requests().await.unwrap().len(), 1, "no retry on 404");
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        1,
+        "no retry on 404"
+    );
 }
 
 #[tokio::test]
@@ -99,7 +113,11 @@ async fn refreshes_token_on_401_and_replays() {
         Box::pin(async move {
             // First acquire hands out a stale token; the re-acquire hands out the good one.
             let n = calls.fetch_add(1, Ordering::SeqCst);
-            Ok(if n == 0 { "stale".to_string() } else { "good".to_string() })
+            Ok(if n == 0 {
+                "stale".to_string()
+            } else {
+                "good".to_string()
+            })
         })
     });
 
@@ -108,9 +126,16 @@ async fn refreshes_token_on_401_and_replays() {
         .bearer_auth(refresher)
         .build();
     let url = server.uri();
-    let resp = client.execute(|h| h.get(&url)).await.expect("succeeds after token refresh");
+    let resp = client
+        .execute(|h| h.get(&url))
+        .await
+        .expect("succeeds after token refresh");
     assert_eq!(resp.status().as_u16(), 200);
-    assert_eq!(calls.load(Ordering::SeqCst), 2, "acquired once, refreshed once");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        2,
+        "acquired once, refreshed once"
+    );
 }
 
 #[tokio::test]
@@ -155,7 +180,9 @@ async fn caps_parallelism() {
     for _ in 0..10 {
         let c = client.clone();
         let url = url.clone();
-        handles.push(tokio::spawn(async move { c.execute(move |h| h.get(&url)).await }));
+        handles.push(tokio::spawn(async move {
+            c.execute(move |h| h.get(&url)).await
+        }));
     }
     for h in handles {
         let _ = h.await.unwrap();
@@ -163,5 +190,8 @@ async fn caps_parallelism() {
 
     let peak = client.peak_in_flight();
     assert!(peak <= 3, "parallelism cap exceeded: peak {peak}");
-    assert!(peak >= 2, "requests did not actually parallelize: peak {peak}");
+    assert!(
+        peak >= 2,
+        "requests did not actually parallelize: peak {peak}"
+    );
 }
