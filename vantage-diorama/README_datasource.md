@@ -269,6 +269,47 @@ If reads work, writes round-trip, and the Lens's `on_start` /`on_refresh` /
 test matrix (composition with other drivers, capability propagation, error
 surfaces) lives in `vantage-diorama/tests/`.
 
+### Scripting a fake source (latency, faults, live mutation)
+
+You rarely want a real network in a behavioural test — it's slow and
+non-deterministic. `MockShell` is the in-memory `TableShell` Diorama's own BDD
+suite drives, and it doubles as a **scriptable source**: its store is
+`Arc`-shared, so a clone taken before you box it into a `Vista` stays a live
+handle you can mutate mid-test to simulate an upstream that changed between
+reads.
+
+```rust
+use ciborium::Value as CborValue;
+use vantage_vista::{Vista, mocks::MockShell};
+
+// Seed, then keep a handle to the live store.
+let source = MockShell::new()
+    .with_metadata(my_metadata())
+    .with_record("42", record(&[("title", CborValue::Text("before".into()))]));
+let control = source.clone();                  // shares the same rows
+let master = Vista::new("items", Box::new(source));
+
+let dio = lens.make_dio(master).await?;
+let scenery = dio.table_scenery().open().await?;
+// ... first read sees "before" ...
+
+// Simulate the upstream changing, then reconcile:
+control.set_field("42", "title", CborValue::Text("after".into()));
+dio.refresh().await?;                           // re-fetches in place
+// ... the next read sees "after", and the grid never blanked ...
+
+control.remove_record("42");                    // row vanishes upstream
+control.set_record("99", record(&[/* … */]));   // a new row appears
+control.clear_records();                         // empty upstream
+```
+
+For **latency** and **injected failures** under deterministic virtual time, the
+BDD harness wraps the source's reads in a gate driven by `tokio::time::pause()`
+— see `tests/features/source_control.feature` and the `the source has a read
+latency of N milliseconds` / `the source fails the next N reads` steps. That
+same harness is the stand-in for the real transport: the machinery is exercised
+against slow/failing/mutating sources without a socket in sight.
+
 ## A small worked example
 
 A REST API for a product catalog. Pagination via `?page=N`. No native search.
