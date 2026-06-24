@@ -79,6 +79,30 @@ pub trait TableScenery: Send + Sync {
 
 pub(crate) struct TableSceneryImpl {
     pub(crate) inner: Arc<TableSceneryState>,
+    /// Aborts the reactor + viewport tasks when the last handle to this
+    /// scenery is released. The viewport task owns every in-flight fetch
+    /// inline (single-pass chunk loads *and* two-pass detail hydration both
+    /// run inside it), so aborting it cancels outstanding requests — a
+    /// closing grid stops pulling. Dropping `inner` alone wouldn't suffice:
+    /// the tasks hold their own `Arc<TableSceneryState>`, so without this
+    /// guard a released scenery would linger for the Dio's whole lifetime.
+    _guard: SceneryGuard,
+}
+
+/// Owns the scenery's background tasks and aborts them on drop. Deliberately
+/// holds nothing else: registry eviction is lazy (`Weak::upgrade` + prune),
+/// so a scenery that loses a concurrent-open race can drop safely without
+/// touching the winner's registry entry.
+struct SceneryGuard {
+    tasks: Vec<tokio::task::JoinHandle<()>>,
+}
+
+impl Drop for SceneryGuard {
+    fn drop(&mut self) {
+        for task in &self.tasks {
+            task.abort();
+        }
+    }
 }
 
 impl TableScenery for TableSceneryImpl {

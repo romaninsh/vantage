@@ -11,7 +11,7 @@ use crate::dio::{Dio, DioInner, Generation};
 use super::loader::{enqueue_viewport, viewport_loop};
 use super::reactor::reload_loop;
 use super::state::TableSceneryState;
-use super::{SortDir, TableScenery, TableSceneryImpl, ViewportRequest};
+use super::{SceneryGuard, SortDir, TableScenery, TableSceneryImpl, ViewportRequest};
 
 /// Builder produced by [`Dio::table_scenery`](crate::Dio::table_scenery).
 pub struct TableSceneryBuilder {
@@ -88,6 +88,27 @@ impl TableSceneryBuilder {
             initial_range,
         } = self;
 
+        // Dedup key over (shape, conditions, sort, search). A live scenery
+        // for the same query is shared — one reactor, one cache window, one
+        // in-flight JoinSet — instead of standing up a parallel copy.
+        let key = {
+            let vista_sort = sort.as_ref().map(|(col, dir)| {
+                let dir = match dir {
+                    SortDir::Asc => vantage_vista::SortDirection::Ascending,
+                    SortDir::Desc => vantage_vista::SortDirection::Descending,
+                };
+                (col.as_str(), dir)
+            });
+            format!(
+                "table\u{1}{}\u{1}{}",
+                dio.master.index_key(&conditions, vista_sort),
+                search.as_deref().unwrap_or(""),
+            )
+        };
+        if let Some(existing) = dio.lookup_table_scenery(&key) {
+            return Ok(existing);
+        }
+
         let (gen_tx, _gen_rx) = watch::channel(Generation::default());
         let (viewport_tx, viewport_rx) = mpsc::unbounded_channel();
 
@@ -161,17 +182,21 @@ impl TableSceneryBuilder {
             state.bump_generation();
         }
 
-        // 3. Spawn reactor.
+        // 3. Spawn reactor. Handle retained by the scenery's drop guard so a
+        //    released scenery stops reacting (and frees its state) instead of
+        //    living for the Dio's whole lifetime.
         let bus_rx = dio.event_bus.subscribe();
         let reactor_state = state.clone();
-        dio.lens.runtime.spawn(async move {
+        let reactor_handle = dio.lens.runtime.spawn(async move {
             reload_loop(reactor_state, bus_rx).await;
         });
 
-        // 4. Spawn viewport-debounce loop.
+        // 4. Spawn viewport-debounce loop. This task owns every in-flight
+        //    fetch inline, so aborting it on drop cancels outstanding loads —
+        //    a closing grid stops pulling.
         let viewport_state = state.clone();
         let debounce = dio.lens.defaults.viewport_debounce;
-        dio.lens.runtime.spawn(async move {
+        let viewport_handle = dio.lens.runtime.spawn(async move {
             viewport_loop(viewport_state, viewport_rx, debounce).await;
         });
 
@@ -194,6 +219,16 @@ impl TableSceneryBuilder {
             );
         }
 
-        Ok(Arc::new(TableSceneryImpl { inner: state }) as Arc<dyn TableScenery>)
+        let scenery: Arc<dyn TableScenery> = Arc::new(TableSceneryImpl {
+            inner: state,
+            _guard: SceneryGuard {
+                tasks: vec![reactor_handle, viewport_handle],
+            },
+        });
+
+        // Publish to the dedup registry. If a concurrent open won the race for
+        // this key, `register_table_scenery` returns the winner and our
+        // `scenery` drops here — its guard aborts the redundant tasks.
+        Ok(dio.register_table_scenery(key, scenery))
     }
 }
