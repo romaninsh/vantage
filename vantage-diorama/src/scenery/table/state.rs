@@ -10,7 +10,7 @@ use vantage_vista::VistaCapabilities;
 
 use crate::dio::{DioInner, Generation};
 use crate::lens::SceneryChunkTarget;
-use crate::scenery::enriched_record::EnrichedRecord;
+use crate::scenery::enriched_record::{EnrichedRecord, RowStatus};
 
 use super::helpers::{cbor_cmp, matches_conditions, matches_search};
 use super::{SortDir, ViewportRequest};
@@ -175,6 +175,30 @@ impl TableSceneryState {
             .insert(idx, Arc::new(EnrichedRecord::fresh(rec)));
         self.bump_generation();
         Ok(())
+    }
+
+    /// Stamp the slot for `id` with `status`, re-reading its current cache
+    /// value (the optimistic-write affordance — `PendingWrite` while a write is
+    /// in flight, `WriteFailed` after a rollback). No-op if the row isn't in
+    /// this scenery's window. Bumps generation so bound widgets repaint.
+    pub(crate) async fn mark_row(&self, id: &str, status: RowStatus) {
+        let Some(dio_inner) = self.dio_weak.upgrade() else {
+            return;
+        };
+        let Some(idx) = self.id_to_idx.read().unwrap().get(id).copied() else {
+            return;
+        };
+        let Ok(Some(rec)) = dio_inner.cache.get_value(id).await else {
+            return;
+        };
+        let enriched = EnrichedRecord {
+            record: rec,
+            status,
+            dirty_fields: None,
+            fetched_at: Some(std::time::SystemTime::now()),
+        };
+        self.rows.write().unwrap().insert(idx, Arc::new(enriched));
+        self.bump_generation();
     }
 
     /// True if every index in `range` is loaded.

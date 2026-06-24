@@ -25,6 +25,23 @@ pub enum DioEvent {
         error: String,
     },
 
+    /// An optimistic write was just staged in the cache: the new value is
+    /// already visible, but the write-through hasn't confirmed yet. Sceneries
+    /// flip the row for `id` to [`PendingWrite`](crate::RowStatus::PendingWrite).
+    WritePending {
+        id: String,
+    },
+
+    /// An optimistic write failed and its cache pre-image was restored. The
+    /// value has reverted; sceneries surface the error by flipping the row for
+    /// `id` to [`WriteFailed`](crate::RowStatus::WriteFailed). Distinct from
+    /// [`WriteFailed`](Self::WriteFailed), the fire-and-forget facade-queue
+    /// failure that does not touch the cache.
+    WriteReverted {
+        id: String,
+        error: String,
+    },
+
     /// Emitted by `TableScenery` once a `set_viewport` / `request_load_more`
     /// has cleared its debounce window and committed a viewport. Always
     /// fires; a viewport entirely inside the cached range still emits this

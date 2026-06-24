@@ -2,6 +2,16 @@
 
 ## 0.6.3 — unreleased
 
+- Optimistic writes. `Dio::write_optimistic(op)` (and the `patch_optimistic`
+  shorthand) stage a write in the cache and announce it (`WritePending`) before
+  the write-through runs, so a form edit shows instantly as
+  `RowStatus::PendingWrite`. On success it settles to `Fresh` (`RecordChanged`);
+  on failure the cache pre-image is restored and the row flips to
+  `RowStatus::WriteFailed` (`WriteReverted`) — the view reverts rather than
+  keeping a value that didn't save. The edit reflects across every bound scenery
+  via the existing `RecordChanged` fan-out. Two new bus events (`WritePending`,
+  `WriteReverted`) are handled by both `RecordScenery` and `TableScenery`; the
+  previously-unused `RowStatus::PendingWrite` / `WriteFailed` now have producers.
 - Soft-refresh sort for augmented (two-pass) grids. Changing a two-pass
   scenery's sort (or search) now rebuilds the ordered index for the new variant
   and **restarts the detail pass for the visible window** — augmentation resumes

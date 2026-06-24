@@ -28,7 +28,7 @@ pub(crate) async fn write_worker_loop(inner: Weak<DioInner>, mut rx: mpsc::Recei
         };
         let dio = Dio { inner: strong };
         let id_for_event = op.id().map(str::to_string);
-        let outcome = dispatch(&dio, op).await;
+        let outcome = run_write_through(&dio, op).await;
         if let Err(err) = outcome {
             tracing::error!(error = %err, "Dio write op failed");
             let _ = dio.inner.event_bus.send(DioEvent::WriteFailed {
@@ -39,7 +39,11 @@ pub(crate) async fn write_worker_loop(inner: Weak<DioInner>, mut rx: mpsc::Recei
     }
 }
 
-async fn dispatch(dio: &Dio, op: WriteOp) -> Result<()> {
+/// Run a write through the lens's `on_write` callback, or the default
+/// write-to-master path when none is registered. Shared by the fire-and-forget
+/// queue worker and the optimistic write path
+/// ([`Dio::write_optimistic`](crate::Dio::write_optimistic)).
+pub(crate) async fn run_write_through(dio: &Dio, op: WriteOp) -> Result<()> {
     if let Some(cb) = dio.inner.lens.callbacks.on_write.as_ref() {
         cb(dio, op).await
     } else {

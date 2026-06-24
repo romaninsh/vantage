@@ -96,6 +96,34 @@ impl RecordSceneryState {
         self.bump_generation();
     }
 
+    /// Show the optimistically-staged value while the write is in flight.
+    async fn set_pending_write(&self) {
+        let Some(dio_inner) = self.dio_weak.upgrade() else {
+            return;
+        };
+        if let Ok(Some(rec)) = dio_inner.cache.get_value(&self.id).await {
+            *self.record.write().unwrap() = Some(Arc::new(EnrichedRecord::pending_write(rec)));
+            self.bump_generation();
+        }
+    }
+
+    /// The optimistic write was rolled back: re-read the restored pre-image and
+    /// flag the failure so the form can surface it.
+    async fn set_write_failed(&self, error: String) {
+        let Some(dio_inner) = self.dio_weak.upgrade() else {
+            return;
+        };
+        match dio_inner.cache.get_value(&self.id).await {
+            Ok(Some(rec)) => {
+                *self.record.write().unwrap() =
+                    Some(Arc::new(EnrichedRecord::write_failed(rec, error)));
+            }
+            // Pre-image was absent (a failed insert): drop the row.
+            _ => *self.record.write().unwrap() = None,
+        }
+        self.bump_generation();
+    }
+
     fn bump_generation(&self) {
         let next = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         // `send_replace` (not `send`) — the stored value must reflect the
@@ -124,6 +152,12 @@ async fn reload_loop(state: Arc<RecordSceneryState>, mut bus: broadcast::Receive
                 if let Err(e) = state.reload().await {
                     tracing::error!(error = %e, "RecordScenery reload failed");
                 }
+            }
+            Ok(DioEvent::WritePending { id }) if id == state.id => {
+                state.set_pending_write().await;
+            }
+            Ok(DioEvent::WriteReverted { id, error }) if id == state.id => {
+                state.set_write_failed(error).await;
             }
             Ok(_) => {}
             Err(broadcast::error::RecvError::Lagged(_)) => {
