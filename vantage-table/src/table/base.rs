@@ -42,6 +42,13 @@ where
     pub(super) title_field: Option<String>,
     pub(super) title_fields: Vec<String>,
     pub(super) id_field: Option<String>,
+    /// Column values a newly-inserted row defaults to so it conforms to this
+    /// set's definition (e.g. a has-many child gets the parent's foreign key).
+    /// Registered wherever the table is narrowed by a literal `column = value`
+    /// (see [`Self::with_id`], `Reference::resolve_from_row`); never from an
+    /// expression scope. Applied on insert only for columns the caller left
+    /// null/absent — a caller-supplied value always wins.
+    pub(super) defaults: IndexMap<String, T::Value>,
 }
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
@@ -63,6 +70,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             title_field: None,
             title_fields: Vec::new(),
             id_field: None,
+            defaults: IndexMap::new(),
         }
     }
 
@@ -88,6 +96,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             title_field: self.title_field,
             title_fields: self.title_fields,
             id_field: self.id_field,
+            defaults: self.defaults,
         }
     }
 
@@ -224,6 +233,27 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// Get the current pagination configuration, if set
     pub fn pagination(&self) -> Option<&Pagination> {
         self.pagination.as_ref()
+    }
+
+    /// Insert-time column defaults that keep new rows conforming to this set.
+    ///
+    /// See the `defaults` field: applied by write backends to columns the
+    /// caller left null/absent on insert.
+    pub fn defaults(&self) -> &IndexMap<String, T::Value> {
+        &self.defaults
+    }
+
+    /// Register a default value for `column` on inserts into this set.
+    ///
+    /// A later call for the same column overwrites the earlier default.
+    pub fn add_default(&mut self, column: impl Into<String>, value: T::Value) {
+        self.defaults.insert(column.into(), value);
+    }
+
+    /// Builder form of [`Self::add_default`].
+    pub fn with_default(mut self, column: impl Into<String>, value: T::Value) -> Self {
+        self.add_default(column, value);
+        self
     }
 }
 
