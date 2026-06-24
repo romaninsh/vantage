@@ -13,15 +13,15 @@ impl TableShell for DioShell {
     // ---- Schema forwarding to master ----------------------------------------
 
     fn columns(&self) -> &IndexMap<String, Column> {
-        self.dio.master.source.columns()
+        &self.columns
     }
 
     fn references(&self) -> &IndexMap<String, Reference> {
-        self.dio.master.source.references()
+        &self.references
     }
 
     fn id_column(&self) -> Option<&str> {
-        self.dio.master.source.id_column()
+        self.id_column.as_deref()
     }
 
     // ---- Reads — cache-first --------------------------------------------------

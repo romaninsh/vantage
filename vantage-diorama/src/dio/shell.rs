@@ -1,23 +1,34 @@
 use std::sync::Arc;
 
-use vantage_vista::VistaCapabilities;
+use indexmap::IndexMap;
+use vantage_vista::{Column, Reference, VistaCapabilities};
 
 use super::DioInner;
 
 /// `TableShell` impl that backs the Vista returned by `Dio::vista()`.
 ///
 /// Holds the shared inner Dio state so reads/writes route through the
-/// Dio's machinery while schema (columns, refs, id) is forwarded to
-/// the master Vista. Capability advertisement is the union of the
+/// Dio's machinery. Schema (columns, refs, id) is **snapshotted** from the
+/// master at construction so the facade doesn't borrow the now-swappable
+/// master across reads; a fresh `dio.vista()` after a [`reload`](crate::Dio::reload)
+/// captures the new schema. Capability advertisement is the union of the
 /// master's capabilities and what the Lens's callbacks unlock.
 pub struct DioShell {
     pub(crate) dio: Arc<DioInner>,
     pub(crate) capabilities: VistaCapabilities,
+    pub(crate) columns: IndexMap<String, Column>,
+    pub(crate) references: IndexMap<String, Reference>,
+    pub(crate) id_column: Option<String>,
 }
 
 impl DioShell {
     pub(crate) fn new(dio: Arc<DioInner>) -> Self {
-        let master_caps = dio.master.capabilities().clone();
+        let master = dio.master.read().unwrap();
+        let master_caps = master.capabilities().clone();
+        let columns = master.source.columns().clone();
+        let references = master.source.references().clone();
+        let id_column = master.source.id_column().map(str::to_string);
+        drop(master);
         let cbs = &dio.lens.callbacks;
         let has_on_write = cbs.on_write.is_some();
         let has_on_event = cbs.on_event.is_some();
@@ -48,6 +59,12 @@ impl DioShell {
             can_traverse_to_set: master_caps.can_traverse_to_set,
             can_build_ref_via_script: master_caps.can_build_ref_via_script,
         };
-        Self { dio, capabilities }
+        Self {
+            dio,
+            capabilities,
+            columns,
+            references,
+            id_column,
+        }
     }
 }
