@@ -2,6 +2,14 @@
 
 ## 0.6.3 — unreleased
 
+- Adaptive polling via an app-activity signal. A new `ActivitySignal`
+  (`Active`/`Standby`/`Offline`), shared into a Lens with `.activity_signal(..)`,
+  drives the refresh cadence: `refresh_every` is the active interval,
+  `.standby_refresh_every(..)` the slower standby one, and `Offline` skips
+  polling entirely (resuming on reconnect). One signal, set by the UI from
+  window-focus / idle / network state, re-paces every Dio's refresh loop at
+  once. Replaces the fixed-interval ticker (semantics preserved: still skips the
+  t=0 tick).
 - No-flicker reload. The master Vista is now swappable, and `Dio::reload(new_master)`
   re-points a Dio at a freshly-built Vista (e.g. after its VistaFactory reloaded
   the YAML/script) and rebuilds the cache from it — without tearing the Dio down.

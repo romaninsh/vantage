@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod build;
 pub mod cache_backend;
 pub mod callbacks;
@@ -19,6 +20,7 @@ use crate::dio::Dio;
 use crate::error::LensBuildError;
 use crate::ops::{ChangeEvent, QueryDescriptor, WriteOp};
 
+pub use activity::{Activity, ActivitySignal};
 pub use cache_backend::{CacheBackend, CacheStatus, CacheTable};
 pub use callbacks::{
     DioCallback, DioEventCallback, DioListPageCallback, DioLoadChunkCallback,
@@ -40,6 +42,9 @@ pub struct Lens {
     pub(crate) callbacks: Arc<LensCallbacks>,
     pub(crate) defaults: LensDefaults,
     pub(crate) runtime: Handle,
+    /// App-activity signal driving adaptive refresh cadence. Shared with the UI
+    /// (cloned), so flipping it re-paces every Dio's refresh loop at once.
+    pub(crate) activity: ActivitySignal,
 }
 
 impl Lens {
@@ -87,6 +92,7 @@ pub struct LensBuilder {
     pub(crate) catalog: Option<std::sync::Arc<vantage_vista_factory::VistaCatalog>>,
     pub(crate) defaults: LensDefaults,
     pub(crate) runtime: Option<Handle>,
+    pub(crate) activity: ActivitySignal,
 }
 
 impl Default for LensBuilder {
@@ -113,7 +119,24 @@ impl LensBuilder {
             catalog: None,
             defaults: LensDefaults::default(),
             runtime: None,
+            activity: ActivitySignal::new(),
         }
+    }
+
+    /// Share an app-activity signal so this Lens's refresh loops adapt their
+    /// cadence (active → fast, standby → slow, offline → paused). Pass the same
+    /// cloned handle to every Lens and update it from the UI.
+    pub fn activity_signal(mut self, signal: ActivitySignal) -> Self {
+        self.activity = signal;
+        self
+    }
+
+    /// The slower refresh interval used while the app is on
+    /// [`Standby`](Activity::Standby). Falls back to the active
+    /// [`refresh_every`](Self::refresh_every) interval when unset.
+    pub fn standby_refresh_every(mut self, interval: std::time::Duration) -> Self {
+        self.defaults.standby_refresh_interval = Some(interval);
+        self
     }
 
     /// Provide the cache backend explicitly. Use this when [`cache_at`](Self::cache_at)

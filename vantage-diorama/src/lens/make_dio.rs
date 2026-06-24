@@ -14,7 +14,7 @@ use vantage_core::Result;
 use vantage_vista::Vista;
 
 use crate::dio::{Dio, DioEvent, DioInner, HotTier, worker::write_worker_loop};
-use crate::lens::Lens;
+use crate::lens::{Activity, ActivitySignal, Lens};
 
 impl Lens {
     /// Bind `master` to this Lens. Opens the cache table, spawns the
@@ -74,29 +74,50 @@ async fn spawn_write_worker(dio: &Dio, rx: mpsc::Receiver<crate::ops::WriteOp>) 
 }
 
 async fn spawn_refresh_task(dio: &Dio) {
-    let Some(interval) = dio.inner.lens.defaults.refresh_interval else {
+    let Some(active) = dio.inner.lens.defaults.refresh_interval else {
         return;
     };
     if dio.inner.lens.callbacks.on_refresh.is_none() {
         return;
     }
+    let standby = dio
+        .inner
+        .lens
+        .defaults
+        .standby_refresh_interval
+        .unwrap_or(active);
+    let signal = dio.inner.lens.activity.clone();
     let inner_weak = Arc::downgrade(&dio.inner);
     let handle = dio.inner.lens.runtime.spawn(async move {
-        refresh_loop(inner_weak, interval).await;
+        refresh_loop(inner_weak, active, standby, signal).await;
     });
     *dio.inner.refresh_task.lock().await = Some(handle);
 }
 
-async fn refresh_loop(inner: Weak<DioInner>, interval: Duration) {
-    let mut ticker = tokio::time::interval(interval);
-    // Skip the immediate tick — `on_start` typically just ran and refresh
-    // should fire after `interval`, not at t=0.
-    ticker.tick().await;
+/// Adaptive refresh ticker. Waits at the cadence the current
+/// [`Activity`] dictates, then fires `on_refresh` — unless the app is
+/// [`Offline`](Activity::Offline), in which case it skips the body so polling
+/// pauses but resumes promptly on reconnect. Sleeping *before* the first fire
+/// keeps the t=0 skip the interval ticker used to give.
+async fn refresh_loop(
+    inner: Weak<DioInner>,
+    active: Duration,
+    standby: Duration,
+    signal: ActivitySignal,
+) {
     loop {
-        ticker.tick().await;
+        let delay = match signal.get() {
+            Activity::Active => active,
+            Activity::Standby => standby,
+            Activity::Offline => active,
+        };
+        tokio::time::sleep(delay).await;
         let Some(strong) = inner.upgrade() else {
             return;
         };
+        if matches!(signal.get(), Activity::Offline) {
+            continue;
+        }
         let dio = Dio { inner: strong };
         let _ = dio.inner.event_bus.send(DioEvent::Refreshing);
         if let Some(cb) = dio.inner.lens.callbacks.on_refresh.as_ref()

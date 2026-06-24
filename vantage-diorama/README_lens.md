@@ -619,3 +619,33 @@ the new master via your `on_start` (or `on_refresh`), and only then publishes on
 swap to the new data in a single atomic step on that `Invalidated` — so a grid
 mid-scroll never flashes empty, even though the dataset changed underneath it.
 "Responsive first, eventually precise," applied to a source reload.
+
+## Adaptive polling — let the app pace your refresh
+
+A fixed `refresh_every` is wasteful: it polls just as hard when the window is in
+the background or the user walked away, and it hammers a dead network while
+offline. The app knows all of this; hand it to the Lens through one shared
+`ActivitySignal`:
+
+```rust
+let activity = ActivitySignal::new();          // shared with the UI
+
+let lens = Lens::new()
+    .cache_at("cache.redb")
+    .on_refresh(pull_changes)
+    .refresh_every(Duration::from_secs(1))            // Active: snappy
+    .standby_refresh_every(Duration::from_secs(60))   // Standby: relaxed
+    .activity_signal(activity.clone())
+    .build()?;
+
+// …elsewhere, the desktop app flips it as window focus / idle / network change:
+activity.set(Activity::Active);    // foreground + interacting → 1s cadence
+activity.set(Activity::Standby);   // backgrounded or idle    → 60s cadence
+activity.set(Activity::Offline);   // no network → stop polling; resume on reconnect
+```
+
+Pass the *same* cloned `activity` to every Lens and one `set` re-paces them all.
+`Offline` skips the refresh body entirely (no doomed requests) and picks back up
+on the next tick once you flip it back. This is the data-layer half of the
+desktop app's visibility-aware refresh; the UI half (window-active / idle
+detection) just drives `activity.set(...)`.
