@@ -168,8 +168,14 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
     // Two-pass: a viewport drives the detail pass over the visible rows, not a
     // random-access chunk load. Hydration dedups against already-`Complete`
     // ids, so re-entering the same viewport is a no-op.
+    //
+    // A `titles_only` picker skips hydration entirely — it only needs the
+    // cheap list columns, so the viewport just commits (the `ViewportChanged`
+    // above) and no detail fetch is issued.
     if state.two_pass {
-        super::two_pass::run_detail_for_range(state.clone(), visible).await;
+        if !state.titles_only {
+            super::two_pass::run_detail_for_range(state.clone(), visible).await;
+        }
         return;
     }
 

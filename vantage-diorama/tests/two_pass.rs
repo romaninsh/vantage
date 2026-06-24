@@ -304,6 +304,53 @@ async fn sort_change_restarts_augmentation_without_scrolling() {
     assert!(scenery.row(0).is_some(), "row 0 never blanks on revert");
 }
 
+/// A `titles_only` picker (dropdown/autocomplete) over an augmented table lists
+/// the cheap columns and **never hydrates detail** — even as its viewport
+/// moves — while a full grid over the same query is a distinct scenery that
+/// does hydrate. The picker pays list cost only.
+#[tokio::test]
+async fn titles_only_picker_skips_detail_hydration() {
+    let tmp = TempDir::new().unwrap();
+    let log = tmp.path().join("calls.log");
+    let lens = two_pass_lens(tmp.path(), &log);
+    let dio = open_dio(&lens, &make_cmd(&log)).await;
+
+    let picker = dio.table_scenery().titles_only().page_size(2).open().await.unwrap();
+    picker.set_viewport(0..2);
+    // Let the viewport debounce + (suppressed) detail path run.
+    tokio::time::sleep(Duration::from_millis(30)).await;
+
+    // List columns are present; the row stays Incomplete and no detail ran.
+    assert_eq!(branch_of(&picker, 0).as_deref(), Some("main"), "title column listed");
+    assert!(
+        matches!(status_of(&picker, 0), Some(RowStatus::Incomplete)),
+        "picker rows stay Incomplete: {:?}",
+        status_of(&picker, 0)
+    );
+    assert!(detail_of(&picker, 0).is_none(), "no detail column");
+    assert_eq!(count_with_prefix(&log, "detail"), 0, "picker must not hydrate");
+    assert_eq!(count_with_prefix(&log, "list"), 1, "one list page");
+
+    // A full grid over the same query is a DISTINCT scenery (it hydrates), so
+    // the Dio now holds two live sceneries.
+    let grid = dio.table_scenery().page_size(2).open().await.unwrap();
+    assert!(
+        !std::sync::Arc::ptr_eq(&picker, &grid),
+        "titles_only keys distinctly from a full grid"
+    );
+    assert_eq!(dio.live_table_scenery_count(), 2);
+
+    grid.set_viewport(0..2);
+    eventually("grid hydrates", || {
+        matches!(status_of(&grid, 0), Some(RowStatus::Fresh))
+    })
+    .await;
+    assert!(
+        count_with_prefix(&log, "detail") > 0,
+        "the full grid hydrates even though the picker didn't"
+    );
+}
+
 /// Sequential, no-total paging: each `request_load_more` fetches the next list
 /// page; a short final page flips `has_more` false and freezes the estimate.
 #[tokio::test]
