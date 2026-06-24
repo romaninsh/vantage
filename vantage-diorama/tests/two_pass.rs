@@ -351,6 +351,56 @@ async fn titles_only_picker_skips_detail_hydration() {
     );
 }
 
+/// `dio.diagnostics()` reports every open scenery with its refcount and
+/// hydration breakdown, the cache size, and dedup-aware sharing — and empties
+/// as handles are released.
+#[tokio::test]
+async fn diagnostics_report_sceneries_refcount_and_hydration() {
+    let tmp = TempDir::new().unwrap();
+    let log = tmp.path().join("calls.log");
+    let lens = two_pass_lens(tmp.path(), &log);
+    let dio = open_dio(&lens, &make_cmd(&log)).await;
+
+    // A picker (titles_only) lists cheap rows — Incomplete, never hydrated.
+    let picker = dio.table_scenery().titles_only().page_size(2).open().await.unwrap();
+    eventually("picker listed", || picker.row_count() >= 2).await;
+
+    let d = dio.diagnostics().await;
+    assert_eq!(d.sceneries.len(), 1);
+    assert_eq!(d.sceneries[0].refcount, 1);
+    assert!(
+        d.sceneries[0].status.incomplete >= 2,
+        "picker rows are Incomplete: {:?}",
+        d.sceneries[0].status
+    );
+    assert_eq!(d.sceneries[0].status.fresh, 0);
+
+    // Dedup: re-opening the same picker query shares it → refcount 2.
+    let picker2 = dio.table_scenery().titles_only().page_size(2).open().await.unwrap();
+    assert_eq!(dio.diagnostics().await.sceneries[0].refcount, 2);
+
+    // A full grid is a distinct scenery that hydrates → Fresh rows.
+    let grid = dio.table_scenery().page_size(2).open().await.unwrap();
+    grid.set_viewport(0..2);
+    eventually("grid hydrates both rows", || {
+        matches!(status_of(&grid, 0), Some(RowStatus::Fresh))
+            && matches!(status_of(&grid, 1), Some(RowStatus::Fresh))
+    })
+    .await;
+
+    let d = dio.diagnostics().await;
+    assert_eq!(d.sceneries.len(), 2, "picker + grid");
+    assert!(d.augmented_rows() >= 2, "grid contributes Fresh rows");
+    assert!(d.cache_rows >= 2);
+
+    // Releasing every handle empties the diagnostics (no leak).
+    drop(picker);
+    drop(picker2);
+    drop(grid);
+    let d = dio.diagnostics().await;
+    assert_eq!(d.sceneries.len(), 0, "released sceneries are pruned");
+}
+
 /// Sequential, no-total paging: each `request_load_more` fetches the next list
 /// page; a short final page flips `has_more` false and freezes the estimate.
 #[tokio::test]
