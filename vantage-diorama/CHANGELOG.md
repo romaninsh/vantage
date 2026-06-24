@@ -2,6 +2,14 @@
 
 ## 0.6.3 — unreleased
 
+- No-flicker reload. The master Vista is now swappable, and `Dio::reload(new_master)`
+  re-points a Dio at a freshly-built Vista (e.g. after its VistaFactory reloaded
+  the YAML/script) and rebuilds the cache from it — without tearing the Dio down.
+  Open sceneries keep their current rows visible until the new data is staged and
+  swap atomically on a single trailing `Invalidated`, so a grid never flashes
+  empty even when the dataset changes wholesale. `Dio::master()` now returns
+  `Arc<Vista>` (was `&Vista`); the `dio.vista()` facade snapshots its schema at
+  construction. Stale per-query indexes are dropped on reload.
 - `titles_only()` table-scenery projection — the dropdown / autocomplete shape.
   A picker binds to the same `TableScenery` a grid does (visible band →
   `set_viewport`, typeahead → `set_search`), projected to the title columns. On

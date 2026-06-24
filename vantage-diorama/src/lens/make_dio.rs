@@ -29,7 +29,7 @@ impl Lens {
 
         let inner = Arc::new(DioInner {
             lens: self.clone(),
-            master,
+            master: std::sync::RwLock::new(Arc::new(master)),
             cache,
             cache_table_name,
             write_queue: write_tx,
