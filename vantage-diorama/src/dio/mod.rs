@@ -59,7 +59,10 @@ pub struct Dio {
 
 pub(crate) struct DioInner {
     pub(crate) lens: Arc<Lens>,
-    pub(crate) master: Vista,
+    /// The master Vista, swappable so a [`reload`](Dio::reload) can re-point the
+    /// Dio at a freshly-built Vista (e.g. after its VistaFactory reloaded)
+    /// without tearing the Dio down. Read via [`Dio::master`].
+    pub(crate) master: std::sync::RwLock<Arc<Vista>>,
     pub(crate) cache: Arc<dyn CacheTable>,
     pub(crate) cache_table_name: String,
     pub(crate) write_queue: mpsc::Sender<WriteOp>,
@@ -125,8 +128,36 @@ impl DioInner {
 }
 
 impl Dio {
-    pub fn master(&self) -> &Vista {
-        &self.inner.master
+    /// The current master Vista (cloned `Arc`). Cheap; safe to hold across
+    /// awaits even while a concurrent [`reload`](Self::reload) swaps it.
+    pub fn master(&self) -> Arc<Vista> {
+        self.inner.master.read().unwrap().clone()
+    }
+
+    /// Re-point this Dio at a freshly-built master Vista and rebuild its cache
+    /// from it — the "its VistaFactory reloaded, the dataset may be wholly
+    /// different" path. The swap is **non-blanking**: open sceneries keep
+    /// showing their current rows until the cache is refilled, then soft-reseed
+    /// in one atomic swap on the trailing `Invalidated`. Stale per-query indexes
+    /// are dropped so two-pass orders rebuild against the new data.
+    pub async fn reload(&self, new_master: Vista) -> Result<()> {
+        *self.inner.master.write().unwrap() = Arc::new(new_master);
+        self.inner.query_indexes.lock().unwrap().clear();
+
+        // Refill the cache from the new master. The cache is briefly empty
+        // here — so we deliberately do NOT emit `Refreshing` (which an eager
+        // scenery would reseed on, blanking to the empty cache). No scenery
+        // reseeds until the single `Invalidated` below, by which point the new
+        // data is staged; open sceneries keep their old rows visible until then
+        // and swap in one atomic step, so nothing blanks.
+        self.inner.cache.clear().await?;
+        if let Some(on_start) = self.inner.lens.callbacks.on_start.as_ref() {
+            on_start(self).await?;
+        } else if let Some(on_refresh) = self.inner.lens.callbacks.on_refresh.as_ref() {
+            on_refresh(self).await?;
+        }
+        let _ = self.inner.event_bus.send(DioEvent::Invalidated);
+        Ok(())
     }
 
     pub fn cache(&self) -> &Arc<dyn CacheTable> {
@@ -230,7 +261,7 @@ impl Dio {
     /// etc.) while reads route through the cache and writes route
     /// through the Dio's queue.
     pub fn vista(&self) -> Vista {
-        let name = self.inner.master.name().to_string();
+        let name = self.master().name().to_string();
         let shell = DioShell::new(self.inner.clone());
         Vista::new(name, Box::new(shell))
     }

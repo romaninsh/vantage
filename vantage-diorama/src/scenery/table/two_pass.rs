@@ -180,7 +180,11 @@ pub(crate) async fn resort(state: Arc<TableSceneryState>) {
         };
         (col.as_str(), dir)
     });
-    let key = dio_inner.master.index_key(&conditions, vista_sort);
+    let key = dio_inner
+        .master
+        .read()
+        .unwrap()
+        .index_key(&conditions, vista_sort);
     let new_index = dio_inner.query_index(&key);
     state.set_index(Some(new_index.clone()));
 
