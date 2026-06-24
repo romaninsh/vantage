@@ -54,9 +54,28 @@ pub(crate) struct ViewportRequest {
     pub(crate) force_load: bool,
 }
 
+/// Breakdown of the row statuses currently materialized in a scenery's sparse
+/// map. Cheap to compute (iterates only loaded rows, not the full row count) —
+/// the per-scenery slice of the diagnostics surface.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RowStatusSummary {
+    /// Rows actually present in the sparse map (a paged scenery's `row_count`
+    /// can be far larger — most indices are unloaded).
+    pub loaded: usize,
+    pub fresh: usize,
+    pub incomplete: usize,
+    pub pending_write: usize,
+    /// `LoadFailed` + `WriteFailed` combined.
+    pub failed: usize,
+}
+
 /// Reactive view onto a Dio that exposes an ordered, paginated row set.
 pub trait TableScenery: Send + Sync {
     fn row_count(&self) -> usize;
+
+    /// Status breakdown over the rows currently in the sparse map. Used by the
+    /// diagnostics surface to report how much of a scenery is hydrated.
+    fn status_summary(&self) -> RowStatusSummary;
     fn has_more(&self) -> bool;
     fn estimated_total(&self) -> Option<usize>;
     fn row(&self, idx: usize) -> Option<Arc<EnrichedRecord>>;
@@ -114,6 +133,22 @@ impl TableScenery for TableSceneryImpl {
             return t;
         }
         self.inner.rows.read().unwrap().len()
+    }
+
+    fn status_summary(&self) -> RowStatusSummary {
+        use super::enriched_record::RowStatus;
+        let mut s = RowStatusSummary::default();
+        for row in self.inner.rows.read().unwrap().values() {
+            s.loaded += 1;
+            match &row.status {
+                RowStatus::Fresh => s.fresh += 1,
+                RowStatus::Incomplete => s.incomplete += 1,
+                RowStatus::PendingWrite => s.pending_write += 1,
+                RowStatus::LoadFailed { .. } | RowStatus::WriteFailed { .. } => s.failed += 1,
+                _ => {}
+            }
+        }
+        s
     }
 
     fn has_more(&self) -> bool {

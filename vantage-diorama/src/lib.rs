@@ -15,6 +15,7 @@ pub use augment::{
     SourceSpec, lower_augment,
 };
 pub use composition::Diorama;
+pub use dio::diagnostics::{DioDiagnostics, SceneryDiagnostic};
 pub use dio::{Dio, DioEvent, DioShell, Generation};
 pub use error::{DioError, LensBuildError};
 pub use lens::{
@@ -24,8 +25,8 @@ pub use lens::{
 };
 pub use ops::{ChangeEvent, QueryDescriptor, WriteOp};
 pub use scenery::{
-    Aggregate, CustomAggregate, EnrichedRecord, RecordScenery, RecordStatus, RowStatus, SortDir,
-    TableScenery, TableSceneryBuilder, ValueScenery, ValueSceneryBuilder, ValueStatus,
-    boxed_custom_aggregate,
+    Aggregate, CustomAggregate, EnrichedRecord, RecordScenery, RecordStatus, RowStatus,
+    RowStatusSummary, SortDir, TableScenery, TableSceneryBuilder, ValueScenery, ValueSceneryBuilder,
+    ValueStatus, boxed_custom_aggregate,
 };
 pub use vantage_vista::VistaCapabilities;
