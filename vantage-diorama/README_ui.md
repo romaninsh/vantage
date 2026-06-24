@@ -486,6 +486,15 @@ largest workloads where even chunked windowing is overkill.
 the Scenery's reload task wakes, re-filters/sorts the cached row set,
 publishes a new generation. The widget re-renders.
 
+**Sort on an augmented (two-pass) grid is soft-refresh.** Changing the sort
+re-points the scenery at the new variant's ordered index and re-seeds the
+visible rows from cache **immediately** — the grid never blanks — then restarts
+the detail pass for the visible window in the background, so augmentation
+resumes without the user having to scroll. A sort you've used before reorders
+straight from cache with no refetch; a brand-new sort lists its first page once.
+(Mutating the sort/search in place takes the scenery out of the dedup registry —
+it's now a bespoke view, not the shareable canonical one for the original query.)
+
 What's **not** happening yet: push-down to master or to the cache backend.
 The filter runs in-memory across the loaded `Vec<Arc<EnrichedRecord>>`.
 For 100k rows × a handful of text columns, that's milliseconds. For
