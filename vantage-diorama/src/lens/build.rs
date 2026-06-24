@@ -72,6 +72,7 @@ impl LensBuilder {
             callbacks: Arc::new(callbacks),
             defaults: self.defaults,
             runtime,
+            activity: self.activity,
         })
     }
 }

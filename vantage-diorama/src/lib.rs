@@ -18,9 +18,9 @@ pub use composition::Diorama;
 pub use dio::{Dio, DioEvent, DioShell, Generation};
 pub use error::{DioError, LensBuildError};
 pub use lens::{
-    CacheBackend, ChunkRow, ChunkSink, DioCallback, DioEventCallback, DioLoadChunkCallback,
-    DioQueryCallback, DioTotalProviderCallback, DioWriteCallback, Lens, LensBuilder, LensCallbacks,
-    LensDefaults,
+    Activity, ActivitySignal, CacheBackend, ChunkRow, ChunkSink, DioCallback, DioEventCallback,
+    DioLoadChunkCallback, DioQueryCallback, DioTotalProviderCallback, DioWriteCallback, Lens,
+    LensBuilder, LensCallbacks, LensDefaults,
 };
 pub use ops::{ChangeEvent, QueryDescriptor, WriteOp};
 pub use scenery::{

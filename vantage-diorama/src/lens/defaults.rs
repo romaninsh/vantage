@@ -8,6 +8,12 @@ pub struct LensDefaults {
     /// manually.
     pub refresh_interval: Option<Duration>,
 
+    /// Slower refresh interval used while the app is on
+    /// [`Standby`](crate::Activity::Standby). `None` falls back to
+    /// `refresh_interval`. While [`Offline`](crate::Activity::Offline) the
+    /// scheduler skips the refresh body entirely until the app is back.
+    pub standby_refresh_interval: Option<Duration>,
+
     /// Maximum age a cache entry may reach before counting as stale.
     /// `None` means cache entries never expire on their own.
     pub cache_ttl: Option<Duration>,
@@ -37,6 +43,7 @@ impl Default for LensDefaults {
     fn default() -> Self {
         Self {
             refresh_interval: None,
+            standby_refresh_interval: None,
             cache_ttl: None,
             write_queue_capacity: 256,
             on_start_blocking: true,
