@@ -61,6 +61,38 @@ let counter = dio.value_scenery()
     .await?;
 ```
 
+## Sharing and lifecycle
+
+Opening a `TableScenery` is **cheap and deduplicated**. Two widgets that ask for
+the same `(conditions, sort, search)` get back the *same* `Arc` — one reactor,
+one cache window, one in-flight fetch — not two parallel copies:
+
+```rust
+let grid     = dio.table_scenery().sort("price", SortDir::Asc).open().await?;
+let elsewhere = dio.table_scenery().sort("price", SortDir::Asc).open().await?;
+// `grid` and `elsewhere` are the same object; edits and loads are shared.
+debug_assert!(std::sync::Arc::ptr_eq(&grid, &elsewhere));
+```
+
+This is why you don't budget for sceneries: a form with eight dropdowns over the
+same lookup table, or the same record shown in a grid row and a detail sheet,
+costs one scenery, not eight.
+
+Lifecycle is **refcounted**. The handle is the refcount; when the last clone
+drops, the scenery's background tasks are aborted. Because the viewport task
+owns every in-flight fetch inline, **a closing grid stops pulling** — outstanding
+chunk loads (and two-pass detail hydration) are cancelled rather than running to
+completion against a view nobody is watching. There is nothing to call: just drop
+the handle (clear the field, close the tab) and the work unwinds.
+
+```rust
+// One open window onto the registry — useful in tests and the diagnostics panel.
+assert_eq!(dio.live_table_scenery_count(), 1); // grid + elsewhere share one
+drop(grid);
+drop(elsewhere);
+assert_eq!(dio.live_table_scenery_count(), 0); // released → evicted, no leak
+```
+
 ## The pull-on-render contract
 
 GPUI's `TableDelegate` polls the delegate on every render frame. The relevant
