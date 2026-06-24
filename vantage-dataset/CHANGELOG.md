@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.2 — unreleased
+
+- `ActiveEntity::data()` and `ActiveEntity::dataset()` accessors, so extension traits (e.g.
+  `Table`-level relationship traversal) can reach the entity and its originating dataset.
+
 ## 0.6.1 — unreleased
 
 - Internal dependency realignment for the coordinated 0.6 release; no public API changes.

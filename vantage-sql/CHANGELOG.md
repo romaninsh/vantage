@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.3 — unreleased
+
+- SQLite inserts now apply a table's insert defaults (see vantage-table 0.6.6): `insert` and
+  `insert_return_id` fill columns the caller left null/absent from `Table::defaults`, so a row
+  inserted into an equality-scoped set (e.g. a traversed has-many relation) picks up its foreign key
+  automatically. A caller-supplied non-null value is never overwritten.
+
 ## 0.6.2
 
 ### Added

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.6 — unreleased
+
+- `ActiveEntity::related::<E2>("rel")` (via the new `RelatedEntityExt` trait): traverse a relation
+  from a loaded record, the record-level equivalent of `Table::get_ref_from_row`. The entity's id is
+  injected into the row before traversal so has-many relations resolve.
+- An equality scope now implies an insert default: a table narrowed by a literal `column = value`
+  (via `with_id` or `Reference::resolve_from_row`) records that value as a default, so a row inserted
+  into the set conforms to it (e.g. a has-many child picks up its parent's foreign key). Only plain
+  `column = value` scopes register a default — never expression conditions. Backends fill the default
+  for columns the caller left null/absent on insert; a caller-supplied value always wins. New
+  `Table::add_default` / `with_default` / `defaults`.
+
 ## 0.6.5 — unreleased
 
 - Docs: `ExpressionFn`'s doc comment no longer intra-doc-links to the private `Table::as_entity_erased`,
