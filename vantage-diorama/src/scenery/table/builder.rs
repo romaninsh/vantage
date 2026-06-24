@@ -151,7 +151,8 @@ impl TableSceneryBuilder {
             load_in_flight: Mutex::new(None),
             master_capabilities,
             two_pass,
-            index,
+            index: RwLock::new(index),
+            registry_key: Mutex::new(Some(key.clone())),
             detail_in_flight: Mutex::new(std::collections::HashSet::new()),
             list_in_flight: Mutex::new(false),
         });
@@ -170,7 +171,7 @@ impl TableSceneryBuilder {
             // first list page. The detail pass stays dormant until a viewport
             // is set, so opening yields `Incomplete` rows with zero detail
             // calls.
-            let index_empty = state.index.as_ref().map(|i| i.is_empty()).unwrap_or(true);
+            let index_empty = state.index().map(|i| i.is_empty()).unwrap_or(true);
             if index_empty {
                 super::two_pass::run_list_page(state.clone()).await;
             } else {
