@@ -67,6 +67,10 @@ pub(crate) struct TableSceneryState {
     // the legacy single-pass path.
     /// Whether this scenery drives two-pass (list + detail) loading.
     pub(crate) two_pass: bool,
+    /// Dropdown / autocomplete projection: serve the cheap list columns and
+    /// **skip the detail pass** even on a two-pass table. The list pass still
+    /// runs (rows carry id + title columns); per-row hydration never fires.
+    pub(crate) titles_only: bool,
     /// The shared per-query ordered index for this scenery's conditions/sort,
     /// keyed by [`Vista::index_key`](vantage_vista::Vista::index_key). `None` in single-pass mode.
     /// Swappable: a `set_sort` / `set_search` re-points it at the index for the

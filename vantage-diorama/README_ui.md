@@ -93,6 +93,33 @@ drop(elsewhere);
 assert_eq!(dio.live_table_scenery_count(), 0); // released → evicted, no leak
 ```
 
+## Dropdowns & autocomplete reuse the grid mechanic
+
+A dropdown (FK picker) and an autocomplete are the **same** `TableScenery` a grid
+binds to — just projected to the title columns. Open with `.titles_only()`:
+
+```rust
+// A country picker — id + title columns, lazily loaded, search-as-you-type.
+let countries = countries_dio.table_scenery().titles_only().open().await?;
+// DropdownField renders `countries.row(i)`'s title column and submits its id.
+// AutocompleteField additionally forwards keystrokes:
+//   countries.set_search((!q.is_empty()).then(|| q));
+// and its visible band:
+//   countries.set_viewport(visible);
+```
+
+Everything you already know about grids applies: the visible band drives loading
+via `set_viewport`, typeahead drives `set_search`, and the dedup registry means a
+form with eight pickers over the same lookup table costs **one** scenery, not
+eight (see *Sharing and lifecycle*).
+
+The one difference `.titles_only()` makes is on an **augmented (two-pass)**
+lookup: it suppresses the detail pass. The picker serves the cheap list-pass
+rows (id + title) and never pays for per-row hydration, so a 10,000-row lookup
+opens a picker as cheaply as it lists. A `titles_only` picker and a full grid
+over the same query are deliberately distinct sceneries — the grid hydrates, the
+picker doesn't — so neither drags cost onto the other.
+
 ## The pull-on-render contract
 
 GPUI's `TableDelegate` polls the delegate on every render frame. The relevant

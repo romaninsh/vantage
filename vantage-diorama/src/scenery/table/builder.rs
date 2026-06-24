@@ -22,6 +22,7 @@ pub struct TableSceneryBuilder {
     pub(crate) page_size: usize,
     pub(crate) eager: bool,
     pub(crate) initial_range: Option<std::ops::Range<usize>>,
+    pub(crate) titles_only: bool,
 }
 
 impl TableSceneryBuilder {
@@ -34,6 +35,7 @@ impl TableSceneryBuilder {
             page_size: 100,
             eager: false,
             initial_range: None,
+            titles_only: false,
         }
     }
 
@@ -73,6 +75,19 @@ impl TableSceneryBuilder {
         self
     }
 
+    /// Project to the cheap title columns only — the dropdown / autocomplete
+    /// shape. On an **augmented (two-pass)** table this suppresses the detail
+    /// pass entirely: the scenery serves the list-pass rows (id + title columns)
+    /// and never pays for per-row hydration, so a 10,000-row lookup opens a
+    /// picker as cheaply as it lists. Same mechanic as a grid otherwise —
+    /// `set_search` for typeahead, `set_viewport` for the visible band. A
+    /// `titles_only` picker and a full grid over the same query are distinct
+    /// sceneries (the grid hydrates, the picker doesn't).
+    pub fn titles_only(mut self) -> Self {
+        self.titles_only = true;
+        self
+    }
+
     /// Open the Scenery — runs `total_provider` (if configured),
     /// seeds the sparse map from the cache, spawns the reactor and
     /// viewport-debounce tasks, optionally schedules a background
@@ -86,11 +101,14 @@ impl TableSceneryBuilder {
             page_size,
             eager: _,
             initial_range,
+            titles_only,
         } = self;
 
-        // Dedup key over (shape, conditions, sort, search). A live scenery
-        // for the same query is shared — one reactor, one cache window, one
-        // in-flight JoinSet — instead of standing up a parallel copy.
+        // Dedup key over (shape, conditions, sort, search, titles_only). A live
+        // scenery for the same query is shared — one reactor, one cache window,
+        // one in-flight JoinSet — instead of standing up a parallel copy. A
+        // `titles_only` picker keys distinctly from a full grid so the picker
+        // never inherits the grid's detail hydration.
         let key = {
             let vista_sort = sort.as_ref().map(|(col, dir)| {
                 let dir = match dir {
@@ -100,9 +118,10 @@ impl TableSceneryBuilder {
                 (col.as_str(), dir)
             });
             format!(
-                "table\u{1}{}\u{1}{}",
+                "table\u{1}{}\u{1}{}\u{1}{}",
                 dio.master.index_key(&conditions, vista_sort),
                 search.as_deref().unwrap_or(""),
+                titles_only as u8,
             )
         };
         if let Some(existing) = dio.lookup_table_scenery(&key) {
@@ -151,6 +170,7 @@ impl TableSceneryBuilder {
             load_in_flight: Mutex::new(None),
             master_capabilities,
             two_pass,
+            titles_only,
             index: RwLock::new(index),
             registry_key: Mutex::new(Some(key.clone())),
             detail_in_flight: Mutex::new(std::collections::HashSet::new()),
