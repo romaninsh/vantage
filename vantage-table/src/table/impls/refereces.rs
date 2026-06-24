@@ -299,7 +299,9 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
             .name()
             .to_string();
         let id = id.into();
-        let condition = self.data_source().eq_value_condition(&id_name, id.clone())?;
+        let condition = self
+            .data_source()
+            .eq_value_condition(&id_name, id.clone())?;
         self.add_condition(condition);
         // A row inserted into "this id" should conform to it.
         self.add_default(id_name, id);
