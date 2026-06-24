@@ -277,7 +277,10 @@ async fn sort_change_restarts_augmentation_without_scrolling() {
     );
     // Soft-refresh: the visible row never blanks to None, and its augmented
     // (detail) columns survive the reorder because the cache is keyed by id.
-    assert!(scenery.row(0).is_some(), "row 0 stays present across the resort");
+    assert!(
+        scenery.row(0).is_some(),
+        "row 0 stays present across the resort"
+    );
     assert_eq!(detail_of(&scenery, 0).as_deref(), Some("full-r0"));
 
     // Reverting to a variant already listed reorders straight from cache — its
@@ -315,20 +318,34 @@ async fn titles_only_picker_skips_detail_hydration() {
     let lens = two_pass_lens(tmp.path(), &log);
     let dio = open_dio(&lens, &make_cmd(&log)).await;
 
-    let picker = dio.table_scenery().titles_only().page_size(2).open().await.unwrap();
+    let picker = dio
+        .table_scenery()
+        .titles_only()
+        .page_size(2)
+        .open()
+        .await
+        .unwrap();
     picker.set_viewport(0..2);
     // Let the viewport debounce + (suppressed) detail path run.
     tokio::time::sleep(Duration::from_millis(30)).await;
 
     // List columns are present; the row stays Incomplete and no detail ran.
-    assert_eq!(branch_of(&picker, 0).as_deref(), Some("main"), "title column listed");
+    assert_eq!(
+        branch_of(&picker, 0).as_deref(),
+        Some("main"),
+        "title column listed"
+    );
     assert!(
         matches!(status_of(&picker, 0), Some(RowStatus::Incomplete)),
         "picker rows stay Incomplete: {:?}",
         status_of(&picker, 0)
     );
     assert!(detail_of(&picker, 0).is_none(), "no detail column");
-    assert_eq!(count_with_prefix(&log, "detail"), 0, "picker must not hydrate");
+    assert_eq!(
+        count_with_prefix(&log, "detail"),
+        0,
+        "picker must not hydrate"
+    );
     assert_eq!(count_with_prefix(&log, "list"), 1, "one list page");
 
     // A full grid over the same query is a DISTINCT scenery (it hydrates), so
@@ -362,7 +379,13 @@ async fn diagnostics_report_sceneries_refcount_and_hydration() {
     let dio = open_dio(&lens, &make_cmd(&log)).await;
 
     // A picker (titles_only) lists cheap rows — Incomplete, never hydrated.
-    let picker = dio.table_scenery().titles_only().page_size(2).open().await.unwrap();
+    let picker = dio
+        .table_scenery()
+        .titles_only()
+        .page_size(2)
+        .open()
+        .await
+        .unwrap();
     eventually("picker listed", || picker.row_count() >= 2).await;
 
     let d = dio.diagnostics().await;
@@ -376,7 +399,13 @@ async fn diagnostics_report_sceneries_refcount_and_hydration() {
     assert_eq!(d.sceneries[0].status.fresh, 0);
 
     // Dedup: re-opening the same picker query shares it → refcount 2.
-    let picker2 = dio.table_scenery().titles_only().page_size(2).open().await.unwrap();
+    let picker2 = dio
+        .table_scenery()
+        .titles_only()
+        .page_size(2)
+        .open()
+        .await
+        .unwrap();
     assert_eq!(dio.diagnostics().await.sceneries[0].refcount, 2);
 
     // A full grid is a distinct scenery that hydrates → Fresh rows.

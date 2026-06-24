@@ -83,7 +83,7 @@ pub(crate) struct DioInner {
     /// the one shared `Arc` (one reactor, one cache window, one in-flight
     /// `JoinSet`), and the entry self-heals once the last widget releases
     /// it. This is what makes "scenery must be cheap" true and what lets a
-    /// closing grid stop pulling — see [`TableSceneryImpl`]'s drop guard.
+    /// closing grid stop pulling — see `TableSceneryImpl`'s drop guard.
     pub(crate) table_sceneries:
         std::sync::Mutex<std::collections::HashMap<String, std::sync::Weak<dyn TableScenery>>>,
 }
@@ -192,7 +192,7 @@ impl Dio {
         self.inner.write_worker.lock().await.take()
     }
 
-    /// Start a [`TableScenery`](crate::scenery::TableScenery) builder
+    /// Start a [`TableScenery`] builder
     /// for this Dio. Chainable; call `.open().await` to spawn the
     /// reactive view.
     pub fn table_scenery(&self) -> TableSceneryBuilder {

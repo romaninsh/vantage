@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.3 — unreleased
+
+### Added
+
+- `MockShell` mutation helpers (`set_record`, `set_field`, `remove_record`, `clear_records`): opt-in,
+  interior-mutable knobs for scripting server-side dataset changes mid-test. Back `vantage-diorama`'s
+  scriptable test source (refresh / reload / soft-refresh scenarios). Read-only `MockShell` behaviour
+  is unchanged.
+
 ## 0.6.2 — unreleased
 
 ### Added

@@ -17,7 +17,7 @@ use crate::{
 /// expression only ever reads entity-agnostic table state (columns and
 /// relations by name, conditions, subqueries), never the entity's typed fields.
 /// [`Table::with_expression`] adapts the caller's `Fn(&Table<T, E>)` into this
-/// shape; see [`Table::as_entity_erased`] for the soundness of the cast.
+/// shape; see `Table::as_entity_erased` for the soundness of the cast.
 pub type ExpressionFn<T> =
     Arc<dyn Fn(&Table<T, EmptyEntity>) -> Expression<<T as TableSource>::Value> + Send + Sync>;
 

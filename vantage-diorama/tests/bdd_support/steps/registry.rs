@@ -38,7 +38,10 @@ async fn same_object(w: &mut DioramaWorld) {
 async fn live_count(w: &mut DioramaWorld, expected: usize) {
     let dio = w.dio.as_ref().expect("dio not created");
     let got = dio.live_table_scenery_count();
-    assert_eq!(got, expected, "live table scenery count: want {expected}, got {got}");
+    assert_eq!(
+        got, expected,
+        "live table scenery count: want {expected}, got {got}"
+    );
 }
 
 #[when("the table scenery handles are released")]
