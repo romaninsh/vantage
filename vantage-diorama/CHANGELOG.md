@@ -2,6 +2,14 @@
 
 ## 0.6.3 — unreleased
 
+- `titles_only()` table-scenery projection — the dropdown / autocomplete shape.
+  A picker binds to the same `TableScenery` a grid does (visible band →
+  `set_viewport`, typeahead → `set_search`), projected to the title columns. On
+  an augmented (two-pass) lookup, `titles_only` **suppresses the detail pass**:
+  the picker serves the cheap list-pass rows and never pays for per-row
+  hydration, so a large lookup opens a picker as cheaply as it lists. A
+  `titles_only` picker keys distinctly in the dedup registry from a full grid
+  over the same query, so neither inherits the other's hydration.
 - Optimistic writes. `Dio::write_optimistic(op)` (and the `patch_optimistic`
   shorthand) stage a write in the cache and announce it (`WritePending`) before
   the write-through runs, so a form edit shows instantly as
