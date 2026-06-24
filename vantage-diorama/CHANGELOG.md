@@ -2,6 +2,16 @@
 
 ## 0.6.3 — unreleased
 
+- Soft-refresh sort for augmented (two-pass) grids. Changing a two-pass
+  scenery's sort (or search) now rebuilds the ordered index for the new variant
+  and **restarts the detail pass for the visible window** — augmentation resumes
+  without the user scrolling. Previously `set_sort` dropped two-pass sceneries
+  onto the single-pass reseed path, which never re-listed the variant nor
+  re-issued the viewport, so hydration silently stalled. The reorder re-seeds
+  from cache in one atomic swap (the grid never blanks), a previously-seen sort
+  reorders with no refetch, and a scenery that mutates its own sort/search in
+  place leaves the dedup registry (it's no longer the shareable canonical view
+  for the original query).
 - Deduplicating scenery registry. Opening a `TableScenery` for a
   `(conditions, sort, search)` that is already live now returns the **same**
   shared `Arc` — one reactor, one cache window, one in-flight fetch — instead of

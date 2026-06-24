@@ -24,8 +24,16 @@ pub(crate) async fn reload_loop(
         }
 
         tokio::select! {
+            // `set_sort` / `set_search` ping `reload_notify`. A two-pass
+            // scenery must rebuild its ordered index and restart hydration
+            // (single-pass `reseed_from_cache` re-sorts in memory and is
+            // enough on its own).
             _ = state.reload_notify.notified() => {
-                reseed(&state).await;
+                if state.two_pass {
+                    super::two_pass::resort(state.clone()).await;
+                } else {
+                    reseed(&state).await;
+                }
             }
             recv = bus.recv() => {
                 match recv {

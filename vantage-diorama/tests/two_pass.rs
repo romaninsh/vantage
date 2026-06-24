@@ -19,7 +19,7 @@ use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_cmd::{Cmd, CmdSpec, eq};
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Dio, Lens, RowStatus, TableScenery};
+use vantage_diorama::{Dio, Lens, RowStatus, SortDir, TableScenery};
 use vantage_table::pagination::Pagination;
 use vantage_table::table::Table;
 use vantage_types::EmptyEntity;
@@ -235,6 +235,73 @@ async fn detail_pass_hydrates_visible_rows_once_in_order() {
     eventually("debounce settles", || true).await;
     tokio::time::sleep(Duration::from_millis(20)).await;
     assert_eq!(count_with_prefix(&log, "detail"), 2, "no re-hydration");
+}
+
+/// Regression (soft-refresh sort): changing the sort **restarts the detail
+/// pass for the visible window without a scroll**. Before the fix, `set_sort`
+/// dropped a two-pass scenery onto the single-pass reseed path, which never
+/// rebuilt the ordered index nor re-issued the viewport — so augmentation
+/// silently stopped until the user happened to scroll.
+#[tokio::test]
+async fn sort_change_restarts_augmentation_without_scrolling() {
+    let tmp = TempDir::new().unwrap();
+    let log = tmp.path().join("calls.log");
+    let lens = two_pass_lens(tmp.path(), &log);
+    let dio = open_dio(&lens, &make_cmd(&log)).await;
+
+    let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
+    scenery.set_viewport(0..2);
+    eventually("initial hydration", || {
+        matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
+            && matches!(status_of(&scenery, 1), Some(RowStatus::Fresh))
+    })
+    .await;
+    let list_before = count_with_prefix(&log, "list");
+
+    // Change the sort in place — NO new set_viewport. The machinery must rebuild
+    // the ordered index for the new variant (one list page) and restart the
+    // detail pass on its own. Before the fix, set_sort fell to the single-pass
+    // reseed-from-cache path: it never listed the new variant nor re-issued the
+    // viewport, so `list` stayed flat and augmentation was dead.
+    scenery.set_sort(Some("branch".to_string()), SortDir::Asc);
+
+    eventually("new sort variant is listed", || {
+        count_with_prefix(&log, "list") > list_before
+            && matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
+    })
+    .await;
+
+    assert!(
+        count_with_prefix(&log, "list") > list_before,
+        "a sort change must list the new variant, not silently reseed from cache"
+    );
+    // Soft-refresh: the visible row never blanks to None, and its augmented
+    // (detail) columns survive the reorder because the cache is keyed by id.
+    assert!(scenery.row(0).is_some(), "row 0 stays present across the resort");
+    assert_eq!(detail_of(&scenery, 0).as_deref(), Some("full-r0"));
+
+    // Reverting to a variant already listed reorders straight from cache — its
+    // index exists and its rows are `Complete`, so neither a list nor a detail
+    // call is issued, and the grid never blanks.
+    let list_after_sort = count_with_prefix(&log, "list");
+    let detail_after_sort = count_with_prefix(&log, "detail");
+    scenery.set_sort(None, SortDir::Asc);
+    eventually("revert reseeds from cache", || {
+        matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert_eq!(
+        count_with_prefix(&log, "list"),
+        list_after_sort,
+        "reverting to a seen variant must not re-list it"
+    );
+    assert_eq!(
+        count_with_prefix(&log, "detail"),
+        detail_after_sort,
+        "reverting must not re-fetch already-complete details"
+    );
+    assert!(scenery.row(0).is_some(), "row 0 never blanks on revert");
 }
 
 /// Sequential, no-total paging: each `request_load_more` fetches the next list

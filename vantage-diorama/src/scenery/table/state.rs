@@ -69,7 +69,14 @@ pub(crate) struct TableSceneryState {
     pub(crate) two_pass: bool,
     /// The shared per-query ordered index for this scenery's conditions/sort,
     /// keyed by [`Vista::index_key`](vantage_vista::Vista::index_key). `None` in single-pass mode.
-    pub(crate) index: Option<Arc<crate::dio::query_index::QueryIndex>>,
+    /// Swappable: a `set_sort` / `set_search` re-points it at the index for the
+    /// new variant (see [`resort`](super::two_pass::resort)).
+    pub(crate) index: RwLock<Option<Arc<crate::dio::query_index::QueryIndex>>>,
+    /// This scenery's key in the Dio's dedup registry, captured at open. Cleared
+    /// (and the registry entry removed) the first time the handle mutates its own
+    /// query in place — a bespoke, resorted scenery is no longer the shareable
+    /// canonical one, so a later open under the old key must not get it back.
+    pub(crate) registry_key: Mutex<Option<String>>,
     /// Ids whose detail fetch is currently dispatched — guards against
     /// re-hydrating the same row while a fetch is in flight.
     pub(crate) detail_in_flight: Mutex<std::collections::HashSet<String>>,
@@ -86,6 +93,27 @@ impl TableSceneryState {
 
     pub(crate) fn current_generation(&self) -> u64 {
         self.generation.load(Ordering::SeqCst)
+    }
+
+    /// Current two-pass index (cloned `Arc`), or `None` in single-pass mode.
+    pub(crate) fn index(&self) -> Option<Arc<crate::dio::query_index::QueryIndex>> {
+        self.index.read().unwrap().clone()
+    }
+
+    /// Re-point the two-pass index at a different query variant's ordered index.
+    pub(crate) fn set_index(&self, index: Option<Arc<crate::dio::query_index::QueryIndex>>) {
+        *self.index.write().unwrap() = index;
+    }
+
+    /// Drop this scenery's dedup-registry entry the first time it mutates its
+    /// own query (sort/search) in place. Idempotent: the key is taken once.
+    pub(crate) fn deregister(&self) {
+        let Some(key) = self.registry_key.lock().unwrap().take() else {
+            return;
+        };
+        if let Some(dio) = self.dio_weak.upgrade() {
+            dio.table_sceneries.lock().unwrap().remove(&key);
+        }
     }
 
     /// Replace the sparse map from a freshly-listed cache snapshot.

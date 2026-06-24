@@ -107,7 +107,7 @@ impl Drop for SceneryGuard {
 
 impl TableScenery for TableSceneryImpl {
     fn row_count(&self) -> usize {
-        if let Some(index) = self.inner.index.as_ref() {
+        if let Some(index) = self.inner.index() {
             return index.len();
         }
         if let Some(t) = *self.inner.total.read().unwrap() {
@@ -119,7 +119,7 @@ impl TableScenery for TableSceneryImpl {
     fn has_more(&self) -> bool {
         // Two-pass / sequential no-total: more pages exist until the list pass
         // sees a short or empty page.
-        if let Some(index) = self.inner.index.as_ref() {
+        if let Some(index) = self.inner.index() {
             return !index.is_complete();
         }
         let total = *self.inner.total.read().unwrap();
@@ -133,7 +133,7 @@ impl TableScenery for TableSceneryImpl {
     fn estimated_total(&self) -> Option<usize> {
         // Two-pass: the running index length is the best estimate; it grows as
         // pages load and freezes once the list pass completes.
-        if let Some(index) = self.inner.index.as_ref() {
+        if let Some(index) = self.inner.index() {
             return Some(index.len());
         }
         let stored = *self.inner.total.read().unwrap();
@@ -204,11 +204,13 @@ impl TableScenery for TableSceneryImpl {
     }
 
     fn set_search(&self, query: Option<String>) {
+        self.inner.deregister();
         *self.inner.search.write().unwrap() = query;
         self.inner.reload_notify.notify_one();
     }
 
     fn set_sort(&self, column: Option<String>, dir: SortDir) {
+        self.inner.deregister();
         *self.inner.sort.write().unwrap() = column.map(|c| (c, dir));
         self.inner.reload_notify.notify_one();
     }
