@@ -595,3 +595,27 @@ let report_lens = Arc::new(
 
 Dios under different Lenses are independent. Cross-Lens invalidation, if you
 need it, is done explicitly in callbacks.
+
+## Reloading — when the source itself changes
+
+A Vista is produced by a VistaFactory, and that factory can reload: someone edits
+the YAML that defines a table, or the script that backs it, and the dataset is now
+*wholly different* — not just a few changed rows. That's not a refresh (same
+shape, new values); it's a **reload** (new master Vista, new data).
+
+`dio.reload(new_master)` handles it without tearing the Dio down or blanking the
+UI:
+
+```rust
+// The catalog rebuilt this model's Vista; hand the Dio the new one.
+let fresh = catalog.build_vista("orders")?;
+dio.reload(fresh).await?;
+```
+
+What it does, in order: swaps the master Vista, drops the stale per-query indexes
+(two-pass orders rebuild against the new data), clears and refills the cache from
+the new master via your `on_start` (or `on_refresh`), and only then publishes one
+`Invalidated`. Open sceneries keep showing their current rows the whole time and
+swap to the new data in a single atomic step on that `Invalidated` — so a grid
+mid-scroll never flashes empty, even though the dataset changed underneath it.
+"Responsive first, eventually precise," applied to a source reload.

@@ -119,7 +119,7 @@ impl TableSceneryBuilder {
             });
             format!(
                 "table\u{1}{}\u{1}{}\u{1}{}",
-                dio.master.index_key(&conditions, vista_sort),
+                dio.master.read().unwrap().index_key(&conditions, vista_sort),
                 search.as_deref().unwrap_or(""),
                 titles_only as u8,
             )
@@ -131,7 +131,7 @@ impl TableSceneryBuilder {
         let (gen_tx, _gen_rx) = watch::channel(Generation::default());
         let (viewport_tx, viewport_rx) = mpsc::unbounded_channel();
 
-        let master_capabilities = dio.master.capabilities().clone();
+        let master_capabilities = dio.master.read().unwrap().capabilities().clone();
 
         // Two-pass engages only when the Lens registers an `on_load_detail`
         // callback. The shared per-query index is keyed by the master Vista's
@@ -146,7 +146,7 @@ impl TableSceneryBuilder {
                 };
                 (col.as_str(), dir)
             });
-            let key = dio.master.index_key(&conditions, vista_sort);
+            let key = dio.master.read().unwrap().index_key(&conditions, vista_sort);
             Some(dio.query_index(&key))
         } else {
             None
