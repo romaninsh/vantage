@@ -119,7 +119,10 @@ impl TableSceneryBuilder {
             });
             format!(
                 "table\u{1}{}\u{1}{}\u{1}{}",
-                dio.master.read().unwrap().index_key(&conditions, vista_sort),
+                dio.master
+                    .read()
+                    .unwrap()
+                    .index_key(&conditions, vista_sort),
                 search.as_deref().unwrap_or(""),
                 titles_only as u8,
             )
@@ -146,7 +149,11 @@ impl TableSceneryBuilder {
                 };
                 (col.as_str(), dir)
             });
-            let key = dio.master.read().unwrap().index_key(&conditions, vista_sort);
+            let key = dio
+                .master
+                .read()
+                .unwrap()
+                .index_key(&conditions, vista_sort);
             Some(dio.query_index(&key))
         } else {
             None

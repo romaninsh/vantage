@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.5 — unreleased
+
+- Docs: `ExpressionFn`'s doc comment no longer intra-doc-links to the private `Table::as_entity_erased`,
+  which broke `cargo doc -D warnings` (and docs.rs) under `rustdoc::private_intra_doc_links`. No API change.
+
 ## 0.6.4 — unreleased
 
 - `Pagination::window(offset, limit)` for random-access `[offset, offset + limit)` windows whose

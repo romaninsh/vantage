@@ -53,12 +53,12 @@ async fn eager_lens(cache_path: std::path::PathBuf) -> Arc<Lens> {
 }
 
 fn name_at(scenery: &Arc<dyn TableScenery>, idx: usize) -> Option<String> {
-    scenery
-        .row(idx)
-        .and_then(|r| r.record.get("name").and_then(|v| match v {
+    scenery.row(idx).and_then(|r| {
+        r.record.get("name").and_then(|v| match v {
             CborValue::Text(s) => Some(s.clone()),
             _ => None,
-        }))
+        })
+    })
 }
 
 async fn eventually(label: &str, f: impl Fn() -> bool) {
@@ -121,6 +121,9 @@ async fn reload_swaps_dataset_without_blanking() -> Result<()> {
 
     // No blank: the view never showed fewer than the original 2 rows.
     let min = min_seen.load(Ordering::SeqCst);
-    assert!(min >= 2, "scenery blanked mid-reload — min row_count was {min}");
+    assert!(
+        min >= 2,
+        "scenery blanked mid-reload — min row_count was {min}"
+    );
     Ok(())
 }

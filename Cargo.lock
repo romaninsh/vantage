@@ -4660,7 +4660,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-pool"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -4804,7 +4804,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4991,7 +4991,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -5041,7 +5041,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "async-stream",
  "async-trait",

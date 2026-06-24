@@ -20,11 +20,11 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use tokio::sync::{RwLock, Semaphore};
 
 /// Retry/backoff knobs. Backoff is exponential from `base` (doubling per
@@ -206,17 +206,22 @@ impl ResilientClient {
                         return Ok(resp);
                     }
                     // 401 → refresh the token once and replay (not a retry).
-                    if status.as_u16() == 401 && self.auth.is_some() && !refreshed {
-                        refreshed = true;
-                        self.auth.as_ref().unwrap().reacquire().await?;
-                        continue;
+                    if status.as_u16() == 401 && !refreshed {
+                        if let Some(auth) = self.auth.as_ref() {
+                            refreshed = true;
+                            auth.reacquire().await?;
+                            continue;
+                        }
                     }
                     // 429 / 5xx → backoff + retry.
                     if status.as_u16() == 429 || status.is_server_error() {
                         if attempt >= self.policy.max_retries {
-                            return Err(anyhow!("giving up after {attempt} retries: HTTP {status}"));
+                            return Err(anyhow!(
+                                "giving up after {attempt} retries: HTTP {status}"
+                            ));
                         }
-                        let delay = retry_after(&resp).unwrap_or_else(|| self.policy.backoff(attempt));
+                        let delay =
+                            retry_after(&resp).unwrap_or_else(|| self.policy.backoff(attempt));
                         attempt += 1;
                         tokio::time::sleep(with_jitter(delay)).await;
                         continue;
@@ -244,7 +249,13 @@ impl ResilientClient {
 }
 
 fn retry_after(resp: &reqwest::Response) -> Option<Duration> {
-    let secs: u64 = resp.headers().get("retry-after")?.to_str().ok()?.parse().ok()?;
+    let secs: u64 = resp
+        .headers()
+        .get("retry-after")?
+        .to_str()
+        .ok()?
+        .parse()
+        .ok()?;
     (secs >= 1).then(|| Duration::from_secs(secs))
 }
 
@@ -292,12 +303,21 @@ impl ResilientClientBuilder {
     /// Apply a bearer-style auth token, re-acquired lazily and on `401`.
     /// `refresher` returns the token value (without the scheme prefix).
     pub fn bearer_auth(mut self, refresher: AuthRefresher) -> Self {
-        self.auth = Some((refresher, "Authorization".to_string(), "Bearer ".to_string()));
+        self.auth = Some((
+            refresher,
+            "Authorization".to_string(),
+            "Bearer ".to_string(),
+        ));
         self
     }
 
     /// Apply auth with a custom header name and scheme prefix.
-    pub fn auth(mut self, refresher: AuthRefresher, header: impl Into<String>, scheme: impl Into<String>) -> Self {
+    pub fn auth(
+        mut self,
+        refresher: AuthRefresher,
+        header: impl Into<String>,
+        scheme: impl Into<String>,
+    ) -> Self {
         self.auth = Some((refresher, header.into(), scheme.into()));
         self
     }
@@ -312,15 +332,13 @@ impl ResilientClientBuilder {
             http: self.http.unwrap_or_default(),
             semaphore: Arc::new(Semaphore::new(self.max_parallel)),
             policy: self.policy,
-            breaker: self
-                .breaker
-                .map(|(threshold, cooldown)| {
-                    Arc::new(CircuitBreaker {
-                        threshold,
-                        cooldown,
-                        inner: std::sync::Mutex::new(BreakerInner::default()),
-                    })
-                }),
+            breaker: self.breaker.map(|(threshold, cooldown)| {
+                Arc::new(CircuitBreaker {
+                    threshold,
+                    cooldown,
+                    inner: std::sync::Mutex::new(BreakerInner::default()),
+                })
+            }),
             auth: self.auth.map(|(refresh, header, scheme)| {
                 Arc::new(AuthState {
                     token: RwLock::new(None),
