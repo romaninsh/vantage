@@ -1,0 +1,6 @@
+---
+source: vantage-diorama/tests/bdd_support/steps/assertions.rs
+expression: events
+---
+- "WritePending { id: \"a\" }"
+- "RecordChanged { id: \"a\" }"

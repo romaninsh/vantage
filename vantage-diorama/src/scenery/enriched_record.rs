@@ -40,6 +40,28 @@ impl EnrichedRecord {
         }
     }
 
+    /// Wrap a row carrying an **optimistically-staged** write — the new value
+    /// is shown immediately while the write-through is in flight.
+    pub fn pending_write(record: Record<CborValue>) -> Self {
+        Self {
+            record,
+            status: RowStatus::PendingWrite,
+            dirty_fields: None,
+            fetched_at: Some(SystemTime::now()),
+        }
+    }
+
+    /// Wrap a row whose optimistic write failed and was rolled back: `record`
+    /// is the restored pre-image, `status` carries the error for the UI.
+    pub fn write_failed(record: Record<CborValue>, error: String) -> Self {
+        Self {
+            record,
+            status: RowStatus::WriteFailed { error },
+            dirty_fields: None,
+            fetched_at: Some(SystemTime::now()),
+        }
+    }
+
     /// Mark a row whose detail pass failed. Keeps the partial (list-pass)
     /// `record` so the row stays visible, but records the error so the UI can
     /// surface it. Carries over the previous `fetched_at`.
