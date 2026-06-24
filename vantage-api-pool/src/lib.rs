@@ -31,3 +31,6 @@ pub use paginator::PaginatedStream3;
 
 mod pool_api;
 pub use pool_api::PoolApi;
+
+pub mod resilient;
+pub use resilient::{AuthRefresher, ResilientClient, ResilientClientBuilder, RetryPolicy};
