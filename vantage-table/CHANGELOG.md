@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.7 — 2026-06-25
+
+- Lifecycle hooks on `Table`, registered with `Table::with_hook(Hook::…)`. The `Hook` enum carries
+  a placement-specific async closure: `BeforeInsert`/`BeforeUpdate`/`BeforeSave` (and `After*`) run
+  on the record around a write; `BeforeDelete`/`AfterDelete` run around a delete. Before-write hooks
+  run ahead of invariant enforcement, ordered by `Phase` (`Normalize` → `Populate` → `Validate`,
+  then registration order), and may mutate the record (audit stamps, normalization) or return an
+  error to cancel the write. `BeforeDelete` may instead return `HookReturn::Handled` to take over —
+  e.g. a soft-delete that patches a marker and skips the real `DELETE`. After-commit hooks fire for
+  side-effects (the delete hook receives the row's former contents). Hooks receive the
+  entity-erased table for relation/datasource access. Both the typed-entity and raw-record write
+  paths fire them; `delete_all` does not.
+
 ## 0.6.6 — 2026-06-25
 
 - `ActiveEntity::get_ref::<E2>("rel")` and `ActiveRecord::get_ref::<E2>("rel")` (via the new

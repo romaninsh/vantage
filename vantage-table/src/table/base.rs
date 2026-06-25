@@ -1,9 +1,11 @@
+use std::future::Future;
 use std::marker::PhantomData;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use indexmap::IndexMap;
 use vantage_expressions::Expression;
-use vantage_types::{EmptyEntity, Entity};
+use vantage_types::{EmptyEntity, Entity, Record};
 
 use crate::{
     pagination::Pagination, references::Reference, sorting::SortDirection,
@@ -20,6 +22,78 @@ use crate::{
 /// shape; see `Table::as_entity_erased` for the soundness of the cast.
 pub type ExpressionFn<T> =
     Arc<dyn Fn(&Table<T, EmptyEntity>) -> Expression<<T as TableSource>::Value> + Send + Sync>;
+
+/// Ordering band for before-write hooks. Hooks run in this order (and in
+/// registration order within a band), ahead of set-invariant enforcement.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Phase {
+    /// Clean inputs (trim, default empties).
+    Normalize,
+    /// Set or compute fields (audit stamps, derived values). The default.
+    Populate,
+    /// Read-only checks, last — so they see the final record.
+    Validate,
+}
+
+/// What a `before_delete` hook decided.
+pub enum HookReturn {
+    /// Carry out the underlying operation.
+    Proceed,
+    /// The hook already performed the operation (e.g. a soft-delete patch); skip
+    /// the real one and report success.
+    Handled,
+}
+
+/// A before-write hook: mutate the record in place ahead of invariant
+/// enforcement, returning `Err` to cancel the write. Receives the record being
+/// written and the (entity-erased) table for relation/datasource access.
+pub type BeforeFn<T> = Arc<
+    dyn for<'r> Fn(
+            &'r mut Record<<T as TableSource>::Value>,
+            &'r Table<T, EmptyEntity>,
+        ) -> Pin<Box<dyn Future<Output = vantage_core::Result<()>> + Send + 'r>>
+        + Send
+        + Sync,
+>;
+
+/// A before-delete hook: receives the row id and its current contents; may
+/// `Err` to veto, or return [`HookReturn::Handled`] to take over (soft-delete).
+pub type BeforeDeleteFn<T> = Arc<
+    dyn for<'r> Fn(
+            &'r <T as TableSource>::Id,
+            &'r Record<<T as TableSource>::Value>,
+            &'r Table<T, EmptyEntity>,
+        )
+            -> Pin<Box<dyn Future<Output = vantage_core::Result<HookReturn>> + Send + 'r>>
+        + Send
+        + Sync,
+>;
+
+/// An after-commit hook: side-effects on the committed row (id + record). Used
+/// for inserts, updates, and deletes (where the record is the former contents).
+pub type AfterFn<T> = Arc<
+    dyn for<'r> Fn(
+            &'r <T as TableSource>::Id,
+            &'r Record<<T as TableSource>::Value>,
+            &'r Table<T, EmptyEntity>,
+        ) -> Pin<Box<dyn Future<Output = vantage_core::Result<()>> + Send + 'r>>
+        + Send
+        + Sync,
+>;
+
+/// A lifecycle hook attached to a table via [`Table::with_hook`]. Each variant
+/// carries a closure receiving exactly the references available at that stage.
+/// `BeforeSave`/`AfterSave` are sugar that register for both insert and update.
+pub enum Hook<T: TableSource> {
+    BeforeInsert(Phase, BeforeFn<T>),
+    BeforeUpdate(Phase, BeforeFn<T>),
+    BeforeSave(Phase, BeforeFn<T>),
+    BeforeDelete(BeforeDeleteFn<T>),
+    AfterInsert(AfterFn<T>),
+    AfterUpdate(AfterFn<T>),
+    AfterSave(AfterFn<T>),
+    AfterDelete(AfterFn<T>),
+}
 
 #[derive(Clone)]
 pub struct Table<T, E>
@@ -50,6 +124,14 @@ where
     /// left null/absent is filled, a matching value is kept, and a conflicting
     /// value is rejected.
     pub(super) invariants: IndexMap<String, T::Value>,
+    /// Lifecycle hooks (see [`Hook`]), split by placement and kept phase-sorted
+    /// for the before-write bands. Registered via [`Self::with_hook`].
+    pub(super) before_insert: Vec<(Phase, BeforeFn<T>)>,
+    pub(super) before_update: Vec<(Phase, BeforeFn<T>)>,
+    pub(super) before_delete: Vec<BeforeDeleteFn<T>>,
+    pub(super) after_insert: Vec<AfterFn<T>>,
+    pub(super) after_update: Vec<AfterFn<T>>,
+    pub(super) after_delete: Vec<AfterFn<T>>,
 }
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
@@ -72,6 +154,12 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             title_fields: Vec::new(),
             id_field: None,
             invariants: IndexMap::new(),
+            before_insert: Vec::new(),
+            before_update: Vec::new(),
+            before_delete: Vec::new(),
+            after_insert: Vec::new(),
+            after_update: Vec::new(),
+            after_delete: Vec::new(),
         }
     }
 
@@ -98,6 +186,12 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             title_fields: self.title_fields,
             id_field: self.id_field,
             invariants: self.invariants,
+            before_insert: self.before_insert,
+            before_update: self.before_update,
+            before_delete: self.before_delete,
+            after_insert: self.after_insert,
+            after_update: self.after_update,
+            after_delete: self.after_delete,
         }
     }
 
@@ -255,6 +349,64 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self.add_invariant(column, value);
         self
     }
+
+    pub(crate) fn before_insert_hooks(&self) -> &[(Phase, BeforeFn<T>)] {
+        &self.before_insert
+    }
+    pub(crate) fn before_update_hooks(&self) -> &[(Phase, BeforeFn<T>)] {
+        &self.before_update
+    }
+    pub(crate) fn before_delete_hooks(&self) -> &[BeforeDeleteFn<T>] {
+        &self.before_delete
+    }
+    pub(crate) fn after_insert_hooks(&self) -> &[AfterFn<T>] {
+        &self.after_insert
+    }
+    pub(crate) fn after_update_hooks(&self) -> &[AfterFn<T>] {
+        &self.after_update
+    }
+    pub(crate) fn after_delete_hooks(&self) -> &[AfterFn<T>] {
+        &self.after_delete
+    }
+
+    /// Register a lifecycle [`Hook`]. Before-write hooks are kept ordered by
+    /// [`Phase`] (then registration order); `BeforeSave`/`AfterSave` register
+    /// for both insert and update.
+    pub fn add_hook(&mut self, hook: Hook<T>) {
+        match hook {
+            Hook::BeforeInsert(phase, f) => push_phased(&mut self.before_insert, phase, f),
+            Hook::BeforeUpdate(phase, f) => push_phased(&mut self.before_update, phase, f),
+            Hook::BeforeSave(phase, f) => {
+                push_phased(&mut self.before_insert, phase, f.clone());
+                push_phased(&mut self.before_update, phase, f);
+            }
+            Hook::BeforeDelete(f) => self.before_delete.push(f),
+            Hook::AfterInsert(f) => self.after_insert.push(f),
+            Hook::AfterUpdate(f) => self.after_update.push(f),
+            Hook::AfterSave(f) => {
+                self.after_insert.push(f.clone());
+                self.after_update.push(f);
+            }
+            Hook::AfterDelete(f) => self.after_delete.push(f),
+        }
+    }
+
+    /// Builder form of [`Self::add_hook`].
+    pub fn with_hook(mut self, hook: Hook<T>) -> Self {
+        self.add_hook(hook);
+        self
+    }
+}
+
+/// Append a before-write hook and keep the vector ordered by phase (stable, so
+/// registration order is preserved within a phase).
+fn push_phased<T: TableSource>(
+    hooks: &mut Vec<(Phase, BeforeFn<T>)>,
+    phase: Phase,
+    f: BeforeFn<T>,
+) {
+    hooks.push((phase, f));
+    hooks.sort_by_key(|(p, _)| *p);
 }
 
 impl<T: TableSource, E: Entity<T::Value>> std::ops::Index<&str> for Table<T, E> {

@@ -1,13 +1,22 @@
 use async_trait::async_trait;
 use vantage_core::Result;
-use vantage_dataset::WritableValueSet;
+use vantage_dataset::{ReadableValueSet, WritableValueSet};
 use vantage_types::{Entity, InvariantValue, Record};
 
-use crate::{prelude::TableSource, table::Table, table::sets::invariants::enforce_invariants};
+use crate::{
+    prelude::TableSource,
+    table::HookReturn,
+    table::Table,
+    table::sets::{
+        hooks::{run_after, run_before, run_before_delete},
+        invariants::enforce_invariants,
+    },
+};
 
-// Implement WritableValueSet by enforcing set invariants, then delegating to the
-// data source. A row written into a scoped set must conform however it is
-// written, so insert/replace/patch all run the same check.
+// Implement WritableValueSet by running lifecycle hooks and enforcing set
+// invariants, then delegating to the data source. A row written into a scoped
+// set must conform however it is written, so insert/replace/patch all run
+// invariants; before/after hooks fire around each operation.
 #[async_trait]
 impl<T: TableSource, E: Entity<T::Value>> WritableValueSet for Table<T, E>
 where
@@ -19,11 +28,16 @@ where
         record: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>> {
         let id = id.into();
+        let erased = self.as_entity_erased();
         let mut record = record.clone();
+        run_before(self.before_insert_hooks(), &mut record, erased).await?;
         enforce_invariants(&mut record, self.invariants())?;
-        self.data_source()
+        let result = self
+            .data_source()
             .insert_table_value(self, &id, &record)
-            .await
+            .await?;
+        run_after(self.after_insert_hooks(), &id, &result, erased).await?;
+        Ok(result)
     }
 
     async fn replace_value(
@@ -32,11 +46,16 @@ where
         record: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>> {
         let id = id.into();
+        let erased = self.as_entity_erased();
         let mut record = record.clone();
+        run_before(self.before_update_hooks(), &mut record, erased).await?;
         enforce_invariants(&mut record, self.invariants())?;
-        self.data_source()
+        let result = self
+            .data_source()
             .replace_table_value(self, &id, &record)
-            .await
+            .await?;
+        run_after(self.after_update_hooks(), &id, &result, erased).await?;
+        Ok(result)
     }
 
     async fn patch_value(
@@ -45,15 +64,34 @@ where
         partial: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>> {
         let id = id.into();
+        let erased = self.as_entity_erased();
         let mut partial = partial.clone();
+        run_before(self.before_update_hooks(), &mut partial, erased).await?;
         enforce_invariants(&mut partial, self.invariants())?;
-        self.data_source()
+        let result = self
+            .data_source()
             .patch_table_value(self, &id, &partial)
-            .await
+            .await?;
+        run_after(self.after_update_hooks(), &id, &result, erased).await?;
+        Ok(result)
     }
 
     async fn delete(&self, id: impl Into<Self::Id> + Send) -> Result<()> {
         let id = id.into();
+        // Load the row once so delete hooks can inspect it (the after-hook needs
+        // its former contents). Only pay this when delete hooks are present.
+        if !self.before_delete_hooks().is_empty() || !self.after_delete_hooks().is_empty() {
+            if let Some(former) = self.get_value(id.clone()).await? {
+                let erased = self.as_entity_erased();
+                let outcome =
+                    run_before_delete(self.before_delete_hooks(), &id, &former, erased).await?;
+                if let HookReturn::Proceed = outcome {
+                    self.data_source().delete_table_value(self, &id).await?;
+                }
+                run_after(self.after_delete_hooks(), &id, &former, erased).await?;
+                return Ok(());
+            }
+        }
         self.data_source().delete_table_value(self, &id).await
     }
 
