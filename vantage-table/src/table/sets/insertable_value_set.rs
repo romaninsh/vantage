@@ -3,22 +3,34 @@ use vantage_core::Result;
 use vantage_dataset::prelude::InsertableValueSet;
 use vantage_types::{Entity, InvariantValue, Record};
 
-use crate::{prelude::TableSource, table::Table, table::sets::invariants::enforce_invariants};
+use crate::{
+    prelude::TableSource,
+    table::Table,
+    table::sets::{
+        hooks::{run_after, run_before},
+        invariants::enforce_invariants,
+    },
+};
 
-// Implement InsertableValueSet by enforcing set invariants, then delegating to
-// the data source. The typed-entity path (insertable_dataset) funnels through
-// here too, so conformance is applied in exactly one place.
+// Implement InsertableValueSet by running before-insert hooks, enforcing set
+// invariants, writing, then running after-insert hooks. The typed-entity path
+// (insertable_dataset) funnels through here too, so all of it runs in one place.
 #[async_trait]
 impl<T: TableSource, E: Entity<T::Value>> InsertableValueSet for Table<T, E>
 where
     T::Value: InvariantValue,
 {
     async fn insert_return_id_value(&self, record: &Record<Self::Value>) -> Result<Self::Id> {
+        let erased = self.as_entity_erased();
         let mut record = record.clone();
+        run_before(self.before_insert_hooks(), &mut record, erased).await?;
         enforce_invariants(&mut record, self.invariants())?;
-        self.data_source()
+        let id = self
+            .data_source()
             .insert_table_return_id_value(self, &record)
-            .await
+            .await?;
+        run_after(self.after_insert_hooks(), &id, &record, erased).await?;
+        Ok(id)
     }
 }
 

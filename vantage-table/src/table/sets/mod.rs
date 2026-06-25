@@ -3,6 +3,7 @@ use vantage_types::Entity;
 
 use crate::{prelude::TableSource, table::Table};
 
+pub(crate) mod hooks;
 pub mod insertable_dataset;
 pub mod insertable_value_set;
 pub(crate) mod invariants;
