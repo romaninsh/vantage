@@ -127,6 +127,14 @@ where
         &self.id
     }
 
+    /// Borrow the dataset this record was loaded from.
+    ///
+    /// Mirrors [`ActiveEntity::dataset`]: lets extension traits (e.g. `Table`-level
+    /// relationship traversal) reach the originating dataset.
+    pub fn dataset(&self) -> &D {
+        self.dataset
+    }
+
     /// Save the current state of the record back to the dataset.
     ///
     /// This is a full **replace** (idempotent overwrite), matching

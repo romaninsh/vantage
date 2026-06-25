@@ -2,15 +2,19 @@
 
 ## 0.6.6 — unreleased
 
-- `ActiveEntity::related::<E2>("rel")` (via the new `RelatedEntityExt` trait): traverse a relation
-  from a loaded record, the record-level equivalent of `Table::get_ref_from_row`. The entity's id is
-  injected into the row before traversal so has-many relations resolve.
-- An equality scope now implies an insert default: a table narrowed by a literal `column = value`
-  (via `with_id` or `Reference::resolve_from_row`) records that value as a default, so a row inserted
-  into the set conforms to it (e.g. a has-many child picks up its parent's foreign key). Only plain
-  `column = value` scopes register a default — never expression conditions. Backends fill the default
-  for columns the caller left null/absent on insert; a caller-supplied value always wins. New
-  `Table::add_default` / `with_default` / `defaults`.
+- `ActiveEntity::get_ref::<E2>("rel")` and `ActiveRecord::get_ref::<E2>("rel")` (via the new
+  `GetRefExt` trait): traverse a relation from a loaded record, the record-level equivalent of
+  `Table::get_ref_from_row`. For the typed `ActiveEntity` the entity's id is injected into the row
+  before traversal so has-many relations resolve; the untyped `ActiveRecord` already holds the raw
+  row and forwards directly.
+- An equality scope is a set **invariant**: a table narrowed by a literal `column = value` (via
+  `with_id` or `Reference::resolve_from_row`) carries that value as an invariant, so every row
+  written into the set conforms to it (e.g. a has-many child carries its parent's foreign key). Only
+  plain `column = value` scopes register an invariant — expression conditions do not. Enforcement is
+  generic across all backends on insert/replace/patch: a column left null/absent is filled, a
+  matching value is kept, and a conflicting value is rejected with an error. `Table::add_invariant`
+  / `with_invariant` / `invariants` register and read them; the `InvariantValue` value trait
+  supplies the null check and equality each backend needs.
 
 ## 0.6.5 — unreleased
 

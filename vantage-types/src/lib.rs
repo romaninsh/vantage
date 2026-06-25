@@ -2,11 +2,13 @@
 pub use vantage_types_entity::entity;
 
 // Include type_system module with regular macros
+pub mod null;
 pub mod prelude;
 pub mod record;
 pub mod terminal_render;
 pub mod type_system;
 
+pub use null::InvariantValue;
 pub use record::{IntoRecord, Record, TryFromRecord, TryIntoRecord};
 pub use terminal_render::{RichText, Span, Style, TerminalRender};
 

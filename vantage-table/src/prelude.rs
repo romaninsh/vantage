@@ -11,7 +11,7 @@ pub use crate::column::core::Column;
 pub use crate::column::flags::ColumnFlag;
 
 // Traits
-pub use crate::active_entity_ext::RelatedEntityExt;
+pub use crate::active_entity_ext::GetRefExt;
 pub use crate::traits::column_like::ColumnLike;
 pub use crate::traits::table_source::TableSource;
 

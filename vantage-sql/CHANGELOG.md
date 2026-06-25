@@ -2,10 +2,10 @@
 
 ## 0.6.3 — unreleased
 
-- SQLite inserts now apply a table's insert defaults (see vantage-table 0.6.6): `insert` and
-  `insert_return_id` fill columns the caller left null/absent from `Table::defaults`, so a row
-  inserted into an equality-scoped set (e.g. a traversed has-many relation) picks up its foreign key
-  automatically. A caller-supplied non-null value is never overwritten.
+- `AnySqliteType` implements `InvariantValue` (via the type-system macro's `null_when:
+  ciborium::Value::Null`), so SQLite participates in vantage-table's backend-agnostic set-invariant
+  enforcement (see 0.6.6): a row written into an equality-scoped set, such as a traversed has-many
+  relation, carries its foreign key automatically.
 
 ## 0.6.2
 

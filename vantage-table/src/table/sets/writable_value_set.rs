@@ -1,21 +1,28 @@
 use async_trait::async_trait;
 use vantage_core::Result;
 use vantage_dataset::WritableValueSet;
-use vantage_types::{Entity, Record};
+use vantage_types::{Entity, InvariantValue, Record};
 
-use crate::{prelude::TableSource, table::Table};
+use crate::{prelude::TableSource, table::Table, table::sets::invariants::enforce_invariants};
 
-// Implement WritableValueSet by delegating to data source
+// Implement WritableValueSet by enforcing set invariants, then delegating to the
+// data source. A row written into a scoped set must conform however it is
+// written, so insert/replace/patch all run the same check.
 #[async_trait]
-impl<T: TableSource, E: Entity<T::Value>> WritableValueSet for Table<T, E> {
+impl<T: TableSource, E: Entity<T::Value>> WritableValueSet for Table<T, E>
+where
+    T::Value: InvariantValue,
+{
     async fn insert_value(
         &self,
         id: impl Into<Self::Id> + Send,
         record: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>> {
         let id = id.into();
+        let mut record = record.clone();
+        enforce_invariants(&mut record, self.invariants())?;
         self.data_source()
-            .insert_table_value(self, &id, record)
+            .insert_table_value(self, &id, &record)
             .await
     }
 
@@ -25,8 +32,10 @@ impl<T: TableSource, E: Entity<T::Value>> WritableValueSet for Table<T, E> {
         record: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>> {
         let id = id.into();
+        let mut record = record.clone();
+        enforce_invariants(&mut record, self.invariants())?;
         self.data_source()
-            .replace_table_value(self, &id, record)
+            .replace_table_value(self, &id, &record)
             .await
     }
 
@@ -36,8 +45,10 @@ impl<T: TableSource, E: Entity<T::Value>> WritableValueSet for Table<T, E> {
         partial: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>> {
         let id = id.into();
+        let mut partial = partial.clone();
+        enforce_invariants(&mut partial, self.invariants())?;
         self.data_source()
-            .patch_table_value(self, &id, partial)
+            .patch_table_value(self, &id, &partial)
             .await
     }
 

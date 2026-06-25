@@ -1,16 +1,23 @@
 use async_trait::async_trait;
 use vantage_core::Result;
 use vantage_dataset::prelude::InsertableValueSet;
-use vantage_types::{Entity, Record};
+use vantage_types::{Entity, InvariantValue, Record};
 
-use crate::{prelude::TableSource, table::Table};
+use crate::{prelude::TableSource, table::Table, table::sets::invariants::enforce_invariants};
 
-// Implement InsertableValueSet by delegating to data source
+// Implement InsertableValueSet by enforcing set invariants, then delegating to
+// the data source. The typed-entity path (insertable_dataset) funnels through
+// here too, so conformance is applied in exactly one place.
 #[async_trait]
-impl<T: TableSource, E: Entity<T::Value>> InsertableValueSet for Table<T, E> {
+impl<T: TableSource, E: Entity<T::Value>> InsertableValueSet for Table<T, E>
+where
+    T::Value: InvariantValue,
+{
     async fn insert_return_id_value(&self, record: &Record<Self::Value>) -> Result<Self::Id> {
+        let mut record = record.clone();
+        enforce_invariants(&mut record, self.invariants())?;
         self.data_source()
-            .insert_table_return_id_value(self, record)
+            .insert_table_return_id_value(self, &record)
             .await
     }
 }
