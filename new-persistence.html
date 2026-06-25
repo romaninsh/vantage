@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Adding a New Persistence - Vantage 0.4 Framework</title>
+        <title>Adding a New Persistence - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-228ae3e4.js";
+            window.path_to_searchindex_js = "searchindex-0df4a5b3.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-82c1d7c4.js"></script>
+        <script src="toc-298e3dc9.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -138,7 +138,7 @@
                         </button>
                     </div>
 
-                    <h1 class="menu-title">Vantage 0.4 Framework</h1>
+                    <h1 class="menu-title">Vantage Framework</h1>
 
                     <div class="right-buttons">
                         <a href="print.html" title="Print this book" aria-label="Print this book">
@@ -176,9 +176,9 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="adding-a-new-persistence"><a class="header" href="#adding-a-new-persistence">Adding a New Persistence</a></h1>
-<p>So you want to connect Vantage to a new database? This guide walks through the process in eight
+<p>So you want to connect Vantage to a new database? This guide walks through the process in nine
 incremental steps — each one unlocks more framework features. You don’t have to implement all
-eight; stop whenever your persistence has enough capability for your use case.</p>
+nine; stop whenever your persistence has enough capability for your use case.</p>
 <ul>
 <li><a href="#overview">Overview</a></li>
 <li><a href="#step-1-type-system">Step 1: Type System</a></li>
@@ -189,6 +189,7 @@ eight; stop whenever your persistence has enough capability for your use case.</
 <li><a href="#step-6-relationships">Step 6: Relationships</a></li>
 <li><a href="#step-7-multi-backend-applications">Step 7: Multi-Backend Applications</a></li>
 <li><a href="#step-8-vista">Step 8: Vista</a></li>
+<li><a href="#step-9-contained-relations">Step 9: Contained Relations</a></li>
 </ul>
 <hr>
 <h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
@@ -204,8 +205,9 @@ eight; stop whenever your persistence has enough capability for your use case.</
 <tr><td><a href="./new-persistence/step4-query-builder.html">4. Query Builder</a></td><td><code>Selectable</code>, <code>SelectableDataSource</code></td><td>Composable SELECT with conditions, ordering, limits</td><td>Skip if your persistence has no query language</td></tr>
 <tr><td><a href="./new-persistence/step5-table-crud.html">5. Table &amp; CRUD</a></td><td><code>TableSource</code>, entity tables, aggregates, writes</td><td><code>Table&lt;DB, Entity&gt;</code>, full CRUD, <code>ReadableDataSet</code>, <code>WritableDataSet</code></td><td><strong>Required</strong> for table support</td></tr>
 <tr><td><a href="./new-persistence/step6-relationships.html">6. Relationships</a></td><td><code>with_one</code>, <code>with_many</code>, correlated subqueries</td><td>Reference traversal, expression fields</td><td>Skip if you don’t need cross-table queries</td></tr>
-<tr><td><a href="./new-persistence/step7-multi-backend.html">7. Multi-Backend</a></td><td><code>AnyTable::from_table()</code>, CLI example</td><td>Type-erased tables, generic UI/API code</td><td>Skip if you only use one persistence</td></tr>
+<tr><td><a href="./new-persistence/step7-multi-backend.html">7. Multi-Backend</a></td><td>model crate, <code>vista_factory().from_table()</code>, CLI example</td><td>Type-erased tables, generic UI/API code</td><td>Skip if you only use one persistence</td></tr>
 <tr><td><a href="./new-persistence/step8-vista-integration.html">8. Vista</a></td><td><code>&lt;Driver&gt;VistaFactory</code>, <code>&lt;Driver&gt;TableShell</code>, YAML extras</td><td>YAML-defined data handles consumed by UI / scripting / agents</td><td>Skip if you don’t need Vista support</td></tr>
+<tr><td><a href="./new-persistence/step9-contained-relations.html">9. Contained Relations</a></td><td>embedded object/array columns as sub-tables</td><td>JSON/document sub-records surfaced as editable child sets</td><td>Skip if you have no embedded collections</td></tr>
 </tbody>
 </table>
 </div>
@@ -258,9 +260,11 @@ Implement <code>column_table_values_expr</code> for subquery-based traversal and
 <p><strong><a href="./new-persistence/step6-relationships.html">Read Step 6 →</a></strong></p>
 <hr>
 <h2 id="step-7-multi-backend-applications"><a class="header" href="#step-7-multi-backend-applications">Step 7: Multi-Backend Applications</a></h2>
-<p>Wrap your tables with <code>AnyTable::from_table()</code> to erase the backend type. This enables generic UI,
-CLI, and API code that works identically across SurrealDB, SQLite, CSV, MongoDB, or your new
-persistence — all through a uniform <code>serde_json::Value</code>-based interface.</p>
+<p>Define your entities and table constructors once in a model crate, then erase the backend type with
+<code>db.vista_factory().from_table(table)</code> so generic UI, CLI, and API code works identically across
+SurrealDB, SQLite, CSV, MongoDB, or your new persistence. (Type erasure used to live in the
+now-removed <code>AnyTable</code>; it moved up to <a href="./new-persistence/step8-vista-integration.html"><code>Vista</code></a> in
+0.5.)</p>
 <p><strong><a href="./new-persistence/step7-multi-backend.html">Read Step 7 →</a></strong></p>
 <hr>
 <h2 id="step-8-vista"><a class="header" href="#step-8-vista">Step 8: Vista</a></h2>
@@ -268,7 +272,15 @@ persistence — all through a uniform <code>serde_json::Value</code>-based inter
 scripting, and agents consume through a CBOR / <code>String</code> boundary. Adds YAML schema loading and
 condition delegation so callers don’t need a Rust entity struct.</p>
 <p>Skip this step if your driver is only consumed from typed Rust code.</p>
-<p><strong><a href="./new-persistence/step8-vista.html">Read Step 8 →</a></strong></p>
+<p><strong><a href="./new-persistence/step8-vista-integration.html">Read Step 8 →</a></strong></p>
+<hr>
+<h2 id="step-9-contained-relations"><a class="header" href="#step-9-contained-relations">Step 9: Contained Relations</a></h2>
+<p>Surface an embedded object or array column (a JSON document, a Mongo sub-document) as an editable
+child sub-table. Declare it with <code>with_contained_one</code> / <code>with_contained_many</code>; reads project the
+embedded collection as records and writes patch it back into the host column. Native document
+backends and JSON-blob columns share the same path.</p>
+<p>Skip this step if your persistence has no embedded collections.</p>
+<p><strong><a href="./new-persistence/step9-contained-relations.html">Read Step 9 →</a></strong></p>
 
                     </main>
 

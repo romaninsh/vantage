@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Step 9: Contained Relations - Vantage 0.4 Framework</title>
+        <title>Step 9: Contained Relations - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-228ae3e4.js";
+            window.path_to_searchindex_js = "../searchindex-0df4a5b3.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-82c1d7c4.js"></script>
+        <script src="../toc-298e3dc9.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -138,7 +138,7 @@
                         </button>
                     </div>
 
-                    <h1 class="menu-title">Vantage 0.4 Framework</h1>
+                    <h1 class="menu-title">Vantage Framework</h1>
 
                     <div class="right-buttons">
                         <a href="../print.html" title="Print this book" aria-label="Print this book">
@@ -207,7 +207,7 @@ should be able to edit as records.</p>
 same type system, evaluated lazily. <code>vista_contained()</code> surfaces these as <code>ContainedSpec</code>s.</p>
 </li>
 <li>
-<p><strong>The sub-Vista</strong> is <a href="https://docs.rs/vantage_vista/0.6.2/vantage_vista/contained/fn.build_contained_vista.html" title="vantage_vista::build_contained_vista"><code>vantage_vista::build_contained_vista</code></a>. It materializes the column’s
+<p><strong>The sub-Vista</strong> is <a href="https://docs.rs/vantage_vista/0.6.3/vantage_vista/contained/fn.build_contained_vista.html" title="vantage_vista::build_contained_vista"><code>vantage_vista::build_contained_vista</code></a>. It materializes the column’s
 records into an in-memory <code>ImTable</code>, serves reads from it, and on every write re-serializes the
 whole collection and calls a <strong>writeback</strong> closure. That writeback — patch the parent row’s host
 column — is the only persistence-specific part you supply.</p>

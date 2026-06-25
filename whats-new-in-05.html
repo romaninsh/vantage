@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>What&#x27;s New in 0.5 - Vantage 0.4 Framework</title>
+        <title>What&#x27;s New in 0.5 - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-228ae3e4.js";
+            window.path_to_searchindex_js = "searchindex-0df4a5b3.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-82c1d7c4.js"></script>
+        <script src="toc-298e3dc9.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -138,7 +138,7 @@
                         </button>
                     </div>
 
-                    <h1 class="menu-title">Vantage 0.4 Framework</h1>
+                    <h1 class="menu-title">Vantage Framework</h1>
 
                     <div class="right-buttons">
                         <a href="print.html" title="Print this book" aria-label="Print this book">
@@ -197,11 +197,11 @@ data handle, and builds an entire reactive stack on top of it.</p>
 </ul>
 <hr>
 <h2 id="vista--the-universal-data-handle"><a class="header" href="#vista--the-universal-data-handle">Vista — the universal data handle</a></h2>
-<p>A <a href="https://docs.rs/vantage_vista/0.6.2/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a> wraps any typed <code>Table&lt;DB, E&gt;</code> and erases <strong>both</strong> the backend and
+<p>A <a href="https://docs.rs/vantage_vista/0.6.3/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a> wraps any typed <code>Table&lt;DB, E&gt;</code> and erases <strong>both</strong> the backend and
 the entity. All data flows through <code>Record&lt;CborValue&gt;</code> — an ordered map of string keys to CBOR
 values. All schema lives on the Vista itself: columns (with types and flags), references, the id
 column, and a set of capability flags. Execution is delegated to a per-driver
-<a href="https://docs.rs/vantage_vista/0.6.2/vantage_vista/source/trait.TableShell.html"><code>TableShell</code></a>.</p>
+<a href="https://docs.rs/vantage_vista/0.6.3/vantage_vista/source/trait.TableShell.html"><code>TableShell</code></a>.</p>
 <pre><code class="language-text">Table&lt;SqliteDB, Product&gt;   — typed entity, typed backend, compile-time safe
 Vista                      — fully erased: schema-bearing, CborValue, no generics
 </code></pre>
@@ -269,7 +269,7 @@ stores BSON), so wrapping a typed table into a Vista no longer crosses a JSON fu
 <p>Not every backend can do everything. A CSV file can’t sort or search server-side; DynamoDB orders
 only by its declared sort key; a token-paginated REST API offers a forward cursor but no page
 numbers. Vista makes this explicit with
-<a href="https://docs.rs/vantage_vista/0.6.2/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a> — a struct of booleans where each driver
+<a href="https://docs.rs/vantage_vista/0.6.3/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a> — a struct of booleans where each driver
 declares exactly what it supports:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -305,7 +305,7 @@ scrollbar (random access) and a “load more” button (cursor-based).</p>
 <hr>
 <h2 id="config-driven-yaml-specs-and-rhai-scripting"><a class="header" href="#config-driven-yaml-specs-and-rhai-scripting">Config-driven: YAML specs and Rhai scripting</a></h2>
 <p>A Vista no longer needs a hand-written Rust definition. Tables, columns, and relations can be
-declared in a <strong>YAML spec</strong> (<a href="https://docs.rs/vantage_vista/0.6.2/vantage_vista/spec/struct.VistaSpec.html"><code>VistaSpec</code></a>) and materialized by the
+declared in a <strong>YAML spec</strong> (<a href="https://docs.rs/vantage_vista/0.6.3/vantage_vista/spec/struct.VistaSpec.html"><code>VistaSpec</code></a>) and materialized by the
 driver’s factory:</p>
 <pre><code class="language-yaml">table: product
 columns:

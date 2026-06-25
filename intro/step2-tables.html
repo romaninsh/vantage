@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Tables and Typed Data Access - Vantage 0.4 Framework</title>
+        <title>Tables and Typed Data Access - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-228ae3e4.js";
+            window.path_to_searchindex_js = "../searchindex-0df4a5b3.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-82c1d7c4.js"></script>
+        <script src="../toc-298e3dc9.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -138,7 +138,7 @@
                         </button>
                     </div>
 
-                    <h1 class="menu-title">Vantage 0.4 Framework</h1>
+                    <h1 class="menu-title">Vantage Framework</h1>
 
                     <div class="right-buttons">
                         <a href="../print.html" title="Print this book" aria-label="Print this book">
@@ -254,7 +254,7 @@ important differences:</p>
 </tbody>
 </table>
 </div>
-<p>A <a href="https://docs.rs/vantage_table/0.6.3/vantage_table/table/base/struct.Table.html"><code>Table</code></a> is typically defined in its own file alongside the entity.
+<p>A <a href="https://docs.rs/vantage_table/0.6.7/vantage_table/table/base/struct.Table.html"><code>Table</code></a> is typically defined in its own file alongside the entity.
 Create <code>src/product.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -375,65 +375,10 @@ side effects.</p>
 </div>
 
 <hr>
-<h2 id="type-erased-tables"><a class="header" href="#type-erased-tables">Type-erased tables</a></h2>
-<p><code>Table&lt;SqliteDB, Product&gt;</code> is great when you know the types at compile time. But what if you want to
-write a function that lists <em>any</em> table — products, orders, customers — without knowing the entity
-type?</p>
-<p><code>AnyTable</code> wraps a concrete table and erases its type parameters.
-Values come back as <code>Record&lt;serde_json::Value&gt;</code> instead of typed entities. You can iterate columns
-by name and build a generic display:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>async fn list_table(table: &amp;AnyTable) -&gt; VantageResult&lt;()&gt; {
-    let columns = table.column_names();
-
-    // Header
-    print!("  {:&lt;12}", "id");
-    for col in &amp;columns {
-        print!("{:&lt;16}", col);
-    }
-    println!();
-
-    // Rows
-    for (id, record) in table.list_values().await? {
-        print!("  {:&lt;12}", id);
-        for col in &amp;columns {
-            let val = record.get(col).map(|v| format!("{}", v)).unwrap_or_default();
-            print!("{:&lt;16}", val);
-        }
-        println!();
-    }
-    Ok(())
-}
-<span class="boring">}</span></code></pre>
-<p>Convert any typed table into an <code>AnyTable</code> with <code>from_table()</code>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let table = Product::table(db);
-let any = AnyTable::from_table(table);
-
-list_table(&amp;any).await?;
-// id          name            price
-// cupcake     "Cupcake"       120
-// donut       "Doughnut"      135
-// ...
-<span class="boring">}</span></code></pre>
-<p>Under the hood, <code>AnyTable</code> converts values to and from <code>serde_json::Value</code> on the fly. Conditions,
-pagination, and all CRUD operations still work — you just lose compile-time type safety on the
-entity fields. This is the trade-off: <code>AnyTable</code> lets you build generic UI components, CLI tools,
-and admin panels that work with any table definition.</p>
-<div id="admonition-generics-vs-type-erasure" class="admonition admonish-info" role="note" aria-labelledby="admonition-generics-vs-type-erasure-title">
-<div class="admonition-title">
-<div id="admonition-generics-vs-type-erasure-title">
-<p>Generics vs type erasure</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-generics-vs-type-erasure"></a>
-</div>
-
-<div>
-<p>You can also write <code>list_table</code> using generics — that keeps type safety but limits you
-to Rust callers:</p>
+<h2 id="listing-any-table"><a class="header" href="#listing-any-table">Listing any table</a></h2>
+<p><code>Table&lt;SqliteDB, Product&gt;</code> is great when you know the types at compile time. Sometimes you want a
+function that lists <em>any</em> table — products, orders, customers — without naming the entity type.</p>
+<p>With <strong>generics</strong> you keep full type safety, limited to Rust callers:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>async fn list_table&lt;E: Entity + std::fmt::Debug&gt;(
@@ -445,12 +390,10 @@ to Rust callers:</p>
     Ok(())
 }
 <span class="boring">}</span></code></pre>
-<p>If you plan to expose tables outside of Rust (Python bindings, FFI, a web admin UI),
-type erasure via <code>AnyTable</code> is the way to go.</p>
-</div>
-
-</div>
-
+<p>To go fully <strong>type-erased</strong> — iterate columns by name, get runtime values, and expose tables
+outside Rust (a web admin UI, FFI, scripting) — wrap the table in a <strong>Vista</strong>, the universal
+schema-bearing data handle. That’s the subject of <a href="./step4-vista.html">its own chapter</a>; <code>Vista</code>
+replaced the older <code>AnyTable</code> carrier in 0.5.</p>
 <hr>
 <h2 id="relationships"><a class="header" href="#relationships">Relationships</a></h2>
 <p>Our database has a <code>category</code> table that we haven’t used yet. Let’s define it and connect it to

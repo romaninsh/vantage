@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Step 3: Operators - Vantage Framework</title>
+        <title>Records: Traversal, Invariants &amp; Hooks - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -12,34 +12,34 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
-        <link rel="icon" href="../favicon-de23e50b.svg">
-        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
-        <link rel="stylesheet" href="../css/variables-8adf115d.css">
-        <link rel="stylesheet" href="../css/general-2459343d.css">
-        <link rel="stylesheet" href="../css/chrome-ae938929.css">
-        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-2459343d.css">
+        <link rel="stylesheet" href="css/chrome-ae938929.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
 
         <!-- Highlight.js Stylesheets -->
-        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
-        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
-        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
 
         <!-- Custom theme stylesheets -->
-        <link rel="stylesheet" href=".././mdbook-admonish.css">
+        <link rel="stylesheet" href="./mdbook-admonish.css">
 
 
         <!-- Provide site root and default themes to javascript -->
         <script>
-            const path_to_root = "../";
+            const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-0df4a5b3.js";
+            window.path_to_searchindex_js = "searchindex-0df4a5b3.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-298e3dc9.js"></script>
+        <script src="toc-298e3dc9.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -106,7 +106,7 @@
             <!-- populated by js -->
             <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
             <noscript>
-                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
             </noscript>
             <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -141,7 +141,7 @@
                     <h1 class="menu-title">Vantage Framework</h1>
 
                     <div class="right-buttons">
-                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
                             <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
                         </a>
 
@@ -175,150 +175,187 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="step-3-implement-operators"><a class="header" href="#step-3-implement-operators">Step 3: Implement Operators</a></h1>
-<p>Expressions let you build raw queries, but users shouldn’t have to write
-<code>sqlite_expr!("{} &gt; {}", (ident("price")), 100i64)</code> every time they want a condition. <strong>Operators</strong>
-give typed columns ergonomic methods like <code>.eq()</code>, <code>.gt()</code>, <code>.in_()</code> that produce your backend’s
-native condition type.</p>
-<p>This step covers how to implement a vendor-specific operation trait for your persistence.</p>
-<h3 id="vendor-specific-operation-traits"><a class="header" href="#vendor-specific-operation-traits">Vendor-specific operation traits</a></h3>
-<p>Each persistence defines its own operation trait that returns the backend’s condition type directly.
-The trait is blanket-implemented for all <code>Expressive&lt;T&gt;</code> where <code>T: Into&lt;AnyBackendType&gt;</code>, so typed
-columns get the methods for free.</p>
-<p>For SQL backends, a macro generates the trait:</p>
+                        <h1 id="records-traversal-invariants--hooks"><a class="header" href="#records-traversal-invariants--hooks">Records: Traversal, Invariants &amp; Hooks</a></h1>
+<p>Once a backend implements <code>TableSource</code> (see <a href="./new-persistence.html">Adding a New Persistence</a>),
+<code>vantage-table</code> gives every <code>Table&lt;Db, Entity&gt;</code> a uniform write pipeline. On each write the record
+flows through three stages before it reaches the datasource:</p>
+<pre><code class="language-text">record  →  lifecycle hooks (before)  →  set invariants  →  datasource write  →  hooks (after)
+</code></pre>
+<p>This page covers the consumer-facing features built on that pipeline: traversing a relation from a
+loaded record, the foreign-key <strong>invariants</strong> that traversal sets up, and the <strong>lifecycle hooks</strong>
+you can attach for audit, validation, soft-delete, and after-effects. They are backend-agnostic —
+everything here works the same on SQLite, Postgres, MySQL, Mongo, etc.</p>
+<h2 id="traversing-from-a-loaded-record-get_ref"><a class="header" href="#traversing-from-a-loaded-record-get_ref">Traversing from a loaded record: <code>get_ref</code></a></h2>
+<p><code>Table::get_ref_as</code> / <code>get_ref_from_row</code> traverse a relation from a <em>table</em>. The <code>GetRefExt</code> trait
+adds the record-level equivalent: traverse straight from a loaded <code>ActiveEntity</code> (typed) or
+<code>ActiveRecord</code> (untyped).</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>// In vantage-sql/src/sqlite/operation.rs
-define_sql_operation!(
-    SqliteOperation,
-    SqliteCondition,
-    crate::sqlite::types::AnySqliteType
-);
+</span>use vantage_table::prelude::GetRefExt;
+
+let launch = launches.get_entity(id).await?.expect("launch");
+
+// A child set scoped to this launch — and carrying its foreign key (see invariants below).
+let crew = launch.get_ref::&lt;LaunchCrew&gt;("launch_crew")?;
+crew.insert_return_id(&amp;LaunchCrew { astronaut_id: Some(a), role: Some("Pilot".into()), ..Default::default() }).await?;
 <span class="boring">}</span></code></pre>
-<p>This produces:</p>
+<p><code>get_ref::&lt;E2&gt;(relation)</code> returns a <code>Table&lt;T, E2&gt;</code> scoped to the parent. For a typed <code>ActiveEntity</code>
+the entity’s id is injected into the row before traversal (so has-many relations resolve); an
+untyped <code>ActiveRecord</code> already holds the raw row and forwards directly. The same method exists on
+both handles.</p>
+<h2 id="set-invariants"><a class="header" href="#set-invariants">Set invariants</a></h2>
+<p>A table narrowed by a literal <code>column = value</code> is a <strong>set</strong>, and every row written into it must
+<em>conform</em> to that definition. Vantage records the pair as an <strong>invariant</strong> and enforces it on
+write. The most common source is relationship traversal: <code>launch.get_ref::&lt;LaunchCrew&gt;("launch_crew")</code>
+narrows the child set by <code>launch_id = &lt;this launch&gt;</code>, so an inserted crew row’s <code>launch_id</code> is
+filled automatically.</p>
+<p>Invariants are registered automatically wherever the scope is a plain <code>column = value</code>:</p>
 <ul>
-<li>A trait <code>SqliteOperation&lt;T&gt;</code> with <code>.eq()</code>, <code>.gt()</code>, <code>.lt()</code>, <code>.ne()</code>, <code>.gte()</code>, <code>.lte()</code>,
-<code>.in_()</code>, <code>.in_list()</code>, <code>.cast()</code> — all returning <code>SqliteCondition</code></li>
-<li>A blanket impl for all <code>Expressive&lt;T&gt;</code> where <code>T: Into&lt;AnySqliteType&gt;</code></li>
-<li>An <code>Expressive&lt;AnySqliteType&gt;</code> impl for <code>SqliteCondition</code>, enabling chaining</li>
+<li><code>Table::with_id(id)</code> — narrows by the id column.</li>
+<li>has-many / has-one traversal (<code>Reference::resolve_from_row</code>) — narrows by the foreign key.</li>
 </ul>
-<h3 id="how-it-works-internally"><a class="header" href="#how-it-works-internally">How it works internally</a></h3>
-<p>Each method builds an <code>Expression&lt;T&gt;</code> from the two operands, then converts it to the backend’s
-condition type via <code>From&lt;Expression&lt;T&gt;&gt;</code>:</p>
+<p>Expression scopes never register an invariant. You can also set one explicitly with
+<code>Table::with_invariant(column, value)</code> / <code>add_invariant</code>.</p>
+<p>On every insert / replace / patch, each invariant column is resolved by a four-way rule:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>record’s value for the column</th><th>result</th></tr>
+</thead>
+<tbody>
+<tr><td>absent</td><td>set to the invariant value</td></tr>
+<tr><td>present but null</td><td>set to the invariant value</td></tr>
+<tr><td>present and equal</td><td>kept</td></tr>
+<tr><td>present and <strong>conflicting</strong></td><td>the write is rejected with an error</td></tr>
+</tbody>
+</table>
+</div>
+<p>So a child row inserted through a relation needs no foreign key (it’s filled), may state the
+matching one (kept), but cannot smuggle in a <em>different</em> one (error — it doesn’t belong to this set).</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>fn gt(&amp;self, value: impl Expressive&lt;T&gt;) -&gt; SqliteCondition {
-    let expr: Expression&lt;T&gt; = Expression::new("{} &gt; {}", vec![
-        ExpressiveEnum::Nested(self.expr()),
-        ExpressiveEnum::Nested(value.expr()),
-    ]);
-    SqliteCondition::from(expr)  // maps T → AnySqliteType via Into
+</span>let crew = launch.get_ref::&lt;LaunchCrew&gt;("launch_crew")?;
+
+// launch_id absent → filled from the set:
+crew.insert_return_id(&amp;LaunchCrew { astronaut_id: Some(a), role: Some("Pilot".into()), ..Default::default() }).await?;
+
+// launch_id set to a *different* launch → Err:
+assert!(crew.insert_return_id(&amp;LaunchCrew { launch_id: Some("other".into()), ..Default::default() }).await.is_err());
+<span class="boring">}</span></code></pre>
+<div id="admonition-backends-and-invariantvalue" class="admonition admonish-info" role="note" aria-labelledby="admonition-backends-and-invariantvalue-title">
+<div class="admonition-title">
+<div id="admonition-backends-and-invariantvalue-title">
+<p>Backends and InvariantValue</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-backends-and-invariantvalue"></a>
+</div>
+
+<div>
+<p>Enforcement needs two operations on a backend’s value type — a null check and an equality check —
+provided by the <code>InvariantValue</code> trait (<code>vantage-types</code>). The <code>vantage_type_system!</code> macro emits it
+for every generated <code>Any*Type</code>; pass a <code>null_when:</code> pattern (e.g. <code>null_when: ciborium::Value::Null</code>
+for the SQL backends) so genuine nulls are recognised. Non-nullable value types (e.g. CSV’s
+<code>String</code>) simply never match the null branch.</p>
+</div>
+
+</div>
+
+<h2 id="lifecycle-hooks"><a class="header" href="#lifecycle-hooks">Lifecycle hooks</a></h2>
+<p>Attach async callbacks around writes with <code>Table::with_hook(Hook::…)</code>. Hooks are how audit stamps,
+normalization, validation, soft-delete, and after-effects are expressed — generically, on any
+backend.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use std::sync::Arc;
+use vantage_table::prelude::{Hook, Phase};
+
+let launches = Launch::table(db).with_hook(Hook::BeforeInsert(Phase::Populate, Arc::new(stamp_created)));
+<span class="boring">}</span></code></pre>
+<h3 id="the-hook-variants"><a class="header" href="#the-hook-variants">The <code>Hook</code> variants</a></h3>
+<p>One enum carries a placement-specific closure, so each hook receives exactly what’s available at
+its stage. Before-write hooks get the record (mutable) and the entity-erased table; the delete hook
+gets the id and the row’s former contents:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>variant</th><th>when</th><th>receives</th><th>may</th></tr>
+</thead>
+<tbody>
+<tr><td><code>BeforeInsert(Phase, _)</code></td><td>before an insert</td><td><code>&amp;mut Record</code>, <code>&amp;Table</code></td><td>mutate / <code>Err</code> to cancel</td></tr>
+<tr><td><code>BeforeUpdate(Phase, _)</code></td><td>before replace/patch</td><td><code>&amp;mut Record</code>, <code>&amp;Table</code></td><td>mutate / <code>Err</code> to cancel</td></tr>
+<tr><td><code>BeforeSave(Phase, _)</code></td><td>before insert <strong>and</strong> update</td><td><code>&amp;mut Record</code>, <code>&amp;Table</code></td><td>mutate / <code>Err</code> to cancel</td></tr>
+<tr><td><code>BeforeDelete(_)</code></td><td>before a delete</td><td><code>&amp;Id</code>, <code>&amp;Record</code> (former), <code>&amp;Table</code></td><td><code>Err</code> to veto, or <code>HookReturn::Handled</code> to take over</td></tr>
+<tr><td><code>AfterInsert</code> / <code>AfterUpdate</code> / <code>AfterSave</code></td><td>after the write commits</td><td><code>&amp;Id</code>, <code>&amp;Record</code>, <code>&amp;Table</code></td><td>side-effects</td></tr>
+<tr><td><code>AfterDelete(_)</code></td><td>after a delete</td><td><code>&amp;Id</code>, <code>&amp;Record</code> (former), <code>&amp;Table</code></td><td>side-effects</td></tr>
+</tbody>
+</table>
+</div>
+<p>The <code>&amp;Table</code> handed to a hook is entity-erased, so it can traverse relations (<code>get_ref</code>) and reach
+the datasource — enough for cross-row validation and after-effects.</p>
+<h3 id="ordering-and-control-flow"><a class="header" href="#ordering-and-control-flow">Ordering and control flow</a></h3>
+<ul>
+<li><strong>Before-write hooks run ahead of invariant enforcement</strong>, ordered by <code>Phase</code>:
+<code>Normalize</code> → <code>Populate</code> (the default) → <code>Validate</code>, then registration order within a phase. So
+normalize inputs, then derive/stamp fields, then validate the final record.</li>
+<li><strong>Returning <code>Err</code> from any before-hook cancels the operation</strong> before anything is written.</li>
+<li><strong><code>BeforeDelete</code> returning <code>HookReturn::Handled</code></strong> skips the real delete and reports success —
+this is how soft-delete works (patch a <code>deleted</code> marker, return <code>Handled</code>). A delete with hooks
+loads the row once so before/after hooks see its contents; <code>delete_all</code> fires no hooks.</li>
+<li>After-hooks run for side-effects only. Vantage favours idempotence over transactions: an
+after-hook failure surfaces an error but does not roll back the committed write — design
+after-effects to be safe to retry.</li>
+</ul>
+<h3 id="writing-a-hook"><a class="header" href="#writing-a-hook">Writing a hook</a></h3>
+<p>Hooks are boxed async closures. The reliable construction is a free <code>fn</code> returning a boxed future
+whose lifetime ties to the arguments, then <code>Arc::new(it)</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use std::future::Future;
+use std::pin::Pin;
+use vantage_core::Result;
+use vantage_types::Record;
+use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
+use vantage_table::table::Table;
+
+// before-insert: stamp an audit field
+fn stamp_created&lt;'a&gt;(
+    rec: &amp;'a mut Record&lt;AnySqliteType&gt;,
+    _t: &amp;'a Table&lt;SqliteDB, vantage_types::EmptyEntity&gt;,
+) -&gt; Pin&lt;Box&lt;dyn Future&lt;Output = Result&lt;()&gt;&gt; + Send + 'a&gt;&gt; {
+    Box::pin(async move {
+        rec.insert("created".into(), AnySqliteType::new(now_iso8601()));
+        Ok(())
+    })
+}
+
+// before-delete: soft-delete instead of removing the row
+fn soft_delete&lt;'a&gt;(
+    id: &amp;'a String,
+    _former: &amp;'a Record&lt;AnySqliteType&gt;,
+    table: &amp;'a Table&lt;SqliteDB, vantage_types::EmptyEntity&gt;,
+) -&gt; Pin&lt;Box&lt;dyn Future&lt;Output = Result&lt;vantage_table::prelude::HookReturn&gt;&gt; + Send + 'a&gt;&gt; {
+    Box::pin(async move {
+        let mut patch = Record::new();
+        patch.insert("deleted".into(), AnySqliteType::new(now_iso8601()));
+        table.patch_value(id.clone(), &amp;patch).await?;
+        Ok(vantage_table::prelude::HookReturn::Handled)
+    })
 }
 <span class="boring">}</span></code></pre>
-<p>The <code>From&lt;Expression&lt;F&gt;&gt; for SqliteCondition</code> impl (from Step 1’s <code>define_sql_condition!</code> macro)
-handles the type mapping — it calls <code>ExpressionMap::map()</code> to convert all <code>F</code> scalars into
-<code>AnySqliteType</code>.</p>
-<h3 id="chaining-across-type-boundaries"><a class="header" href="#chaining-across-type-boundaries">Chaining across type boundaries</a></h3>
-<p>Because <code>SqliteCondition</code> implements <code>Expressive&lt;AnySqliteType&gt;</code>, the blanket gives it
-<code>SqliteOperation&lt;AnySqliteType&gt;</code>. This enables:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let price = Column::&lt;i64&gt;::new("price");
-price.gt(10).eq(false)
-// =&gt; SqliteCondition wrapping: (price &gt; 10) = 0
-<span class="boring">}</span></code></pre>
-<p>The first operation (<code>.gt(10)</code>) enforces type safety — <code>10</code> must be <code>Expressive&lt;i64&gt;</code>. The second
-operation (<code>.eq(false)</code>) operates on <code>SqliteCondition</code> where <code>bool: Expressive&lt;AnySqliteType&gt;</code>, so
-any backend-compatible type is accepted.</p>
-<h3 id="implementing-for-a-non-sql-backend"><a class="header" href="#implementing-for-a-non-sql-backend">Implementing for a non-SQL backend</a></h3>
-<p>For backends that don’t use expression trees for conditions (like MongoDB), you implement the
-operation trait manually instead of using the macro. MongoDB produces BSON documents:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>pub trait MongoOperation&lt;T&gt;: Expressive&lt;T&gt; {
-    fn eq(&amp;self, value: impl Into&lt;AnyMongoType&gt;) -&gt; MongoCondition {
-        let field = self.expr().template.clone();
-        let bson_val = AnyMongoType::from(value).to_bson();
-        MongoCondition::Doc(doc! { field: { "$eq": bson_val } })
-    }
-
-    fn gt(&amp;self, value: impl Into&lt;AnyMongoType&gt;) -&gt; MongoCondition {
-        let field = self.expr().template.clone();
-        let bson_val = AnyMongoType::from(value).to_bson();
-        MongoCondition::Doc(doc! { field: { "$gt": bson_val } })
-    }
-    // ...
-}
-
-impl&lt;T, S: Expressive&lt;T&gt;&gt; MongoOperation&lt;T&gt; for S {}
-<span class="boring">}</span></code></pre>
-<p>Key differences from SQL:</p>
-<ul>
-<li><strong>Values use <code>Into&lt;AnyMongoType&gt;</code></strong> not <code>Expressive&lt;T&gt;</code> — MongoDB doesn’t compose expression
-trees, it builds BSON documents from scalar values.</li>
-<li><strong>Field name extraction</strong> — <code>self.expr().template</code> gives the column name for simple columns.
-Complex expressions produce the template string as the field path.</li>
-<li><strong>Chaining</strong> — <code>MongoCondition</code> implements <code>Expressive&lt;AnyMongoType&gt;</code> for the blanket, but boolean
-chaining (<code>.eq(false)</code> = negate) is handled via dedicated methods like <code>.eq_bool(false)</code> since
-MongoDB negation uses <code>$not</code> wrappers.</li>
-</ul>
-<h3 id="avoiding-method-name-conflicts"><a class="header" href="#avoiding-method-name-conflicts">Avoiding method name conflicts</a></h3>
-<p>When multiple backend features are enabled, types like <code>Identifier</code> and <code>&amp;str</code> implement
-<code>Expressive&lt;T&gt;</code> for multiple backends. This causes ambiguity if the operation trait is generic.</p>
-<p>Each backend’s operation trait lives in its own module (e.g. <code>sqlite::operation::SqliteOperation</code>).
-Users import only the trait they need:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// In your prelude:
-pub use crate::sqlite::operation::SqliteOperation;
-<span class="boring">}</span></code></pre>
-<h3 id="condition-type-requirements"><a class="header" href="#condition-type-requirements">Condition type requirements</a></h3>
-<p>Your condition type must satisfy <code>TableSource::Condition</code> bounds — <code>Clone + Send + Sync + 'static</code>.
-It also needs:</p>
-<ul>
-<li><code>From&lt;Expression&lt;F&gt;&gt;</code> for any <code>F: Into&lt;AnyType&gt;</code> — so typed column operations convert cleanly</li>
-<li><code>From&lt;Identifier&gt;</code> — so <code>ident("field")</code> works with <code>with_condition()</code></li>
-<li><code>Expressive&lt;AnyType&gt;</code> — so the condition can be chained with further operations</li>
-<li>Any backend-specific conversions (e.g. <code>From&lt;Document&gt;</code> for MongoDB)</li>
-</ul>
-<p>For SQL backends, the <code>define_sql_condition!</code> macro generates all of these.</p>
-<h3 id="step-2b-checklist"><a class="header" href="#step-2b-checklist">Step 2b checklist</a></h3>
-<ol>
-<li>
-<p><strong>Define your operation trait</strong> — either via <code>define_sql_operation!</code> (SQL) or manually
-(document-oriented backends).</p>
-</li>
-<li>
-<p><strong>Blanket-implement it</strong> for all <code>Expressive&lt;T&gt;</code> where <code>T</code> converts into your <code>AnyType</code>.</p>
-</li>
-<li>
-<p><strong>Implement <code>Expressive&lt;AnyType&gt;</code> for your condition type</strong> — enables chaining.</p>
-</li>
-<li>
-<p><strong>Export from your prelude</strong> — so users get the operation trait automatically.</p>
-</li>
-<li>
-<p><strong>Tests</strong> covering:</p>
-<ul>
-<li>Typed column operations: <code>Column::&lt;i64&gt;::new("price").gt(150)</code> → condition</li>
-<li>Boolean column: <code>Column::&lt;bool&gt;::new("active").eq(false)</code> → condition</li>
-<li>Chaining: <code>price.gt(10).eq(false)</code> compiles and produces correct output</li>
-<li>Cross-type rejection: <code>price.gt(false)</code> does NOT compile</li>
-<li>Same-type column comparison: <code>price.eq(price.clone())</code> works</li>
-<li>Condition usable with <code>table.add_condition()</code> and <code>select.with_condition()</code></li>
-</ul>
-</li>
-</ol>
+<p>To pull in outside context (e.g. an <code>updated_by</code> actor), have the hook capture an <code>Arc</code> or read a
+task-local — the closure runs in async context. A capturing closure works too, but needs its boxed
+return type annotated explicitly so it coerces to the hook type.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../new-persistence/step2-expressions.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="expressions.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../new-persistence/step4-query-builder.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="mda.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -328,11 +365,11 @@ It also needs:</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../new-persistence/step2-expressions.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="expressions.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../new-persistence/step4-query-builder.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="mda.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
@@ -352,17 +389,17 @@ It also needs:</p>
         </script>
 
 
-        <script src="../elasticlunr-ef4e11c1.min.js"></script>
-        <script src="../mark-09e88c2c.min.js"></script>
-        <script src="../searcher-c2a407aa.js"></script>
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-c2a407aa.js"></script>
 
-        <script src="../clipboard-1626706a.min.js"></script>
-        <script src="../highlight-abc7f01d.js"></script>
-        <script src="../book-a0b12cfe.js"></script>
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-a0b12cfe.js"></script>
 
         <!-- Custom JS scripts -->
-        <script src="../mermaid-eefea253.min.js"></script>
-        <script src="../mermaid-init-ccf746f1.js"></script>
+        <script src="mermaid-eefea253.min.js"></script>
+        <script src="mermaid-init-ccf746f1.js"></script>
 
 
 

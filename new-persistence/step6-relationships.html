@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Step 6: Relationships - Vantage 0.4 Framework</title>
+        <title>Step 6: Relationships - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-228ae3e4.js";
+            window.path_to_searchindex_js = "../searchindex-0df4a5b3.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-82c1d7c4.js"></script>
+        <script src="../toc-298e3dc9.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -138,7 +138,7 @@
                         </button>
                     </div>
 
-                    <h1 class="menu-title">Vantage 0.4 Framework</h1>
+                    <h1 class="menu-title">Vantage Framework</h1>
 
                     <div class="right-buttons">
                         <a href="../print.html" title="Print this book" aria-label="Print this book">
@@ -175,10 +175,27 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="step-5-relationships"><a class="header" href="#step-5-relationships">Step 5: Relationships</a></h1>
+                        <h1 id="step-6-relationships"><a class="header" href="#step-6-relationships">Step 6: Relationships</a></h1>
 <p>Tables can declare relationships using <code>with_one</code> and <code>with_many</code>, then traverse them at runtime
 with <code>get_ref_as</code>. The relationship system is provided by <code>vantage-table</code> — your backend just needs
 <code>column_table_values_expr</code> implemented to make it work.</p>
+<div id="admonition-tip" class="admonition admonish-tip" role="note" aria-labelledby="admonition-tip-title">
+<div class="admonition-title">
+<div id="admonition-tip-title">
+<p>Tip</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-tip"></a>
+</div>
+
+<div>
+<p>This step covers what a <em>driver</em> must implement for relationships. For the <em>consumer</em> side —
+traversing from a loaded record with <code>get_ref</code>, and the foreign-key invariants traversal sets up —
+see <a href="../record-lifecycle.html">Records: Traversal, Invariants &amp; Hooks</a>.</p>
+</div>
+
+</div>
+
 <p>Implement <code>column_table_values_expr</code> — it builds a subquery for a single column respecting current
 conditions. For SQL backends this is a <code>SELECT "col" FROM "table" WHERE ...</code> expression.</p>
 <p>Define relationships when constructing tables — <code>with_one</code> for foreign-key-to-parent, <code>with_many</code>

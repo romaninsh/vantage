@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Model-Driven Architecture - Vantage 0.4 Framework</title>
+        <title>Model-Driven Architecture - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-228ae3e4.js";
+            window.path_to_searchindex_js = "searchindex-0df4a5b3.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-82c1d7c4.js"></script>
+        <script src="toc-298e3dc9.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -138,7 +138,7 @@
                         </button>
                     </div>
 
-                    <h1 class="menu-title">Vantage 0.4 Framework</h1>
+                    <h1 class="menu-title">Vantage Framework</h1>
 
                     <div class="right-buttons">
                         <a href="print.html" title="Print this book" aria-label="Print this book">
@@ -218,7 +218,7 @@ is the source of truth.</p>
  │    ├── order.rs        ← Order entity + table constructors
  │    └── product.rs      ← Product entity + table constructors
  └── examples/
-      ├── cli.rs          ← multi-source CLI using AnyTable
+      ├── cli.rs          ← multi-source CLI using Vista
       └── 0-intro.rs      ← direct SurrealDB queries
 </code></pre>
 <p>Each entity file follows the same pattern: <strong>struct → trait impls → table constructors</strong>.</p>
@@ -397,18 +397,20 @@ entity definitions and business rules.</p>
 
 <hr>
 <h2 id="type-erased-access"><a class="header" href="#type-erased-access">Type-erased access</a></h2>
-<p>For truly generic code (UI grids, admin panels, config-driven tools), wrap tables with <code>AnyTable</code>:</p>
+<p>For truly generic code (UI grids, admin panels, config-driven tools), wrap tables in a
+<a href="./new-persistence/step8-vista-integration.html"><code>Vista</code></a> — the schema-bearing handle that replaced
+the removed <code>AnyTable</code> in 0.5:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>let tables: Vec&lt;AnyTable&gt; = vec![
-    AnyTable::from_table(Client::surreal_table(db.clone())),
-    AnyTable::from_table(Product::sqlite_table(sqlite.clone())),
-    AnyTable::from_table(Order::csv_table(csv.clone())),
+</span>let vistas = vec![
+    db.vista_factory().from_table(Client::surreal_table(db.clone()))?,
+    sqlite.vista_factory().from_table(Product::sqlite_table(sqlite.clone()))?,
+    csv.vista_factory().from_table(Order::csv_table(csv.clone()))?,
 ];
 
 // Same code handles all three — different databases, same interface
-for table in &amp;tables {
-    println!("{}: {} records", table.table_name(), table.get_count().await?);
+for v in &amp;vistas {
+    println!("{} records", v.list_values().await?.len());
 }
 <span class="boring">}</span></code></pre>
 <p>See also: <code>bakery_model3/examples/cli.rs</code> for a complete multi-source CLI built on this pattern.</p>
@@ -456,7 +458,7 @@ scales to hundreds of entities and dozens of developers without coupling.</p>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="expressions.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="record-lifecycle.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
@@ -470,7 +472,7 @@ scales to hundreds of entities and dozens of developers without coupling.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="expressions.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="record-lifecycle.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 

@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Step 7: Multi-Backend - Vantage 0.4 Framework</title>
+        <title>Step 7: Multi-Backend - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-228ae3e4.js";
+            window.path_to_searchindex_js = "../searchindex-0df4a5b3.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-82c1d7c4.js"></script>
+        <script src="../toc-298e3dc9.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -138,7 +138,7 @@
                         </button>
                     </div>
 
-                    <h1 class="menu-title">Vantage 0.4 Framework</h1>
+                    <h1 class="menu-title">Vantage Framework</h1>
 
                     <div class="right-buttons">
                         <a href="../print.html" title="Print this book" aria-label="Print this book">
@@ -175,37 +175,52 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="step-6-multi-backend-applications"><a class="header" href="#step-6-multi-backend-applications">Step 6: Multi-Backend Applications</a></h1>
+                        <h1 id="step-7-multi-backend-applications"><a class="header" href="#step-7-multi-backend-applications">Step 7: Multi-Backend Applications</a></h1>
 <p>At this point your backend works — you can define tables, query data, and traverse relationships.
 But a real application typically has a <em>model crate</em> that defines entities once and offers table
 constructors for each backend. That’s <code>bakery_model3</code> in the Vantage repo. The final piece is
-<code>AnyTable</code>, which lets you treat tables from different backends uniformly.</p>
-<h3 id="anytable-the-type-erased-wrapper"><a class="header" href="#anytable-the-type-erased-wrapper">AnyTable: the type-erased wrapper</a></h3>
-<p><code>AnyTable</code> erases the backend and entity types behind a uniform <code>serde_json::Value</code>-based interface.
-This is what makes it possible to write generic UI, CLI, or API code that doesn’t care which
-database is behind it.</p>
-<p>There are two ways to create one:</p>
+type erasure, which lets you treat tables from different backends uniformly.</p>
+<div id="admonition-anytable-is-gone--use-vista" class="admonition admonish-info" role="note" aria-labelledby="admonition-anytable-is-gone--use-vista-title">
+<div class="admonition-title">
+<div id="admonition-anytable-is-gone--use-vista-title">
+<p>AnyTable is gone — use Vista</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-anytable-is-gone--use-vista"></a>
+</div>
+
+<div>
+<p>Earlier versions erased the backend with <code>AnyTable</code>. It was removed in 0.5.2; type erasure now
+lives one layer up in <a href="./step8-vista-integration.html"><code>Vista</code></a>, reached through the driver’s vista
+factory. The mechanism below is the supported replacement.</p>
+</div>
+
+</div>
+
+<h3 id="vista-the-type-erased-handle"><a class="header" href="#vista-the-type-erased-handle">Vista: the type-erased handle</a></h3>
+<p><code>db.vista_factory().from_table(table)</code> erases the backend and entity types behind a uniform,
+schema-bearing <a href="./step8-vista-integration.html"><code>Vista</code></a> carrying <code>Record&lt;ciborium::Value&gt;</code>. This is
+what makes it possible to write generic UI, CLI, or API code that doesn’t care which database is
+behind it:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>// 1. If your backend already uses serde_json::Value (rare):
-let any = AnyTable::new(my_table);
-
-// 2. For backends with custom value types (the common case):
-let any = AnyTable::from_table(Product::sqlite_table(db));
+</span>// Wrap any typed Table&lt;Driver, Entity&gt; as a backend-agnostic Vista:
+let products = Product::sqlite_table(db).vista_factory().from_table(Product::sqlite_table(db));
+// (or surreal/csv/mongo — the call site is identical)
 <span class="boring">}</span></code></pre>
-<p><code>from_table</code> works as long as your <code>AnyType</code> implements <code>Into&lt;serde_json::Value&gt;</code> and
-<code>From&lt;serde_json::Value&gt;</code>. The <code>vantage_type_system!</code> macro generates the <code>Into</code> conversion
-automatically, and after Step 1 your backend should have the <code>From</code> direction covered too.</p>
+<p>Erasure works because each driver’s vista factory bridges its native <code>AnyType</code> to the CBOR value
+the Vista exposes — the <code>vantage_type_system!</code> macro and your Step 1 conversions already provide
+both directions. See <a href="./step8-vista-integration.html">Step 8</a> for the factory and <code>TableShell</code> you
+implement to enable this.</p>
 <h3 id="building-a-multi-source-cli"><a class="header" href="#building-a-multi-source-cli">Building a multi-source CLI</a></h3>
 <p>The CLI example in <code>bakery_model3/examples/cli.rs</code> shows the pattern. A <code>build_table</code> function
-matches on the user’s chosen source, calls the right entity constructor, and wraps it with
-<code>AnyTable::from_table()</code>. Once you have an <code>AnyTable</code>, all commands are backend-agnostic —
-<code>list_values()</code>, <code>get_count()</code>, <code>get_some_value()</code>, <code>insert_value()</code>, and <code>delete()</code> all work
-identically regardless of which database is behind it.</p>
-<p>Because the values flow through as <code>serde_json::Value</code>, the CLI renderer can inspect types at
+matches on the user’s chosen source, calls the right entity constructor, and wraps it through the
+vista factory. Once you have a <code>Vista</code>, all commands are backend-agnostic — listing, counting,
+reading, inserting, and deleting all work identically regardless of which database is behind it.</p>
+<p>Because the values flow through as a typed CBOR record, the CLI renderer can inspect types at
 runtime — booleans like <code>is_deleted</code> display as <code>true</code>/<code>false</code> with color highlighting, numbers stay
 numeric, and nulls render cleanly. Your type system work in Step 1 ensures these values arrive with
-the right JSON type rather than everything being a string.</p>
+the right type rather than everything being a string.</p>
 <p>Try it out:</p>
 <pre><code class="language-bash"># List products from CSV
 cargo run --example cli -- csv product list
@@ -226,8 +241,8 @@ cargo run --example cli -- surreal bakery add myid '{"name":"Test","profit_margi
 cargo run --example cli -- surreal bakery delete myid
 </code></pre>
 <p>That’s the payoff of implementing a proper type system and <code>TableSource</code> — one line of
-<code>AnyTable::from_table()</code> bridges the gap between your backend’s native types and a uniform
-JSON-based interface.</p>
+<code>vista_factory().from_table()</code> bridges the gap between your backend’s native types and a uniform
+record-based interface.</p>
 
                     </main>
 

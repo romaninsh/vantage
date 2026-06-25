@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Three Paths for Developers - Vantage 0.4 Framework</title>
+        <title>Three Paths for Developers - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-228ae3e4.js";
+            window.path_to_searchindex_js = "searchindex-0df4a5b3.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-82c1d7c4.js"></script>
+        <script src="toc-298e3dc9.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -138,7 +138,7 @@
                         </button>
                     </div>
 
-                    <h1 class="menu-title">Vantage 0.4 Framework</h1>
+                    <h1 class="menu-title">Vantage Framework</h1>
 
                     <div class="right-buttons">
                         <a href="print.html" title="Print this book" aria-label="Print this book">
@@ -373,7 +373,7 @@ persistence becomes a first-class citizen in the entity framework.</p>
 <hr>
 <h2 id="convergence"><a class="header" href="#convergence">Convergence</a></h2>
 <p>All three paths converge into the same <strong>data abstraction layer</strong>. Entity framework tables, raw
-query results, and custom persistence data all flow through <code>Table</code>, <code>DataSet</code>, and <code>AnyTable</code> —
+query results, and custom persistence data all flow through <code>Table</code>, <code>DataSet</code>, and <code>Vista</code> —
 giving you one interface for the entire organisation’s data.</p>
 <pre><code class="language-text">┌──────────────────────────────────────────────────────────────┐
 │                  Data Abstraction Layer                       │
@@ -384,7 +384,7 @@ giving you one interface for the entire organisation’s data.</p>
 │   Table&lt;LiveTable, Product&gt;   ← cached + reactive            │
 │                                                              │
 │   All implement: DataSet · ValueSet · ActiveEntitySet         │
-│   All wrap into: AnyTable (type-erased, generic code)        │
+│   All wrap into: Vista (type-erased, generic code)          │
 └──────────────────────────────────────────────────────────────┘
                               │
               ┌───────────────┼───────────────┐
