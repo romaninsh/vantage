@@ -1,4 +1,4 @@
-# Step 2b: Implement Operators
+# Step 3: Implement Operators
 
 Expressions let you build raw queries, but users shouldn't have to write
 `sqlite_expr!("{} > {}", (ident("price")), 100i64)` every time they want a condition. **Operators**

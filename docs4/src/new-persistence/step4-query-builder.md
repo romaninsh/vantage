@@ -1,4 +1,4 @@
-# Step 3: Statement Builders and SelectableDataSource
+# Step 4: Statement Builders and SelectableDataSource
 
 In practice, nobody writes raw expressions for every query. This step adds the `Selectable` trait
 implementation for your SELECT builder and wires it up through `SelectableDataSource` so the rest of

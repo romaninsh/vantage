@@ -1,8 +1,8 @@
 # Adding a New Persistence
 
-So you want to connect Vantage to a new database? This guide walks through the process in eight
+So you want to connect Vantage to a new database? This guide walks through the process in nine
 incremental steps — each one unlocks more framework features. You don't have to implement all
-eight; stop whenever your persistence has enough capability for your use case.
+nine; stop whenever your persistence has enough capability for your use case.
 
 <!-- toc -->
 
@@ -18,8 +18,9 @@ eight; stop whenever your persistence has enough capability for your use case.
 | [4. Query Builder](./new-persistence/step4-query-builder.md)  | `Selectable`, `SelectableDataSource`                          | Composable SELECT with conditions, ordering, limits                  | Skip if your persistence has no query language |
 | [5. Table & CRUD](./new-persistence/step5-table-crud.md)      | `TableSource`, entity tables, aggregates, writes              | `Table<DB, Entity>`, full CRUD, `ReadableDataSet`, `WritableDataSet` | **Required** for table support                 |
 | [6. Relationships](./new-persistence/step6-relationships.md)  | `with_one`, `with_many`, correlated subqueries                | Reference traversal, expression fields                               | Skip if you don't need cross-table queries     |
-| [7. Multi-Backend](./new-persistence/step7-multi-backend.md)  | `AnyTable::from_table()`, CLI example                         | Type-erased tables, generic UI/API code                              | Skip if you only use one persistence           |
+| [7. Multi-Backend](./new-persistence/step7-multi-backend.md)  | model crate, `vista_factory().from_table()`, CLI example     | Type-erased tables, generic UI/API code                              | Skip if you only use one persistence           |
 | [8. Vista](./new-persistence/step8-vista-integration.md)      | `<Driver>VistaFactory`, `<Driver>TableShell`, YAML extras     | YAML-defined data handles consumed by UI / scripting / agents        | Skip if you don't need Vista support           |
+| [9. Contained Relations](./new-persistence/step9-contained-relations.md) | embedded object/array columns as sub-tables       | JSON/document sub-records surfaced as editable child sets            | Skip if you have no embedded collections       |
 
 ---
 
@@ -102,9 +103,11 @@ Skip this step if your persistence is flat (no foreign keys or cross-collection 
 
 ## Step 7: Multi-Backend Applications
 
-Wrap your tables with `AnyTable::from_table()` to erase the backend type. This enables generic UI,
-CLI, and API code that works identically across SurrealDB, SQLite, CSV, MongoDB, or your new
-persistence — all through a uniform `serde_json::Value`-based interface.
+Define your entities and table constructors once in a model crate, then erase the backend type with
+`db.vista_factory().from_table(table)` so generic UI, CLI, and API code works identically across
+SurrealDB, SQLite, CSV, MongoDB, or your new persistence. (Type erasure used to live in the
+now-removed `AnyTable`; it moved up to [`Vista`](./new-persistence/step8-vista-integration.md) in
+0.5.)
 
 **[Read Step 7 →](./new-persistence/step7-multi-backend.md)**
 
@@ -118,4 +121,17 @@ condition delegation so callers don't need a Rust entity struct.
 
 Skip this step if your driver is only consumed from typed Rust code.
 
-**[Read Step 8 →](./new-persistence/step8-vista.md)**
+**[Read Step 8 →](./new-persistence/step8-vista-integration.md)**
+
+---
+
+## Step 9: Contained Relations
+
+Surface an embedded object or array column (a JSON document, a Mongo sub-document) as an editable
+child sub-table. Declare it with `with_contained_one` / `with_contained_many`; reads project the
+embedded collection as records and writes patch it back into the host column. Native document
+backends and JSON-blob columns share the same path.
+
+Skip this step if your persistence has no embedded collections.
+
+**[Read Step 9 →](./new-persistence/step9-contained-relations.md)**

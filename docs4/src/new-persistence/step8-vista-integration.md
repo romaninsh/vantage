@@ -1,4 +1,4 @@
-# Step 7: Vista Integration
+# Step 8: Vista Integration
 
 By the end of Step 6 your backend is a fully-featured persistence — typed `Table<T, E>`, conditions,
 relationships, the lot. That's exactly what business logic wants. It's also exactly what generic
