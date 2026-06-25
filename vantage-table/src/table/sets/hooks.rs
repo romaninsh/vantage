@@ -75,6 +75,8 @@ mod tests {
         })
     }
 
+    // `&String` (not `&str`) is dictated by the hook signature — `T::Id` is `String`.
+    #[allow(clippy::ptr_arg)]
     fn veto<'a>(
         _id: &'a String,
         _rec: &'a Record<Value>,
@@ -83,6 +85,7 @@ mod tests {
         Box::pin(async move { Err(vantage_core::error!("deletion not allowed")) })
     }
 
+    #[allow(clippy::ptr_arg)]
     fn soft_delete<'a>(
         id: &'a String,
         _rec: &'a Record<Value>,
