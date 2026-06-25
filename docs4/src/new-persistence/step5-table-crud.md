@@ -1,4 +1,4 @@
-# Step 4: Table Abstraction and Entity CRUD
+# Step 5: Table Abstraction and Entity CRUD
 
 The same entities get used hundreds of times across a codebase — constructing a query from scratch
 every single time is tedious and error-prone. Vantage offers `Table<>` as an abstraction over your

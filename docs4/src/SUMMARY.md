@@ -11,6 +11,7 @@
   - [What's New in 0.4](./whats-new-04.md)
   - [What's New in 0.5](./whats-new-in-05.md)
 - [Expressions & Queries](./expressions.md)
+- [Records: Traversal, Invariants & Hooks](./record-lifecycle.md)
 - [Model-Driven Architecture](./mda.md)
   - [Three Paths for Developers](./three-paths.md)
 - [Adding a New Persistence](./new-persistence.md)

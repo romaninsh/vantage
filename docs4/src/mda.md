@@ -42,7 +42,7 @@ bakery_model3/
  │    ├── order.rs        ← Order entity + table constructors
  │    └── product.rs      ← Product entity + table constructors
  └── examples/
-      ├── cli.rs          ← multi-source CLI using AnyTable
+      ├── cli.rs          ← multi-source CLI using Vista
       └── 0-intro.rs      ← direct SurrealDB queries
 ```
 
@@ -225,18 +225,20 @@ entity definitions and business rules.
 
 ## Type-erased access
 
-For truly generic code (UI grids, admin panels, config-driven tools), wrap tables with `AnyTable`:
+For truly generic code (UI grids, admin panels, config-driven tools), wrap tables in a
+[`Vista`](./new-persistence/step8-vista-integration.md) — the schema-bearing handle that replaced
+the removed `AnyTable` in 0.5:
 
 ```rust
-let tables: Vec<AnyTable> = vec![
-    AnyTable::from_table(Client::surreal_table(db.clone())),
-    AnyTable::from_table(Product::sqlite_table(sqlite.clone())),
-    AnyTable::from_table(Order::csv_table(csv.clone())),
+let vistas = vec![
+    db.vista_factory().from_table(Client::surreal_table(db.clone()))?,
+    sqlite.vista_factory().from_table(Product::sqlite_table(sqlite.clone()))?,
+    csv.vista_factory().from_table(Order::csv_table(csv.clone()))?,
 ];
 
 // Same code handles all three — different databases, same interface
-for table in &tables {
-    println!("{}: {} records", table.table_name(), table.get_count().await?);
+for v in &vistas {
+    println!("{} records", v.list_values().await?.len());
 }
 ```
 
