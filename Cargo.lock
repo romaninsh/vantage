@@ -4633,7 +4633,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vantage-api-client"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4686,7 +4686,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4887,7 +4887,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-mongodb"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "bson",
@@ -4911,7 +4911,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-redb"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -4960,7 +4960,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "bakery_model3",
@@ -5015,7 +5015,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "ciborium",
  "csv",

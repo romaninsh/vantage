@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.3 — unreleased
+## 0.6.3 — 2026-06-25
 
 - `AnySqliteType` implements `InvariantValue` (via the type-system macro's `null_when:
   ciborium::Value::Null`), so SQLite participates in vantage-table's backend-agnostic set-invariant

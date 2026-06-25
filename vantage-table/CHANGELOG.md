@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.6 — unreleased
+## 0.6.6 — 2026-06-25
 
 - `ActiveEntity::get_ref::<E2>("rel")` and `ActiveRecord::get_ref::<E2>("rel")` (via the new
   `GetRefExt` trait): traverse a relation from a loaded record, the record-level equivalent of
@@ -16,12 +16,12 @@
   / `with_invariant` / `invariants` register and read them; the `InvariantValue` value trait
   supplies the null check and equality each backend needs.
 
-## 0.6.5 — unreleased
+## 0.6.5 — 2026-06-24
 
 - Docs: `ExpressionFn`'s doc comment no longer intra-doc-links to the private `Table::as_entity_erased`,
   which broke `cargo doc -D warnings` (and docs.rs) under `rustdoc::private_intra_doc_links`. No API change.
 
-## 0.6.4 — unreleased
+## 0.6.4 — 2026-06-21
 
 - `Pagination::window(offset, limit)` for random-access `[offset, offset + limit)` windows whose
   offset need not be a multiple of the page size (`skip()` returns the offset verbatim). Backs
@@ -33,12 +33,12 @@
   adapts the caller's `Fn(&Table<T, E>)` into it. Fixes the `get_ref_from_row` doc claim that
   expressions are preserved.
 
-## 0.6.3 — unreleased
+## 0.6.3 — 2026-06-18
 
 - Added `ColumnFlag::Label` — hints a column is better shown as a small status tag attached to the
   record's title than as its own column (e.g. a status/state field with a per-value color map).
 
-## 0.6.2 — unreleased
+## 0.6.2 — 2026-06-17
 
 - Internal dependency realignment for the coordinated 0.6 release; no public API changes.
 

@@ -1,6 +1,14 @@
 # Changelog
 
-## 0.6.1 — unreleased
+## 0.6.2 — 2026-06-25
+
+- `InvariantValue` trait: a value type's null check (`is_null`) and equality (`value_eq`) — the two
+  operations `vantage-table` needs to enforce set invariants. Implemented for `serde_json::Value`
+  and `ciborium::Value`, and emitted by `vantage_type_system!` for every generated `Any*Type` with
+  an optional `null_when:` pattern for the null check (omitted for non-nullable representations,
+  which are never null).
+
+## 0.6.1 — 2026-06-17
 
 - Internal dependency realignment for the coordinated 0.6 release; no public API changes.
 
