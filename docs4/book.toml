@@ -2,7 +2,7 @@
 authors = ["Romans Malinovskis"]
 language = "en"
 src = "src"
-title = "Vantage 0.4 Framework"
+title = "Vantage Framework"
 
 [preprocessor.toc]
 max-level = 3

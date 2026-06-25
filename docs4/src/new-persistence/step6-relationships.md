@@ -1,8 +1,14 @@
-# Step 5: Relationships
+# Step 6: Relationships
 
 Tables can declare relationships using `with_one` and `with_many`, then traverse them at runtime
 with `get_ref_as`. The relationship system is provided by `vantage-table` — your backend just needs
 `column_table_values_expr` implemented to make it work.
+
+```admonish tip
+This step covers what a *driver* must implement for relationships. For the *consumer* side —
+traversing from a loaded record with `get_ref`, and the foreign-key invariants traversal sets up —
+see [Records: Traversal, Invariants & Hooks](../record-lifecycle.md).
+```
 
 Implement `column_table_values_expr` — it builds a subquery for a single column respecting current
 conditions. For SQL backends this is a `SELECT "col" FROM "table" WHERE ...` expression.

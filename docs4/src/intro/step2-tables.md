@@ -188,63 +188,14 @@ side effects.
 
 ---
 
-## Type-erased tables
+## Listing any table
 
-`Table<SqliteDB, Product>` is great when you know the types at compile time. But what if you want to
-write a function that lists _any_ table — products, orders, customers — without knowing the entity
-type?
+`Table<SqliteDB, Product>` is great when you know the types at compile time. Sometimes you want a
+function that lists _any_ table — products, orders, customers — without naming the entity type.
 
-`AnyTable` wraps a concrete table and erases its type parameters.
-Values come back as `Record<serde_json::Value>` instead of typed entities. You can iterate columns
-by name and build a generic display:
+With **generics** you keep full type safety, limited to Rust callers:
 
 ```rust
-async fn list_table(table: &AnyTable) -> VantageResult<()> {
-    let columns = table.column_names();
-
-    // Header
-    print!("  {:<12}", "id");
-    for col in &columns {
-        print!("{:<16}", col);
-    }
-    println!();
-
-    // Rows
-    for (id, record) in table.list_values().await? {
-        print!("  {:<12}", id);
-        for col in &columns {
-            let val = record.get(col).map(|v| format!("{}", v)).unwrap_or_default();
-            print!("{:<16}", val);
-        }
-        println!();
-    }
-    Ok(())
-}
-```
-
-Convert any typed table into an `AnyTable` with `from_table()`:
-
-```rust
-let table = Product::table(db);
-let any = AnyTable::from_table(table);
-
-list_table(&any).await?;
-// id          name            price
-// cupcake     "Cupcake"       120
-// donut       "Doughnut"      135
-// ...
-```
-
-Under the hood, `AnyTable` converts values to and from `serde_json::Value` on the fly. Conditions,
-pagination, and all CRUD operations still work — you just lose compile-time type safety on the
-entity fields. This is the trade-off: `AnyTable` lets you build generic UI components, CLI tools,
-and admin panels that work with any table definition.
-
-```admonish info title="Generics vs type erasure"
-You can also write `list_table` using generics — that keeps type safety but limits you
-to Rust callers:
-
-~~~rust
 async fn list_table<E: Entity + std::fmt::Debug>(
     table: &impl ReadableDataSet<E>,
 ) -> VantageResult<()> {
@@ -253,11 +204,12 @@ async fn list_table<E: Entity + std::fmt::Debug>(
     }
     Ok(())
 }
-~~~
-
-If you plan to expose tables outside of Rust (Python bindings, FFI, a web admin UI),
-type erasure via `AnyTable` is the way to go.
 ```
+
+To go fully **type-erased** — iterate columns by name, get runtime values, and expose tables
+outside Rust (a web admin UI, FFI, scripting) — wrap the table in a **Vista**, the universal
+schema-bearing data handle. That's the subject of [its own chapter](./step4-vista.md); `Vista`
+replaced the older `AnyTable` carrier in 0.5.
 
 ---
 
