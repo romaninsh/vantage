@@ -17,6 +17,7 @@ vantage_type_system! {
     type_trait: PostgresType,
     method_name: cbor,
     value_type: ciborium::Value,
+    null_when: ciborium::Value::Null,
     type_variants: [
         Null,
         Bool,       // BOOLEAN

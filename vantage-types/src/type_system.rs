@@ -12,6 +12,7 @@ macro_rules! vantage_type_system {
         type_trait: $trait_name:ident,
         method_name: $method_name:ident,
         value_type: $value_type:ty,
+        $( null_when: $null_when:pat, )?
         type_variants: [$($variant:ident),* $(,)?]
     ) => {
         // Generate enum for type variants
@@ -105,6 +106,21 @@ macro_rules! vantage_type_system {
             impl From<$value_type> for [<Any $trait_name>] {
                 fn from(value: $value_type) -> Self {
                     Self::[<from_ $method_name>](&value).expect("Failed to convert value to type")
+                }
+            }
+
+            // Set-invariant enforcement (see vantage_types::InvariantValue).
+            // `null_when` (optional) gives the underlying null pattern; without
+            // it the representation is non-nullable and is_null is always false.
+            impl $crate::InvariantValue for [<Any $trait_name>] {
+                fn is_null(&self) -> bool {
+                    $( return matches!(self.value, $null_when); )?
+                    #[allow(unreachable_code)]
+                    false
+                }
+
+                fn value_eq(&self, other: &Self) -> bool {
+                    self.value == other.value
                 }
             }
 

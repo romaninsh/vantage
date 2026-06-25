@@ -2,8 +2,9 @@
 
 ## 0.6.2 — unreleased
 
-- `ActiveEntity::data()` and `ActiveEntity::dataset()` accessors, so extension traits (e.g.
-  `Table`-level relationship traversal) can reach the entity and its originating dataset.
+- `ActiveEntity::data()` / `ActiveEntity::dataset()` and `ActiveRecord::dataset()` accessors, so
+  extension traits (e.g. `Table`-level relationship traversal) can reach the entity/record and its
+  originating dataset.
 
 ## 0.6.1 — unreleased
 

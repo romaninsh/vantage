@@ -10,6 +10,7 @@ vantage_type_system! {
     type_trait: MongoType,
     method_name: bson,
     value_type: bson::Bson,
+    null_when: bson::Bson::Null,
     type_variants: [
         Null,
         Bool,

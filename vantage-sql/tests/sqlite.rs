@@ -24,8 +24,8 @@ mod sqlite {
     mod identifier;
     #[path = "2_insert.rs"]
     mod insert;
-    #[path = "5_insert_defaults.rs"]
-    mod insert_defaults;
+    #[path = "5_invariants.rs"]
+    mod invariants;
     #[path = "2_primitives.rs"]
     mod primitives;
     #[path = "7_query_source.rs"]

@@ -1,62 +1,53 @@
 use async_trait::async_trait;
 
 use vantage_core::Result;
-use vantage_dataset::prelude::WritableDataSet;
-use vantage_types::{Entity, TryIntoRecord};
+use vantage_dataset::prelude::{WritableDataSet, WritableValueSet};
+use vantage_types::{Entity, InvariantValue, TryIntoRecord};
 
 use crate::{table::Table, traits::table_source::TableSource};
 
-// Implement WritableDataSet by converting entities to records and delegating to data source
+// Implement WritableDataSet by serializing the entity to a record and delegating
+// to the value-set twin, so set invariants are enforced in exactly one place
+// (see writable_value_set / invariants).
 #[async_trait]
 impl<T, E> WritableDataSet<E> for Table<T, E>
 where
     T: TableSource,
+    T::Value: InvariantValue,
     E: Entity<T::Value>,
     <E as TryIntoRecord<T::Value>>::Error: std::fmt::Debug,
 {
     async fn insert(&self, id: impl Into<Self::Id> + Send, entity: &E) -> Result<E> {
-        let id = id.into();
         let record = entity
             .clone()
             .try_into_record()
             .map_err(|e| vantage_core::error!("Failed to serialize entity to record", error = e))?;
 
-        let result_record = self
-            .data_source()
-            .insert_table_value(self, &id, &record)
-            .await?;
+        let result_record = self.insert_value(id, &record).await?;
 
         E::try_from_record(&result_record)
             .map_err(|_| vantage_core::error!("Failed to convert record to entity"))
     }
 
     async fn replace(&self, id: impl Into<Self::Id> + Send, entity: &E) -> Result<E> {
-        let id = id.into();
         let record = entity
             .clone()
             .try_into_record()
             .map_err(|e| vantage_core::error!("Failed to serialize entity to record", error = e))?;
 
-        let result_record = self
-            .data_source()
-            .replace_table_value(self, &id, &record)
-            .await?;
+        let result_record = self.replace_value(id, &record).await?;
 
         E::try_from_record(&result_record)
             .map_err(|_| vantage_core::error!("Failed to convert record to entity"))
     }
 
     async fn patch(&self, id: impl Into<Self::Id> + Send, partial: &E) -> Result<E> {
-        let id = id.into();
         let partial_record = partial
             .clone()
             .try_into_record()
             .map_err(|e| vantage_core::error!("Failed to serialize entity to record", error = e))?;
 
-        let result_record = self
-            .data_source()
-            .patch_table_value(self, &id, &partial_record)
-            .await?;
+        let result_record = self.patch_value(id, &partial_record).await?;
 
         E::try_from_record(&result_record)
             .map_err(|_| vantage_core::error!("Failed to convert record to entity"))

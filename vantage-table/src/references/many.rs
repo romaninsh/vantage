@@ -106,7 +106,7 @@ where
         let condition = ds.eq_value_condition(&tgt_col, join_value.clone())?;
         target.add_condition(condition);
         // Inserting a child into this set should fill the foreign key.
-        target.add_default(tgt_col, join_value);
+        target.add_invariant(tgt_col, join_value);
 
         Ok(Box::new(target.into_entity::<EmptyEntity>()))
     }
