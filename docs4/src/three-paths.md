@@ -161,7 +161,7 @@ persistence becomes a first-class citizen in the entity framework.
 ## Convergence
 
 All three paths converge into the same **data abstraction layer**. Entity framework tables, raw
-query results, and custom persistence data all flow through `Table`, `DataSet`, and `AnyTable` —
+query results, and custom persistence data all flow through `Table`, `DataSet`, and `Vista` —
 giving you one interface for the entire organisation's data.
 
 ```text
@@ -174,7 +174,7 @@ giving you one interface for the entire organisation's data.
 │   Table<LiveTable, Product>   ← cached + reactive            │
 │                                                              │
 │   All implement: DataSet · ValueSet · ActiveEntitySet         │
-│   All wrap into: AnyTable (type-erased, generic code)        │
+│   All wrap into: Vista (type-erased, generic code)          │
 └──────────────────────────────────────────────────────────────┘
                               │
               ┌───────────────┼───────────────┐

@@ -6,7 +6,7 @@ use vantage_expressions::Expression;
 use vantage_types::{EmptyEntity, Entity};
 
 use crate::{
-    pagination::Pagination, references::Reference, sorting::SortDirection,
+    pagination::Pagination, references::Reference, sorting::SortDirection, table::hooks::Hooks,
     traits::table_source::TableSource, traits::table_source_spec::TableSourceSpec,
 };
 
@@ -50,6 +50,8 @@ where
     /// left null/absent is filled, a matching value is kept, and a conflicting
     /// value is rejected.
     pub(super) invariants: IndexMap<String, T::Value>,
+    /// Lifecycle hooks (see [`Hook`]). Registered via [`Self::with_hook`].
+    pub(super) hooks: Hooks<T>,
 }
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
@@ -72,6 +74,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             title_fields: Vec::new(),
             id_field: None,
             invariants: IndexMap::new(),
+            hooks: Hooks::default(),
         }
     }
 
@@ -98,6 +101,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             title_fields: self.title_fields,
             id_field: self.id_field,
             invariants: self.invariants,
+            hooks: self.hooks,
         }
     }
 
