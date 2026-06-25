@@ -1,12 +1,12 @@
 # Changelog
 
-## 0.6.2 — unreleased
+## 0.6.2 — 2026-06-25
 
 - `ActiveEntity::data()` / `ActiveEntity::dataset()` and `ActiveRecord::dataset()` accessors, so
   extension traits (e.g. `Table`-level relationship traversal) can reach the entity/record and its
   originating dataset.
 
-## 0.6.1 — unreleased
+## 0.6.1 — 2026-06-17
 
 - Internal dependency realignment for the coordinated 0.6 release; no public API changes.
 
