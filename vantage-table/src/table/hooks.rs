@@ -2,7 +2,7 @@
 //!
 //! Register them with [`Table::with_hook`] / [`Table::add_hook`]. Before-write
 //! hooks run ahead of set-invariant enforcement, ordered by [`Phase`]; the
-//! firing itself lives in [`crate::table::sets::hooks`].
+//! firing itself lives in the `table::sets` write paths.
 
 use std::future::Future;
 use std::pin::Pin;
