@@ -7,6 +7,7 @@ vantage_type_system! {
     type_trait: MockType,
     method_name: json,
     value_type: serde_json::Value,
+    null_when: serde_json::Value::Null,
     type_variants: [String, Int, Float, Decimal, Bool, Null]
 }
 

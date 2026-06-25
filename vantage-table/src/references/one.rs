@@ -114,8 +114,10 @@ where
             )
         })?;
 
-        let condition = ds.eq_value_condition(&tgt_col, join_value)?;
+        let condition = ds.eq_value_condition(&tgt_col, join_value.clone())?;
         target.add_condition(condition);
+        // Conform inserts into the single-target set to the join value.
+        target.add_invariant(tgt_col, join_value);
 
         Ok(Box::new(target.into_entity::<EmptyEntity>()))
     }

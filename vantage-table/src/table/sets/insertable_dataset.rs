@@ -1,16 +1,19 @@
 use async_trait::async_trait;
 
 use vantage_core::Result;
-use vantage_dataset::prelude::InsertableDataSet;
-use vantage_types::{Entity, TryIntoRecord};
+use vantage_dataset::prelude::{InsertableDataSet, InsertableValueSet};
+use vantage_types::{Entity, InvariantValue, TryIntoRecord};
 
 use crate::{table::Table, traits::table_source::TableSource};
 
-// Implement InsertableDataSet by converting entities to records and delegating to data source
+// Implement InsertableDataSet by serializing the entity to a record and
+// delegating to the value-set twin, so set invariants are enforced in exactly
+// one place (see insertable_value_set / invariants).
 #[async_trait]
 impl<T, E> InsertableDataSet<E> for Table<T, E>
 where
     T: TableSource,
+    T::Value: InvariantValue,
     E: Entity<T::Value>,
     <E as TryIntoRecord<T::Value>>::Error: std::fmt::Debug,
 {
@@ -20,9 +23,7 @@ where
             .try_into_record()
             .map_err(|e| vantage_core::error!("Failed to serialize entity to record", error = e))?;
 
-        self.data_source()
-            .insert_table_return_id_value(self, &record)
-            .await
+        self.insert_return_id_value(&record).await
     }
 }
 

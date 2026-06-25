@@ -18,6 +18,7 @@ vantage_type_system! {
     type_trait: GraphqlType,
     method_name: json,
     value_type: serde_json::Value,
+    null_when: serde_json::Value::Null,
     type_variants: [
         Null,
         Bool,      // Boolean
