@@ -11,6 +11,7 @@ vantage_type_system! {
     type_trait: SurrealType,
     method_name: cbor,
     value_type: ciborium::Value,
+    null_when: ciborium::Value::Null,
     type_variants: [
         // Primitive types
         None,

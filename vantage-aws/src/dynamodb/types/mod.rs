@@ -47,6 +47,7 @@ vantage_type_system! {
     type_trait: DynamoType,
     method_name: attr,
     value_type: AttributeValue,
+    null_when: AttributeValue::Null,
     type_variants: [
         S,
         N,

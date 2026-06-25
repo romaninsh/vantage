@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.3 — 2026-06-25
+
+- `AnySqliteType` implements `InvariantValue` (via the type-system macro's `null_when:
+  ciborium::Value::Null`), so SQLite participates in vantage-table's backend-agnostic set-invariant
+  enforcement (see 0.6.6): a row written into an equality-scoped set, such as a traversed has-many
+  relation, carries its foreign key automatically.
+
 ## 0.6.2
 
 ### Added

@@ -5,6 +5,7 @@ use crate::{prelude::TableSource, table::Table};
 
 pub mod insertable_dataset;
 pub mod insertable_value_set;
+pub(crate) mod invariants;
 pub mod readable_dataset;
 pub mod readable_value_set;
 pub mod writable_dataset;

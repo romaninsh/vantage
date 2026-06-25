@@ -37,6 +37,7 @@ pub mod traits;
 
 pub mod mocks;
 
+pub mod active_entity_ext;
 pub mod cbor_ext;
 pub mod conditions;
 pub mod pagination;

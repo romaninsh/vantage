@@ -1,19 +1,25 @@
 # Changelog
 
-## 0.6.2 — unreleased
+## 0.6.3 — 2026-06-25
+
+- `AnyGraphqlType` declares `null_when: serde_json::Value::Null`, so it implements `InvariantValue`
+  (vantage-types 0.6.2) and participates in vantage-table's set-invariant enforcement. (REST uses
+  `ciborium::Value` directly, which already implements the trait.)
+
+## 0.6.2 — 2026-06-20
 
 - REST: fix URL construction when a table path already carries a query string
   (e.g. `launches/?mode=detailed`). Pagination and condition params now join with
   `&` instead of emitting a second `?`, which the server rejected (HTTP 500).
 
-## 0.6.1 — unreleased
+## 0.6.1 — 2026-06-18
 
 - REST lazy-load: `RestApiBuilder::total_key`/`debug`, `RestApi::fetch_window_records`/`fetch_total`,
   a `RestApiTableShell::fetch_window` impl + envelope-total count, and `can_fetch_window` advertised
   when a `total_key` is configured. Windows map onto skip-based (raw offset) or page-based
   (`offset/limit+1`) pagination.
 
-## 0.6.0 — unreleased
+## 0.6.0 — 2026-06-17
 
 - Coordinated 0.6 release; internal dependencies realigned to 0.6. No public API changes.
 

@@ -8,6 +8,7 @@
 //! ```
 
 // Re-export core types
+pub use crate::null::InvariantValue;
 pub use crate::record::{IntoRecord, Record, TryFromRecord, TryIntoRecord};
 pub use crate::terminal_render::{RichText, Span, Style, TerminalRender};
 

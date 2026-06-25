@@ -153,7 +153,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         encode_host: impl Fn(CborValue) -> CborValue + Send + Sync + 'static,
     ) -> Result<vantage_vista::Vista>
     where
-        T::Value: From<CborValue> + Send + Sync,
+        T::Value: From<CborValue> + Send + Sync + vantage_types::InvariantValue,
         T::Id: Clone + Send + Sync,
         T::Column<T::AnyType>: ColumnLike<T::AnyType>,
     {
@@ -298,8 +298,13 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
             .ok_or_else(|| error!("id field not set on table"))?
             .name()
             .to_string();
-        let condition = self.data_source().eq_value_condition(&id_name, id.into())?;
+        let id = id.into();
+        let condition = self
+            .data_source()
+            .eq_value_condition(&id_name, id.clone())?;
         self.add_condition(condition);
+        // A row inserted into "this id" should conform to it.
+        self.add_invariant(id_name, id);
         Ok(self)
     }
 

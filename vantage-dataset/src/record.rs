@@ -28,6 +28,19 @@ where
         &self.id
     }
 
+    /// Borrow the in-memory entity (also reachable via `Deref`).
+    pub fn data(&self) -> &E {
+        &self.data
+    }
+
+    /// Borrow the dataset this entity was loaded from.
+    ///
+    /// Lets extension traits (e.g. `Table`-level relationship traversal) reach
+    /// the originating dataset without re-plumbing it through the caller.
+    pub fn dataset(&self) -> &D {
+        self.dataset
+    }
+
     /// Save the current state of the entity back to the dataset.
     ///
     /// This is a full **replace** (idempotent overwrite): it creates the row if
@@ -112,6 +125,14 @@ where
     /// Get the ID of this record
     pub fn id(&self) -> &D::Id {
         &self.id
+    }
+
+    /// Borrow the dataset this record was loaded from.
+    ///
+    /// Mirrors [`ActiveEntity::dataset`]: lets extension traits (e.g. `Table`-level
+    /// relationship traversal) reach the originating dataset.
+    pub fn dataset(&self) -> &D {
+        self.dataset
     }
 
     /// Save the current state of the record back to the dataset.

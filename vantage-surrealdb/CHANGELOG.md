@@ -1,6 +1,11 @@
 # Changelog
 
-## 0.6.0 — unreleased
+## 0.6.1 — 2026-06-25
+
+- `AnySurrealType` declares `null_when: ciborium::Value::Null`, so it implements `InvariantValue`
+  (vantage-types 0.6.2) and participates in vantage-table's set-invariant enforcement.
+
+## 0.6.0 — 2026-06-17
 
 - Coordinated 0.6 release; internal dependencies realigned to 0.6. No changes beyond 0.5.12.
 
