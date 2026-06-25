@@ -95,6 +95,31 @@ pub enum Hook<T: TableSource> {
     AfterDelete(AfterFn<T>),
 }
 
+/// A table's registered lifecycle hooks, split by placement. The before-write
+/// bands are kept ordered by [`Phase`]. Populated via [`Table::with_hook`].
+#[derive(Clone)]
+pub struct Hooks<T: TableSource> {
+    pub(super) before_insert: Vec<(Phase, BeforeFn<T>)>,
+    pub(super) before_update: Vec<(Phase, BeforeFn<T>)>,
+    pub(super) before_delete: Vec<BeforeDeleteFn<T>>,
+    pub(super) after_insert: Vec<AfterFn<T>>,
+    pub(super) after_update: Vec<AfterFn<T>>,
+    pub(super) after_delete: Vec<AfterFn<T>>,
+}
+
+impl<T: TableSource> Default for Hooks<T> {
+    fn default() -> Self {
+        Self {
+            before_insert: Vec::new(),
+            before_update: Vec::new(),
+            before_delete: Vec::new(),
+            after_insert: Vec::new(),
+            after_update: Vec::new(),
+            after_delete: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Table<T, E>
 where
@@ -124,14 +149,8 @@ where
     /// left null/absent is filled, a matching value is kept, and a conflicting
     /// value is rejected.
     pub(super) invariants: IndexMap<String, T::Value>,
-    /// Lifecycle hooks (see [`Hook`]), split by placement and kept phase-sorted
-    /// for the before-write bands. Registered via [`Self::with_hook`].
-    pub(super) before_insert: Vec<(Phase, BeforeFn<T>)>,
-    pub(super) before_update: Vec<(Phase, BeforeFn<T>)>,
-    pub(super) before_delete: Vec<BeforeDeleteFn<T>>,
-    pub(super) after_insert: Vec<AfterFn<T>>,
-    pub(super) after_update: Vec<AfterFn<T>>,
-    pub(super) after_delete: Vec<AfterFn<T>>,
+    /// Lifecycle hooks (see [`Hook`]). Registered via [`Self::with_hook`].
+    pub(super) hooks: Hooks<T>,
 }
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
@@ -154,12 +173,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             title_fields: Vec::new(),
             id_field: None,
             invariants: IndexMap::new(),
-            before_insert: Vec::new(),
-            before_update: Vec::new(),
-            before_delete: Vec::new(),
-            after_insert: Vec::new(),
-            after_update: Vec::new(),
-            after_delete: Vec::new(),
+            hooks: Hooks::default(),
         }
     }
 
@@ -186,12 +200,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             title_fields: self.title_fields,
             id_field: self.id_field,
             invariants: self.invariants,
-            before_insert: self.before_insert,
-            before_update: self.before_update,
-            before_delete: self.before_delete,
-            after_insert: self.after_insert,
-            after_update: self.after_update,
-            after_delete: self.after_delete,
+            hooks: self.hooks,
         }
     }
 
@@ -351,43 +360,44 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     }
 
     pub(crate) fn before_insert_hooks(&self) -> &[(Phase, BeforeFn<T>)] {
-        &self.before_insert
+        &self.hooks.before_insert
     }
     pub(crate) fn before_update_hooks(&self) -> &[(Phase, BeforeFn<T>)] {
-        &self.before_update
+        &self.hooks.before_update
     }
     pub(crate) fn before_delete_hooks(&self) -> &[BeforeDeleteFn<T>] {
-        &self.before_delete
+        &self.hooks.before_delete
     }
     pub(crate) fn after_insert_hooks(&self) -> &[AfterFn<T>] {
-        &self.after_insert
+        &self.hooks.after_insert
     }
     pub(crate) fn after_update_hooks(&self) -> &[AfterFn<T>] {
-        &self.after_update
+        &self.hooks.after_update
     }
     pub(crate) fn after_delete_hooks(&self) -> &[AfterFn<T>] {
-        &self.after_delete
+        &self.hooks.after_delete
     }
 
     /// Register a lifecycle [`Hook`]. Before-write hooks are kept ordered by
     /// [`Phase`] (then registration order); `BeforeSave`/`AfterSave` register
     /// for both insert and update.
     pub fn add_hook(&mut self, hook: Hook<T>) {
+        let hooks = &mut self.hooks;
         match hook {
-            Hook::BeforeInsert(phase, f) => push_phased(&mut self.before_insert, phase, f),
-            Hook::BeforeUpdate(phase, f) => push_phased(&mut self.before_update, phase, f),
+            Hook::BeforeInsert(phase, f) => push_phased(&mut hooks.before_insert, phase, f),
+            Hook::BeforeUpdate(phase, f) => push_phased(&mut hooks.before_update, phase, f),
             Hook::BeforeSave(phase, f) => {
-                push_phased(&mut self.before_insert, phase, f.clone());
-                push_phased(&mut self.before_update, phase, f);
+                push_phased(&mut hooks.before_insert, phase, f.clone());
+                push_phased(&mut hooks.before_update, phase, f);
             }
-            Hook::BeforeDelete(f) => self.before_delete.push(f),
-            Hook::AfterInsert(f) => self.after_insert.push(f),
-            Hook::AfterUpdate(f) => self.after_update.push(f),
+            Hook::BeforeDelete(f) => hooks.before_delete.push(f),
+            Hook::AfterInsert(f) => hooks.after_insert.push(f),
+            Hook::AfterUpdate(f) => hooks.after_update.push(f),
             Hook::AfterSave(f) => {
-                self.after_insert.push(f.clone());
-                self.after_update.push(f);
+                hooks.after_insert.push(f.clone());
+                hooks.after_update.push(f);
             }
-            Hook::AfterDelete(f) => self.after_delete.push(f),
+            Hook::AfterDelete(f) => hooks.after_delete.push(f),
         }
     }
 
