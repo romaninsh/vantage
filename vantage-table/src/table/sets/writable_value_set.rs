@@ -80,17 +80,22 @@ where
         let id = id.into();
         // Load the row once so delete hooks can inspect it (the after-hook needs
         // its former contents). Only pay this when delete hooks are present.
-        if !self.before_delete_hooks().is_empty() || !self.after_delete_hooks().is_empty() {
-            if let Some(former) = self.get_value(id.clone()).await? {
-                let erased = self.as_entity_erased();
-                let outcome =
-                    run_before_delete(self.before_delete_hooks(), &id, &former, erased).await?;
-                if let HookReturn::Proceed = outcome {
-                    self.data_source().delete_table_value(self, &id).await?;
-                }
-                run_after(self.after_delete_hooks(), &id, &former, erased).await?;
-                return Ok(());
+        let has_hooks =
+            !self.before_delete_hooks().is_empty() || !self.after_delete_hooks().is_empty();
+        let former = if has_hooks {
+            self.get_value(id.clone()).await?
+        } else {
+            None
+        };
+        if let Some(former) = former {
+            let erased = self.as_entity_erased();
+            let outcome =
+                run_before_delete(self.before_delete_hooks(), &id, &former, erased).await?;
+            if let HookReturn::Proceed = outcome {
+                self.data_source().delete_table_value(self, &id).await?;
             }
+            run_after(self.after_delete_hooks(), &id, &former, erased).await?;
+            return Ok(());
         }
         self.data_source().delete_table_value(self, &id).await
     }
