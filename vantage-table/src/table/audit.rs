@@ -136,9 +136,7 @@ mod tests {
     use super::*;
     use crate::mocks::mock_table_source::MockTableSource;
     use serde_json::json;
-    use vantage_dataset::prelude::{
-        InsertableValueSet, ReadableValueSet, WritableValueSet,
-    };
+    use vantage_dataset::prelude::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 
     type MockTable = Table<MockTableSource, EmptyEntity>;
 
