@@ -53,6 +53,19 @@ pub(crate) struct TableSceneryState {
     /// `request_load_more` from queueing the same range twice in a row.
     pub(crate) load_in_flight: Mutex<Option<Range<usize>>>,
 
+    /// Set by [`write_chunk_row`](Self::write_chunk_row) whenever a chunk load
+    /// actually changes a row's visible content (new slot, status change, or a
+    /// different record). The loader reads and clears it after the load and
+    /// bumps the generation only when it is set — so a refresh that re-fetches
+    /// byte-identical rows does not signal a repaint.
+    pub(crate) load_dirty: std::sync::atomic::AtomicBool,
+
+    /// Count of rows the in-flight chunk load *received* (every push, including
+    /// those `write_chunk_row` skips as unchanged). A short page — fewer rows
+    /// than the requested window — means the end of the set, so the loader
+    /// derives the grand `total` from it (no separate count request).
+    pub(crate) load_push_count: AtomicUsize,
+
     /// Snapshot of the master Vista's capability flags taken at open
     /// time. Sceneries hand this back through
     /// `TableScenery::master_capabilities` so UI delegates can route
@@ -97,6 +110,33 @@ impl TableSceneryState {
 
     pub(crate) fn current_generation(&self) -> u64 {
         self.generation.load(Ordering::SeqCst)
+    }
+
+    /// Clear the per-load trackers (dirty flag + push count) before dispatching
+    /// a load, so they reflect only the rows written by that load.
+    pub(crate) fn reset_load_dirty(&self) {
+        self.load_dirty.store(false, Ordering::SeqCst);
+        self.load_push_count.store(0, Ordering::SeqCst);
+    }
+
+    /// Read and clear the chunk-load dirty flag. `true` means the load changed
+    /// at least one row's content (so a generation bump is warranted).
+    pub(crate) fn take_load_dirty(&self) -> bool {
+        self.load_dirty.swap(false, Ordering::SeqCst)
+    }
+
+    /// Rows the just-finished chunk load received (see [`load_push_count`]).
+    pub(crate) fn load_push_count(&self) -> usize {
+        self.load_push_count.load(Ordering::SeqCst)
+    }
+
+    /// Overwrite the cached grand total. Returns `true` if it changed (so the
+    /// loader can bump the generation for `row_count` consumers).
+    pub(crate) fn set_total(&self, total: Option<usize>) -> bool {
+        let mut guard = self.total.write().unwrap();
+        let changed = *guard != total;
+        *guard = total;
+        changed
     }
 
     /// Current two-pass index (cloned `Arc`), or `None` in single-pass mode.
@@ -260,8 +300,24 @@ impl TableSceneryState {
 
 impl SceneryChunkTarget for TableSceneryState {
     fn write_chunk_row(&self, idx: usize, id: String, record: Record<CborValue>) {
+        // Count every received row (before the skip below), so the loader can
+        // tell a short page (end of set) from a full one.
+        self.load_push_count.fetch_add(1, Ordering::SeqCst);
+        // Skip the write entirely when this slot already holds the same fresh
+        // record: a refresh that re-fetches identical data must not look like a
+        // change. Only a new/!Fresh slot or a different record is "dirty", and
+        // only a dirty load bumps the generation (see `loader::fire_chunk_load`).
+        {
+            let rows = self.rows.read().unwrap();
+            if let Some(existing) = rows.get(&idx) {
+                if existing.status == RowStatus::Fresh && existing.record == record {
+                    return;
+                }
+            }
+        }
         let enriched = Arc::new(EnrichedRecord::fresh(record));
         self.rows.write().unwrap().insert(idx, enriched);
         self.id_to_idx.write().unwrap().insert(id, idx);
+        self.load_dirty.store(true, Ordering::SeqCst);
     }
 }

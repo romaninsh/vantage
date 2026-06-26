@@ -4,7 +4,7 @@
 
 // Core table types
 pub use crate::table::Table;
-pub use crate::table::{Hook, HookReturn, Phase};
+pub use crate::table::{Hook, HookReturn, IdGenerator, Phase, Timestamps};
 
 // Column functionality
 pub use crate::column::collection::ColumnCollectionExt;

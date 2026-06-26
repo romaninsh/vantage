@@ -379,6 +379,10 @@ impl RestApi {
         let query = self.build_query_string(window, &conds, &query_consumed);
         let url = join_query(&endpoint, &query);
 
+        if self.debug {
+            tracing::info!(target: "vantage_api_client::rest", table = table_name, url = %url, "REST GET");
+        }
+
         let mut request = self.client.get(&url);
         if let Some(ref auth) = self.auth_header {
             request = request.header("Authorization", auth);

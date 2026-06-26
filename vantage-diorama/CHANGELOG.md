@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.4 — unreleased
+## 0.6.5 — 2026-06-26
 
 - Diagnostics surface. `dio.diagnostics().await` returns a `DioDiagnostics`
   snapshot — cache row count, query-index count, and one `SceneryDiagnostic` per
@@ -74,6 +74,18 @@
   failed refetch leaves the existing rows untouched — instead of clearing the cache and
   waiting for a refill. Previously any refill lag or error (e.g. a slow/`504` page) left
   the visible rows blank while their count survived.
+- Refresh-on-open now hits the server even when the cache seed already filled the range. The
+  cache is id-keyed (arbitrary order) but the server applies the query's ordering, so the open
+  fetch uses `force_load` to replace the seed with ordered rows — a freshly-opened grid is ordered
+  without a manual refresh.
+- A chunk load only bumps the generation when it actually changes a visible row. `write_chunk_row`
+  skips a slot that already holds the same `Fresh` record, so a refresh that re-fetches
+  byte-identical rows no longer triggers a repaint.
+- A short page (fewer rows than the requested window) is treated as the end of the set, so the
+  grand `total` is derived from the fetch itself (no separate count request). This self-corrects a
+  list opened before its rows existed, whose `total` was counted once at 0 and would otherwise
+  never grow. `set_search` also drops the stale cached total, since a new query matches a different
+  set.
 
 ## 0.6.2 — unreleased
 

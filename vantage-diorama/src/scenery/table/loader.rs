@@ -282,6 +282,9 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
         force_load,
         "fire_chunk_load: dispatching on_load_chunk",
     );
+    // Clear the dirty flag so it reflects only the rows this load writes;
+    // `write_chunk_row` sets it when a row's content actually changes.
+    state.reset_load_dirty();
     let result = cb(&dio, effective_range.clone(), sink).await;
 
     *state.load_in_flight.lock().unwrap() = None;
@@ -289,7 +292,23 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
     let cached_after = state.rows.read().unwrap().len();
     match result {
         Ok(()) => {
-            state.bump_generation();
+            // A short page — fewer rows than the requested window — is the end
+            // of the set, so the grand total is `start + received`. This keeps
+            // `total` self-correcting from the fetch we already did (no separate
+            // count request), and fixes a list opened before its rows existed:
+            // its `total` was counted once at 0 and would otherwise never grow.
+            let pushed = state.load_push_count();
+            let total_changed = if pushed < effective_len {
+                state.set_total(Some(effective_range.start + pushed))
+            } else {
+                false
+            };
+            // Bump when a row changed (a refresh of byte-identical rows leaves
+            // the flag clear) or when the total moved (so `row_count` consumers
+            // — scrollbars, `ListDio` — repaint).
+            if state.take_load_dirty() || total_changed {
+                state.bump_generation();
+            }
             tracing::debug!(
                 target: "vantage_diorama::viewport",
                 effective = ?effective_range,

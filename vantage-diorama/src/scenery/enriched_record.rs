@@ -79,7 +79,7 @@ impl EnrichedRecord {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RowStatus {
     Fresh,
     /// Only the list pass has run — cheap columns present, detail columns

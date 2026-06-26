@@ -175,6 +175,8 @@ impl TableSceneryBuilder {
             viewport_tx,
             viewport_queue_depth: AtomicUsize::new(0),
             load_in_flight: Mutex::new(None),
+            load_dirty: std::sync::atomic::AtomicBool::new(false),
+            load_push_count: AtomicUsize::new(0),
             master_capabilities,
             two_pass,
             titles_only,
@@ -233,6 +235,12 @@ impl TableSceneryBuilder {
         //    the first page in the background. Skipped for two-pass — its
         //    detail pass must wait for an explicit viewport so that opening
         //    never triggers detail fetches.
+        //
+        //    `force_load` so the fetch runs even when the cache seed already
+        //    filled this range: the cache is id-keyed (arbitrary order), but the
+        //    server applies the query's ordering, so the on-open fetch must
+        //    actually hit the server to replace the seed with ordered rows —
+        //    otherwise the grid shows cache order until a manual refresh.
         if !two_pass
             && dio.lens.defaults.refresh_on_open
             && dio.lens.callbacks.on_load_chunk.is_some()
@@ -242,7 +250,7 @@ impl TableSceneryBuilder {
                 &state,
                 ViewportRequest {
                     range,
-                    force_load: false,
+                    force_load: true,
                 },
             );
         }
