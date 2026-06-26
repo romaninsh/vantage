@@ -241,6 +241,10 @@ impl TableScenery for TableSceneryImpl {
     fn set_search(&self, query: Option<String>) {
         self.inner.deregister();
         *self.inner.search.write().unwrap() = query;
+        // The cached total belongs to the previous query; a new search matches a
+        // different set. Drop it so `row_count` falls back to the loaded rows
+        // until the re-fetch's short page (or a re-count) sets it for this query.
+        self.inner.set_total(None);
         self.inner.reload_notify.notify_one();
     }
 

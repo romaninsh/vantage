@@ -39,6 +39,7 @@ fn parse_rows(
             _ => continue,
         };
 
+        let mut id_seen = false;
         let mut id = None;
         let mut record = Record::new();
         for (k, v) in map {
@@ -47,17 +48,29 @@ fn parse_rows(
                 _ => continue,
             };
             if key == id_field_name {
-                id = Some(match &v {
-                    CborValue::Text(s) => s.clone(),
-                    CborValue::Integer(i) => i128::from(*i).to_string(),
-                    CborValue::Float(f) => f.to_string(),
-                    _ => format!("{:?}", v),
-                });
+                id_seen = true;
+                // A SQL NULL id (e.g. a table whose id column has neither a
+                // DEFAULT nor AUTOINCREMENT, so an omitted id inserts NULL) is
+                // not a usable key: leave it `None` so the row is skipped rather
+                // than keyed under the literal "Null" — which would also collide
+                // every such row onto a single map entry.
+                id = match &v {
+                    CborValue::Text(s) => Some(s.clone()),
+                    CborValue::Integer(i) => Some(i128::from(*i).to_string()),
+                    CborValue::Float(f) => Some(f.to_string()),
+                    CborValue::Null => None,
+                    other => Some(format!("{other:?}")),
+                };
             }
             record.insert(key, AnySqliteType::untyped(v));
         }
 
-        let id = id.ok_or_else(|| error!("row missing id field", field = id_field_name))?;
+        // A row that never carried the id column at all is a query-construction
+        // bug worth surfacing; a present-but-NULL id is degenerate data we skip.
+        if !id_seen {
+            return Err(error!("row missing id field", field = id_field_name));
+        }
+        let Some(id) = id else { continue };
         records.insert(id, record);
     }
 
@@ -257,8 +270,11 @@ impl TableSource for SqliteDB {
             .unwrap_or_else(|| "id".to_string());
 
         let insert = crate::sqlite::statements::SqliteInsert::new(table.table_name())
-            .with_field(&id_field_name, AnySqliteType::from(id.clone()))
-            .with_record(record);
+            .with_record(record)
+            // The explicit id param is authoritative on this path, so apply it
+            // after the record — a record-carried id (e.g. one a generator hook
+            // filled) must not override the id the caller asked to write.
+            .with_field(&id_field_name, AnySqliteType::from(id.clone()));
         self.execute(&insert.expr()).await?;
 
         self.get_table_value(table, id)
@@ -282,8 +298,11 @@ impl TableSource for SqliteDB {
 
         // SQLite INSERT OR REPLACE handles both insert and update
         let insert = crate::sqlite::statements::SqliteInsert::new(table.table_name())
-            .with_field(&id_field_name, AnySqliteType::from(id.clone()))
-            .with_record(record);
+            .with_record(record)
+            // The explicit id param is authoritative on this path, so apply it
+            // after the record — a record-carried id (e.g. one a generator hook
+            // filled) must not override the id the caller asked to write.
+            .with_field(&id_field_name, AnySqliteType::from(id.clone()));
         // Rewrite as INSERT OR REPLACE
         let expr = insert.expr();
         let replace_expr = Expression::new(
@@ -371,9 +390,13 @@ impl TableSource for SqliteDB {
         let returning = expr_any!("{} RETURNING {}", (base), (ident(&id_field_name)));
         let result = self.execute(&returning).await?;
         let mut rows = parse_rows(result, &id_field_name)?;
-        rows.swap_remove_index(0)
-            .map(|(id, _)| id)
-            .ok_or_else(|| error!("insert_table_return_id_value: no id returned"))
+        rows.swap_remove_index(0).map(|(id, _)| id).ok_or_else(|| {
+            error!(
+                "insert returned no usable id — the row's id came back NULL; \
+                     does the table's id column have a DEFAULT or AUTOINCREMENT?",
+                table = table.table_name()
+            )
+        })
     }
 
     fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(

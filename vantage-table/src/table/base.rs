@@ -50,7 +50,7 @@ where
     /// left null/absent is filled, a matching value is kept, and a conflicting
     /// value is rejected.
     pub(super) invariants: IndexMap<String, T::Value>,
-    /// Lifecycle hooks (see [`Hook`]). Registered via [`Self::with_hook`].
+    /// Lifecycle hooks (see [`Hook`](super::Hook)). Registered via [`Self::with_hook`].
     pub(super) hooks: Hooks<T>,
 }
 
