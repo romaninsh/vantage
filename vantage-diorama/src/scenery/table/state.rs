@@ -125,7 +125,7 @@ impl TableSceneryState {
         self.load_dirty.swap(false, Ordering::SeqCst)
     }
 
-    /// Rows the just-finished chunk load received (see [`load_push_count`]).
+    /// Rows the just-finished chunk load received (reads the `load_push_count` field).
     pub(crate) fn load_push_count(&self) -> usize {
         self.load_push_count.load(Ordering::SeqCst)
     }
