@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.4 — 2026-06-26
+
+- REST: with `.debug(true)`, each GET now logs the resolved request URL
+  (`target: "vantage_api_client::rest"`) so a failing query can be replayed by hand.
+
 ## 0.6.3 — 2026-06-25
 
 - `AnyGraphqlType` declares `null_when: serde_json::Value::Null`, so it implements `InvariantValue`

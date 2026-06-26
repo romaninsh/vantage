@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.8 — 2026-06-26
+
+- `Table::with_generated_id(IdGenerator)` mints a record's id on insert when the backend does not
+  (a bare SQL `PRIMARY KEY` with no `DEFAULT`, a client-keyed REST resource). `IdGenerator` offers
+  `UuidV7` (time-ordered, index-friendly — the recommended default), `UuidV4`, and `Custom` for any
+  other scheme. Built on a `before_insert` hook: it fills the id only when the record carries none
+  (absent or null) and only on insert — `patch`/`replace`/`update`/`upsert` never touch the id, and
+  a caller-supplied id is always kept, so generation stays idempotent.
+- `Table::with_timestamps()` / `with_audit(Timestamps)` stamp audit columns from the wall clock:
+  `created_at` once on insert (only if the caller left it empty), `updated_at` on every write. Values
+  are RFC 3339 UTC strings; column names are overridable via `Timestamps`. Built on the same
+  before-write hooks, so a nullable `TEXT` column is all the backend needs.
+
 ## 0.6.7 — 2026-06-25
 
 - Lifecycle hooks on `Table`, registered with `Table::with_hook(Hook::…)`. The `Hook` enum carries

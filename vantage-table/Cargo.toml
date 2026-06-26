@@ -1,6 +1,6 @@
 [package]
 name = "vantage-table"
-version = "0.6.7"
+version = "0.6.8"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Table, Column, and operation traits for the Vantage data framework"
@@ -32,6 +32,8 @@ mockall = "0.12"
 paste = "1.0"
 tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "sync"] }
 rust_decimal = { version = "1.42.0", features = ["macros", "serde"] }
+uuid = { version = "1", features = ["v4", "v7"] }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [dev-dependencies]
 tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "sync"] }

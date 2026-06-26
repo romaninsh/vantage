@@ -5,6 +5,7 @@
 #[allow(unused_imports)]
 use vantage_sql::sqlite::SqliteType;
 use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
+use vantage_table::prelude::IdGenerator;
 use vantage_table::table::Table;
 use vantage_types::entity;
 
@@ -147,4 +148,62 @@ async fn test_insert_return_id() {
     let fetched = table.get(id).await.unwrap().expect("inserted row");
     assert_eq!(fetched.name, "Auto");
     assert_eq!(fetched.price, 42);
+}
+
+#[tokio::test]
+async fn test_insert_return_id_null_pk_errors() {
+    // `item`'s id is a bare `TEXT PRIMARY KEY` — no DEFAULT, no AUTOINCREMENT.
+    // Omitting the id inserts SQL NULL, so RETURNING hands back a NULL id, which
+    // is not usable. It must surface as an error, not a bogus "Null" string.
+    let (_db, table) = setup().await;
+
+    let item = Item {
+        name: "Orphan".into(),
+        price: 7,
+    };
+    let err = table
+        .insert_return_id(&item)
+        .await
+        .expect_err("a NULL primary key must not be returned as a usable id");
+    let msg = err.to_string();
+    assert!(
+        !msg.contains("Null"),
+        "error should explain the NULL id, not echo it: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn test_generated_id_fills_bare_primary_key() {
+    // Same bare `TEXT PRIMARY KEY` as above, but `with_generated_id` mints the id
+    // client-side before the INSERT, so `insert_return_id` succeeds and hands
+    // back the generated key.
+    let (_db, table) = setup().await;
+    let table = table.with_generated_id(IdGenerator::UuidV7);
+
+    let item = Item {
+        name: "Minted".into(),
+        price: 7,
+    };
+    let id = table.insert_return_id(&item).await.unwrap();
+    assert!(id.contains('-'), "expected a uuid, got {id:?}");
+
+    let fetched = table.get(id).await.unwrap().expect("inserted row");
+    assert_eq!(fetched.name, "Minted");
+    assert_eq!(fetched.price, 7);
+}
+
+#[tokio::test]
+async fn test_generated_id_kept_on_explicit_insert() {
+    // With a generator registered, the explicit-id insert path still writes the
+    // id the caller passed — the generator never clobbers it.
+    let (_db, table) = setup().await;
+    let table = table.with_generated_id(IdGenerator::UuidV7);
+
+    let item = Item {
+        name: "Explicit".into(),
+        price: 9,
+    };
+    table.insert("z", &item).await.unwrap();
+    let fetched = table.get("z").await.unwrap().expect("row z");
+    assert_eq!(fetched.name, "Explicit");
 }

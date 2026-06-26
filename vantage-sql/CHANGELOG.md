@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.4 — 2026-06-26
+
+- A NULL id read back from a row is no longer coerced to the literal string `"Null"`: rows with a
+  NULL id are skipped on read, and an insert whose `RETURNING` id comes back NULL (a `PRIMARY KEY`
+  with no `DEFAULT`/sequence and no supplied id) fails with an explanatory error instead of a bogus
+  id. Pair such tables with `Table::with_generated_id` to mint the id client-side. Applies to the
+  SQLite, Postgres, and MySQL table sources.
+- On the explicit-id insert/replace paths the id the caller passes is now applied after the record,
+  so it stays authoritative even when a `before_insert` hook (e.g. an id generator) also wrote an id
+  into the record.
+
 ## 0.6.3 — 2026-06-25
 
 - `AnySqliteType` implements `InvariantValue` (via the type-system macro's `null_when:
