@@ -309,10 +309,11 @@ impl SceneryChunkTarget for TableSceneryState {
         // only a dirty load bumps the generation (see `loader::fire_chunk_load`).
         {
             let rows = self.rows.read().unwrap();
-            if let Some(existing) = rows.get(&idx) {
-                if existing.status == RowStatus::Fresh && existing.record == record {
-                    return;
-                }
+            if let Some(existing) = rows.get(&idx)
+                && existing.status == RowStatus::Fresh
+                && existing.record == record
+            {
+                return;
             }
         }
         let enriched = Arc::new(EnrichedRecord::fresh(record));
