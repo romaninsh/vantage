@@ -13,7 +13,7 @@ use tokio::sync::{Mutex, broadcast, mpsc};
 use vantage_core::Result;
 use vantage_vista::Vista;
 
-use crate::dio::{Dio, DioEvent, DioInner, HotTier, worker::write_worker_loop};
+use crate::dio::{Dio, DioInner, HotTier, worker::write_worker_loop};
 use crate::lens::{Activity, ActivitySignal, Lens};
 
 impl Lens {
@@ -119,12 +119,14 @@ async fn refresh_loop(
             continue;
         }
         let dio = Dio { inner: strong };
-        let _ = dio.inner.event_bus.send(DioEvent::Refreshing);
-        if let Some(cb) = dio.inner.lens.callbacks.on_refresh.as_ref()
-            && let Err(e) = cb(&dio).await
-        {
+        // Delegate to `dio.refresh()` so the auto ticker and the manual path
+        // share one definition: it announces `Refreshing`, runs `on_refresh`,
+        // and publishes `Invalidated` *only* when the refresh succeeds. A failed
+        // tick (e.g. the source 503s) must not invalidate — that would reseed
+        // sceneries from stale cache and drop rows added since the last good
+        // refresh.
+        if let Err(e) = dio.refresh().await {
             tracing::error!(error = %e, "on_refresh callback failed");
         }
-        let _ = dio.inner.event_bus.send(DioEvent::Invalidated);
     }
 }

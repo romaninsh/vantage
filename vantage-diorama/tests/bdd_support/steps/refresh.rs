@@ -19,6 +19,12 @@ async fn register_on_refresh(w: &mut DioramaWorld) {
     w.lens_builder.register_on_refresh = true;
 }
 
+#[given("an on_refresh callback that fails")]
+async fn register_failing_on_refresh(w: &mut DioramaWorld) {
+    w.lens_builder.register_on_refresh = true;
+    w.lens_builder.on_refresh_fails = true;
+}
+
 #[when(regex = r"^(\d+) seconds? pass(?:es)?$")]
 async fn time_passes(w: &mut DioramaWorld, secs: u64) {
     tokio::time::advance(Duration::from_secs(secs)).await;
