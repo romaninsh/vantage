@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.6 — 2026-06-27
+
+- Failed auto-refresh no longer reverts the grid to stale cache. The
+  `refresh_every` ticker published `Invalidated` even when its `on_refresh`
+  callback failed (e.g. the source returned a 503), forcing every open scenery to
+  reseed from cache — which dropped rows added since the last good refresh. The
+  ticker now delegates to `Dio::refresh()`, the same path manual refresh uses: a
+  failed tick announces `Refreshing` but does **not** invalidate, so the painted
+  rows survive a transient source error; only a successful refresh updates the
+  cache and repaints.
+
 ## 0.6.5 — 2026-06-26
 
 - Diagnostics surface. `dio.diagnostics().await` returns a `DioDiagnostics`

@@ -82,6 +82,10 @@ pub struct LensBuilderState {
     pub total_provider_kind: TotalProviderKind,
     pub on_load_chunk_kind: OnLoadChunkKind,
     pub register_on_refresh: bool,
+    /// With `register_on_refresh`, makes the on_refresh closure return `Err`
+    /// (after bumping the spy) — models a refresh that hits a server error
+    /// (e.g. a 503), so the refresh-failure path can be driven deterministically.
+    pub on_refresh_fails: bool,
     /// When present, the `on_start` closure awaits this Notify before
     /// running its body. Lets a test pin "make_dio is/isn't waiting on
     /// the callback" deterministically — see scenario 1/2.
@@ -288,10 +292,14 @@ impl LensBuilderState {
 
         if self.register_on_refresh {
             let counter = spies.on_refresh.clone();
+            let fails = self.on_refresh_fails;
             b = b.on_refresh(move |_dio| {
                 let counter = counter.clone();
                 async move {
                     counter.fetch_add(1, Ordering::SeqCst);
+                    if fails {
+                        return Err(vantage_core::error!("on_refresh failed (injected 503)"));
+                    }
                     Ok(())
                 }
             });

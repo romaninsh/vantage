@@ -3,6 +3,7 @@
 //! without copy-paste.
 
 use cucumber::{then, when};
+use vantage_diorama::DioEvent;
 
 use crate::bdd_support::world::DioramaWorld;
 
@@ -61,4 +62,15 @@ async fn event_log_snapshot(w: &mut DioramaWorld, name: String) {
     }, {
         insta::assert_yaml_snapshot!(events);
     });
+}
+
+#[then("the event log contains no Invalidated")]
+async fn no_invalidated(w: &mut DioramaWorld) {
+    let events = w.snapshot_events().await;
+    let found = events.iter().any(|e| matches!(e, DioEvent::Invalidated));
+    assert!(
+        !found,
+        "a failed refresh must not publish Invalidated — it would reseed the grid \
+         from (stale) cache and drop newer rows; got: {events:?}"
+    );
 }
