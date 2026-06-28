@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.6 — 2026-06-28
+
+- TLS support for the Postgres and MySQL connection pools: sqlx is now built with the `tls-rustls`
+  feature (rustls + ring + webpki), so a `DATABASE_URL` with `sslmode=require` negotiates an
+  encrypted connection. This is required against servers that enforce SSL — e.g. Amazon RDS for
+  PostgreSQL 15+, whose default parameter group sets `rds.force_ssl = 1` and rejects unencrypted
+  sessions. No API change; existing non-SSL connections keep working (sqlx defaults to
+  `sslmode=prefer`).
+
 ## 0.6.5 — 2026-06-28
 
 - The Postgres table source honors `Table::with_text_id()` (vantage-table 0.6.9): a text-keyed
