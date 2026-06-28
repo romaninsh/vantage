@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.6.9 — 2026-06-28
+
+First step of the "Dio owns query semantics" work: the Dio — not the scenery or
+the Lens — defines what a table is (its conditions, order, and augmentation), and
+re-plugs capabilities the backend lacks by emulating them over the cache.
+
+**Dio owns conditions and order**
+
+- `Dio::with_condition_eq(col, val)` and `Dio::with_order(col, dir)` set the
+  table's base query. Every scenery opened on the Dio inherits them; a view can
+  still add its own conditions or override the sort.
+
+**Dio owns augmentation**
+
+- `Dio::augment(catalog, augmentations)` configures the two-pass list/detail/
+  refresh (previously `Lens::augment`), so Dios sharing one Lens can enrich
+  differently. The Dio records its *augmented columns* — the marker that a
+  condition or sort on that column is client-side and must run locally.
+- `Lens::augment` still works (delegates to the same passes, now in a shared
+  `dio::augment_passes` module) and is retired once consumers move to the Dio API.
+
+**Local filter/sort emulation**
+
+- A two-pass view carrying conditions/sort the master can't push down now refines
+  its visible set over the cache: rows are filtered and sorted by their hydrated
+  values, and the visible set (not the index) drives `row_count`.
+- A predicate on an augmented column hides each row until hydration confirms a
+  match, so matches appear progressively. Such a view hydrates the whole listed
+  set — the documented cost of filtering/sorting on a client-side column.
+- A view with no conditions/sort is unchanged (raw index order, gray rows kept).
+
+**In-memory cache**
+
+- `LensBuilder::cache_in_memory()` + a `MemoryCache` backend: process-local, no
+  file, but with the same per-Dio table and per-row `CacheStatus` semantics as
+  redb — so ephemeral Dios and tests skip the `TempDir` while still exercising
+  real `Incomplete`/`Complete` round-tripping. It yields once per operation so
+  schedule-sensitive consumers behave the same as on redb.
+- `MemoryCache`, `CacheStatus`, and `CacheTable` are re-exported at the crate root.
+
 ## 0.6.8 — 2026-06-28
 
 - Formatting only (`cargo fmt --all`); no functional change.

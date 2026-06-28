@@ -104,6 +104,21 @@ impl TableSceneryBuilder {
             titles_only,
         } = self;
 
+        // Inherit the Dio's base query semantics. The Dio owns "what this table
+        // is" (base conditions + default order); this view layers its own
+        // conditions on top and falls back to the Dio's order when it sets none.
+        let conditions = {
+            let base = dio.base_conditions.read().unwrap();
+            if base.is_empty() {
+                conditions
+            } else {
+                let mut merged = base.clone();
+                merged.extend(conditions);
+                merged
+            }
+        };
+        let sort = sort.or_else(|| dio.base_sort.read().unwrap().clone());
+
         // Dedup key over (shape, conditions, sort, search, titles_only). A live
         // scenery for the same query is shared — one reactor, one cache window,
         // one in-flight JoinSet — instead of standing up a parallel copy. A
@@ -136,11 +151,20 @@ impl TableSceneryBuilder {
 
         let master_capabilities = dio.master.read().unwrap().capabilities().clone();
 
-        // Two-pass engages only when the Lens registers an `on_load_detail`
-        // callback. The shared per-query index is keyed by the master Vista's
-        // index_key over the scenery's conditions + sort, so reopening the same
-        // variant reuses the already-built index.
-        let two_pass = dio.lens.callbacks.on_load_detail.is_some();
+        // Two-pass engages when the Dio owns augmentation, or (legacy) the Lens
+        // registers an `on_load_detail` callback. The shared per-query index is
+        // keyed by the master Vista's index_key over the scenery's conditions +
+        // sort, so reopening the same variant reuses the already-built index.
+        let two_pass = dio.is_two_pass();
+        // Two-pass can't push conditions/sort to its list pass, so any
+        // condition/sort means the visible set must be refined locally over the
+        // cache (this is also the only way an augmented-column filter can work —
+        // the column exists only after hydration). A picker (`titles_only`) keeps
+        // raw list order — it never hydrates, so it can't evaluate augmented
+        // predicates anyway.
+        let local_refine = two_pass
+            && !titles_only
+            && (!conditions.is_empty() || sort.is_some() || search.is_some());
         let index = if two_pass {
             let vista_sort = sort.as_ref().map(|(col, dir)| {
                 let dir = match dir {
@@ -179,6 +203,7 @@ impl TableSceneryBuilder {
             load_push_count: AtomicUsize::new(0),
             master_capabilities,
             two_pass,
+            local_refine,
             titles_only,
             index: RwLock::new(index),
             registry_key: Mutex::new(Some(key.clone())),
@@ -205,6 +230,13 @@ impl TableSceneryBuilder {
                 super::two_pass::run_list_page(state.clone()).await;
             } else {
                 super::two_pass::seed_from_index(&state).await;
+                state.bump_generation();
+            }
+            // Locally-refined views filter/sort the just-seeded rows over the
+            // cache. With an augmented-column condition this yields an empty set
+            // until hydration confirms matches.
+            if state.local_refine {
+                super::two_pass::reseed_filtered(&state).await;
                 state.bump_generation();
             }
         } else {

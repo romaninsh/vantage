@@ -19,9 +19,10 @@ pub use dio::diagnostics::{DioDiagnostics, SceneryDiagnostic};
 pub use dio::{Dio, DioEvent, DioShell, Generation};
 pub use error::{DioError, LensBuildError};
 pub use lens::{
-    Activity, ActivitySignal, CacheBackend, ChunkRow, ChunkSink, DioCallback, DioEventCallback,
-    DioLoadChunkCallback, DioQueryCallback, DioTotalProviderCallback, DioWriteCallback, Lens,
-    LensBuilder, LensCallbacks, LensDefaults,
+    Activity, ActivitySignal, CacheBackend, CacheStatus, CacheTable, ChunkRow, ChunkSink,
+    DioCallback, DioEventCallback, DioLoadChunkCallback, DioQueryCallback,
+    DioTotalProviderCallback, DioWriteCallback, Lens, LensBuilder, LensCallbacks, LensDefaults,
+    MemoryCache, MemoryCacheTable,
 };
 pub use ops::{ChangeEvent, QueryDescriptor, WriteOp};
 pub use scenery::{
