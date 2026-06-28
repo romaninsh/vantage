@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.5 — 2026-06-28
+
+- The Postgres table source honors `Table::with_text_id()` (vantage-table 0.6.9): a text-keyed
+  table binds its id as text on every by-id insert/get/replace/patch/delete, instead of coercing an
+  all-digit id to `bigint`. Tables without the flag keep the integer-coercing default.
+- The Postgres Vista shell implements `fetch_window(offset, limit)` (and advertises
+  `can_fetch_window`), so windowed pagination works through the Vista facade, matching the SQLite
+  shell.
+
 ## 0.6.4 — 2026-06-26
 
 - A NULL id read back from a row is no longer coerced to the literal string `"Null"`: rows with a
