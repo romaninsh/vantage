@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.8 — 2026-06-28
+
+- Formatting only (`cargo fmt --all`); no functional change.
+
 ## 0.6.7 — 2026-06-28
 
 - `Dio::get_ref(relation, row)` traverses a reference and returns a new `Dio`
