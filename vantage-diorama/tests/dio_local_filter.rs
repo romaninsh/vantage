@@ -27,6 +27,22 @@ async fn condition_on_augmented_column_filters_locally() {
 }
 
 #[tokio::test]
+async fn native_column_condition_filters_cheap_rows_without_forcing_hydration() {
+    // `kind` is a native list-pass column → the filter applies to the cheap
+    // (gray) rows immediately and does NOT force full hydration. No viewport set.
+    let dio = bucket_dio().await;
+    dio.with_condition_eq("kind", "red");
+
+    let view = MockView::open(&dio, 10).await;
+    view.settle_until("native filter pre-hydration", |v| v.row_count() == 2)
+        .await;
+
+    assert_eq!(view.row_count(), 2, "two red rows");
+    assert_eq!(view.gray_rows(), 2, "shown as gray — no forced hydration");
+    assert_eq!(view.loaded_rows(), 0);
+}
+
+#[tokio::test]
 async fn no_condition_keeps_all_augmented_rows() {
     let dio = bucket_dio().await;
     let view = MockView::open(&dio, 10).await;

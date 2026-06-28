@@ -47,13 +47,14 @@ pub fn meta(columns: &[&str]) -> VistaMetadata {
 
 // ---- bucket fixture ------------------------------------------------------
 
-/// Master: a bucket object list — ids only, no `name` (that's augmented).
+/// Master: a bucket object list. `kind` is a native (list-pass) column; `name`
+/// is NOT present here — it's augmented from the `names` detail source.
 pub fn bucket_master() -> Vista {
     let shell = MockShell::new()
-        .with_record("o1", record(&[("id", "o1")]))
-        .with_record("o2", record(&[("id", "o2")]))
-        .with_record("o3", record(&[("id", "o3")]))
-        .with_metadata(meta(&["id"]));
+        .with_record("o1", record(&[("id", "o1"), ("kind", "red")]))
+        .with_record("o2", record(&[("id", "o2"), ("kind", "blue")]))
+        .with_record("o3", record(&[("id", "o3"), ("kind", "red")]))
+        .with_metadata(meta(&["id", "kind"]));
     Vista::new("bucket", Box::new(shell))
 }
 

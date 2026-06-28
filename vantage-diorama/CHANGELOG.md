@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.10 — 2026-06-28
+
+- Local emulation only forces full-set hydration when a condition/sort actually
+  targets an **augmented** column (whose value is unknown until a row hydrates).
+  A condition/sort on a **native** list-pass column now refines the cheap cached
+  rows in place with normal viewport-driven hydration — so a two-pass grid with a
+  `default_sort` on a real column no longer hydrates the whole table on open.
+
 ## 0.6.9 — 2026-06-28
 
 First step of the "Dio owns query semantics" work: the Dio — not the scenery or
