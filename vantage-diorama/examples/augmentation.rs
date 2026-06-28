@@ -100,19 +100,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Lens::new()
             .cache_at(&cache)
             .viewport_debounce(Duration::from_millis(1))
-            .catalog(Arc::new(catalog))
-            .augment(vec![Augmentation {
-                table: "tfstate-detail".into(), // catalog name of the detail Vista
-                source: Source::Id,             // master.id -> detail.id
-                fetch: Fetch::PerRow,           // one detail record per master row
-                merge: MergeRule {
-                    columns: vec!["resources".into(), "serial".into()],
-                },
-            }])
             .build()?,
     );
 
-    let dio = lens.make_dio(master()).await?;
+    // Augmentation is a property of the Dio, not the Lens: configure it after
+    // make_dio, before opening any scenery.
+    let dio = lens.make_dio(master()).await?.augment(
+        Arc::new(catalog),
+        vec![Augmentation {
+            table: "tfstate-detail".into(), // catalog name of the detail Vista
+            source: Source::Id,             // master.id -> detail.id
+            fetch: Fetch::PerRow,           // one detail record per master row
+            merge: MergeRule {
+                columns: vec!["resources".into(), "serial".into()],
+            },
+        }],
+    );
     let scenery = dio.table_scenery().page_size(10).open().await?;
     let n = scenery.row_count();
 

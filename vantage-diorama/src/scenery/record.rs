@@ -15,8 +15,7 @@
 //! Deliberately *not* in v1:
 //!
 //! - **Master fetch on cache miss** — the cache is the source of
-//!   truth. Use [`Dio::patched`](crate::Dio::patched) (e.g. from an
-//!   `on_query` callback once that lands in stage 5b) to seed the row.
+//!   truth. Use [`Dio::patched`](crate::Dio::patched) to seed the row.
 //! - **`PendingWrite` status + `mark_pending_write`** — optimistic
 //!   write tracking lands when the UI adapter (stage 8) exercises it.
 //! - **`Stale` status** — no producer until refresh/TTL tracking

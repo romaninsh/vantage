@@ -93,12 +93,11 @@ async fn open(tmp: &TempDir, augmentations: Vec<Augmentation>) -> Dio {
         Lens::new()
             .cache_at(tmp.path().join("cache.redb"))
             .viewport_debounce(Duration::from_millis(1))
-            .catalog(catalog())
-            .augment(augmentations)
             .build()
             .expect("lens builds"),
     );
-    lens.make_dio(master_vista()).await.expect("make_dio")
+    let dio = lens.make_dio(master_vista()).await.expect("make_dio");
+    dio.augment(catalog(), augmentations)
 }
 
 fn status_of(s: &Arc<dyn TableScenery>, i: usize) -> Option<RowStatus> {
@@ -199,21 +198,6 @@ async fn multiple_augmentations_merge_independently() {
     assert_eq!(col_of(&scenery, 0, "detail").as_deref(), Some("full-r0"));
     assert_eq!(col_of(&scenery, 0, "extra").as_deref(), Some("x0"));
     assert_eq!(col_of(&scenery, 0, "branch").as_deref(), Some("main"));
-}
-
-/// Registering augmentations without a catalog is rejected at build time —
-/// honest failure, not a silent no-op.
-#[tokio::test]
-async fn augment_without_catalog_fails_to_build() {
-    let tmp = TempDir::new().unwrap();
-    let result = Lens::new()
-        .cache_at(tmp.path().join("cache.redb"))
-        .augment(vec![aug("runs-detail", Source::Id, &["detail"])])
-        .build();
-    assert!(matches!(
-        result,
-        Err(vantage_diorama::LensBuildError::MissingCatalog)
-    ));
 }
 
 /// A missing key field surfaces as a failed row — the detail pass error marks

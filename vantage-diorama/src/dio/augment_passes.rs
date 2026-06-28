@@ -1,11 +1,10 @@
 //! The two-pass augmentation passes, owned by the Dio.
 //!
 //! A Dio configured with [`Dio::augment`](crate::Dio::augment) drives its own
-//! list / detail / refresh passes from the augmentation config it holds, instead
-//! of the Lens carrying them. These free functions are the shared bodies: the
-//! Dio path calls them reading config off `DioInner`, and the legacy
-//! `Lens::augment` synthesis (`lens::build`) delegates here too, so there's one
-//! definition of each pass.
+//! list / detail / refresh passes from the augmentation config it holds. These
+//! free functions are the shared bodies, read off `DioInner` — distinct from a
+//! Lens that registers explicit `on_list_page`/`on_load_detail` callbacks for
+//! hand-rolled two-pass.
 
 use ciborium::Value as CborValue;
 use vantage_core::Result;
