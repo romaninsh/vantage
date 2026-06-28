@@ -369,20 +369,31 @@ mod tests {
         );
         cat.register_relation(
             "launch",
-            Relation::single_key("crew", "launch_crew", ReferenceKind::HasMany, "launch_id", "id"),
+            Relation::single_key(
+                "crew",
+                "launch_crew",
+                ReferenceKind::HasMany,
+                "launch_id",
+                "id",
+            ),
         );
 
         let launch = record(&[("id", text("L1"))]);
         let rel = cat.relations_for("launch")[0].clone();
 
         // 1) Source up — traversal works, exactly one crew member.
-        let crew = cat.traverse(&rel, &launch).expect("traverse with source up");
+        let crew = cat
+            .traverse(&rel, &launch)
+            .expect("traverse with source up");
         assert_eq!(crew.list_values().await.unwrap().len(), 1);
 
         // 2) The crew source goes down (refresh 503s) — re-traverse.
         crew_up.store(false, Ordering::SeqCst);
         let down_res = cat.traverse(&rel, &launch);
-        assert!(down_res.is_err(), "traverse fails while the crew source is down");
+        assert!(
+            down_res.is_err(),
+            "traverse fails while the crew source is down"
+        );
         let down = format!("{:?}", down_res.err().unwrap());
 
         // 3) The reference DEFINITION is untouched: it still exists.
@@ -390,7 +401,10 @@ mod tests {
             cat.relations_for("launch").iter().any(|r| r.name == "crew"),
             "the `crew` relation is still defined"
         );
-        assert!(cat.has_model("launch_crew"), "the target model is still registered");
+        assert!(
+            cat.has_model("launch_crew"),
+            "the target model is still registered"
+        );
 
         // 4) Yet the error is a bare load failure carrying nothing that lets a
         //    caller distinguish "unreachable" from "no such reference" — both a
@@ -400,9 +414,15 @@ mod tests {
         assert!(missing_res.is_err(), "an unregistered model also errors");
         let absent = format!("{:?}", missing_res.err().unwrap());
 
-        assert!(down.contains("unavailable") || down.contains("503"), "got: {down}");
+        assert!(
+            down.contains("unavailable") || down.contains("503"),
+            "got: {down}"
+        );
         // Both failures are the same `Result::Err` shape with no machine-readable
         // "kind" — this sameness is the conflation the bug is about.
-        assert!(!absent.is_empty(), "missing-model error exists but is just another opaque Err");
+        assert!(
+            !absent.is_empty(),
+            "missing-model error exists but is just another opaque Err"
+        );
     }
 }
