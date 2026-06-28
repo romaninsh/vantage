@@ -75,6 +75,21 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self
     }
 
+    /// Mark the id column as a text/string key so backends do not numerically
+    /// coerce it. Use for models whose id column is `TEXT` even when some ids
+    /// look numeric (e.g. ids from an external API mixed with generated UUIDs);
+    /// without this the Postgres backend binds an all-digit id like `"121"` as
+    /// `bigint`, which fails against a `TEXT` id column.
+    pub fn with_text_id(mut self) -> Self {
+        self.id_text = true;
+        self
+    }
+
+    /// Whether the id column is a text key (see [`Self::with_text_id`]).
+    pub fn id_is_text(&self) -> bool {
+        self.id_text
+    }
+
     /// Add a typed column AND mark it as a display title.
     ///
     /// Title columns show alongside the id in generic list views and

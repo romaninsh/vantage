@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.9 — 2026-06-28
+
+- `Table::with_text_id()` marks the id column as a text/string key so SQL backends do not
+  numerically coerce it. Without it the Postgres backend binds an all-digit id like `"121"` as
+  `bigint`, which fails against a `TEXT` id column; the flag keeps such ids bound as text. Defaults
+  off, so the integer-id convention other models rely on is unchanged. Read back via
+  `Table::id_is_text()`.
+
 ## 0.6.8 — 2026-06-26
 
 - `Table::with_generated_id(IdGenerator)` mints a record's id on insert when the backend does not
