@@ -10,7 +10,7 @@ use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
 use vantage_diorama::Lens;
 use vantage_types::Record;
-use vantage_vista::{mocks::MockShell, Column, Reference, ReferenceKind, Vista, VistaMetadata};
+use vantage_vista::{Column, Reference, ReferenceKind, Vista, VistaMetadata, mocks::MockShell};
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.to_string())
@@ -33,8 +33,14 @@ fn crew_shell() -> MockShell {
         .with_id_column("id");
     MockShell::new()
         .with_metadata(meta)
-        .with_record("c1", rec(&[("id", "c1"), ("launch_id", "L1"), ("name", "Buzz")]))
-        .with_record("c2", rec(&[("id", "c2"), ("launch_id", "L2"), ("name", "Neil")]))
+        .with_record(
+            "c1",
+            rec(&[("id", "c1"), ("launch_id", "L1"), ("name", "Buzz")]),
+        )
+        .with_record(
+            "c2",
+            rec(&[("id", "c2"), ("launch_id", "L2"), ("name", "Neil")]),
+        )
 }
 
 /// A launches master declaring a `crew` has-many onto `launch_crew`, resolved
