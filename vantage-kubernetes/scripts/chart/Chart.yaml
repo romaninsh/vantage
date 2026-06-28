@@ -1,0 +1,6 @@
+apiVersion: v2
+name: vantage-fixtures
+description: Sample workloads for vantage-kubernetes integration tests
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

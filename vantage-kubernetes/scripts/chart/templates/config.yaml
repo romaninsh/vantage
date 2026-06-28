@@ -1,0 +1,20 @@
+# A ConfigMap + Secret so the config tables have rows.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-config
+  labels:
+    app: web
+data:
+  greeting: "hello from vantage"
+  replicas: "{{ .Values.web.replicas }}"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: demo-secret
+  labels:
+    app: web
+type: Opaque
+stringData:
+  token: "s3cr3t-do-not-look"

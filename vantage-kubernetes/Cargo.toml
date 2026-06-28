@@ -1,0 +1,58 @@
+[package]
+name = "vantage-kubernetes"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+authors = ["Romans Malinovskis <me@nearly.guru>"]
+description = "Kubernetes API persistence backend for Vantage framework — incubating"
+documentation = "https://docs.rs/vantage-kubernetes"
+homepage = "https://romaninsh.github.io/vantage"
+repository = "https://github.com/romaninsh/vantage"
+readme = "README.md"
+
+[dependencies]
+vantage-core = { version = "0.6" }
+vantage-types = { version = "0.6", features = ["serde"] }
+vantage-expressions = { version = "0.6" }
+vantage-table = { version = "0.6" }
+vantage-dataset = { version = "0.6" }
+vantage-vista = { version = "0.6" }
+
+# Native Kubernetes client: config/auth/TLS only. We issue raw list
+# requests and project the JSON ourselves, so k8s-openapi's generated
+# types are deliberately not pulled in.
+kube = { version = "0.99", default-features = false, features = ["client", "config", "rustls-tls"] }
+# kube-client depends on k8s-openapi, which requires a Kubernetes version
+# feature to be selected. We don't use its generated types (we work with raw
+# JSON), but the version must be pinned for the dependency graph to build.
+k8s-openapi = { version = "0.24", features = ["latest"] }
+http = "1"
+# rustls 0.23 requires a process-wide CryptoProvider to be selected; we
+# install the ring provider in `KubernetesCluster::try_default`.
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde_yaml_ng = "0.10"
+indexmap = { version = "2", features = ["serde"] }
+async-trait = "0.1"
+tokio = { version = "1", features = ["rt", "macros", "sync"] }
+
+# JSON ↔ CBOR via ciborium's serde bridge (Vista speaks CBOR).
+ciborium = "0.2"
+
+# RFC3339 timestamp parsing for `creationTimestamp` / age.
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+
+[dev-dependencies]
+vantage-cli-util = { version = "0.6" }
+ciborium = "0.2"
+
+anyhow = "1"
+pretty_assertions = "1"
+tokio = { version = "1", features = ["full"] }
+clap = { version = "4", features = ["derive"] }
+
+[[example]]
+name = "k8s-cli"
+path = "examples/k8s-cli.rs"
