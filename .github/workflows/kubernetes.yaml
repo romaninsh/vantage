@@ -1,0 +1,53 @@
+name: Kubernetes Tests
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "vantage-kubernetes/**"
+      - ".github/workflows/kubernetes.yaml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: vantage-kubernetes
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          key: "kubernetes-incubating-v01"
+          workspaces: vantage-kubernetes
+
+      - name: Start minikube
+        uses: medyagh/setup-minikube@latest
+        with:
+          addons: metrics-server
+
+      - name: Deploy fixtures via Helm
+        run: ./scripts/ingress.sh
+
+      - name: Build crate + CLI
+        run: cargo build --all-targets
+
+      - name: Run unit tests
+        run: cargo test --lib
+
+      - name: Run integration tests against minikube
+        run: cargo test --test '*' -- --test-threads=1
+        env:
+          RUN_K8S_INTEGRATION: "1"
+
+      - name: Smoke-test the CLI
+        run: cargo run --example k8s-cli -- core.pods namespace=demo
+
+      - name: Cleanup
+        if: always()
+        run: minikube delete || true
