@@ -14,6 +14,14 @@
   override the sort). Native columns flow through the existing per-`(conditions,
   sort)` index / local-filter path; pushdown-vs-local routing for augmented
   columns arrives with the local-emulation work.
+- Augmentation is now owned by the Dio, not the Lens: `Dio::augment(catalog,
+  augmentations)` configures the two-pass list/detail/refresh, so Dios sharing a
+  Lens can enrich differently. The pass bodies moved to a shared
+  `dio::augment_passes` module; the Dio records its *augmented columns* (the
+  merged columns), the signal that a condition/sort on a client-side column must
+  be emulated locally rather than pushed to the master. `Lens::augment` still
+  works (delegates to the same passes) and will be retired once consumers move to
+  the Dio API.
 
 ## 0.6.7 — 2026-06-28
 

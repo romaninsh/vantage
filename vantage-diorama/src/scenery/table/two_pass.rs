@@ -91,9 +91,11 @@ pub(crate) async fn run_list_page(state: Arc<TableSceneryState>) {
     let Some(index) = state.index() else {
         return;
     };
-    let Some(cb) = dio_inner.lens.callbacks.on_list_page.as_ref() else {
+    // The list pass comes from the Dio's own augmentation (preferred) or the
+    // legacy Lens `on_list_page` callback. Bail if neither provides one.
+    if !dio_inner.has_dio_augment() && dio_inner.lens.callbacks.on_list_page.is_none() {
         return;
-    };
+    }
     if index.is_complete() {
         return;
     }
@@ -113,7 +115,12 @@ pub(crate) async fn run_list_page(state: Arc<TableSceneryState>) {
     let dio = Dio {
         inner: dio_inner.clone(),
     };
-    let result = cb(&dio, q).await;
+    let result = if dio_inner.has_dio_augment() {
+        crate::dio::augment_passes::list_page(&dio, q).await
+    } else {
+        let cb = dio_inner.lens.callbacks.on_list_page.as_ref().unwrap();
+        cb(&dio, q).await
+    };
 
     *state.list_in_flight.lock().unwrap() = false;
 
@@ -243,9 +250,9 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
     let Some(index) = state.index() else {
         return;
     };
-    let Some(cb) = dio_inner.lens.callbacks.on_load_detail.as_ref() else {
+    if !dio_inner.has_dio_augment() && dio_inner.lens.callbacks.on_load_detail.is_none() {
         return;
-    };
+    }
     let dio = Dio {
         inner: dio_inner.clone(),
     };
@@ -275,7 +282,20 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
             }
         }
 
-        let result = cb(&dio, id.clone()).await;
+        let result = if dio_inner.has_dio_augment() {
+            let catalog = dio_inner.augment_catalog.read().unwrap().clone();
+            let augs = dio_inner.augmentations.read().unwrap().clone();
+            match (catalog, augs) {
+                (Some(catalog), Some(augs)) => {
+                    crate::dio::augment_passes::load_detail_with(&dio, id.clone(), &catalog, &augs)
+                        .await
+                }
+                _ => Ok(Default::default()),
+            }
+        } else {
+            let cb = dio_inner.lens.callbacks.on_load_detail.as_ref().unwrap();
+            cb(&dio, id.clone()).await
+        };
         state.detail_in_flight.lock().unwrap().remove(&id);
 
         match result {

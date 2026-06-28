@@ -85,18 +85,18 @@ pub fn augment_name() -> Augmentation {
 }
 
 /// A Dio over the bucket master, augmenting each row's `name` from the `names`
-/// detail source, backed by an in-memory cache (no TempDir).
+/// detail source, backed by an in-memory cache (no TempDir). Augmentation is
+/// configured on the **Dio** (`dio.augment`), not the Lens.
 pub async fn bucket_dio() -> Dio {
     let lens = Arc::new(
         Lens::new()
             .cache_in_memory()
             .viewport_debounce(Duration::from_millis(1))
-            .catalog(bucket_catalog())
-            .augment(vec![augment_name()])
             .build()
             .expect("lens builds"),
     );
-    lens.make_dio(bucket_master()).await.expect("make_dio")
+    let dio = lens.make_dio(bucket_master()).await.expect("make_dio");
+    dio.augment(bucket_catalog(), vec![augment_name()])
 }
 
 // ---- single-pass (eager) fixture -----------------------------------------
