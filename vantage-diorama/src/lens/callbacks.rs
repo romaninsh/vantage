@@ -25,9 +25,6 @@ pub type DioWriteCallback =
 pub type DioEventCallback =
     Box<dyn for<'a> Fn(&'a Dio, ChangeEvent) -> DioCallbackFuture<'a> + Send + Sync + 'static>;
 
-pub type DioQueryCallback =
-    Box<dyn for<'a> Fn(&'a Dio, QueryDescriptor) -> DioCallbackFuture<'a> + Send + Sync + 'static>;
-
 /// Future returned by a [`DioTotalProviderCallback`]. Carries a row
 /// count back to the Scenery; runs once per scenery open and is
 /// cached for the scenery's lifetime.
@@ -81,7 +78,6 @@ pub struct LensCallbacks {
     pub on_refresh: Option<DioCallback>,
     pub on_write: Option<DioWriteCallback>,
     pub on_event: Option<DioEventCallback>,
-    pub on_query: Option<DioQueryCallback>,
     pub total_provider: Option<DioTotalProviderCallback>,
     pub on_load_chunk: Option<DioLoadChunkCallback>,
     pub on_list_page: Option<DioListPageCallback>,
@@ -119,15 +115,6 @@ where
     Fut: Future<Output = Result<()>> + Send + 'static,
 {
     Box::new(move |dio, ev| Box::pin(f(dio, ev)))
-}
-
-/// Wrap a user closure into a [`DioQueryCallback`].
-pub fn boxed_dio_query_callback<F, Fut>(f: F) -> DioQueryCallback
-where
-    F: for<'a> Fn(&'a Dio, QueryDescriptor) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = Result<()>> + Send + 'static,
-{
-    Box::new(move |dio, q| Box::pin(f(dio, q)))
 }
 
 /// Wrap a user closure into a [`DioTotalProviderCallback`].

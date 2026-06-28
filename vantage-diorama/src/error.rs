@@ -6,9 +6,6 @@ pub enum LensBuildError {
     #[error("cache backend is required (call .cache_at(...) or .cache_source(...))")]
     MissingCacheSource,
 
-    #[error("augmentations were registered but no catalog was provided (call .catalog(...))")]
-    MissingCatalog,
-
     #[error(transparent)]
     Other(#[from] VantageError),
 }

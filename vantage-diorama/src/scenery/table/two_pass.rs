@@ -174,8 +174,9 @@ pub(crate) async fn run_list_page(state: Arc<TableSceneryState>) {
     let Some(index) = state.index() else {
         return;
     };
-    // The list pass comes from the Dio's own augmentation (preferred) or the
-    // legacy Lens `on_list_page` callback. Bail if neither provides one.
+    // The list pass comes from the Dio's own augmentation (preferred) or an
+    // explicitly-registered Lens `on_list_page` callback (hand-rolled two-pass).
+    // Bail if neither provides one.
     if !dio_inner.has_dio_augment() && dio_inner.lens.callbacks.on_list_page.is_none() {
         return;
     }
