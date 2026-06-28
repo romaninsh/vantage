@@ -1,0 +1,9 @@
+# Fixture knobs. Integration tests assert against these exact values, so a
+# `helm upgrade` after editing here re-deploys and the tests re-verify.
+web:
+  # Number of nginx replicas. Tests assert deployment "web" → pods == this.
+  replicas: 3
+  image: nginx:1.27-alpine
+
+busybox:
+  image: busybox:1.36

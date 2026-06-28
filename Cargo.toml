@@ -27,6 +27,7 @@ exclude = [
     "learn-qw",
     "learn-qw7",
     "vantage-aws",
+    "vantage-kubernetes",
     "vantage-aggregate",
     "vantage-aggregate-qw",
     "example_*",
