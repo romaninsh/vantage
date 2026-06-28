@@ -65,6 +65,29 @@ async fn seed_rows(
     }
 }
 
+/// Whether this scenery's conditions or sort touch a column produced by
+/// augmentation — the case that needs full-index hydration before the predicate
+/// can be evaluated. A native (list-pass) column is already present on the cheap
+/// cached rows, so it needs none.
+fn references_augmented_column(
+    state: &Arc<TableSceneryState>,
+    dio_inner: &Arc<crate::dio::DioInner>,
+) -> bool {
+    let cond_aug = state
+        .conditions
+        .read()
+        .unwrap()
+        .iter()
+        .any(|(col, _)| dio_inner.is_augmented_column(col));
+    let sort_aug = state
+        .sort
+        .read()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|(col, _)| dio_inner.is_augmented_column(col));
+    cond_aug || sort_aug
+}
+
 /// Rebuild the visible map for a **locally-refined** two-pass scenery: take the
 /// index's ids, read each row's current cache record + status, keep those that
 /// match the conditions/search, sort locally if requested, and renumber. An
@@ -313,11 +336,13 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
     if !dio_inner.has_dio_augment() && dio_inner.lens.callbacks.on_load_detail.is_none() {
         return;
     }
-    // A locally-refined view can't know which rows match an augmented-column
-    // predicate until they're hydrated, so it hydrates the whole index rather
-    // than just the visible window. (Bounded by the listed set; large sets pay
-    // for this — the documented cost of filtering on a client-side column.)
-    let range = if state.local_refine {
+    // A predicate/sort on an *augmented* column can't be evaluated until rows are
+    // hydrated, so such a view hydrates the whole index rather than just the
+    // visible window (the documented cost of filtering/sorting on a client-side
+    // column). A condition/sort on a *native* (list-pass) column needs no extra
+    // hydration — `reseed_filtered` already orders/filters the cheap cache rows —
+    // so it keeps normal viewport-driven hydration.
+    let range = if state.local_refine && references_augmented_column(&state, &dio_inner) {
         0..index.len()
     } else {
         range
