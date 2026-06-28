@@ -29,6 +29,18 @@ pub use event_bus::DioEvent;
 pub use hot_tier::HotTier;
 pub use shell::DioShell;
 
+/// Stringify a scalar CBOR id for use inside a cache table name. Non-scalars
+/// yield an empty string (the name then degrades to the shared, id-less form).
+fn cbor_scalar_string(v: &CborValue) -> String {
+    match v {
+        CborValue::Text(s) => s.clone(),
+        CborValue::Integer(i) => i128::from(*i).to_string(),
+        CborValue::Bool(b) => b.to_string(),
+        CborValue::Float(f) => f.to_string(),
+        _ => String::new(),
+    }
+}
+
 /// Monotonically-increasing per-Scenery counter. Bumped on every state
 /// change a Scenery exposes; UI adapters watch the receiver and
 /// re-render on each bump.
@@ -133,6 +145,41 @@ impl Dio {
     /// awaits even while a concurrent [`reload`](Self::reload) swaps it.
     pub fn master(&self) -> Arc<Vista> {
         self.inner.master.read().unwrap().clone()
+    }
+
+    /// Traverse a reference and return a NEW [`Dio`] bound to the traversed
+    /// target Vista — mirroring `Table::get_ref` → `Table` and
+    /// [`Vista::get_ref`] → `Vista`. The new Dio reuses this Dio's [`Lens`], so
+    /// the target loads through the same cache-first, failure-tolerant path:
+    /// a temporarily-unreachable target yields an empty/stale-but-recovering
+    /// scenery, never a hard error. The ONLY failure here is a structural one —
+    /// the reference is undefined or the parent row lacks the join field —
+    /// surfaced synchronously by the underlying `Vista::get_ref`.
+    ///
+    /// Dio is persistence-agnostic: it delegates resolution to the master
+    /// Vista's `get_ref` and wraps whatever Vista comes back.
+    pub async fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Dio> {
+        // Resolve the target Vista — pure descriptor work delegated to the
+        // master shell. The only failure is structural (undefined relation /
+        // missing join field); a down *source* does not fail here, it surfaces
+        // later as an empty/recovering scenery on the returned Dio.
+        let target = self.master().get_ref(relation, row)?;
+
+        // Per-parent cache identity. A narrowed target (e.g. `crew` for launch
+        // L1 vs L2 — both `name()` "launch_crew") must NOT share one cache
+        // table, or one parent's snapshot refresh would clobber the other's.
+        // `Vista` doesn't expose its conditions, but we know the relation and
+        // the parent row, so derive the key the way the UI's detail tabs do:
+        // `{target}-via-{relation}-{parent_id}`.
+        let parent_id = self
+            .master()
+            .get_id_column()
+            .and_then(|idc| row.get(idc))
+            .map(cbor_scalar_string)
+            .unwrap_or_default();
+        let cache_table_name = format!("{}-via-{}-{}", target.name(), relation, parent_id);
+
+        self.inner.lens.make_dio_as(target, cache_table_name).await
     }
 
     /// Re-point this Dio at a freshly-built master Vista and rebuild its cache

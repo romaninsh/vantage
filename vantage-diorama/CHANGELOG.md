@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.7 — 2026-06-28
+
+- `Dio::get_ref(relation, row)` traverses a reference and returns a new `Dio`
+  bound to the narrowed target Vista — mirroring `Table::get_ref` and
+  `Vista::get_ref`. The target loads through the normal cache-first,
+  failure-tolerant scenery, so a temporarily-unreachable relation source yields
+  an empty/stale-but-recovering grid rather than an error; the only synchronous
+  failure is a structurally-undefined reference. `Dio` is persistence-agnostic —
+  it delegates resolution to the master Vista and wraps whatever it returns.
+- `Lens::make_dio_as(master, cache_table_name)` builds a Dio with an explicit
+  cache table name (`make_dio` now delegates with `master.name()`). `get_ref`
+  uses it to give each parent's traversed target an isolated cache table, so one
+  parent's refresh can't clobber another's.
+
 ## 0.6.6 — 2026-06-27
 
 - Failed auto-refresh no longer reverts the grid to stale cache. The

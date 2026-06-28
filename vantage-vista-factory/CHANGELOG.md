@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1 — unreleased
+
+- Test only: a characterization test pinning that an unreachable reference
+  target is conflated with a missing reference at the traversal layer — the
+  problem `vantage-diorama`'s `Dio::get_ref` resolves. No public API or
+  behaviour change.
+
 ## 0.6.0 — unreleased
 
 - Coordinated 0.6 release; internal dependencies realigned to 0.6. No public API changes.

@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use vantage_core::Result;
 use vantage_types::Record;
@@ -28,6 +29,14 @@ pub struct MockShell {
     search: Arc<Mutex<Option<String>>>,
     capabilities: VistaCapabilities,
     metadata: VistaMetadata,
+    /// Per-relation target stores, so `get_ref` can resolve a foreign-key
+    /// reference to another in-memory shell — the mock analogue of a driver's
+    /// `with_one`/`with_many`. Registered via [`Self::with_ref_target`].
+    ref_targets: IndexMap<String, MockShell>,
+    /// While set, every read returns `Err` — the in-memory analogue of a
+    /// source that is temporarily unreachable (a 503). Shared across clones
+    /// (incl. narrowed `get_ref` results) so a test can flip it from any handle.
+    fail_reads: Arc<AtomicBool>,
 }
 
 impl MockShell {
@@ -48,6 +57,42 @@ impl MockShell {
                 ..VistaCapabilities::default()
             },
             metadata: VistaMetadata::new(),
+            ref_targets: IndexMap::new(),
+            fail_reads: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Register the target store for a foreign-key relation declared in
+    /// `metadata` (via [`VistaMetadata::with_reference`]). `get_ref(relation,
+    /// row)` then returns this store narrowed by `foreign_key == parent_row[id]`
+    /// — the in-memory analogue of a driver resolving a `with_one`/`with_many`.
+    pub fn with_ref_target(mut self, relation: impl Into<String>, target: MockShell) -> Self {
+        self.ref_targets.insert(relation.into(), target);
+        self
+    }
+
+    /// Flip read failure on/off. While `true`, `list`/`get`/`count` return
+    /// `Err`. Shared across clones (incl. narrowed `get_ref` results) via `Arc`,
+    /// so a handle kept before the shell is registered/boxed can fail the live
+    /// dataset mid-run — simulating a source that goes offline.
+    pub fn set_fail_reads(&self, fail: bool) {
+        self.fail_reads.store(fail, Ordering::SeqCst);
+    }
+
+    /// Clone sharing the data, fail toggle, ref targets, and metadata, but with
+    /// FRESH condition state — so narrowing a `get_ref` result doesn't pollute
+    /// the registered target shell's filters/order/search.
+    fn narrowed_clone(&self) -> Self {
+        Self {
+            data: self.data.clone(),
+            next_auto_id: self.next_auto_id.clone(),
+            filters: Arc::new(Mutex::new(Vec::new())),
+            order: Arc::new(Mutex::new(None)),
+            search: Arc::new(Mutex::new(None)),
+            capabilities: self.capabilities.clone(),
+            metadata: self.metadata.clone(),
+            ref_targets: self.ref_targets.clone(),
+            fail_reads: self.fail_reads.clone(),
         }
     }
 
@@ -97,6 +142,14 @@ impl MockShell {
     /// Drop every record.
     pub fn clear_records(&self) {
         self.data.lock().unwrap().clear();
+    }
+
+    /// Return `Err` while `fail_reads` is set — see [`Self::set_fail_reads`].
+    fn guard_reads(&self) -> Result<()> {
+        if self.fail_reads.load(Ordering::SeqCst) {
+            return Err(vantage_core::error!("mock source read failed (injected)"));
+        }
+        Ok(())
     }
 
     fn matches_filters(&self, record: &Record<CborValue>) -> bool {
@@ -185,6 +238,34 @@ impl TableShell for MockShell {
         build_contained_vista(spec, host_value.as_ref(), writeback, None)
     }
 
+    /// Resolve a foreign-key relation to its registered target store, narrowed
+    /// by `foreign_key == parent_row[id]`. This is a pure descriptor operation
+    /// (no read), so it succeeds even while the target's `fail_reads` is set —
+    /// the failure surfaces later, at load time, on the returned Vista.
+    fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
+        let reference = self.metadata.references.get(relation).ok_or_else(|| {
+            vantage_core::error!("unknown relation", relation = relation)
+        })?;
+        let target = self.ref_targets.get(relation).ok_or_else(|| {
+            vantage_core::error!("no ref target registered for relation", relation = relation)
+        })?;
+        let id_field = self.metadata.id_column.as_deref().unwrap_or("id");
+        let parent_val = row.get(id_field).cloned().ok_or_else(|| {
+            vantage_core::error!(
+                "parent row missing id for traversal",
+                relation = relation,
+                id_field = id_field
+            )
+        })?;
+        let narrowed = target.narrowed_clone();
+        narrowed
+            .filters
+            .lock()
+            .unwrap()
+            .push((reference.foreign_key.clone(), parent_val));
+        Ok(Vista::new(reference.target.clone(), Box::new(narrowed)))
+    }
+
     fn id_column(&self) -> Option<&str> {
         self.metadata.id_column.as_deref()
     }
@@ -193,6 +274,7 @@ impl TableShell for MockShell {
         &self,
         _vista: &Vista,
     ) -> Result<IndexMap<String, Record<CborValue>>> {
+        self.guard_reads()?;
         let data = self.data.lock().unwrap();
         let mut rows: Vec<(String, Record<CborValue>)> = data
             .iter()
@@ -218,6 +300,7 @@ impl TableShell for MockShell {
         _vista: &Vista,
         id: &String,
     ) -> Result<Option<Record<CborValue>>> {
+        self.guard_reads()?;
         Ok(self.data.lock().unwrap().get(id).cloned())
     }
 
@@ -225,6 +308,7 @@ impl TableShell for MockShell {
         &self,
         _vista: &Vista,
     ) -> Result<Option<(String, Record<CborValue>)>> {
+        self.guard_reads()?;
         let data = self.data.lock().unwrap();
         Ok(data
             .iter()

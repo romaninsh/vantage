@@ -299,7 +299,8 @@ impl Vista {
 
     // ---- references --------------------------------------------------------
 
-    /// Traverse a named **same-persistence** reference using a known source row.
+    /// Traverse a named reference using a known source row, returning the
+    /// narrowed target `Vista`.
     ///
     /// Routes in this order:
     /// 1. Contained (embedded-in-row) relations via
@@ -308,9 +309,11 @@ impl Vista {
     ///    consults the wrapped typed `Table`'s `with_one` / `with_many`
     ///    registrations.
     ///
-    /// The target always lives in the same backend as this Vista.
-    /// Cross-persistence traversal is handled one layer up by
-    /// `vantage-vista-factory`'s `VistaCatalog`.
+    /// Whether the target lives in the same backend as this Vista or in a
+    /// different persistence is entirely the **shell's** concern — it resolves
+    /// the target and applies the join. Callers (including diorama's
+    /// `Dio::get_ref`) stay persistence-agnostic and just consume the returned
+    /// `Vista`.
     ///
     /// The `row` must come from this Vista (typically via
     /// [`get_value`](vantage_dataset::traits::ReadableValueSet::get_value)
