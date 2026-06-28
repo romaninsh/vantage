@@ -7,7 +7,9 @@ use tempfile::TempDir;
 use tokio::sync::{Mutex, Notify, broadcast};
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_diorama::{ChangeEvent, Dio, DioEvent, Lens, TableScenery, WriteOp};
+use vantage_diorama::{
+    CacheBackend, ChangeEvent, Dio, DioEvent, Lens, MemoryCache, TableScenery, WriteOp,
+};
 use vantage_vista::Vista;
 
 use super::backend::BackendKind;
@@ -100,6 +102,11 @@ pub struct LensBuilderState {
 #[world(init = Self::new)]
 pub struct DioramaWorld {
     pub tmp: Option<TempDir>,
+    /// Shared in-memory cache backend for the scenario. One instance reused
+    /// across every Lens the world builds, so multiple Dios (and Lens rebuilds)
+    /// see one another's cache tables — the cross-Lens sharing the old shared
+    /// redb file gave, without touching disk.
+    pub mem_cache: Option<Arc<MemoryCache>>,
     pub backend: BackendKind,
     pub master: Option<Vista>,
     pub lens_builder: LensBuilderState,
@@ -158,6 +165,7 @@ impl DioramaWorld {
     async fn new() -> Self {
         Self {
             tmp: None,
+            mem_cache: None,
             backend: BackendKind::default(),
             master: None,
             lens_builder: LensBuilderState::default(),
@@ -230,6 +238,13 @@ impl DioramaWorld {
         }
         self.tmp.as_ref().unwrap().path().to_path_buf()
     }
+
+    /// The scenario's shared in-memory cache backend (created on first use).
+    pub fn cache_source(&mut self) -> Arc<dyn CacheBackend> {
+        self.mem_cache
+            .get_or_insert_with(|| Arc::new(MemoryCache::new()))
+            .clone()
+    }
 }
 
 impl LensBuilderState {
@@ -244,11 +259,11 @@ impl LensBuilderState {
     /// cache assertions.
     pub fn build(
         &self,
-        cache_path: std::path::PathBuf,
+        cache: Arc<dyn CacheBackend>,
         spies: &Spies,
         backend: BackendKind,
     ) -> Result<Arc<Lens>> {
-        let mut b = Lens::new().cache_at(cache_path);
+        let mut b = Lens::new().cache_source(cache);
         let bridge = backend == BackendKind::Sqlite;
 
         // on_start — legacy "copy master" mode kept for v1 features;

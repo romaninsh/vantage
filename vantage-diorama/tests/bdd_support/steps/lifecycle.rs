@@ -20,10 +20,10 @@ async fn set_on_start_blocking(w: &mut DioramaWorld, val: String) {
 
 #[when("I spawn make_dio")]
 async fn spawn_make_dio(w: &mut DioramaWorld) {
-    let cache_path = w.tmp_path().join("cache.redb");
+    let cache = w.cache_source();
     let lens = w
         .lens_builder
-        .build(cache_path, &w.spies, w.backend)
+        .build(cache, &w.spies, w.backend)
         .expect("build lens");
     let master = w.master.take().expect("master not set");
     w.lens = Some(lens.clone());

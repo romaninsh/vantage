@@ -18,12 +18,12 @@ async fn named_master(w: &mut DioramaWorld, name: String, step: &Step) {
 
 #[when(regex = r#"^the dio for "([^"]+)" is created$"#)]
 async fn create_named_dio(w: &mut DioramaWorld, name: String) {
-    let cache_path = w.tmp_path().join("cache.redb");
     // Reuse the Lens across all named dios under this scenario.
     if w.lens.is_none() {
+        let cache = w.cache_source();
         let lens = w
             .lens_builder
-            .build(cache_path, &w.spies, w.backend)
+            .build(cache, &w.spies, w.backend)
             .expect("build lens");
         w.lens = Some(lens);
     }
