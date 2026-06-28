@@ -20,7 +20,6 @@ pub struct TableSceneryBuilder {
     pub(crate) sort: Option<(String, SortDir)>,
     pub(crate) search: Option<String>,
     pub(crate) page_size: usize,
-    pub(crate) eager: bool,
     pub(crate) initial_range: Option<std::ops::Range<usize>>,
     pub(crate) titles_only: bool,
 }
@@ -33,7 +32,6 @@ impl TableSceneryBuilder {
             sort: None,
             search: None,
             page_size: 100,
-            eager: false,
             initial_range: None,
             titles_only: false,
         }
@@ -58,13 +56,6 @@ impl TableSceneryBuilder {
     /// refresh-on-open initial fetch. Default 100.
     pub fn page_size(mut self, n: usize) -> Self {
         self.page_size = n;
-        self
-    }
-
-    /// Currently equivalent to the default — kept so caller code can
-    /// continue to target the v1 API shape.
-    pub fn eager(mut self) -> Self {
-        self.eager = true;
         self
     }
 
@@ -99,7 +90,6 @@ impl TableSceneryBuilder {
             sort,
             search,
             page_size,
-            eager: _,
             initial_range,
             titles_only,
         } = self;
@@ -151,8 +141,8 @@ impl TableSceneryBuilder {
 
         let master_capabilities = dio.master.read().unwrap().capabilities().clone();
 
-        // Two-pass engages when the Dio owns augmentation, or (legacy) the Lens
-        // registers an `on_load_detail` callback. The shared per-query index is
+        // Two-pass engages when the Dio owns augmentation, or the Lens registers
+        // an explicit `on_load_detail` callback. The shared per-query index is
         // keyed by the master Vista's index_key over the scenery's conditions +
         // sort, so reopening the same variant reuses the already-built index.
         let two_pass = dio.is_two_pass();
