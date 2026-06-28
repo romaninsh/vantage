@@ -80,6 +80,14 @@ pub(crate) struct TableSceneryState {
     // the legacy single-pass path.
     /// Whether this scenery drives two-pass (list + detail) loading.
     pub(crate) two_pass: bool,
+    /// Two-pass only: whether the visible set is *locally refined* — its rows are
+    /// filtered/sorted over the cache rather than served in raw index order.
+    /// Engaged when the query carries conditions/sort the list pass can't push to
+    /// the master (today, any condition/sort in two-pass — augmented columns in
+    /// particular, which only exist after hydration). When set, the visible
+    /// `rows` map is authoritative for `row_count` (the index may hold more ids
+    /// than match the filter).
+    pub(crate) local_refine: bool,
     /// Dropdown / autocomplete projection: serve the cheap list columns and
     /// **skip the detail pass** even on a two-pass table. The list pass still
     /// runs (rows carry id + title columns); per-row hydration never fires.

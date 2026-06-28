@@ -65,6 +65,66 @@ async fn seed_rows(
     }
 }
 
+/// Rebuild the visible map for a **locally-refined** two-pass scenery: take the
+/// index's ids, read each row's current cache record + status, keep those that
+/// match the conditions/search, sort locally if requested, and renumber. An
+/// augmented-column condition naturally excludes rows not yet hydrated (the
+/// column is absent → no match), so matches surface as rows hydrate. The row's
+/// `Fresh`/`Incomplete` status is preserved.
+pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
+    use super::helpers::{cbor_cmp, matches_conditions, matches_search};
+
+    let Some(dio_inner) = state.dio_weak.upgrade() else {
+        return;
+    };
+    let Some(index) = state.index() else {
+        return;
+    };
+    let ids = index.ids();
+    let conditions = state.conditions.read().unwrap().clone();
+    let search = state.search.read().unwrap().clone();
+    let sort = state.sort.read().unwrap().clone();
+
+    let mut gathered: Vec<(String, vantage_types::Record<ciborium::Value>, CacheStatus)> =
+        Vec::with_capacity(ids.len());
+    for id in &ids {
+        if let Some((rec, status)) = dio_inner
+            .cache
+            .get_value_with_status(id)
+            .await
+            .ok()
+            .flatten()
+        {
+            if matches_conditions(&rec, &conditions) && matches_search(&rec, search.as_deref()) {
+                gathered.push((id.clone(), rec, status));
+            }
+        }
+    }
+
+    if let Some((col, dir)) = &sort {
+        gathered.sort_by(|(_, a, _), (_, b, _)| {
+            let ord = cbor_cmp(a.get(col), b.get(col));
+            match dir {
+                SortDir::Asc => ord,
+                SortDir::Desc => ord.reverse(),
+            }
+        });
+    }
+
+    let mut rows = std::collections::BTreeMap::new();
+    let mut id_to_idx = std::collections::HashMap::new();
+    for (i, (id, rec, status)) in gathered.into_iter().enumerate() {
+        let enriched = match status {
+            CacheStatus::Complete => EnrichedRecord::fresh(rec),
+            CacheStatus::Incomplete => EnrichedRecord::incomplete(rec),
+        };
+        rows.insert(i, Arc::new(enriched));
+        id_to_idx.insert(id, i);
+    }
+    *state.rows.write().unwrap() = rows;
+    *state.id_to_idx.write().unwrap() = id_to_idx;
+}
+
 /// Seed the scenery's sparse map from an already-populated shared index
 /// (reused across filter switches) without issuing any list call.
 pub(crate) async fn seed_from_index(state: &Arc<TableSceneryState>) {
@@ -253,6 +313,15 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
     if !dio_inner.has_dio_augment() && dio_inner.lens.callbacks.on_load_detail.is_none() {
         return;
     }
+    // A locally-refined view can't know which rows match an augmented-column
+    // predicate until they're hydrated, so it hydrates the whole index rather
+    // than just the visible window. (Bounded by the listed set; large sets pay
+    // for this — the documented cost of filtering on a client-side column.)
+    let range = if state.local_refine {
+        0..index.len()
+    } else {
+        range
+    };
     let dio = Dio {
         inner: dio_inner.clone(),
     };
@@ -316,7 +385,12 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
                     .cache
                     .insert_value_with_status(&id, &merged, CacheStatus::Complete)
                     .await;
-                if let Some(i) = state.id_to_idx.read().unwrap().get(&id).copied() {
+                // A locally-refined view re-derives its whole visible set after
+                // the loop (a freshly-hydrated row may now match/sort differently);
+                // a plain view updates the row's slot in place.
+                if !state.local_refine
+                    && let Some(i) = state.id_to_idx.read().unwrap().get(&id).copied()
+                {
                     state
                         .rows
                         .write()
@@ -326,7 +400,9 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
                 changed = true;
             }
             Err(e) => {
-                if let Some(i) = state.id_to_idx.read().unwrap().get(&id).copied() {
+                if !state.local_refine
+                    && let Some(i) = state.id_to_idx.read().unwrap().get(&id).copied()
+                {
                     let prev = state.rows.read().unwrap().get(&i).cloned();
                     if let Some(prev) = prev {
                         let failed = EnrichedRecord::detail_failed(
@@ -347,6 +423,11 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
     }
 
     if changed {
+        // Re-derive the locally-refined visible set now that more rows are
+        // hydrated (newly-matching rows appear, no-longer-matching drop).
+        if state.local_refine {
+            reseed_filtered(&state).await;
+        }
         state.bump_generation();
     }
 }
