@@ -42,6 +42,12 @@ where
     pub(super) title_field: Option<String>,
     pub(super) title_fields: Vec<String>,
     pub(super) id_field: Option<String>,
+    /// When true, the id column is a text/string key and backends must NOT
+    /// numerically coerce it (e.g. the Postgres backend otherwise binds an
+    /// all-digit id like `"121"` as `bigint`, which breaks against a `TEXT` id
+    /// column). Set via [`Self::with_text_id`]. Defaults to false to preserve
+    /// the integer-id convention used by other models.
+    pub(super) id_text: bool,
     /// Column values every row in this set must hold, because they are part of
     /// the set's definition (e.g. a has-many child carries the parent's foreign
     /// key). Registered wherever the table is narrowed by a literal
@@ -73,6 +79,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             title_field: None,
             title_fields: Vec::new(),
             id_field: None,
+            id_text: false,
             invariants: IndexMap::new(),
             hooks: Hooks::default(),
         }
@@ -100,6 +107,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             title_field: self.title_field,
             title_fields: self.title_fields,
             id_field: self.id_field,
+            id_text: self.id_text,
             invariants: self.invariants,
             hooks: self.hooks,
         }
