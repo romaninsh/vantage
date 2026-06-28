@@ -104,6 +104,21 @@ impl TableSceneryBuilder {
             titles_only,
         } = self;
 
+        // Inherit the Dio's base query semantics. The Dio owns "what this table
+        // is" (base conditions + default order); this view layers its own
+        // conditions on top and falls back to the Dio's order when it sets none.
+        let conditions = {
+            let base = dio.base_conditions.read().unwrap();
+            if base.is_empty() {
+                conditions
+            } else {
+                let mut merged = base.clone();
+                merged.extend(conditions);
+                merged
+            }
+        };
+        let sort = sort.or_else(|| dio.base_sort.read().unwrap().clone());
+
         // Dedup key over (shape, conditions, sort, search, titles_only). A live
         // scenery for the same query is shared — one reactor, one cache window,
         // one in-flight JoinSet — instead of standing up a parallel copy. A

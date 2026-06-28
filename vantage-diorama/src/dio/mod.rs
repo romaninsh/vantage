@@ -89,6 +89,12 @@ pub(crate) struct DioInner {
     pub(crate) query_indexes: std::sync::Mutex<
         std::collections::HashMap<String, Arc<crate::dio::query_index::QueryIndex>>,
     >,
+    /// Dio-level query semantics inherited by every scenery opened on this Dio.
+    /// The Dio — not the scenery — defines *what this table is*: a base set of
+    /// equality conditions and an optional default order. A scenery may layer
+    /// further per-view conditions/sort on top (see `TableSceneryBuilder`).
+    pub(crate) base_conditions: std::sync::RwLock<Vec<(String, CborValue)>>,
+    pub(crate) base_sort: std::sync::RwLock<Option<(String, crate::scenery::SortDir)>>,
     /// Deduplicating registry of live table sceneries, keyed by
     /// `(shape, conditions, sort, search)`. Holds `Weak` handles so it
     /// never keeps a scenery alive: opening the same query twice returns
@@ -237,6 +243,40 @@ impl Dio {
     #[doc(hidden)]
     pub async fn take_write_worker_handle(&self) -> Option<JoinHandle<()>> {
         self.inner.write_worker.lock().await.take()
+    }
+
+    /// Add a base equality condition that every scenery on this Dio inherits.
+    ///
+    /// The Dio owns query semantics: a condition set here defines *what this
+    /// table is* (e.g. "the John-filtered collection"), so all views — grids,
+    /// pickers, detail panes — see the same narrowed dataset. A scenery may add
+    /// further per-view conditions on top via
+    /// [`where_eq`](crate::scenery::TableSceneryBuilder::where_eq).
+    ///
+    /// How the condition is honoured depends on the column: a native column on
+    /// a capable master pushes down; a column the master can't filter (or an
+    /// augmented one) is emulated locally over the cache. Returns a clone so
+    /// calls chain. Conditions take effect for sceneries opened afterwards.
+    pub fn with_condition_eq(
+        &self,
+        col: impl Into<String>,
+        value: impl Into<CborValue>,
+    ) -> Self {
+        self.inner
+            .base_conditions
+            .write()
+            .unwrap()
+            .push((col.into(), value.into()));
+        self.clone()
+    }
+
+    /// Set the Dio's default order, inherited by every scenery that doesn't set
+    /// its own sort. Like [`with_condition_eq`](Self::with_condition_eq), the
+    /// Dio owns ordering — native+orderable columns push down, others sort
+    /// locally over the cache. Returns a clone so calls chain.
+    pub fn with_order(&self, col: impl Into<String>, dir: crate::scenery::SortDir) -> Self {
+        *self.inner.base_sort.write().unwrap() = Some((col.into(), dir));
+        self.clone()
     }
 
     /// Start a [`TableScenery`] builder

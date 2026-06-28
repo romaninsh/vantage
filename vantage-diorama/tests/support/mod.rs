@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ciborium::Value as CborValue;
+use vantage_dataset::prelude::ReadableValueSet;
 use vantage_diorama::{Augmentation, Dio, Fetch, Lens, MergeRule, Source, TableScenery};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
@@ -98,6 +99,40 @@ pub async fn bucket_dio() -> Dio {
     lens.make_dio(bucket_master()).await.expect("make_dio")
 }
 
+// ---- single-pass (eager) fixture -----------------------------------------
+
+/// Master with a native `team` column — 2 red, 1 blue — for condition/order
+/// tests that don't involve augmentation.
+pub fn teams_master() -> Vista {
+    let shell = MockShell::new()
+        .with_record("a", record(&[("id", "a"), ("team", "red")]))
+        .with_record("b", record(&[("id", "b"), ("team", "blue")]))
+        .with_record("c", record(&[("id", "c"), ("team", "red")]))
+        .with_metadata(meta(&["id", "team"]));
+    Vista::new("members", Box::new(shell))
+}
+
+/// A single-pass Dio whose `on_start` eagerly copies the master into an
+/// in-memory cache. No augmentation — the scenery filters/sorts the cache
+/// locally (the v1-compat path).
+pub async fn eager_dio(master: Vista) -> Dio {
+    let lens = Arc::new(
+        Lens::new()
+            .cache_in_memory()
+            .on_start(|dio| {
+                let dio = dio.clone();
+                async move {
+                    let rows = dio.master().list_values().await?;
+                    dio.cache().insert_values(rows).await?;
+                    Ok(())
+                }
+            })
+            .build()
+            .expect("lens builds"),
+    );
+    lens.make_dio(master).await.expect("make_dio")
+}
+
 // ---- MockView ------------------------------------------------------------
 
 /// A scenery consumer for tests. Wraps a `TableScenery` and exposes the
@@ -134,6 +169,14 @@ impl MockView {
 
     pub fn row_count(&self) -> usize {
         self.scenery.row_count()
+    }
+
+    /// Read a text column at a row index (None if absent / not a string).
+    pub fn col_at(&self, idx: usize, col: &str) -> Option<String> {
+        self.scenery.row(idx).and_then(|r| match r.record.get(col) {
+            Some(CborValue::Text(t)) => Some(t.clone()),
+            _ => None,
+        })
     }
 
     pub fn total(&self) -> Option<usize> {

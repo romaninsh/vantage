@@ -8,6 +8,12 @@
   and per-row `CacheStatus` semantics. Lets ephemeral Dios and tests skip the
   `TempDir`/redb file while still exercising real `Incomplete`/`Complete`
   round-tripping (two-pass, local emulation).
+- The Dio now owns base query semantics: `Dio::with_condition_eq(col, val)` and
+  `Dio::with_order(col, dir)` define *what the table is*, and every scenery
+  opened on the Dio inherits them (a view may still layer its own conditions and
+  override the sort). Native columns flow through the existing per-`(conditions,
+  sort)` index / local-filter path; pushdown-vs-local routing for augmented
+  columns arrives with the local-emulation work.
 
 ## 0.6.7 — 2026-06-28
 
