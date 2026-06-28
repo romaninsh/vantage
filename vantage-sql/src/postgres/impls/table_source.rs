@@ -27,6 +27,21 @@ fn id_value(id: &str) -> AnyPostgresType {
     }
 }
 
+/// Bind an id for a given table. Honors [`Table::with_text_id`]: a text-keyed
+/// table always binds its id as text, even when it looks numeric, so an
+/// all-digit id like `"121"` is not coerced to `bigint` against a `TEXT` id
+/// column. Other tables keep the integer-coercing default ([`id_value`]).
+fn id_param<E>(table: &Table<PostgresDB, E>, id: &str) -> AnyPostgresType
+where
+    E: Entity<AnyPostgresType>,
+{
+    if table.id_is_text() {
+        AnyPostgresType::from(id.to_string())
+    } else {
+        id_value(id)
+    }
+}
+
 /// Parse the CBOR array result from execute() into an IndexMap of id -> Record.
 fn parse_rows(
     result: AnyPostgresType,
@@ -190,7 +205,7 @@ impl TableSource for PostgresDB {
             .unwrap_or_else(|| "id".to_string());
 
         let condition = {
-            let id_val = id_value(id);
+            let id_val = id_param(table, id);
             postgres_expr!("{} = {}", (ident(&id_field_name)), id_val)
         };
         let select = table.select().with_condition(condition);
@@ -288,7 +303,7 @@ impl TableSource for PostgresDB {
             // The explicit id param is authoritative on this path, so apply it
             // after the record — a record-carried id (e.g. one a generator hook
             // filled) must not override the id the caller asked to write.
-            .with_field(&id_field_name, id_value(id));
+            .with_field(&id_field_name, id_param(table, id));
         self.execute(&insert.expr()).await?;
 
         self.get_table_value(table, id)
@@ -316,7 +331,7 @@ impl TableSource for PostgresDB {
             // The explicit id param is authoritative on this path, so apply it
             // after the record — a record-carried id (e.g. one a generator hook
             // filled) must not override the id the caller asked to write.
-            .with_field(&id_field_name, id_value(id));
+            .with_field(&id_field_name, id_param(table, id));
         let base = insert.expr();
 
         let set_parts: Vec<Expression<AnyPostgresType>> = if record.is_empty() {
@@ -365,7 +380,7 @@ impl TableSource for PostgresDB {
             .unwrap_or_else(|| "id".to_string());
 
         let id_condition = {
-            let id_val = id_value(id);
+            let id_val = id_param(table, id);
             postgres_expr!("{} = {}", (ident(&id_field_name)), id_val)
         };
         let update = crate::postgres::statements::PostgresUpdate::new(table.table_name())
@@ -388,7 +403,7 @@ impl TableSource for PostgresDB {
             .unwrap_or_else(|| "id".to_string());
 
         let id_condition = {
-            let id_val = id_value(id);
+            let id_val = id_param(table, id);
             postgres_expr!("{} = {}", (ident(&id_field_name)), id_val)
         };
         let delete = crate::postgres::statements::PostgresDelete::new(table.table_name())
