@@ -1,0 +1,16 @@
+# A two-container Pod. Exercises array-derived projection: ready "2/2" and
+# the summed restart count across containers.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sidecar
+  labels:
+    app: sidecar
+spec:
+  containers:
+    - name: app
+      image: {{ .Values.busybox.image }}
+      command: ["sh", "-c", "while true; do echo working; sleep 30; done"]
+    - name: log
+      image: {{ .Values.busybox.image }}
+      command: ["sh", "-c", "while true; do echo tailing; sleep 30; done"]

@@ -1,0 +1,19 @@
+# A short-lived Job. Exercises the jobs table and its completion fields.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pi
+  labels:
+    app: pi
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: pi
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: pi
+          image: {{ .Values.busybox.image }}
+          command: ["sh", "-c", "echo 'scale=20; 4*a(1)' | bc -l 2>/dev/null || echo 3.14159; sleep 2"]
