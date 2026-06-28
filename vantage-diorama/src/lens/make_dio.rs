@@ -51,6 +51,11 @@ impl Lens {
             hot_tier: Arc::new(HotTier::new()),
             query_indexes: std::sync::Mutex::new(std::collections::HashMap::new()),
             table_sceneries: std::sync::Mutex::new(std::collections::HashMap::new()),
+            base_conditions: std::sync::RwLock::new(Vec::new()),
+            base_sort: std::sync::RwLock::new(None),
+            augmentations: std::sync::RwLock::new(None),
+            augment_catalog: std::sync::RwLock::new(None),
+            augmented_columns: std::sync::RwLock::new(std::collections::HashSet::new()),
         });
         let dio = Dio { inner };
 
