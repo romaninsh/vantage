@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.11 — 2026-06-28
+
+**Lens reduced to pure caching**
+
+- The legacy `Lens::augment` / `LensBuilder::catalog` builder API is removed;
+  configure two-pass augmentation on the Dio with `Dio::augment(catalog, augs)`.
+  The Lens now owns only caching strategy and explicitly-registered callbacks
+  (`on_start` / `on_refresh` / `on_load_chunk` / hand-rolled `on_list_page` +
+  `on_load_detail`).
+- Removed the unwired `Lens::on_query` seam and the no-op
+  `TableSceneryBuilder::eager()` v1 compatibility stub.
+
 ## 0.6.10 — 2026-06-28
 
 - Local emulation only forces full-set hydration when a condition/sort actually

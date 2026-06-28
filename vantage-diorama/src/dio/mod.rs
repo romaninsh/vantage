@@ -132,7 +132,8 @@ impl DioInner {
     }
 
     /// Whether this Dio engages two-pass loading — either it owns augmentation
-    /// or its Lens registers a detail callback (legacy `Lens::augment` path).
+    /// or its Lens registers an explicit `on_load_detail` callback (hand-rolled
+    /// two-pass).
     pub(crate) fn is_two_pass(&self) -> bool {
         self.has_dio_augment() || self.lens.callbacks.on_load_detail.is_some()
     }
@@ -302,7 +303,7 @@ impl Dio {
     }
 
     /// Configure two-pass augmentation on this Dio: a cheap master list pass plus
-    /// a per-row detail pass that resolves each [`Augmentation`]'s detail Vista
+    /// a per-row detail pass that resolves each [`Augmentation`](crate::Augmentation)'s detail Vista
     /// through `catalog`, fetches it, and merges its columns onto the row.
     ///
     /// Augmentation is a property of the Dio, not the Lens — so different Dios
@@ -355,8 +356,7 @@ impl Dio {
     /// - cache miss → `RecordStatus::NotFound`, record = `None`
     ///
     /// No master fetch on miss (the cache is the source of truth in
-    /// v1). Use [`Dio::patched`](Self::patched) — from an `on_query`
-    /// callback or your own code — to seed the row.
+    /// v1). Use [`Dio::patched`](Self::patched) to seed the row.
     pub async fn record_scenery(&self, id: impl Into<String>) -> Result<Arc<dyn RecordScenery>> {
         let id = id.into();
         let (initial_record, initial_status) = match self.inner.cache.get_value(&id).await? {
