@@ -5,6 +5,7 @@ pub mod callbacks;
 pub mod chunk_sink;
 pub mod defaults;
 pub mod make_dio;
+pub mod memory_cache;
 pub mod redb_cache;
 
 use std::ops::Range;
@@ -31,6 +32,7 @@ pub use callbacks::{
 };
 pub use chunk_sink::{ChunkRow, ChunkSink, SceneryChunkTarget};
 pub use defaults::LensDefaults;
+pub use memory_cache::{MemoryCache, MemoryCacheTable};
 pub use redb_cache::{RedbCache, RedbCacheTable};
 
 /// Long-lived shared infrastructure for caching, callbacks, and refresh.
@@ -160,6 +162,13 @@ impl LensBuilder {
                 ..self
             },
         }
+    }
+
+    /// Convenience: cache to a process-local in-memory store. No file, no
+    /// persistence — handy for tests and ephemeral Dios. Mirrors
+    /// [`cache_at`](Self::cache_at)'s per-Dio-named-table + status semantics.
+    pub fn cache_in_memory(self) -> Self {
+        self.cache_source(Arc::new(MemoryCache::new()))
     }
 
     /// Register the `on_start` callback. Fires once when a Dio is built

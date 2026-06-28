@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0 — 2026-06-28
+
+- Begin the "Dio owns query semantics" refactor. First landed piece:
+  `LensBuilder::cache_in_memory()` + a `MemoryCache` backend — a process-local,
+  non-persistent `CacheBackend` mirroring the redb backend's per-Dio-named-table
+  and per-row `CacheStatus` semantics. Lets ephemeral Dios and tests skip the
+  `TempDir`/redb file while still exercising real `Incomplete`/`Complete`
+  round-tripping (two-pass, local emulation).
+
 ## 0.6.7 — 2026-06-28
 
 - `Dio::get_ref(relation, row)` traverses a reference and returns a new `Dio`
