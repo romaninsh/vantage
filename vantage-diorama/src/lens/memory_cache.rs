@@ -56,11 +56,20 @@ impl MemoryCacheTable {
     fn lock(&self) -> std::sync::MutexGuard<'_, IndexMap<String, (Record<CborValue>, CacheStatus)>> {
         self.rows.lock().expect("MemoryCacheTable mutex poisoned")
     }
+
+    /// Yield once per operation so this backend is a well-behaved async citizen.
+    /// The redb backend suspends at a `spawn_blocking` boundary on every call;
+    /// matching that here keeps schedule-sensitive consumers (e.g. event-ordered
+    /// reactors) seeing the same interleaving regardless of which cache backs them.
+    async fn yield_point() {
+        tokio::task::yield_now().await;
+    }
 }
 
 #[async_trait]
 impl CacheTable for MemoryCacheTable {
     async fn list_values(&self) -> Result<IndexMap<String, Record<CborValue>>> {
+        Self::yield_point().await;
         Ok(self
             .lock()
             .iter()
@@ -69,16 +78,19 @@ impl CacheTable for MemoryCacheTable {
     }
 
     async fn get_value(&self, id: &str) -> Result<Option<Record<CborValue>>> {
+        Self::yield_point().await;
         Ok(self.lock().get(id).map(|(rec, _)| rec.clone()))
     }
 
     async fn insert_value(&self, id: &str, record: &Record<CborValue>) -> Result<()> {
+        Self::yield_point().await;
         self.lock()
             .insert(id.to_string(), (record.clone(), CacheStatus::Complete));
         Ok(())
     }
 
     async fn insert_values(&self, rows: IndexMap<String, Record<CborValue>>) -> Result<()> {
+        Self::yield_point().await;
         let mut guard = self.lock();
         for (id, record) in rows {
             guard.insert(id, (record, CacheStatus::Complete));
@@ -87,16 +99,19 @@ impl CacheTable for MemoryCacheTable {
     }
 
     async fn delete_value(&self, id: &str) -> Result<()> {
+        Self::yield_point().await;
         self.lock().shift_remove(id);
         Ok(())
     }
 
     async fn clear(&self) -> Result<()> {
+        Self::yield_point().await;
         self.lock().clear();
         Ok(())
     }
 
     async fn count(&self) -> Result<i64> {
+        Self::yield_point().await;
         Ok(self.lock().len() as i64)
     }
 
@@ -106,6 +121,7 @@ impl CacheTable for MemoryCacheTable {
         record: &Record<CborValue>,
         status: CacheStatus,
     ) -> Result<()> {
+        Self::yield_point().await;
         self.lock()
             .insert(id.to_string(), (record.clone(), status));
         Ok(())
@@ -115,12 +131,14 @@ impl CacheTable for MemoryCacheTable {
         &self,
         id: &str,
     ) -> Result<Option<(Record<CborValue>, CacheStatus)>> {
+        Self::yield_point().await;
         Ok(self.lock().get(id).cloned())
     }
 
     async fn list_values_with_status(
         &self,
     ) -> Result<IndexMap<String, (Record<CborValue>, CacheStatus)>> {
+        Self::yield_point().await;
         Ok(self.lock().clone())
     }
 }

@@ -7,7 +7,10 @@
   non-persistent `CacheBackend` mirroring the redb backend's per-Dio-named-table
   and per-row `CacheStatus` semantics. Lets ephemeral Dios and tests skip the
   `TempDir`/redb file while still exercising real `Incomplete`/`Complete`
-  round-tripping (two-pass, local emulation).
+  round-tripping (two-pass, local emulation). `MemoryCache` yields once per
+  operation so schedule-sensitive consumers see the same interleaving as the
+  redb backend (whose `spawn_blocking` boundary suspends). `MemoryCache`,
+  `CacheStatus`, and `CacheTable` are now re-exported at the crate root.
 - The Dio now owns base query semantics: `Dio::with_condition_eq(col, val)` and
   `Dio::with_order(col, dir)` define *what the table is*, and every scenery
   opened on the Dio inherits them (a view may still layer its own conditions and

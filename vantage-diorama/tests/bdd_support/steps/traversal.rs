@@ -64,10 +64,10 @@ async fn launch_with_crew(w: &mut DioramaWorld) {
     // Warm-cache-aware eager lens (mirrors the UI's `build_eager_lens`): copy
     // the master into the cache on first open, but TRUST a warm cache — so a
     // target whose source has gone down still opens from previously-cached rows.
-    let cache = w.tmp_path().join("cache.redb");
+    let cache = w.cache_source();
     let lens = Arc::new(
         Lens::new()
-            .cache_at(cache)
+            .cache_source(cache)
             .on_start(|dio| {
                 let dio = dio.clone();
                 async move {
