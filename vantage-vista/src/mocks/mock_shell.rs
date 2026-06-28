@@ -243,9 +243,11 @@ impl TableShell for MockShell {
     /// (no read), so it succeeds even while the target's `fail_reads` is set —
     /// the failure surfaces later, at load time, on the returned Vista.
     fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
-        let reference = self.metadata.references.get(relation).ok_or_else(|| {
-            vantage_core::error!("unknown relation", relation = relation)
-        })?;
+        let reference = self
+            .metadata
+            .references
+            .get(relation)
+            .ok_or_else(|| vantage_core::error!("unknown relation", relation = relation))?;
         let target = self.ref_targets.get(relation).ok_or_else(|| {
             vantage_core::error!("no ref target registered for relation", relation = relation)
         })?;

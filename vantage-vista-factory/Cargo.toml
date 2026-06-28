@@ -1,6 +1,6 @@
 [package]
 name = "vantage-vista-factory"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Multi-datasource Vista catalog and cross-persistence reference traversal for the Vantage data framework"
