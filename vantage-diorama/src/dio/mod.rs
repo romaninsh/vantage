@@ -1,3 +1,4 @@
+pub(crate) mod augment_passes;
 pub mod diagnostics;
 pub mod event_bus;
 pub mod hot_tier;
@@ -95,6 +96,15 @@ pub(crate) struct DioInner {
     /// further per-view conditions/sort on top (see `TableSceneryBuilder`).
     pub(crate) base_conditions: std::sync::RwLock<Vec<(String, CborValue)>>,
     pub(crate) base_sort: std::sync::RwLock<Option<(String, crate::scenery::SortDir)>>,
+    /// Augmentation owned by the Dio (not the Lens). When set, the Dio drives its
+    /// own two-pass list/detail/refresh from this config (see `augment_passes`);
+    /// `augmented_columns` is the union of every augmentation's merged columns,
+    /// used to route conditions/sort on a client-side column to local emulation.
+    pub(crate) augmentations:
+        std::sync::RwLock<Option<Arc<Vec<crate::augment::Augmentation>>>>,
+    pub(crate) augment_catalog:
+        std::sync::RwLock<Option<Arc<vantage_vista_factory::VistaCatalog>>>,
+    pub(crate) augmented_columns: std::sync::RwLock<std::collections::HashSet<String>>,
     /// Deduplicating registry of live table sceneries, keyed by
     /// `(shape, conditions, sort, search)`. Holds `Weak` handles so it
     /// never keeps a scenery alive: opening the same query twice returns
@@ -116,6 +126,24 @@ impl DioInner {
             .entry(key.to_string())
             .or_insert_with(|| Arc::new(crate::dio::query_index::QueryIndex::new()))
             .clone()
+    }
+
+    /// Whether this Dio owns an augmentation config (drives its own two-pass).
+    pub(crate) fn has_dio_augment(&self) -> bool {
+        self.augmentations.read().unwrap().is_some()
+    }
+
+    /// Whether this Dio engages two-pass loading — either it owns augmentation
+    /// or its Lens registers a detail callback (legacy `Lens::augment` path).
+    pub(crate) fn is_two_pass(&self) -> bool {
+        self.has_dio_augment() || self.lens.callbacks.on_load_detail.is_some()
+    }
+
+    /// Whether `col` is produced by augmentation (a client-side column the master
+    /// can't filter/sort on) — the signal to route its conditions/sort to local
+    /// emulation. Always `false` until [`Dio::augment`] populates the set.
+    pub(crate) fn is_augmented_column(&self, col: &str) -> bool {
+        self.augmented_columns.read().unwrap().contains(col)
     }
 
     /// Return the live shared table scenery for `key`, or `None` if none is
@@ -279,6 +307,33 @@ impl Dio {
         self.clone()
     }
 
+    /// Configure two-pass augmentation on this Dio: a cheap master list pass plus
+    /// a per-row detail pass that resolves each [`Augmentation`]'s detail Vista
+    /// through `catalog`, fetches it, and merges its columns onto the row.
+    ///
+    /// Augmentation is a property of the Dio, not the Lens — so different Dios
+    /// sharing one Lens can enrich differently. The merged columns are recorded
+    /// as the Dio's *augmented columns*; a condition or sort on one of them is
+    /// client-side and routes to local emulation rather than master pushdown.
+    ///
+    /// Call before opening sceneries. Returns a clone so calls chain.
+    pub fn augment(
+        &self,
+        catalog: Arc<vantage_vista_factory::VistaCatalog>,
+        augmentations: Vec<crate::augment::Augmentation>,
+    ) -> Self {
+        let mut cols = std::collections::HashSet::new();
+        for aug in &augmentations {
+            for c in &aug.merge.columns {
+                cols.insert(c.clone());
+            }
+        }
+        *self.inner.augmented_columns.write().unwrap() = cols;
+        *self.inner.augment_catalog.write().unwrap() = Some(catalog);
+        *self.inner.augmentations.write().unwrap() = Some(Arc::new(augmentations));
+        self.clone()
+    }
+
     /// Start a [`TableScenery`] builder
     /// for this Dio. Chainable; call `.open().await` to spawn the
     /// reactive view.
@@ -423,7 +478,10 @@ impl Dio {
     /// Returns `Ok(())` immediately when no `on_refresh` is registered.
     pub async fn refresh(&self) -> Result<()> {
         let _ = self.inner.event_bus.send(DioEvent::Refreshing);
-        let result = if let Some(cb) = self.inner.lens.callbacks.on_refresh.as_ref() {
+        let result = if self.inner.has_dio_augment() {
+            // Dio owns augmentation → run its reconciling refresh pass.
+            augment_passes::refresh(self).await
+        } else if let Some(cb) = self.inner.lens.callbacks.on_refresh.as_ref() {
             cb(self).await
         } else {
             Ok(())

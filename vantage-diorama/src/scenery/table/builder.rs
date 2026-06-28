@@ -151,11 +151,11 @@ impl TableSceneryBuilder {
 
         let master_capabilities = dio.master.read().unwrap().capabilities().clone();
 
-        // Two-pass engages only when the Lens registers an `on_load_detail`
-        // callback. The shared per-query index is keyed by the master Vista's
-        // index_key over the scenery's conditions + sort, so reopening the same
-        // variant reuses the already-built index.
-        let two_pass = dio.lens.callbacks.on_load_detail.is_some();
+        // Two-pass engages when the Dio owns augmentation, or (legacy) the Lens
+        // registers an `on_load_detail` callback. The shared per-query index is
+        // keyed by the master Vista's index_key over the scenery's conditions +
+        // sort, so reopening the same variant reuses the already-built index.
+        let two_pass = dio.is_two_pass();
         let index = if two_pass {
             let vista_sort = sort.as_ref().map(|(col, dir)| {
                 let dir = match dir {
