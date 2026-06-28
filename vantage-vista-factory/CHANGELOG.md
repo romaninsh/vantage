@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.1 — unreleased
+## 0.6.2 — unreleased
 
 - Test only: a characterization test pinning that an unreachable reference
   target is conflated with a missing reference at the traversal layer — the
