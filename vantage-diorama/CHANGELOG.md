@@ -14,6 +14,15 @@
   override the sort). Native columns flow through the existing per-`(conditions,
   sort)` index / local-filter path; pushdown-vs-local routing for augmented
   columns arrives with the local-emulation work.
+- Local filter/sort emulation for two-pass views. A two-pass list pass can't
+  push conditions/sort to the master, so a view carrying either now refines its
+  visible set locally over the cache: rows are filtered (and sorted) by the
+  hydrated records, the visible map becomes authoritative for `row_count`, and an
+  augmented-column predicate naturally hides rows until hydration confirms a
+  match (matches surface progressively as rows augment). Such a view hydrates the
+  whole listed set rather than just the viewport — the documented cost of
+  filtering/sorting on a client-side column. A view with no conditions/sort is
+  unchanged (raw index order, gray rows preserved).
 - Augmentation is now owned by the Dio, not the Lens: `Dio::augment(catalog,
   augmentations)` configures the two-pass list/detail/refresh, so Dios sharing a
   Lens can enrich differently. The pass bodies moved to a shared
