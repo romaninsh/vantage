@@ -31,7 +31,8 @@ async fn no_condition_keeps_all_augmented_rows() {
     let dio = bucket_dio().await;
     let view = MockView::open(&dio, 10).await;
     view.viewport(0..10);
-    view.settle_until("all hydrated", |v| v.loaded_rows() == 3).await;
+    view.settle_until("all hydrated", |v| v.loaded_rows() == 3)
+        .await;
     assert_eq!(view.loaded_rows(), 3);
 }
 

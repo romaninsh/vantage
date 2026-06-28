@@ -26,7 +26,8 @@ async fn dio_condition_is_inherited_by_every_view() {
 async fn no_condition_shows_all_rows() {
     let dio: Dio = eager_dio(teams_master()).await;
     let view = MockView::open(&dio, 10).await;
-    view.settle_until("all rows", |v| v.loaded_rows() == 3).await;
+    view.settle_until("all rows", |v| v.loaded_rows() == 3)
+        .await;
     assert_eq!(view.loaded_rows(), 3);
 }
 

@@ -53,7 +53,9 @@ pub struct MemoryCacheTable {
 }
 
 impl MemoryCacheTable {
-    fn lock(&self) -> std::sync::MutexGuard<'_, IndexMap<String, (Record<CborValue>, CacheStatus)>> {
+    fn lock(
+        &self,
+    ) -> std::sync::MutexGuard<'_, IndexMap<String, (Record<CborValue>, CacheStatus)>> {
         self.rows.lock().expect("MemoryCacheTable mutex poisoned")
     }
 
@@ -122,8 +124,7 @@ impl CacheTable for MemoryCacheTable {
         status: CacheStatus,
     ) -> Result<()> {
         Self::yield_point().await;
-        self.lock()
-            .insert(id.to_string(), (record.clone(), status));
+        self.lock().insert(id.to_string(), (record.clone(), status));
         Ok(())
     }
 

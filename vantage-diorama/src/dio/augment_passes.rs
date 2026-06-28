@@ -50,7 +50,8 @@ pub(crate) async fn load_detail_with(
     let mut row = dio.cache().get_value(&id).await?.unwrap_or_default();
     let master_id_column = dio.master().get_id_column().unwrap_or("id").to_string();
     for aug in augmentations {
-        aug.augment_row(&master_id_column, &mut row, catalog).await?;
+        aug.augment_row(&master_id_column, &mut row, catalog)
+            .await?;
     }
     Ok(row)
 }

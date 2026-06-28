@@ -94,10 +94,10 @@ pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
             .await
             .ok()
             .flatten()
+            && matches_conditions(&rec, &conditions)
+            && matches_search(&rec, search.as_deref())
         {
-            if matches_conditions(&rec, &conditions) && matches_search(&rec, search.as_deref()) {
-                gathered.push((id.clone(), rec, status));
-            }
+            gathered.push((id.clone(), rec, status));
         }
     }
 
