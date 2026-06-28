@@ -22,6 +22,18 @@ impl Lens {
     /// and returns the live [`Dio`].
     pub async fn make_dio(self: &Arc<Self>, master: Vista) -> Result<Dio> {
         let cache_table_name = master.name().to_string();
+        self.make_dio_as(master, cache_table_name).await
+    }
+
+    /// Like [`make_dio`](Self::make_dio) but with an explicit cache table name
+    /// instead of `master.name()`. Reference traversal ([`Dio::get_ref`]) uses
+    /// this so a narrowed target (e.g. `crew` for launch L1 vs L2 — both named
+    /// `"crew"`) gets a per-parent cache table rather than colliding on one.
+    pub async fn make_dio_as(
+        self: &Arc<Self>,
+        master: Vista,
+        cache_table_name: String,
+    ) -> Result<Dio> {
         let cache = self.cache_source.open_table(&cache_table_name).await?;
 
         let (write_tx, write_rx) = mpsc::channel(self.defaults.write_queue_capacity);

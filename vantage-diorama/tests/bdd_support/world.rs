@@ -135,6 +135,11 @@ pub struct DioramaWorld {
     /// `source.set_field(...)` mid-scenario is observed by the next read.
     /// `None` for CSV/SQLite backends.
     pub source: Option<vantage_vista::mocks::MockShell>,
+    /// Reference-traversal scenarios: the Dio produced by the most recent
+    /// `dio.get_ref(...)`, and a live handle to the related-table shell so a
+    /// step can take its source offline mid-scenario.
+    pub traversed: Option<Dio>,
+    pub ref_source: Option<vantage_vista::mocks::MockShell>,
 }
 
 impl std::fmt::Debug for DioramaWorld {
@@ -172,6 +177,8 @@ impl DioramaWorld {
             named_masters: std::collections::HashMap::new(),
             named_dios: std::collections::HashMap::new(),
             source: None,
+            traversed: None,
+            ref_source: None,
         }
     }
 
