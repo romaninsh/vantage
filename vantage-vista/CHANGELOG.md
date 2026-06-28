@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.4 — unreleased
+
+### Added
+
+- `MockShell` foreign-key traversal: `with_ref_target(relation, shell)` plus a
+  `get_ref` that resolves a declared reference to another in-memory store,
+  narrowed by the parent row's id. A `set_fail_reads` toggle simulates a source
+  that goes offline. Together they let tests exercise reference traversal and
+  failure-tolerance end to end (used by `vantage-diorama`'s `Dio::get_ref`).
+
+### Changed
+
+- `Vista::get_ref` docs no longer claim "same-persistence only": persistence is
+  the shell's concern; callers stay persistence-agnostic.
+
 ## 0.6.3 — unreleased
 
 ### Added
