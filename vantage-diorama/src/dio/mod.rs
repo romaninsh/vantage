@@ -100,10 +100,8 @@ pub(crate) struct DioInner {
     /// own two-pass list/detail/refresh from this config (see `augment_passes`);
     /// `augmented_columns` is the union of every augmentation's merged columns,
     /// used to route conditions/sort on a client-side column to local emulation.
-    pub(crate) augmentations:
-        std::sync::RwLock<Option<Arc<Vec<crate::augment::Augmentation>>>>,
-    pub(crate) augment_catalog:
-        std::sync::RwLock<Option<Arc<vantage_vista_factory::VistaCatalog>>>,
+    pub(crate) augmentations: std::sync::RwLock<Option<Arc<Vec<crate::augment::Augmentation>>>>,
+    pub(crate) augment_catalog: std::sync::RwLock<Option<Arc<vantage_vista_factory::VistaCatalog>>>,
     pub(crate) augmented_columns: std::sync::RwLock<std::collections::HashSet<String>>,
     /// Deduplicating registry of live table sceneries, keyed by
     /// `(shape, conditions, sort, search)`. Holds `Weak` handles so it
@@ -285,11 +283,7 @@ impl Dio {
     /// a capable master pushes down; a column the master can't filter (or an
     /// augmented one) is emulated locally over the cache. Returns a clone so
     /// calls chain. Conditions take effect for sceneries opened afterwards.
-    pub fn with_condition_eq(
-        &self,
-        col: impl Into<String>,
-        value: impl Into<CborValue>,
-    ) -> Self {
+    pub fn with_condition_eq(&self, col: impl Into<String>, value: impl Into<CborValue>) -> Self {
         self.inner
             .base_conditions
             .write()

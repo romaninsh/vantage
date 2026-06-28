@@ -16,7 +16,10 @@ fn text(s: &str) -> CborValue {
     CborValue::Text(s.into())
 }
 fn rec(pairs: &[(&str, &str)]) -> Record<CborValue> {
-    pairs.iter().map(|(k, v)| ((*k).to_string(), text(v))).collect()
+    pairs
+        .iter()
+        .map(|(k, v)| ((*k).to_string(), text(v)))
+        .collect()
 }
 
 /// Crew store keyed by `launch_id`: L1 has two members, L2 one.
@@ -28,9 +31,18 @@ fn crew_shell() -> MockShell {
         .with_id_column("id");
     MockShell::new()
         .with_metadata(meta)
-        .with_record("c1", rec(&[("id", "c1"), ("launch_id", "L1"), ("name", "Buzz")]))
-        .with_record("c2", rec(&[("id", "c2"), ("launch_id", "L1"), ("name", "Neil")]))
-        .with_record("c3", rec(&[("id", "c3"), ("launch_id", "L2"), ("name", "Pete")]))
+        .with_record(
+            "c1",
+            rec(&[("id", "c1"), ("launch_id", "L1"), ("name", "Buzz")]),
+        )
+        .with_record(
+            "c2",
+            rec(&[("id", "c2"), ("launch_id", "L1"), ("name", "Neil")]),
+        )
+        .with_record(
+            "c3",
+            rec(&[("id", "c3"), ("launch_id", "L2"), ("name", "Pete")]),
+        )
 }
 
 fn launch_master() -> Vista {
@@ -38,7 +50,12 @@ fn launch_master() -> Vista {
         .with_column(Column::new("id", "String").with_flag("id"))
         .with_column(Column::new("name", "String"))
         .with_id_column("id")
-        .with_reference(Reference::new("crew", "launch_crew", ReferenceKind::HasMany, "launch_id"));
+        .with_reference(Reference::new(
+            "crew",
+            "launch_crew",
+            ReferenceKind::HasMany,
+            "launch_id",
+        ));
     let shell = MockShell::new()
         .with_metadata(meta)
         .with_record("L1", rec(&[("id", "L1"), ("name", "Apollo 11")]))
@@ -92,6 +109,7 @@ async fn traversed_child_without_condition_sees_all_related_rows() {
     let crew = launches.get_ref("crew", &l1).await.expect("get_ref crew");
 
     let view = MockView::open(&crew, 10).await;
-    view.settle_until("both L1 crew", |v| v.loaded_rows() == 2).await;
+    view.settle_until("both L1 crew", |v| v.loaded_rows() == 2)
+        .await;
     assert_eq!(view.loaded_rows(), 2, "L1 has two crew members");
 }
