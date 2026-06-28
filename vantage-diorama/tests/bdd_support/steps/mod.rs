@@ -11,4 +11,5 @@ pub mod registry;
 pub mod skeleton;
 pub mod source;
 pub mod table_v2;
+pub mod traversal;
 pub mod write_path;

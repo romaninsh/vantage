@@ -330,4 +330,79 @@ mod tests {
         let bad = record(&[("id", text("c1"))]); // no bakery_id
         assert!(cat.traverse(rel, &bad).is_err());
     }
+
+    /// Reproduction: a launch's `crew` reference whose target data source is
+    /// temporarily unreachable (a 503 on refresh) makes traversal fail in a
+    /// way that is **indistinguishable from the reference not existing**.
+    ///
+    /// The reference DEFINITION never changes — `relations_for("launch")` still
+    /// lists `crew` and `has_model("launch_crew")` stays true throughout. Only
+    /// the *load* fails. But `traverse` → `build_vista` → `loader()` surfaces
+    /// that as a plain `Err`, which the caller (`open_detail`) collapses to
+    /// `None` and the UI shows as "no ref 'crew'". The user can't tell
+    /// "this relation doesn't exist" from "we couldn't load it right now".
+    #[tokio::test]
+    async fn unreachable_ref_target_is_conflated_with_missing_reference() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        // `crew_up=false` models the crew data source 503-ing on refresh.
+        let crew_up = Arc::new(AtomicBool::new(true));
+
+        let mut cat = VistaCatalog::new();
+        let up = crew_up.clone();
+        cat.register(
+            "launch_crew",
+            Arc::new(move || {
+                if !up.load(Ordering::SeqCst) {
+                    return Err(error!("crew source unavailable (injected 503)"));
+                }
+                let meta = VistaMetadata::new()
+                    .with_column(Column::new("id", "String").with_flag("id"))
+                    .with_column(Column::new("launch_id", "String"))
+                    .with_id_column("id");
+                let source = MockShell::new().with_metadata(meta).with_record(
+                    "c1",
+                    record(&[("id", text("c1")), ("launch_id", text("L1"))]),
+                );
+                Ok(Vista::new("launch_crew", Box::new(source)))
+            }),
+        );
+        cat.register_relation(
+            "launch",
+            Relation::single_key("crew", "launch_crew", ReferenceKind::HasMany, "launch_id", "id"),
+        );
+
+        let launch = record(&[("id", text("L1"))]);
+        let rel = cat.relations_for("launch")[0].clone();
+
+        // 1) Source up — traversal works, exactly one crew member.
+        let crew = cat.traverse(&rel, &launch).expect("traverse with source up");
+        assert_eq!(crew.list_values().await.unwrap().len(), 1);
+
+        // 2) The crew source goes down (refresh 503s) — re-traverse.
+        crew_up.store(false, Ordering::SeqCst);
+        let down_res = cat.traverse(&rel, &launch);
+        assert!(down_res.is_err(), "traverse fails while the crew source is down");
+        let down = format!("{:?}", down_res.err().unwrap());
+
+        // 3) The reference DEFINITION is untouched: it still exists.
+        assert!(
+            cat.relations_for("launch").iter().any(|r| r.name == "crew"),
+            "the `crew` relation is still defined"
+        );
+        assert!(cat.has_model("launch_crew"), "the target model is still registered");
+
+        // 4) Yet the error is a bare load failure carrying nothing that lets a
+        //    caller distinguish "unreachable" from "no such reference" — both a
+        //    down source AND an unregistered model arrive as an opaque `Err`
+        //    that `open_detail` turns into `None` → "no ref 'crew'".
+        let missing_res = cat.build_vista("does_not_exist");
+        assert!(missing_res.is_err(), "an unregistered model also errors");
+        let absent = format!("{:?}", missing_res.err().unwrap());
+
+        assert!(down.contains("unavailable") || down.contains("503"), "got: {down}");
+        // Both failures are the same `Result::Err` shape with no machine-readable
+        // "kind" — this sameness is the conflation the bug is about.
+        assert!(!absent.is_empty(), "missing-model error exists but is just another opaque Err");
+    }
 }
