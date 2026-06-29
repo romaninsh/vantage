@@ -15,14 +15,16 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
-use std::time::Duration;
 
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
-use vantage_diorama::{Generation, Lens, SortDir, TableScenery};
+use vantage_diorama::{Lens, SortDir, TableScenery};
 use vantage_types::Record;
-use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
+use vantage_vista::Vista;
+
+mod support;
+use support::chunk::{Backend, col_at, master as master_cols, wait_for_gen};
 
 fn rec(v: &str) -> Record<CborValue> {
     let mut r = Record::new();
@@ -31,33 +33,11 @@ fn rec(v: &str) -> Record<CborValue> {
 }
 
 fn value(scenery: &Arc<dyn TableScenery>, idx: usize) -> Option<String> {
-    scenery.row(idx).and_then(|r| match r.record.get("v") {
-        Some(CborValue::Text(s)) => Some(s.clone()),
-        _ => None,
-    })
+    col_at(scenery, idx, "v")
 }
 
 fn master() -> Vista {
-    let metadata = VistaMetadata::new()
-        .with_column(Column::new("id", "String").with_flag("id"))
-        .with_column(Column::new("v", "String"))
-        .with_id_column("id");
-    Vista::new("items", Box::new(MockShell::new().with_metadata(metadata)))
-}
-
-type Backend = Arc<Mutex<Vec<(String, Record<CborValue>)>>>;
-
-async fn wait_for_gen(rx: &mut tokio::sync::watch::Receiver<Generation>, current: u64) -> u64 {
-    tokio::time::timeout(Duration::from_millis(500), async {
-        loop {
-            if u64::from(*rx.borrow_and_update()) > current {
-                return u64::from(*rx.borrow());
-            }
-            rx.changed().await.expect("watch channel closed");
-        }
-    })
-    .await
-    .expect("timed out waiting for generation bump")
+    master_cols(&[("v", "String")])
 }
 
 /// Master native order is (a=v3, b=v1, c=v2). Sorted ascending the view is

@@ -6,14 +6,18 @@
 //! that scramble.
 
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
-use vantage_diorama::{Generation, Lens, TableScenery};
+use vantage_diorama::TableScenery;
 use vantage_types::Record;
-use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
+use vantage_vista::Vista;
+
+mod support;
+use support::chunk::{
+    Backend, col_at, master as master_cols, paged_lens_native_desc, settle, wait_for_gen,
+};
 
 fn rec(name: &str, lu: i64) -> Record<CborValue> {
     let mut r = Record::new();
@@ -23,74 +27,15 @@ fn rec(name: &str, lu: i64) -> Record<CborValue> {
 }
 
 fn name_at(scenery: &Arc<dyn TableScenery>, idx: usize) -> Option<String> {
-    scenery.row(idx).and_then(|r| match r.record.get("name") {
-        Some(CborValue::Text(s)) => Some(s.clone()),
-        _ => None,
-    })
+    col_at(scenery, idx, "name")
 }
 
 fn master() -> Vista {
-    let metadata = VistaMetadata::new()
-        .with_column(Column::new("id", "String").with_flag("id"))
-        .with_column(Column::new("name", "String"))
-        .with_column(Column::new("lu", "i64"))
-        .with_id_column("id");
-    Vista::new("items", Box::new(MockShell::new().with_metadata(metadata)))
+    master_cols(&[("name", "String"), ("lu", "i64")])
 }
 
-type Backend = Arc<Mutex<Vec<(String, Record<CborValue>)>>>;
-
-fn paged_lens(cache: std::path::PathBuf, backend: Backend) -> Arc<Lens> {
-    let total = backend.clone();
-    let lens = Lens::new()
-        .cache_at(cache)
-        .total_provider(move |_dio| {
-            let b = total.clone();
-            async move { Ok(b.lock().unwrap().len()) }
-        })
-        .on_load_chunk(move |_dio, range, sink| {
-            let b = backend.clone();
-            async move {
-                // Native order = lu DESC (mirrors ?ordering=-last_updated).
-                let mut rows = b.lock().unwrap().clone();
-                rows.sort_by(|a, b| {
-                    let la = a.1.get("lu");
-                    let lb = b.1.get("lu");
-                    match (la, lb) {
-                        (Some(CborValue::Integer(x)), Some(CborValue::Integer(y))) => {
-                            i128::from(*y).cmp(&i128::from(*x))
-                        }
-                        _ => std::cmp::Ordering::Equal,
-                    }
-                });
-                for idx in range {
-                    if let Some((id, r)) = rows.get(idx) {
-                        sink.push(idx, id.clone(), r.clone()).await?;
-                    }
-                }
-                Ok(())
-            }
-        })
-        .build()
-        .expect("build paged lens");
-    Arc::new(lens)
-}
-
-async fn wait_for_gen(rx: &mut tokio::sync::watch::Receiver<Generation>, current: u64) -> u64 {
-    tokio::time::timeout(Duration::from_millis(500), async {
-        loop {
-            if u64::from(*rx.borrow_and_update()) > current {
-                return u64::from(*rx.borrow());
-            }
-            rx.changed().await.expect("watch channel closed");
-        }
-    })
-    .await
-    .expect("timed out waiting for generation bump")
-}
-
-async fn settle() {
-    tokio::time::sleep(Duration::from_millis(80)).await;
+fn paged_lens(cache: std::path::PathBuf, backend: Backend) -> Arc<vantage_diorama::Lens> {
+    paged_lens_native_desc(cache, backend, "lu")
 }
 
 #[tokio::test]
