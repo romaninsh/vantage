@@ -95,7 +95,7 @@ fn references_augmented_column(
 /// column is absent → no match), so matches surface as rows hydrate. The row's
 /// `Fresh`/`Incomplete` status is preserved.
 pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
-    use super::helpers::{cbor_cmp, matches_conditions, matches_search};
+    use super::helpers::{cbor_cmp, matches_conditions, matches_search, record_get_path};
 
     let Some(dio_inner) = state.dio_weak.upgrade() else {
         return;
@@ -126,7 +126,7 @@ pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
 
     if let Some((col, dir)) = &sort {
         gathered.sort_by(|(_, a, _), (_, b, _)| {
-            let ord = cbor_cmp(a.get(col), b.get(col));
+            let ord = cbor_cmp(record_get_path(a, col), record_get_path(b, col));
             match dir {
                 SortDir::Asc => ord,
                 SortDir::Desc => ord.reverse(),
