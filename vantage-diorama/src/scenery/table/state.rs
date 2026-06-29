@@ -12,7 +12,7 @@ use crate::dio::{DioInner, Generation};
 use crate::lens::SceneryChunkTarget;
 use crate::scenery::enriched_record::{EnrichedRecord, RowStatus};
 
-use super::helpers::{cbor_cmp, matches_conditions, matches_search};
+use super::helpers::{cbor_cmp, matches_conditions, matches_search, record_get_path};
 use super::{SortDir, ViewportRequest};
 
 /// Internal state shared by the public scenery handle, the reactor
@@ -187,13 +187,25 @@ impl TableSceneryState {
             .collect();
 
         if let Some((col, dir)) = sort {
+            let missing = filtered
+                .iter()
+                .filter(|(_, r)| record_get_path(r, &col).is_none())
+                .count();
             filtered.sort_by(|(_, a), (_, b)| {
-                let ord = cbor_cmp(a.get(&col), b.get(&col));
+                let ord = cbor_cmp(record_get_path(a, &col), record_get_path(b, &col));
                 match dir {
                     SortDir::Asc => ord,
                     SortDir::Desc => ord.reverse(),
                 }
             });
+            tracing::debug!(
+                target: "vantage_diorama::sort",
+                col = %col,
+                dir = ?dir,
+                rows = filtered.len(),
+                rows_missing_sort_value = missing,
+                "reseed_from_cache applied sort",
+            );
         }
 
         let mut rows = BTreeMap::new();
@@ -205,6 +217,35 @@ impl TableSceneryState {
         *self.rows.write().unwrap() = rows;
         *self.id_to_idx.write().unwrap() = id_to_idx;
         Ok(())
+    }
+
+    /// Re-invoke the lens `total_provider` and update the cached grand total, so
+    /// a row that appeared (or vanished) server-side since open grows (or shrinks)
+    /// the scrollbar instead of staying frozen at the open-time total. No-op when
+    /// no provider is registered (the total then self-corrects from short pages).
+    ///
+    /// Deliberately does NOT bump the generation: it runs at the *start* of a
+    /// refresh, before the in-place refetch repopulates the rows. Bumping here
+    /// would repaint an intermediate frame (new count, rows not yet refreshed /
+    /// re-sorted) — a visible flicker. The forced refetch that follows carries
+    /// the single repaint, so the new count and the refreshed+re-sorted rows land
+    /// together.
+    pub(crate) async fn refresh_total(&self) {
+        let Some(dio_inner) = self.dio_weak.upgrade() else {
+            return;
+        };
+        let Some(cb) = dio_inner.lens.callbacks.total_provider.as_ref() else {
+            return;
+        };
+        let dio = crate::Dio {
+            inner: dio_inner.clone(),
+        };
+        match cb(&dio).await {
+            Ok(total) => {
+                self.set_total(Some(total));
+            }
+            Err(e) => tracing::error!(error = %e, "refresh_total failed"),
+        }
     }
 
     /// React to `DioEvent::RecordChanged { id }`: if the id is in our
@@ -274,22 +315,42 @@ impl TableSceneryState {
             .unwrap_or(false)
     }
 
-    /// Re-fetch the last viewport in place so a refresh updates the visible
-    /// rows without blanking them: `force_load` overwrites each slot as the
-    /// fresh rows land, and a failed refetch leaves the existing rows
-    /// untouched (the loader never clears on error). No-op until a viewport
-    /// has been set.
+    /// Re-fetch the loaded rows in place so a refresh updates them without
+    /// blanking: `force_load` overwrites each slot as the fresh rows land, and a
+    /// failed refetch leaves the existing rows untouched (the loader never clears
+    /// on error). No-op until a viewport has been set.
+    ///
+    /// Re-fetches the whole **contiguous loaded block** that contains the
+    /// viewport, not just the viewport itself. The master serves rows by absolute
+    /// offset; if its order shifted since the last fetch — e.g. a `-last_updated`
+    /// order the live source keeps bumping — re-fetching only the viewport leaves
+    /// a row that migrated *into* it still sitting at its old slot, i.e. a
+    /// duplicate (and another row silently dropped). Overwriting the entire
+    /// contiguous block keeps every loaded slot consistent with the master's
+    /// current order, so a reorder reshuffles cleanly instead of scrambling.
     pub(crate) fn refresh_loaded_viewport(&self) {
-        let range = self.last_viewport.read().unwrap().clone();
-        if let Some(range) = range {
-            super::loader::enqueue_viewport(
-                self,
-                ViewportRequest {
-                    range,
-                    force_load: true,
-                },
-            );
-        }
+        let Some(viewport) = self.last_viewport.read().unwrap().clone() else {
+            return;
+        };
+        let range = {
+            let rows = self.rows.read().unwrap();
+            let mut start = viewport.start;
+            while start > 0 && rows.contains_key(&(start - 1)) {
+                start -= 1;
+            }
+            let mut end = viewport.end;
+            while rows.contains_key(&end) {
+                end += 1;
+            }
+            start..end
+        };
+        super::loader::enqueue_viewport(
+            self,
+            ViewportRequest {
+                range,
+                force_load: true,
+            },
+        );
     }
 
     /// Largest cached index, +1 — the natural start for the next
@@ -308,9 +369,19 @@ impl TableSceneryState {
 
 impl SceneryChunkTarget for TableSceneryState {
     fn write_chunk_row(&self, idx: usize, id: String, record: Record<CborValue>) {
-        // Count every received row (before the skip below), so the loader can
+        // Count every received row (before the skips below), so the loader can
         // tell a short page (end of set) from a full one.
         self.load_push_count.fetch_add(1, Ordering::SeqCst);
+        // With a client sort active, the displayed map is a pure projection of
+        // the cache, rebuilt by `reseed_from_cache` once the load finishes (the
+        // loader re-sorts whenever `sort` is set). The cache row was already
+        // written by `ChunkSink::push`, so there is nothing more to do here —
+        // and stamping this server-ordered row into the visible map would expose
+        // the master's native order in the window before the re-sort runs, a
+        // flicker the grid repaints on its own timer. Let reseed own the map.
+        if self.sort.read().unwrap().is_some() {
+            return;
+        }
         // Skip the write entirely when this slot already holds the same fresh
         // record: a refresh that re-fetches identical data must not look like a
         // change. Only a new/!Fresh slot or a different record is "dirty", and

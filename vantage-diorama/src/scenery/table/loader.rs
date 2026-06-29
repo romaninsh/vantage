@@ -303,10 +303,32 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
             } else {
                 false
             };
-            // Bump when a row changed (a refresh of byte-identical rows leaves
-            // the flag clear) or when the total moved (so `row_count` consumers
-            // — scrollbars, `ListDio` — repaint).
-            if state.take_load_dirty() || total_changed {
+            // A client-side sort can't push down to a paged, non-orderable
+            // master, so this load (a viewport fetch, a scroll, or a refresh's
+            // in-place refetch) lands rows in the master's native order. Re-impose
+            // the active sort over the freshly-cached rows so the order survives
+            // the refetch instead of snapping back to native order. It orders only
+            // the loaded rows — the documented cost of sorting a lazily-paged
+            // source that can't order server-side.
+            let resorted = if state.sort.read().unwrap().is_some() {
+                if let Err(e) = state.reseed_from_cache().await {
+                    tracing::error!(error = %e, "post-load resort failed");
+                    false
+                } else {
+                    true
+                }
+            } else {
+                false
+            };
+            // Drain the dirty flag regardless (so it doesn't leak into the next
+            // load). Bump when this was a forced refetch (a refresh or load-more —
+            // it carries the single repaint for the whole refresh, including a
+            // `refresh_total` that updated the count without bumping), when the
+            // order was re-imposed, when a row changed (a refresh of byte-identical
+            // rows leaves the flag clear), or when the total moved (so `row_count`
+            // consumers — scrollbars, `ListDio` — repaint).
+            let dirty = state.take_load_dirty();
+            if force_load || resorted || dirty || total_changed {
                 state.bump_generation();
             }
             tracing::debug!(

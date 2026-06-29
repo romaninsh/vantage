@@ -262,6 +262,13 @@ impl TableScenery for TableSceneryImpl {
     }
 
     fn set_sort(&self, column: Option<String>, dir: SortDir) {
+        tracing::debug!(
+            target: "vantage_diorama::sort",
+            column = ?column,
+            dir = ?dir,
+            two_pass = self.inner.two_pass,
+            "set_sort",
+        );
         self.inner.deregister();
         *self.inner.sort.write().unwrap() = column.map(|c| (c, dir));
         self.inner.reload_notify.notify_one();
