@@ -106,17 +106,16 @@ async fn refresh_never_exposes_master_order_midload() -> Result<()> {
                         }
                         // Second load == the refresh's in-place refetch. Snapshot
                         // the visible order in the post-push / pre-resort window.
-                        if load_count.fetch_add(1, Ordering::SeqCst) == 1 {
-                            if let Some(scenery) = scenery_slot
+                        if load_count.fetch_add(1, Ordering::SeqCst) == 1
+                            && let Some(scenery) = scenery_slot
                                 .lock()
                                 .unwrap()
                                 .as_ref()
                                 .and_then(Weak::upgrade)
-                            {
-                                let snap: Vec<String> =
-                                    (0..3).filter_map(|i| value(&scenery, i)).collect();
-                                *observed.lock().unwrap() = snap;
-                            }
+                        {
+                            let snap: Vec<String> =
+                                (0..3).filter_map(|i| value(&scenery, i)).collect();
+                            *observed.lock().unwrap() = snap;
                         }
                         Ok(())
                     }
