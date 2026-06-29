@@ -332,7 +332,7 @@ impl RestApi {
                 )
             })?;
         if self.debug {
-            tracing::info!(target: "vantage_api_client::rest", total, "REST count");
+            tracing::debug!(target: "vantage_api_client::rest", total, "REST count");
         }
         Ok(Some(total))
     }
@@ -379,8 +379,14 @@ impl RestApi {
         let query = self.build_query_string(window, &conds, &query_consumed);
         let url = join_query(&endpoint, &query);
 
+        // The `(0, 1)` window is the count probe (reads only the envelope's
+        // total); log it at debug so it doesn't drown the real data fetches.
         if self.debug {
-            tracing::info!(target: "vantage_api_client::rest", table = table_name, url = %url, "REST GET");
+            if window == Some((0, 1)) {
+                tracing::debug!(target: "vantage_api_client::rest", table = table_name, url = %url, "REST GET (count probe)");
+            } else {
+                tracing::info!(target: "vantage_api_client::rest", table = table_name, url = %url, "REST GET");
+            }
         }
 
         let mut request = self.client.get(&url);

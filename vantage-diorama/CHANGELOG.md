@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.6.12 — 2026-06-29
+
+**Chunk-loaded grids: sort survives refresh, count stays live**
+
+- A client-side sort on a single-pass, chunk-loaded (paged) scenery is now
+  re-imposed after every chunk load and refresh. A paged master that can't order
+  server-side returns rows in its native order on each refetch; the scenery
+  re-sorts the freshly-cached rows instead of snapping back to native order, so a
+  user's column sort no longer flickers away on the next poll. (Orders the loaded
+  rows — the documented cost of sorting a lazily-paged, non-orderable source.)
+- A chunk-loaded refresh now re-invokes `total_provider`, so a row that appeared
+  (or vanished) server-side since open grows (or shrinks) the row count instead of
+  staying frozen at the open-time total.
+- **A refresh repaints once, atomically — no intermediate-frame flicker.** A
+  chunk-loaded refresh used to bump the generation twice: once when re-counting
+  (start of the refresh) and again after the in-place refetch + re-sort landed,
+  with a network round-trip in between. The grid repainted in that gap — a brief
+  flash of the new row count against not-yet-refreshed/re-sorted rows. Re-count is
+  now silent and the forced refetch carries the single repaint, so the new count
+  and the refreshed, re-sorted rows appear together.
+- **A reordering refresh no longer duplicates/drops rows.** A paged refresh used
+  to re-fetch only the last viewport by absolute offset; if the master's order had
+  shifted (e.g. a `-last_updated` order a live source keeps bumping), a row that
+  migrated into the viewport was left ALSO sitting at its old slot (a duplicate),
+  silently evicting another row. Refresh now re-fetches the whole contiguous
+  loaded block containing the viewport, so a reorder reshuffles cleanly.
+- **Sort / filter on a dotted (nested) column now works.** A condition or sort on
+  a column like `launch_service_provider.name` — whose value lives in a nested CBOR
+  `Map` (a REST `?mode=detailed` belongs-to object) — used to look up the literal
+  flat key, find nothing, and silently no-op. Dotted keys now resolve into the
+  nested map.
+- **A client-sorted refresh never flashes the master's native order.** While a
+  refresh's in-place refetch landed, each chunk row was stamped straight into the
+  *displayed* map at its absolute master offset — so for the window between the
+  pushes and the re-sort the grid (which repaints on its own timer, not just on
+  generation bumps) could repaint the rows in the master's native order, then snap
+  back to the client sort. On a paged scenery with an active sort the displayed map
+  is now a pure projection of the cache: the chunk loader fills the cache and the
+  post-load re-sort is the sole writer of the visible map, so the order only ever
+  transitions atomically between sorted states.
+
 ## 0.6.11 — 2026-06-28
 
 **Lens reduced to pure caching**

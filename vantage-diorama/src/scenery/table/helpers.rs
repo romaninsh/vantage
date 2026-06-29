@@ -1,11 +1,37 @@
 use ciborium::Value as CborValue;
 use vantage_types::Record;
 
+/// Resolve a column key against a record, walking dotted paths (`obj.field`)
+/// into nested CBOR `Map`s. A REST `?mode=detailed` response stores belongs-to
+/// objects as nested maps (e.g. `launch_service_provider: { name: … }`) and
+/// surfaces their leaves as dotted columns, so a flat `rec.get("a.b")` misses
+/// them. Tries the literal key first (covers flat columns and any key that
+/// genuinely contains a dot), then descends segment by segment.
+pub(crate) fn record_get_path<'a>(rec: &'a Record<CborValue>, path: &str) -> Option<&'a CborValue> {
+    if let Some(v) = rec.get(path) {
+        return Some(v);
+    }
+    let mut segments = path.split('.');
+    let mut current = rec.get(segments.next()?)?;
+    for segment in segments {
+        let CborValue::Map(entries) = current else {
+            return None;
+        };
+        current = entries.iter().find_map(|(k, v)| match k {
+            CborValue::Text(name) if name == segment => Some(v),
+            _ => None,
+        })?;
+    }
+    Some(current)
+}
+
 pub(crate) fn matches_conditions(rec: &Record<CborValue>, conds: &[(String, CborValue)]) -> bool {
-    conds.iter().all(|(col, expected)| match rec.get(col) {
-        Some(v) => cbor_eq(v, expected),
-        None => false,
-    })
+    conds
+        .iter()
+        .all(|(col, expected)| match record_get_path(rec, col) {
+            Some(v) => cbor_eq(v, expected),
+            None => false,
+        })
 }
 
 pub(crate) fn matches_search(rec: &Record<CborValue>, needle: Option<&str>) -> bool {

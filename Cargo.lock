@@ -4635,7 +4635,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vantage-api-client"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4806,7 +4806,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.6.11"
+version = "0.6.12"
 dependencies = [
  "async-trait",
  "ciborium",

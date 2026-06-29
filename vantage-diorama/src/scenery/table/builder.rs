@@ -229,7 +229,27 @@ impl TableSceneryBuilder {
                 super::two_pass::reseed_filtered(&state).await;
                 state.bump_generation();
             }
+        } else if dio.lens.callbacks.on_load_chunk.is_some()
+            && dio.lens.callbacks.on_start.is_none()
+        {
+            // Pure paged lens (lazy chunk loading, no eager `on_start` warm): the
+            // row ORDER is the master's, fetched a page at a time — NOT the cache's
+            // id-keyed iteration order. Seeding densely from the cache here would
+            // both show the wrong order and make the viewport loader treat every
+            // row as already-cached and skip the authoritative fetch, so a warm
+            // cache (the redb file surviving a restart) would pin the grid to a
+            // stale, mis-ordered set until a forced refresh. Leave the map empty;
+            // the first viewport load fills it in the master's order.
+            // `total_provider` (above) already sized the scrollbar, so the grid
+            // shows its loading state, not a blank count.
+            //
+            // A hybrid lens that DOES warm via `on_start` (cache seeded in the
+            // master's list order) still reseeds below, so its cache-aware
+            // "skip already-loaded ranges" optimisation is preserved.
+            state.bump_generation();
         } else {
+            // Eager single-pass (or `on_start`-warmed hybrid): the cache IS the
+            // row set; seed (and order) from it directly.
             state.reseed_from_cache().await?;
             state.bump_generation();
         }
