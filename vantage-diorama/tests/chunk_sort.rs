@@ -10,14 +10,15 @@
 //!      total is not frozen at its open-time value.
 
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
-use vantage_diorama::{Generation, Lens, SortDir, TableScenery};
+use vantage_diorama::{SortDir, TableScenery};
 use vantage_types::Record;
-use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
+
+mod support;
+use support::chunk::{Backend, col_at, master as master_cols, paged_lens, wait_for_gen};
 
 fn rec(v: &str) -> Record<CborValue> {
     let mut r = Record::new();
@@ -26,64 +27,11 @@ fn rec(v: &str) -> Record<CborValue> {
 }
 
 fn value(scenery: &Arc<dyn TableScenery>, idx: usize) -> Option<String> {
-    scenery.row(idx).and_then(|r| match r.record.get("v") {
-        Some(CborValue::Text(s)) => Some(s.clone()),
-        _ => None,
-    })
+    col_at(scenery, idx, "v")
 }
 
-/// Master only supplies metadata + the (false) order capability; rows come from
-/// `backend` via `on_load_chunk`.
-fn master() -> Vista {
-    let metadata = VistaMetadata::new()
-        .with_column(Column::new("id", "String").with_flag("id"))
-        .with_column(Column::new("v", "String"))
-        .with_id_column("id");
-    Vista::new("items", Box::new(MockShell::new().with_metadata(metadata)))
-}
-
-type Backend = Arc<Mutex<Vec<(String, Record<CborValue>)>>>;
-
-/// Paged lens with NO `on_refresh` — refresh flows through the scenery's
-/// in-place viewport refetch. `on_load_chunk` pushes each row at its absolute
-/// `backend` index (the master's native order). `total_provider` reports the
-/// live `backend` length, so a re-count picks up appended rows.
-fn paged_lens(cache: std::path::PathBuf, backend: Backend) -> Arc<Lens> {
-    let total = backend.clone();
-    let lens = Lens::new()
-        .cache_at(cache)
-        .total_provider(move |_dio| {
-            let b = total.clone();
-            async move { Ok(b.lock().unwrap().len()) }
-        })
-        .on_load_chunk(move |_dio, range, sink| {
-            let b = backend.clone();
-            async move {
-                let rows = b.lock().unwrap().clone();
-                for idx in range {
-                    if let Some((id, r)) = rows.get(idx) {
-                        sink.push(idx, id.clone(), r.clone()).await?;
-                    }
-                }
-                Ok(())
-            }
-        })
-        .build()
-        .expect("build paged lens");
-    Arc::new(lens)
-}
-
-async fn wait_for_gen(rx: &mut tokio::sync::watch::Receiver<Generation>, current: u64) -> u64 {
-    tokio::time::timeout(Duration::from_millis(500), async {
-        loop {
-            if u64::from(*rx.borrow_and_update()) > current {
-                return u64::from(*rx.borrow());
-            }
-            rx.changed().await.expect("watch channel closed");
-        }
-    })
-    .await
-    .expect("timed out waiting for generation bump")
+fn master() -> vantage_vista::Vista {
+    master_cols(&[("v", "String")])
 }
 
 /// Sort by `v` ascending, then refresh. The backend stays in its native order

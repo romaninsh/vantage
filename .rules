@@ -316,6 +316,29 @@ the following rules:
   not need to be linear — a follow-up commit (`fix`, `fmt`, `clippy`, etc.) is
   always fine.
 
+### Final checks before asking for PR approval
+
+Run this sweep **once per PR**, right before you tell me the PR is ready — not on
+every intermediate commit. These mirror what CI enforces, so passing them locally
+means green checks. The point is to catch them in one pass instead of a
+push-fail-push loop.
+
+1. **Clippy on everything, warnings denied** — `cargo clippy --all-targets
+   -- -D warnings`. The `--all-targets` matters: CI lints test/example/bench code
+   too, so a plain `cargo clippy` will miss lints in `tests/` (e.g.
+   `collapsible_if`, unused imports) and the build will still fail.
+2. **Format** — `cargo fmt --check`.
+3. **Tests** — full suite plus BDD: `cargo test` and `cargo test --test bdd`.
+4. **Version + CHANGELOG bump for every changed crate.** The release `check` job
+   fails any crate that has a diff but the same version as base. For each crate
+   you touched (even a one-line log-level change), bump its `Cargo.toml` version
+   (patch is fine) and add a CHANGELOG entry. Don't forget to let the bump flow
+   into `Cargo.lock`.
+5. **No duplicated new code** (SonarCloud, ≤3% on new lines). Copy-pasted test
+   boilerplate is the usual offender — factor shared helpers into
+   `tests/support/` (include via `mod support;`) rather than repeating
+   `paged_lens` / `wait_for_gen` / fixture builders across files.
+
 ## List of sub-crates and very brief description for each:
 
 ### Core Framework Crates
