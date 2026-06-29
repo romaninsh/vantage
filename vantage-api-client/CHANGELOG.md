@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.5 — 2026-06-29
+
+- REST: the count probe is quieter under `.debug(true)`. The count query and its
+  `window (0, 1)` probe GET now log at `debug`, while real data fetches stay at
+  `info` — so the log shows the fetches that matter without the count-probe noise.
+
 ## 0.6.4 — 2026-06-26
 
 - REST: with `.debug(true)`, each GET now logs the resolved request URL
