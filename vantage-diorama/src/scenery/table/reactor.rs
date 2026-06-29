@@ -46,10 +46,10 @@ pub(crate) async fn reload_loop(
                             reseed(&state).await;
                         }
                     }
-                    Ok(DioEvent::RecordChanged { .. })
-                    | Ok(DioEvent::RecordInserted { .. })
-                    | Ok(DioEvent::RecordRemoved { .. })
-                    | Ok(DioEvent::Invalidated) => {
+                    Ok(DioEvent::RecordChanged { .. }
+                    | DioEvent::RecordInserted { .. }
+                    | DioEvent::RecordRemoved { .. }
+                    | DioEvent::Invalidated) => {
                         refresh(&state).await;
                     }
                     // Optimistic-write affordance: stamp just the affected row
@@ -84,6 +84,10 @@ pub(crate) async fn reload_loop(
 /// `on_refresh` has already restaged).
 async fn refresh(state: &Arc<TableSceneryState>) {
     if state.is_chunk_loaded() {
+        // Re-count first: a chunk-loaded scenery caches its total at open and
+        // would otherwise never notice a row that appeared (or vanished)
+        // server-side. Then re-fetch the current viewport in place.
+        state.refresh_total().await;
         state.refresh_loaded_viewport();
     } else {
         reseed(state).await;
