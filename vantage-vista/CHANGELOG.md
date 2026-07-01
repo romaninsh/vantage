@@ -1,28 +1,34 @@
 # Changelog
 
-## 0.6.5 — unreleased
+## 0.6.6 — 2026-07-01
 
 ### Added
 
-- `MockShell` foreign-key traversal: `with_ref_target(relation, shell)` plus a
-  `get_ref` that resolves a declared reference to another in-memory store,
-  narrowed by the parent row's id. A `set_fail_reads` toggle simulates a source
-  that goes offline. Together they let tests exercise reference traversal and
-  failure-tolerance end to end (used by `vantage-diorama`'s `Dio::get_ref`).
+- `MockShell::len()` / `is_empty()`: synchronous record count for tests/examples that grow or shrink
+  the store at runtime and want to assert on its size without an async `list`.
+
+## 0.6.5 — 2026-06-28
+
+### Added
+
+- `MockShell` foreign-key traversal: `with_ref_target(relation, shell)` plus a `get_ref` that
+  resolves a declared reference to another in-memory store, narrowed by the parent row's id. A
+  `set_fail_reads` toggle simulates a source that goes offline. Together they let tests exercise
+  reference traversal and failure-tolerance end to end (used by `vantage-diorama`'s `Dio::get_ref`).
 
 ### Changed
 
-- `Vista::get_ref` docs no longer claim "same-persistence only": persistence is
-  the shell's concern; callers stay persistence-agnostic.
+- `Vista::get_ref` docs no longer claim "same-persistence only": persistence is the shell's concern;
+  callers stay persistence-agnostic.
 
 ## 0.6.3 — unreleased
 
 ### Added
 
-- `MockShell` mutation helpers (`set_record`, `set_field`, `remove_record`, `clear_records`): opt-in,
-  interior-mutable knobs for scripting server-side dataset changes mid-test. Back `vantage-diorama`'s
-  scriptable test source (refresh / reload / soft-refresh scenarios). Read-only `MockShell` behaviour
-  is unchanged.
+- `MockShell` mutation helpers (`set_record`, `set_field`, `remove_record`, `clear_records`):
+  opt-in, interior-mutable knobs for scripting server-side dataset changes mid-test. Back
+  `vantage-diorama`'s scriptable test source (refresh / reload / soft-refresh scenarios). Read-only
+  `MockShell` behaviour is unchanged.
 
 ## 0.6.2 — unreleased
 
@@ -51,33 +57,31 @@
 
 ### Added
 
-- `Vista::index_key(conditions, sort)` — a stable per-query identity string
-  (name + normalized conditions + sort). Two-pass loading keys its ordered index
-  by this, so filter/sort variants of the same entity get distinct indexes while
-  sharing the name-keyed detail store.
+- `Vista::index_key(conditions, sort)` — a stable per-query identity string (name + normalized
+  conditions + sort). Two-pass loading keys its ordered index by this, so filter/sort variants of
+  the same entity get distinct indexes while sharing the name-keyed detail store.
 
 ## 0.5.4 — 2026-06-07
 
 ### Added
 
-- Rhai-scripted reference traversal (escape hatch over the fixed foreign-key path). YAML
-  stays the primary table-definition format; a per-reference Rhai script is a targeted,
-  serializable override that builds the relationship's target `Vista` at traversal time.
-  Gated behind the new optional `rhai` feature.
-  - `Reference::build_script: Option<String>` plus `Reference::with_build_script(..)`, carrying
-    the per-reference script lowered from the backend extras slot. Lazy: it only evaluates on
-    traversal, so self/cyclic relations cost nothing until walked.
+- Rhai-scripted reference traversal (escape hatch over the fixed foreign-key path). YAML stays the
+  primary table-definition format; a per-reference Rhai script is a targeted, serializable override
+  that builds the relationship's target `Vista` at traversal time. Gated behind the new optional
+  `rhai` feature.
+  - `Reference::build_script: Option<String>` plus `Reference::with_build_script(..)`, carrying the
+    per-reference script lowered from the backend extras slot. Lazy: it only evaluates on traversal,
+    so self/cyclic relations cost nothing until walked.
   - `VistaCapabilities::can_build_ref_via_script` advertises the capability, mirroring the
     `can_traverse_to_set` precedent.
-  - `TableShell::register_rhai_extensions(&self, &mut rhai::Engine)` — default no-op hook
-    backends override to contribute vendor vocabulary (expression syntax, `with_condition`).
-  - New `rhai_conventional` module owns the engine with a *conventional, uniform* vocabulary
-    over the type-erased `Vista` (`table`, `with_id`, `add_condition_eq`, `add_order`,
-    `add_search`, `set_page_size`, `get_ref`), so any datasource — even engine-less ones —
-    supports the script vocabulary and only loses vendor expression syntax (graceful
-    degradation). Exposes `RhaiVista`, `TargetResolver`, `register_conventional_onto`,
-    `eval_ref_script`, and `eval_modify_script` (the last applies a script to an
-    already-built vista).
+  - `TableShell::register_rhai_extensions(&self, &mut rhai::Engine)` — default no-op hook backends
+    override to contribute vendor vocabulary (expression syntax, `with_condition`).
+  - New `rhai_conventional` module owns the engine with a _conventional, uniform_ vocabulary over
+    the type-erased `Vista` (`table`, `with_id`, `add_condition_eq`, `add_order`, `add_search`,
+    `set_page_size`, `get_ref`), so any datasource — even engine-less ones — supports the script
+    vocabulary and only loses vendor expression syntax (graceful degradation). Exposes `RhaiVista`,
+    `TargetResolver`, `register_conventional_onto`, `eval_ref_script`, and `eval_modify_script` (the
+    last applies a script to an already-built vista).
 
 ## 0.5.3 — 2026-06-06
 
@@ -85,20 +89,19 @@
 
 - **Breaking:** cross-persistence traversal is no longer a `Vista` concern. Removed
   `Vista::with_foreign`, the `ForeignResolver` / `ForeignRef` types, and the internal
-  `foreign_resolvers` registry. A `Vista` is now strictly single-persistence: `get_ref`
-  routes contained relations to the embedded sub-`Vista` and forwards everything else to
-  the underlying shell. Resolving a reference that crosses persistence boundaries is now
-  the job of [`vantage-vista-factory`](https://crates.io/crates/vantage-vista-factory)'s
-  `VistaCatalog`.
+  `foreign_resolvers` registry. A `Vista` is now strictly single-persistence: `get_ref` routes
+  contained relations to the embedded sub-`Vista` and forwards everything else to the underlying
+  shell. Resolving a reference that crosses persistence boundaries is now the job of
+  [`vantage-vista-factory`](https://crates.io/crates/vantage-vista-factory)'s `VistaCatalog`.
 
 ## 0.5.2 — 2026-05-31
 
 ### Added
 
 - Contained relations surface embedded objects/arrays as a full editable sub-`Vista` via
-  `build_contained_vista`. Reads project the host column into records; writes re-serialize the
-  whole collection and patch the parent row through a writeback closure. Contained records can
-  traverse out to real tables, and a `contained:` section is now decodable from YAML specs. See the
+  `build_contained_vista`. Reads project the host column into records; writes re-serialize the whole
+  collection and patch the parent row through a writeback closure. Contained records can traverse
+  out to real tables, and a `contained:` section is now decodable from YAML specs. See the
   [contained relations guide](https://romaninsh.github.io/vantage/new-persistence/step9-contained-relations.html).
 
 ## 0.5.1 — 2026-05-30
@@ -108,11 +111,11 @@
 - **Nested insert through relations.** `insert_value` / `insert_return_id_value` now accept a record
   whose keys name a **relation** instead of a column, and sequence the writes so foreign keys are
   populated automatically: a **has-one** child (`inventory` as a map, or grouped `inventory.count` /
-  `inventory.flag` keys) is inserted first and its id stamped into the parent's FK column; **has-many**
-  children (`orders` as a list of maps) are inserted after the parent with the parent's id stamped
-  into each child's FK column. Arbitrary depth, native (same-persistence) relations only. Best-effort
-  and non-atomic — a mid-sequence failure leaves earlier writes committed. Vista does no field
-  validation; the underlying table validates each record. Cross-persistence
+  `inventory.flag` keys) is inserted first and its id stamped into the parent's FK column;
+  **has-many** children (`orders` as a list of maps) are inserted after the parent with the parent's
+  id stamped into each child's FK column. Arbitrary depth, native (same-persistence) relations only.
+  Best-effort and non-atomic — a mid-sequence failure leaves earlier writes committed. Vista does no
+  field validation; the underlying table validates each record. Cross-persistence
   ([`with_foreign`](https://docs.rs/vantage-vista/0.5.1/vantage_vista/struct.Vista.html#method.with_foreign))
   relations are rejected.
 - [`TableShell::get_ref_target`](https://docs.rs/vantage-vista/0.5.1/vantage_vista/trait.TableShell.html)
