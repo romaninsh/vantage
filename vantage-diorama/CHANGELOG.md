@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.13 — 2026-07-01
+
+**Client-side sort orders numeric columns numerically**
+
+- A client-side sort on a `Float` (decimal) column now orders by numeric value
+  instead of by the value's `{:?}` debug string. The comparator only special-cased
+  `Text`/`Integer`/`Bool` and fell through to a lexicographic debug-string compare
+  for everything else, so a decimal column sorted like text: `657.96` ranked above
+  `1826.19` (because `'6' > '1'`). A single such value would wedge itself into the
+  wrong slot of an otherwise-ordered list — most visible on a live-updating,
+  decimal-valued grid or chart. `Integer`/`Float` mixes now compare numerically
+  too; `NaN` sorts as equal so it can't panic the sort.
+
 ## 0.6.12 — 2026-06-29
 
 **Chunk-loaded grids: sort survives refresh, count stays live**

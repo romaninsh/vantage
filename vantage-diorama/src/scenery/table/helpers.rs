@@ -65,6 +65,18 @@ pub(crate) fn cbor_cmp(a: Option<&CborValue>, b: Option<&CborValue>) -> std::cmp
         (Some(lhs), Some(rhs)) => match (lhs, rhs) {
             (CborValue::Text(l), CborValue::Text(r)) => l.cmp(r),
             (CborValue::Integer(l), CborValue::Integer(r)) => i128::from(*l).cmp(&i128::from(*r)),
+            // Floats (and int/float mixes) sort by numeric value — NOT by their
+            // `{:?}` debug string, which would rank "657.96" above "1826.19".
+            // NaN is treated as equal so a stray NaN can't panic the sort.
+            (CborValue::Float(l), CborValue::Float(r)) => {
+                l.partial_cmp(r).unwrap_or(Ordering::Equal)
+            }
+            (CborValue::Integer(l), CborValue::Float(r)) => (i128::from(*l) as f64)
+                .partial_cmp(r)
+                .unwrap_or(Ordering::Equal),
+            (CborValue::Float(l), CborValue::Integer(r)) => l
+                .partial_cmp(&(i128::from(*r) as f64))
+                .unwrap_or(Ordering::Equal),
             (CborValue::Bool(l), CborValue::Bool(r)) => l.cmp(r),
             _ => format!("{lhs:?}").cmp(&format!("{rhs:?}")),
         },
