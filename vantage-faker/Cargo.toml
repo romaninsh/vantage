@@ -1,0 +1,43 @@
+[package]
+name = "vantage-faker"
+version = "0.6.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+authors = ["Romans Malinovskis <me@nearly.guru>"]
+description = "Synthetic, optionally-live datasource for Vantage — generates fake rows and mutates them over time for testing and demos — incubating"
+documentation = "https://docs.rs/vantage-faker"
+homepage = "https://romaninsh.github.io/vantage"
+repository = "https://github.com/romaninsh/vantage"
+readme = "README.md"
+
+# Standalone crate: excluded from the parent vantage workspace, so an empty
+# workspace table detaches it (mirrors vantage-cmd / vantage-aws).
+[workspace]
+
+[dependencies]
+vantage-types = { version = "0.6", path = "../vantage-types", features = ["serde"] }
+vantage-vista = { version = "0.6", path = "../vantage-vista" }
+vantage-diorama = { version = "0.6", path = "../vantage-diorama" }
+
+# Universal value carrier across the type-erased Vista / ChangeEvent boundary.
+ciborium = "0.2"
+indexmap = { version = "2", features = ["serde"] }
+async-trait = "0.1"
+
+# Live effects run on the async runtime; `broadcast` fans deltas out to every
+# subscribed Dio, `time` drives the fifo ticker + row expiry.
+tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
+
+# Third-party realistic value generation (names, emails, addresses, …).
+fake = "5"
+
+tracing = "0.1"
+
+[dev-dependencies]
+vantage-core = { version = "0.6", path = "../vantage-core" }
+# `list_values` in tests reads back through the Vista's dataset traits.
+vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
+# Styled table output for the `fifo_cli` example.
+vantage-cli-util = { version = "0.6", path = "../vantage-cli-util" }
+tokio = { version = "1", features = ["full"] }
+tempfile = "3"

@@ -144,6 +144,18 @@ impl MockShell {
         self.data.lock().unwrap().clear();
     }
 
+    /// Number of records currently held. Companion to the live-mutation
+    /// helpers above, for tests/examples that grow or shrink the store at
+    /// runtime and want to assert on its size without an async `list`.
+    pub fn len(&self) -> usize {
+        self.data.lock().unwrap().len()
+    }
+
+    /// Whether the store holds no records.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Return `Err` while `fail_reads` is set — see [`Self::set_fail_reads`].
     fn guard_reads(&self) -> Result<()> {
         if self.fail_reads.load(Ordering::SeqCst) {
