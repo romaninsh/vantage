@@ -14,7 +14,7 @@ use std::time::Duration;
 use ciborium::Value as CborValue;
 use vantage_diorama::{Generation, Lens, TableScenery};
 use vantage_types::Record;
-use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
+use vantage_vista::{Column, Vista, VistaCapabilities, VistaMetadata, mocks::MockShell};
 
 /// An in-memory list of `(id, record)` rows the lens serves chunks from.
 pub type Backend = Arc<Mutex<Vec<(String, Record<CborValue>)>>>;
@@ -29,7 +29,21 @@ pub fn master(cols: &[(&str, &str)]) -> Vista {
         metadata = metadata.with_column(Column::new(*name, *ty));
     }
     let metadata = metadata.with_id_column("id");
-    Vista::new("items", Box::new(MockShell::new().with_metadata(metadata)))
+    // A native-order paged master: it serves rows through `on_load_chunk` and
+    // genuinely can't push a sort down, so `can_order` is false — the scenery
+    // re-sorts client-side over the cache.
+    let caps = VistaCapabilities {
+        can_order: false,
+        ..Default::default()
+    };
+    Vista::new(
+        "items",
+        Box::new(
+            MockShell::new()
+                .with_metadata(metadata)
+                .with_capabilities(caps),
+        ),
+    )
 }
 
 /// Paged lens with NO `on_refresh`: refresh flows through the scenery's in-place
@@ -44,7 +58,7 @@ pub fn paged_lens(cache: std::path::PathBuf, backend: Backend) -> Arc<Lens> {
             let b = total.clone();
             async move { Ok(b.lock().unwrap().len()) }
         })
-        .on_load_chunk(move |_dio, range, sink| {
+        .on_load_chunk(move |_dio, range, _sort, sink| {
             let b = backend.clone();
             async move {
                 let rows = b.lock().unwrap().clone();
@@ -77,7 +91,7 @@ pub fn paged_lens_native_desc(
             let b = total.clone();
             async move { Ok(b.lock().unwrap().len()) }
         })
-        .on_load_chunk(move |_dio, range, sink| {
+        .on_load_chunk(move |_dio, range, _sort, sink| {
             let b = backend.clone();
             async move {
                 let mut rows = b.lock().unwrap().clone();

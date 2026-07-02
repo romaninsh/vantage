@@ -56,7 +56,7 @@ fn paged_lens(
             let b = total.clone();
             async move { Ok(b.lock().unwrap().len()) }
         })
-        .on_load_chunk(move |_dio, range, sink| {
+        .on_load_chunk(move |_dio, range, _sort, sink| {
             let b = backend.clone();
             let fail = fail_next.clone();
             async move {

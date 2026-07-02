@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.7 — 2026-07-02
+
+- SQLite's shell is now `Clone` and implements `TableShell::clone_shell`, so a
+  consumer (e.g. a diorama paged scenery) can build a per-view ordered copy —
+  `clone_shell()` → `add_order` → `fetch_window` — to page rows in server order.
+  The clone is cheap: it copies the wrapped table's query state (the same clone
+  `fetch_window` already does per call) while the connection pool stays shared.
+
 ## 0.6.6 — 2026-06-28
 
 - TLS support for the Postgres and MySQL connection pools: sqlx is now built with the `tls-rustls`
