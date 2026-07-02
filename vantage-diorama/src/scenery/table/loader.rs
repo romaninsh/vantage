@@ -285,7 +285,8 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
     // Clear the dirty flag so it reflects only the rows this load writes;
     // `write_chunk_row` sets it when a row's content actually changes.
     state.reset_load_dirty();
-    let result = cb(&dio, effective_range.clone(), sink).await;
+    let sort = state.sort.read().unwrap().clone();
+    let result = cb(&dio, effective_range.clone(), sort, sink).await;
 
     *state.load_in_flight.lock().unwrap() = None;
 
@@ -310,16 +311,21 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
             // the refetch instead of snapping back to native order. It orders only
             // the loaded rows — the documented cost of sorting a lazily-paged
             // source that can't order server-side.
-            let resorted = if state.sort.read().unwrap().is_some() {
-                if let Err(e) = state.reseed_from_cache().await {
-                    tracing::error!(error = %e, "post-load resort failed");
-                    false
+            // Only re-sort client-side when the master couldn't order it for us.
+            // A `can_order` master fetched this window server-ordered (via
+            // `Dio::fetch_window_ordered`), so `write_chunk_row` already stamped
+            // the rows in the right order — reseeding would be redundant.
+            let resorted =
+                if state.sort.read().unwrap().is_some() && !state.master_capabilities.can_order {
+                    if let Err(e) = state.reseed_from_cache().await {
+                        tracing::error!(error = %e, "post-load resort failed");
+                        false
+                    } else {
+                        true
+                    }
                 } else {
-                    true
-                }
-            } else {
-                false
-            };
+                    false
+                };
             // Drain the dirty flag regardless (so it doesn't leak into the next
             // load). Bump when this was a forced refetch (a refresh or load-more —
             // it carries the single repaint for the whole refresh, including a

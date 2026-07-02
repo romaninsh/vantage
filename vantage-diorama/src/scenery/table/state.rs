@@ -372,14 +372,15 @@ impl SceneryChunkTarget for TableSceneryState {
         // Count every received row (before the skips below), so the loader can
         // tell a short page (end of set) from a full one.
         self.load_push_count.fetch_add(1, Ordering::SeqCst);
-        // With a client sort active, the displayed map is a pure projection of
-        // the cache, rebuilt by `reseed_from_cache` once the load finishes (the
-        // loader re-sorts whenever `sort` is set). The cache row was already
-        // written by `ChunkSink::push`, so there is nothing more to do here —
-        // and stamping this server-ordered row into the visible map would expose
-        // the master's native order in the window before the re-sort runs, a
-        // flicker the grid repaints on its own timer. Let reseed own the map.
-        if self.sort.read().unwrap().is_some() {
+        // With a *client-side* sort active, the displayed map is a pure
+        // projection of the cache, rebuilt by `reseed_from_cache` once the load
+        // finishes (the loader re-sorts whenever `sort` is set). Stamping this
+        // native-order row into the visible map would expose the master's order
+        // in the window before the re-sort runs — a flicker. Let reseed own the
+        // map. But a `can_order` master fetched this window *already* in sort
+        // order (`Dio::fetch_window_ordered`) and there is no client re-sort, so
+        // these rows must be written straight through.
+        if self.sort.read().unwrap().is_some() && !self.master_capabilities.can_order {
             return;
         }
         // Skip the write entirely when this slot already holds the same fresh
