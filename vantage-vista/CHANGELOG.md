@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.7 — 2026-07-02
+
+- `TableShell::clone_shell(&self) -> Option<Box<dyn TableShell>>` — a defaulted
+  (`None`) hook a driver overrides when it can be cloned cheaply, sharing the
+  backing store but owning its own query state (conditions / order / search). A
+  consumer builds a per-view ordered shell with `clone_shell()` → `add_order` →
+  `fetch_window`, without mutating the shared original. `MockShell` implements it
+  (and now serves an order-applying `fetch_window`) so it can stand in for an
+  orderable, windowed driver in tests.
+
 ## 0.6.6 — 2026-07-01
 
 ### Added

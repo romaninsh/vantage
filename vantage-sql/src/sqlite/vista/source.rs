@@ -30,6 +30,7 @@ use crate::sqlite::operation::SqliteOperation;
 use crate::sqlite::types::AnySqliteType;
 use crate::types::{cbor_to_json, parse_json_host};
 
+#[derive(Clone)]
 pub struct SqliteTableShell<E = EmptyEntity>
 where
     E: Entity<AnySqliteType>,
@@ -223,6 +224,14 @@ where
     fn clear_orders(&mut self) -> Result<()> {
         self.table.clear_orders();
         Ok(())
+    }
+
+    /// Cheap: `Table` clones its query state (conditions/order/pagination) while
+    /// the `SqliteDB` connection pool behind it is `Arc`-shared. This is the same
+    /// clone `fetch_window` already does per call, so a per-view ordered copy
+    /// costs no more than a windowed fetch.
+    fn clone_shell(&self) -> Option<Box<dyn TableShell>> {
+        Some(Box::new(self.clone()))
     }
 
     fn add_search(&mut self, text: &str) -> Result<()> {

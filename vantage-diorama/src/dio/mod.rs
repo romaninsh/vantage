@@ -403,6 +403,36 @@ impl Dio {
         Vista::new(name, Box::new(shell))
     }
 
+    /// Fetch a `[offset, limit)` window, preferring the master's own ordering.
+    ///
+    /// When `sort` is set and the master `can_order` and yields an independent
+    /// [`clone_shell`](vantage_vista::TableShell::clone_shell), the window is read
+    /// from a **per-call ordered clone** (`add_order` → `fetch_window`) — the
+    /// shared master is never mutated, so differently-sorted views never race. If
+    /// the master can't order or can't be cloned, it fetches the window in native
+    /// order and the caller re-sorts over the cache (the existing fallback).
+    pub async fn fetch_window_ordered(
+        &self,
+        offset: usize,
+        limit: usize,
+        sort: Option<(String, crate::SortDir)>,
+    ) -> Result<Vec<(String, Record<CborValue>)>> {
+        let master = self.master();
+        if let Some((col, dir)) = sort
+            && master.capabilities().can_order
+            && let Some(shell) = master.source.clone_shell()
+        {
+            let mut ordered = Vista::new(master.name(), shell);
+            let vdir = match dir {
+                crate::SortDir::Asc => vantage_vista::SortDirection::Ascending,
+                crate::SortDir::Desc => vantage_vista::SortDirection::Descending,
+            };
+            ordered.add_order(&col, vdir)?;
+            return ordered.fetch_window(offset, limit).await;
+        }
+        master.fetch_window(offset, limit).await
+    }
+
     // ---- Event bus — user-callable surface ----------------------------------
 
     /// Dispatch an upstream [`ChangeEvent`] through the lens's
