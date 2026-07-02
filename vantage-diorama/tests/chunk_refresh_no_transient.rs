@@ -72,7 +72,7 @@ async fn refresh_never_exposes_master_order_midload() -> Result<()> {
                     let b = total.clone();
                     async move { Ok(b.lock().unwrap().len()) }
                 })
-                .on_load_chunk(move |_dio, range, sink| {
+                .on_load_chunk(move |_dio, range, _sort, sink| {
                     let b = backend.clone();
                     let scenery_slot = scenery_slot.clone();
                     let observed = observed.clone();

@@ -503,7 +503,7 @@ impl LensBuilderState {
                 let error_once = spies.on_load_chunk_error_once.clone();
                 let source_latency = spies.source_latency_ms.clone();
                 let source_fail_reads = spies.source_fail_reads.clone();
-                b = b.on_load_chunk(move |dio, range, sink| {
+                b = b.on_load_chunk(move |dio, range, _sort, sink| {
                     let counter = counter.clone();
                     let master_list_counter = master_list_counter.clone();
                     let last_range = last_range.clone();
@@ -548,7 +548,7 @@ impl LensBuilderState {
             OnLoadChunkKind::RecordCalls => {
                 let counter = spies.on_load_chunk.clone();
                 let last_range = spies.last_load_chunk_range.clone();
-                b = b.on_load_chunk(move |_dio, range, _sink| {
+                b = b.on_load_chunk(move |_dio, range, _sort, _sink| {
                     let counter = counter.clone();
                     let last_range = last_range.clone();
                     async move {
@@ -561,7 +561,7 @@ impl LensBuilderState {
             OnLoadChunkKind::AlwaysError => {
                 let counter = spies.on_load_chunk.clone();
                 let last_range = spies.last_load_chunk_range.clone();
-                b = b.on_load_chunk(move |_dio, range, _sink| {
+                b = b.on_load_chunk(move |_dio, range, _sort, _sink| {
                     let counter = counter.clone();
                     let last_range = last_range.clone();
                     async move {

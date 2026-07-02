@@ -304,6 +304,22 @@ pub trait TableShell: Send + Sync + 'static {
         Err(self.default_error("clear_orders", "can_order"))
     }
 
+    // ---- Cloning -----------------------------------------------------------
+
+    /// Produce an independent copy of this shell, or `None` if the driver can't
+    /// be cloned cheaply. The copy must share the backing store / connection
+    /// (typically `Arc`) but own its own query state (conditions / order /
+    /// search) so a caller can narrow it — set an ORDER BY, add a WHERE — without
+    /// disturbing the original. This is how a consumer builds a per-view ordered
+    /// Vista to fetch from: `clone_shell()` → `add_order(...)` → `fetch_window`.
+    ///
+    /// Default `None`: drivers opt in only where a clone is genuinely cheap
+    /// (query state is small; the store is `Arc`-shared). Callers that get `None`
+    /// fall back to reading the shared shell and ordering client-side.
+    fn clone_shell(&self) -> Option<Box<dyn TableShell>> {
+        None
+    }
+
     // ---- References --------------------------------------------------------
 
     /// Resolve a same-persistence relation using a known source row, returning

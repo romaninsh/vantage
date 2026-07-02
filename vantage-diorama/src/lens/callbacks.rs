@@ -6,6 +6,7 @@ use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_types::Record;
 
+use crate::SortDir;
 use crate::dio::Dio;
 use crate::lens::chunk_sink::ChunkSink;
 use crate::ops::{ChangeEvent, QueryDescriptor, WriteOp};
@@ -36,8 +37,18 @@ pub type DioTotalProviderCallback =
 /// Callback that fetches a contiguous range of rows from the master
 /// and pushes them into the Scenery via [`ChunkSink::push`]. Returns
 /// `Ok(())` once it is done pushing for this invocation.
+///
+/// The `sort` is the requesting scenery's active order (`None` if unsorted).
+/// Callbacks should fetch through [`Dio::fetch_window_ordered`], which pushes
+/// the sort to a `can_order` master and otherwise returns the native-order
+/// window (the scenery then re-sorts over the cache).
 pub type DioLoadChunkCallback = Box<
-    dyn for<'a> Fn(&'a Dio, Range<usize>, ChunkSink) -> DioCallbackFuture<'a>
+    dyn for<'a> Fn(
+            &'a Dio,
+            Range<usize>,
+            Option<(String, SortDir)>,
+            ChunkSink,
+        ) -> DioCallbackFuture<'a>
         + Send
         + Sync
         + 'static,
@@ -129,10 +140,13 @@ where
 /// Wrap a user closure into a [`DioLoadChunkCallback`].
 pub fn boxed_load_chunk_callback<F, Fut>(f: F) -> DioLoadChunkCallback
 where
-    F: for<'a> Fn(&'a Dio, Range<usize>, ChunkSink) -> Fut + Send + Sync + 'static,
+    F: for<'a> Fn(&'a Dio, Range<usize>, Option<(String, SortDir)>, ChunkSink) -> Fut
+        + Send
+        + Sync
+        + 'static,
     Fut: Future<Output = Result<()>> + Send + 'static,
 {
-    Box::new(move |dio, range, sink| Box::pin(f(dio, range, sink)))
+    Box::new(move |dio, range, sort, sink| Box::pin(f(dio, range, sort, sink)))
 }
 
 /// Wrap a user closure into a [`DioListPageCallback`].

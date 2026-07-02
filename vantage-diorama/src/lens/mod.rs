@@ -237,7 +237,10 @@ impl LensBuilder {
     /// `ViewportChanged` and never load.
     pub fn on_load_chunk<F, Fut>(mut self, f: F) -> Self
     where
-        F: for<'a> Fn(&'a Dio, Range<usize>, ChunkSink) -> Fut + Send + Sync + 'static,
+        F: for<'a> Fn(&'a Dio, Range<usize>, Option<(String, crate::SortDir)>, ChunkSink) -> Fut
+            + Send
+            + Sync
+            + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
         self.on_load_chunk = Some(callbacks::boxed_load_chunk_callback(f));

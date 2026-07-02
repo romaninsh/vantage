@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.6.14 — 2026-07-02
+
+**Server-side ordering when the master can order**
+
+- A paged scenery whose master reports `can_order` now pushes its sort **down to
+  the master** and skips the client-side re-sort. `Dio::fetch_window_ordered`
+  clones the master per fetch (`TableShell::clone_shell`), applies the sort with
+  `add_order`, and reads the ordered `[offset, limit)` window — the shared master
+  is never mutated, so differently-sorted views can't race. When the master can't
+  order (or can't be cloned) it fetches native order and the scenery re-sorts over
+  the cache, exactly as before. The eager (non-windowed) path is unchanged — its
+  cache is unordered, so it still sorts client-side.
+- `on_load_chunk` callbacks now receive the requesting scenery's `sort`
+  (`Fn(&Dio, Range, Option<(String, SortDir)>, ChunkSink)`) and should fetch via
+  `Dio::fetch_window_ordered`. (API break: add the `sort` parameter.)
+
 ## 0.6.13 — 2026-07-01
 
 **Client-side sort orders numeric columns numerically**

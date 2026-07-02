@@ -309,6 +309,41 @@ impl TableShell for MockShell {
         Ok(rows.into_iter().collect())
     }
 
+    /// Windowed read that honours the shell's current `add_order` — the mock's
+    /// analogue of a driver serving an ordered `[offset, limit)` page. Reuses
+    /// `list_vista_values` (filter + search + order) then slices, so a caller
+    /// that set an order via `add_order` gets it applied server-side. Gated by
+    /// `can_fetch_window` like every driver.
+    async fn fetch_window(
+        &self,
+        vista: &Vista,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<(String, Record<CborValue>)>> {
+        let ordered = self.list_vista_values(vista).await?;
+        Ok(ordered.into_iter().skip(offset).take(limit).collect())
+    }
+
+    /// Share the backing store, but give the copy its **own** query state
+    /// (filters / order / search) — the `clone_shell` contract. `MockShell`'s
+    /// derived `Clone` shares those (they're `Arc<Mutex<_>>`), so it can't be
+    /// used here: narrowing the clone (e.g. `add_order` in
+    /// `Dio::fetch_window_ordered`) must not reach back and reorder the original.
+    /// `data` / `next_auto_id` / `fail_reads` stay shared (the store).
+    fn clone_shell(&self) -> Option<Box<dyn TableShell>> {
+        Some(Box::new(MockShell {
+            data: self.data.clone(),
+            next_auto_id: self.next_auto_id.clone(),
+            filters: Arc::new(Mutex::new(self.filters.lock().unwrap().clone())),
+            order: Arc::new(Mutex::new(self.order.lock().unwrap().clone())),
+            search: Arc::new(Mutex::new(self.search.lock().unwrap().clone())),
+            capabilities: self.capabilities.clone(),
+            metadata: self.metadata.clone(),
+            ref_targets: self.ref_targets.clone(),
+            fail_reads: self.fail_reads.clone(),
+        }))
+    }
+
     async fn get_vista_value(
         &self,
         _vista: &Vista,
