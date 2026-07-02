@@ -16,6 +16,7 @@
 //! broadcast [`Sender`](broadcast::Sender) to subscribe to for live deltas.
 
 pub mod effect;
+pub mod pulse;
 pub mod value_gen;
 
 use tokio::sync::broadcast;
@@ -25,6 +26,7 @@ use vantage_vista::Vista;
 use vantage_vista::mocks::MockShell;
 
 pub use effect::{FakerCtx, FakerEffect, FifoEffect, StaticEffect};
+pub use pulse::{PulseConfig, PulseKey, PulseRole, PulseSim};
 pub use value_gen::ValueGen;
 
 /// One column of a faker table: a name, a declared type, and free-form flags
