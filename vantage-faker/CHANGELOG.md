@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.2 — 2026-07-03
+
+- `LiveFolderSim`: a synthetic, constantly-mutating multi-layer log tree. One shared run loop
+  simulates three streams under `{date}/` — an `access_logs_HH` chunked access log (active chunk
+  bumps each second at `requests_per_sec × bytes_per_request` bytes; rolls a new `chunk_NN.log` when
+  it crosses `chunk_threshold`, sized for ~100 files/hour at defaults), a rare `error_logs` stream
+  (one `HH:MM:SS-errors.log` file per error occurrence, gated by `error_pct_per_sec`), and ten
+  `events/<type>.log` event files each with its own 1–10% per-second probability of a 2000–4000-byte
+  bump. Folders and files carry `created`/`modified`; any leaf mutation touches every ancestor up to
+  root. A `backfill` duration replays the algorithm at full speed from `now − backfill` to `now` on
+  construction. The listing vista is a `FolderListingShell` reading the live tree on every list,
+  declaring a `subdir` HasMany reference so a Dio over a parent folder can traverse into any child
+  via `get_ref("subdir", row)`. The folder-size vista is get-only (no list) and fetches with a
+  100ms–1s latency scaled by file count — for exercising viewport debounce.
+- `live_folder_cli` and `scenery_folder_cli` examples: the former renders the whole tree as a
+  `tree(1)`-style outline; the latter opens three reactive `TableScenery` panes (ymd, error_logs,
+  events) wired through `Dio::get_ref("subdir", ...)` and refreshed on every sim tick.
+
 ## 0.6.1 — 2026-07-02
 
 - `PulseSim`: a generic, config-driven "live aggregate feed". One shared run loop drives three

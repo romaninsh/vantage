@@ -1,6 +1,6 @@
 [package]
 name = "vantage-faker"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -15,6 +15,7 @@ readme = "README.md"
 [workspace]
 
 [dependencies]
+vantage-core = { version = "0.6", path = "../vantage-core" }
 vantage-types = { version = "0.6", path = "../vantage-types", features = ["serde"] }
 vantage-vista = { version = "0.6", path = "../vantage-vista" }
 vantage-diorama = { version = "0.6", path = "../vantage-diorama" }
@@ -41,3 +42,8 @@ vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
 vantage-cli-util = { version = "0.6", path = "../vantage-cli-util" }
 tokio = { version = "1", features = ["full"] }
 tempfile = "3"
+cucumber = { version = "0.21", default-features = false, features = ["macros"] }
+
+[[test]]
+name = "bdd"
+harness = false
