@@ -2,7 +2,7 @@
 
 **Observed** (launch-control binder tab, 1-row relation):
 
-```
+```text
 GET payload_flights/?mode=detailed&offset=0&limit=1&launch__id=…   ← count probe
 REST count total=1
 GET payload_flights/?mode=detailed&offset=0&limit=100&launch__id=… ← first chunk
