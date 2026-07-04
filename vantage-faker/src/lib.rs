@@ -16,6 +16,7 @@
 //! broadcast [`Sender`](broadcast::Sender) to subscribe to for live deltas.
 
 pub mod effect;
+pub mod live_folder;
 pub mod pulse;
 pub mod value_gen;
 
@@ -26,6 +27,9 @@ use vantage_vista::Vista;
 use vantage_vista::mocks::MockShell;
 
 pub use effect::{FakerCtx, FakerEffect, FifoEffect, StaticEffect};
+pub use live_folder::{
+    EVENT_TYPES, Entry, EntryKind, LiveFolderConfig, LiveFolderSim, PushMode, format_ts,
+};
 pub use pulse::{PulseConfig, PulseKey, PulseRole, PulseSim};
 pub use value_gen::ValueGen;
 
