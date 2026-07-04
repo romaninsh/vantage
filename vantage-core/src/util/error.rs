@@ -263,6 +263,21 @@ impl VantageError {
         self
     }
 
+    /// Emit the same structured event as [`traced`](Self::traced) at DEBUG
+    /// level — for errors that are a legitimate answer to a probing caller
+    /// (e.g. an `Unsupported` capability refusal) rather than faults: the
+    /// error value carries the message to the caller, the log stays quiet.
+    pub fn traced_debug(self) -> Self {
+        tracing::debug!(
+            kind = ?self.kind,
+            location = self.location.as_deref().unwrap_or(""),
+            context = %self.context_string(),
+            "{}",
+            self.message
+        );
+        self
+    }
+
     /// `true` if this error is classified as [`ErrorKind::Unsupported`].
     pub fn is_unsupported(&self) -> bool {
         self.kind == ErrorKind::Unsupported
@@ -279,9 +294,19 @@ impl VantageError {
     }
 
     fn emit_trace(&self) {
-        // Flatten context into a single string so it lands as a structured
-        // attribute on the tracing event without needing a serializer.
-        let context_str = if self.context.is_empty() {
+        tracing::error!(
+            kind = ?self.kind,
+            location = self.location.as_deref().unwrap_or(""),
+            context = %self.context_string(),
+            "{}",
+            self.message
+        );
+    }
+
+    /// Flatten context into a single string so it lands as a structured
+    /// attribute on a tracing event without needing a serializer.
+    fn context_string(&self) -> String {
+        if self.context.is_empty() {
             String::new()
         } else {
             self.context
@@ -289,14 +314,7 @@ impl VantageError {
                 .map(|(k, v)| format!("{}={}", k, v))
                 .collect::<Vec<_>>()
                 .join(", ")
-        };
-        tracing::error!(
-            kind = ?self.kind,
-            location = self.location.as_deref().unwrap_or(""),
-            context = %context_str,
-            "{}",
-            self.message
-        );
+        }
     }
 
     /// Create a "no data available" error
