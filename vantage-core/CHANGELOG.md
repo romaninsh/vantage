@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1 — 2026-07-04
+
+- `VantageError::traced_debug()`: emit the same structured event as
+  `traced()` at DEBUG level — for errors that are a legitimate answer to a
+  probing caller (e.g. an `Unsupported` capability refusal) rather than
+  faults.
+
 ## 0.6.0 — unreleased
 
 - **Breaking:** the error-kind annotators `VantageError::is_unsupported` /
