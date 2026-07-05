@@ -13,7 +13,9 @@ use std::time::Duration;
 
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
-use vantage_diorama::{Augmentation, Dio, Fetch, Lens, MergeRule, RowStatus, Source, TableScenery};
+use vantage_diorama::{
+    Augmentation, Detail, Dio, Fetch, Lens, MergeRule, RowStatus, Source, TableScenery,
+};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
 use vantage_vista::{Column, Vista, VistaMetadata};
@@ -79,7 +81,7 @@ fn catalog() -> Arc<VistaCatalog> {
 
 fn aug(table: &str, source: Source, merge: &[&str]) -> Augmentation {
     Augmentation {
-        table: table.into(),
+        detail: Detail::Catalog(table.into()),
         source,
         fetch: Fetch::PerRow,
         merge: MergeRule {
@@ -250,7 +252,7 @@ async fn custom_fetch_closure_reads_narrowed_detail() {
 
     let tmp = TempDir::new().unwrap();
     let augmentation = Augmentation {
-        table: "runs-detail".into(),
+        detail: Detail::Catalog("runs-detail".into()),
         source: Source::Id,
         fetch: Fetch::Custom(Arc::new(|detail: V| {
             Box::pin(async move { Ok(detail.list_values().await?.into_values().collect()) })
@@ -298,4 +300,144 @@ async fn scripted_source_augments_via_rhai() {
     .await;
     assert_eq!(col_of(&scenery, 0, "detail").as_deref(), Some("full-r0"));
     assert_eq!(col_of(&scenery, 1, "detail").as_deref(), Some("full-r1"));
+}
+
+/// The finder/live_folder shape: the detail is a FIXED get-only Vista handle,
+/// registered in no catalog, keyed by a master column (`path`). Rows hydrate
+/// the merged columns through the same lazy detail pass.
+#[tokio::test]
+async fn fixed_detail_vista_hydrates_without_a_catalog() {
+    let tmp = TempDir::new().unwrap();
+
+    // Get-only side table keyed by path — the folder-size vista shape.
+    let size_meta = VistaMetadata::new()
+        .with_column(Column::new("path", "String").with_flag("id"))
+        .with_column(Column::new("size", "String"))
+        .with_column(Column::new("file_count", "String"))
+        .with_id_column("path");
+    let size_shell = MockShell::new()
+        .with_record(
+            "a/logs",
+            record(&[("path", "a/logs"), ("size", "4096"), ("file_count", "3")]),
+        )
+        .with_record(
+            "a/tmp",
+            record(&[("path", "a/tmp"), ("size", "512"), ("file_count", "1")]),
+        )
+        .with_metadata(size_meta);
+    let fixed = Arc::new(Vista::new("folder_size", Box::new(size_shell)));
+
+    let master = MockShell::new()
+        .with_record("r0", record(&[("id", "r0"), ("path", "a/logs")]))
+        .with_record("r1", record(&[("id", "r1"), ("path", "a/tmp")]))
+        .with_metadata(meta(&["id", "path"]));
+    let lens = Arc::new(
+        Lens::new()
+            .cache_at(tmp.path().join("cache.redb"))
+            .viewport_debounce(Duration::from_millis(1))
+            .build()
+            .expect("lens builds"),
+    );
+    let dio = lens
+        .make_dio(Vista::new("listing", Box::new(master)))
+        .await
+        .expect("make_dio")
+        .augment(
+            Arc::new(VistaCatalog::new()), // EMPTY — the fixed handle needs no catalog
+            vec![Augmentation {
+                detail: Detail::Fixed(fixed),
+                source: Source::Column {
+                    from: "path".into(),
+                    to: None,
+                },
+                fetch: Fetch::PerRow,
+                merge: MergeRule {
+                    columns: vec!["size".into(), "file_count".into()],
+                },
+            }],
+        );
+    let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
+    scenery.set_viewport(0..2);
+
+    eventually("rows hydrated", || {
+        matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
+            && matches!(status_of(&scenery, 1), Some(RowStatus::Fresh))
+    })
+    .await;
+    assert_eq!(col_of(&scenery, 0, "size").as_deref(), Some("4096"));
+    assert_eq!(col_of(&scenery, 0, "file_count").as_deref(), Some("3"));
+    assert_eq!(col_of(&scenery, 1, "size").as_deref(), Some("512"));
+    // The merge list is respected: the detail's own key column stays put.
+    assert_eq!(col_of(&scenery, 0, "path").as_deref(), Some("a/logs"));
+}
+
+/// Staleness: when a base row's list fields move (its `modified` bumps), the
+/// refresh reconciliation demotes it and the standing viewport refetches the
+/// augment — the row shows the NEW detail value, not the stale hydration.
+#[tokio::test]
+async fn changed_master_row_refetches_its_augment() {
+    use vantage_dataset::prelude::WritableValueSet;
+
+    let tmp = TempDir::new().unwrap();
+
+    // MockShell clones share one store — the writer handles mutate what the
+    // dio's master and fixed detail read.
+    let master_shell = MockShell::new()
+        .with_record("r0", record(&[("id", "r0"), ("modified", "t1")]))
+        .with_metadata(meta(&["id", "modified"]));
+    let detail_shell = MockShell::new()
+        .with_record("r0", record(&[("id", "r0"), ("size", "100")]))
+        .with_metadata(meta(&["id", "size"]));
+    let master_writer = Vista::new("m", Box::new(master_shell.clone()));
+    let detail_writer = Vista::new("d", Box::new(detail_shell.clone()));
+
+    let lens = Arc::new(
+        Lens::new()
+            .cache_at(tmp.path().join("cache.redb"))
+            .viewport_debounce(Duration::from_millis(1))
+            .build()
+            .expect("lens builds"),
+    );
+    let dio = lens
+        .make_dio(Vista::new("listing", Box::new(master_shell)))
+        .await
+        .expect("make_dio")
+        .augment(
+            Arc::new(VistaCatalog::new()),
+            vec![Augmentation {
+                detail: Detail::Fixed(Arc::new(Vista::new("sizes", Box::new(detail_shell)))),
+                source: Source::Id,
+                fetch: Fetch::PerRow,
+                merge: MergeRule {
+                    columns: vec!["size".into()],
+                },
+            }],
+        );
+    let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
+    scenery.set_viewport(0..1);
+    eventually("hydrated with the first size", || {
+        col_of(&scenery, 0, "size").as_deref() == Some("100")
+    })
+    .await;
+
+    // The world moves: the folder's modified bumps and its size grows.
+    detail_writer
+        .replace_value("r0", &record(&[("id", "r0"), ("size", "200")]))
+        .await
+        .expect("detail write");
+    master_writer
+        .replace_value("r0", &record(&[("id", "r0"), ("modified", "t2")]))
+        .await
+        .expect("master write");
+
+    // Reconcile (demotes r0 — a list field changed), then let the standing
+    // viewport re-run the detail pass for the demoted row.
+    dio.refresh().await.expect("refresh");
+    scenery.set_viewport(0..1);
+
+    eventually("augment refetched", || {
+        col_of(&scenery, 0, "size").as_deref() == Some("200")
+            && col_of(&scenery, 0, "modified").as_deref() == Some("t2")
+    })
+    .await;
 }
