@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.15 — 2026-07-05
+
+**Augment details can be fixed Vista handles**
+
+- `Augmentation` now names its detail source through a `Detail` enum:
+  `Detail::Catalog(name)` resolves through the `VistaCatalog` per fetch (the
+  config/YAML form — behavior unchanged), and `Detail::Fixed(Arc<Vista>)` takes a
+  direct handle for get-only side tables that live in no catalog — e.g. a
+  folder-size vista a listing Dio augments its rows from, keyed by a row column
+  (`source: Column { from: "path" }`). Read-key fetches use the shared handle;
+  narrowing sources rebuild a private instance per row via
+  `TableShell::clone_shell` (a fixed detail whose shell isn't cloneable errors at
+  fetch time). Everything downstream is unchanged: hydration stays lazy and
+  viewport-driven with per-id single-flight, merged columns patch rows in place
+  as they land, and refresh reconciliation demotes a row whose list fields moved
+  (its `modified` bumped) so the standing viewport refetches the augment. (API
+  break: `Augmentation::table: String` → `Augmentation::detail: Detail`.)
+
 ## 0.6.14 — 2026-07-02
 
 **Server-side ordering when the master can order**

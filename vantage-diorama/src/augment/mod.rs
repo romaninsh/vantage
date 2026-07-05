@@ -61,6 +61,28 @@ pub enum Fetch {
     Custom(FetchFn),
 }
 
+/// Where an augmentation's detail records come from.
+pub enum Detail {
+    /// Resolve the base detail Vista from the catalog by name, per fetch —
+    /// the config/YAML form (a name is all a spec can carry).
+    Catalog(String),
+    /// A fixed secondary Vista handle — for get-only side tables that live
+    /// in no catalog (a folder-size vista keyed by path). Read-key fetches
+    /// use the shared handle directly; narrowing sources rebuild a private
+    /// instance per row via `TableShell::clone_shell`.
+    Fixed(Arc<Vista>),
+}
+
+impl Detail {
+    /// The detail model's name, for relation labels and error context.
+    fn name(&self) -> &str {
+        match self {
+            Detail::Catalog(name) => name,
+            Detail::Fixed(vista) => vista.name(),
+        }
+    }
+}
+
 /// Which detail columns land on the master row.
 pub struct MergeRule {
     /// Columns to lift. Empty = lift all detail columns.
@@ -86,8 +108,8 @@ impl MergeRule {
 
 /// One declared augmentation in runtime form.
 pub struct Augmentation {
-    /// Catalog name of the detail model.
-    pub table: String,
+    /// The detail model this augmentation reads from.
+    pub detail: Detail,
     pub source: Source,
     pub fetch: Fetch,
     pub merge: MergeRule,
@@ -116,13 +138,32 @@ impl Augmentation {
     /// uniform "one record by key" primitive (cmd runs its detail script, SQL a
     /// `WHERE id =`, REST a `GET /{id}`). Other-column and `Build` sources narrow
     /// the detail vista and take the first record.
+    /// An owned base detail Vista for one fetch: catalog details resolve by
+    /// name; fixed details rebuild a private instance from the shared handle
+    /// (`clone_shell` — cheap for the get-only shells this serves).
+    fn base_vista(&self, catalog: &VistaCatalog) -> Result<Vista> {
+        match &self.detail {
+            Detail::Catalog(name) => catalog.build_vista(name),
+            Detail::Fixed(vista) => vista
+                .source
+                .clone_shell()
+                .map(|shell| Vista::new(vista.name().to_string(), shell))
+                .ok_or_else(|| {
+                    error!(
+                        "augment: fixed detail vista's shell is not cloneable",
+                        table = vista.name()
+                    )
+                }),
+        }
+    }
+
     async fn fetch_one(
         &self,
         master_id_column: &str,
         row: &Record<CborValue>,
         catalog: &VistaCatalog,
     ) -> Result<Option<Record<CborValue>>> {
-        let base = catalog.build_vista(&self.table)?;
+        let base = self.base_vista(catalog)?;
         match &self.fetch {
             Fetch::PerRow => match &self.source {
                 // `get_value_with_row` hands the cheap master row to drivers that
@@ -163,7 +204,7 @@ impl Augmentation {
         row: &Record<CborValue>,
         catalog: &VistaCatalog,
     ) -> Result<Vista> {
-        let mut base = catalog.build_vista(&self.table)?;
+        let mut base = self.base_vista(catalog)?;
         match &self.source {
             Source::Id => {
                 let detail_id = self.detail_id_column(&base)?;
@@ -191,7 +232,7 @@ impl Augmentation {
     ) -> Result<()> {
         Relation::single_key(
             "augment",
-            &self.table,
+            self.detail.name(),
             ReferenceKind::HasOne,
             detail_column.to_string(),
             master_field.to_string(),
@@ -203,7 +244,7 @@ impl Augmentation {
         base.get_id_column().map(str::to_string).ok_or_else(|| {
             error!(
                 "augment: detail vista has no id column",
-                table = self.table.as_str()
+                table = self.detail.name()
             )
         })
     }

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.3 — 2026-07-05
+
+- `LiveFolderSim::size_augment()` — the folder-size vista packaged as a dio-level
+  augment (`Detail::Fixed`, keyed by the listing's hidden `path` column, merging
+  `{size, file_count}`). A listing Dio built with it patches folder rows in place
+  as hydration lands, with the size vista's file-count-scaled latency intact —
+  one Dio, no second observation anywhere above it. Requires vantage-diorama
+  0.6.15.
+
 ## 0.6.2 — 2026-07-03
 
 - `LiveFolderSim`: a synthetic, constantly-mutating multi-layer log tree. One shared run loop

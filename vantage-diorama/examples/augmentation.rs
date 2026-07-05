@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ciborium::Value as CborValue;
-use vantage_diorama::{Augmentation, Fetch, Lens, MergeRule, RowStatus, Source};
+use vantage_diorama::{Augmentation, Detail, Fetch, Lens, MergeRule, RowStatus, Source};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
 use vantage_vista::{Column, Vista, VistaMetadata};
@@ -108,9 +108,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dio = lens.make_dio(master()).await?.augment(
         Arc::new(catalog),
         vec![Augmentation {
-            table: "tfstate-detail".into(), // catalog name of the detail Vista
-            source: Source::Id,             // master.id -> detail.id
-            fetch: Fetch::PerRow,           // one detail record per master row
+            // catalog name of the detail Vista (`Detail::Fixed` takes a
+            // direct handle for catalog-less get-only sources)
+            detail: Detail::Catalog("tfstate-detail".into()),
+            source: Source::Id,   // master.id -> detail.id
+            fetch: Fetch::PerRow, // one detail record per master row
             merge: MergeRule {
                 columns: vec!["resources".into(), "serial".into()],
             },
