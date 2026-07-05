@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.6.16 — 2026-07-05
+
+**Augment reconciliation: no flap, gap rule, column demand, stale-while-refetch**
+
+- Refresh reconciliation no longer flaps augmented columns. The list pass may
+  paint a column the augment owns (a folder listing's cheap `size` under the
+  augment's real recursive size); comparing it demoted every hydrated row on
+  every refresh — the visible 0 → value → 0 flap. Augment-owned columns are now
+  excluded from the change comparison: an unchanged list row keeps its augmented
+  values and fetches nothing, and a `modified` bump demotes exactly the moved
+  row. Regression: refresh with unchanged rows issues zero detail fetches.
+- The gap rule: an augmentation fetches ONLY rows where the list leaves at
+  least one augment column absent/null (a folder without a recursive size); a
+  row the list already completes (a file's own `size`) stubs `Complete` and
+  never touches the detail source. Un-enumerable augments (empty merge list =
+  "lift all") always count as a gap.
+- Stale-while-refetch: a demoted row takes the fresh list values but KEEPS its
+  augmented values while the refetch is in flight — the staleness lives
+  out-of-band in `CacheStatus::Incomplete` (what drives the detail pass), so a
+  hot row's size ticks up in place instead of strobing blank once a second.
+  Blank is reserved for rows never filled; the list's null placeholder never
+  erases a fill.
+- Augment log lines carry `dio=` — the owning dio's master vista name (which
+  embeds the listing key). Two completion series on one `key=` with different
+  `dio=` values means two dios are augmenting the same path: a bug made
+  visible in the log instead of inferred from gap arithmetic.
+- Column demand: sceneries gain a `columns()` open parameter declaring which
+  columns the view actually shows (`None` = everything — existing callers
+  unchanged; demand joins the dedup key). The Dio's active demand is the union
+  over its OPEN sceneries, recomputed as views open and close, and the augment
+  detail pass runs only while that union intersects the augment columns — a
+  tree of folder names never pays for folder sizes; the listing beside it
+  (which demands `size`) is what starts the fetches, and closing it stops
+  them. One get still merges ALL augment columns; already-merged values stay
+  when demand drains (they just stop refreshing), and a demotion under drained
+  demand leaves the columns blank until re-demanded. The full trigger is now
+  demand ∧ gap ∧ visibility.
+- Augment observability: `vantage_diorama::augment` logs `augment completed` at
+  info with the augment key (e.g. the folder path) and the merged `k=v` pairs,
+  `no detail record` at debug, and `row demoted for augment refetch` at debug
+  when a list-field move triggers a refetch — enough to watch, live, which rows
+  re-augment and why.
+
 ## 0.6.15 — 2026-07-05
 
 **Augment details can be fixed Vista handles**

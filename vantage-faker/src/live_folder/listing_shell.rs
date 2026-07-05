@@ -74,10 +74,16 @@ fn entry_to_record(path_so_far: &str, name: &str, entry: &Entry) -> Record<CborV
             .to_string(),
         ),
     );
-    r.insert(
-        "size".to_string(),
-        CborValue::Integer((entry.size as i64).into()),
-    );
+    // Files carry their own size; a FOLDER's recursive size is not the
+    // listing's to answer — the column stays unfilled (the gap a dio-level
+    // augment exists to fill from the size vista). Consumers render the
+    // absence as blank, never a lying 0.
+    if entry.kind == EntryKind::File {
+        r.insert(
+            "size".to_string(),
+            CborValue::Integer((entry.size as i64).into()),
+        );
+    }
     r.insert(
         "created".to_string(),
         CborValue::Text(format_ts(entry.created)),

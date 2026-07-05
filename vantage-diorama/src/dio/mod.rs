@@ -145,6 +145,46 @@ impl DioInner {
         self.augmented_columns.read().unwrap().contains(col)
     }
 
+    /// The union of every LIVE open scenery's demanded columns — the Dio's
+    /// active demand. `None` = at least one open view demands everything (or
+    /// no view declared a demand): the pre-demand behavior. `Some(union)` =
+    /// only these columns are looked at; the augment detail pass runs only
+    /// while the union intersects the augment columns. Recomputed on the fly
+    /// from the dedup registry's live entries, so demand follows scenery
+    /// open/close with no extra lifecycle machinery.
+    pub(crate) fn demanded_columns(&self) -> Option<std::collections::HashSet<String>> {
+        let mut union = std::collections::HashSet::new();
+        let mut any_live = false;
+        let guard = self.table_sceneries.lock().unwrap();
+        for weak in guard.values() {
+            let Some(scenery) = weak.upgrade() else {
+                continue;
+            };
+            any_live = true;
+            match scenery.demanded_columns() {
+                None => return None,
+                Some(columns) => union.extend(columns),
+            }
+        }
+        // No live views at all: stay permissive (a detail pass mid-flight on
+        // a closing scenery must not stall on an empty union).
+        if !any_live { None } else { Some(union) }
+    }
+
+    /// Whether the augment detail pass has work under the current demand:
+    /// true when this Dio's augment columns intersect the open sceneries'
+    /// demand union (or when either side is un-enumerable).
+    pub(crate) fn augment_demanded(&self) -> bool {
+        let augmented = self.augmented_columns.read().unwrap();
+        if augmented.is_empty() {
+            return true; // un-enumerable augment ("lift all"): always demanded
+        }
+        match self.demanded_columns() {
+            None => true,
+            Some(demanded) => augmented.iter().any(|c| demanded.contains(c)),
+        }
+    }
+
     /// Return the live shared table scenery for `key`, or `None` if none is
     /// open (or the last handle was just released — a dead `Weak`).
     pub(crate) fn lookup_table_scenery(&self, key: &str) -> Option<Arc<dyn TableScenery>> {

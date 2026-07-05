@@ -441,3 +441,367 @@ async fn changed_master_row_refetches_its_augment() {
     })
     .await;
 }
+
+// ---------------------------------------------------------------------------
+// Reconcile must not flap augmented columns (live_folder regression): the
+// LIST row itself carries a cheap `size` (0 for folders) that the augment
+// overwrites. A refresh whose list fields are otherwise unchanged must keep
+// the augmented value and fetch NOTHING; a genuinely-changed row (its
+// `modified` moved) refetches — and only that row.
+// ---------------------------------------------------------------------------
+
+/// Get-only detail shell that counts fetches, so tests can assert an
+/// unchanged row issued zero refetches across refreshes.
+mod counting {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    use async_trait::async_trait;
+    use ciborium::Value as CborValue;
+    use indexmap::IndexMap;
+    use vantage_core::Result;
+    use vantage_types::Record;
+    use vantage_vista::capabilities::VistaCapabilities;
+    use vantage_vista::metadata::VistaMetadata;
+    use vantage_vista::reference::Reference;
+    use vantage_vista::source::TableShell;
+    use vantage_vista::{Column, Vista};
+
+    pub struct CountingDetailShell {
+        pub rows: Arc<Mutex<IndexMap<String, Record<CborValue>>>>,
+        pub gets: Arc<AtomicUsize>,
+        metadata: VistaMetadata,
+        capabilities: VistaCapabilities,
+    }
+
+    impl CountingDetailShell {
+        pub fn new(rows: IndexMap<String, Record<CborValue>>) -> Self {
+            let metadata = VistaMetadata::new()
+                .with_column(Column::new("id", "String").with_flag("id"))
+                .with_column(Column::new("size", "String"))
+                .with_id_column("id");
+            Self {
+                rows: Arc::new(Mutex::new(rows)),
+                gets: Arc::new(AtomicUsize::new(0)),
+                metadata,
+                capabilities: VistaCapabilities::default(),
+            }
+        }
+    }
+
+    #[async_trait]
+    #[allow(clippy::ptr_arg)]
+    impl TableShell for CountingDetailShell {
+        fn columns(&self) -> &IndexMap<String, Column> {
+            &self.metadata.columns
+        }
+        fn references(&self) -> &IndexMap<String, Reference> {
+            &self.metadata.references
+        }
+        fn id_column(&self) -> Option<&str> {
+            self.metadata.id_column.as_deref()
+        }
+        async fn list_vista_values(
+            &self,
+            _vista: &Vista,
+        ) -> Result<IndexMap<String, Record<CborValue>>> {
+            Ok(IndexMap::new()) // get-only
+        }
+        async fn get_vista_value(
+            &self,
+            _vista: &Vista,
+            id: &String,
+        ) -> Result<Option<Record<CborValue>>> {
+            self.gets.fetch_add(1, Ordering::SeqCst);
+            Ok(self.rows.lock().unwrap().get(id).cloned())
+        }
+        async fn get_vista_some_value(
+            &self,
+            _vista: &Vista,
+        ) -> Result<Option<(String, Record<CborValue>)>> {
+            Ok(None)
+        }
+        fn capabilities(&self) -> &VistaCapabilities {
+            &self.capabilities
+        }
+        fn clone_shell(&self) -> Option<Box<dyn TableShell>> {
+            Some(Box::new(Self {
+                rows: self.rows.clone(),
+                gets: self.gets.clone(),
+                metadata: self.metadata.clone(),
+                capabilities: self.capabilities.clone(),
+            }))
+        }
+        fn driver_name(&self) -> &'static str {
+            "counting-detail"
+        }
+    }
+}
+
+#[tokio::test]
+async fn refresh_with_unchanged_list_rows_keeps_augment_and_fetches_nothing() {
+    use std::sync::atomic::Ordering;
+    use vantage_dataset::prelude::WritableValueSet;
+
+    let tmp = TempDir::new().unwrap();
+
+    // The live_folder listing shape: FOLDER rows leave the augment column
+    // unfilled (their recursive size is the augment's job); the FILE row
+    // carries its own size from the list — no gap, nothing to fetch.
+    let master_shell = MockShell::new()
+        .with_record("logs", record(&[("id", "logs"), ("modified", "t1")]))
+        .with_record("tmp", record(&[("id", "tmp"), ("modified", "t1")]))
+        .with_record(
+            "run.log",
+            record(&[("id", "run.log"), ("modified", "t1"), ("size", "64")]),
+        )
+        .with_metadata(meta(&["id", "modified", "size"]));
+    let master_writer = Vista::new("m", Box::new(master_shell.clone()));
+
+    let mut detail_rows = indexmap::IndexMap::new();
+    detail_rows.insert(
+        "logs".to_string(),
+        record(&[("id", "logs"), ("size", "4096")]),
+    );
+    detail_rows.insert("tmp".to_string(), record(&[("id", "tmp"), ("size", "512")]));
+    let detail = counting::CountingDetailShell::new(detail_rows);
+    let gets = detail.gets.clone();
+
+    let lens = Arc::new(
+        Lens::new()
+            .cache_at(tmp.path().join("cache.redb"))
+            .viewport_debounce(Duration::from_millis(1))
+            .build()
+            .expect("lens builds"),
+    );
+    let dio = lens
+        .make_dio(Vista::new("listing", Box::new(master_shell)))
+        .await
+        .expect("make_dio")
+        .augment(
+            Arc::new(VistaCatalog::new()),
+            vec![Augmentation {
+                detail: Detail::Fixed(Arc::new(Vista::new("sizes", Box::new(detail)))),
+                source: Source::Id,
+                fetch: Fetch::PerRow,
+                merge: MergeRule {
+                    columns: vec!["size".into()],
+                },
+            }],
+        );
+    let scenery = dio.table_scenery().page_size(4).open().await.unwrap();
+    // Row order shifts as reseeds re-list the cache — address rows by id.
+    let by_id = |id: &'static str, c: &'static str| {
+        let scenery = scenery.clone();
+        move || {
+            (0..scenery.row_count())
+                .filter_map(|i| scenery.row(i))
+                .find(|r| matches!(r.record.get("id"), Some(CborValue::Text(t)) if t == id))
+                .and_then(|r| match r.record.get(c) {
+                    Some(CborValue::Text(t)) => Some(t.clone()),
+                    _ => None,
+                })
+        }
+    };
+    scenery.set_viewport(0..3);
+    eventually("folder rows hydrated", || {
+        by_id("logs", "size")().as_deref() == Some("4096")
+            && by_id("tmp", "size")().as_deref() == Some("512")
+    })
+    .await;
+    assert_eq!(
+        gets.load(Ordering::SeqCst),
+        2,
+        "gap rule: only the two folders fetched — the file's list-supplied size is no gap"
+    );
+    assert_eq!(
+        by_id("run.log", "size")().as_deref(),
+        Some("64"),
+        "the file keeps its own listed size"
+    );
+
+    // Two refresh "ticks" with NOTHING changed. The augmented value must
+    // survive, no row may demote, and zero detail fetches may fire.
+    for _ in 0..2 {
+        dio.refresh().await.expect("refresh");
+        scenery.set_viewport(0..3);
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        assert_eq!(
+            by_id("logs", "size")().as_deref(),
+            Some("4096"),
+            "unchanged row keeps its augmented value through refresh"
+        );
+        assert_eq!(by_id("tmp", "size")().as_deref(), Some("512"));
+    }
+    assert_eq!(
+        gets.load(Ordering::SeqCst),
+        2,
+        "unchanged rows never refetch their augment"
+    );
+
+    // One folder's `modified` moves: its augment clears (the gap is open
+    // again) and ONLY that row refetches. A moved FILE row never fetches —
+    // its list row still has no gap.
+    master_writer
+        .replace_value("logs", &record(&[("id", "logs"), ("modified", "t2")]))
+        .await
+        .expect("master write");
+    master_writer
+        .replace_value(
+            "run.log",
+            &record(&[("id", "run.log"), ("modified", "t2"), ("size", "96")]),
+        )
+        .await
+        .expect("file write");
+    dio.refresh().await.expect("refresh");
+    scenery.set_viewport(0..3);
+    eventually("changed folder refetched, file re-listed", || {
+        by_id("logs", "modified")().as_deref() == Some("t2")
+            && by_id("logs", "size")().as_deref() == Some("4096")
+            && by_id("run.log", "size")().as_deref() == Some("96")
+    })
+    .await;
+    assert_eq!(
+        gets.load(Ordering::SeqCst),
+        3,
+        "exactly the changed folder refetched; its sibling and the file stayed cold"
+    );
+    assert_eq!(by_id("tmp", "size")().as_deref(), Some("512"));
+}
+
+/// A row's column by id, order-independent (reseeds re-list the cache).
+fn col_by_id(s: &Arc<dyn TableScenery>, id: &str, c: &str) -> Option<String> {
+    (0..s.row_count())
+        .filter_map(|i| s.row(i))
+        .find(|r| matches!(r.record.get("id"), Some(CborValue::Text(t)) if t == id))
+        .and_then(|r| match r.record.get(c) {
+            Some(CborValue::Text(t)) => Some(t.clone()),
+            _ => None,
+        })
+}
+
+/// DEMAND gates the detail pass: a view demanding only cheap columns never
+/// pays for the augment; opening a view that demands an augment column starts
+/// the fetches (gap rows only); closing it stops them — a later demotion
+/// leaves the augment blank until something demands it again.
+#[tokio::test]
+async fn augment_fetches_only_while_a_view_demands_augment_columns() {
+    use std::sync::atomic::Ordering;
+    use vantage_dataset::prelude::WritableValueSet;
+
+    let tmp = TempDir::new().unwrap();
+    let master_shell = MockShell::new()
+        .with_record("logs", record(&[("id", "logs"), ("modified", "t1")]))
+        .with_record("tmp", record(&[("id", "tmp"), ("modified", "t1")]))
+        .with_metadata(meta(&["id", "modified"]));
+    let master_writer = Vista::new("m", Box::new(master_shell.clone()));
+
+    let mut detail_rows = indexmap::IndexMap::new();
+    detail_rows.insert(
+        "logs".to_string(),
+        record(&[("id", "logs"), ("size", "4096")]),
+    );
+    detail_rows.insert("tmp".to_string(), record(&[("id", "tmp"), ("size", "512")]));
+    let detail = counting::CountingDetailShell::new(detail_rows);
+    let gets = detail.gets.clone();
+
+    let lens = Arc::new(
+        Lens::new()
+            .cache_at(tmp.path().join("cache.redb"))
+            .viewport_debounce(Duration::from_millis(1))
+            .build()
+            .expect("lens builds"),
+    );
+    let dio = lens
+        .make_dio(Vista::new("listing", Box::new(master_shell)))
+        .await
+        .expect("make_dio")
+        .augment(
+            Arc::new(VistaCatalog::new()),
+            vec![Augmentation {
+                detail: Detail::Fixed(Arc::new(Vista::new("sizes", Box::new(detail)))),
+                source: Source::Id,
+                fetch: Fetch::PerRow,
+                merge: MergeRule {
+                    columns: vec!["size".into()],
+                },
+            }],
+        );
+
+    // A tree-shaped view: demands only cheap columns. Gap rows exist, a
+    // viewport is held — and still nothing fetches.
+    let tree = dio
+        .table_scenery()
+        .page_size(4)
+        .columns(["id", "modified"])
+        .open()
+        .await
+        .unwrap();
+    tree.set_viewport(0..2);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        gets.load(Ordering::SeqCst),
+        0,
+        "no open view demands an augment column — the detail pass stays idle"
+    );
+    assert!(col_by_id(&tree, "logs", "size").is_none());
+
+    // A listing opens beside it, demanding `size`: fetches begin.
+    let listing = dio
+        .table_scenery()
+        .page_size(4)
+        .columns(["id", "size", "modified"])
+        .open()
+        .await
+        .unwrap();
+    listing.set_viewport(0..2);
+    eventually("augment lands once demanded", || {
+        col_by_id(&listing, "logs", "size").as_deref() == Some("4096")
+            && col_by_id(&listing, "tmp", "size").as_deref() == Some("512")
+    })
+    .await;
+    assert_eq!(gets.load(Ordering::SeqCst), 2, "one fetch per gap row");
+
+    // The listing closes: demand drains. A demoted row KEEPS its stale
+    // augment value (stale-while-refetch — the display never blanks once
+    // filled) and nothing refetches it while nobody demands the column.
+    drop(listing);
+    master_writer
+        .replace_value("logs", &record(&[("id", "logs"), ("modified", "t2")]))
+        .await
+        .expect("master write");
+    dio.refresh().await.expect("refresh");
+    tree.set_viewport(0..2);
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    assert_eq!(
+        gets.load(Ordering::SeqCst),
+        2,
+        "demand drained — the demoted row does not refetch"
+    );
+    assert_eq!(
+        col_by_id(&tree, "logs", "size").as_deref(),
+        Some("4096"),
+        "the demoted row keeps its stale value until re-demanded"
+    );
+
+    // Demand returns: the stale row refetches.
+    let listing = dio
+        .table_scenery()
+        .page_size(4)
+        .columns(["id", "size", "modified"])
+        .open()
+        .await
+        .unwrap();
+    listing.set_viewport(0..2);
+    // The stale value already reads "4096", so the wait must be on the FETCH
+    // COUNTER — the visible value merely stops being stale when it lands.
+    eventually("re-demanded row refetches", || {
+        gets.load(Ordering::SeqCst) == 3
+    })
+    .await;
+    assert_eq!(
+        col_by_id(&listing, "logs", "size").as_deref(),
+        Some("4096"),
+        "refetched value replaces the stale one in place"
+    );
+}
