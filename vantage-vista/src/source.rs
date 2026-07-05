@@ -466,8 +466,11 @@ pub trait TableShell: Send + Sync + 'static {
     /// → `Unimplemented`); a `false` flag means the driver honestly doesn't
     /// claim the op (caller should have checked → `Unsupported`).
     ///
-    /// Both kinds emit a `tracing::error!` at construction with `method`,
-    /// `capability`, `source_type`, and `vista_name` as structured fields.
+    /// Only the `Unimplemented` kind traces at error level — it's a driver
+    /// bug. An `Unsupported` refusal is a legitimate answer to a caller
+    /// probing a capability (e.g. an exploratory data script calling
+    /// `set_page_size` on a cache-mode vista): the error value carries the
+    /// full message to the caller, so it logs at debug only.
     fn default_error(&self, method: &str, capability: &str) -> VantageError {
         let source_type = std::any::type_name::<Self>();
         if self.capability_flag(capability) {
@@ -492,7 +495,7 @@ pub trait TableShell: Send + Sync + 'static {
                 source_type = source_type
             )
             .mark_unsupported()
-            .traced()
+            .traced_debug()
         }
     }
 }
