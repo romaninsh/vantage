@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.8 — 2026-07-04
+
+- `TableShell::default_error` no longer emits a `tracing::error!` for an
+  `Unsupported` refusal (capability flag honestly `false`) — the error value
+  already carries the full message to the caller, so it traces at DEBUG via
+  the new `vantage_core::VantageError::traced_debug()`. The `Unimplemented`
+  case (flag `true` but no impl — a driver bug) keeps the ERROR-level trace.
+
 ## 0.6.7 — 2026-07-02
 
 - `TableShell::clone_shell(&self) -> Option<Box<dyn TableShell>>` — a defaulted
