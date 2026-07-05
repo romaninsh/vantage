@@ -7,7 +7,7 @@ use vantage_core::{Result, error};
 use vantage_vista_factory::VistaCatalog;
 
 use super::spec::{AugmentSpec, FetchSpec, SourceSpec};
-use super::{Augmentation, Fetch, MergeRule, Source};
+use super::{Augmentation, Detail, Fetch, MergeRule, Source};
 
 /// Lower one declared augmentation into its runtime form. `catalog` backs the
 /// `table(name)` resolver used by scripted sources.
@@ -27,7 +27,7 @@ pub fn lower_augment(spec: AugmentSpec, catalog: &Arc<VistaCatalog>) -> Result<A
         }
     };
     Ok(Augmentation {
-        table: spec.table,
+        detail: Detail::Catalog(spec.table),
         source,
         fetch,
         merge: MergeRule {

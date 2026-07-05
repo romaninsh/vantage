@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use ciborium::Value as CborValue;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Augmentation, Dio, Fetch, Lens, MergeRule, Source, TableScenery};
+use vantage_diorama::{Augmentation, Detail, Dio, Fetch, Lens, MergeRule, Source, TableScenery};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
 use vantage_vista::{Column, Vista, VistaMetadata};
@@ -78,7 +78,7 @@ pub fn bucket_catalog() -> Arc<VistaCatalog> {
 
 pub fn augment_name() -> Augmentation {
     Augmentation {
-        table: "names".into(),
+        detail: Detail::Catalog("names".into()),
         source: Source::Id,
         fetch: Fetch::PerRow,
         merge: MergeRule {
