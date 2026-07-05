@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.4 — 2026-07-05
+
+- Listing rows leave a FOLDER's `size` unfilled (absent) instead of reporting 0:
+  a folder's recursive size is the augment's to fill (diorama's gap rule fetches
+  exactly those rows), and consumers render the absence as blank, never a lying
+  zero. File rows keep carrying their own size. Requires vantage-diorama 0.6.16.
+
 ## 0.6.3 — 2026-07-05
 
 - `LiveFolderSim::size_augment()` — the folder-size vista packaged as a dio-level

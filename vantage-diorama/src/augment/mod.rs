@@ -117,17 +117,55 @@ pub struct Augmentation {
 
 impl Augmentation {
     /// Resolve → fetch → merge the matching detail record onto `row` in place.
-    /// The per-row unit the two-pass detail pass drives.
+    /// The per-row unit the two-pass detail pass drives. `dio_name` identifies
+    /// the OWNING dio (its master vista name, which embeds the listing key) —
+    /// two completion series on one key with different `dio=` values means two
+    /// dios are augmenting the same path, which is a bug made visible.
     pub async fn augment_row(
         &self,
+        dio_name: &str,
         master_id_column: &str,
         row: &mut Record<CborValue>,
         catalog: &VistaCatalog,
     ) -> Result<()> {
-        if let Some(detail) = self.fetch_one(master_id_column, row, catalog).await? {
-            self.merge.apply(row, &detail);
+        match self.fetch_one(master_id_column, row, catalog).await? {
+            Some(detail) => {
+                self.merge.apply(row, &detail);
+                let merged: Vec<String> = detail
+                    .iter()
+                    .filter(|(k, _)| self.merge.wants(k))
+                    .map(|(k, v)| format!("{k}={}", scalar_text(v)))
+                    .collect();
+                tracing::info!(
+                    target: "vantage_diorama::augment",
+                    dio = %dio_name,
+                    detail = %self.detail.name(),
+                    key = %self.key_display(row, master_id_column),
+                    merged = %merged.join(" "),
+                    "augment completed",
+                );
+            }
+            None => {
+                tracing::debug!(
+                    target: "vantage_diorama::augment",
+                    dio = %dio_name,
+                    detail = %self.detail.name(),
+                    key = %self.key_display(row, master_id_column),
+                    "augment found no detail record — row stays as listed",
+                );
+            }
         }
         Ok(())
+    }
+
+    /// The row's augment key value, for log lines — the `Column` source's
+    /// field (e.g. the folder path), else the master id.
+    fn key_display(&self, row: &Record<CborValue>, master_id_column: &str) -> String {
+        let field = match &self.source {
+            Source::Column { from, .. } => from.as_str(),
+            Source::Id | Source::Build(_) => master_id_column,
+        };
+        row.get(field).map(scalar_text).unwrap_or_default()
     }
 
     /// Fetch the single detail record for one master row, or `None` if there is
@@ -263,6 +301,19 @@ impl Augmentation {
                 field = field
             )),
         }
+    }
+}
+
+/// A cell's short text form for log lines: scalars print directly, anything
+/// nested prints a marker (log lines must stay cheap).
+fn scalar_text(v: &CborValue) -> String {
+    match v {
+        CborValue::Text(s) => s.clone(),
+        CborValue::Integer(i) => i128::from(*i).to_string(),
+        CborValue::Float(f) => f.to_string(),
+        CborValue::Bool(b) => b.to_string(),
+        CborValue::Null => "null".to_string(),
+        _ => "<nested>".to_string(),
     }
 }
 

@@ -398,6 +398,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn listing_leaves_folder_size_unfilled_for_the_augment() {
+        let sim = LiveFolderSim::new(LiveFolderConfig {
+            backfill: Duration::from_secs(3600),
+            error_pct_per_sec: 100.0, // guarantee files exist
+            ..LiveFolderConfig::default()
+        });
+
+        // Root rows are day FOLDERS: size must be absent (the augment's gap),
+        // never a lying 0.
+        let (root, _tx) = sim.listing_vista("root", "");
+        let rows = root.list_values().await.unwrap();
+        assert!(!rows.is_empty());
+        for (_, rec) in &rows {
+            assert_eq!(rec.get("kind").and_then(|v| v.as_text()), Some("folder"));
+            assert!(rec.get("size").is_none(), "folder rows leave size unfilled");
+        }
+
+        // A FILE row carries its own size from the listing.
+        let file_path = sim
+            .snapshot()
+            .into_iter()
+            .find(|(_, e)| e.kind == EntryKind::File)
+            .map(|(p, _)| p)
+            .expect("backfill produced files");
+        let parent = file_path.rsplit_once('/').map(|(p, _)| p).unwrap_or("");
+        let (listing, _tx) = sim.listing_vista("parent", parent);
+        let rows = listing.list_values().await.unwrap();
+        let file_row = rows
+            .values()
+            .find(|r| r.get("kind").and_then(|v| v.as_text()) == Some("file"))
+            .expect("parent folder lists the file");
+        assert!(
+            file_row.get("size").is_some(),
+            "file rows carry their own size"
+        );
+    }
+
+    #[tokio::test]
     async fn size_augment_hydrates_listing_rows_over_one_dio() {
         use std::sync::Arc;
 
