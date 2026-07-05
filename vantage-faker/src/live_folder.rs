@@ -217,6 +217,29 @@ impl LiveFolderSim {
         Vista::new(name, Box::new(FolderSizeShell::new(self.inner.clone())))
     }
 
+    /// The folder-size vista as a **dio-level augment** over a listing Dio:
+    /// hydrated rows gain `{size, file_count}` lazily, keyed by their full
+    /// `path`, with the size vista's file-count-scaled latency intact (the
+    /// debounce showcase). The detail rides as a fixed handle — it lives in
+    /// no catalog — and every listing Dio of the same sim can carry its own
+    /// copy: they all read the one shared tree. Rows whose base fields move
+    /// (`modified` bumps) refetch through the Dio's refresh reconciliation.
+    pub fn size_augment(&self) -> vantage_diorama::Augmentation {
+        vantage_diorama::Augmentation {
+            detail: vantage_diorama::Detail::Fixed(std::sync::Arc::new(
+                self.size_vista("folder_size"),
+            )),
+            source: vantage_diorama::Source::Column {
+                from: "path".to_string(),
+                to: None,
+            },
+            fetch: vantage_diorama::Fetch::PerRow,
+            merge: vantage_diorama::MergeRule {
+                columns: vec!["size".to_string(), "file_count".to_string()],
+            },
+        }
+    }
+
     /// Snapshot the tree as a flat `path → entry` map. Used by the example
     /// CLI to render the whole tree without spinning up per-path listings.
     pub fn snapshot(&self) -> Vec<(String, Entry)> {
@@ -372,5 +395,54 @@ mod tests {
                 "child path {path:?} should start with parent {parent:?}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn size_augment_hydrates_listing_rows_over_one_dio() {
+        use std::sync::Arc;
+
+        // A backfilled tree so the root has day folders with real content.
+        let sim = LiveFolderSim::new(LiveFolderConfig {
+            backfill: Duration::from_secs(1800),
+            ..LiveFolderConfig::default()
+        });
+        let (listing, _tx) = sim.listing_vista("root", "");
+        let lens = Arc::new(
+            vantage_diorama::Lens::new()
+                .cache_in_memory()
+                .viewport_debounce(Duration::from_millis(1))
+                .build()
+                .expect("lens builds"),
+        );
+        let dio = lens.make_dio(listing).await.expect("make_dio").augment(
+            // The size augment is a fixed handle — no catalog entry needed.
+            Arc::new(vantage_vista_factory::VistaCatalog::new()),
+            vec![sim.size_augment()],
+        );
+        let scenery = dio.table_scenery().open().await.expect("scenery opens");
+        scenery.set_viewport(0..10);
+
+        // The listing's own size column reports 0 on folders; the augment
+        // patches the recursive size in as hydration lands (with the size
+        // vista's deliberate latency).
+        let mut augmented = false;
+        for _ in 0..100 {
+            let n = scenery.row_count();
+            augmented = (0..n).filter_map(|i| scenery.row(i)).any(|row| {
+                row.record.get("file_count").is_some()
+                    && matches!(
+                        row.record.get("size"),
+                        Some(ciborium::Value::Integer(i)) if i128::from(*i) > 0
+                    )
+            });
+            if augmented {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(
+            augmented,
+            "a folder row gained a positive size + file_count from the augment"
+        );
     }
 }

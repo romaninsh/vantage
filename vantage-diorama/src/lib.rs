@@ -11,8 +11,8 @@ pub mod ops;
 pub mod scenery;
 
 pub use augment::{
-    AugmentSpec, Augmentation, BuildFn, Fetch, FetchFn, FetchSpec, MergeRule, SetOp, Source,
-    SourceSpec, lower_augment,
+    AugmentSpec, Augmentation, BuildFn, Detail, Fetch, FetchFn, FetchSpec, MergeRule, SetOp,
+    Source, SourceSpec, lower_augment,
 };
 pub use composition::Diorama;
 pub use dio::diagnostics::{DioDiagnostics, SceneryDiagnostic};

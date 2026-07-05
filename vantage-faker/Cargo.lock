@@ -1987,7 +1987,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-core"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "atty",
  "indexmap",
@@ -2018,7 +2018,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.6.14"
+version = "0.6.15"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -2051,7 +2051,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-faker"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -2067,6 +2067,7 @@ dependencies = [
  "vantage-diorama",
  "vantage-types",
  "vantage-vista",
+ "vantage-vista-factory",
 ]
 
 [[package]]
@@ -2117,7 +2118,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.7"
+version = "0.6.8"
 dependencies = [
  "async-stream",
  "async-trait",

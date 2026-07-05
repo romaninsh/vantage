@@ -1,6 +1,6 @@
 [package]
 name = "vantage-faker"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -18,7 +18,7 @@ readme = "README.md"
 vantage-core = { version = "0.6", path = "../vantage-core" }
 vantage-types = { version = "0.6", path = "../vantage-types", features = ["serde"] }
 vantage-vista = { version = "0.6", path = "../vantage-vista" }
-vantage-diorama = { version = "0.6", path = "../vantage-diorama" }
+vantage-diorama = { version = "0.6.15", path = "../vantage-diorama" }
 
 # Universal value carrier across the type-erased Vista / ChangeEvent boundary.
 ciborium = "0.2"
@@ -38,6 +38,8 @@ tracing = "0.1"
 vantage-core = { version = "0.6", path = "../vantage-core" }
 # `list_values` in tests reads back through the Vista's dataset traits.
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
+# `Dio::augment` takes a catalog; the size-augment test passes an empty one.
+vantage-vista-factory = { version = "0.6", path = "../vantage-vista-factory" }
 # Styled table output for the `fifo_cli` example.
 vantage-cli-util = { version = "0.6", path = "../vantage-cli-util" }
 tokio = { version = "1", features = ["full"] }
