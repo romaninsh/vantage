@@ -22,6 +22,7 @@ pub struct TableSceneryBuilder {
     pub(crate) page_size: usize,
     pub(crate) initial_range: Option<std::ops::Range<usize>>,
     pub(crate) titles_only: bool,
+    pub(crate) demand: Option<Vec<String>>,
 }
 
 impl TableSceneryBuilder {
@@ -34,6 +35,7 @@ impl TableSceneryBuilder {
             page_size: 100,
             initial_range: None,
             titles_only: false,
+            demand: None,
         }
     }
 
@@ -79,6 +81,24 @@ impl TableSceneryBuilder {
         self
     }
 
+    /// Declare which columns this view actually shows — its **demand**.
+    /// Default (`None`) demands everything, the pre-demand behavior. Demand
+    /// gates the AUGMENT detail pass only: the Dio unions the demands of its
+    /// open sceneries and fetches augment values only while some open view
+    /// demands an augmented column (a tree of folder names never pays for
+    /// folder sizes; the listing beside it does). Non-augment (list-pass)
+    /// columns always flow regardless of demand. Recomputed naturally as
+    /// sceneries open and close; already-merged values stay when demand
+    /// drains — they just stop refreshing.
+    pub fn columns<I, S>(mut self, columns: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.demand = Some(columns.into_iter().map(Into::into).collect());
+        self
+    }
+
     /// Open the Scenery — runs `total_provider` (if configured),
     /// seeds the sparse map from the cache, spawns the reactor and
     /// viewport-debounce tasks, optionally schedules a background
@@ -92,6 +112,7 @@ impl TableSceneryBuilder {
             page_size,
             initial_range,
             titles_only,
+            demand,
         } = self;
 
         // Inherit the Dio's base query semantics. The Dio owns "what this table
@@ -122,14 +143,26 @@ impl TableSceneryBuilder {
                 };
                 (col.as_str(), dir)
             });
+            // Demand joins the dedup key: a tree demanding [name, kind] and a
+            // grid demanding [.., size] over the same query are DISTINCT
+            // sceneries — sharing one would erase the cheaper view's savings.
+            let demand_key = match &demand {
+                None => "*".to_string(),
+                Some(columns) => {
+                    let mut sorted = columns.clone();
+                    sorted.sort();
+                    sorted.join(",")
+                }
+            };
             format!(
-                "table\u{1}{}\u{1}{}\u{1}{}",
+                "table\u{1}{}\u{1}{}\u{1}{}\u{1}{}",
                 dio.master
                     .read()
                     .unwrap()
                     .index_key(&conditions, vista_sort),
                 search.as_deref().unwrap_or(""),
                 titles_only as u8,
+                demand_key,
             )
         };
         if let Some(existing) = dio.lookup_table_scenery(&key) {
@@ -195,6 +228,7 @@ impl TableSceneryBuilder {
             two_pass,
             local_refine,
             titles_only,
+            demand,
             index: RwLock::new(index),
             registry_key: Mutex::new(Some(key.clone())),
             detail_in_flight: Mutex::new(std::collections::HashSet::new()),

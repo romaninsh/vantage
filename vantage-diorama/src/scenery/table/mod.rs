@@ -94,6 +94,13 @@ pub trait TableScenery: Send + Sync {
     /// `set_viewport`; cursor-only (`can_fetch_next`) → call
     /// `request_load_more` to walk forward.
     fn master_capabilities(&self) -> &VistaCapabilities;
+
+    /// The columns this view declared it shows (its demand, from the
+    /// builder's `columns()`). `None` = demands everything — the default for
+    /// implementations that don't track demand.
+    fn demanded_columns(&self) -> Option<Vec<String>> {
+        None
+    }
 }
 
 pub(crate) struct TableSceneryImpl {
@@ -280,5 +287,9 @@ impl TableScenery for TableSceneryImpl {
 
     fn master_capabilities(&self) -> &VistaCapabilities {
         &self.inner.master_capabilities
+    }
+
+    fn demanded_columns(&self) -> Option<Vec<String>> {
+        self.inner.demand.clone()
     }
 }
