@@ -210,6 +210,18 @@ pub(crate) async fn run_list_page(state: Arc<TableSceneryState>) {
 
     match result {
         Ok(rows) => {
+            // The gap rule: a dio-augmented row whose list values already
+            // fill every augment column (a file's own `size`) has nothing to
+            // fetch — stub it `Complete` so the detail pass skips it.
+            // Hand-rolled two-pass (`on_load_detail` lens callbacks) keeps
+            // the always-`Incomplete` stubbing: it declares no augment
+            // columns, so every row is the detail pass's business.
+            let augmented = if dio_inner.has_dio_augment() {
+                dio_inner.augmented_columns.read().unwrap().clone()
+            } else {
+                std::collections::HashSet::new()
+            };
+            let gap_aware = dio_inner.has_dio_augment() && !augmented.is_empty();
             let mut new_ids = Vec::with_capacity(rows.len());
             for (id, rec) in &rows {
                 // Never demote a record the detail pass already completed.
@@ -223,9 +235,16 @@ pub(crate) async fn run_list_page(state: Arc<TableSceneryState>) {
                     Some((_, CacheStatus::Complete))
                 );
                 if !already_complete {
+                    let status = if gap_aware
+                        && !crate::dio::augment_passes::has_augment_gap(rec, &augmented)
+                    {
+                        CacheStatus::Complete
+                    } else {
+                        CacheStatus::Incomplete
+                    };
                     let _ = dio_inner
                         .cache
-                        .insert_value_with_status(id, rec, CacheStatus::Incomplete)
+                        .insert_value_with_status(id, rec, status)
                         .await;
                 }
                 new_ids.push(id.clone());
@@ -335,6 +354,18 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
         return;
     };
     if !dio_inner.has_dio_augment() && dio_inner.lens.callbacks.on_load_detail.is_none() {
+        return;
+    }
+    // The DEMAND gate: a dio-owned augment fetches only while some open
+    // scenery demands an augmented column. A tree of folder names never pays
+    // for folder sizes; opening the listing beside it (which demands `size`)
+    // is what starts the fetches, and closing it stops them. Rows stay
+    // `Incomplete` — a later demanding viewport hydrates them.
+    if dio_inner.has_dio_augment() && !dio_inner.augment_demanded() {
+        tracing::trace!(
+            target: "vantage_diorama::augment",
+            "detail pass idle — no open view demands an augment column",
+        );
         return;
     }
     // A predicate/sort on an *augmented* column can't be evaluated until rows are

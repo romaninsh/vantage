@@ -48,8 +48,9 @@ pub(crate) async fn load_detail_with(
 ) -> Result<Record<CborValue>> {
     let mut row = dio.cache().get_value(&id).await?.unwrap_or_default();
     let master_id_column = dio.master().get_id_column().unwrap_or("id").to_string();
+    let dio_name = dio.master().name().to_string();
     for aug in augmentations {
-        aug.augment_row(&master_id_column, &mut row, catalog)
+        aug.augment_row(&dio_name, &master_id_column, &mut row, catalog)
             .await?;
     }
     Ok(row)
@@ -58,31 +59,60 @@ pub(crate) async fn load_detail_with(
 /// **Refresh pass**: re-run the cheap list pass and reconcile against the cache
 /// without discarding still-valid augmentation. Unchanged list fields keep their
 /// hydrated detail columns + `Complete` status; changed ones merge the fresh
-/// list values and demote to `Incomplete` (re-hydrate on next viewport); new ids
-/// stub `Incomplete`; vanished ids are deleted.
+/// list values and demote per the gap rule; new ids stub per the gap rule;
+/// vanished ids are deleted.
+///
+/// Augment-owned columns are excluded from the change COMPARISON — the cached
+/// row's augmented value against the list's unfilled column is not a change
+/// (comparing it demoted every hydrated row on every refresh: the 0 → value → 0
+/// flap). A row that genuinely moved takes the fresh list values but KEEPS its
+/// augmented values while the refetch is in flight — stale-while-refetch. The
+/// staleness lives out-of-band in [`CacheStatus`]: `Incomplete` is what drives
+/// the detail pass, so the cell never has to blank to signal the gap. Blank is
+/// reserved for rows that were never filled.
 pub(crate) async fn refresh(dio: &Dio) -> Result<()> {
     let fresh = dio.master().list_values().await?;
     let cache = dio.cache();
     let existing = cache.list_values_with_status().await?;
+    let augmented = dio.inner.augmented_columns.read().unwrap().clone();
 
     for (id, list_row) in &fresh {
+        let gap = has_augment_gap(list_row, &augmented);
+        let status = if gap {
+            CacheStatus::Incomplete
+        } else {
+            CacheStatus::Complete
+        };
         match existing.get(id) {
             Some((old, _)) => {
-                if !list_fields_changed(list_row, old) {
+                if !list_fields_changed(list_row, old, &augmented) {
                     continue;
                 }
+                tracing::debug!(
+                    target: "vantage_diorama::augment",
+                    id = %id,
+                    gap,
+                    "list fields moved — row demoted for augment refetch",
+                );
+                // Merge fresh list values over the cached row: every list
+                // value (a file's own size included) wins, but augment columns
+                // the list leaves unfilled KEEP their previous values — the
+                // display stays on the stale number while `Incomplete` status
+                // sends the row back through the detail pass.
                 let mut merged = old.clone();
                 for (k, v) in list_row {
+                    if augmented.contains(k)
+                        && matches!(v, CborValue::Null)
+                        && merged.get(k).is_some()
+                    {
+                        continue; // list's null placeholder never erases a fill
+                    }
                     merged.insert(k.clone(), v.clone());
                 }
-                cache
-                    .insert_value_with_status(id, &merged, CacheStatus::Incomplete)
-                    .await?;
+                cache.insert_value_with_status(id, &merged, status).await?;
             }
             None => {
-                cache
-                    .insert_value_with_status(id, list_row, CacheStatus::Incomplete)
-                    .await?;
+                cache.insert_value_with_status(id, list_row, status).await?;
             }
         }
     }
@@ -94,18 +124,43 @@ pub(crate) async fn refresh(dio: &Dio) -> Result<()> {
     Ok(())
 }
 
-/// True when any field the list pass paints differs from the cached record. Only
-/// keys present in `list_row` are compared — the detail pass's own columns (which
-/// exist only in `cached`) are never inspected.
+/// The gap rule: an augmentation exists to FILL columns the list leaves
+/// unfilled. A row whose list-supplied values already cover every augment
+/// column (a file's own `size`) has no gap and never fetches; a row with an
+/// absent/null augment column (a folder) does. An un-enumerable augment
+/// (empty merge list = "lift all") always counts as a gap — there is nothing
+/// to test against.
+pub(crate) fn has_augment_gap(
+    list_row: &Record<CborValue>,
+    augmented: &std::collections::HashSet<String>,
+) -> bool {
+    if augmented.is_empty() {
+        return true;
+    }
+    augmented
+        .iter()
+        .any(|column| matches!(list_row.get(column), None | Some(CborValue::Null)))
+}
+
+/// True when any field the list pass paints differs from the cached record.
+/// Only keys present in `list_row` are compared — the detail pass's own
+/// columns (which exist only in `cached`) are never inspected — and columns
+/// in `augmented` are skipped even when the list supplies them: the augment
+/// owns those values, so the list's cheap placeholder is never a change.
 pub(crate) fn list_fields_changed(
     list_row: &Record<CborValue>,
     cached: &Record<CborValue>,
+    augmented: &std::collections::HashSet<String>,
 ) -> bool {
-    list_row.iter().any(|(k, v)| cached.get(k) != Some(v))
+    list_row
+        .iter()
+        .any(|(k, v)| !augmented.contains(k) && cached.get(k) != Some(v))
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::list_fields_changed;
     use ciborium::Value;
     use vantage_types::Record;
@@ -115,6 +170,10 @@ mod tests {
             .iter()
             .map(|(k, v)| (k.to_string(), v.clone()))
             .collect()
+    }
+
+    fn none() -> HashSet<String> {
+        HashSet::new()
     }
 
     #[test]
@@ -128,7 +187,7 @@ mod tests {
             ("updated_at", Value::from("t1")),
             ("subject_area", Value::from("finance")),
         ]);
-        assert!(!list_fields_changed(&list, &cached));
+        assert!(!list_fields_changed(&list, &cached, &none()));
     }
 
     #[test]
@@ -142,7 +201,7 @@ mod tests {
             ("updated_at", Value::from("t1")),
             ("subject_area", Value::from("finance")),
         ]);
-        assert!(list_fields_changed(&list, &cached));
+        assert!(list_fields_changed(&list, &cached, &none()));
     }
 
     #[test]
@@ -152,6 +211,28 @@ mod tests {
             ("region", Value::from("eu")),
         ]);
         let cached = rec(&[("status", Value::from("LIVE"))]);
-        assert!(list_fields_changed(&list, &cached));
+        assert!(list_fields_changed(&list, &cached, &none()));
+    }
+
+    /// The flap regression in miniature: the list paints an augment-owned
+    /// column with a cheap placeholder (a folder's `size: 0`); the cached row
+    /// holds the augmented value. That difference is NOT a change — the
+    /// augment owns the column.
+    #[test]
+    fn a_list_placeholder_under_an_augmented_column_is_not_a_change() {
+        let list = rec(&[("modified", Value::from("t1")), ("size", Value::from("0"))]);
+        let cached = rec(&[
+            ("modified", Value::from("t1")),
+            ("size", Value::from("4096")),
+            ("file_count", Value::from("3")),
+        ]);
+        let augmented: HashSet<String> = ["size", "file_count"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert!(!list_fields_changed(&list, &cached, &augmented));
+        // …while a real list-field move on the same row still demotes it.
+        let moved = rec(&[("modified", Value::from("t2")), ("size", Value::from("0"))]);
+        assert!(list_fields_changed(&moved, &cached, &augmented));
     }
 }

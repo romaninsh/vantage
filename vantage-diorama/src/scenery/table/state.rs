@@ -92,6 +92,11 @@ pub(crate) struct TableSceneryState {
     /// **skip the detail pass** even on a two-pass table. The list pass still
     /// runs (rows carry id + title columns); per-row hydration never fires.
     pub(crate) titles_only: bool,
+    /// The columns this view declared it shows (its **demand**), from the
+    /// builder's `columns()`. `None` = demands everything. The Dio unions the
+    /// demands of its open sceneries to gate the augment detail pass — see
+    /// [`DioInner::demanded_columns`](crate::dio::DioInner::demanded_columns).
+    pub(crate) demand: Option<Vec<String>>,
     /// The shared per-query ordered index for this scenery's conditions/sort,
     /// keyed by [`Vista::index_key`](vantage_vista::Vista::index_key). `None` in single-pass mode.
     /// Swappable: a `set_sort` / `set_search` re-points it at the index for the
