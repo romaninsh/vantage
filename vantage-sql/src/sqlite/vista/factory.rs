@@ -145,6 +145,9 @@ pub(crate) fn build_sqlite_table(
         if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
             table.add_title_field(name);
         }
+        if let Some(code) = &col_spec.lazy {
+            add_lazy_column(&mut table, name, code)?;
+        }
     }
 
     let id_column = resolve_id_column(spec);
@@ -253,6 +256,9 @@ fn build_derived_table(
         if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
             table.add_title_field(name);
         }
+        if let Some(code) = &col_spec.lazy {
+            add_lazy_column(&mut table, name, code)?;
+        }
     }
 
     // Explicit id override; otherwise the id inherited from the base stands.
@@ -262,6 +268,43 @@ fn build_derived_table(
 
     let table = table.with_contained_specs(&spec.contained, build_column)?;
     Ok(table)
+}
+
+/// Lower a column's `lazy:` script onto the table. The Rhai closure works on
+/// the CBOR carrier, so each record converts per value on the way in
+/// (`into_value`) and the script's result converts back on the way out
+/// (`AnySqliteType::untyped`).
+#[cfg(feature = "rhai")]
+fn add_lazy_column(
+    table: &mut Table<SqliteDB, EmptyEntity>,
+    name: &str,
+    code: &str,
+) -> Result<()> {
+    let script = vantage_vista::lazy_value_closure(code.to_string());
+    table.add_lazy_expression(
+        name,
+        Arc::new(move |record| {
+            let cbor_row: vantage_types::Record<ciborium::Value> = record
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone().into_value()))
+                .collect();
+            let script = script.clone();
+            Box::pin(async move { Ok(AnySqliteType::untyped(script(&cbor_row)?)) })
+        }),
+    );
+    Ok(())
+}
+
+#[cfg(not(feature = "rhai"))]
+fn add_lazy_column(
+    _table: &mut Table<SqliteDB, EmptyEntity>,
+    name: &str,
+    _code: &str,
+) -> Result<()> {
+    Err(error!(
+        "column declares a `lazy:` script but vantage-sql was built without the `rhai` feature",
+        column = name
+    ))
 }
 
 /// Apply a `rhai:` transform to a base select. Feature-gated like
