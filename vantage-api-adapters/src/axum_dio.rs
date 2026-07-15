@@ -10,7 +10,8 @@
 //! - `GET /?offset=&limit=&watch=true` — the same page as a **watch**: the
 //!   connection stays open and streams NDJSON events, kubernetes-style —
 //!   `{"type":"ADDED","object":{…}}` per row, then `MODIFIED` lines as rows
-//!   change. A watch is a real [`TableScenery`]: it declares the configured
+//!   change. A watch is a real [`TableScenery`](vantage_diorama::TableScenery):
+//!   it declares the configured
 //!   columns as its demand and its page as the viewport, which is exactly
 //!   what drives augmentation. Closing the connection drops the scenery —
 //!   its queued detail fetches are withdrawn and its demand drains.
@@ -19,7 +20,8 @@
 //!   the cost is paid once). Fetches share the augment scheduler, so a
 //!   detail GET racing a watch never downloads a row twice.
 //! - `GET /{id}?watch=true` — the record as a watch: `ADDED` with the
-//!   current value, `MODIFIED` on every change, via a [`RecordScenery`].
+//!   current value, `MODIFIED` on every change, via a
+//!   [`RecordScenery`](vantage_diorama::RecordScenery).
 //!
 //! ```ignore
 //! let api = DioRouter::new(dio)
