@@ -275,11 +275,7 @@ fn build_derived_table(
 /// (`into_value`) and the script's result converts back on the way out
 /// (`AnySqliteType::untyped`).
 #[cfg(feature = "rhai")]
-fn add_lazy_column(
-    table: &mut Table<SqliteDB, EmptyEntity>,
-    name: &str,
-    code: &str,
-) -> Result<()> {
+fn add_lazy_column(table: &mut Table<SqliteDB, EmptyEntity>, name: &str, code: &str) -> Result<()> {
     let script = vantage_vista::lazy_value_closure(code.to_string());
     table.add_lazy_expression(
         name,

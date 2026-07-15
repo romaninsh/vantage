@@ -515,10 +515,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
             let column = self.data_source.create_column::<T::AnyType>(name);
             self.add_column(column);
         }
-        self.add_lazy_expression(
-            name,
-            Arc::new(move |record| Box::pin(f(record))),
-        );
+        self.add_lazy_expression(name, Arc::new(move |record| Box::pin(f(record))));
         self
     }
 
@@ -526,11 +523,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
     /// touching the column set. Factories lowering a spec (which declares
     /// its columns separately) use this; application code should prefer
     /// [`Self::with_lazy_expression`].
-    pub fn add_lazy_expression(
-        &mut self,
-        name: &str,
-        f: crate::table::base::LazyExpressionFn<T>,
-    ) {
+    pub fn add_lazy_expression(&mut self, name: &str, f: crate::table::base::LazyExpressionFn<T>) {
         self.lazy_expressions.insert(name.to_string(), f);
     }
 

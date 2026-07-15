@@ -36,7 +36,11 @@ impl Readings {
                 let aws = aws.clone();
                 let bucket = bucket.clone();
                 let contents = contents.clone();
-                let key = row.get("Key").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                let key = row
+                    .get("Key")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
                 async move {
                     let fetch_key = key.clone();
                     let body = contents
@@ -49,13 +53,19 @@ impl Readings {
             })
             .with_lazy_expression("rows", |row| {
                 // Every line after the CSV header is one reading.
-                let contents = row.get("contents").and_then(|v| v.as_str()).unwrap_or_default();
+                let contents = row
+                    .get("contents")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
                 let rows = contents.lines().count().saturating_sub(1) as i64;
                 async move { Ok(rows.into()) }
             })
             .with_lazy_expression("latest", |row| {
                 // Readings are date-ordered; take the last line's DATE column.
-                let contents = row.get("contents").and_then(|v| v.as_str()).unwrap_or_default();
+                let contents = row
+                    .get("contents")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
                 let latest = contents
                     .lines()
                     .last()

@@ -282,13 +282,12 @@ async fn list_page_into(
                     .await;
             }
             None => {
-                let status = if gap_aware
-                    && !crate::dio::augment_passes::has_augment_gap(rec, &augmented)
-                {
-                    CacheStatus::Complete
-                } else {
-                    CacheStatus::Incomplete
-                };
+                let status =
+                    if gap_aware && !crate::dio::augment_passes::has_augment_gap(rec, &augmented) {
+                        CacheStatus::Complete
+                    } else {
+                        CacheStatus::Incomplete
+                    };
                 let _ = dio_inner
                     .cache
                     .insert_value_with_status(id, rec, status)
@@ -577,7 +576,12 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
         let Some(id) = index.id_at(idx) else {
             continue;
         };
-        let cached = dio_inner.cache.get_value_with_status(&id).await.ok().flatten();
+        let cached = dio_inner
+            .cache
+            .get_value_with_status(&id)
+            .await
+            .ok()
+            .flatten();
         // Materialize the slot if this scenery never seeded it: the index is
         // shared per query, so a stretch of it may have been listed by a
         // SIBLING scenery — whose run_list_page seeded only its own map.
@@ -596,7 +600,8 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
             seeded = true;
         }
         if let Some((row, CacheStatus::Complete)) = &cached {
-            let no_gap = !gap_aware || !crate::dio::augment_passes::has_augment_gap(row, &augmented);
+            let no_gap =
+                !gap_aware || !crate::dio::augment_passes::has_augment_gap(row, &augmented);
             if no_gap {
                 continue;
             }

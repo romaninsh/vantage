@@ -43,8 +43,7 @@ pub mod prelude {
     pub use crate::lens::{CacheBackend, CacheStatus, CacheTable, Lens, RedbCache};
     pub use crate::ops::{ChangeEvent, WriteOp};
     pub use crate::scenery::{
-        EnrichedRecord, RecordScenery, RecordStatus, RowStatus, SortDir, TableScenery,
-        ValueScenery,
+        EnrichedRecord, RecordScenery, RecordStatus, RowStatus, SortDir, TableScenery, ValueScenery,
     };
     pub use vantage_vista_factory::VistaCatalog;
 }

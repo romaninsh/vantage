@@ -40,11 +40,11 @@ pub fn objects_table(aws: AwsAccount) -> Table<AwsAccount, Object> {
         "restxml/Contents@continuation-token=NextContinuationToken:s3/GET /{Bucket}?list-type=2",
         aws,
     )
-        .with_id_column("Key")
-        .with_title_column_of::<String>("Size")
-        .with_title_column_of::<AwsDateTime>("LastModified")
-        .with_column_of::<String>("ETag")
-        .with_column_of::<String>("StorageClass")
+    .with_id_column("Key")
+    .with_title_column_of::<String>("Size")
+    .with_title_column_of::<AwsDateTime>("LastModified")
+    .with_column_of::<String>("ETag")
+    .with_column_of::<String>("StorageClass")
 }
 
 /// Fetch one object's content (`GetObject`) as text. Goes through the
