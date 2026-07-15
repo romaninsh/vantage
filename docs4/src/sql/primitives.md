@@ -61,6 +61,12 @@ let aliased = ident("total").with_alias("t"); // "total" AS "t"
 [`Identifier::new()`](vantage_sql::primitives::identifier::Identifier::new). Reserved words and
 names with spaces are quoted automatically.
 
+Each backend also has a **typed** identifier — `sqlite_ident()`, `pg_ident()`, `mysql_ident()` —
+returning a backend-pinned wrapper so operations like `.eq()` and `.gt()` resolve without
+ambiguity. The generic `ident()` works when the backend can be inferred from context (inside
+`sqlite_expr!()`, or passed where a specific `Expressive<T>` is expected); reach for the typed
+variant when calling operations directly.
+
 ## `fx!` — Function Calls
 
 The [`fx!`](vantage_sql::fx) macro builds a SQL function call. Arguments are passed directly —

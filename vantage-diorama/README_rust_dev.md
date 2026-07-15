@@ -50,15 +50,15 @@ let lens = Arc::new(
                 match &op {
                     WriteOp::Insert { id, record } | WriteOp::Replace { id, record } => {
                         dio.master().insert_value(id, record).await?;
-                        dio.invalidate_record(id.clone());
+                        dio.notify_record_changed(id.clone());
                     }
                     WriteOp::Delete { id } => {
                         dio.master().delete_value(id).await?;
-                        dio.invalidate_record(id.clone());
+                        dio.notify_record_changed(id.clone());
                     }
                     WriteOp::DeleteAll => {
                         dio.master().delete_all_values().await?;
-                        dio.invalidate_all();
+                        dio.notify_dataset_changed();
                     }
                     _ => {}
                 }
@@ -344,7 +344,7 @@ async fn main() -> anyhow::Result<()> {
         .on_write(|dio, op| async move {
             dio.master().apply(&op).await?;
             if let Some(id) = op.target_id() {
-                dio.invalidate_record(id);
+                dio.notify_record_changed(id);
             }
             Ok(())
         })

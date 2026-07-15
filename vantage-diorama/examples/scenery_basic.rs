@@ -103,7 +103,7 @@ async fn main() -> Result<()> {
 
     // External system tells us about a new row.
     dio.cache().insert_value("c4", &record("water", 1)).await?;
-    dio.invalidate_record("c4");
+    dio.notify_record_changed("c4");
     let last = u64::from(*gen_rx.borrow_and_update());
     let _ = tokio::time::timeout(Duration::from_millis(200), async {
         loop {

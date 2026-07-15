@@ -250,6 +250,44 @@ pub fn eval_augment_source(
         .ok_or_else(|| error!("rhai augment source consumed `self`"))
 }
 
+/// A lazy-expression value closure: given the record as built so far, compute
+/// one column value. This is the CBOR-carrier form of
+/// `vantage_table::Table::with_lazy_expression`'s callback — driver factories
+/// adapt it to their native value type when lowering a spec's `lazy:` script.
+pub type LazyValueFn = Arc<dyn Fn(&Record<CborValue>) -> Result<CborValue> + Send + Sync>;
+
+/// Evaluate a lazy-expression script for one record. The record as built so
+/// far — source columns plus any lazy columns declared earlier — is exposed
+/// as the `row` map; the script's final expression becomes the column's
+/// value:
+///
+/// ```rhai
+/// row.contents.split("\n").len() - 1
+/// ```
+pub fn eval_lazy_expression(
+    engine: &Engine,
+    code: &str,
+    row: &Record<CborValue>,
+) -> Result<CborValue> {
+    let mut scope = Scope::new();
+    scope.push_dynamic("row", record_to_dynamic(row));
+
+    let result: Dynamic = engine
+        .eval_with_scope(&mut scope, code)
+        .map_err(|e| error!(format!("rhai lazy expression failed: {e}")))?;
+    dynamic_to_cbor(result).map_err(|e| error!(format!("rhai lazy expression result: {e}")))
+}
+
+/// Build a reusable [`LazyValueFn`] from a Rhai `code` string. The engine is
+/// plain — a lazy expression derives a value from `row`, it doesn't build
+/// queries or fetch data, so no resolver or vendor vocabulary is needed.
+pub fn lazy_value_closure(code: String) -> LazyValueFn {
+    Arc::new(move |row: &Record<CborValue>| -> Result<CborValue> {
+        let engine = Engine::new();
+        eval_lazy_expression(&engine, code.as_str(), row)
+    })
+}
+
 /// Build a reusable [`AugmentSourceFn`] from a Rhai `code` string and a
 /// `resolver` for `table(name)`. Keeps all Rhai engine assembly inside
 /// vantage-vista: a consumer (diorama's augmentation lowering) only flips the

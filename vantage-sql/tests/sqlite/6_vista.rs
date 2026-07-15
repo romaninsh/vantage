@@ -137,6 +137,44 @@ sqlite:
     Ok(())
 }
 
+/// A `lazy:` column runs its Rhai script on each returned record (`row` in
+/// scope), in declaration order — the second script reads the first's value.
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn vista_yaml_lazy_columns_compute_from_row() -> TestResult {
+    let db = setup().await;
+
+    let yaml = r#"
+name: product_view
+columns:
+  id:
+    type: string
+    flags: [id]
+  name:
+    type: string
+  price:
+    type: int
+  price_label:
+    lazy: '`${row.name}: ${row.price}`'
+  shouted:
+    lazy: 'row.price_label.to_upper()'
+sqlite:
+  table: product
+"#;
+
+    let vista = db.vista_factory().from_yaml(yaml)?;
+    let rows = vista.list_values().await?;
+    assert_eq!(
+        rows["a"].get("price_label"),
+        Some(&CborValue::Text("Alpha: 10".into()))
+    );
+    assert_eq!(
+        rows["a"].get("shouted"),
+        Some(&CborValue::Text("ALPHA: 10".into()))
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn vista_writes_round_trip_via_cbor() -> TestResult {
     let db = setup().await;

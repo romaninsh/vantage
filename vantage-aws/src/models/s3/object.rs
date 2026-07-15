@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use vantage_core::Result;
 use vantage_table::table::Table;
 
 use crate::types::AwsDateTime;
@@ -27,15 +28,32 @@ pub struct Object {
 /// `prefix` / `delimiter` / `max-keys` filters become query params if
 /// supplied.
 ///
+/// Auto-paginates: the `@continuation-token=NextContinuationToken`
+/// cursor makes a listing walk every page (S3 returns at most 1000
+/// keys per response, or `max-keys` if set). Cap the walk with
+/// [`AwsAccount::with_max_pages`].
+///
 /// Used as the `objects` relation on [`super::bucket::Bucket`] —
 /// traversing from a single bucket fills `Bucket` automatically.
 pub fn objects_table(aws: AwsAccount) -> Table<AwsAccount, Object> {
-    Table::new("restxml/Contents:s3/GET /{Bucket}?list-type=2", aws)
-        .with_id_column("Key")
-        .with_title_column_of::<String>("Size")
-        .with_title_column_of::<AwsDateTime>("LastModified")
-        .with_column_of::<String>("ETag")
-        .with_column_of::<String>("StorageClass")
+    Table::new(
+        "restxml/Contents@continuation-token=NextContinuationToken:s3/GET /{Bucket}?list-type=2",
+        aws,
+    )
+    .with_id_column("Key")
+    .with_title_column_of::<String>("Size")
+    .with_title_column_of::<AwsDateTime>("LastModified")
+    .with_column_of::<String>("ETag")
+    .with_column_of::<String>("StorageClass")
+}
+
+/// Fetch one object's content (`GetObject`) as text. Goes through the
+/// same REST transport as the listings — signed for a credentialed
+/// [`AwsAccount`], bare for [`AwsAccount::public`] — but skips XML
+/// parsing: the response body *is* the object.
+pub async fn get_object(aws: &AwsAccount, bucket: &str, key: &str) -> Result<String> {
+    let path = crate::restxml::transport::encode_path(&format!("/{bucket}/{key}"));
+    crate::restxml::restxml_call(aws, "s3", "GET", &path, &[]).await
 }
 
 impl Object {

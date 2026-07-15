@@ -139,7 +139,7 @@ async fn external_invalidate_triggers_recompute() -> Result<()> {
     let initial = u64::from(*gen_rx.borrow_and_update());
 
     dio.cache().insert_value("d", &record("delta", 5)).await?;
-    dio.invalidate_record("d");
+    dio.notify_record_changed("d");
     wait_for_gen(&mut gen_rx, initial).await;
 
     assert_eq!(cbor_int(&scenery.value().unwrap()), Some(4));
@@ -157,7 +157,7 @@ async fn unchanged_value_does_not_bump_generation() -> Result<()> {
     let initial = u64::from(*gen_rx.borrow_and_update());
 
     // Touch the bus without changing the count.
-    dio.invalidate_record("nonexistent");
+    dio.notify_record_changed("nonexistent");
     tokio::time::sleep(Duration::from_millis(100)).await;
     let after = u64::from(*gen_rx.borrow_and_update());
     assert_eq!(after, initial, "count unchanged → no generation bump");
@@ -227,7 +227,7 @@ async fn custom_aggregate_error_preserves_last_value() -> Result<()> {
     let initial = u64::from(*gen_rx.borrow_and_update());
 
     // Trigger a recompute that will fail.
-    dio.invalidate_all();
+    dio.notify_dataset_changed();
     wait_for_gen(&mut gen_rx, initial).await;
 
     // Value preserved; status flipped to Error.

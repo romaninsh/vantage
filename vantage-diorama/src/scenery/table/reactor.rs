@@ -9,7 +9,7 @@ use super::state::TableSceneryState;
 /// Background task that reacts to Dio-level events for the scenery.
 ///
 /// Single-row events (`RecordChanged`) update the matching slot in
-/// place if known. Whole-set events (`Invalidated`, `Refreshing`)
+/// place if known. Whole-set events (`DatasetChanged`, `Refreshing`)
 /// drop the sparse map and re-seed from cache. Our own viewport
 /// events (`ViewportChanged`, `RangeLoaded`, `LoadFailed`) are
 /// emitted *by* the loader pipeline — the reactor ignores them so
@@ -38,19 +38,38 @@ pub(crate) async fn reload_loop(
             recv = bus.recv() => {
                 match recv {
                     // `Refreshing` is the leading edge of `dio.refresh()`; the
-                    // refetch happens on the trailing `Invalidated`. Reseeding
-                    // here would only re-show the current cache, so a
-                    // chunk-loaded scenery ignores it.
+                    // refetch happens on the trailing `DatasetChanged`. Reseeding
+                    // here would only re-show the current cache, so chunk-loaded
+                    // and two-pass sceneries (whose spine is the index, not the
+                    // cache's iteration order) ignore it.
                     Ok(DioEvent::Refreshing) => {
-                        if !state.is_chunk_loaded() {
+                        if !state.is_chunk_loaded() && !state.two_pass {
                             reseed(&state).await;
                         }
                     }
-                    Ok(DioEvent::RecordChanged { .. }
-                    | DioEvent::RecordInserted { .. }
+                    // A changed record moves values, not membership — a
+                    // two-pass scenery updates that one slot in place instead
+                    // of re-deriving its whole index.
+                    Ok(DioEvent::RecordChanged { id }) => {
+                        if state.two_pass {
+                            super::two_pass::update_row_from_cache(&state, &id).await;
+                        } else {
+                            refresh(&state).await;
+                        }
+                    }
+                    Ok(DioEvent::RecordInserted { .. }
                     | DioEvent::RecordRemoved { .. }
-                    | DioEvent::Invalidated) => {
+                    | DioEvent::DatasetChanged) => {
                         refresh(&state).await;
+                    }
+                    // A scheduled detail fetch for one of our rows failed —
+                    // stamp the slot so the grid shows the failure (single-pass
+                    // rows load through their own chunk pipeline, not the
+                    // scheduler, so only two-pass reacts).
+                    Ok(DioEvent::RecordLoadFailed { id, error }) => {
+                        if state.two_pass {
+                            super::two_pass::mark_detail_failed(&state, &id, &error);
+                        }
                     }
                     // Optimistic-write affordance: stamp just the affected row
                     // rather than reseeding the whole map. On success the
@@ -63,10 +82,14 @@ pub(crate) async fn reload_loop(
                             .mark_row(&id, crate::scenery::RowStatus::WriteFailed { error })
                             .await;
                     }
+                    // A facade read announcing its hydration sweep; each
+                    // hydrated row follows as `RecordChanged`, which is
+                    // what actually updates the view.
                     Ok(DioEvent::WriteFailed { .. })
                     | Ok(DioEvent::ViewportChanged { .. })
                     | Ok(DioEvent::RangeLoaded { .. })
-                    | Ok(DioEvent::LoadFailed { .. }) => {}
+                    | Ok(DioEvent::LoadFailed { .. })
+                    | Ok(DioEvent::Hydrating { .. }) => {}
                     Err(broadcast::error::RecvError::Lagged(_)) => {
                         refresh(&state).await;
                     }
@@ -77,13 +100,17 @@ pub(crate) async fn reload_loop(
     }
 }
 
-/// Whole-set refresh. A chunk-loaded (paged/lazy) scenery re-fetches its
+/// Whole-set refresh. A two-pass scenery's row spine is its per-query index,
+/// and the cache may have gained or lost rows behind it — re-derive the index
+/// from a fresh list pass. A chunk-loaded (paged/lazy) scenery re-fetches its
 /// last viewport in place — `force_load` overwrites each slot as fresh rows
 /// land and a failed refetch keeps the existing rows, so the grid never
 /// blanks. Other sceneries reseed the sparse map from the cache (which their
 /// `on_refresh` has already restaged).
 async fn refresh(state: &Arc<TableSceneryState>) {
-    if state.is_chunk_loaded() {
+    if state.two_pass {
+        crate::scenery::table::two_pass::refresh_index(state).await;
+    } else if state.is_chunk_loaded() {
         // Re-count first: a chunk-loaded scenery caches its total at open and
         // would otherwise never notice a row that appeared (or vanished)
         // server-side. Then re-fetch the current viewport in place.

@@ -655,10 +655,14 @@ async fn refresh_with_unchanged_list_rows_keeps_augment_and_fetches_nothing() {
         .expect("file write");
     dio.refresh().await.expect("refresh");
     scenery.set_viewport(0..3);
+    // The view may reflect the reconciled cache (stale size kept) before the
+    // async refetch lands — wait on the fetch counter as well, not just the
+    // visible values.
     eventually("changed folder refetched, file re-listed", || {
         by_id("logs", "modified")().as_deref() == Some("t2")
             && by_id("logs", "size")().as_deref() == Some("4096")
             && by_id("run.log", "size")().as_deref() == Some("96")
+            && gets.load(Ordering::SeqCst) == 3
     })
     .await;
     assert_eq!(

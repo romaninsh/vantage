@@ -1,6 +1,6 @@
 [package]
 name = "vantage-sql"
-version = "0.6.7"
+version = "0.6.8"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -15,7 +15,7 @@ sqlite = ["sqlx/sqlite"]
 postgres = ["sqlx/postgres"]
 mysql = ["sqlx/mysql"]
 vista = ["dep:vantage-vista"]
-rhai = ["dep:rhai"]
+rhai = ["dep:rhai", "vantage-vista?/rhai"]
 
 [dependencies]
 vantage-core = { version = "0.6", path = "../vantage-core" }

@@ -21,6 +21,26 @@ use crate::{
 pub type ExpressionFn<T> =
     Arc<dyn Fn(&Table<T, EmptyEntity>) -> Expression<<T as TableSource>::Value> + Send + Sync>;
 
+/// Type alias for lazy-expression callbacks stored on Table.
+///
+/// A lazy expression runs *after* the data source returns a record.
+/// Callbacks apply in declaration order: each borrows the record as built
+/// so far, and the value it returns is inserted under the expression's
+/// name. A later lazy expression therefore sees the columns produced by
+/// earlier ones — one expensive fetch (a file's contents) can feed several
+/// cheap derived columns. See [`Table::with_lazy_expression`].
+pub type LazyExpressionFn<T> = Arc<
+    dyn Fn(
+            &vantage_types::Record<<T as TableSource>::Value>,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = vantage_core::Result<<T as TableSource>::Value>>
+                    + Send,
+            >,
+        > + Send
+        + Sync,
+>;
+
 #[derive(Clone)]
 pub struct Table<T, E>
 where
@@ -38,6 +58,7 @@ where
     pub(super) refs: Option<IndexMap<String, Arc<dyn Reference>>>,
     pub(super) contained: Vec<crate::references::ContainedRelation<T>>,
     pub(super) expressions: IndexMap<String, ExpressionFn<T>>,
+    pub(super) lazy_expressions: IndexMap<String, LazyExpressionFn<T>>,
     pub(super) pagination: Option<Pagination>,
     pub(super) title_field: Option<String>,
     pub(super) title_fields: Vec<String>,
@@ -75,6 +96,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             refs: None,
             contained: Vec::new(),
             expressions: IndexMap::new(),
+            lazy_expressions: IndexMap::new(),
             pagination: None,
             title_field: None,
             title_fields: Vec::new(),
@@ -103,6 +125,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             refs: self.refs,
             contained: self.contained,
             expressions: self.expressions,
+            lazy_expressions: self.lazy_expressions,
             pagination: self.pagination,
             title_field: self.title_field,
             title_fields: self.title_fields,
@@ -123,6 +146,21 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         // SAFETY: identical layout (E is PhantomData only); lifetime is tied to
         // `&self`, and the borrow is shared/read-only.
         unsafe { &*(self as *const Table<T, E> as *const Table<T, EmptyEntity>) }
+    }
+
+    /// Apply lazy expressions to one returned record, in declaration order.
+    /// Each callback borrows the record as built so far; the value it
+    /// returns is inserted under the expression's name before the next
+    /// callback runs. See [`Self::with_lazy_expression`].
+    pub(crate) async fn apply_lazy_expressions(
+        &self,
+        record: &mut vantage_types::Record<T::Value>,
+    ) -> vantage_core::Result<()> {
+        for (name, f) in &self.lazy_expressions {
+            let value = f(record).await?;
+            record.insert(name.clone(), value);
+        }
+        Ok(())
     }
 
     /// Snapshot the table's relations as Vista references (name, target type,

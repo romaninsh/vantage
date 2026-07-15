@@ -23,25 +23,19 @@ right query and sends it over. Even traversal operations and sub-queries are don
 queries and executing remotely — if the database supports it, of course.
 
 When you `.clone()` a table, you don't clone the data — you clone the _definition_. From there you
-can narrow it down by adding conditions, turning it into a subset. Some examples of data sets you
-might work with:
+can narrow it down by adding conditions, turning it into a subset. Some examples of sets you might
+work with:
 
 - all user records except those with a soft-delete flag
 - orders placed today
-- paid customers
 - orders of paid customers
+- customers who have an unpaid invoice older than 30 days
 - products that sold at least 5 items today
 
-Each of these is a set — defined by conditions, not a list of IDs. Another typical operation is
-expressing one set as a condition of another then perform an action:
-
-- notify customers who have an unpaid invoice older than 30 days
-- archive orders whose products have been discontinued
-- apply a discount to customers who spent more than $500 this month
-- list warehouses that stock at least one out-of-stock product
-- flag reviews written by users who have been banned
-
-Put these together and even complex operations are easy to express in code:
+Each of these is a set — defined by conditions, not a list of IDs — and one set can serve as the
+condition of another ("orders *of paid customers*"). Acting on a set is a single call: notify those
+customers, archive those orders, apply that discount. Put together, even complex operations are
+easy to express in code:
 
 ```rust
 // "notify customers who have an unpaid invoice older than 30 days"
@@ -159,18 +153,18 @@ let table = Product::table(db);
 
 // Read — list all, get one by ID
 let all = table.list().await?;             // IndexMap<String, Product>
-let pie = table.get("pie").await?;         // Option<Product>
+let pie = table.get("4").await?;           // Option<Product> — id 4 is Pie
 
 // Create — insert with a known ID
 let muffin = Product { name: "Muffin".into(), price: 175 };
-table.insert(&"muffin".to_string(), &muffin).await?;
+table.insert(&"8".to_string(), &muffin).await?;
 
 // Update — replace the entire record
 let updated = Product { name: "Blueberry Muffin".into(), price: 195 };
-table.replace(&"muffin".to_string(), &updated).await?;
+table.replace(&"8".to_string(), &updated).await?;
 
 // Delete
-table.delete(&"muffin".to_string()).await?;
+table.delete(&"8".to_string()).await?;
 ```
 
 That's it. `list()` returns an `IndexMap<Id, Product>` — ordered and keyed by ID. `get()` returns
@@ -178,6 +172,15 @@ That's it. `list()` returns an `IndexMap<Id, Product>` — ordered and keyed by 
 your own not-found error. There's also `get_some()` which returns an `(Id, Product)` pair (still
 `Option`-wrapped) for sampling, and `insert_return_id()` for when you want the database to generate
 the ID.
+
+```admonish info title="Ids are strings"
+Our `id` column is `INTEGER PRIMARY KEY`, yet every id above is a string. That's deliberate:
+at the Vantage API level ids are always strings — the one type that can carry any backend's
+key (SQLite rowids, Mongo ObjectIds, S3 object keys). The persistence binds the string into
+the id-column comparison when it builds the query, so `get("4")` matches the integer `4`.
+You'll meet the same convention wherever ids travel through the framework — including the
+JSON output in the next chapter.
+```
 
 ```admonish tip title="Idempotent operations"
 Try duplicating the `replace()` and `delete()` calls — the result is the same. Replacing
@@ -515,17 +518,25 @@ Rust's extension traits solve this. Define a trait on `Table<SqliteDB, Category>
 traversal:
 
 ```rust
-pub trait CategoryTable: ReadableDataSet<Category> {
+pub trait CategoryTable {
+    fn ref_products(&self) -> Table<SqliteDB, Product>;
+}
+
+impl CategoryTable for Table<SqliteDB, Category> {
     fn ref_products(&self) -> Table<SqliteDB, Product> {
         self.get_ref_as("products").unwrap()
     }
 }
-impl CategoryTable for Table<SqliteDB, Category> {}
 ```
 
-The default method lives in the trait — `impl` is just `{}`. The `unwrap()` is safe because we know
-"products" is defined on every `CategoryTable`. If the string were wrong, it would panic immediately
-during development, not silently fail at runtime.
+The trait declares the vocabulary; the `impl` block supplies the bodies. Nothing is
+auto-implemented — `ref_products()` appears on `Table<SqliteDB, Category>` the moment you write
+this impl, and on nothing else. The bodies must live impl-side, too: methods like `get_ref_as` are
+inherent to `Table`, so they're only reachable where `self` is concretely that table — inside the
+impl, not inside a trait default.
+
+The `unwrap()` is safe because we know "products" is defined on every `CategoryTable`. If the
+string were wrong, it would panic immediately during development, not silently fail at runtime.
 
 Now callers write `categories.ref_products()` — no turbofish, no string, no `?`, and the compiler
 catches typos.
@@ -534,19 +545,21 @@ The same pattern works for typed column access:
 
 ```rust
 pub trait ProductTable {
+    fn price(&self) -> Column<i64>;
+}
+
+impl ProductTable for Table<SqliteDB, Product> {
     fn price(&self) -> Column<i64> {
         self.get_column("price").unwrap()
     }
 }
-impl ProductTable for Table<SqliteDB, Product> {}
 ```
 
 With both traits in place, code reads naturally:
 
 ```rust
-let expensive = categories
-    .ref_products()
-    .with_condition(products.price().gt(200));
+let products = categories.ref_products();
+let expensive = products.with_condition(products.price().gt(200));
 ```
 
 ```admonish tip title="Where to put extension traits"
@@ -561,19 +574,23 @@ Business logic code never sees raw strings or turbofish — just method calls.
 
 ```admonish info title="Custom methods on extension traits"
 Extension traits aren't limited to column and relationship accessors — you can add any
-business logic. For example, the `vantage-cli-util` crate provides `print_table()` for
-terminal output. Add it as a method on your trait:
+business logic. For example, the `vantage-cli-util` crate provides `print_table()`, which
+accepts any `&Table<T, E>` and renders it for the terminal. Declare the method on your trait
+and implement it in the same impl block as the accessors:
 
 ~~~rust
-use vantage_cli_util::table_display;
-
 pub trait ProductTable {
+    fn price(&self) -> Column<i64>;
+    async fn print(&self) -> VantageResult<()>;
+}
+
+impl ProductTable for Table<SqliteDB, Product> {
     fn price(&self) -> Column<i64> {
         self.get_column("price").unwrap()
     }
 
     async fn print(&self) -> VantageResult<()> {
-        table_display::print_table(self).await
+        vantage_cli_util::print_table(self).await
     }
 }
 ~~~
@@ -600,10 +617,9 @@ The table is yours to extend.
 
 ## Persistence Abstraction
 
-It is time for a pause and reflection. The files you have written so far — `Cargo.toml`,
-`product.rs`, `category.rs`, `main.rs` — are the makings of an extensible business software
-architecture. Scalable, maintainable, testable, and portable across databases without rewriting a
-single line of business logic.
+The files you have written so far — `Cargo.toml`, `product.rs`, `category.rs`, `main.rs` — are the
+makings of an extensible business software architecture: scalable, maintainable, testable, and
+portable across databases without rewriting a single line of business logic.
 
 What you have is four distinct components, each with a clear job:
 
@@ -625,39 +641,36 @@ The model definitions focus on describing _where_ and _how_ data is stored, but 
 micro-manage the process. If storage requirements change — a new backend, a schema migration, a
 cached layer in front — the model is where you make the tweaks. Business code remains untouched.
 
-This separation gives you:
+This separation gives you the ergonomics scripting-language ORMs are known for — concise,
+domain-focused code — with Rust's type safety and performance underneath: the abstraction compiles
+down to direct calls. When storage requirements shift, the change stays contained in the model
+layer instead of rippling through business code, and the whole architecture travels as a single
+static binary — server, desktop, or embedded.
 
-- [x] **Separation of concerns** - framework to establish great design for your software from day
-      one, then scale.
-- [x] **No ripple effect** — in Rust code refactoring cascade through entire codebase. Vantage model
-      layer contains that pain, and enterprise codebases don't unravel when requirements shift.
-- [x] **Concise syntax** — the ergonomics Python, JavaScript, and PHP developers enjoy, now in Rust.
-      Cuting boilerplate, making code readablle.
-- [x] **Strong types, zero cost** — everything TypeScript has and more, without sacrificing
-      performance. The abstraction compiles down to direct calls.
-- [x] **A usable alternative to OOP** — Java and C# developers get entities, methods, and
-      composition without inheritance hierarchies or dependency injection containers.
-- [x] **Safe concurrency, async, ownership, no memory leaks** — the performance of C with ergonomics
-      that make concurrent code readable.
-- [x] **Portability** — take Vantage with you anywhere: server, desktop, web, mobile, embedded. One
-      static binary per target.
+```admonish tip title="Going deeper"
+`Table` has considerably more surface than one chapter can show. The reference pages pick up where
+this one stops:
+
+- **[Records: Traversal, Invariants & Hooks](../record-lifecycle.md)** — lifecycle hooks (audit
+  stamps, validation, soft-delete that intercepts a real delete), **set invariants** that fill and
+  enforce foreign keys on every write through a relation, and traversing relations from a single
+  loaded record.
+- **[Expressions & Queries](../expressions.md)** — the machinery underneath `with_expression` and
+  every condition you wrote in this chapter.
+- **[Model-Driven Architecture](../mda.md)** — how entities, table constructors, and connection
+  management are organised in a real model crate, including one entity with constructors for
+  several backends.
+- **[Three Paths for Developers](../three-paths.md)** — how this chapter's entity framework
+  relates to raw query building and custom persistences, and when to reach for each.
+```
 
 ```admonish tip title="A sneak peek at what's next"
-This introduction gets you productive quickly, but it barely scratches the surface.
-Later chapters explore more complex challenges that make Vantage is equipped to deal with:
+The pattern you've just built scales well beyond a product catalog:
 
-- **Zero-cost cross-persistence traversal** — follow a relationship from a Postgres table
-  into a MongoDB collection, all expressed in Rust, executed efficiently on each side.
-- **In-memory entity caching with indexing** — Using `vantage-redb` for powerful and
-  transparent client-side caching.
-- **Facades and middleware APIs, almost for free** — wrap your model to expose a filtered
-  or transformed view to another team an API.
-- **Super-efficient API clients and SDKs** — your model becomes the client. Typed endpoints,
-  retries, pagination, and rate limits — all in one abstraction.
-- **UI framework integration** — the same model drives desktop, terminal, web, and mobile
-  UIs through `vantage-ui-adapters`. Define once, render anywhere.
-- **Reactive in-memory data** — make your local data reactive, receiving live updates
-  from your database or websocket APIs.
-
-The patterns you've learned scale all the way up.
+- **Client-side caching and reactive data** — chapters 5–8 of this guide put a model behind a
+  persistent cache with live updates streaming to a terminal UI and a React frontend.
+- **Cross-persistence traversal** — follow a relationship from a Postgres table into a MongoDB
+  collection, expressed in Rust, executed efficiently on each side.
+- **UI framework integration** — the same model drives desktop, terminal, and web UIs through
+  `vantage-ui-adapters`: define once, render anywhere.
 ```

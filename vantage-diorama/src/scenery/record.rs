@@ -147,7 +147,7 @@ async fn reload_loop(state: Arc<RecordSceneryState>, mut bus: broadcast::Receive
                     tracing::error!(error = %e, "RecordScenery reload failed");
                 }
             }
-            Ok(DioEvent::Invalidated) => {
+            Ok(DioEvent::DatasetChanged) => {
                 if let Err(e) = state.reload().await {
                     tracing::error!(error = %e, "RecordScenery reload failed");
                 }
@@ -172,6 +172,21 @@ async fn reload_loop(state: Arc<RecordSceneryState>, mut bus: broadcast::Receive
 
 pub(crate) struct RecordSceneryImpl {
     pub(crate) inner: Arc<RecordSceneryState>,
+    /// Aborts the bus task when the last handle drops — a released record
+    /// view stops reacting instead of living for the Dio's whole lifetime
+    /// (one leaked task per view would add up fast for per-request views,
+    /// e.g. an HTTP watch endpoint opening one per connection).
+    _guard: RecordSceneryGuard,
+}
+
+struct RecordSceneryGuard {
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for RecordSceneryGuard {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
 }
 
 impl RecordScenery for RecordSceneryImpl {
@@ -193,7 +208,7 @@ impl RecordScenery for RecordSceneryImpl {
             if let Err(e) = dio.refresh().await {
                 tracing::error!(error = %e, "RecordScenery request_refresh failed");
             }
-            // refresh() publishes `Invalidated`; the bus task reloads.
+            // refresh() publishes `DatasetChanged`; the bus task reloads.
         });
     }
 
@@ -223,9 +238,12 @@ pub(crate) fn spawn_record_scenery(
 
     let bus_rx = dio.event_bus.subscribe();
     let task_state = state.clone();
-    dio.lens.runtime.spawn(async move {
+    let task = dio.lens.runtime.spawn(async move {
         reload_loop(task_state, bus_rx).await;
     });
 
-    Arc::new(RecordSceneryImpl { inner: state }) as Arc<dyn RecordScenery>
+    Arc::new(RecordSceneryImpl {
+        inner: state,
+        _guard: RecordSceneryGuard { task },
+    }) as Arc<dyn RecordScenery>
 }

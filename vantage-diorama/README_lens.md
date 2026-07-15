@@ -245,7 +245,7 @@ to serve reads until the next successful refresh.
 
 ### What if a refresh fails mid-day?
 
-The refresh task logs the error and emits `DioEvent::Invalidated` (or not,
+The refresh task logs the error and emits `DioEvent::DatasetChanged` (or not,
 depending on configuration). The cache keeps serving the previous data. Your
 UI can subscribe to a Scenery and surface a "last synced N minutes ago"
 indicator from the watch generation.
@@ -305,7 +305,7 @@ your domain.
 ### Won't the cache get out of sync if writes succeed locally but later fail upstream?
 
 Yes, and you have to design for it. Two common patterns: (a) tag failed writes
-in the cache (via `dio.invalidate_record`) so the UI shows them as conflicted
+in the cache (via `dio.notify_record_changed`) so the UI shows them as conflicted
 and the user resolves manually; (b) drop the local change and re-fetch the
 upstream version, accepting "last write loses" for sync conflicts. Pick based
 on your domain.
@@ -339,9 +339,9 @@ let lens = Lens::new()
     .on_write(|dio, op| async move {
         dio.master().apply(&op).await?;
         if let Some(id) = op.target_id() {
-            dio.invalidate_record(id);
+            dio.notify_record_changed(id);
         } else {
-            dio.invalidate_all();
+            dio.notify_dataset_changed();
         }
         Ok(())
     })
@@ -478,7 +478,7 @@ let lens = Lens::new()
                     if let Some(rec) = dio.master().get_value(&id).await? {
                         dio.patched(id, rec).await?;
                     } else {
-                        dio.invalidate_record(id);
+                        dio.notify_record_changed(id);
                     }
                 }
                 ChangeEvent::Inserted { id, new: Some(record) } => {
@@ -486,7 +486,7 @@ let lens = Lens::new()
                 }
                 ChangeEvent::Deleted { id } => {
                     dio.cache().delete_value(&id).await?;
-                    dio.invalidate_record(id);
+                    dio.notify_record_changed(id);
                 }
                 _ => {
                     dio.refresh().await?;
@@ -615,8 +615,8 @@ dio.reload(fresh).await?;
 What it does, in order: swaps the master Vista, drops the stale per-query indexes
 (two-pass orders rebuild against the new data), clears and refills the cache from
 the new master via your `on_start` (or `on_refresh`), and only then publishes one
-`Invalidated`. Open sceneries keep showing their current rows the whole time and
-swap to the new data in a single atomic step on that `Invalidated` — so a grid
+`DatasetChanged`. Open sceneries keep showing their current rows the whole time and
+swap to the new data in a single atomic step on that `DatasetChanged` — so a grid
 mid-scroll never flashes empty, even though the dataset changed underneath it.
 "Responsive first, eventually precise," applied to a source reload.
 

@@ -360,7 +360,7 @@ impl ValueScenery for ValueSceneryImpl {
             if let Err(e) = dio.refresh().await {
                 tracing::error!(error = %e, "ValueScenery request_refresh failed");
             }
-            // refresh() emits `Invalidated`; the recompute loop picks it up
+            // refresh() emits `DatasetChanged`; the recompute loop picks it up
             // and the value reloads. Trigger an immediate recompute too so
             // a callback-less Lens still sees a fresh value.
             state.recompute().await;
