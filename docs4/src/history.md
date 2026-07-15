@@ -360,7 +360,7 @@ categories in Postgres, products in MongoDB — moved out of `Vista` and into
 ```admonish note title="A new introduction"
 The getting-started guide was rewritten around these concepts — chapters on
 [Vista](./intro/step4-vista.md), [Dio & Lens](./intro/step5-dio-lens.md), and
-[Scenery](./intro/step6-scenery.md) build a CLI up from a single SQLite query to a reactive,
+[Scenery](./intro/step7-scenery.md) build a CLI up from a single SQLite query to a reactive,
 cached, multi-backend handle.
 
 **[Read the full 0.5 feature guide →](./whats-new-in-05.md)**

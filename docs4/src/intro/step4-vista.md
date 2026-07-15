@@ -12,6 +12,20 @@ database sits underneath.
 
 That handle is [`Vista`](vantage_vista::Vista).
 
+```admonish question title="Why 'Vista'?"
+Vantage is named for the view. Stand at a vantage point — the peak above your infrastructure — and
+the landscape arranges itself below: every database, API, and file your organisation keeps,
+observable from one place. The framework's names stay true to that scene, borrowing from landscape
+and photography rather than reusing overloaded database words.
+
+A **table** isn't one of ours — it's what you already have. Vantage describes your tables; it
+doesn't reinvent them. A **vista** is the first thing the framework adds: in the landscape sense, a
+wide view opening up from where you stand. And that is precisely what a `Vista` is here — one data
+source seen in full, its schema, capabilities, and records composed into a single view, no matter
+what produces it. Further along the trail wait a **Lens**, a **Dio**rama, and **Scenery** — each
+another way of looking, never another thing to store.
+```
+
 ```admonish example title="Goals for this chapter"
 By the end of this page you'll be able to:
 
@@ -38,9 +52,12 @@ Table<SqliteDB, Product>   — typed entity, typed backend, compile-time safe
 Vista                      — fully erased: schema-bearing, CborValue, no generics
 ```
 
-Vista trades away compile-time knowledge for runtime flexibility. Everything is a string key and a
-CBOR value — but it carries enough metadata to build a data grid, a form, a CLI, or a REST endpoint
-without knowing anything about the underlying database.
+Vista trades away compile-time knowledge for runtime flexibility: everything is a string key and a
+CBOR value, and the schema travels with the handle rather than with your types. Wrapping a typed
+`Table` — this chapter's path — is also not the only way to get one: every driver ships a
+`VistaFactory` that can materialize a Vista from a declarative YAML spec, with Rhai scripts for the
+expressions YAML can't state. That path has its own guide —
+[Config-Driven Vistas](../config-driven-vistas.md) — and this chapter stays on the typed one.
 
 ```admonish info title="CBOR, not JSON"
 Vista uses [`ciborium::Value`](https://docs.rs/ciborium) as its carrier type — a CBOR value. CBOR preserves type fidelity that JSON loses (integer vs float, binary blobs, precise decimals). You'll see `CborValue` in every Vista method signature.
@@ -119,8 +136,9 @@ Flags are open — drivers and consumers can add their own.
 
 ## Adding conditions
 
-Vista doesn't carry its own condition type. Instead, it delegates to the wrapped driver, which
-translates the value into whatever the backend speaks:
+Vista doesn't carry its own condition type. Instead, it delegates to a
+[`TableShell`](vantage_vista::TableShell) — the per-driver executor every Vista wraps, and the
+piece each factory actually builds — which translates the value into whatever the backend speaks:
 
 ```rust
 let mut v = vista.clone();
@@ -135,7 +153,17 @@ condition — `Expression` for SQL, `bson::Document` for MongoDB, `AwsCondition:
 pushes it onto the wrapped table.
 
 ```admonish info title="Conditions mutate the shell"
-Unlike `Table`'s `.with_condition()` (which consumes and returns a new table), Vista's `add_condition_eq` mutates in place. Vista is a runtime handle — there's no builder pattern to preserve. Clone before narrowing if you need the unfiltered version later.
+Unlike `Table`'s `.with_condition()` (which consumes and returns a new table), Vista's
+`add_condition_eq` mutates in place. Vista is a runtime handle — there's no builder pattern to
+preserve. The mutability rules:
+
+| Operation                     | Semantics                                                  |
+| ----------------------------- | ---------------------------------------------------------- |
+| `add_condition_eq`, `with_id` | **Accrete** — each call narrows further; none can be removed |
+| `add_search`, `add_order`     | **Replace** — calling again swaps the previous one out     |
+| Widening                      | **Clone first** — narrow the clone, keep the original      |
+
+A narrowed Vista is a *different, smaller set* — not a view you toggle filters on.
 ```
 
 ### Narrowing by id
@@ -248,42 +276,24 @@ traverse from each row.
 
 `get_ref` routes in order:
 
-1. **Foreign resolver** — checks for a [`with_foreign`](#cross-backend-references-with_foreign)
-   closure registered under that name.
-2. **Driver shell fallback** — delegates to the shell's `get_ref`, which resolves the `with_one` /
-   `with_many` relationship declared on the typed table.
+1. **Contained relations** — records embedded in a column of the parent row (an order's `lines`
+   array) resolve first, as an editable sub-Vista.
+2. **Foreign-key references** — the shell forwards to the `with_one` / `with_many` relationships
+   declared on the typed table, and re-wraps the narrowed target as a fresh Vista.
 
-So the same `get_ref("products", &row)` call works whether the relationship lives in the same
-database or crosses a backend boundary — Vista handles the routing transparently.
+Either way the result is another `Vista`, so traversal chains without ever leaving the universal
+surface.
 
-### Cross-backend references: `with_foreign`
+### Cross-backend references
 
-Same-persistence refs work because the driver's shell can translate them natively. But what if your
-categories live in PostgreSQL and your products in MongoDB? `with_foreign` registers a
-cross-persistence resolver:
-
-```rust
-categories.with_foreign(
-    "products",
-    ReferenceKind::HasMany,
-    |row| {
-        let mut p = mongo_factory.from_table(Product::table(mongo_db.clone()))?;
-        p.add_condition_eq("category_id", row["id"].clone())?;
-        Ok(p)
-    },
-);
-// get_ref("products", &row) now crosses from Postgres into MongoDB
-```
-
-The closure is **stored, not called** at registration. It fires once — lazily — when
-`get_ref("products", &row)` is invoked. This avoids recursion when two Vistas reference each other.
-
-The closure receives the parent row and returns a Vista from **any** backend. The consumer calling
-`get_ref` doesn't know or care that the join crossed a database boundary.
-
-```admonish tip title="Lazy resolution"
-Because `with_foreign` closures are lazy, you can register mutual references between two Vistas (A → B and B → A) without worrying about construction order. The closures capture factories by clone, not by reference to a Vista that doesn't exist yet.
-```
+What if your categories live in PostgreSQL and your products in MongoDB? That is deliberately
+*not* a Vista's job — a Vista honestly describes one backend, and there is no engine that could
+execute a join across two. Cross-persistence traversal lives one layer up, in
+`vantage-vista-factory`'s [`VistaCatalog`](vantage_vista_factory): register a loader per model
+name, declare the relation, and `catalog.traverse_from("category", "products", &row)` resolves the
+target in *its* backend and narrows it by values read from the parent row. The consumer still just
+receives a Vista — see [Config-Driven Vistas](../config-driven-vistas.md) for the catalog in
+action.
 
 ---
 
@@ -373,8 +383,8 @@ MongoDB Vista, an AWS Vista — anything the framework can produce.
 | `with_id`                                               | Convenience: narrow by primary key                      |
 | `add_search` / `add_order`                              | Quicksearch and sorting (replace semantics)             |
 | `fetch_page` / `fetch_next`                             | Offset and cursor pagination                            |
-| `get_ref`                                               | Traverse a same-persistence relationship                |
-| `with_foreign`                                          | Register a cross-persistence relationship resolver      |
+| `get_ref`                                               | Traverse a relationship from a parent row               |
+| [`VistaCatalog`](vantage_vista_factory)                 | Cross-persistence traversal, one layer above Vista      |
 
 ```admonish tip title="What's next"
 Vista gives you a universal read/write handle. But every call still hits the database — there's no caching, no reactivity, no way to push live updates to a UI.
