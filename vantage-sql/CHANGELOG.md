@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.8 — 2026-07-15
+
+- SQLite vista factory honours the column spec's `lazy: <rhai script>` form —
+  the script sees the record built so far as `row`, chaining in declaration
+  order (requires the `rhai` feature, which now also enables
+  `vantage-vista/rhai`).
+
 ## 0.6.7 — 2026-07-02
 
 - SQLite's shell is now `Clone` and implements `TableShell::clone_shell`, so a

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.9 — 2026-07-15
+
+- `vantage_vista::prelude` — one use-line for consumers: `Vista`,
+  `VistaFactory`, `TableShell`, `VistaCapabilities`, `SortDirection`,
+  `CborValue`.
+- Config-driven lazy columns: a column spec may carry `lazy: <rhai script>`;
+  the script sees the record built so far as `row` and its result becomes the
+  column value, chaining in declaration order. New rhai helpers
+  (`eval_lazy_expression`, `lazy_value_closure`) back the drivers' factory
+  implementations.
+
 ## 0.6.8 — 2026-07-04
 
 - `TableShell::default_error` no longer emits a `tracing::error!` for an
