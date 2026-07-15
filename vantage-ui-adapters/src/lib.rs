@@ -366,5 +366,8 @@ pub mod tauri_adapter;
 #[cfg(feature = "ratatui")]
 pub mod ratatui_adapter;
 
+#[cfg(feature = "ratatui")]
+pub mod ratatui_dio;
+
 #[cfg(feature = "cursive")]
 pub mod cursive_adapter;
