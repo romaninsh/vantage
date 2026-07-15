@@ -109,7 +109,9 @@ async fn sync(dio: &Dio) -> VantageResult<()> {
         let start = Instant::now();
         let (page, next) = dio.master().fetch_next(token).await?;
         let count = page.len();
-        dio.cache().insert_values(page.into_iter().collect()).await?;
+        dio.cache()
+            .insert_values(page.into_iter().collect())
+            .await?;
         println!("fetched {count} files in {:?}", start.elapsed());
         if next.is_none() {
             return Ok(());
