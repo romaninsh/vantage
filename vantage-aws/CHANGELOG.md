@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.2 — 2026-07-15
+
+- `AwsAccount::public(region)` — unsigned requests for anonymous access to
+  public resources (the `aws s3 ls --no-sign-request` equivalent): no
+  credentials to configure.
+- Auto-pagination cursor in the table-name grammar:
+  `{proto}/{array_key}@{request}={response}:{service}/{target}` (one name when
+  the request and response fields match) re-issues the request with the
+  response's continuation token folded back in until the listing is complete —
+  one `list()`, as many HTTP requests as it takes.
+- The S3 vista source defines its `fetch_next` cursor as the last key of the
+  previous page (`start-after`), so a listing resumes from any key you already
+  hold — including across process restarts.
+- `s3::get_object(account, bucket, key)` — raw object-body fetch through the
+  same (optionally unsigned) transport.
+- `vantage_aws::prelude` — one use-line for the working set, including the
+  `CborValueExt` record-value helpers.
+
 ## 0.6.1 — 2026-06-25
 
 - `AnyDynamoType` declares `null_when: AttributeValue::Null`, so it implements `InvariantValue`

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.5 — 2026-07-15
+
+- Track vantage-diorama 0.6.17: the `scenery_cli` example calls
+  `notify_dataset_changed()` (renamed from `invalidate_all()`). No API changes.
+
 ## 0.6.4 — 2026-07-05
 
 - Listing rows leave a FOLDER's `size` unfilled (absent) instead of reporting 0:

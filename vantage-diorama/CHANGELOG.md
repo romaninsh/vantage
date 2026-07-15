@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.6.17 — 2026-07-15
+
+**Central augment scheduler, notify_* rename, exclusive sceneries**
+
+- Detail fetches are now scheduled by the Dio, not by each scenery: every
+  consumer that wants rows hydrated (a scenery's viewport, a facade read)
+  registers a queue with the central augment scheduler. Queues drain
+  round-robin, so disjoint viewports interleave fairly; an id already in
+  flight is never fetched twice — the one fetch completes every queue waiting
+  on it. Dropping a scenery withdraws its queued ids; a fetch already in the
+  air completes and lands in the cache. `Lens::augment_workers(n)` sizes the
+  worker pool (default 1 — deterministic order).
+- Renamed: `Dio::invalidate_record` → `notify_record_changed`,
+  `Dio::invalidate_all` → `notify_dataset_changed`, and `DioEvent::Invalidated`
+  → `DioEvent::DatasetChanged`. The names now say what happened — values moved
+  vs. membership/order changed — instead of prescribing what a consumer should
+  invalidate. (`ChangeEvent::Invalidated`, the upstream push event, is
+  unchanged.)
+- New `DioEvent::RecordLoadFailed { id, error }`: a scheduled detail fetch
+  failed. Two-pass sceneries mark the row `RowStatus::LoadFailed` while its
+  cheap list columns stay visible; the row is retried the next time a
+  viewport reaches it.
+- `TableSceneryBuilder::exclusive()` — a scenery that never shares its
+  instance (identical opens normally dedup; an HTTP watch connection must own
+  its viewport). Still counted in the demand union, still released on drop.
+- Facade bounded reads (`get_value`, `fetch_window`) hydrate through the
+  scheduler — a facade read racing a scenery's viewport shares its fetches —
+  and honour a hand-rolled `on_load_detail` lens callback as well as
+  declarative augmentation.
+- `RecordScenery` aborts its event-bus task on drop (was leaking one task per
+  open until the Dio died).
+- `RedbCache` and `CacheBackend::open_table(name)` are exported: applications
+  can claim their own named key-value tables inside the Dio's redb file.
+- The shared `QueryIndex` dedups ids across sceneries racing the same page
+  and within a single incoming page.
+
 ## 0.6.16 — 2026-07-05
 
 **Augment reconciliation: no flap, gap rule, column demand, stale-while-refetch**
