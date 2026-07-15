@@ -129,6 +129,9 @@ impl TableSource for MockTableSource {
             && type_id != TypeId::of::<Option<f64>>()
             && type_id != TypeId::of::<Option<Decimal>>()
             && type_id != TypeId::of::<Option<bool>>()
+            // The dynamic carrier itself — what `to_any_column` stores, and
+            // what type-agnostic columns (lazy expressions) register as.
+            && type_id != TypeId::of::<crate::mocks::mock_type_system::AnyMockType>()
         {
             panic!(
                 "Type {:?} is not compatible with mock_type_system. Only String, i64, f64, Decimal, bool and their Optionals are supported.",

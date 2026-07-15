@@ -9,11 +9,17 @@ use vantage_types::{Entity, Record};
 
 use crate::{table::Table, traits::table_source::TableSource};
 
-// Implement ReadableValueSet by delegating to data source
+// Implement ReadableValueSet by delegating to data source, then applying
+// any lazy expressions to the returned records (see
+// `Table::with_lazy_expression`).
 #[async_trait]
 impl<T: TableSource, E: Entity<T::Value>> ReadableValueSet for Table<T, E> {
     async fn list_values(&self) -> Result<IndexMap<Self::Id, Record<Self::Value>>> {
-        self.data_source().list_table_values(self).await
+        let mut rows = self.data_source().list_table_values(self).await?;
+        for (_, record) in rows.iter_mut() {
+            self.apply_lazy_expressions(record).await?;
+        }
+        Ok(rows)
     }
 
     async fn get_value(
@@ -21,11 +27,19 @@ impl<T: TableSource, E: Entity<T::Value>> ReadableValueSet for Table<T, E> {
         id: impl Into<Self::Id> + Send,
     ) -> Result<Option<Record<Self::Value>>> {
         let id = id.into();
-        self.data_source().get_table_value(self, &id).await
+        let Some(mut record) = self.data_source().get_table_value(self, &id).await? else {
+            return Ok(None);
+        };
+        self.apply_lazy_expressions(&mut record).await?;
+        Ok(Some(record))
     }
 
     async fn get_some_value(&self) -> Result<Option<(Self::Id, Record<Self::Value>)>> {
-        self.data_source().get_table_some_value(self).await
+        let Some((id, mut record)) = self.data_source().get_table_some_value(self).await? else {
+            return Ok(None);
+        };
+        self.apply_lazy_expressions(&mut record).await?;
+        Ok(Some((id, record)))
     }
 
     fn stream_values(
@@ -41,6 +55,42 @@ mod tests {
     use crate::mocks::mock_table_source::MockTableSource;
     use serde_json::json;
     use vantage_types::EmptyEntity;
+
+    #[tokio::test]
+    async fn lazy_expressions_chain_in_declaration_order_and_register_columns() {
+        let mock_source = MockTableSource::new()
+            .with_data("t", vec![json!({"id": "1", "name": "Alice"})])
+            .await;
+        let table = Table::<MockTableSource, EmptyEntity>::new("t", mock_source)
+            .with_lazy_expression("greeting", |r| {
+                // Clone out of the borrowed record before going async.
+                let name = r
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                async move { Ok(json!(format!("hello {name}"))) }
+            })
+            .with_lazy_expression("shout", |r| {
+                // A later lazy expression sees the earlier one's column.
+                let greeting = r
+                    .get("greeting")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                async move { Ok(json!(greeting.to_uppercase())) }
+            });
+
+        assert!(table.columns().contains_key("greeting"));
+        assert!(table.columns().contains_key("shout"));
+
+        let rows = table.list_values().await.unwrap();
+        assert_eq!(rows["1"]["greeting"], json!("hello Alice"));
+        assert_eq!(rows["1"]["shout"], json!("HELLO ALICE"));
+
+        let row = table.get_value("1").await.unwrap().expect("row 1");
+        assert_eq!(row["shout"], json!("HELLO ALICE"));
+    }
 
     #[tokio::test]
     async fn test_readable_value_set_implementation() {
