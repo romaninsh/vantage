@@ -30,8 +30,7 @@ By the end of this page you'll be able to:
 2. Build SELECT queries with fields and conditions
 3. Execute queries and read results
 4. Convert results into `Vec<Record>` with typed field access
-5. Run aggregates (COUNT, SUM) with one method call
-6. Understand how Vantage keeps parameters separate from SQL (no injection risk)
+5. Understand how Vantage keeps parameters separate from SQL (no injection risk)
 ```
 
 ---
@@ -69,7 +68,7 @@ INSERT INTO product VALUES (2, 'Doughnut',          135, 1, 0);
 INSERT INTO product VALUES (3, 'Tart',              220, 2, 0);
 INSERT INTO product VALUES (4, 'Pie',               299, 2, 0);
 INSERT INTO product VALUES (5, 'Cookies',           199, 1, 0);
-INSERT INTO product VALUES (6, 'Discontinued Cake',  80, 1, 1);
+INSERT INTO product VALUES (6, 'A Stale Cake',       80, 1, 1);
 INSERT INTO product VALUES (7, 'Sourdough Loaf',    350, 3, 0);
 
 CREATE TABLE category (
@@ -243,7 +242,7 @@ synchronous struct manipulation. You always know when a database call happens be
 
 ## Adding conditions
 
-Our database has a soft-delete flag — `old_cake` has `is_deleted = 1`. Let's filter it out:
+Our database has a soft-delete flag — "A Stale Cake" has `is_deleted = 1`. Let's filter it out:
 
 ```rust
 let condition = sqlite_expr!("\"is_deleted\" = {}", false);
@@ -268,7 +267,7 @@ it's nested inside the select's own expression tree. At execution time the whole
 [flattened](vantage_expressions::ExpressionFlattener) into a single template + parameter list that
 the database driver can bind safely.
 
-Run it — you should see 5 rows, with "Discontinued Cake" filtered out.
+Run it — you should see 5 rows, with "A Stale Cake" filtered out.
 
 ```admonish info title="Types and persistence rendering"
 Notice that you passed `false` but the preview shows `0`. SQLite has no native boolean — Vantage's
@@ -285,7 +284,8 @@ See [Persistence-aligned Type System](../type-system.md) for details.
 Writing `\"is_deleted\"` in a raw expression works, but there's a cleaner way.
 [`Column<T>`](vantage_table::column::core::Column) creates a typed column reference, then chain an
 [`SqliteOperation`](vantage_sql::sqlite::operation::SqliteOperation) like `.eq()` to build the
-condition:
+condition. (`Column` lives in the `vantage-table` crate, but the `vantage_sql` prelude re-exports
+it — no new dependency needed.)
 
 ```rust
 let is_deleted = Column::<bool>::new("is_deleted");
@@ -301,30 +301,11 @@ directly to `.with_condition()`.
 
 ```admonish info title="Type safety and backend-specific operations"
 Each SQL backend has its own operation trait — `SqliteOperation`, `PostgresOperation`,
-`MysqlOperation` — imported automatically via the prelude. These traits are
-blanket-implemented for any `Expressive<T>` where `T: Into<AnySqliteType>`, so typed columns
-(`Column<i64>`, `Column<bool>`, etc.) all get `.eq()`, `.gt()`, and friends for free.
-
-The operation produces a `SqliteCondition` that wraps `Expression<AnySqliteType>`. Since the
-condition type itself implements `Expressive<AnySqliteType>`, you can **chain** operations
-across type boundaries:
-
-~~~rust
-let price = Column::<i64>::new("price");
-price.gt(10).eq(false)  // => (price > 10) = 0
-~~~
-
-Here `.gt(10)` returns a `SqliteCondition`, and `.eq(false)` works on it because `bool` is
-`Expressive<AnySqliteType>`. Try `price.gt(10).eq("foobar")` — surprisingly, this compiles
-too. That's by design: type safety is enforced on the **first** operation (the column level),
-but once you have a `SqliteCondition`, any `AnySqliteType`-compatible value is accepted.
-
-You can also compare columns of the same type: `price.eq(price.clone())` compiles. But
-`price.eq(is_deleted)` won't — `Column<bool>` isn't `Expressive<i64>`.
-
-The `.clone()` is needed because operations take ownership of their arguments — values are
-stored inside the `Expression` tree until the query is executed. If you plan to reuse a
-column in multiple conditions, clone it or create a fresh `Column::new()`.
+`MysqlOperation` — imported automatically via the prelude. Type safety is enforced at the
+column level; conditions themselves are expressions, so operations chain further
+(`price.gt(10).eq(false)` reads "price > 10 is false"). Operations take ownership of their
+arguments — `.clone()` a column you want to reuse. The
+[Expressive trait](../expressions.md#expressive-trait) reference covers the chaining mechanics.
 ```
 
 Multiple conditions combine with AND:
@@ -342,8 +323,9 @@ let select = SqliteSelect::new()
 ```
 
 ```admonish info title="Primitives for untyped access"
-`sqlite_ident()` is one of several **primitives** — reusable building blocks for SQL expressions.
-They handle quoting, escaping, and vendor-specific syntax. To use them:
+Typed columns aren't the only way to reference a column. **Primitives** are reusable building
+blocks for SQL expressions — they handle quoting, escaping, and vendor-specific syntax. The
+identifier primitive builds the same condition without declaring a type:
 
 ~~~rust
 use vantage_sql::sqlite::sqlite_ident as ident;
@@ -351,23 +333,16 @@ use vantage_sql::sqlite::sqlite_ident as ident;
 let condition = ident("is_deleted").eq(false);
 ~~~
 
-Each backend has its own typed identifier: `sqlite_ident()`, `pg_ident()`, `mysql_ident()`.
-These return a backend-pinned wrapper so `.eq()`, `.gt()`, etc. work without ambiguity.
-
-There is also a generic `ident()` that works when the backend type can be inferred from
-context — for example, inside `sqlite_expr!()` or when passed to a method that expects
-a specific `Expressive<AnySqliteType>`. Use the typed variant when calling operations
-directly.
-
 Primitives are not part of the prelude — import them when needed. Besides identifiers, you get
-`Fx` (function calls), `Case`, `Concat`, `Interval`, and more. See the
-[Primitives reference](../sql/primitives.md) for the full list.
-
-In Vantage, primitives, query builders, Column, Conditions and even native types
-like i64 and bool — all implement `Expressive<T>`, where T is your database's AnyType
-(for SQLite it's `AnySqliteType`, for MongoDB — `AnyMongoType`) — making them
-eligible to be parameters of expressions.
+`Fx` (function calls), `Case`, `Concat`, `Interval`, and more. The
+[Primitives reference](../sql/primitives.md) has the full list, including the typed
+(`sqlite_ident()`, `pg_ident()`) versus generic (`ident()`) identifier variants.
 ```
+
+Primitives, query builders, `Column`, conditions — even native values like `i64` and `bool` —
+all implement `Expressive<T>`, where `T` is your database's any-type (`AnySqliteType` for
+SQLite, `AnyMongoType` for MongoDB). That shared trait is what makes any of them usable as a
+parameter inside any expression.
 
 ---
 
@@ -474,25 +449,10 @@ persistence. One struct, all backends.
 
 ```admonish info title="Serde alternative"
 `#[entity]` converts each field directly through the persistence's type system — your struct
-fields just need to implement `SqliteType`. Alternatively, you can convert a
-`Record<AnySqliteType>` into `Record<serde_json::Value>` and use serde, but this may lose
-type information (e.g. `Decimal` precision, date types):
-
-~~~rust
-#[derive(serde::Deserialize)]
-struct Product {
-    name: String,
-    price: i64,
-}
-
-for rec in records {
-    let json_rec: Record<serde_json::Value> = rec.into_record();
-    let product = Product::from_record(json_rec)?;
-}
-~~~
-
-For simple types like `String` and `i64` it's fine, but `Decimal` values lose precision and
-dates become strings. Prefer `#[entity]` when your schema includes those types.
+fields just need to implement `SqliteType`. You could instead convert to
+`Record<serde_json::Value>` (as above) and derive `serde::Deserialize` — but that funnels
+values through JSON, with the same precision loss. Prefer `#[entity]` when your schema
+includes decimals or dates.
 ```
 
 ---
@@ -563,3 +523,22 @@ cargo run
 | `db.execute()`                                                       | Runs an expression, returns [`AnySqliteType`](vantage_sql::sqlite::AnySqliteType) | [`ExprDataSource`](vantage_expressions::ExprDataSource) |
 | [`Record<V>`](vantage_types::Record)                                 | Ordered map of column names to values — row-level access                          | `.try_get::<T>()`                                       |
 | `#[entity(SqliteType)]`                                              | Generates lossless record-to-struct conversion                                    | [`TryFromRecord`](vantage_types::TryFromRecord)         |
+
+```admonish tip title="Going deeper"
+This chapter used the smallest useful slice of the query layer. When you need more, the reference
+half of the book has it:
+
+- **[Expressions & Queries](../expressions.md)** — how expressions nest and flatten, building
+  lists with `from_vec` (multi-row INSERTs), and `defer()` — a parameter whose value is fetched
+  from a *different* database at execution time.
+- **[SQL Primitives](../sql/primitives.md)** — the building blocks we skipped: `or_()` / `and_()`
+  grouping, `fx!` function calls, `Case`, `ternary()`, `concat_!`, `Interval`, and portable
+  `date_format()`.
+- **[SQL: PostgreSQL, MySQL & SQLite](../sql.md)** — the other two SQL backends (same interface,
+  different dialects) and the [type-conversion tables](../sql/type-conversions.md) showing exactly
+  how chrono and decimal types round-trip per column type.
+- **[Three Paths — Query Building](../three-paths.md)** — worked examples of the heavy artillery:
+  JOINs, CTEs, window functions, `DISTINCT ON`.
+
+None of it is required for the next chapter — come back when a query calls for it.
+```

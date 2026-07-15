@@ -14,3 +14,4 @@ vantage-sql = { path = "../vantage-sql", features = ["sqlite", "postgres"] }
 vantage-table = { path = "../vantage-table" }
 vantage-types = { path = "../vantage-types" }
 vantage-vista = { path = "../vantage-vista" }
+vantage-vista-factory = { path = "../vantage-vista-factory" }

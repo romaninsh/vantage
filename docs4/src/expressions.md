@@ -197,3 +197,11 @@ Anything that implements `Expressive<T>` can be used inside an expression. This 
 
 You can implement `Expressive<T>` for your own types to make them composable into the expression
 system.
+
+Because conditions are themselves `Expressive`, operations **chain across type boundaries**:
+`price.gt(10)` returns a `SqliteCondition`, and `.eq(false)` works on it — reading
+"(price > 10) = 0". Type safety is enforced on the *first* operation, at the column level; once
+you hold a condition, any value compatible with the backend's any-type is accepted
+(`price.gt(10).eq("foobar")` compiles by design). Columns of the same type compare directly
+(`price.eq(price.clone())`), and operations take ownership of their arguments — clone a column
+you plan to reuse across conditions.

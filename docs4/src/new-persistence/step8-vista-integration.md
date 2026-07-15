@@ -370,45 +370,43 @@ two halves of that translation in the in-tree drivers.
 
 ### References delegate too
 
-`Vista::get_ref(relation)` is the eq-condition delegation one rung up: same principle, same
+`Vista::get_ref(relation, row)` is the eq-condition delegation one rung up: same principle, same
 Vista-stores-nothing rule. The call lands on `TableShell::get_ref`, which forwards through to the
-wrapped `Table`'s `with_one`/`with_many`/`with_foreign` machinery and re-wraps the result as a
-fresh `Vista`. Vista itself holds reference *metadata* (the YAML-friendly
+wrapped `Table`'s `with_one`/`with_many` machinery and re-wraps the result as a fresh `Vista`.
+Vista itself holds reference *metadata* (the YAML-friendly
 `Reference { name, target, kind, foreign_key }` struct) but no live traversal state.
 
 The default trait impl returns `Unimplemented`. This is the most-forgotten override on the trait,
 because the underlying `Table<T, E>` you handed to the factory already supports traversal —
-nothing rewires it into the Vista surface unless you write the glue:
+nothing rewires it into the Vista surface unless you write the glue (SQLite's shell, verbatim):
 
 ```rust
-fn get_ref(&self, relation: &str) -> Result<Vista> {
-    let any_table = self.table.get_ref(relation)?;       // typed Table's refs → AnyTable
-    Ok(vista_from_any_table(any_table))                  // re-wrap as Vista
+fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
+    let native_row = to_native_record(row);
+    let target = self.table.get_ref_from_row::<EmptyEntity>(relation, &native_row)?;
+    let factory = SqliteVistaFactory::new(self.table.data_source().clone());
+    factory.from_table(target)
 }
 ```
 
 Two notes worth dwelling on:
 
 - The result is *another* `Vista`, not the inner table. Consumers stay on the universal surface;
-  `client.get_ref("orders").get_ref("items")` works without falling out of Vista at any hop —
-  including across backends, when the resulting table came in via `with_foreign` from a different
-  driver entirely.
-- The re-wrap helper belongs in your driver crate as a free function (no factory state needed),
-  because every driver has the same Vista construction code already; exposing it from the shell
-  keeps the trait method short and avoids storing an `Arc<Factory>` back-pointer.
+  each hop fetches a row and traverses from it without falling out of Vista.
+- Traversal here is strictly **same-persistence** — a Vista describes one backend. Cross-backend
+  relations live one layer up in `vantage-vista-factory`'s
+  [`VistaCatalog`](vantage_vista_factory), which resolves the target by name in *its* driver and
+  narrows it with universal eq-conditions. Your shell doesn't need any code for that to work.
 
-#### Cross-backend references: `add_raw_condition`
+#### Native conditions from outside: `add_raw_condition`
 
-`Table::with_foreign` accepts a closure that builds an `AnyTable` from any backend, and the
-resulting reference is *foreign* — the source can't resolve it on its own, because the join
-condition has to fire in the *target* backend's vocabulary, not this one. The YAML factory layer
-constructs a deferred `Fn`-condition outside the value-set surface and pushes it through
-`TableShell::add_raw_condition`, which takes a `Box<dyn Any>` and downcasts to the driver's
-native condition type.
-
-REST is the in-tree driver showing how to wire this — and it's what lets a Postgres-backed
-`client` table reference a REST-backed `orders` endpoint inside one YAML inventory. If you're not
-planning to participate in cross-driver YAML schemas, leave the default in place; the
+Universal eq-conditions cover the CBOR vocabulary, but some callers hold a condition already in
+your backend's *native* type — the Rhai layer is the in-tree case: a `modify:` or traversal script
+builds a vendor `Expression` that no `(field, value)` pair can carry.
+`TableShell::add_raw_condition` is the hatch for exactly that: it receives a `Box<dyn Any>`,
+downcasts to the driver's native condition type, and pushes it onto the wrapped table — SurrealDB's
+shell is the worked example (it rejects anything that isn't an `Expression<AnySurrealType>`, with a
+clear message). If your driver has no scripted-condition story, leave the default in place; the
 advertise-what-you-mean rule applies here the same as everywhere else.
 
 #### What if my backend doesn't traverse?
