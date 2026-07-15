@@ -43,10 +43,16 @@ impl AwsVistaFactory {
 
     fn wrap(&self, table: Table<AwsAccount, EmptyEntity>, name: String) -> Vista {
         let metadata = metadata_from_table(&table);
+        // REST-XML (S3) listings can page one request at a time via
+        // `start-after` — see [`AwsTableShell::fetch_next`].
+        let can_fetch_next = crate::dispatch::parse_table_name(&name)
+            .map(|op| op.protocol == crate::dispatch::Protocol::RestXml)
+            .unwrap_or(false);
         let source = AwsTableShell::new(
             table,
             VistaCapabilities {
                 can_count: true,
+                can_fetch_next,
                 ..VistaCapabilities::default()
             },
             metadata,

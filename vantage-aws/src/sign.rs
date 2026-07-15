@@ -191,8 +191,14 @@ fn parse_url_path_query(url: &str) -> Result<(String, String)> {
     };
 
     // Canonicalise the query string: split into (key, value) pairs,
-    // percent-encode each side per RFC 3986 (unreserved alphabet),
-    // sort by encoded key+value, rejoin with `&`.
+    // NORMALIZE each side (percent-decode, then re-encode per the SigV4
+    // unreserved alphabet), sort by encoded key+value, rejoin with `&`.
+    //
+    // The decode step makes this idempotent for callers that hand us a
+    // wire-ready URL whose values are already percent-encoded (the
+    // REST-XML transport does): without it, an encoded `%2F` would be
+    // re-encoded to `%252F` and the signature would cover different
+    // bytes than the ones AWS canonicalises from the wire.
     let mut pairs: Vec<(String, String)> = Vec::new();
     if !query_raw.is_empty() {
         for kv in query_raw.split('&') {
@@ -200,7 +206,10 @@ fn parse_url_path_query(url: &str) -> Result<(String, String)> {
                 Some((k, v)) => (k, v),
                 None => (kv, ""),
             };
-            pairs.push((sigv4_encode(k), sigv4_encode(v)));
+            pairs.push((
+                sigv4_encode(&percent_decode(k)),
+                sigv4_encode(&percent_decode(v)),
+            ));
         }
         pairs.sort();
     }
@@ -211,6 +220,30 @@ fn parse_url_path_query(url: &str) -> Result<(String, String)> {
         .join("&");
 
     Ok((path, query))
+}
+
+/// Percent-decode a query component. Malformed escapes (`%` not
+/// followed by two hex digits) pass through literally, so raw
+/// (never-encoded) input round-trips unchanged.
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && let (Some(hi), Some(lo)) = (
+                bytes.get(i + 1).and_then(|b| (*b as char).to_digit(16)),
+                bytes.get(i + 2).and_then(|b| (*b as char).to_digit(16)),
+            )
+        {
+            out.push((hi * 16 + lo) as u8);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// Percent-encode per the SigV4 unreserved alphabet
@@ -256,5 +289,31 @@ mod tests {
         let (_p, q) =
             parse_url_path_query("https://example.com/?Param2=value2&Param1=value1").unwrap();
         assert_eq!(q, "Param1=value1&Param2=value2");
+    }
+
+    /// Regression: a wire-ready URL (values already percent-encoded, as the
+    /// REST-XML transport builds) and a raw URL must canonicalise to the SAME
+    /// query — no double-encoding of `%` into `%25`. This is the S3
+    /// `prefix=a/b/` case: the signature must cover `%2F`, not `%252F`.
+    #[test]
+    fn encoded_and_raw_query_values_canonicalise_identically() {
+        let (_p, enc) = parse_url_path_query(
+            "https://s3.us-east-1.amazonaws.com/bucket?list-type=2&prefix=csv%2Fby_year%2F",
+        )
+        .unwrap();
+        let (_p, raw) = parse_url_path_query(
+            "https://s3.us-east-1.amazonaws.com/bucket?list-type=2&prefix=csv/by_year/",
+        )
+        .unwrap();
+        assert_eq!(enc, raw);
+        assert_eq!(enc, "list-type=2&prefix=csv%2Fby_year%2F");
+    }
+
+    #[test]
+    fn percent_decode_passes_malformed_escapes_through() {
+        assert_eq!(percent_decode("a%2Fb"), "a/b");
+        assert_eq!(percent_decode("100%"), "100%");
+        assert_eq!(percent_decode("%GG"), "%GG");
+        assert_eq!(percent_decode("plain"), "plain");
     }
 }
