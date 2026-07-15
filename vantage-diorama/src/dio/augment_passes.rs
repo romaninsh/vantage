@@ -92,7 +92,13 @@ pub(crate) async fn hydrate_one(inner: &std::sync::Arc<super::DioInner>, id: &st
 
     // Merge the detail columns onto the cheap list-pass row so the list
     // columns survive hydration, then mark the row Complete.
-    let mut merged = inner.cache.get_value(id).await.ok().flatten().unwrap_or_default();
+    let mut merged = inner
+        .cache
+        .get_value(id)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
     for (k, v) in detail {
         merged.insert(k, v);
     }
@@ -118,7 +124,9 @@ pub(crate) async fn hydrate_gaps(
     dio: &Dio,
     rows: &mut indexmap::IndexMap<String, Record<CborValue>>,
 ) -> Result<()> {
-    if !dio.inner.has_dio_augment() {
+    // Two-pass covers both declarative augmentation and a hand-rolled
+    // `on_load_detail` lens callback — facade reads hydrate through either.
+    if !dio.inner.is_two_pass() {
         return Ok(());
     }
     let augmented = dio.inner.augmented_columns.read().unwrap().clone();

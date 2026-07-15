@@ -45,7 +45,24 @@ impl<T: TableSource, E: Entity<T::Value>> ReadableValueSet for Table<T, E> {
     fn stream_values(
         &self,
     ) -> Pin<Box<dyn Stream<Item = Result<(Self::Id, Record<Self::Value>)>> + Send + '_>> {
-        self.data_source().stream_table_values(self)
+        let mut source = self.data_source().stream_table_values(self);
+        if self.lazy_expressions.is_empty() {
+            return source;
+        }
+        // Streamed records carry the same computed columns as list/get reads.
+        Box::pin(async_stream::stream! {
+            while let Some(item) =
+                std::future::poll_fn(|cx| source.as_mut().poll_next(cx)).await
+            {
+                match item {
+                    Ok((id, mut record)) => match self.apply_lazy_expressions(&mut record).await {
+                        Ok(()) => yield Ok((id, record)),
+                        Err(e) => yield Err(e),
+                    },
+                    Err(e) => yield Err(e),
+                }
+            }
+        })
     }
 }
 
@@ -90,6 +107,15 @@ mod tests {
 
         let row = table.get_value("1").await.unwrap().expect("row 1");
         assert_eq!(row["shout"], json!("HELLO ALICE"));
+
+        // Streaming reads carry the same computed columns.
+        let mut stream = table.stream_values();
+        let mut streamed = Vec::new();
+        while let Some(item) = std::future::poll_fn(|cx| stream.as_mut().poll_next(cx)).await {
+            streamed.push(item.unwrap());
+        }
+        assert_eq!(streamed.len(), 1);
+        assert_eq!(streamed[0].1["shout"], json!("HELLO ALICE"));
     }
 
     #[tokio::test]

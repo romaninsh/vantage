@@ -15,9 +15,7 @@ use std::time::Duration;
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{
-    Augmentation, Detail, Dio, Fetch, Lens, MergeRule, RowStatus, Source, TableScenery,
-};
+use vantage_diorama::{Augmentation, Detail, Dio, Fetch, Lens, MergeRule, Source, TableScenery};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
 use vantage_vista::{Column, Vista, VistaMetadata};
@@ -54,7 +52,10 @@ fn master_vista(count: usize) -> Vista {
         let id = format!("r{i}");
         shell = shell.with_record(&id, record(&[("id", &id), ("modified", "t1")]));
     }
-    Vista::new("runs", Box::new(shell.with_metadata(meta(&["id", "modified"]))))
+    Vista::new(
+        "runs",
+        Box::new(shell.with_metadata(meta(&["id", "modified"]))),
+    )
 }
 
 /// Gated, logging detail shell. Every `get` records its id in dispatch order,

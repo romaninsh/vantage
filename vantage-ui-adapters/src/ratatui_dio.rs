@@ -140,8 +140,15 @@ impl SceneryTable {
             scenery.set_viewport(band_start..(band_start + HYDRATE_BAND).min(total));
 
             tokio::select! {
-                _ = ticks.recv() => {}
-                Some(event) = keys.recv() => {
+                // recv() returning None means the channel closed (generation
+                // forwarder or terminal input thread died) — exit cleanly
+                // instead of spinning on a closed channel or going deaf to
+                // input.
+                res = ticks.recv() => {
+                    if res.is_none() { break; }
+                }
+                res = keys.recv() => {
+                    let Some(event) = res else { break };
                     let Event::Key(key) = event else { continue };
                     if key.kind != KeyEventKind::Press {
                         continue;

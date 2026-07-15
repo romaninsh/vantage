@@ -55,8 +55,10 @@ async fn main() -> Result<()> {
                         }
                         ChangeEvent::Deleted { id } => {
                             println!("on_event: deleting {id} from cache");
-                            dio.cache().delete_value(&id).await?;
-                            dio.notify_record_changed(id);
+                            // delete-and-announce in one motion: emits
+                            // RecordRemoved, which drops the row from views
+                            // (RecordChanged would leave a stale slot).
+                            dio.removed(id).await?;
                         }
                         ChangeEvent::Invalidated => {
                             println!("on_event: full invalidation");
