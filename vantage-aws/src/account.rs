@@ -32,6 +32,9 @@ struct Inner {
     /// `None` walks until AWS stops returning a continuation token.
     /// See [`AwsAccount::with_max_pages`].
     max_pages: Option<usize>,
+    /// Skip SigV4 signing entirely — requests go out unauthenticated.
+    /// See [`AwsAccount::public`].
+    anonymous: bool,
     http: reqwest::Client,
 }
 
@@ -50,6 +53,26 @@ impl AwsAccount {
                 region: region.into(),
                 endpoint: env_endpoint(),
                 max_pages: None,
+                anonymous: false,
+                http: reqwest::Client::new(),
+            }),
+        }
+    }
+
+    /// Construct an unauthenticated account — no credentials, no SigV4.
+    /// Requests go out unsigned, the way `aws --no-sign-request` sends
+    /// them, so this works only against resources that allow anonymous
+    /// access (public S3 buckets such as the AWS Open Data registry).
+    pub fn public(region: impl Into<String>) -> Self {
+        Self {
+            inner: Arc::new(Inner {
+                access_key: String::new(),
+                secret_key: String::new(),
+                session_token: None,
+                region: region.into(),
+                endpoint: env_endpoint(),
+                max_pages: None,
+                anonymous: true,
                 http: reqwest::Client::new(),
             }),
         }
@@ -74,6 +97,7 @@ impl AwsAccount {
                 region,
                 endpoint: env_endpoint(),
                 max_pages: None,
+                anonymous: false,
                 http: reqwest::Client::new(),
             }),
         })
@@ -118,6 +142,7 @@ impl AwsAccount {
                     region,
                     endpoint: env_endpoint(),
                     max_pages: None,
+                    anonymous: false,
                     http: reqwest::Client::new(),
                 }),
             });
@@ -135,6 +160,7 @@ impl AwsAccount {
                 region,
                 endpoint: env_endpoint(),
                 max_pages: None,
+                anonymous: false,
                 http: reqwest::Client::new(),
             }),
         })
@@ -164,6 +190,7 @@ impl AwsAccount {
                 region: region.into(),
                 endpoint: inner.endpoint.clone(),
                 max_pages: inner.max_pages,
+                anonymous: inner.anonymous,
                 http: inner.http.clone(),
             }),
         }
@@ -184,6 +211,7 @@ impl AwsAccount {
                 region: inner.region.clone(),
                 endpoint: Some(endpoint.into()),
                 max_pages: inner.max_pages,
+                anonymous: inner.anonymous,
                 http: inner.http.clone(),
             }),
         }
@@ -209,6 +237,7 @@ impl AwsAccount {
                 region: inner.region.clone(),
                 endpoint: inner.endpoint.clone(),
                 max_pages: Some(n),
+                anonymous: inner.anonymous,
                 http: inner.http.clone(),
             }),
         }
@@ -216,6 +245,10 @@ impl AwsAccount {
 
     pub(crate) fn max_pages(&self) -> Option<usize> {
         self.inner.max_pages
+    }
+
+    pub(crate) fn is_anonymous(&self) -> bool {
+        self.inner.anonymous
     }
 
     pub(crate) fn region(&self) -> &str {

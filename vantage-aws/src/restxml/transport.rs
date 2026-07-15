@@ -166,29 +166,6 @@ pub(crate) async fn restxml_call(
     let host = format!("{service}.{region}.amazonaws.com");
     let url = build_url(&host, path, query);
 
-    let body_bytes: Vec<u8> = Vec::new();
-
-    let signing_headers = [
-        ("host".to_string(), host.clone()),
-        (
-            "x-amz-content-sha256".to_string(),
-            EMPTY_BODY_SHA256.to_string(),
-        ),
-    ];
-
-    let signed = sign_v4(
-        account.access_key(),
-        account.secret_key(),
-        account.session_token(),
-        region,
-        service,
-        method,
-        &url,
-        &signing_headers,
-        &body_bytes,
-        SystemTime::now(),
-    )?;
-
     let req_builder = match method {
         "GET" => account.http().get(&url),
         "HEAD" => account.http().head(&url),
@@ -199,10 +176,38 @@ pub(crate) async fn restxml_call(
             ));
         }
     };
-    let mut req = req_builder.header("x-amz-content-sha256", EMPTY_BODY_SHA256);
-    for h in &signed {
-        req = req.header(h.name.as_str(), h.value.as_str());
-    }
+
+    // Anonymous accounts ([`AwsAccount::public`]) send the request bare —
+    // no Authorization, no amz headers — matching `aws --no-sign-request`.
+    let req = if account.is_anonymous() {
+        req_builder
+    } else {
+        let body_bytes: Vec<u8> = Vec::new();
+        let signing_headers = [
+            ("host".to_string(), host.clone()),
+            (
+                "x-amz-content-sha256".to_string(),
+                EMPTY_BODY_SHA256.to_string(),
+            ),
+        ];
+        let signed = sign_v4(
+            account.access_key(),
+            account.secret_key(),
+            account.session_token(),
+            region,
+            service,
+            method,
+            &url,
+            &signing_headers,
+            &body_bytes,
+            SystemTime::now(),
+        )?;
+        let mut req = req_builder.header("x-amz-content-sha256", EMPTY_BODY_SHA256);
+        for h in &signed {
+            req = req.header(h.name.as_str(), h.value.as_str());
+        }
+        req
+    };
 
     let resp = req.send().await.map_err(|e| {
         error!(
@@ -306,6 +311,13 @@ fn build_url(host: &str, path: &str, query: &[(String, String)]) -> String {
         }
     }
     url
+}
+
+/// Encode a full URL path for the wire — same alphabet the signer
+/// uses. Exposed for non-listing calls (S3 `GetObject`) that build
+/// their path outside [`build_request`].
+pub(crate) fn encode_path(path: &str) -> String {
+    path_segment_encode(path)
 }
 
 /// Path-segment encoder: keep `/` literal (multi-segment placeholders

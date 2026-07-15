@@ -73,6 +73,30 @@ pub use condition::{AwsCondition, eq, in_};
 pub use operation::AwsOperation;
 pub use types::{AnyAwsType, Arn, AwsDateTime, typed_records, untyped_records};
 
+/// Common imports for working with vantage-aws.
+///
+/// ```
+/// use vantage_aws::prelude::*;
+/// ```
+pub mod prelude {
+    pub use std::process::Termination;
+    pub use vantage_core::{Context, Result as VantageResult, VantageError};
+    pub use vantage_dataset::{
+        InsertableDataSet, ReadableDataSet, ReadableValueSet, WritableDataSet, WritableValueSet,
+    };
+    pub use vantage_table::cbor_ext::CborValueExt;
+    pub use vantage_table::column::core::Column;
+    pub use vantage_table::pagination::Pagination;
+    pub use vantage_table::table::Table;
+    pub use vantage_table::traits::table_source::TableSource;
+    pub use vantage_types::{Entity, entity};
+
+    pub use crate::AwsAccount;
+    pub use crate::condition::{AwsCondition, eq, in_};
+    pub use crate::models::s3;
+    pub use crate::types::{AnyAwsType, AwsDateTime};
+}
+
 #[doc(hidden)]
 pub mod __test_support {
     //! Internal hooks for integration tests under `tests/`. Not part of
