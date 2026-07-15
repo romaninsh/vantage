@@ -313,6 +313,14 @@ impl LensBuilder {
         self
     }
 
+    /// Number of concurrent per-row augment detail fetches (the scheduler's
+    /// worker pool). Default 1 — deterministic round-robin order across the
+    /// views demanding rows; raise for parallel hydration.
+    pub fn augment_workers(mut self, workers: usize) -> Self {
+        self.defaults.augment_workers = workers;
+        self
+    }
+
     pub fn runtime(mut self, handle: Handle) -> Self {
         self.runtime = Some(handle);
         self

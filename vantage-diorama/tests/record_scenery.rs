@@ -132,7 +132,7 @@ async fn invalidate_other_id_does_not_bump() -> Result<()> {
     let mut gen_rx = scenery.subscribe();
     let initial = u64::from(*gen_rx.borrow_and_update());
 
-    dio.invalidate_record("b");
+    dio.notify_record_changed("b");
 
     // Give the bus a moment; no bump expected.
     tokio::time::sleep(Duration::from_millis(80)).await;
@@ -155,7 +155,7 @@ async fn invalidate_own_id_triggers_reload() -> Result<()> {
     dio.cache()
         .insert_value("a", &record("alpha-prime", 31))
         .await?;
-    dio.invalidate_record("a");
+    dio.notify_record_changed("a");
     wait_for_gen(&mut gen_rx, initial).await;
 
     let r = scenery.record().expect("record present");

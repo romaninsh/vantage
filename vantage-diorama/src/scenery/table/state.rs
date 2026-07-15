@@ -107,9 +107,11 @@ pub(crate) struct TableSceneryState {
     /// query in place — a bespoke, resorted scenery is no longer the shareable
     /// canonical one, so a later open under the old key must not get it back.
     pub(crate) registry_key: Mutex<Option<String>>,
-    /// Ids whose detail fetch is currently dispatched — guards against
-    /// re-hydrating the same row while a fetch is in flight.
-    pub(crate) detail_in_flight: Mutex<std::collections::HashSet<String>>,
+    /// This scenery's requester handle into the Dio's central augment
+    /// scheduler (two-pass only). The detail pass enqueues ids here; the
+    /// ticket's drop — with the last handle to this state — withdraws
+    /// anything still queued, so a closing view stops pulling.
+    pub(crate) augment_ticket: Option<crate::dio::augment_scheduler::AugmentTicket>,
     /// True while a list-page fetch is dispatched, so overlapping
     /// `request_load_more` calls don't double-page.
     pub(crate) list_in_flight: Mutex<bool>,
@@ -337,7 +339,15 @@ impl TableSceneryState {
         let Some(viewport) = self.last_viewport.read().unwrap().clone() else {
             return;
         };
-        let range = {
+        // Two-pass sceneries seed their whole index into the sparse map, so
+        // the contiguous-block expansion below would cover EVERYTHING — and
+        // a two-pass viewport drives per-row detail fetches, not a cheap
+        // block overwrite. Re-issue exactly what the consumer last declared
+        // visible; the reorder concern doesn't apply (order lives in the
+        // index, rebuilt by `refresh_index`).
+        let range = if self.two_pass {
+            viewport
+        } else {
             let rows = self.rows.read().unwrap();
             let mut start = viewport.start;
             while start > 0 && rows.contains_key(&(start - 1)) {

@@ -24,17 +24,17 @@ async fn change_event_updated(w: &mut DioramaWorld, id: String, title: String) {
     w.settle().await;
 }
 
-#[when(regex = r#"^dio\.invalidate_record is called for "([^"]+)"$"#)]
-async fn invalidate_record(w: &mut DioramaWorld, id: String) {
+#[when(regex = r#"^dio\.notify_record_changed is called for "([^"]+)"$"#)]
+async fn notify_record_changed(w: &mut DioramaWorld, id: String) {
     let dio = w.dio.as_ref().expect("dio not created");
-    dio.invalidate_record(id);
+    dio.notify_record_changed(id);
     w.settle().await;
 }
 
-#[when("dio.invalidate_all is called")]
-async fn invalidate_all(w: &mut DioramaWorld) {
+#[when("dio.notify_dataset_changed is called")]
+async fn notify_dataset_changed(w: &mut DioramaWorld) {
     let dio = w.dio.as_ref().expect("dio not created");
-    dio.invalidate_all();
+    dio.notify_dataset_changed();
     w.settle().await;
 }
 

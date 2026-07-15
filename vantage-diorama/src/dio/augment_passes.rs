@@ -56,6 +56,97 @@ pub(crate) async fn load_detail_with(
     Ok(row)
 }
 
+/// The canonical per-row hydration body, run by the augment scheduler's
+/// workers: re-check the cache (an id another requester already settled
+/// costs one read and zero fetches — this is what makes cross-view dedup
+/// total), fetch the detail, merge it onto the cheap list-pass row, persist
+/// as `Complete`, and broadcast `RecordChanged` so every open view updates
+/// its slot.
+pub(crate) async fn hydrate_one(inner: &std::sync::Arc<super::DioInner>, id: &str) -> Result<()> {
+    let augmented = inner.augmented_columns.read().unwrap().clone();
+    let gap_aware = inner.has_dio_augment() && !augmented.is_empty();
+    if let Some((row, CacheStatus::Complete)) =
+        inner.cache.get_value_with_status(id).await.ok().flatten()
+        && (!gap_aware || !has_augment_gap(&row, &augmented))
+    {
+        return Ok(());
+    }
+
+    let dio = Dio {
+        inner: inner.clone(),
+    };
+    let detail = if inner.has_dio_augment() {
+        let catalog = inner.augment_catalog.read().unwrap().clone();
+        let augmentations = inner.augmentations.read().unwrap().clone();
+        match (catalog, augmentations) {
+            (Some(catalog), Some(augmentations)) => {
+                load_detail_with(&dio, id.to_string(), &catalog, &augmentations).await?
+            }
+            _ => Default::default(),
+        }
+    } else if let Some(cb) = inner.lens.callbacks.on_load_detail.as_ref() {
+        cb(&dio, id.to_string()).await?
+    } else {
+        return Ok(());
+    };
+
+    // Merge the detail columns onto the cheap list-pass row so the list
+    // columns survive hydration, then mark the row Complete.
+    let mut merged = inner.cache.get_value(id).await.ok().flatten().unwrap_or_default();
+    for (k, v) in detail {
+        merged.insert(k, v);
+    }
+    inner
+        .cache
+        .insert_value_with_status(id, &merged, CacheStatus::Complete)
+        .await?;
+    let _ = inner
+        .event_bus
+        .send(crate::DioEvent::RecordChanged { id: id.to_string() });
+    Ok(())
+}
+
+/// Hydrate every row in `rows` that still has an augment gap, blocking until
+/// the scheduler has settled them all, then swap the enriched rows into
+/// `rows` from the cache. Before the sweep a single
+/// [`DioEvent::Hydrating`](crate::DioEvent::Hydrating) carries the pending
+/// count — a consumer blocking on a facade read can tell the user what's
+/// coming — and every hydrated row emits `RecordChanged` for progress. Going
+/// through the scheduler means a facade read racing a scenery's viewport
+/// shares its fetches instead of duplicating them.
+pub(crate) async fn hydrate_gaps(
+    dio: &Dio,
+    rows: &mut indexmap::IndexMap<String, Record<CborValue>>,
+) -> Result<()> {
+    if !dio.inner.has_dio_augment() {
+        return Ok(());
+    }
+    let augmented = dio.inner.augmented_columns.read().unwrap().clone();
+    let pending: Vec<String> = rows
+        .iter()
+        .filter(|(_, row)| has_augment_gap(row, &augmented))
+        .map(|(id, _)| id.clone())
+        .collect();
+    if pending.is_empty() {
+        return Ok(());
+    }
+    let _ = dio.inner.event_bus.send(crate::DioEvent::Hydrating {
+        pending: pending.len(),
+    });
+    dio.inner.ensure_augment_workers();
+    let ticket = dio.inner.augment_scheduler.ticket();
+    ticket
+        .enqueue_and_wait(pending.clone())
+        .await
+        .map_err(|e| vantage_core::error!("augment hydration failed", detail = e))?;
+    for id in pending {
+        if let Some(full) = dio.inner.cache.get_value(&id).await? {
+            rows.insert(id, full);
+        }
+    }
+    Ok(())
+}
+
 /// **Refresh pass**: re-run the cheap list pass and reconcile against the cache
 /// without discarding still-valid augmentation. Unchanged list fields keep their
 /// hydrated detail columns + `Complete` status; changed ones merge the fresh

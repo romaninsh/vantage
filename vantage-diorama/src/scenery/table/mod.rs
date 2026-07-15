@@ -6,7 +6,7 @@
 //!
 //! - **Cache seed** — `open()` reads whatever is already in the cache
 //!   (e.g. warmed from disk on restart) and assigns indices in
-//!   iteration order. Subsequent `Invalidated` / `Refreshing` events
+//!   iteration order. Subsequent `DatasetChanged` / `Refreshing` events
 //!   re-seed the same way.
 //! - **Chunk load** — `set_viewport` / `request_load_more` queue a
 //!   range request on a debounce channel; on commit, the lens-level

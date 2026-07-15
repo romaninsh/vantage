@@ -149,7 +149,7 @@ async fn where_eq_at_builder_time_filters_rows() -> Result<()> {
 }
 
 #[tokio::test]
-async fn external_invalidate_record_triggers_reload() -> Result<()> {
+async fn external_notify_record_changed_triggers_reload() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let lens = build_lens(tmp.path().join("cache.redb")).await?;
     let dio = lens.make_dio(seeded_master()).await?;
@@ -160,7 +160,7 @@ async fn external_invalidate_record_triggers_reload() -> Result<()> {
 
     // External system tells the Dio about a new row, then publishes a change.
     dio.cache().insert_value("d", &record("delta", 5)).await?;
-    dio.invalidate_record("d");
+    dio.notify_record_changed("d");
 
     wait_for_gen(&mut gen_rx, initial).await;
     assert_eq!(scenery.row_count(), 4);
@@ -203,7 +203,7 @@ async fn patched_updates_visible_rows() -> Result<()> {
 
 /// `dio.removed(id)` wipes the cache entry AND publishes the bus
 /// event so a subscribed TableScenery's reseed actually drops the
-/// row. The bare `invalidate_record(id)` path leaves the cache
+/// row. The bare `notify_record_changed(id)` path leaves the cache
 /// untouched — sceneries would reload the deleted row right back in.
 #[tokio::test]
 async fn removed_drops_row_from_visible_set() -> Result<()> {
