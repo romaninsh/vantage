@@ -53,24 +53,44 @@ impl QueryIndex {
         self.ids.read().unwrap().clone()
     }
 
+    /// Whether `id` is indexed for this query variant.
+    pub(crate) fn contains(&self, id: &str) -> bool {
+        self.ids.read().unwrap().iter().any(|i| i == id)
+    }
+
     /// Append one list page's worth of ids to the end of the index and record
-    /// that a page was fetched. `page_len` is the number of rows the source
-    /// returned; a page shorter than `requested_limit` (including empty) marks
-    /// the index [`complete`](Self::is_complete) — there is no next page.
+    /// that a page was fetched. A page with fewer FETCHED rows than
+    /// `requested_limit` (including empty) marks the index
+    /// [`complete`](Self::is_complete) — there is no next page.
+    ///
+    /// Ids the index already holds are skipped: the index is shared across
+    /// every scenery of a query variant, and two opening concurrently can
+    /// both fetch the same page (each scenery's list single-flight doesn't
+    /// span sceneries) — appending both copies would duplicate every row.
+    /// Returns `(base, appended)`: the position the new ids landed at and the
+    /// ids that were actually new, for seeding the caller's sparse map.
     pub(crate) fn append_page(
         &self,
-        ids: impl IntoIterator<Item = String>,
+        ids: Vec<String>,
         requested_limit: usize,
-    ) {
+    ) -> (usize, Vec<String>) {
+        let fetched = ids.len();
         let mut guard = self.ids.write().unwrap();
-        let before = guard.len();
-        guard.extend(ids);
-        let page_len = guard.len() - before;
+        let appended: Vec<String> = {
+            let existing: std::collections::HashSet<&str> =
+                guard.iter().map(|s| s.as_str()).collect();
+            ids.into_iter()
+                .filter(|id| !existing.contains(id.as_str()))
+                .collect()
+        };
+        let base = guard.len();
+        guard.extend(appended.iter().cloned());
         drop(guard);
         self.list_pages_fetched.fetch_add(1, Ordering::SeqCst);
-        if page_len < requested_limit {
+        if fetched < requested_limit {
             self.complete.store(true, Ordering::SeqCst);
         }
+        (base, appended)
     }
 
     /// True once a short/empty page has been seen — the list pass is done.
@@ -91,7 +111,9 @@ mod tests {
     fn append_page_grows_index_and_preserves_order() {
         let idx = QueryIndex::new();
         assert!(idx.is_empty());
-        idx.append_page(["a".into(), "b".into(), "c".into()], 3);
+        let (base, appended) = idx.append_page(vec!["a".into(), "b".into(), "c".into()], 3);
+        assert_eq!(base, 0);
+        assert_eq!(appended, vec!["a", "b", "c"]);
         assert_eq!(idx.len(), 3);
         assert_eq!(idx.id_at(0).as_deref(), Some("a"));
         assert_eq!(idx.id_at(2).as_deref(), Some("c"));
@@ -102,12 +124,12 @@ mod tests {
     fn full_page_does_not_complete_short_page_does() {
         let idx = QueryIndex::new();
         // A full page (page_len == requested_limit) leaves room for more.
-        idx.append_page(["a".into(), "b".into()], 2);
+        idx.append_page(vec!["a".into(), "b".into()], 2);
         assert!(!idx.is_complete(), "a full page must not end paging");
         assert_eq!(idx.list_pages_fetched(), 1);
 
         // A short page ends paging.
-        idx.append_page(["c".into()], 2);
+        idx.append_page(vec!["c".into()], 2);
         assert!(idx.is_complete(), "a short page must end paging");
         assert_eq!(idx.len(), 3);
         assert_eq!(idx.list_pages_fetched(), 2);
@@ -116,9 +138,23 @@ mod tests {
     #[test]
     fn empty_page_completes() {
         let idx = QueryIndex::new();
-        idx.append_page(Vec::<String>::new(), 50);
+        idx.append_page(Vec::new(), 50);
         assert!(idx.is_complete(), "an empty page must end paging");
         assert_eq!(idx.len(), 0);
         assert_eq!(idx.list_pages_fetched(), 1);
+    }
+
+    /// Two sceneries racing to page the shared index both fetch the same
+    /// window; the second append keeps only the novel ids.
+    #[test]
+    fn duplicate_ids_are_skipped_on_append() {
+        let idx = QueryIndex::new();
+        idx.append_page(vec!["a".into(), "b".into()], 2);
+        let (base, appended) = idx.append_page(vec!["a".into(), "b".into(), "c".into()], 3);
+        assert_eq!(base, 2, "novel ids land at the tail");
+        assert_eq!(appended, vec!["c"]);
+        assert_eq!(idx.ids(), vec!["a", "b", "c"], "no duplicates");
+        // Completeness still judges the FETCHED page: 3 of 3 → maybe more.
+        assert!(!idx.is_complete());
     }
 }

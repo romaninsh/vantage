@@ -129,7 +129,7 @@ async fn main() -> Result<()> {
     let last_sum = u64::from(*sum_rx.borrow_and_update());
     let last_avg = u64::from(*avg_rx.borrow_and_update());
     dio.cache().insert_value("c", &record("gamma", 30)).await?;
-    dio.invalidate_record("c");
+    dio.notify_record_changed("c");
     let _ = wait_for_bump(&mut count_rx, last_count).await;
     let _ = wait_for_bump(&mut sum_rx, last_sum).await;
     let _ = wait_for_bump(&mut avg_rx, last_avg).await;

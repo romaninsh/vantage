@@ -64,13 +64,13 @@ async fn event_log_snapshot(w: &mut DioramaWorld, name: String) {
     });
 }
 
-#[then("the event log contains no Invalidated")]
-async fn no_invalidated(w: &mut DioramaWorld) {
+#[then("the event log contains no DatasetChanged")]
+async fn no_dataset_changed(w: &mut DioramaWorld) {
     let events = w.snapshot_events().await;
-    let found = events.iter().any(|e| matches!(e, DioEvent::Invalidated));
+    let found = events.iter().any(|e| matches!(e, DioEvent::DatasetChanged));
     assert!(
         !found,
-        "a failed refresh must not publish Invalidated — it would reseed the grid \
+        "a failed refresh must not publish DatasetChanged — it would reseed the grid \
          from (stale) cache and drop newer rows; got: {events:?}"
     );
 }

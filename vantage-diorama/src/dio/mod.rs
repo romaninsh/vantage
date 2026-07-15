@@ -1,4 +1,5 @@
 pub(crate) mod augment_passes;
+pub(crate) mod augment_scheduler;
 pub mod diagnostics;
 pub mod event_bus;
 pub mod hot_tier;
@@ -112,6 +113,23 @@ pub(crate) struct DioInner {
     /// closing grid stop pulling — see `TableSceneryImpl`'s drop guard.
     pub(crate) table_sceneries:
         std::sync::Mutex<std::collections::HashMap<String, std::sync::Weak<dyn TableScenery>>>,
+    /// Central per-row detail-fetch scheduler: every consumer (scenery
+    /// viewport, blocking facade read) queues ids here and a small worker
+    /// pool drains them — one flight per row, round-robin across consumers.
+    /// Inert (no tasks) until [`ensure_augment_workers`](Self::ensure_augment_workers) runs.
+    pub(crate) augment_scheduler: Arc<augment_scheduler::AugmentScheduler>,
+    /// Worker tasks spawned by `ensure_augment_workers`, aborted when the
+    /// Dio drops — a parked worker holds only a `Weak` and would otherwise
+    /// idle forever.
+    pub(crate) augment_worker_handles: std::sync::Mutex<Vec<JoinHandle<()>>>,
+}
+
+impl Drop for DioInner {
+    fn drop(&mut self) {
+        for handle in self.augment_worker_handles.lock().unwrap().drain(..) {
+            handle.abort();
+        }
+    }
 }
 
 impl DioInner {
@@ -182,6 +200,28 @@ impl DioInner {
         match self.demanded_columns() {
             None => true,
             Some(demanded) => augmented.iter().any(|c| demanded.contains(c)),
+        }
+    }
+
+    /// Spawn the augment-scheduler worker pool if it isn't running yet.
+    /// Idempotent and cheap after the first call. Called wherever two-pass
+    /// hydration can first be needed — [`Dio::augment`], a two-pass scenery
+    /// open, a facade read about to block on hydration — so a Dio that never
+    /// hydrates never runs a worker task.
+    pub(crate) fn ensure_augment_workers(self: &Arc<Self>) {
+        let mut guard = self.augment_worker_handles.lock().unwrap();
+        if !guard.is_empty() {
+            return;
+        }
+        let workers = self.lens.defaults.augment_workers.max(1);
+        for _ in 0..workers {
+            let weak = Arc::downgrade(self);
+            let scheduler = self.augment_scheduler.clone();
+            guard.push(
+                self.lens
+                    .runtime
+                    .spawn(augment_scheduler::augment_worker_loop(weak, scheduler)),
+            );
         }
     }
 
@@ -259,8 +299,8 @@ impl Dio {
     /// from it — the "its VistaFactory reloaded, the dataset may be wholly
     /// different" path. The swap is **non-blanking**: open sceneries keep
     /// showing their current rows until the cache is refilled, then soft-reseed
-    /// in one atomic swap on the trailing `Invalidated`. Stale per-query indexes
-    /// are dropped so two-pass orders rebuild against the new data.
+    /// in one atomic swap on the trailing `DatasetChanged`. Stale per-query
+    /// indexes are dropped so two-pass orders rebuild against the new data.
     pub async fn reload(&self, new_master: Vista) -> Result<()> {
         *self.inner.master.write().unwrap() = Arc::new(new_master);
         self.inner.query_indexes.lock().unwrap().clear();
@@ -268,7 +308,7 @@ impl Dio {
         // Refill the cache from the new master. The cache is briefly empty
         // here — so we deliberately do NOT emit `Refreshing` (which an eager
         // scenery would reseed on, blanking to the empty cache). No scenery
-        // reseeds until the single `Invalidated` below, by which point the new
+        // reseeds until the single `DatasetChanged` below, by which point the new
         // data is staged; open sceneries keep their old rows visible until then
         // and swap in one atomic step, so nothing blanks.
         self.inner.cache.clear().await?;
@@ -277,7 +317,7 @@ impl Dio {
         } else if let Some(on_refresh) = self.inner.lens.callbacks.on_refresh.as_ref() {
             on_refresh(self).await?;
         }
-        let _ = self.inner.event_bus.send(DioEvent::Invalidated);
+        let _ = self.inner.event_bus.send(DioEvent::DatasetChanged);
         Ok(())
     }
 
@@ -366,6 +406,7 @@ impl Dio {
         *self.inner.augmented_columns.write().unwrap() = cols;
         *self.inner.augment_catalog.write().unwrap() = Some(catalog);
         *self.inner.augmentations.write().unwrap() = Some(Arc::new(augmentations));
+        self.inner.ensure_augment_workers();
         self.clone()
     }
 
@@ -484,7 +525,7 @@ impl Dio {
     /// `LiveStream`/`broadcast::Receiver`/channel into
     /// `dio.handle_event(evt).await`. The callback decides how to
     /// reconcile cache state and publish bus events (typically via
-    /// [`patched`](Self::patched) or [`invalidate_record`](Self::invalidate_record)).
+    /// [`patched`](Self::patched) or [`notify_record_changed`](Self::notify_record_changed)).
     pub async fn handle_event(&self, evt: ChangeEvent) -> Result<()> {
         if let Some(cb) = self.inner.lens.callbacks.on_event.as_ref() {
             cb(self, evt).await
@@ -496,17 +537,18 @@ impl Dio {
     /// Publish [`DioEvent::RecordChanged`] on the bus. Doesn't touch
     /// the cache — use [`patched`](Self::patched) when you also have
     /// the new record value.
-    pub fn invalidate_record(&self, id: impl Into<String>) {
+    pub fn notify_record_changed(&self, id: impl Into<String>) {
         let _ = self
             .inner
             .event_bus
             .send(DioEvent::RecordChanged { id: id.into() });
     }
 
-    /// Publish [`DioEvent::Invalidated`] on the bus. Sceneries respond
-    /// by re-reading their full state.
-    pub fn invalidate_all(&self) {
-        let _ = self.inner.event_bus.send(DioEvent::Invalidated);
+    /// Publish [`DioEvent::DatasetChanged`] on the bus — "the set of records
+    /// changed: rows appeared, vanished, or reordered." Sceneries respond by
+    /// re-deriving their index and re-reading their full state.
+    pub fn notify_dataset_changed(&self) {
+        let _ = self.inner.event_bus.send(DioEvent::DatasetChanged);
     }
 
     /// Write `record` to the cache under `id` and publish
@@ -525,7 +567,7 @@ impl Dio {
     /// their view. Without the cache wipe, the bus event still fires
     /// but Sceneries that reseed from the cache (e.g. TableScenery)
     /// re-include the row, leaving the grid out of sync with the
-    /// master until the next `refresh()` / `invalidate_all()`.
+    /// master until the next `refresh()` / `notify_dataset_changed()`.
     ///
     /// `Ok(())` if the row wasn't in the cache to begin with —
     /// idempotent.
@@ -551,7 +593,7 @@ impl Dio {
             Ok(())
         };
         if result.is_ok() {
-            let _ = self.inner.event_bus.send(DioEvent::Invalidated);
+            let _ = self.inner.event_bus.send(DioEvent::DatasetChanged);
         }
         result
     }

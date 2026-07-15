@@ -37,6 +37,13 @@ pub struct LensDefaults {
     /// Window over which rapid `set_viewport` calls are coalesced
     /// before a chunk fetch is fired.
     pub viewport_debounce: Duration,
+
+    /// Size of the per-Dio augment-scheduler worker pool — how many
+    /// per-row detail fetches may run concurrently. The default of 1
+    /// keeps fetch order deterministic (round-robin across the views
+    /// demanding rows); raise it when the detail source tolerates
+    /// parallel requests and hydration latency matters more than order.
+    pub augment_workers: usize,
 }
 
 impl Default for LensDefaults {
@@ -49,6 +56,7 @@ impl Default for LensDefaults {
             on_start_blocking: true,
             refresh_on_open: true,
             viewport_debounce: Duration::from_millis(50),
+            augment_workers: 1,
         }
     }
 }

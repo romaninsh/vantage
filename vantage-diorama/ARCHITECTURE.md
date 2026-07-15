@@ -197,8 +197,8 @@ impl Dio {
     pub async fn handle_event(&self, evt: ChangeEvent) -> Result<()> {
         // dispatches to lens.on_event if registered
     }
-    pub fn invalidate_record(&self, id: impl Into<String>) { /* publishes event */ }
-    pub fn invalidate_all(&self) { /* publishes event */ }
+    pub fn notify_record_changed(&self, id: impl Into<String>) { /* publishes event */ }
+    pub fn notify_dataset_changed(&self) { /* publishes event */ }
     pub async fn patched(&self, id: impl Into<String>, record: Record<CborValue>) -> Result<()> {
         // user-driven patch: writes to cache + publishes RecordChanged
     }
@@ -290,7 +290,7 @@ pub enum DioEvent {
     RecordChanged { id: String },
     RecordInserted { id: String },
     RecordRemoved { id: String },
-    Invalidated,                                          // wholesale: refresh just completed
+    DatasetChanged,                                       // wholesale: the set of records changed
     Refreshing,                                           // refresh started
     WriteFailed { id: Option<String>, error: String },
     ViewportChanged { range: Range<usize> },              // TableScenery: viewport committed
@@ -307,8 +307,8 @@ own output. See [Sceneries](#sceneries) below.
 Sceneries hold a `broadcast::Receiver<DioEvent>` and react. The Lens itself
 never directly touches Sceneries — all UI updates flow through the event bus.
 
-The user's callbacks can publish into this bus via `dio.invalidate_record(id)`,
-`dio.invalidate_all()`, `dio.patched(id, record)`. This is how `on_event`
+The user's callbacks can publish into this bus via `dio.notify_record_changed(id)`,
+`dio.notify_dataset_changed()`, `dio.patched(id, record)`. This is how `on_event`
 turns external live-stream events into Scenery updates.
 
 ## Sceneries
@@ -408,7 +408,7 @@ struct TableSceneryState {
 
 1. If `total_provider` is registered, fire it once and stash the result.
    This drives `row_count()` and `estimated_total()` for the scenery's
-   lifetime; future `Invalidated` events do *not* re-fire it.
+   lifetime; future `DatasetChanged` events do *not* re-fire it.
 2. Seed the sparse map from `cache.list_values()` in iteration order.
    Whatever's already in the cache (warm from disk on restart, or
    freshly written by an `on_start` callback) goes to indices
@@ -423,7 +423,7 @@ struct TableSceneryState {
 
 The reactor handles single-row and whole-set events but **ignores**
 its own viewport events. v2 starts simple: any `RecordChanged{id}` /
-`RecordInserted{id}` / `RecordRemoved{id}` / `Invalidated` /
+`RecordInserted{id}` / `RecordRemoved{id}` / `DatasetChanged` /
 `Refreshing` drops the sparse map and re-seeds from
 `cache.list_values()`. The targeted "update one slot by id" path is
 sketched in `TableSceneryState::update_by_id` and reserved for a
@@ -523,20 +523,20 @@ async fn refresh_loop(dio_inner: Arc<DioInner>, interval: Duration) {
         if let Some(cb) = &dio_inner.lens.callbacks.on_refresh {
             let _ = cb(&dio_handle).await;         // errors are logged, not propagated
         }
-        dio_inner.event_bus.send(DioEvent::Invalidated).ok();
+        dio_inner.event_bus.send(DioEvent::DatasetChanged).ok();
     }
 }
 ```
 
 Manual refresh via `dio.refresh().await` fires the same callback synchronously
-and publishes `Invalidated` on completion.
+and publishes `DatasetChanged` on completion.
 
 ## Cross-Dio interactions
 
 Dios are independent. A change in one Dio doesn't propagate to another. If you
 want cross-Dio invalidation (e.g., editing an `Order` invalidates a `Client`
 view that aggregates orders), the user's `on_write` callback explicitly calls
-`other_dio.invalidate_record(...)` or `other_dio.refresh()`.
+`other_dio.notify_record_changed(...)` or `other_dio.refresh()`.
 
 Future direction: a Lens-level event bus that all Dios under the lens publish
 into, with subscribers able to filter by Dio name. Not in v1.

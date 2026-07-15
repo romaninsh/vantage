@@ -56,6 +56,8 @@ impl Lens {
             augmentations: std::sync::RwLock::new(None),
             augment_catalog: std::sync::RwLock::new(None),
             augmented_columns: std::sync::RwLock::new(std::collections::HashSet::new()),
+            augment_scheduler: Arc::new(crate::dio::augment_scheduler::AugmentScheduler::new()),
+            augment_worker_handles: std::sync::Mutex::new(Vec::new()),
         });
         let dio = Dio { inner };
 
@@ -138,7 +140,7 @@ async fn refresh_loop(
         let dio = Dio { inner: strong };
         // Delegate to `dio.refresh()` so the auto ticker and the manual path
         // share one definition: it announces `Refreshing`, runs `on_refresh`,
-        // and publishes `Invalidated` *only* when the refresh succeeds. A failed
+        // and publishes `DatasetChanged` *only* when the refresh succeeds. A failed
         // tick (e.g. the source 503s) must not invalidate — that would reseed
         // sceneries from stale cache and drop rows added since the last good
         // refresh.

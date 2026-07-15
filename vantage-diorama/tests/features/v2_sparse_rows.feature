@@ -45,7 +45,7 @@ Feature: Sparse row access (v2)
     And a total_provider that returns the master count
     When the dio is created
     And the table scenery is opened
-    And dio.invalidate_record is called for the id at index 0
+    And dio.notify_record_changed is called for the id at index 0
     And I wait for 1 event
     Then the table scenery row at index 0 is Some
     And the table scenery row at index 99 is Some

@@ -23,6 +23,7 @@ pub struct TableSceneryBuilder {
     pub(crate) initial_range: Option<std::ops::Range<usize>>,
     pub(crate) titles_only: bool,
     pub(crate) demand: Option<Vec<String>>,
+    pub(crate) exclusive: bool,
 }
 
 impl TableSceneryBuilder {
@@ -36,6 +37,7 @@ impl TableSceneryBuilder {
             initial_range: None,
             titles_only: false,
             demand: None,
+            exclusive: false,
         }
     }
 
@@ -99,6 +101,19 @@ impl TableSceneryBuilder {
         self
     }
 
+    /// Opt out of dedup **sharing**: this view always gets its own scenery —
+    /// its own viewport, its own hydration queue — instead of joining a live
+    /// scenery for the same query. For per-consumer standing views (an HTTP
+    /// watch connection, one grid per client) sharing is wrong: every
+    /// consumer's `set_viewport` would fight over the one shared window, and
+    /// only the last writer's rows would hydrate. An exclusive scenery still
+    /// registers (under a unique key), so its demand joins the union and its
+    /// close still drains it; per-query indexes stay shared either way.
+    pub fn exclusive(mut self) -> Self {
+        self.exclusive = true;
+        self
+    }
+
     /// Open the Scenery — runs `total_provider` (if configured),
     /// seeds the sparse map from the cache, spawns the reactor and
     /// viewport-debounce tasks, optionally schedules a background
@@ -113,6 +128,7 @@ impl TableSceneryBuilder {
             initial_range,
             titles_only,
             demand,
+            exclusive,
         } = self;
 
         // Inherit the Dio's base query semantics. The Dio owns "what this table
@@ -154,7 +170,7 @@ impl TableSceneryBuilder {
                     sorted.join(",")
                 }
             };
-            format!(
+            let mut key = format!(
                 "table\u{1}{}\u{1}{}\u{1}{}\u{1}{}",
                 dio.master
                     .read()
@@ -163,7 +179,16 @@ impl TableSceneryBuilder {
                 search.as_deref().unwrap_or(""),
                 titles_only as u8,
                 demand_key,
-            )
+            );
+            // An exclusive view registers under a unique key: never shared,
+            // but still visible to the demand union and the diagnostics.
+            if exclusive {
+                use std::sync::atomic::{AtomicU64, Ordering};
+                static EXCLUSIVE_SEQ: AtomicU64 = AtomicU64::new(0);
+                key.push('\u{1}');
+                key.push_str(&EXCLUSIVE_SEQ.fetch_add(1, Ordering::Relaxed).to_string());
+            }
+            key
         };
         if let Some(existing) = dio.lookup_table_scenery(&key) {
             return Ok(existing);
@@ -206,6 +231,15 @@ impl TableSceneryBuilder {
             None
         };
 
+        // Two-pass hydration runs on the Dio's central augment scheduler:
+        // make sure its workers exist and register this view as a requester.
+        let augment_ticket = if two_pass {
+            dio.ensure_augment_workers();
+            Some(dio.augment_scheduler.ticket())
+        } else {
+            None
+        };
+
         let state = Arc::new(TableSceneryState {
             dio_weak: Arc::downgrade(&dio),
             conditions: RwLock::new(conditions),
@@ -231,7 +265,7 @@ impl TableSceneryBuilder {
             demand,
             index: RwLock::new(index),
             registry_key: Mutex::new(Some(key.clone())),
-            detail_in_flight: Mutex::new(std::collections::HashSet::new()),
+            augment_ticket,
             list_in_flight: Mutex::new(false),
         });
 

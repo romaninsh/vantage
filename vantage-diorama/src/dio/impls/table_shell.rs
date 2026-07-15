@@ -24,7 +24,15 @@ impl TableShell for DioShell {
         self.id_column.as_deref()
     }
 
-    // ---- Reads — cache-first --------------------------------------------------
+    // ---- Reads — cache-first; bounded reads hydrate ---------------------------
+    //
+    // When the Dio carries augmentations, a BOUNDED facade read
+    // (`get_value`, `fetch_window`) runs the detail pass for every
+    // returned row that still has an augment gap — the read blocks until
+    // its rows are fully hydrated (and cached, so the cost is paid once).
+    // `list_values` deliberately stays cheap: a listing is the fast spine,
+    // and hydrating an entire set through it means one innocent-looking
+    // call downloading everything. Ask for a window when you want details.
 
     async fn list_vista_values(
         &self,
@@ -38,7 +46,12 @@ impl TableShell for DioShell {
         _vista: &Vista,
         id: &String,
     ) -> Result<Option<Record<CborValue>>> {
-        self.dio.cache.get_value(id).await
+        let Some(row) = self.dio.cache.get_value(id).await? else {
+            return Ok(None);
+        };
+        let mut rows = IndexMap::from([(id.clone(), row)]);
+        self.hydrate(&mut rows).await?;
+        Ok(rows.shift_remove(id))
     }
 
     async fn get_vista_some_value(
@@ -46,11 +59,29 @@ impl TableShell for DioShell {
         _vista: &Vista,
     ) -> Result<Option<(String, Record<CborValue>)>> {
         let rows = self.dio.cache.list_values().await?;
-        Ok(rows.into_iter().next())
+        let Some((id, row)) = rows.into_iter().next() else {
+            return Ok(None);
+        };
+        let mut one = IndexMap::from([(id.clone(), row)]);
+        self.hydrate(&mut one).await?;
+        Ok(one.into_iter().next())
     }
 
     async fn get_vista_count(&self, _vista: &Vista) -> Result<i64> {
         self.dio.cache.count().await
+    }
+
+    async fn fetch_window(
+        &self,
+        _vista: &Vista,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<(String, Record<CborValue>)>> {
+        let all = self.dio.cache.list_values().await?;
+        let mut rows: IndexMap<String, Record<CborValue>> =
+            all.into_iter().skip(offset).take(limit).collect();
+        self.hydrate(&mut rows).await?;
+        Ok(rows.into_iter().collect())
     }
 
     // ---- Writes — enqueue + return synthesized record ------------------------
@@ -124,6 +155,19 @@ impl TableShell for DioShell {
 }
 
 impl DioShell {
+    /// Facade reads hydrate what they return: any row still missing its
+    /// augment columns runs the Dio's detail pass before the read
+    /// resolves. No augmentations configured → no-op.
+    async fn hydrate(&self, rows: &mut IndexMap<String, Record<CborValue>>) -> Result<()> {
+        if !self.dio.has_dio_augment() {
+            return Ok(());
+        }
+        let dio = crate::Dio {
+            inner: self.dio.clone(),
+        };
+        crate::dio::augment_passes::hydrate_gaps(&dio, rows).await
+    }
+
     async fn enqueue(&self, op: WriteOp) -> Result<()> {
         self.dio
             .write_queue

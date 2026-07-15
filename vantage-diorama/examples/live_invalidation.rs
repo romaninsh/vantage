@@ -56,12 +56,12 @@ async fn main() -> Result<()> {
                         ChangeEvent::Deleted { id } => {
                             println!("on_event: deleting {id} from cache");
                             dio.cache().delete_value(&id).await?;
-                            dio.invalidate_record(id);
+                            dio.notify_record_changed(id);
                         }
                         ChangeEvent::Invalidated => {
                             println!("on_event: full invalidation");
                             dio.cache().clear().await?;
-                            dio.invalidate_all();
+                            dio.notify_dataset_changed();
                         }
                         _ => {}
                     }
@@ -82,7 +82,7 @@ async fn main() -> Result<()> {
                 DioEvent::RecordChanged { id } => {
                     println!("  bus: RecordChanged {id}");
                 }
-                DioEvent::Invalidated => println!("  bus: Invalidated"),
+                DioEvent::DatasetChanged => println!("  bus: DatasetChanged"),
                 _ => {}
             }
         }

@@ -174,9 +174,11 @@ pub(crate) async fn run_list_page(state: Arc<TableSceneryState>) {
     let Some(index) = state.index() else {
         return;
     };
-    // The list pass comes from the Dio's own augmentation (preferred) or an
-    // explicitly-registered Lens `on_list_page` callback (hand-rolled two-pass).
-    // Bail if neither provides one.
+    // The list pass comes from an explicitly-registered Lens `on_list_page`
+    // callback when there is one — a deliberate override (e.g. serving list
+    // pages from an `on_start`-warmed cache instead of re-walking the
+    // master). Otherwise the Dio's own augmentation provides the generic
+    // capability-aware pass. Bail if neither is available.
     if !dio_inner.has_dio_augment() && dio_inner.lens.callbacks.on_list_page.is_none() {
         return;
     }
@@ -193,64 +195,12 @@ pub(crate) async fn run_list_page(state: Arc<TableSceneryState>) {
         *guard = true;
     }
 
-    let limit = state.page_size.max(1);
-    let offset = index.len();
-    let q = descriptor(&state, offset, limit);
-    let dio = Dio {
-        inner: dio_inner.clone(),
-    };
-    let result = if dio_inner.has_dio_augment() {
-        crate::dio::augment_passes::list_page(&dio, q).await
-    } else {
-        let cb = dio_inner.lens.callbacks.on_list_page.as_ref().unwrap();
-        cb(&dio, q).await
-    };
+    let result = list_page_into(&state, &dio_inner, &index).await;
 
     *state.list_in_flight.lock().unwrap() = false;
 
     match result {
-        Ok(rows) => {
-            // The gap rule: a dio-augmented row whose list values already
-            // fill every augment column (a file's own `size`) has nothing to
-            // fetch — stub it `Complete` so the detail pass skips it.
-            // Hand-rolled two-pass (`on_load_detail` lens callbacks) keeps
-            // the always-`Incomplete` stubbing: it declares no augment
-            // columns, so every row is the detail pass's business.
-            let augmented = if dio_inner.has_dio_augment() {
-                dio_inner.augmented_columns.read().unwrap().clone()
-            } else {
-                std::collections::HashSet::new()
-            };
-            let gap_aware = dio_inner.has_dio_augment() && !augmented.is_empty();
-            let mut new_ids = Vec::with_capacity(rows.len());
-            for (id, rec) in &rows {
-                // Never demote a record the detail pass already completed.
-                let already_complete = matches!(
-                    dio_inner
-                        .cache
-                        .get_value_with_status(id)
-                        .await
-                        .ok()
-                        .flatten(),
-                    Some((_, CacheStatus::Complete))
-                );
-                if !already_complete {
-                    let status = if gap_aware
-                        && !crate::dio::augment_passes::has_augment_gap(rec, &augmented)
-                    {
-                        CacheStatus::Complete
-                    } else {
-                        CacheStatus::Incomplete
-                    };
-                    let _ = dio_inner
-                        .cache
-                        .insert_value_with_status(id, rec, status)
-                        .await;
-                }
-                new_ids.push(id.clone());
-            }
-            let base = index.len();
-            index.append_page(new_ids.clone(), limit);
+        Ok((base, new_ids)) => {
             seed_rows(&state, &dio_inner, base, &new_ids).await;
             state.bump_generation();
             let _ = dio_inner.event_bus.send(DioEvent::RangeLoaded {
@@ -258,12 +208,96 @@ pub(crate) async fn run_list_page(state: Arc<TableSceneryState>) {
             });
         }
         Err(e) => {
+            let end = index.len();
             let _ = dio_inner.event_bus.send(DioEvent::LoadFailed {
-                range: offset..offset,
+                range: end..end,
                 error: e.to_string(),
             });
         }
     }
+}
+
+/// Fetch one list page at `index`'s tail, stub cache statuses for the
+/// returned rows, and append their ids to `index`. Returns where the novel
+/// ids landed and which they were (`(base, appended)` — the index skips ids
+/// it already holds). Shared by [`run_list_page`] (live index — the caller
+/// also seeds the sparse map) and [`refresh_index`] (detached index —
+/// swapped in whole once built). Touches neither `state.index` nor the
+/// sparse map.
+async fn list_page_into(
+    state: &Arc<TableSceneryState>,
+    dio_inner: &Arc<crate::dio::DioInner>,
+    index: &Arc<crate::dio::query_index::QueryIndex>,
+) -> vantage_core::Result<(usize, Vec<String>)> {
+    let limit = state.page_size.max(1);
+    let offset = index.len();
+    let q = descriptor(state, offset, limit);
+    let dio = Dio {
+        inner: dio_inner.clone(),
+    };
+    let rows = if let Some(cb) = dio_inner.lens.callbacks.on_list_page.as_ref() {
+        cb(&dio, q).await?
+    } else {
+        crate::dio::augment_passes::list_page(&dio, q).await?
+    };
+
+    // The gap rule: a dio-augmented row whose list values already
+    // fill every augment column (a file's own `size`) has nothing to
+    // fetch — stub it `Complete` so the detail pass skips it.
+    // Hand-rolled two-pass (`on_load_detail` lens callbacks) keeps
+    // the always-`Incomplete` stubbing: it declares no augment
+    // columns, so every row is the detail pass's business.
+    let augmented = if dio_inner.has_dio_augment() {
+        dio_inner.augmented_columns.read().unwrap().clone()
+    } else {
+        std::collections::HashSet::new()
+    };
+    let gap_aware = dio_inner.has_dio_augment() && !augmented.is_empty();
+    let mut new_ids = Vec::with_capacity(rows.len());
+    for (id, rec) in &rows {
+        match dio_inner
+            .cache
+            .get_value_with_status(id)
+            .await
+            .ok()
+            .flatten()
+        {
+            // Never demote a record the detail pass already completed.
+            Some((_, CacheStatus::Complete)) => {}
+            // Existing incomplete row: overlay the fresh list fields,
+            // but augment-owned values already merged into the cache
+            // win — a deliberately-demoted row (stale-while-refetch)
+            // must keep displaying its old value, not blank it.
+            Some((prev, CacheStatus::Incomplete)) => {
+                let mut merged = prev;
+                for (k, v) in rec {
+                    if augmented.contains(k) && merged.get(k).is_some() {
+                        continue;
+                    }
+                    merged.insert(k.clone(), v.clone());
+                }
+                let _ = dio_inner
+                    .cache
+                    .insert_value_with_status(id, &merged, CacheStatus::Incomplete)
+                    .await;
+            }
+            None => {
+                let status = if gap_aware
+                    && !crate::dio::augment_passes::has_augment_gap(rec, &augmented)
+                {
+                    CacheStatus::Complete
+                } else {
+                    CacheStatus::Incomplete
+                };
+                let _ = dio_inner
+                    .cache
+                    .insert_value_with_status(id, rec, status)
+                    .await;
+            }
+        }
+        new_ids.push(id.clone());
+    }
+    Ok(index.append_page(new_ids, limit))
 }
 
 /// Soft-refresh a two-pass scenery after its `(conditions, sort)` changed.
@@ -331,9 +365,8 @@ pub(crate) async fn resort(state: Arc<TableSceneryState>) {
     }
     *state.rows.write().unwrap() = rows;
     *state.id_to_idx.write().unwrap() = id_to_idx;
-    // Old in-flight detail claims belonged to the previous order — drop them so
-    // the restarted detail pass isn't blocked by stale single-flight guards.
-    state.detail_in_flight.lock().unwrap().clear();
+    // Ids enqueued for the previous order stay queued — the scheduler's
+    // settled recheck makes any that no longer need hydration free no-ops.
     state.bump_generation();
 
     // 4. Restart the detail pass for the last viewport so augmentation resumes
@@ -341,11 +374,160 @@ pub(crate) async fn resort(state: Arc<TableSceneryState>) {
     state.refresh_loaded_viewport();
 }
 
-/// Run the detail pass for `range`: for each indexed id in the range that is
-/// not already `Complete` (and not in flight), fetch its detail, merge it into
-/// the cache as `Complete`, and flip the row to `Fresh`. Skips ids already
-/// hydrated, so re-entering the same viewport — or switching to a variant whose
-/// rows are already `Fresh` — issues zero detail calls.
+/// Update one row's slot from its current cache state — the two-pass
+/// response to `RecordChanged`: the row's values moved (a facade read
+/// hydrated it, an event handler patched it) but the set's membership and
+/// order did not, so touching the index — let alone re-listing — would be
+/// wasted work. Ids the index doesn't hold are ignored; membership changes
+/// arrive as their own events and re-derive the index.
+pub(crate) async fn update_row_from_cache(state: &Arc<TableSceneryState>, id: &str) {
+    let Some(dio_inner) = state.dio_weak.upgrade() else {
+        return;
+    };
+    // A locally-refined view's membership follows the row's VALUES — a
+    // freshly-hydrated row may start (or stop) matching the filter — so the
+    // visible-map lookup below can't gate it: a matching row that wasn't
+    // visible yet has no slot. Re-derive the whole visible set whenever the
+    // id belongs to this view's candidate index at all.
+    if state.local_refine {
+        if !state.index().map(|ix| ix.contains(id)).unwrap_or(false) {
+            return;
+        }
+        reseed_filtered(state).await;
+        state.bump_generation();
+        return;
+    }
+    let Some(i) = state.id_to_idx.read().unwrap().get(id).copied() else {
+        return;
+    };
+    let Some((rec, status)) = dio_inner
+        .cache
+        .get_value_with_status(id)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return;
+    };
+    let enriched = match status {
+        CacheStatus::Complete => EnrichedRecord::fresh(rec),
+        CacheStatus::Incomplete => EnrichedRecord::incomplete(rec),
+    };
+    state.rows.write().unwrap().insert(i, Arc::new(enriched));
+    state.bump_generation();
+}
+
+/// Re-derive the scenery's index from a fresh list pass — the two-pass
+/// analogue of a cache reseed. The cache can gain or lose rows behind a
+/// built index (a background sync pump appending pages, the refresh pass
+/// reconciling against the master), and an index is append-only and possibly
+/// already complete — so a refresh REPLACES the shared index for this
+/// variant, re-lists, and rebuilds the sparse map in one swap (same shape as
+/// [`resort`]).
+pub(crate) async fn refresh_index(state: &Arc<TableSceneryState>) {
+    let Some(dio_inner) = state.dio_weak.upgrade() else {
+        return;
+    };
+
+    let conditions = state.conditions.read().unwrap().clone();
+    let sort = state.sort.read().unwrap().clone();
+    let vista_sort = sort.as_ref().map(|(col, dir)| {
+        let dir = match dir {
+            SortDir::Asc => SortDirection::Ascending,
+            SortDir::Desc => SortDirection::Descending,
+        };
+        (col.as_str(), dir)
+    });
+    let key = dio_inner
+        .master
+        .read()
+        .unwrap()
+        .index_key(&conditions, vista_sort);
+    if !dio_inner.has_dio_augment() && dio_inner.lens.callbacks.on_list_page.is_none() {
+        return;
+    }
+
+    // Single-flight, shared with the regular list pass. A concurrent page
+    // load wins; the next event retries the refresh.
+    {
+        let mut guard = state.list_in_flight.lock().unwrap();
+        if *guard {
+            return;
+        }
+        *guard = true;
+    }
+
+    // Build the replacement spine OFF TO THE SIDE: the scenery keeps serving
+    // its current index and map while pages land here, so a refresh never
+    // passes through an empty row set (which would blank the grid and reset
+    // a UI's cursor). Re-list as deep as the user had scrolled — at least as
+    // many rows as the old index held.
+    let target = state.index().map(|i| i.len()).unwrap_or(0);
+    let fresh = Arc::new(crate::dio::query_index::QueryIndex::new());
+    loop {
+        if let Err(e) = list_page_into(state, &dio_inner, &fresh).await {
+            *state.list_in_flight.lock().unwrap() = false;
+            let _ = dio_inner.event_bus.send(DioEvent::LoadFailed {
+                range: fresh.len()..fresh.len(),
+                error: e.to_string(),
+            });
+            return;
+        }
+        if fresh.is_complete() || fresh.len() >= target {
+            break;
+        }
+    }
+    *state.list_in_flight.lock().unwrap() = false;
+
+    // Read the rows for the new spine before touching anything visible; each
+    // shows `Fresh`/`Incomplete` per its cached status.
+    let ids = fresh.ids();
+    let mut rows = std::collections::BTreeMap::new();
+    let mut id_to_idx = std::collections::HashMap::new();
+    for (i, id) in ids.iter().enumerate() {
+        let Some((rec, status)) = dio_inner
+            .cache
+            .get_value_with_status(id)
+            .await
+            .ok()
+            .flatten()
+        else {
+            continue;
+        };
+        let enriched = match status {
+            CacheStatus::Complete => EnrichedRecord::fresh(rec),
+            CacheStatus::Incomplete => EnrichedRecord::incomplete(rec),
+        };
+        rows.insert(i, Arc::new(enriched));
+        id_to_idx.insert(id.clone(), i);
+    }
+
+    // Swap in one motion: shared registry, scenery index, sparse map.
+    dio_inner
+        .query_indexes
+        .lock()
+        .unwrap()
+        .insert(key, fresh.clone());
+    state.set_index(Some(fresh));
+    *state.rows.write().unwrap() = rows;
+    *state.id_to_idx.write().unwrap() = id_to_idx;
+    if state.local_refine {
+        reseed_filtered(state).await;
+    }
+    state.bump_generation();
+
+    // Resume hydration for what's on screen without waiting for a scroll.
+    state.refresh_loaded_viewport();
+}
+
+/// Run the detail pass for `range`: collect each indexed id in the range that
+/// is not already settled and hand the batch to the Dio's central augment
+/// scheduler. The fetches themselves run on the scheduler's workers — one
+/// flight per row across every open view, round-robin between views — and
+/// each hydrated row comes back as a `RecordChanged` broadcast, which the
+/// reactor turns into an in-place slot update ([`update_row_from_cache`]).
+/// Skips ids already hydrated, so re-entering the same viewport — or
+/// switching to a variant whose rows are already `Fresh` — enqueues nothing.
 pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: Range<usize>) {
     let Some(dio_inner) = state.dio_weak.upgrade() else {
         return;
@@ -379,112 +561,76 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
     } else {
         range
     };
-    let dio = Dio {
-        inner: dio_inner.clone(),
-    };
-    let mut changed = false;
+    // Gap-aware skip rule (enumerable dio augments only): a row is settled
+    // when it is `Complete` AND its augment columns are filled. Status alone
+    // can't be trusted to skip — a cache warmed by plain inserts (an
+    // `on_start` sync pump) stores rows as `Complete` without ever running
+    // the detail pass. The status still matters for the refresh pass's
+    // stale-while-refetch demotion: an `Incomplete` row with filled (stale)
+    // augment columns must refetch, which a column check alone would skip.
+    let augmented = dio_inner.augmented_columns.read().unwrap().clone();
+    let gap_aware = dio_inner.has_dio_augment() && !augmented.is_empty();
 
+    let mut pending = Vec::new();
+    let mut seeded = false;
     for idx in range {
         let Some(id) = index.id_at(idx) else {
             continue;
         };
-
-        let status = dio_inner
-            .cache
-            .get_value_with_status(&id)
-            .await
-            .ok()
-            .flatten()
-            .map(|(_, s)| s);
-        if status == Some(CacheStatus::Complete) {
-            continue;
-        }
-
-        // Claim the id; skip if another detail fetch already owns it.
+        let cached = dio_inner.cache.get_value_with_status(&id).await.ok().flatten();
+        // Materialize the slot if this scenery never seeded it: the index is
+        // shared per query, so a stretch of it may have been listed by a
+        // SIBLING scenery — whose run_list_page seeded only its own map.
+        // The viewport pass reads the cache row anyway; putting it on screen
+        // is free. (Locally-refined views own their map wholesale — skip.)
+        if !state.local_refine
+            && let Some((row, status)) = &cached
+            && !state.rows.read().unwrap().contains_key(&idx)
         {
-            let mut inflight = state.detail_in_flight.lock().unwrap();
-            if !inflight.insert(id.clone()) {
+            let enriched = match status {
+                CacheStatus::Complete => EnrichedRecord::fresh(row.clone()),
+                CacheStatus::Incomplete => EnrichedRecord::incomplete(row.clone()),
+            };
+            state.rows.write().unwrap().insert(idx, Arc::new(enriched));
+            state.id_to_idx.write().unwrap().insert(id.clone(), idx);
+            seeded = true;
+        }
+        if let Some((row, CacheStatus::Complete)) = &cached {
+            let no_gap = !gap_aware || !crate::dio::augment_passes::has_augment_gap(row, &augmented);
+            if no_gap {
                 continue;
             }
         }
-
-        let result = if dio_inner.has_dio_augment() {
-            let catalog = dio_inner.augment_catalog.read().unwrap().clone();
-            let augs = dio_inner.augmentations.read().unwrap().clone();
-            match (catalog, augs) {
-                (Some(catalog), Some(augs)) => {
-                    crate::dio::augment_passes::load_detail_with(&dio, id.clone(), &catalog, &augs)
-                        .await
-                }
-                _ => Ok(Default::default()),
-            }
-        } else {
-            let cb = dio_inner.lens.callbacks.on_load_detail.as_ref().unwrap();
-            cb(&dio, id.clone()).await
-        };
-        state.detail_in_flight.lock().unwrap().remove(&id);
-
-        match result {
-            Ok(detail) => {
-                // Merge the detail columns onto the cheap list-pass row so the
-                // list columns survive hydration, then mark the row Complete.
-                let mut merged = dio_inner
-                    .cache
-                    .get_value(&id)
-                    .await
-                    .ok()
-                    .flatten()
-                    .unwrap_or_default();
-                for (k, v) in detail {
-                    merged.insert(k, v);
-                }
-                let _ = dio_inner
-                    .cache
-                    .insert_value_with_status(&id, &merged, CacheStatus::Complete)
-                    .await;
-                // A locally-refined view re-derives its whole visible set after
-                // the loop (a freshly-hydrated row may now match/sort differently);
-                // a plain view updates the row's slot in place.
-                if !state.local_refine
-                    && let Some(i) = state.id_to_idx.read().unwrap().get(&id).copied()
-                {
-                    state
-                        .rows
-                        .write()
-                        .unwrap()
-                        .insert(i, Arc::new(EnrichedRecord::fresh(merged)));
-                }
-                changed = true;
-            }
-            Err(e) => {
-                if !state.local_refine
-                    && let Some(i) = state.id_to_idx.read().unwrap().get(&id).copied()
-                {
-                    let prev = state.rows.read().unwrap().get(&i).cloned();
-                    if let Some(prev) = prev {
-                        let failed = EnrichedRecord::detail_failed(
-                            prev.record.clone(),
-                            e.to_string(),
-                            prev.fetched_at,
-                        );
-                        state.rows.write().unwrap().insert(i, Arc::new(failed));
-                    }
-                }
-                let _ = dio_inner.event_bus.send(DioEvent::LoadFailed {
-                    range: idx..idx + 1,
-                    error: e.to_string(),
-                });
-                changed = true;
-            }
-        }
+        pending.push(id);
     }
+    if seeded {
+        state.bump_generation();
+    }
+    if pending.is_empty() {
+        return;
+    }
+    if let Some(ticket) = state.augment_ticket.as_ref() {
+        ticket.enqueue(pending);
+    }
+}
 
-    if changed {
-        // Re-derive the locally-refined visible set now that more rows are
-        // hydrated (newly-matching rows appear, no-longer-matching drop).
-        if state.local_refine {
-            reseed_filtered(&state).await;
-        }
+/// React to `DioEvent::RecordLoadFailed { id }`: a scheduled detail fetch for
+/// a row of ours failed. Stamp the slot so the failure is visible while the
+/// partial (list-pass) columns stay on screen. Locally-refined views skip the
+/// stamp — their visible set is re-derived wholesale, same as the old inline
+/// pass.
+pub(crate) fn mark_detail_failed(state: &Arc<TableSceneryState>, id: &str, error: &str) {
+    if state.local_refine {
+        return;
+    }
+    let Some(i) = state.id_to_idx.read().unwrap().get(id).copied() else {
+        return;
+    };
+    let prev = state.rows.read().unwrap().get(&i).cloned();
+    if let Some(prev) = prev {
+        let failed =
+            EnrichedRecord::detail_failed(prev.record.clone(), error.to_string(), prev.fetched_at);
+        state.rows.write().unwrap().insert(i, Arc::new(failed));
         state.bump_generation();
     }
 }

@@ -18,7 +18,7 @@ pub enum DioEvent {
     RecordRemoved {
         id: String,
     },
-    Invalidated,
+    DatasetChanged,
     Refreshing,
     WriteFailed {
         id: Option<String>,
@@ -63,5 +63,26 @@ pub enum DioEvent {
     LoadFailed {
         range: Range<usize>,
         error: String,
+    },
+
+    /// A scheduled per-row detail fetch failed. Distinct from
+    /// [`LoadFailed`](Self::LoadFailed) (a chunk/list page that couldn't
+    /// load, addressed by range): detail fetches run centrally in the
+    /// augment scheduler, which knows the row's id but not any scenery's
+    /// index for it — each two-pass scenery that holds the id stamps its
+    /// own slot [`LoadFailed`](crate::RowStatus::LoadFailed).
+    RecordLoadFailed {
+        id: String,
+        error: String,
+    },
+
+    /// A facade-Vista read found rows whose augment columns aren't
+    /// hydrated yet and is about to fetch them one by one. Fires once
+    /// per read, before the first fetch — the read blocks until
+    /// hydration completes, so this is the consumer's cue to tell the
+    /// user what's coming ("fetching 1122 files…"). Each hydrated row
+    /// then emits [`RecordChanged`](Self::RecordChanged) for progress.
+    Hydrating {
+        pending: usize,
     },
 }
