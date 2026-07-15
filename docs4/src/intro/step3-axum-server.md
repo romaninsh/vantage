@@ -48,8 +48,9 @@ cargo add axum
 Tokio and serde are already pulled in from earlier chapters. `axum` is the HTTP framework; it uses
 the existing `serde` to encode response bodies as JSON.
 
-**Entities.** Chapter 2's `Category` carried a computed `title` field; Chapter 2's `Product` carried
-a computed `category` field. Both were assembled from subqueries — great for display, but they don't
+**Entities.** Chapter 2's `Product` carried a computed `category` field, and the *Expressions
+compose* callout showed `Category` gaining a computed `title`. Both were assembled from
+subqueries — great for display, but they don't
 round-trip cleanly through a `POST` body because the JSON would try to write columns that don't
 exist. For a writable API we replace the computed fields with the plain FK column that sits under
 them. (See [`with_expression`](vantage_table::table::Table::with_expression) for the chapter-2
@@ -247,8 +248,7 @@ let narrowed = Category::table(db())
     .with_condition(...)           // now we can narrow it
 ~~~
 
-That clone is what chapter 2 meant by "cloning a table clones the definition, not the data":
-it's a copy of the shape (columns, conditions, relationships), and it's cheap.
+That's chapter 2's rule in action — cloning a table copies the definition, and it's cheap.
 ```
 
 ---
@@ -272,10 +272,9 @@ impl CategoryTable for Table<SqliteDB, Category> {
 }
 ```
 
-Chapter 2 introduced this pattern. The trait gives the relationship a typed, discoverable name —
-`ref_products()` — so call sites stop carrying the `"products"` string and the `::<Product>`
-turbofish around. The `.unwrap()` is safe here because we're the ones who registered `"products"`; a
-typo surfaces immediately at startup.
+Chapter 2 introduced this pattern — a typed, discoverable name instead of the string-and-turbofish
+call. The `.unwrap()` is safe here because we're the ones who registered `"products"`; a typo
+surfaces immediately at startup.
 
 Now the handler. Take the cached category table, narrow it to a single id, and traverse the
 relationship:
@@ -300,7 +299,7 @@ Three things going on:
 
 - **`Category::table(db()).clone()`** — we need an owned [`Table`](vantage_table::table::Table) to
   chain [`with_condition`](vantage_table::table::Table::with_condition) onto, so we clone the cached
-  definition. The clone copies the shape (columns, conditions, relationships), not any rows.
+  definition — the shape, not any rows.
 - **`with_condition(id_col.eq(id))`** — narrows the category table to one row: the one we're asking
   for. Nothing hits the database yet.
 - **`ref_products()`** — traverses the `with_many` relationship we registered on Category in
@@ -343,6 +342,10 @@ curl http://localhost:3001/categories/2/products
 
 Swap the id in the URL and the products narrow accordingly. The relationship was declared once, back
 in chapter 2, and we haven't touched it since — every new nested route reuses the same declaration.
+
+Notice `"category_id": "1"` in the responses — a string, even though the SQLite column is INTEGER.
+This is chapter 2's id convention at work: ids travel as strings through Vantage, so the entity
+declares `category_id: Option<String>` and the value converts on its way out of the database.
 
 ---
 
@@ -424,7 +427,7 @@ where
 }
 ```
 
-That's the whole thing. Five handler bodies, each tiny, all generic over the entity type. Mount
+Five handler bodies, each tiny, all generic over the entity type. Mount
 `crud(...)` under a prefix with `.nest(...)` and every route below it gets the full CRUD verb set
 for free.
 
@@ -587,7 +590,7 @@ fn not_found(id: &str) -> ApiError {
 type ApiResult<T> = Result<T, ApiError>;
 ```
 
-Three things earn their keep:
+Three pieces matter here:
 
 - **`IntoResponse`** makes `ApiError` returnable from a handler; axum calls `into_response()`
   to assemble status, headers, and body.
@@ -814,12 +817,12 @@ axum = "0.8.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-vantage-core = { path = "../vantage-core" }
-vantage-dataset = { path = "../vantage-dataset" }
-vantage-expressions = { path = "../vantage-expressions" }
-vantage-mongodb = { path = "../vantage-mongodb" }
-vantage-table = { path = "../vantage-table" }
-vantage-types = { path = "../vantage-types", features = ["serde"] }
+vantage-core = "0.6"
+vantage-dataset = "0.6"
+vantage-expressions = "0.6"
+vantage-mongodb = "0.6"
+vantage-table = "0.6"
+vantage-types = { version = "0.6", features = ["serde"] }
 ```
 
 ### Entities
@@ -938,7 +941,7 @@ where
     E: Entity<AnyMongoType> + Serialize + DeserializeOwned + Send + Sync + 'static,
 ```
 
-Connection, id handling, and error mapping are the only handler-level changes:
+Connection and id handling are the only handler-level changes:
 
 ```rust
 // db() returns MongoDB; connect with URL + database name.
@@ -950,14 +953,11 @@ let conn = MongoDB::connect("mongodb://localhost:27017", "learn3")
 // string is a 24-char hex, otherwise stays a plain String, via a `From<String>`
 // smart-parse in vantage-mongodb.
 let id: MongoId = params["id"].clone().into();
-
-// MongoDB's missing-doc error joins the 404 path.
-let status = if message.contains("no row found") || message.contains("Document not found") {
-    StatusCode::NOT_FOUND
-} else {
-    StatusCode::INTERNAL_SERVER_ERROR
-};
 ```
+
+The 404 path needs no change at all. Mongo's `get` returns `Result<Option<E>>` just like
+SQLite's, so the same `.ok_or_else(|| not_found(&id))?` maps a missing document to 404 — the
+promise of the *Why not match on the error message?* box holds across backends.
 
 ### Running it
 
@@ -1078,7 +1078,7 @@ Adding a new entity to this server is now *two* things:
 .nest("/widgets", crud(|db, _| Widget::table(db).clone()))
 ```
 
-That's the whole surface. `GET` list, `POST` create, `GET /{id}`, `PATCH /{id}`, `DELETE
+The full surface: `GET` list, `POST` create, `GET /{id}`, `PATCH /{id}`, `DELETE
 /{id}`, pagination via `?page=&per_page=`, full-text search via `?q=`, 404s for missing ids,
 400s for malformed bodies, structured JSON errors. No new handler code. No per-entity error
 mapping. No per-entity query-param struct. One line per entity.
@@ -1091,3 +1091,7 @@ principle from chapter 2's `Table` carried all the way to the wire, unbroken.
 The `vantage_axum` module is generic enough to lift directly into a larger codebase — it has
 no knowledge of `Category`, `Product`, or your particular routes. Drop it into your own
 binary, give it a `db()` accessor, write entity files, mount routes.
+
+One thing it deliberately doesn't do is authentication — every endpoint here is anonymous.
+Auth belongs to the HTTP layer: wrap the `Router` in your usual tower middleware; Vantage
+stays out of it.

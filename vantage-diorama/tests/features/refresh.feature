@@ -21,7 +21,7 @@ Feature: Refresh ticker
     Then on_refresh has been called 1 time
     And the event log matches snapshot "refresh_skip_first"
 
-  Scenario: manual dio.refresh fires on_refresh and publishes Invalidated
+  Scenario: manual dio.refresh fires on_refresh and publishes DatasetChanged
     Given a master with rows
       | id | title |
       | a  | one   |
@@ -35,10 +35,10 @@ Feature: Refresh ticker
 
   # A refresh tick whose on_refresh fails (e.g. the server 503s) must leave the
   # painted grid alone: it may announce Refreshing, but it must NOT publish
-  # Invalidated, because Invalidated makes sceneries reseed from cache — which
-  # reverts the grid to a stale snapshot and drops rows added since. This
+  # DatasetChanged, because DatasetChanged makes sceneries reseed from cache —
+  # which reverts the grid to a stale snapshot and drops rows added since. This
   # mirrors the guarantee manual `dio.refresh()` already gives.
-  Scenario: a failed auto-refresh does not publish Invalidated
+  Scenario: a failed auto-refresh does not publish DatasetChanged
     Given a master with rows
       | id | title |
       | a  | one   |
@@ -49,4 +49,4 @@ Feature: Refresh ticker
     And 61 seconds pass
     And I wait for 1 event
     Then on_refresh has been called 1 time
-    And the event log contains no Invalidated
+    And the event log contains no DatasetChanged

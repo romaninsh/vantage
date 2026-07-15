@@ -89,6 +89,14 @@ pub struct ColumnSpec<C = NoExtras> {
     pub flags: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub references: Option<ReferenceSugar>,
+    /// Rhai script for a *lazy* computed column. Runs in Rust on each
+    /// returned record — the record as built so far is exposed as `row`,
+    /// and the script's final expression becomes this column's value.
+    /// Lazy columns apply in declaration order, so a later one sees the
+    /// values earlier ones produced. Lowered via
+    /// `Table::add_lazy_expression`; never part of the backend query.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lazy: Option<String>,
     #[serde(flatten, default)]
     pub driver: C,
 }
@@ -99,6 +107,7 @@ impl<C: Default> ColumnSpec<C> {
             col_type: None,
             flags: Vec::new(),
             references: None,
+            lazy: None,
             driver: C::default(),
         }
     }
@@ -110,6 +119,11 @@ impl<C: Default> ColumnSpec<C> {
 
     pub fn with_flag(mut self, flag: impl Into<String>) -> Self {
         self.flags.push(flag.into());
+        self
+    }
+
+    pub fn with_lazy(mut self, script: impl Into<String>) -> Self {
+        self.lazy = Some(script.into());
         self
     }
 }

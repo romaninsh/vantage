@@ -1,6 +1,6 @@
 [package]
 name = "vantage-faker"
-version = "0.6.4"
+version = "0.6.5"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -18,7 +18,7 @@ readme = "README.md"
 vantage-core = { version = "0.6", path = "../vantage-core" }
 vantage-types = { version = "0.6", path = "../vantage-types", features = ["serde"] }
 vantage-vista = { version = "0.6", path = "../vantage-vista" }
-vantage-diorama = { version = "0.6.16", path = "../vantage-diorama" }
+vantage-diorama = { version = "0.6.17", path = "../vantage-diorama" }
 
 # Universal value carrier across the type-erased Vista / ChangeEvent boundary.
 ciborium = "0.2"

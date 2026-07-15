@@ -488,6 +488,45 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         self
     }
 
+    /// Add a lazy computed column using builder pattern.
+    ///
+    /// Unlike [`Self::with_expression`] (which lowers into the data source's
+    /// query), a lazy expression runs in Rust on the record the data source
+    /// *returned*. Callbacks apply in declaration order: each borrows the
+    /// record as built so far, and the value it returns is inserted under
+    /// `name` before the next callback runs — so one expensive fetch (a
+    /// file's contents) can feed several cheap derived columns declared
+    /// after it.
+    ///
+    /// The name is also registered as a column, so the computed field shows
+    /// up in the table's schema (and in Vista metadata derived from it).
+    /// Because the callback's future must not borrow the record, clone what
+    /// you need from `record` before going async.
+    ///
+    /// Lazy expressions run on the `list`/`get` read paths (both raw-record
+    /// and entity forms). They never participate in queries — no conditions,
+    /// ordering, or pushdown — they exist only on returned data.
+    pub fn with_lazy_expression<F, Fut>(mut self, name: &str, f: F) -> Self
+    where
+        F: Fn(&vantage_types::Record<T::Value>) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<T::Value>> + Send + 'static,
+    {
+        if !self.columns.contains_key(name) {
+            let column = self.data_source.create_column::<T::AnyType>(name);
+            self.add_column(column);
+        }
+        self.add_lazy_expression(name, Arc::new(move |record| Box::pin(f(record))));
+        self
+    }
+
+    /// Register a pre-boxed lazy expression callback under `name`, without
+    /// touching the column set. Factories lowering a spec (which declares
+    /// its columns separately) use this; application code should prefer
+    /// [`Self::with_lazy_expression`].
+    pub fn add_lazy_expression(&mut self, name: &str, f: crate::table::base::LazyExpressionFn<T>) {
+        self.lazy_expressions.insert(name.to_string(), f);
+    }
+
     fn lookup_ref(&self, relation: &str) -> Result<(&dyn Reference, String)> {
         let table_name = self.table_name().to_string();
         let refs = self.refs.as_ref().ok_or_else(|| {

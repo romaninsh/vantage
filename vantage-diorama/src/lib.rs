@@ -22,7 +22,7 @@ pub use lens::{
     Activity, ActivitySignal, CacheBackend, CacheStatus, CacheTable, ChunkRow, ChunkSink,
     DioCallback, DioEventCallback, DioLoadChunkCallback, DioTotalProviderCallback,
     DioWriteCallback, Lens, LensBuilder, LensCallbacks, LensDefaults, MemoryCache,
-    MemoryCacheTable,
+    MemoryCacheTable, RedbCache, RedbCacheTable,
 };
 pub use ops::{ChangeEvent, QueryDescriptor, WriteOp};
 pub use scenery::{
@@ -31,3 +31,19 @@ pub use scenery::{
     ValueSceneryBuilder, ValueStatus, boxed_custom_aggregate,
 };
 pub use vantage_vista::VistaCapabilities;
+
+/// Common imports for working with vantage-diorama.
+///
+/// ```
+/// use vantage_diorama::prelude::*;
+/// ```
+pub mod prelude {
+    pub use crate::augment::{Augmentation, Detail, Fetch, MergeRule, Source};
+    pub use crate::dio::{Dio, DioEvent, Generation};
+    pub use crate::lens::{CacheBackend, CacheStatus, CacheTable, Lens, RedbCache};
+    pub use crate::ops::{ChangeEvent, WriteOp};
+    pub use crate::scenery::{
+        EnrichedRecord, RecordScenery, RecordStatus, RowStatus, SortDir, TableScenery, ValueScenery,
+    };
+    pub use vantage_vista_factory::VistaCatalog;
+}

@@ -83,7 +83,7 @@ async fn main() -> Result<()> {
                         ChangeEvent::Deleted { id } => dio.removed(id).await?,
                         ChangeEvent::Invalidated => {
                             dio.cache().clear().await?;
-                            dio.invalidate_all();
+                            dio.notify_dataset_changed();
                         }
                         _ => {}
                     }

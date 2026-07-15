@@ -402,7 +402,7 @@ impl LargeCacheTable {
                     DioEvent::RecordChanged { .. }
                     | DioEvent::RecordInserted { .. }
                     | DioEvent::RecordRemoved { .. }
-                    | DioEvent::Invalidated => {
+                    | DioEvent::DatasetChanged => {
                         this.update(&mut cx, |this, cx| {
                             this.pages.write().clear();
                             this.refresh_total(&dio_for_task, cx);
@@ -588,7 +588,7 @@ fn on_row_double_clicked(&mut self, row: &EnrichedRecord, cx: &mut Context<Self>
 
 When the same record is mutated elsewhere — a write through `dio.vista()`,
 an `on_event` callback handling a SurrealDB LIVE message, an explicit
-`dio.invalidate_record(id)` — the bus publishes `RecordChanged { id }`,
+`dio.notify_record_changed(id)` — the bus publishes `RecordChanged { id }`,
 this Scenery's reload task notices, re-reads the cache for that id, bumps
 generation. The sheet re-renders.
 

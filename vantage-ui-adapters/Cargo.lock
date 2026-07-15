@@ -2156,6 +2156,7 @@ dependencies = [
  "tokio",
  "tokio-test",
  "vantage-dataset",
+ "vantage-diorama",
  "vantage-table",
  "vantage-types",
  "vantage-vista",
@@ -7769,6 +7770,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "redb"
+version = "2.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8eca1e9d98d5a7e9002d0013e18d5a9b000aee942eb134883a82f06ebffb6c01"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10819,7 +10829,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-core"
-version = "0.4.2"
+version = "0.6.1"
 dependencies = [
  "atty",
  "indexmap 2.14.0",
@@ -10831,7 +10841,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "0.5.0"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -10849,8 +10859,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "vantage-diorama"
+version = "0.6.17"
+dependencies = [
+ "async-trait",
+ "ciborium",
+ "indexmap 2.14.0",
+ "redb",
+ "serde",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "vantage-core",
+ "vantage-dataset",
+ "vantage-table",
+ "vantage-types",
+ "vantage-vista",
+ "vantage-vista-factory",
+]
+
+[[package]]
 name = "vantage-expressions"
-version = "0.4.5"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "serde",
@@ -10863,10 +10893,11 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.5.1"
+version = "0.6.10"
 dependencies = [
  "async-stream",
  "async-trait",
+ "chrono",
  "ciborium",
  "futures-core",
  "indexmap 2.14.0",
@@ -10876,6 +10907,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "uuid",
  "vantage-core",
  "vantage-dataset",
  "vantage-expressions",
@@ -10885,7 +10917,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.4.3"
+version = "0.6.2"
 dependencies = [
  "ciborium",
  "indexmap 2.14.0",
@@ -10898,7 +10930,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types-entity"
-version = "0.4.0"
+version = "0.6.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -10907,7 +10939,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.4.11"
+version = "0.6.9"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -10920,6 +10952,17 @@ dependencies = [
  "vantage-core",
  "vantage-dataset",
  "vantage-types",
+]
+
+[[package]]
+name = "vantage-vista-factory"
+version = "0.6.2"
+dependencies = [
+ "ciborium",
+ "indexmap 2.14.0",
+ "vantage-core",
+ "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]

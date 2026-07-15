@@ -2111,7 +2111,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2156,7 +2156,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-core"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "atty",
  "indexmap",
@@ -2200,10 +2200,11 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.6.6"
+version = "0.6.10"
 dependencies = [
  "async-stream",
  "async-trait",
+ "chrono",
  "ciborium",
  "futures-core",
  "indexmap",
@@ -2213,6 +2214,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "uuid",
  "vantage-core",
  "vantage-dataset",
  "vantage-expressions",
@@ -2244,7 +2246,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.3"
+version = "0.6.9"
 dependencies = [
  "async-stream",
  "async-trait",

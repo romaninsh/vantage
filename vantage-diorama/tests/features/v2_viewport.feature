@@ -5,7 +5,7 @@ Feature: Viewport-driven chunk loading (v2)
   the configured `on_load_chunk` closure to fetch the missing indices
   from the master. New rows land in the cache and a `RangeLoaded`
   event fans out, distinct from the existing whole-scenery
-  `Invalidated`. `request_load_more` is the explicit "page the next
+  `DatasetChanged`. `request_load_more` is the explicit "page the next
   chunk" trigger for callers that don't want to drive loading from
   scroll position alone.
 

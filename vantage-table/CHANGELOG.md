@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.10 — 2026-07-15
+
+- `Table::with_lazy_expression(name, callback)` — a column computed in Rust on
+  each *returned* record, after the source answers. Callbacks apply in
+  declaration order and each borrows the record as built so far, so one
+  expensive fetch (a file's contents) can feed several cheap derived columns
+  declared after it. Lazy columns register in the table's schema and apply on
+  the list/get/stream read paths (raw-record and entity forms), but are never
+  projected into source queries — no conditions, ordering, or pushdown.
+
 ## 0.6.9 — 2026-06-28
 
 - `Table::with_text_id()` marks the id column as a text/string key so SQL backends do not

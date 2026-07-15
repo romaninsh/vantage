@@ -2018,7 +2018,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.6.16"
+version = "0.6.17"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -2051,7 +2051,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-faker"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -2072,7 +2072,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.6.9"
+version = "0.6.10"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2118,7 +2118,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "async-stream",
  "async-trait",

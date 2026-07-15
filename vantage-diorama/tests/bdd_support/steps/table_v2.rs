@@ -170,8 +170,8 @@ async fn call_load_more(w: &mut DioramaWorld) {
     w.settle().await;
 }
 
-#[when(regex = r"^dio\.invalidate_record is called for the id at index (\d+)$")]
-async fn invalidate_at_index(w: &mut DioramaWorld, idx: usize) {
+#[when(regex = r"^dio\.notify_record_changed is called for the id at index (\d+)$")]
+async fn notify_record_changed_at_index(w: &mut DioramaWorld, idx: usize) {
     let scenery = w.scenery.as_ref().expect("scenery not opened");
     let row = scenery
         .row(idx)
@@ -189,7 +189,7 @@ async fn invalidate_at_index(w: &mut DioramaWorld, idx: usize) {
             row.record.get("title") == rec.get("title")
         })
         .unwrap_or_else(|| panic!("cache has no row matching index {idx}"));
-    dio.invalidate_record(id.clone());
+    dio.notify_record_changed(id.clone());
     w.settle().await;
 }
 

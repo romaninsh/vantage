@@ -94,6 +94,50 @@ impl TableShell for AwsTableShell {
         Ok(self.table.list_values().await?.len() as i64)
     }
 
+    /// One page per call, S3-style. The token is the **last key of the
+    /// previous page**, sent as `start-after` — S3 lists keys in
+    /// lexicographic order and accepts any key as a starting point, so
+    /// unlike an opaque continuation token this cursor survives process
+    /// restarts and can be reconstructed from already-fetched data.
+    /// `IsTruncated` on the response decides whether a next page exists.
+    async fn fetch_next(
+        &self,
+        _vista: &Vista,
+        token: Option<CborValue>,
+    ) -> Result<(Vec<(String, Record<CborValue>)>, Option<CborValue>)> {
+        if !self.capabilities.can_fetch_next {
+            return Err(self.default_error("fetch_next", "can_fetch_next"));
+        }
+        let account = self.table.data_source();
+        let name = self.table.table_name();
+        let mut conditions: Vec<AwsCondition> = self.table.conditions().cloned().collect();
+        if let Some(after) = token {
+            conditions.push(AwsCondition::eq("start-after".to_string(), after));
+        }
+        let resp = account.execute_rpc_page(name, &conditions).await?;
+        let truncated = match resp.get("IsTruncated") {
+            Some(serde_json::Value::String(s)) => s == "true",
+            Some(serde_json::Value::Bool(b)) => *b,
+            _ => false,
+        };
+        let rows = account.parse_records(name, resp, self.metadata.id_column.as_deref())?;
+        let next = truncated
+            .then(|| rows.keys().last().map(|k| CborValue::Text(k.clone())))
+            .flatten();
+        Ok((rows.into_iter().collect(), next))
+    }
+
+    /// Cheap: the wrapped table's query state is small and the account is
+    /// `Arc`-shared. Lets consumers narrow a private copy per use — e.g. an
+    /// augmentation's `Detail::Fixed` rebuilding its detail vista per row.
+    fn clone_shell(&self) -> Option<Box<dyn TableShell>> {
+        Some(Box::new(AwsTableShell {
+            table: self.table.clone(),
+            capabilities: self.capabilities.clone(),
+            metadata: self.metadata.clone(),
+        }))
+    }
+
     fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
         // `AwsCondition::Eq` carries the value as `CborValue` directly;
         // the wire-format builders (`build_json1_body`, `build_query_form`)
