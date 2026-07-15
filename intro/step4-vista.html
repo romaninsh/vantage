@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-0df4a5b3.js";
+            window.path_to_searchindex_js = "../searchindex-5e583a43.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-298e3dc9.js"></script>
+        <script src="../toc-ef6241bc.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -184,7 +184,31 @@ already showed the limitation — it could only exist because we erased the enti
 data grid that works with whatever you point it at — none of these know your <code>Product</code> struct. They
 need a handle that carries its own schema, speaks a single value type, and works regardless of which
 database sits underneath.</p>
-<p>That handle is <a href="https://docs.rs/vantage_vista/0.6.3/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a>.</p>
+<p>That handle is <a href="https://docs.rs/vantage_vista/0.6.9/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a>.</p>
+<div id="admonition-why-vista" class="admonition admonish-question" role="note" aria-labelledby="admonition-why-vista-title">
+<div class="admonition-title">
+<div id="admonition-why-vista-title">
+<p>Why ‘Vista’?</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-why-vista"></a>
+</div>
+
+<div>
+<p>Vantage is named for the view. Stand at a vantage point — the peak above your infrastructure — and
+the landscape arranges itself below: every database, API, and file your organisation keeps,
+observable from one place. The framework’s names stay true to that scene, borrowing from landscape
+and photography rather than reusing overloaded database words.</p>
+<p>A <strong>table</strong> isn’t one of ours — it’s what you already have. Vantage describes your tables; it
+doesn’t reinvent them. A <strong>vista</strong> is the first thing the framework adds: in the landscape sense, a
+wide view opening up from where you stand. And that is precisely what a <code>Vista</code> is here — one data
+source seen in full, its schema, capabilities, and records composed into a single view, no matter
+what produces it. Further along the trail wait a <strong>Lens</strong>, a <strong>Dio</strong>rama, and <strong>Scenery</strong> — each
+another way of looking, never another thing to store.</p>
+</div>
+
+</div>
+
 <div id="admonition-goals-for-this-chapter" class="admonition admonish-example" role="note" aria-labelledby="admonition-goals-for-this-chapter-title">
 <div class="admonition-title">
 <div id="admonition-goals-for-this-chapter-title">
@@ -217,9 +241,12 @@ Vista itself: columns (with types and flags), references, id column, and a set o
 <pre><code class="language-text">Table&lt;SqliteDB, Product&gt;   — typed entity, typed backend, compile-time safe
 Vista                      — fully erased: schema-bearing, CborValue, no generics
 </code></pre>
-<p>Vista trades away compile-time knowledge for runtime flexibility. Everything is a string key and a
-CBOR value — but it carries enough metadata to build a data grid, a form, a CLI, or a REST endpoint
-without knowing anything about the underlying database.</p>
+<p>Vista trades away compile-time knowledge for runtime flexibility: everything is a string key and a
+CBOR value, and the schema travels with the handle rather than with your types. Wrapping a typed
+<code>Table</code> — this chapter’s path — is also not the only way to get one: every driver ships a
+<code>VistaFactory</code> that can materialize a Vista from a declarative YAML spec, with Rhai scripts for the
+expressions YAML can’t state. That path has its own guide —
+<a href="../config-driven-vistas.html">Config-Driven Vistas</a> — and this chapter stays on the typed one.</p>
 <div id="admonition-cbor-not-json" class="admonition admonish-info" role="note" aria-labelledby="admonition-cbor-not-json-title">
 <div class="admonition-title">
 <div id="admonition-cbor-not-json-title">
@@ -281,7 +308,7 @@ for (name, kind) in vista.list_references() {
 }
 // ref: products (HasMany)
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_vista/0.6.3/vantage_vista/column/struct.Column.html"><code>Column</code></a> carries an <code>original_type</code> string (preserved from the typed column
+<p><a href="https://docs.rs/vantage_vista/0.6.9/vantage_vista/column/struct.Column.html"><code>Column</code></a> carries an <code>original_type</code> string (preserved from the typed column
 definition) and a set of flags. The standard flag vocabulary:</p>
 <div class="table-wrapper">
 <table>
@@ -301,8 +328,9 @@ definition) and a set of flags. The standard flag vocabulary:</p>
 <p>Flags are open — drivers and consumers can add their own.</p>
 <hr>
 <h2 id="adding-conditions"><a class="header" href="#adding-conditions">Adding conditions</a></h2>
-<p>Vista doesn’t carry its own condition type. Instead, it delegates to the wrapped driver, which
-translates the value into whatever the backend speaks:</p>
+<p>Vista doesn’t carry its own condition type. Instead, it delegates to a
+<a href="https://docs.rs/vantage_vista/0.6.9/vantage_vista/source/trait.TableShell.html"><code>TableShell</code></a> — the per-driver executor every Vista wraps, and the
+piece each factory actually builds — which translates the value into whatever the backend speaks:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>let mut v = vista.clone();
@@ -324,7 +352,22 @@ pushes it onto the wrapped table.</p>
 </div>
 
 <div>
-<p>Unlike <code>Table</code>’s <code>.with_condition()</code> (which consumes and returns a new table), Vista’s <code>add_condition_eq</code> mutates in place. Vista is a runtime handle — there’s no builder pattern to preserve. Clone before narrowing if you need the unfiltered version later.</p>
+<p>Unlike <code>Table</code>’s <code>.with_condition()</code> (which consumes and returns a new table), Vista’s
+<code>add_condition_eq</code> mutates in place. Vista is a runtime handle — there’s no builder pattern to
+preserve. The mutability rules:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Operation</th><th>Semantics</th></tr>
+</thead>
+<tbody>
+<tr><td><code>add_condition_eq</code>, <code>with_id</code></td><td><strong>Accrete</strong> — each call narrows further; none can be removed</td></tr>
+<tr><td><code>add_search</code>, <code>add_order</code></td><td><strong>Replace</strong> — calling again swaps the previous one out</td></tr>
+<tr><td>Widening</td><td><strong>Clone first</strong> — narrow the clone, keep the original</td></tr>
+</tbody>
+</table>
+</div>
+<p>A narrowed Vista is a <em>different, smaller set</em> — not a view you toggle filters on.</p>
 </div>
 
 </div>
@@ -337,7 +380,7 @@ pushes it onto the wrapped table.</p>
 v.with_id("7")?;
 let row = v.get_some_value().await?;
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage_vista/0.6.3/vantage_vista/vista/struct.Vista.html#method.with_id"><code>with_id</code></a> reads the id column name from the schema and calls
+<p><a href="https://docs.rs/vantage_vista/0.6.9/vantage_vista/vista/struct.Vista.html#method.with_id"><code>with_id</code></a> reads the id column name from the schema and calls
 <code>add_condition_eq</code> for you. Returns <code>&amp;mut Self</code> so you can chain.</p>
 <hr>
 <h2 id="search-and-ordering"><a class="header" href="#search-and-ordering">Search and ordering</a></h2>
@@ -441,52 +484,25 @@ need a row first. Typical flow: fetch the parent with <code>get_some_value()</co
 traverse from each row.</p>
 <p><code>get_ref</code> routes in order:</p>
 <ol>
-<li><strong>Foreign resolver</strong> — checks for a <a href="#cross-backend-references-with_foreign"><code>with_foreign</code></a>
-closure registered under that name.</li>
-<li><strong>Driver shell fallback</strong> — delegates to the shell’s <code>get_ref</code>, which resolves the <code>with_one</code> /
-<code>with_many</code> relationship declared on the typed table.</li>
+<li><strong>Contained relations</strong> — records embedded in a column of the parent row (an order’s <code>lines</code>
+array) resolve first, as an editable sub-Vista.</li>
+<li><strong>Foreign-key references</strong> — the shell forwards to the <code>with_one</code> / <code>with_many</code> relationships
+declared on the typed table, and re-wraps the narrowed target as a fresh Vista.</li>
 </ol>
-<p>So the same <code>get_ref("products", &amp;row)</code> call works whether the relationship lives in the same
-database or crosses a backend boundary — Vista handles the routing transparently.</p>
-<h3 id="cross-backend-references-with_foreign"><a class="header" href="#cross-backend-references-with_foreign">Cross-backend references: <code>with_foreign</code></a></h3>
-<p>Same-persistence refs work because the driver’s shell can translate them natively. But what if your
-categories live in PostgreSQL and your products in MongoDB? <code>with_foreign</code> registers a
-cross-persistence resolver:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>categories.with_foreign(
-    "products",
-    ReferenceKind::HasMany,
-    |row| {
-        let mut p = mongo_factory.from_table(Product::table(mongo_db.clone()))?;
-        p.add_condition_eq("category_id", row["id"].clone())?;
-        Ok(p)
-    },
-);
-// get_ref("products", &amp;row) now crosses from Postgres into MongoDB
-<span class="boring">}</span></code></pre>
-<p>The closure is <strong>stored, not called</strong> at registration. It fires once — lazily — when
-<code>get_ref("products", &amp;row)</code> is invoked. This avoids recursion when two Vistas reference each other.</p>
-<p>The closure receives the parent row and returns a Vista from <strong>any</strong> backend. The consumer calling
-<code>get_ref</code> doesn’t know or care that the join crossed a database boundary.</p>
-<div id="admonition-lazy-resolution" class="admonition admonish-tip" role="note" aria-labelledby="admonition-lazy-resolution-title">
-<div class="admonition-title">
-<div id="admonition-lazy-resolution-title">
-<p>Lazy resolution</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-lazy-resolution"></a>
-</div>
-
-<div>
-<p>Because <code>with_foreign</code> closures are lazy, you can register mutual references between two Vistas (A → B and B → A) without worrying about construction order. The closures capture factories by clone, not by reference to a Vista that doesn’t exist yet.</p>
-</div>
-
-</div>
-
+<p>Either way the result is another <code>Vista</code>, so traversal chains without ever leaving the universal
+surface.</p>
+<h3 id="cross-backend-references"><a class="header" href="#cross-backend-references">Cross-backend references</a></h3>
+<p>What if your categories live in PostgreSQL and your products in MongoDB? That is deliberately
+<em>not</em> a Vista’s job — a Vista honestly describes one backend, and there is no engine that could
+execute a join across two. Cross-persistence traversal lives one layer up, in
+<code>vantage-vista-factory</code>’s <a href="https://docs.rs/vantage_vista_factory/0.6.2/vantage_vista_factory/index.html"><code>VistaCatalog</code></a>: register a loader per model
+name, declare the relation, and <code>catalog.traverse_from("category", "products", &amp;row)</code> resolves the
+target in <em>its</em> backend and narrows it by values read from the parent row. The consumer still just
+receives a Vista — see <a href="../config-driven-vistas.html">Config-Driven Vistas</a> for the catalog in
+action.</p>
 <hr>
 <h2 id="capabilities--the-explicit-contract"><a class="header" href="#capabilities--the-explicit-contract">Capabilities — the explicit contract</a></h2>
-<p><a href="https://docs.rs/vantage_vista/0.6.3/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a> is a struct of booleans. The driver sets
+<p><a href="https://docs.rs/vantage_vista/0.6.9/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a> is a struct of booleans. The driver sets
 each flag to reflect what it actually implements:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -568,16 +584,16 @@ MongoDB Vista, an AWS Vista — anything the framework can produce.</p>
 <tr><th>Concept</th><th>What it does</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://docs.rs/vantage_vista/0.6.3/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a></td><td>Universal schema-bearing data handle, wraps any <code>Table</code></td></tr>
-<tr><td><a href="https://docs.rs/vantage_vista/0.6.3/vantage_vista/source/trait.TableShell.html"><code>TableShell</code></a></td><td>Per-driver executor that Vista delegates to</td></tr>
-<tr><td><a href="https://docs.rs/vantage_vista/0.6.3/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a></td><td>Explicit contract of what the driver supports</td></tr>
-<tr><td><a href="https://docs.rs/vantage_vista/0.6.3/vantage_vista/column/struct.Column.html"><code>Column</code></a></td><td>Column metadata with name, type, and flags</td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/0.6.9/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a></td><td>Universal schema-bearing data handle, wraps any <code>Table</code></td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/0.6.9/vantage_vista/source/trait.TableShell.html"><code>TableShell</code></a></td><td>Per-driver executor that Vista delegates to</td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/0.6.9/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a></td><td>Explicit contract of what the driver supports</td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/0.6.9/vantage_vista/column/struct.Column.html"><code>Column</code></a></td><td>Column metadata with name, type, and flags</td></tr>
 <tr><td><code>add_condition_eq</code></td><td>Narrow results to field == value</td></tr>
 <tr><td><code>with_id</code></td><td>Convenience: narrow by primary key</td></tr>
 <tr><td><code>add_search</code> / <code>add_order</code></td><td>Quicksearch and sorting (replace semantics)</td></tr>
 <tr><td><code>fetch_page</code> / <code>fetch_next</code></td><td>Offset and cursor pagination</td></tr>
-<tr><td><code>get_ref</code></td><td>Traverse a same-persistence relationship</td></tr>
-<tr><td><code>with_foreign</code></td><td>Register a cross-persistence relationship resolver</td></tr>
+<tr><td><code>get_ref</code></td><td>Traverse a relationship from a parent row</td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista_factory/0.6.2/vantage_vista_factory/index.html"><code>VistaCatalog</code></a></td><td>Cross-persistence traversal, one layer above Vista</td></tr>
 </tbody>
 </table>
 </div>

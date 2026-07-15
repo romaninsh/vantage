@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-0df4a5b3.js";
+            window.path_to_searchindex_js = "../searchindex-5e583a43.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-298e3dc9.js"></script>
+        <script src="../toc-ef6241bc.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -501,41 +501,40 @@ argument, or a YAML field, or a Rhai script. CBOR is the carrier; the driver dec
 it onto its native type. CSV’s <code>From&lt;CborValue&gt; for AnyCsvType</code> and Mongo’s <code>cbor_to_bson</code> are the
 two halves of that translation in the in-tree drivers.</p>
 <h3 id="references-delegate-too"><a class="header" href="#references-delegate-too">References delegate too</a></h3>
-<p><code>Vista::get_ref(relation)</code> is the eq-condition delegation one rung up: same principle, same
+<p><code>Vista::get_ref(relation, row)</code> is the eq-condition delegation one rung up: same principle, same
 Vista-stores-nothing rule. The call lands on <code>TableShell::get_ref</code>, which forwards through to the
-wrapped <code>Table</code>’s <code>with_one</code>/<code>with_many</code>/<code>with_foreign</code> machinery and re-wraps the result as a
-fresh <code>Vista</code>. Vista itself holds reference <em>metadata</em> (the YAML-friendly
+wrapped <code>Table</code>’s <code>with_one</code>/<code>with_many</code> machinery and re-wraps the result as a fresh <code>Vista</code>.
+Vista itself holds reference <em>metadata</em> (the YAML-friendly
 <code>Reference { name, target, kind, foreign_key }</code> struct) but no live traversal state.</p>
 <p>The default trait impl returns <code>Unimplemented</code>. This is the most-forgotten override on the trait,
 because the underlying <code>Table&lt;T, E&gt;</code> you handed to the factory already supports traversal —
-nothing rewires it into the Vista surface unless you write the glue:</p>
+nothing rewires it into the Vista surface unless you write the glue (SQLite’s shell, verbatim):</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>fn get_ref(&amp;self, relation: &amp;str) -&gt; Result&lt;Vista&gt; {
-    let any_table = self.table.get_ref(relation)?;       // typed Table's refs → AnyTable
-    Ok(vista_from_any_table(any_table))                  // re-wrap as Vista
+</span>fn get_ref(&amp;self, relation: &amp;str, row: &amp;Record&lt;CborValue&gt;) -&gt; Result&lt;Vista&gt; {
+    let native_row = to_native_record(row);
+    let target = self.table.get_ref_from_row::&lt;EmptyEntity&gt;(relation, &amp;native_row)?;
+    let factory = SqliteVistaFactory::new(self.table.data_source().clone());
+    factory.from_table(target)
 }
 <span class="boring">}</span></code></pre>
 <p>Two notes worth dwelling on:</p>
 <ul>
 <li>The result is <em>another</em> <code>Vista</code>, not the inner table. Consumers stay on the universal surface;
-<code>client.get_ref("orders").get_ref("items")</code> works without falling out of Vista at any hop —
-including across backends, when the resulting table came in via <code>with_foreign</code> from a different
-driver entirely.</li>
-<li>The re-wrap helper belongs in your driver crate as a free function (no factory state needed),
-because every driver has the same Vista construction code already; exposing it from the shell
-keeps the trait method short and avoids storing an <code>Arc&lt;Factory&gt;</code> back-pointer.</li>
+each hop fetches a row and traverses from it without falling out of Vista.</li>
+<li>Traversal here is strictly <strong>same-persistence</strong> — a Vista describes one backend. Cross-backend
+relations live one layer up in <code>vantage-vista-factory</code>’s
+<a href="https://docs.rs/vantage_vista_factory/0.6.2/vantage_vista_factory/index.html"><code>VistaCatalog</code></a>, which resolves the target by name in <em>its</em> driver and
+narrows it with universal eq-conditions. Your shell doesn’t need any code for that to work.</li>
 </ul>
-<h4 id="cross-backend-references-add_raw_condition"><a class="header" href="#cross-backend-references-add_raw_condition">Cross-backend references: <code>add_raw_condition</code></a></h4>
-<p><code>Table::with_foreign</code> accepts a closure that builds an <code>AnyTable</code> from any backend, and the
-resulting reference is <em>foreign</em> — the source can’t resolve it on its own, because the join
-condition has to fire in the <em>target</em> backend’s vocabulary, not this one. The YAML factory layer
-constructs a deferred <code>Fn</code>-condition outside the value-set surface and pushes it through
-<code>TableShell::add_raw_condition</code>, which takes a <code>Box&lt;dyn Any&gt;</code> and downcasts to the driver’s
-native condition type.</p>
-<p>REST is the in-tree driver showing how to wire this — and it’s what lets a Postgres-backed
-<code>client</code> table reference a REST-backed <code>orders</code> endpoint inside one YAML inventory. If you’re not
-planning to participate in cross-driver YAML schemas, leave the default in place; the
+<h4 id="native-conditions-from-outside-add_raw_condition"><a class="header" href="#native-conditions-from-outside-add_raw_condition">Native conditions from outside: <code>add_raw_condition</code></a></h4>
+<p>Universal eq-conditions cover the CBOR vocabulary, but some callers hold a condition already in
+your backend’s <em>native</em> type — the Rhai layer is the in-tree case: a <code>modify:</code> or traversal script
+builds a vendor <code>Expression</code> that no <code>(field, value)</code> pair can carry.
+<code>TableShell::add_raw_condition</code> is the hatch for exactly that: it receives a <code>Box&lt;dyn Any&gt;</code>,
+downcasts to the driver’s native condition type, and pushes it onto the wrapped table — SurrealDB’s
+shell is the worked example (it rejects anything that isn’t an <code>Expression&lt;AnySurrealType&gt;</code>, with a
+clear message). If your driver has no scripted-condition story, leave the default in place; the
 advertise-what-you-mean rule applies here the same as everywhere else.</p>
 <h4 id="what-if-my-backend-doesnt-traverse"><a class="header" href="#what-if-my-backend-doesnt-traverse">What if my backend doesn’t traverse?</a></h4>
 <p>LogWriter is the worked example: an insert-only sink has no references, doesn’t read its own

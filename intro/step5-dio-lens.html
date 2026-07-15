@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-0df4a5b3.js";
+            window.path_to_searchindex_js = "../searchindex-5e583a43.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-298e3dc9.js"></script>
+        <script src="../toc-ef6241bc.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -177,379 +177,545 @@
                     <main>
                         <h1 id="dio--lens--caching-and-events"><a class="header" href="#dio--lens--caching-and-events">Dio &amp; Lens — Caching and Events</a></h1>
 <p>Chapter 4 gave you Vista — a universal handle that works with any backend. But every call still hits
-the database. No caching, no reactivity, no way to route writes elsewhere.</p>
-<p><strong>Diorama</strong> (<code>vantage-diorama</code>) sits between your Vista and whatever consumes it. Three things it
-does:</p>
+the backend. That was easy to forgive with a local SQLite file; this chapter picks a data source
+where it hurts: a real cloud API, hundreds of milliseconds away, read-only, and unable to sort or
+search. We’ll build a small CLI around it — an inventory of a public S3 bucket, with a cache.</p>
+<p><strong>Diorama</strong> (<code>vantage-diorama</code>) is the layer that makes this pleasant. It sits between your Vista
+and whatever consumes it, and does three things:</p>
 <ol>
 <li><strong>Transparent caching.</strong> Keep a local copy of your data. Reads come from cache, not from the
-master — no matter how slow or rate-limited the backend is. A CSV file that takes 200ms to parse
-on every <code>list_values()</code> becomes instant after the first load.</li>
-<li><strong>Capability injection.</strong> A Vista backed by a CSV file can’t paginate, sort, or search
-server-side. Diorama caches the full dataset locally and answers those queries from cache — the
-consumer sees a Vista that <em>can</em> paginate, even though the underlying source can’t.</li>
-<li><strong>Custom write routing.</strong> Writes don’t have to go to the master. Route them to a Kafka topic, a
-queue, or a different database entirely. The cache updates immediately; persistence happens
-asynchronously.</li>
+master — a listing that costs seconds over the network costs microseconds after the first fetch.</li>
+<li><strong>Capability injection.</strong> A Vista backed by S3 can’t sort, search, or paginate a listing.
+Diorama caches the dataset locally and answers those queries from cache — the consumer sees a
+richer handle than the backend actually offers.</li>
+<li><strong>Custom write routing.</strong> Writes don’t have to go to the master — useful when the master can’t
+take them at all. You decide what a write means: a queue, a different store, an API call.</li>
 </ol>
-<div id="admonition-goals-for-this-chapter" class="admonition admonish-example" role="note" aria-labelledby="admonition-goals-for-this-chapter-title">
+<div id="admonition-why-diorama" class="admonition admonish-question" role="note" aria-labelledby="admonition-why-diorama-title">
 <div class="admonition-title">
-<div id="admonition-goals-for-this-chapter-title">
-<p>Goals for this chapter</p>
+<div id="admonition-why-diorama-title">
+<p>Why ‘Diorama’?</p>
 </div>
 
-<a class="admonition-anchor-link" href="#admonition-goals-for-this-chapter"></a>
+<a class="admonition-anchor-link" href="#admonition-why-diorama"></a>
 </div>
 
 <div>
-<p>By the end of this page you’ll be able to:</p>
-<ol>
-<li>Build a Lens with cache backend and callbacks</li>
-<li>Create a Dio from a Vista + Lens</li>
-<li>Read from cache, write through the queue</li>
-<li>React to live changes via the event bus</li>
-<li>Produce a facade Vista that hides the caching layer</li>
-</ol>
+<p>The vista from the peak is magnificent — and far away. Sooner or later you want a piece of it
+close at hand: on your desk, under glass, alive. A <strong>diorama</strong> is exactly that — a crafted
+miniature of a real scene, small enough to hold, faithful enough to study.</p>
+<p>That’s the layer this chapter builds. A <strong>Lens</strong> is the optics you capture the scene through —
+ground once, reused for every capture, deciding what is kept and how it refreshes. A <strong>Dio</strong> is
+one captured segment: your local, living copy of the data, reconciling with the world it depicts.
+And once the miniature is lit and running, <strong>Scenery</strong> (chapter 7) is what an audience actually
+watches.</p>
 </div>
 
 </div>
 
 <hr>
-<h2 id="the-four-words"><a class="header" href="#the-four-words">The four words</a></h2>
-<p>Before the code, four terms you’ll see throughout:</p>
-<ul>
-<li><strong>Vista</strong> — a single backend data source (chapter 4). Speaks whatever the backend supports.</li>
-<li><strong>Lens</strong> — long-lived shared infrastructure: cache backend, callbacks, refresh config. Built once.</li>
-<li><strong>Dio</strong> — a Vista bound to a Lens. Owns the cache table, write queue, event bus, and refresh task.
-Produced by <code>lens.make_dio(vista)</code>.</li>
-<li><strong>Scenery</strong> — a reactive view onto a Dio (tables, records, aggregates). The UI binds here. Covered
-in the next chapter.</li>
-</ul>
-<p>The picture:</p>
-<pre><code class="language-text">Vista → Lens.make_dio(vista) → Dio → facade Vista | Scenery
-                                      ↑
-                                  cache + events
-</code></pre>
-<hr>
-<h2 id="building-a-lens"><a class="header" href="#building-a-lens">Building a Lens</a></h2>
-<p>A <a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a> is built once and shared across every Dio you create from it. It
-holds the cache backend, lifecycle callbacks, and default policies:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use std::sync::Arc;
-use std::time::Duration;
-use vantage_diorama::Lens;
-
-let lens = Arc::new(
-    Lens::new()
-        .cache_at("./cache.redb")
-        .on_start(|dio| {
-            let dio = dio.clone();
-            async move {
-                let rows = dio.master().list_values().await?;
-                dio.cache().insert_values(rows).await?;
-                Ok(())
-            }
-        })
-        .refresh_every(Duration::from_secs(300))
-        .build()?,
-);
-<span class="boring">}</span></code></pre>
-<p>Three things happen here:</p>
-<ul>
-<li><strong><code>.cache_at(path)</code></strong> — opens a redb file on disk. Each Dio claims a named table inside it. You
-can also pass a custom <a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a> with
-<code>.cache_source(backend)</code> for in-memory or remote stores.</li>
-<li><strong><code>.on_start(|dio| { ... })</code></strong> — fires once when <code>make_dio</code> is called. The canonical pattern is
-seed the cache from the master: list everything, write it to cache. The <code>dio.clone()</code> inside the
-closure produces a <code>'static</code> future — required because the callback outlives the borrow.</li>
-<li><strong><code>.refresh_every(duration)</code></strong> — schedules periodic refresh. Combined with <code>on_refresh</code> (another
-callback), the Dio re-fetches from the master on a timer.</li>
-</ul>
-<div id="admonition-all-callbacks-borrow-dio" class="admonition admonish-info" role="note" aria-labelledby="admonition-all-callbacks-borrow-dio-title">
-<div class="admonition-title">
-<div id="admonition-all-callbacks-borrow-dio-title">
-<p>All callbacks borrow &amp;Dio</p>
+<h2 id="table-vista-dio"><a class="header" href="#table-vista-dio">Table, Vista, Dio</a></h2>
+<p>This is the third handle to the same records — and like the query-vs-table comparison back in
+chapter 2, each one trades something away for something new:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th><code>Table&lt;DB, E&gt;</code></th><th><code>Vista</code></th><th><code>Dio</code></th></tr>
+</thead>
+<tbody>
+<tr><td><strong>Purpose</strong></td><td>Model your data; business logic</td><td>Let generic code consume any table</td><td>Keep a live local copy of a data segment</td></tr>
+<tr><td><strong>Typing</strong></td><td>Compile-time entity &amp; backend</td><td>Schema carried at runtime</td><td>Same records as Vista</td></tr>
+<tr><td><strong>Reads</strong></td><td>Query the backend</td><td>Query the backend</td><td>Served from a local cache</td></tr>
+<tr><td><strong>Writes</strong></td><td>Applied immediately</td><td>Applied immediately</td><td>Enqueued — routed by policy</td></tr>
+<tr><td><strong>Changes</strong></td><td>You re-query</td><td>You re-query</td><td>Announced on an event bus</td></tr>
+<tr><td><strong>Capabilities</strong></td><td>Whatever the backend supports</td><td>Honestly advertised</td><td>Extended — the cache fills the gaps</td></tr>
+<tr><td><strong>Mode</strong></td><td>Transactional</td><td>Transactional</td><td>Live</td></tr>
+<tr><td><strong>Lifecycle</strong></td><td>A definition — cheap to clone, narrowed per use</td><td>A handle — built, narrowed, dropped</td><td>Long-lived — owns its cache, queue, and background tasks</td></tr>
+</tbody>
+</table>
 </div>
-
-<a class="admonition-anchor-link" href="#admonition-all-callbacks-borrow-dio"></a>
-</div>
-
-<div>
-<p>Every Lens callback receives <code>&amp;Dio</code> — a borrowed reference to the Dio it’s running for. If you
-need to spawn a task or hold the Dio across an <code>.await</code>, clone it inside the closure:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>.on_start(|dio| {
-    let dio = dio.clone();
-    async move {
-        // dio is now owned, safe to hold across await
-    }
-})
-<span class="boring">}</span></code></pre>
-<p>This <code>clone()</code> is cheap — Dio wraps an <code>Arc</code>, so you’re just bumping a reference count.</p>
-</div>
-
-</div>
-
-<hr>
-<h2 id="creating-a-dio"><a class="header" href="#creating-a-dio">Creating a Dio</a></h2>
-<p><a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/lens/struct.Lens.html#method.make_dio"><code>make_dio</code></a> binds a Vista to the Lens. It opens the cache table,
-spawns the write worker and refresh task, fires <code>on_start</code>, and returns a
-<a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let products_dio = lens.make_dio(products_vista).await?;
-<span class="boring">}</span></code></pre>
-<p>That one call does all of this:</p>
-<ol>
-<li>Opens (or creates) a cache table named after the Vista</li>
-<li>Spawns a write worker that drains the write queue</li>
-<li>Starts the refresh timer (if <code>refresh_every</code> + <code>on_refresh</code> are set)</li>
-<li>Fires <code>on_start</code> — your callback seeds the cache</li>
-<li>Returns the Dio, ready to use</li>
-</ol>
-<p>You can create many Dios from one Lens — one per entity, each with its own cache table and write
-queue, all sharing the same cache file and callback configuration.</p>
-<hr>
-<h2 id="reading-from-the-cache"><a class="header" href="#reading-from-the-cache">Reading from the cache</a></h2>
-<p>The Dio’s cache is a simple key-value store — <code>id → Record&lt;CborValue&gt;</code>. Reads come from cache, not
-from the master:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// List everything in cache
-let rows = products_dio.cache().list_values().await?;
-
-// Get one record by id
-let product = products_dio.cache().get_value("7").await?;
-
-// Count
-let n = products_dio.cache().count().await?;
-<span class="boring">}</span></code></pre>
-<p>The cache is intentionally dumb — no conditions, no sort, no search. It stores rows; query planning
-lives on the Dio/Scenery layer.</p>
-<div id="admonition-the-facade-vista" class="admonition admonish-tip" role="note" aria-labelledby="admonition-the-facade-vista-title">
-<div class="admonition-title">
-<div id="admonition-the-facade-vista-title">
-<p>The facade Vista</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-the-facade-vista"></a>
-</div>
-
-<div>
-<p>Direct cache access works, but there’s a more ergonomic path. <code>dio.vista()</code> returns a
-<a href="https://docs.rs/vantage_vista/0.6.3/vantage_vista/vista/struct.Vista.html">Vista</a> backed by the Dio — reads go through cache, writes go through
-the queue, schema comes from the master. Consumers can’t tell the difference:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let mut v = products_dio.vista();
-v.add_condition_eq("category_id", 1.into())?;
-let rows = v.list_values().await?;  // served from cache
-<span class="boring">}</span></code></pre>
-<p>The facade’s capabilities are the union of the master’s and what the Lens provides. A read-only CSV
-Vista gets <code>can_count</code> from the cache. If you register <code>on_write</code>, it gains <code>can_insert</code> too — the
-queue accepts the write even though the master can’t.</p>
-</div>
-
-</div>
-
-<hr>
-<h2 id="writing-through-the-queue"><a class="header" href="#writing-through-the-queue">Writing through the queue</a></h2>
-<p>Writes don’t hit the master directly. They go into the Dio’s write queue as a
-<a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use vantage_types::Record;
-
-let record = Record::from_iter([
-    ("name".into(), "Muffin".into()),
-    ("price".into(), 175i64.into()),
-]);
-
-// Through the facade Vista
-products_dio.vista().insert(&amp;"muffin".to_string(), &amp;record).await?;
-<span class="boring">}</span></code></pre>
-<p>Under the hood this enqueues a <code>WriteOp::Insert</code>. The write worker picks it up asynchronously and
-either calls your <code>on_write</code> callback or applies it to <code>dio.master()</code> directly.</p>
-<div id="admonition-write-through-vs-write-around" class="admonition admonish-info" role="note" aria-labelledby="admonition-write-through-vs-write-around-title">
-<div class="admonition-title">
-<div id="admonition-write-through-vs-write-around-title">
-<p>Write-through vs write-around</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-write-through-vs-write-around"></a>
-</div>
-
-<div>
-<p>When <code>on_write</code> is <strong>not</strong> registered, the write worker applies ops to <code>dio.master()</code> directly —
-the default write-through path. The insert returns as soon as the op is enqueued; the master write
-happens in the background. If it fails, a <code>DioEvent::WriteFailed</code> is published on the event bus.</p>
-<p>When <code>on_write</code> <strong>is</strong> registered, you control where writes go. A common pattern: write to Kafka
-(via <code>on_write</code>) and let the Kafka consumer feed back through <code>on_event</code> to update the cache.
-This decouples the write path from the read path entirely.</p>
-</div>
-
-</div>
-
-<hr>
-<h2 id="the-event-bus"><a class="header" href="#the-event-bus">The event bus</a></h2>
-<p>Every Dio has a <code>broadcast</code> channel. When data changes, events are published there:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use vantage_diorama::DioEvent;
-
-let mut rx = products_dio.subscribe_events();
-
-// In a spawned task
-tokio::spawn(async move {
-    while let Ok(event) = rx.recv().await {
-        match event {
-            DioEvent::RecordChanged { id } =&gt; {
-                println!("updated: {}", id);
-            }
-            DioEvent::RecordInserted { id } =&gt; {
-                println!("new: {}", id);
-            }
-            DioEvent::RecordRemoved { id } =&gt; {
-                println!("deleted: {}", id);
-            }
-            DioEvent::Invalidated =&gt; {
-                println!("full refresh happened");
-            }
-            _ =&gt; {}
-        }
-    }
-});
-<span class="boring">}</span></code></pre>
-<p>Sceneries subscribe to this bus to react to changes. You can also subscribe directly — for logging,
-metrics, cache warming, or triggering side effects in any consumer.</p>
-<hr>
-<h2 id="live-updates-on_event"><a class="header" href="#live-updates-on_event">Live updates: <code>on_event</code></a></h2>
-<p>The event bus carries <em>internal</em> events (cache writes, refreshes). But what about changes happening
-on the master that you didn’t initiate — other users editing records, a database trigger firing, a
-webhook arriving?</p>
-<p><code>on_event</code> receives <em>upstream</em> <a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a> objects and reconciles
-them into the cache. Add it to the Lens alongside <code>on_start</code>:</p>
+<h3 id="caching"><a class="header" href="#caching">Caching</a></h3>
+<p>Diorama caches at two levels. <strong>Page segments</strong> hold windows of an ordered query result — they’re
+what lets a viewport scroll a huge listing without re-asking the master, and they power the
+loading strategies you’ll meet in chapter 7. Beneath them sits the <strong>key/value record store</strong> —
+one entry per record id, plain and dumb. We keep it simple for now: everything in this chapter
+runs on the record store alone.</p>
+<svg viewbox="0 0 760 240" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="13">
+  <defs>
+    <marker id="arrow" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="7" markerheight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#888" />
+    </marker>
+  </defs>
+  <!-- Dio container -->
+  <rect x="20" y="30" width="460" height="180" rx="12" fill="none" stroke="#8f5a2d" stroke-width="2.5" />
+  <text x="250" y="56" text-anchor="middle" fill="#8f5a2d" font-weight="bold" font-size="15">Dio</text>
+  <!-- master -->
+  <rect x="45" y="75" width="170" height="90" rx="8" fill="#4a7c59" />
+  <text x="130" y="105" text-anchor="middle" fill="#fff" font-weight="bold">master</text>
+  <text x="130" y="125" text-anchor="middle" fill="#fff" font-size="12">Vista — S3 listing</text>
+  <text x="130" y="145" text-anchor="middle" fill="#fff" font-size="12" fill-opacity="0.8">~200 ms per page</text>
+  <!-- cache -->
+  <rect x="285" y="75" width="170" height="90" rx="8" fill="#4a7c59" />
+  <text x="370" y="105" text-anchor="middle" fill="#fff" font-weight="bold">cache</text>
+  <text x="370" y="125" text-anchor="middle" fill="#fff" font-size="12">redb — id → record</text>
+  <text x="370" y="145" text-anchor="middle" fill="#fff" font-size="12" fill-opacity="0.8">µs away</text>
+  <!-- pump arrow -->
+  <line x1="215" y1="120" x2="281" y2="120" stroke="#888" stroke-width="2" marker-end="url(#arrow)" />
+  <text x="250" y="190" text-anchor="middle" fill="#888" font-size="12">the Lens pumps master → cache</text>
+  <!-- Consumers -->
+  <rect x="580" y="45" width="160" height="58" rx="10" fill="#7c2d8f" />
+  <text x="660" y="69" text-anchor="middle" fill="#fff" font-weight="bold">facade Vista</text>
+  <text x="660" y="88" text-anchor="middle" fill="#fff" font-size="12">dio.vista()</text>
+  <rect x="580" y="140" width="160" height="58" rx="10" fill="#7c2d8f" fill-opacity="0.55" />
+  <text x="660" y="164" text-anchor="middle" fill="#fff" font-weight="bold">Sceneries</text>
+  <text x="660" y="183" text-anchor="middle" fill="#fff" font-size="12">chapter 7</text>
+  <!-- read arrows -->
+  <line x1="484" y1="74" x2="576" y2="74" stroke="#888" stroke-width="2" marker-end="url(#arrow)" />
+  <line x1="484" y1="169" x2="576" y2="169" stroke="#888" stroke-width="2" marker-end="url(#arrow)" />
+  <text x="530" y="128" text-anchor="middle" fill="#888" font-size="12">reads — µs</text>
+</svg>
+<p>A <strong>Dio</strong> owns exactly the two blocks above: a <em>master</em> Vista — the source of truth, however far
+away — and a <em>cache</em>, the local copy. What it deliberately does <strong>not</strong> decide is policy: when the
+cache fills, when it goes stale, what a write means. There are too many valid answers for one
+default — seed once and keep forever, re-fetch on a timer, reconcile from a push stream, write
+through to the master, write somewhere else entirely. That’s what the <strong>Lens</strong> is for: it
+describes how the cache is used. The simplest possible Lens pumps the master into the cache once,
+when the Dio loads:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>let lens = Arc::new(
     Lens::new()
-        .cache_at("./cache.redb")
+        .cache_at("cache.redb")
         .on_start(|dio| {
             let dio = dio.clone();
             async move {
+                // Pump: read everything from the master, write it to the cache.
                 let rows = dio.master().list_values().await?;
-                dio.cache().insert_values(rows).await?;
-                Ok(())
-            }
-        })
-        .on_event(|dio, event| {
-            let dio = dio.clone();
-            async move {
-                match event {
-                    ChangeEvent::Updated { id, new: Some(row) } =&gt; {
-                        dio.patched(id, row).await?;
-                    }
-                    ChangeEvent::Deleted { id } =&gt; {
-                        dio.cache().delete_value(&amp;id).await?;
-                        dio.invalidate_record(id);
-                    }
-                    ChangeEvent::Invalidated =&gt; {
-                        dio.invalidate_all();
-                    }
-                    _ =&gt; {}
-                }
-                Ok(())
+                dio.cache().insert_values(rows).await
             }
         })
         .build()?,
 );
+
+let dio = lens.make_dio(vista).await?;   // runs on_start, returns a warm Dio
 <span class="boring">}</span></code></pre>
-<p>The typical wiring: a live stream from SurrealDB, a Kafka consumer, or a WebSocket listener feeds
-<a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a>s into <code>dio.handle_event(evt).await</code>, which invokes
-your <code>on_event</code> callback. You write the row to cache and publish the matching <code>DioEvent</code> — any
-subscriber (Scenery, logger, metrics) picks it up.</p>
-<div id="admonition-patched-andinvalidate_record" class="admonition admonish-tip" role="note" aria-labelledby="admonition-patched-andinvalidate_record-title">
-<div class="admonition-title">
-<div id="admonition-patched-andinvalidate_record-title">
-<p>patched() andinvalidate_record()</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-patched-andinvalidate_record"></a>
-</div>
-
-<div>
-<ul>
-<li><code>dio.patched(id, record)</code> writes to cache <strong>and</strong> publishes <code>DioEvent::RecordChanged</code>. The
-canonical “external system told us about a row” pattern.</li>
-<li><code>dio.invalidate_record(id)</code> publishes <code>RecordChanged</code> <strong>without</strong> touching cache — use when you
-know the cache is already stale and a Scenery will refetch.</li>
-<li><code>dio.invalidate_all()</code> publishes <code>Invalidated</code> — Sceneries respond by re-reading their full state.</li>
-</ul>
-</div>
-
-</div>
-
-<hr>
-<h2 id="manual-refresh"><a class="header" href="#manual-refresh">Manual refresh</a></h2>
-<p><code>on_refresh</code> fires on the timer set by <code>refresh_every</code>. You can also trigger it manually:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>products_dio.refresh().await?;
-<span class="boring">}</span></code></pre>
-<p>This fires the <code>on_refresh</code> callback (if registered) and publishes <code>Invalidated</code> on the event bus.
-Sceneries re-read from cache after the refresh completes.</p>
-<hr>
-<h2 id="callback-summary"><a class="header" href="#callback-summary">Callback summary</a></h2>
+<p>With the Dio in place, there are two ways to consume it. The first is the <strong>facade Vista</strong> —
+<code>dio.vista()</code> — for <em>proactive</em> querying: you ask, it answers, exactly like the backend’s own
+Vista from chapter 4. Same interface, same records — except the answers come from the cache, and
+the capability set can be <em>wider</em> than the master’s, because the Lens decides what to add: a
+read-only master gains writes when the Lens routes them somewhere, and counting is always on the
+menu because the cache can count. The second way in is the <strong>Scenery</strong> — a standing, <em>reactive</em>
+view that keeps itself current and tells you when it changed. UIs bind to sceneries; chapter 7
+lives there.</p>
+<svg viewbox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="13">
+  <defs>
+    <marker id="arrow2" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="7" markerheight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#888" />
+    </marker>
+  </defs>
+  <!-- Dio -->
+  <rect x="30" y="30" width="180" height="200" rx="12" fill="none" stroke="#8f5a2d" stroke-width="2.5" />
+  <text x="120" y="125" text-anchor="middle" fill="#8f5a2d" font-weight="bold" font-size="15">Dio</text>
+  <text x="120" y="148" text-anchor="middle" fill="#888" font-size="12">master + cache</text>
+  <!-- facade Vista (pull) -->
+  <rect x="540" y="30" width="190" height="70" rx="10" fill="#7c2d8f" />
+  <text x="635" y="59" text-anchor="middle" fill="#fff" font-weight="bold">facade Vista</text>
+  <text x="635" y="80" text-anchor="middle" fill="#fff" font-size="12">dio.vista()</text>
+  <!-- request: facade → dio -->
+  <line x1="540" y1="50" x2="218" y2="50" stroke="#888" stroke-width="2" marker-end="url(#arrow2)" />
+  <text x="375" y="42" text-anchor="middle" fill="#888" font-size="12">proactive: you ask — list, get, count…</text>
+  <!-- response: dio → facade -->
+  <line x1="210" y1="80" x2="536" y2="80" stroke="#888" stroke-width="2" marker-end="url(#arrow2)" />
+  <text x="375" y="98" text-anchor="middle" fill="#888" font-size="12">…it answers from the cache</text>
+  <!-- Scenery (push) -->
+  <rect x="540" y="160" width="190" height="70" rx="10" fill="#7c2d8f" />
+  <text x="635" y="189" text-anchor="middle" fill="#fff" font-weight="bold">Scenery</text>
+  <text x="635" y="210" text-anchor="middle" fill="#fff" font-size="12">a standing view</text>
+  <!-- push: dio → scenery -->
+  <line x1="210" y1="195" x2="536" y2="195" stroke="#888" stroke-width="2" marker-end="url(#arrow2)" />
+  <text x="375" y="187" text-anchor="middle" fill="#888" font-size="12">reactive: changes stream in —</text>
+  <text x="375" y="215" text-anchor="middle" fill="#888" font-size="12">the generation counter announces each one</text>
+</svg>
+<h3 id="the-facade-vista"><a class="header" href="#the-facade-vista">The facade Vista</a></h3>
+<p>Hand <code>dio.vista()</code> to chapter 4’s <code>print_vista</code> and it just works — it never learns a cache is
+underneath. What makes the facade interesting is its capability set. Chapter 4’s contract was
+honest but rigid: whatever the backend can’t do, your application can’t have. The facade solves
+that — it
+carries the master’s capabilities, and the Lens can manipulate and extend them. Our read-only S3
+listing gains <code>can_insert</code> the moment an <code>on_write</code> callback gives writes somewhere to go. The
+honesty contract still holds; the facade just advertises what the <em>pipeline</em> can do, not what the
+backend alone can.</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Callback</th><th>When it fires</th><th>Typical use</th></tr>
+<tr><th></th><th>facade Vista</th><th>Scenery</th></tr>
 </thead>
 <tbody>
-<tr><td><code>on_start</code></td><td>Once at <code>make_dio</code></td><td>Seed cache from master</td></tr>
-<tr><td><code>on_refresh</code></td><td>Timer + manual <code>refresh()</code></td><td>Re-fetch from master</td></tr>
-<tr><td><code>on_write</code></td><td>Every <code>WriteOp</code></td><td>Custom write routing (e.g. to Kafka)</td></tr>
-<tr><td><code>on_event</code></td><td>Upstream <code>ChangeEvent</code></td><td>Reconcile live updates into cache</td></tr>
-<tr><td><code>on_query</code></td><td>Scenery data fetch</td><td>Custom query routing</td></tr>
-<tr><td><code>total_provider</code></td><td>Scenery open</td><td>Supply total row count</td></tr>
-<tr><td><code>on_load_chunk</code></td><td>Scenery viewport/page</td><td>Fetch a range from master</td></tr>
+<tr><td><strong>Access style</strong></td><td>Proactive — you ask, it answers</td><td>Reactive — a standing view that stays current</td></tr>
+<tr><td><strong>Interface</strong></td><td>Chapter 4’s Vista API, unchanged</td><td>Purpose-built: rows by index, a record, a scalar</td></tr>
+<tr><td><strong>Freshness</strong></td><td>As fresh as the cache when you ask</td><td>Recomputes on every change</td></tr>
+<tr><td><strong>Change awareness</strong></td><td>None — ask again</td><td><code>subscribe()</code> → generation channel</td></tr>
+<tr><td><strong>Capabilities</strong></td><td>The master’s, plus whatever the Lens adds</td><td>Ordering, search, viewport — regardless of backend</td></tr>
+<tr><td><strong>Typical consumer</strong></td><td>Handlers, scripts, CLI commands</td><td>UIs, dashboards, live views</td></tr>
 </tbody>
 </table>
 </div>
 <hr>
-<h2 id="putting-it-together"><a class="header" href="#putting-it-together">Putting it together</a></h2>
-<p>Everything in one place:</p>
+<h2 id="the-project-a-weather-station-inventory"><a class="header" href="#the-project-a-weather-station-inventory">The project: a weather-station inventory</a></h2>
+<p>NOAA publishes its daily climate archive — GHCN, one CSV per weather station — as a public S3
+bucket in the <a href="https://registry.opendata.aws/noaa-ghcn/">AWS Open Data registry</a>. It’s a perfect
+Diorama subject: listing it is slow, every listing request is paid again on every run, and the
+API can’t sort or search. We’ll grow one small tool across three chapters:</p>
+<ul>
+<li><strong>This chapter</strong> — a CLI that lists the station files from a persistent local cache.</li>
+<li><strong>Chapter 6</strong> — <em>augmentation</em>: each file gains columns computed from its contents (how many
+readings, how recent).</li>
+<li><strong>Chapter 7</strong> — a live terminal UI that scrolls the whole archive and fetches per-file data for
+exactly the rows on screen.</li>
+</ul>
+<div id="admonition-no-aws-account-required" class="admonition admonish-info" role="note" aria-labelledby="admonition-no-aws-account-required-title">
+<div class="admonition-title">
+<div id="admonition-no-aws-account-required-title">
+<p>No AWS account required</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-no-aws-account-required"></a>
+</div>
+
+<div>
+<p>The bucket allows anonymous access, the way <code>aws s3 ls --no-sign-request</code> reads it.
+<code>AwsAccount::public(region)</code> is the vantage-aws equivalent: requests go out unsigned, so there are
+no credentials to configure — nothing to install, nothing to pay.</p>
+</div>
+
+</div>
+
+<p>Set up the project:</p>
+<pre><code class="language-sh">cargo new learn-4 &amp;&amp; cd learn-4
+cargo add serde --features derive
+cargo add tokio --features full
+cargo add vantage-aws vantage-diorama vantage-vista
+</code></pre>
+<p><code>vantage-aws</code> is the S3/DynamoDB/IAM driver — it signs (or deliberately doesn’t sign) requests
+itself, so there’s no AWS SDK in the tree. <code>vantage-diorama</code> is what this chapter is about. The
+code splits into two files: <code>files.rs</code> holds the table definition, <code>main.rs</code> uses it.</p>
+<hr>
+<h2 id="filesrs--the-listing-as-a-table"><a class="header" href="#filesrs--the-listing-as-a-table"><code>files.rs</code> — the listing as a table</a></h2>
+<p>One row per file in the bucket. This is chapter 2’s pattern — an entity, and a <code>table()</code>
+constructor that describes the source — pointed at a cloud API instead of a database:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>use std::sync::Arc;
-use std::time::Duration;
-use vantage_diorama::Lens;
+</span>use serde::{Deserialize, Serialize};
+use vantage_aws::prelude::*;
 
-// Build once per application
-let lens = Arc::new(
+/// One file in the bucket. Field names match S3's wire XML
+/// (`&lt;Contents&gt;&lt;Key/&gt;&lt;Size/&gt;&lt;/Contents&gt;`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct File {
+    #[serde(rename = "Key")]
+    pub filename: String,
+    #[serde(rename = "Size")]
+    pub size: String,
+}
+<span class="boring">}</span></code></pre>
+<p>The serde renames map S3’s wire names onto the fields we actually want to write in Rust. <code>Size</code>
+is a <code>String</code> because that’s what the XML carries — no silent coercion.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl File {
+    /// `ListObjectsV2` narrowed to one bucket and prefix. S3 sends at
+    /// most `max-keys` keys per response; the `@continuation-token`
+    /// cursor tells the framework to keep requesting pages until the
+    /// listing is complete.
+    pub fn table(aws: AwsAccount, bucket: &amp;str, prefix: &amp;str) -&gt; Table&lt;AwsAccount, File&gt; {
+        Table::new(
+            "restxml/Contents@continuation-token=NextContinuationToken:s3/GET /{Bucket}?list-type=2",
+            aws,
+        )
+        .with_id_column("Key")
+        .with_column_of::&lt;String&gt;("Size")
+        .with_condition(eq("Bucket", bucket))
+        .with_condition(eq("prefix", prefix))
+        .with_condition(eq("max-keys", 100))
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>The table <em>name</em> is doing a lot of work here — for <code>vantage-aws</code>, it’s the wire protocol spelled
+out: <code>restxml</code> is the protocol S3 speaks; <code>Contents</code> is the response element holding the rows;
+<code>s3/GET /{Bucket}?list-type=2</code> is the service and request. Conditions complete the request the
+same way chapter 2’s conditions completed a WHERE clause: <code>Bucket</code> fills the path placeholder,
+and anything else (<code>prefix</code>, <code>max-keys</code>) becomes a query parameter.</p>
+<p>The <code>@continuation-token=NextContinuationToken</code> part is <strong>auto-pagination</strong>. S3 answers at most
+<code>max-keys</code> files per response, plus a continuation token when more exist; the cursor declaration
+tells the driver to keep re-issuing the request — token folded back in — until the listing is
+complete. One <code>list()</code> call, as many HTTP requests as it takes.</p>
+<div id="admonition-the-table-name-grammar" class="admonition admonish-info" role="note" aria-labelledby="admonition-the-table-name-grammar-title">
+<div class="admonition-title">
+<div id="admonition-the-table-name-grammar-title">
+<p>The table-name grammar</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-the-table-name-grammar"></a>
+</div>
+
+<div>
+<p>The full shape vantage-aws parses is:</p>
+<pre><code class="language-text">{protocol}/{array_key}[@cursor|@request=response]:{service}/{METHOD} {path}?{query}
+</code></pre>
+<p><code>protocol</code> is one of <code>json1</code>, <code>json10</code>, <code>query</code>, <code>restxml</code>, <code>restjson</code>; <code>array_key</code> names the
+response element holding the rows; the optional <code>@</code> suffix declares the pagination cursor
+(one name if request and response fields match, <code>request=response</code> when they differ, as here).
+Get it wrong and the first query returns a <code>VantageError</code> quoting this grammar — an unknown
+protocol lists the valid ones. Nothing is guessed and nothing fails silently.</p>
+</div>
+
+</div>
+
+<h2 id="a-first-listing"><a class="header" href="#a-first-listing">A first listing</a></h2>
+<p><code>main.rs</code>, shortest possible version — build the table, list it, print:</p>
+<pre class="playground"><code class="language-rust">mod files;
+
+use files::File;
+use vantage_aws::prelude::*;
+
+const BUCKET: &amp;str = "noaa-ghcn-pds";
+const PREFIX: &amp;str = "csv/by_station/GM";
+
+#[tokio::main]
+async fn main() {
+    if let Err(e) = run().await {
+        e.report();
+    }
+}
+
+async fn run() -&gt; VantageResult&lt;()&gt; {
+    let aws = AwsAccount::public("us-east-1");
+    let files = File::table(aws, BUCKET, PREFIX);
+
+    for (filename, file) in files.list().await? {
+        println!("{:&gt;10}  {filename}", file.size);
+    }
+    Ok(())
+}</code></pre>
+<p>The <code>GM</code> prefix narrows the archive to Germany’s stations — 1122 files, small enough to look at,
+big enough to feel:</p>
+<pre><code class="language-text">   4796352  csv/by_station/GM000001153.csv
+   7057976  csv/by_station/GM000001474.csv
+   2978238  csv/by_station/GM000002277.csv
+   ...
+1122 files in 2.3s
+</code></pre>
+<p>2.3 seconds: twelve HTTPS round-trips (1122 files at 100 per page), paid <strong>on every run</strong>,
+forever, because nothing remembers the answer. This is the itch the rest of the chapter
+scratches.</p>
+<hr>
+<h2 id="the-master-vista-and-what-it-cant-do"><a class="header" href="#the-master-vista-and-what-it-cant-do">The master Vista, and what it can’t do</a></h2>
+<p>The Dio wants a Vista for its master, so we erase the typed table the same way chapter 4 did:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let master = aws
+    .vista_factory()
+    .from_table(File::table(aws.clone(), BUCKET, PREFIX))?;
+<span class="boring">}</span></code></pre>
+<p>Ask this Vista what it can do, and you’ll see why this backend needs a Diorama:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let caps = master.capabilities();
+// can_count: true    can_fetch_next: true — and that's it.
+// can_search: false   can_order: false   can_insert: false
+<span class="boring">}</span></code></pre>
+<p><code>can_fetch_next</code> is worth pausing on — it’s the one capability this chapter leans on.
+<code>fetch_next(token)</code> is Vista’s <em>cursor-style</em> pagination from chapter 4: pass <code>None</code> for the
+first page, pass back the returned token for the next one. For S3 the driver defines the token
+as <strong>the last key of the previous page</strong>, because S3 lists keys in order and accepts any key as
+a starting point (<code>start-after</code>). That has a consequence the generic contract doesn’t promise:
+this cursor survives process restarts. Any key you already hold — say, the last key in a cache —
+resumes the listing right after it.</p>
+<h2 id="the-lens-pump-pages-resume-where-you-left-off"><a class="header" href="#the-lens-pump-pages-resume-where-you-left-off">The Lens: pump pages, resume where you left off</a></h2>
+<p>Now the Lens. One callback — on start, synchronize the cache with the bucket:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let lens = Arc::new(
     Lens::new()
-        .cache_at("./cache.redb")
+        .cache_at("cache.redb")
         .on_start(|dio| {
             let dio = dio.clone();
-            async move {
-                let rows = dio.master().list_values().await?;
-                dio.cache().insert_values(rows).await?;
-                Ok(())
-            }
+            async move { sync(&amp;dio).await }
         })
-        .refresh_every(Duration::from_secs(300))
-        .build()?,
+        .build()
+        .context("Failed to build lens")?,
 );
-
-// One Dio per entity
-let products = lens.make_dio(products_vista).await?;
-
-// Read and write through the facade — cache is transparent
-let mut v = products.vista();
-let rows = v.list_values().await?;       // cache hit
-v.insert(&amp;"muffin".to_string(), &amp;rec).await?;  // enqueued
+let dio = lens.make_dio(master).await?;
 <span class="boring">}</span></code></pre>
+<ul>
+<li><strong><code>.cache_at("cache.redb")</code></strong> opens a <a href="https://docs.rs/redb">redb</a> file on disk. This is why
+the cache survives process restarts. An in-memory alternative, <code>.cache_in_memory()</code>, is there
+for when persistence isn’t wanted.</li>
+<li><strong><code>.on_start(...)</code></strong> fires once, inside <code>make_dio</code>. Callbacks receive <code>&amp;Dio</code> and clone it to
+hold across <code>.await</code> — a cheap <code>Arc</code> bump; every Lens callback follows this shape.</li>
+<li><strong><code>make_dio</code></strong> does the rest in one call: opens a cache table named after the master, spawns
+the write worker, runs <code>on_start</code>, and hands back the <a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a>.</li>
+</ul>
+<p><code>sync</code> is where the cursor pays off. Instead of one big <code>list_values()</code>, it pulls the listing
+<strong>one page at a time</strong> and seeds the cursor from the cache:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>/// Pump the master listing into the cache, one page per request. S3's
+/// paging cursor is simply "the last key seen" — so the last key already
+/// in the cache resumes the listing, and pages loaded by an earlier run
+/// (even one that was interrupted) are never fetched again.
+async fn sync(dio: &amp;Dio) -&gt; VantageResult&lt;()&gt; {
+    let mut token: Option&lt;CborValue&gt; = dio
+        .cache()
+        .list_values()
+        .await?
+        .keys()
+        .last()
+        .cloned()
+        .map(Into::into);
+    loop {
+        let start = Instant::now();
+        let (page, next) = dio.master().fetch_next(token).await?;
+        let count = page.len();
+        dio.cache().insert_values(page.into_iter().collect()).await?;
+        println!("fetched {count} files in {:?}", start.elapsed());
+        if next.is_none() {
+            return Ok(());
+        }
+        token = next;
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Read the first statement again: the initial token is <em>the last filename already cached</em>. On a
+cold cache that’s <code>None</code> — start from the top. On a warm cache it’s the end of what we have —
+S3 continues from there. Kill the process halfway through a sync and run it again: the pages you
+already paid for are never fetched twice. The cache isn’t just an answer store; it’s the resume
+point.</p>
+<h2 id="reads-come-from-the-cache"><a class="header" href="#reads-come-from-the-cache">Reads come from the cache</a></h2>
+<p>The listing loop stops asking S3 and starts asking the Dio — through the <strong>facade Vista</strong> from
+the first half of the chapter. Notice who talks to what: <code>sync</code>, being Lens plumbing, addresses
+the Dio’s two sides directly (<code>dio.master()</code> to fetch, <code>dio.cache()</code> to store and resume);
+a <em>consumer</em> asks <code>dio.vista()</code> and never learns what’s underneath. The records come back as
+<code>Record&lt;CborValue&gt;</code> — the erased form from chapter 4 — so field access goes through the
+<code>CborValueExt</code> helpers the prelude brings in:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let start = Instant::now();
+let listing = dio.vista().list_values().await?;
+for (filename, file) in &amp;listing {
+    let size = file.get("Size").and_then(|v| v.as_str()).unwrap_or("");
+    println!("{size:&gt;10}  {filename}");
+}
+println!("{} files from cache in {:?}", listing.len(), start.elapsed());
+<span class="boring">}</span></code></pre>
+<p>First run — cold cache, the sync pump narrating each page:</p>
+<pre><code class="language-text">fetched 100 files in 215ms
+fetched 100 files in 217ms
+...
+fetched 22 files in 114ms
+   4796352  csv/by_station/GM000001153.csv
+   7057976  csv/by_station/GM000001474.csv
+   ...
+1122 files from cache in 18ms
+</code></pre>
+<p>Second run — same command, new process:</p>
+<pre><code class="language-text">fetched 0 files in 370ms
+1122 files from cache in 17ms
+</code></pre>
+<p>One round-trip — the resume request from the last cached key, confirming nothing new exists —
+and then the full listing in 17 milliseconds. New files that <em>do</em> appear under the prefix arrive
+on exactly that request, without re-fetching the thousand we already hold.</p>
+<h2 id="invalidating"><a class="header" href="#invalidating">Invalidating</a></h2>
+<p>A resuming cache has one blind spot: it only ever looks <em>past</em> what it holds, so files deleted
+from the bucket linger locally. The honest fix is to start over — wipe and re-pump:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>if std::env::args().any(|a| a == "--invalidate") {
+    dio.cache().clear().await?;
+    sync(&amp;dio).await?;
+}
+<span class="boring">}</span></code></pre>
+<pre><code class="language-text">$ cargo run -- --invalidate
+fetched 0 files in 370ms
+fetched 100 files in 215ms
+...
+1122 files from cache in 18ms
+</code></pre>
+<p>The CLI is complete: two seconds once, milliseconds forever after, resumable mid-sync, and an
+escape hatch back to the truth.</p>
+<hr>
+<h2 id="the-event-bus"><a class="header" href="#the-event-bus">The event bus</a></h2>
+<p>One more thing <code>make_dio</code> set up, invisibly: every Dio carries a <strong>broadcast event bus</strong>.
+Anything that changes data announces it there as a <a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/dio/event_bus/enum.DioEvent.html"><code>DioEvent</code></a> —
+<code>DatasetChanged</code> when the set of records was rewritten wholesale, <code>RecordChanged</code> /
+<code>RecordInserted</code> / <code>RecordRemoved</code> for row-level changes, <code>Refreshing</code> when a reconcile starts,
+<code>WriteFailed</code> when a queued write fails. Nothing in this chapter listens yet; chapter 7’s
+sceneries subscribe to this bus to know when to recompute, and chapter 6’s hydration uses it to
+report progress.</p>
+<p>One rule is worth forming as a habit now: <strong>direct cache writes are silent</strong>. Our <code>sync</code> calls
+<code>dio.cache().insert_values(...)</code>, which stores rows and announces nothing — harmless while
+nothing listens, invisible data the moment something does. When observers exist, either use the
+Dio’s row-level helpers that write <em>and</em> announce in one motion — <code>patched(id, record)</code>,
+<code>removed(id)</code> — or follow a bulk cache write with <code>notify_dataset_changed()</code>, the “re-read
+everything” announcement. Chapter 7’s live view does exactly that.</p>
+<div id="admonition-poll-or-push--the-lens-doesnt-care" class="admonition admonish-info" role="note" aria-labelledby="admonition-poll-or-push--the-lens-doesnt-care-title">
+<div class="admonition-title">
+<div id="admonition-poll-or-push--the-lens-doesnt-care-title">
+<p>Poll or push — the Lens doesn’t care</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-poll-or-push--the-lens-doesnt-care"></a>
+</div>
+
+<div>
+<p>Our S3 listing has no way to notify us, so freshness is <em>pulled</em>: <code>sync</code> on start,
+<code>--invalidate</code> by hand, or <code>refresh_every(duration)</code> on a timer (chapter 7’s live view uses it).
+Backends that can push — a SurrealDB live query, a Kafka topic, a webhook — feed
+<a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a>s into <code>dio.handle_event(...)</code> and reconcile through
+an <code>on_event</code> callback instead, using the same row-level helpers. Same cache, same events — only
+the trigger differs.</p>
+</div>
+
+</div>
+
+<div id="admonition-writes-on-a-read-only-master" class="admonition admonish-info" role="note" aria-labelledby="admonition-writes-on-a-read-only-master-title">
+<div class="admonition-title">
+<div id="admonition-writes-on-a-read-only-master-title">
+<p>Writes, on a read-only master</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-writes-on-a-read-only-master"></a>
+</div>
+
+<div>
+<p>S3’s listing Vista advertises <code>can_insert: false</code>, and the facade won’t pretend otherwise — by
+default. Register an <strong><code>on_write</code></strong> callback on the Lens and the write queue becomes yours:
+each queued <a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a> is handed to your closure, which can append to
+a journal, call a different API, or write a queue — this is exactly the introduction’s
+“a read-only CSV file accepts writes by routing them into a queue”. Without <code>on_write</code>, queued
+ops are applied to the master directly, and a master that can’t take them surfaces
+<code>DioEvent::WriteFailed</code> on the bus — never a silent drop.</p>
+</div>
+
+</div>
+
+<h2 id="callback-summary"><a class="header" href="#callback-summary">Callback summary</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Callback</th><th>When it fires</th><th>In this chapter</th></tr>
+</thead>
+<tbody>
+<tr><td><code>on_start</code></td><td>Once at <code>make_dio</code></td><td><code>sync</code> — pump pages, resume from cache</td></tr>
+<tr><td><code>on_refresh</code></td><td><code>refresh()</code> + timer</td><td>(not used — chapter 7 reconciles on a timer)</td></tr>
+<tr><td><code>on_write</code></td><td>Every <code>WriteOp</code></td><td>(not used — S3 listing is read-only)</td></tr>
+<tr><td><code>on_event</code></td><td>Upstream <code>ChangeEvent</code></td><td>(not used — S3 can’t push)</td></tr>
+<tr><td><code>on_list_page</code></td><td>Scenery list pass</td><td>Chapter 7</td></tr>
+<tr><td><code>on_load_detail</code></td><td>Scenery detail pass</td><td>Chapter 7</td></tr>
+<tr><td><code>total_provider</code> / <code>on_load_chunk</code></td><td>Scenery loading</td><td>Chapter 7</td></tr>
+</tbody>
+</table>
+</div>
 <hr>
 <h2 id="what-we-covered"><a class="header" href="#what-we-covered">What we covered</a></h2>
 <div class="table-wrapper">
@@ -558,15 +724,15 @@ v.insert(&amp;"muffin".to_string(), &amp;rec).await?;  // enqueued
 <tr><th>Concept</th><th>What it does</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a></td><td>Shared infrastructure: cache, callbacks, defaults</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/lens/struct.LensBuilder.html"><code>LensBuilder</code></a></td><td>Chainable configuration for building a Lens</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a></td><td>Per-entity binding of Vista + Lens; owns cache, queue, events</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a></td><td>Storage backing for cached rows</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a></td><td>One unit of work on the write queue</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/dio/event_bus/enum.DioEvent.html"><code>DioEvent</code></a></td><td>Internal event: record changed, invalidated, write failed</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a></td><td>Upstream event from the master backend</td></tr>
-<tr><td><code>on_start</code> / <code>on_refresh</code> / <code>on_write</code> / <code>on_event</code></td><td>Lifecycle callbacks</td></tr>
-<tr><td><code>dio.vista()</code></td><td>Facade Vista that reads from cache, writes through queue</td></tr>
+<tr><td><code>AwsAccount::public(region)</code></td><td>Unsigned requests — public buckets, no credentials</td></tr>
+<tr><td>Cursor in the table name (<code>@req=resp</code>)</td><td>Auto-pagination: one <code>list()</code>, as many requests as needed</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a></td><td>Shared infrastructure: cache, callbacks, refresh policy</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a></td><td>Binding of master Vista + Lens; owns cache, queue, event bus</td></tr>
+<tr><td><code>cache_at</code> / <a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a></td><td>Persistent (redb) or in-memory storage for cached rows</td></tr>
+<tr><td><code>fetch_next(token)</code></td><td>One page per call; S3’s token is the last key — durable</td></tr>
+<tr><td><code>dio.cache()</code> / <code>dio.master()</code></td><td>The two sides of the Dio, directly addressable from callbacks</td></tr>
+<tr><td><code>dio.vista()</code></td><td>Facade Vista: reads from cache, writes through the queue</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/dio/event_bus/enum.DioEvent.html"><code>DioEvent</code></a></td><td>Bus event: invalidated, record-level changes, write failures</td></tr>
 </tbody>
 </table>
 </div>
@@ -580,9 +746,9 @@ v.insert(&amp;"muffin".to_string(), &amp;rec).await?;  // enqueued
 </div>
 
 <div>
-<p>Dio gives you caching and events. But consumers often need more — ordered rows, viewport-driven
-loading, aggregate counts. The next chapter introduces <strong>Scenery</strong>: reactive views that sit on top
-of a Dio and provide structured access patterns for tables, individual records, and aggregates.</p>
+<p>The inventory knows every file’s name and size — and nothing about what’s inside. The next
+chapter teaches the Dio to <em>augment</em> its rows: each station file gains a reading count and a
+latest-reading date, computed from the file itself, fetched once, cached forever.</p>
 </div>
 
 </div>
@@ -596,7 +762,7 @@ of a Dio and provide structured access patterns for tables, individual records, 
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../intro/step6-scenery.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../intro/step6-augmentation.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -610,7 +776,7 @@ of a Dio and provide structured access patterns for tables, individual records, 
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../intro/step6-scenery.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../intro/step6-augmentation.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

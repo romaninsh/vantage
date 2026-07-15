@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-0df4a5b3.js";
+            window.path_to_searchindex_js = "searchindex-5e583a43.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-298e3dc9.js"></script>
+        <script src="toc-ef6241bc.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -177,20 +177,136 @@
                     <main>
                         <h1 id="vantage-framework"><a class="header" href="#vantage-framework">Vantage Framework</a></h1>
 <p>Vantage is a data entity persistence and abstraction framework for Rust.</p>
-<p>Rather than being a traditional ORM, Vantage introduces the concept of a <strong>DataSet</strong> — an abstract,
-composable handle to records living in a remote data store. You define structure, conditions,
-relations, and operations without loading data eagerly, and Vantage translates your intent into
-efficient queries for whichever backend you’re using.</p>
+<p>Vantage changes the way you think about your data. Instead of writing queries and loading rows,
+you work with <strong>sets</strong> of records — “unpaid invoices older than 30 days”, “customers who ordered
+today” — narrowing them, combining them, traversing from one to another, and acting on them where
+they live.</p>
+<p>Vantage offers two ways to work with your data. In <strong>transactional</strong> mode there is no state to
+manage: load a set, act on it, done — each operation goes straight to the backend. This is the
+natural shape of a REST endpoint: handle the request, read or update the data, respond. (The
+name describes that request/response shape, not database transactions — BEGIN/COMMIT is the
+backend’s business, and Vantage doesn’t wrap your operations in one.) In <strong>live</strong> mode Vantage
+maintains a local representation of the data segment you’re working with: you operate on your
+local copy, and it reconciles with the source over time. That’s how a user interface behaves —
+any kind. Live mode is built on top of transactional mode, so everything you learn about the
+first carries into the second.</p>
 <p>This documentation tracks the current <strong>0.6</strong> release line.</p>
+<h2 id="ethos"><a class="header" href="#ethos">Ethos</a></h2>
+<p>A few principles run through every layer of the framework:</p>
+<ul>
+<li><strong>Let the backend do the work.</strong> If a database or API can filter, join, aggregate, or paginate,
+Vantage pushes the work there — data is narrowed at the source, not in your process.</li>
+<li><strong>Fill the gaps client-side, honestly.</strong> Where a backend can’t (a CSV file can’t sort; two
+databases can’t join), the layer above provides it — and every handle advertises exactly what it
+supports, so a missing capability is an explicit error, never a silent guess.</li>
+<li><strong>Respect native types.</strong> Each backend keeps its own type system end to end — decimals stay
+precise, dates stay dates, nothing is funnelled through JSON.</li>
+<li><strong>Business logic lives on the entity.</strong> Validation, audit, soft-delete, and domain methods attach
+to your model once and apply everywhere the entity is used.</li>
+<li><strong>Fail loudly, retry safely.</strong> No panics, no silent zeros or match-alls; operations are
+idempotent wherever possible, so retrying is always an option.</li>
+<li><strong>Be aware of observers.</strong> Data knows who is watching: changes stream to subscribers, and edits
+reconcile instead of clobbering. (This is live mode — chapters 5 through 8 build it up.)</li>
+</ul>
+<h2 id="three-ways-to-work-with-data"><a class="header" href="#three-ways-to-work-with-data">Three ways to work with data</a></h2>
+<p>Vantage lets you choose how strongly typed your data access is — per component, not per project:</p>
+<ol>
+<li><strong>Entity mode</strong> — records are plain Rust structs (<code>Table&lt;SqliteDB, Product&gt;</code>). Columns and
+conditions are compiler-checked, and business logic attaches to the entity: full type safety,
+the natural choice for hand-written Rust code.</li>
+<li><strong>Record mode</strong> — each record is an arbitrary structure of named values (<code>Record&lt;V&gt;</code>), with
+schema introspectable at runtime. No entity struct required — built for generic code: data
+grids, admin tools, import/export.</li>
+<li><strong>Rhai scripts</strong> — more generic still: schema declared in YAML, custom expressions and logic in
+<a href="https://rhai.rs">Rhai</a>. Defined, loaded, and sealed at runtime with no recompiling — made for
+configuration-driven and agent-driven tooling.</li>
+</ol>
+<p>The three interoperate: a Rhai-declared table serves records, records deserialize into entities,
+and all of it sits behind the same capability-checked handles.</p>
+<h2 id="what-makes-vantage-different"><a class="header" href="#what-makes-vantage-different">What makes Vantage different</a></h2>
+<p>Vantage is a <strong>framework, not a library</strong>. A library solves one concern and hands the rest back to
+you; Vantage takes over the data layer entirely — modelling, querying, types, caching, reactivity —
+and gives you well-defined places to plug in what’s yours. The implementation spans 10+ crates
+(query builders, backend drivers, the entity layer, the reactive stack), all built on the same
+cohesive, extensible principles: what you learn in one crate applies in the next, and every
+extension point looks the same wherever you meet it.</p>
+<p>Vantage also doesn’t mimic frameworks from other languages. No reflection, no runtime magic, no
+inheritance hierarchies. It leans on what Rust is uniquely good at — traits for composition,
+ownership for safe sharing, generics that compile away, async throughout — so the framework feels
+native rather than translated.</p>
+<h2 id="the-four-layers"><a class="header" href="#the-four-layers">The four layers</a></h2>
+<p>Everything above maps onto four layers. Each builds on the one below, and you climb only as far as
+your application needs:</p>
+<pre><code class="language-text">Table&lt;SqliteDB, Product&gt;   entity mode — typed, compiler-checked, transactional
+Vista                      record mode — schema known at runtime, capabilities honest
+Dio                        live mode begins — local cache, write queue, change events
+Scenery                    reactive views over a Dio — what a UI binds to and watches
+</code></pre>
+<p>A <code>Table</code> is where your model and business logic live. Wrap it into a <code>Vista</code> when generic code
+needs to consume it (<a href="#three-ways-to-work-with-data">record mode</a>, above). Bind the Vista to a <code>Dio</code> when you want a live local representation —
+caching, write routing, reconciliation. Open a <code>Scenery</code> over the Dio for an ordered table, a
+single record, or an aggregate that updates as the data changes. Layers never leak upward: a
+<code>Table</code> doesn’t know it’s being cached, and a <code>Scenery</code> consumer can’t tell which backend is
+underneath.</p>
+<h2 id="vantage-and-vantage-ui"><a class="header" href="#vantage-and-vantage-ui">Vantage and Vantage UI</a></h2>
+<p><a href="https://vantage-ui.com">Vantage UI</a> is a native admin console built directly on these crates —
+point it at your databases, APIs, and tools, and an AI agent configures tables, forms, and
+dashboards over them. It is a closed-source product (free download), and this framework is its
+open foundation: Vantage is open-sourced so that you can build your own services, CLIs, and UIs
+on the same data layer — and extend it, adding persistences and capabilities that custom builds
+can carry further than the stock app does.</p>
+<p>If you want the finished tool, start with Vantage UI. If you want the foundation, read on.</p>
 <h2 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h2>
 <p>Vantage covers a lot of ground — multiple databases, type systems, entity frameworks, UI adapters —
 but none of that matters until you’ve seen it do something useful.</p>
 <p>This guide introduces Vantage concepts one at a time, each building on the last. We’ll start with
-something you already know — SQL — and work our way up to the bigger abstractions. Along the way
-we’ll build a small CLI tool that grows with each chapter.</p>
+something you already know — SQL — and work our way up to the bigger abstractions. Along the way we
+build a small product catalog that starts as a CLI, becomes an HTTP API, and switches databases
+without touching its handlers — then point the same machinery at a live cloud API and end with a
+cached, reactive view of it: first in the terminal, then served over HTTP to a React frontend.</p>
+<ol>
+<li><strong><a href="./intro/step1-first-query.html">SQLite and the Query Builder</a></strong> — connect to a database, build
+and execute typed queries, map rows to structs.</li>
+<li><strong><a href="./intro/step2-tables.html">Tables and Typed Data Access</a></strong> — define entities and tables, narrow
+sets with conditions, traverse relationships, add computed fields; CRUD becomes one-liners.</li>
+<li><strong><a href="./intro/step3-axum-server.html">A Standalone Axum Server</a></strong> — put the model behind HTTP with one
+generic CRUD handler for every entity, then migrate the whole server from SQLite to MongoDB by
+editing only the model.</li>
+<li><strong><a href="./intro/step4-vista.html">Vista — the Universal Data Handle</a></strong> — erase the entity and backend
+into a schema-bearing runtime handle, with explicit capability contracts.</li>
+<li><strong><a href="./intro/step5-dio-lens.html">Dio &amp; Lens — Caching and Events</a></strong> — build a bucket inventory
+over a real cloud API: a persistent, resumable local cache turns a seconds-long listing into
+milliseconds, with an event bus announcing every change.</li>
+<li><strong><a href="./intro/step6-augmentation.html">Augmentation — Enriching Rows</a></strong> — give every listed file
+columns computed from its contents, fetched once per file through lazy expressions and cached
+with the row.</li>
+<li><strong><a href="./intro/step7-scenery.html">Scenery — Reactive Views</a></strong> — reactive views over the Dio; finish
+with a live terminal UI that scrolls 122,000 files and loads details for the rows at your
+cursor.</li>
+<li><strong><a href="./intro/step8-axum-dio.html">Serving Scenery — Axum &amp; Watch Streams</a></strong> — put the Dio behind
+HTTP: kubernetes-style GET + watch endpoints streaming augmentation to a React frontend, with
+concurrent viewers served fairly from one download per row.</li>
+</ol>
 <p>You’ll need basic Rust experience (structs, traits, async/await, cargo). No prior Vantage knowledge
 required.</p>
 <p><strong>Start here:</strong> <a href="./intro/step1-first-query.html">SQLite and the Query Builder</a></p>
+<h2 id="beyond-the-guide"><a class="header" href="#beyond-the-guide">Beyond the guide</a></h2>
+<p>The rest of the book is reference material — read it when the guide points at it, or jump straight
+to what you need:</p>
+<ul>
+<li><a href="./expressions.html">Expressions &amp; Queries</a> and the per-backend chapters
+(<a href="./sql.html">SQL</a>, <a href="./surrealdb.html">SurrealDB</a>) — the query-building layer in depth.</li>
+<li><a href="./record-lifecycle.html">Records: Traversal, Invariants &amp; Hooks</a> — the write pipeline: audit
+stamps, validation, soft-delete.</li>
+<li><a href="./mda.html">Model-Driven Architecture</a> — how Vantage expects you to structure business software.</li>
+<li><a href="./config-driven-vistas.html">Config-Driven Vistas: YAML &amp; Rhai</a> — define and reshape data handles
+from configuration, sealed at runtime without recompiling.</li>
+<li><a href="./new-persistence.html">Adding a New Persistence</a> — nine incremental steps to connect Vantage to
+a backend it doesn’t know yet; the main path for extending the framework.</li>
+<li><a href="./augmentation.html">Augmentation</a> and the <a href="./type-system.html">Type System</a> — enriching rows from a
+second source, and teaching backends your own types.</li>
+<li><a href="./history.html">Historical Timeline</a> — how the framework got here, release by release.</li>
+</ul>
 
                     </main>
 

@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-0df4a5b3.js";
+            window.path_to_searchindex_js = "../searchindex-5e583a43.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-298e3dc9.js"></script>
+        <script src="../toc-ef6241bc.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -199,7 +199,7 @@ chapter we <strong>migrate</strong> them to MongoDB. That migration is a change 
 and routes don’t know the difference.</li>
 </ul>
 <p>The handler functions are each written <strong>once</strong> and mounted against any
-<a href="https://docs.rs/vantage_table/0.6.7/vantage_table/table/base/struct.Table.html"><code>Table&lt;Backend, Entity&gt;</code></a> the router has on hand — one <code>list</code>, one
+<a href="https://docs.rs/vantage_table/0.6.10/vantage_table/table/base/struct.Table.html"><code>Table&lt;Backend, Entity&gt;</code></a> the router has on hand — one <code>list</code>, one
 <code>get</code>, one <code>post</code>, one <code>patch</code>, one <code>delete</code>, parameterised over the backend and entity types.
 Adding another entity is a route registration, not a new handler.</p>
 <hr>
@@ -210,11 +210,12 @@ server itself. One new dependency:</p>
 </code></pre>
 <p>Tokio and serde are already pulled in from earlier chapters. <code>axum</code> is the HTTP framework; it uses
 the existing <code>serde</code> to encode response bodies as JSON.</p>
-<p><strong>Entities.</strong> Chapter 2’s <code>Category</code> carried a computed <code>title</code> field; Chapter 2’s <code>Product</code> carried
-a computed <code>category</code> field. Both were assembled from subqueries — great for display, but they don’t
+<p><strong>Entities.</strong> Chapter 2’s <code>Product</code> carried a computed <code>category</code> field, and the <em>Expressions
+compose</em> callout showed <code>Category</code> gaining a computed <code>title</code>. Both were assembled from
+subqueries — great for display, but they don’t
 round-trip cleanly through a <code>POST</code> body because the JSON would try to write columns that don’t
 exist. For a writable API we replace the computed fields with the plain FK column that sits under
-them. (See <a href="https://docs.rs/vantage_table/0.6.7/vantage_table/table/base/struct.Table.html#method.with_expression"><code>with_expression</code></a> for the chapter-2
+them. (See <a href="https://docs.rs/vantage_table/0.6.10/vantage_table/table/base/struct.Table.html#method.with_expression"><code>with_expression</code></a> for the chapter-2
 computed-field setup we’re walking away from here.)</p>
 <p><code>src/category.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -312,7 +313,7 @@ async fn main() -&gt; VantageResult&lt;()&gt; {
 }</code></pre>
 <p>A few notes on what this is doing:</p>
 <ul>
-<li><strong><code>static DB: OnceLock&lt;</code><a href="https://docs.rs/vantage_sql/0.6.3/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a><code>&gt;</code>.</strong> The handler needs a
+<li><strong><code>static DB: OnceLock&lt;</code><a href="https://docs.rs/vantage_sql/0.6.8/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a><code>&gt;</code>.</strong> The handler needs a
 database handle but we don’t want to open a new connection per request. A program-wide <code>OnceLock</code>
 is the simplest possible holder — set once in <code>main</code>, read from anywhere.</li>
 <li><strong>Each request calls <code>Category::table(db())</code></strong> — building the table (columns, relationships) and
@@ -359,12 +360,12 @@ callers get a shared reference. Most table operations
 <a href="https://docs.rs/vantage_dataset/0.6.2/vantage_dataset/traits/dataset/trait.WritableDataSet.html#tymethod.insert"><code>insert</code></a>,
 <a href="https://docs.rs/vantage_dataset/0.6.2/vantage_dataset/traits/dataset/trait.WritableDataSet.html#tymethod.replace"><code>replace</code></a>,
 <a href="https://docs.rs/vantage_dataset/0.6.2/vantage_dataset/traits/valueset/trait.WritableValueSet.html#tymethod.delete"><code>delete</code></a>,
-<a href="https://docs.rs/vantage_table/0.6.7/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>) take <code>&amp;self</code>, so they work on the
+<a href="https://docs.rs/vantage_table/0.6.10/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>) take <code>&amp;self</code>, so they work on the
 reference without any clone.</li>
 <li><strong><code>static CACHE: OnceLock&lt;...&gt;</code> lives inside the function.</strong> A function-local static is still a
 program-wide single instance — Rust allows this and it keeps the cache private to the table that
 owns it.</li>
-<li><strong>The <a href="https://docs.rs/vantage_table/0.6.7/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> callback is a closure: <code>|db| Product::table(db).clone()</code>.</strong> The framework still hands us a db and expects an owned
+<li><strong>The <a href="https://docs.rs/vantage_table/0.6.10/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> callback is a closure: <code>|db| Product::table(db).clone()</code>.</strong> The framework still hands us a db and expects an owned
 <code>Table&lt;SqliteDB, Product&gt;</code> back, so we call the cached accessor and clone the reference. On the
 first call this triggers Product’s cache to build; every subsequent call just clones a pre-built
 definition.</li>
@@ -395,15 +396,14 @@ return a new <code>Table</code>. If a handler needs to narrow the cached definit
     .clone()                      // owned copy of the cached definition
     .with_condition(...)           // now we can narrow it
 <span class="boring">}</span></code></pre>
-<p>That clone is what chapter 2 meant by “cloning a table clones the definition, not the data”:
-it’s a copy of the shape (columns, conditions, relationships), and it’s cheap.</p>
+<p>That’s chapter 2’s rule in action — cloning a table copies the definition, and it’s cheap.</p>
 </div>
 
 </div>
 
 <hr>
 <h2 id="products-of-a-category"><a class="header" href="#products-of-a-category">Products of a category</a></h2>
-<p>The <a href="https://docs.rs/vantage_table/0.6.7/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> relationship we kept from chapter 2 lets
+<p>The <a href="https://docs.rs/vantage_table/0.6.10/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> relationship we kept from chapter 2 lets
 us serve a nested route — <code>/categories/{id}/products</code>. Before writing the handler, give the
 relationship a proper name with an extension trait on <code>Table&lt;SqliteDB, Category&gt;</code>. Add this to
 <code>src/category.rs</code>:</p>
@@ -419,10 +419,9 @@ impl CategoryTable for Table&lt;SqliteDB, Category&gt; {
     }
 }
 <span class="boring">}</span></code></pre>
-<p>Chapter 2 introduced this pattern. The trait gives the relationship a typed, discoverable name —
-<code>ref_products()</code> — so call sites stop carrying the <code>"products"</code> string and the <code>::&lt;Product&gt;</code>
-turbofish around. The <code>.unwrap()</code> is safe here because we’re the ones who registered <code>"products"</code>; a
-typo surfaces immediately at startup.</p>
+<p>Chapter 2 introduced this pattern — a typed, discoverable name instead of the string-and-turbofish
+call. The <code>.unwrap()</code> is safe here because we’re the ones who registered <code>"products"</code>; a typo
+surfaces immediately at startup.</p>
 <p>Now the handler. Take the cached category table, narrow it to a single id, and traverse the
 relationship:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -443,13 +442,13 @@ async fn list_category_products(Path(id): Path&lt;i64&gt;) -&gt; Json&lt;Vec&lt;
 <span class="boring">}</span></code></pre>
 <p>Three things going on:</p>
 <ul>
-<li><strong><code>Category::table(db()).clone()</code></strong> — we need an owned <a href="https://docs.rs/vantage_table/0.6.7/vantage_table/table/base/struct.Table.html"><code>Table</code></a> to
-chain <a href="https://docs.rs/vantage_table/0.6.7/vantage_table/table/base/struct.Table.html#method.with_condition"><code>with_condition</code></a> onto, so we clone the cached
-definition. The clone copies the shape (columns, conditions, relationships), not any rows.</li>
+<li><strong><code>Category::table(db()).clone()</code></strong> — we need an owned <a href="https://docs.rs/vantage_table/0.6.10/vantage_table/table/base/struct.Table.html"><code>Table</code></a> to
+chain <a href="https://docs.rs/vantage_table/0.6.10/vantage_table/table/base/struct.Table.html#method.with_condition"><code>with_condition</code></a> onto, so we clone the cached
+definition — the shape, not any rows.</li>
 <li><strong><code>with_condition(id_col.eq(id))</code></strong> — narrows the category table to one row: the one we’re asking
 for. Nothing hits the database yet.</li>
 <li><strong><code>ref_products()</code></strong> — traverses the <code>with_many</code> relationship we registered on Category in
-chapter 2, via <a href="https://docs.rs/vantage_table/0.6.7/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>. The returned table is
+chapter 2, via <a href="https://docs.rs/vantage_table/0.6.10/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>. The returned table is
 <code>Table&lt;SqliteDB, Product&gt;</code>, already scoped to products whose <code>category_id</code> matches the narrowed
 category set. Chapter 2 walked through what the emitted SQL looks like; it’s the same here.</li>
 </ul>
@@ -478,6 +477,9 @@ category set. Chapter 2 walked through what the emitted SQL looks like; it’s t
 </code></pre>
 <p>Swap the id in the URL and the products narrow accordingly. The relationship was declared once, back
 in chapter 2, and we haven’t touched it since — every new nested route reuses the same declaration.</p>
+<p>Notice <code>"category_id": "1"</code> in the responses — a string, even though the SQLite column is INTEGER.
+This is chapter 2’s id convention at work: ids travel as strings through Vantage, so the entity
+declares <code>category_id: Option&lt;String&gt;</code> and the value converts on its way out of the database.</p>
 <hr>
 <h2 id="a-generic-crud-helper"><a class="header" href="#a-generic-crud-helper">A generic <code>crud</code> helper</a></h2>
 <p>Two handlers so far — <code>list_categories</code> and <code>list_category_products</code> — and they’re already doing the
@@ -554,7 +556,7 @@ where
         )
 }
 <span class="boring">}</span></code></pre>
-<p>That’s the whole thing. Five handler bodies, each tiny, all generic over the entity type. Mount
+<p>Five handler bodies, each tiny, all generic over the entity type. Mount
 <code>crud(...)</code> under a prefix with <code>.nest(...)</code> and every route below it gets the full CRUD verb set
 for free.</p>
 <p><code>/categories</code> becomes a one-liner:</p>
@@ -696,7 +698,7 @@ dropped and the client sees an empty reply, with no status code and no body to e
 <li>Everything else returns <strong>500</strong> but with a structured JSON body, not silence.</li>
 </ul>
 <p>Axum already gives us the middle one for free — it rejects malformed <code>Json&lt;E&gt;</code> bodies with 400.
-The other two come down to converting <a href="https://docs.rs/vantage_core/0.6.0/vantage_core/util/error/struct.VantageError.html"><code>VantageError</code></a> into an HTTP
+The other two come down to converting <a href="https://docs.rs/vantage_core/0.6.1/vantage_core/util/error/struct.VantageError.html"><code>VantageError</code></a> into an HTTP
 response. Add an <code>ApiError</code> type to <code>main.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -736,7 +738,7 @@ fn not_found(id: &amp;str) -&gt; ApiError {
 
 type ApiResult&lt;T&gt; = Result&lt;T, ApiError&gt;;
 <span class="boring">}</span></code></pre>
-<p>Three things earn their keep:</p>
+<p>Three pieces matter here:</p>
 <ul>
 <li><strong><code>IntoResponse</code></strong> makes <code>ApiError</code> returnable from a handler; axum calls <code>into_response()</code>
 to assemble status, headers, and body.</li>
@@ -885,11 +887,11 @@ table with whatever the caller asked for, and lists:</p>
 <span class="boring">}</span></code></pre>
 <p>Two things happen:</p>
 <ul>
-<li><strong><a href="https://docs.rs/vantage_table/0.6.7/vantage_table/table/base/struct.Table.html#method.set_pagination"><code>set_pagination</code></a><code>(Some(</code><a href="https://docs.rs/vantage_table/0.6.7/vantage_table/pagination/struct.Pagination.html#method.new"><code>Pagination::new</code></a><code>(page, per_page)))</code></strong>
+<li><strong><a href="https://docs.rs/vantage_table/0.6.10/vantage_table/table/base/struct.Table.html#method.set_pagination"><code>set_pagination</code></a><code>(Some(</code><a href="https://docs.rs/vantage_table/0.6.10/vantage_table/pagination/struct.Pagination.html#method.new"><code>Pagination::new</code></a><code>(page, per_page)))</code></strong>
 takes a page number and a page size. Vantage applies these as <code>LIMIT … OFFSET …</code> on the SELECT.
 Missing params fall back to the defaults (page 1, 50 per page) — and if neither is supplied we
 don’t touch pagination at all, so the unfiltered list still hits the whole set.</li>
-<li><strong><a href="https://docs.rs/vantage_table/0.6.7/vantage_table/table/base/struct.Table.html#method.add_search"><code>add_search</code></a><code>(term)</code></strong> is the <code>.with_search</code> we used
+<li><strong><a href="https://docs.rs/vantage_table/0.6.10/vantage_table/table/base/struct.Table.html#method.add_search"><code>add_search</code></a><code>(term)</code></strong> is the <code>.with_search</code> we used
 in chapter 2 to add a LIKE filter across all columns. Both end up as extra <code>WHERE</code> clauses on the
 query that vantage already compiles for us.</li>
 </ul>
@@ -965,7 +967,7 @@ already knows how to render a 400.</p>
 databases is a change to the model, not to the routes, handlers, or business logic. Now we
 cash the check. <code>/categories</code>, <code>/categories/{id}</code>, and <code>/categories/{cat_id}/products</code> keep
 their exact URL shape, response bodies, and behaviour — but the data lives in
-<a href="https://docs.rs/vantage_mongodb/0.6.1/vantage_mongodb/mongodb/struct.MongoDB.html"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage_sql/0.6.3/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>.</p>
+<a href="https://docs.rs/vantage_mongodb/0.6.1/vantage_mongodb/mongodb/struct.MongoDB.html"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage_sql/0.6.8/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>.</p>
 <p>Start Mongo — Docker is the easiest way:</p>
 <pre><code class="language-sh">docker run -d --name mongo-learn -p 27017:27017 mongo:7
 </code></pre>
@@ -976,12 +978,12 @@ axum = "0.8.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-vantage-core = { path = "../vantage-core" }
-vantage-dataset = { path = "../vantage-dataset" }
-vantage-expressions = { path = "../vantage-expressions" }
-vantage-mongodb = { path = "../vantage-mongodb" }
-vantage-table = { path = "../vantage-table" }
-vantage-types = { path = "../vantage-types", features = ["serde"] }
+vantage-core = "0.6"
+vantage-dataset = "0.6"
+vantage-expressions = "0.6"
+vantage-mongodb = "0.6"
+vantage-table = "0.6"
+vantage-types = { version = "0.6", features = ["serde"] }
 </code></pre>
 <h3 id="entities"><a class="header" href="#entities">Entities</a></h3>
 <p>Swap the <code>#[entity]</code> type tag from <code>SqliteType</code> to <code>MongoType</code> and the id column name from
@@ -1089,7 +1091,7 @@ where
     F: Fn(MongoDB, &amp;Params) -&gt; Table&lt;MongoDB, E&gt; + Send + Sync + 'static,
     E: Entity&lt;AnyMongoType&gt; + Serialize + DeserializeOwned + Send + Sync + 'static,
 <span class="boring">}</span></code></pre>
-<p>Connection, id handling, and error mapping are the only handler-level changes:</p>
+<p>Connection and id handling are the only handler-level changes:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>// db() returns MongoDB; connect with URL + database name.
@@ -1101,14 +1103,10 @@ let conn = MongoDB::connect("mongodb://localhost:27017", "learn3")
 // string is a 24-char hex, otherwise stays a plain String, via a `From&lt;String&gt;`
 // smart-parse in vantage-mongodb.
 let id: MongoId = params["id"].clone().into();
-
-// MongoDB's missing-doc error joins the 404 path.
-let status = if message.contains("no row found") || message.contains("Document not found") {
-    StatusCode::NOT_FOUND
-} else {
-    StatusCode::INTERNAL_SERVER_ERROR
-};
 <span class="boring">}</span></code></pre>
+<p>The 404 path needs no change at all. Mongo’s <code>get</code> returns <code>Result&lt;Option&lt;E&gt;&gt;</code> just like
+SQLite’s, so the same <code>.ok_or_else(|| not_found(&amp;id))?</code> maps a missing document to 404 — the
+promise of the <em>Why not match on the error message?</em> box holds across backends.</p>
 <h3 id="running-it"><a class="header" href="#running-it">Running it</a></h3>
 <pre><code class="language-sh">cargo run
 </code></pre>
@@ -1228,7 +1226,7 @@ learned in chapter 2.</li>
 </span><span class="boring">fn main() {
 </span>.nest("/widgets", crud(|db, _| Widget::table(db).clone()))
 <span class="boring">}</span></code></pre>
-<p>That’s the whole surface. <code>GET</code> list, <code>POST</code> create, <code>GET /{id}</code>, <code>PATCH /{id}</code>, <code>DELETE /{id}</code>, pagination via <code>?page=&amp;per_page=</code>, full-text search via <code>?q=</code>, 404s for missing ids,
+<p>The full surface: <code>GET</code> list, <code>POST</code> create, <code>GET /{id}</code>, <code>PATCH /{id}</code>, <code>DELETE /{id}</code>, pagination via <code>?page=&amp;per_page=</code>, full-text search via <code>?q=</code>, 404s for missing ids,
 400s for malformed bodies, structured JSON errors. No new handler code. No per-entity error
 mapping. No per-entity query-param struct. One line per entity.</p>
 <p>Every route plays by the same rules because every route is served by the same <code>crud</code> — the
@@ -1238,6 +1236,9 @@ principle from chapter 2’s <code>Table</code> carried all the way to the wire,
 <p>The <code>vantage_axum</code> module is generic enough to lift directly into a larger codebase — it has
 no knowledge of <code>Category</code>, <code>Product</code>, or your particular routes. Drop it into your own
 binary, give it a <code>db()</code> accessor, write entity files, mount routes.</p>
+<p>One thing it deliberately doesn’t do is authentication — every endpoint here is anonymous.
+Auth belongs to the HTTP layer: wrap the <code>Router</code> in your usual tower middleware; Vantage
+stays out of it.</p>
 
                     </main>
 

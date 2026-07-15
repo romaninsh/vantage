@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-0df4a5b3.js";
+            window.path_to_searchindex_js = "../searchindex-5e583a43.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-298e3dc9.js"></script>
+        <script src="../toc-ef6241bc.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -223,7 +223,6 @@ disk.</p>
 <li>Build SELECT queries with fields and conditions</li>
 <li>Execute queries and read results</li>
 <li>Convert results into <code>Vec&lt;Record&gt;</code> with typed field access</li>
-<li>Run aggregates (COUNT, SUM) with one method call</li>
 <li>Understand how Vantage keeps parameters separate from SQL (no injection risk)</li>
 </ol>
 </div>
@@ -256,7 +255,7 @@ INSERT INTO product VALUES (2, 'Doughnut',          135, 1, 0);
 INSERT INTO product VALUES (3, 'Tart',              220, 2, 0);
 INSERT INTO product VALUES (4, 'Pie',               299, 2, 0);
 INSERT INTO product VALUES (5, 'Cookies',           199, 1, 0);
-INSERT INTO product VALUES (6, 'Discontinued Cake',  80, 1, 1);
+INSERT INTO product VALUES (6, 'A Stale Cake',       80, 1, 1);
 INSERT INTO product VALUES (7, 'Sourdough Loaf',    350, 3, 0);
 
 CREATE TABLE category (
@@ -293,8 +292,8 @@ async fn run() -&gt; VantageResult&lt;()&gt; {
 }</code></pre>
 <p>A few things going on here:</p>
 <ul>
-<li><strong><code>use vantage_sql::prelude::*</code></strong> brings in everything we need for this chapter — <a href="https://docs.rs/vantage_sql/0.6.3/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>,
-<a href="https://docs.rs/vantage_sql/0.6.3/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a>, the <code>sqlite_expr!</code> macro, error types, and the traits that make builder and
+<li><strong><code>use vantage_sql::prelude::*</code></strong> brings in everything we need for this chapter — <a href="https://docs.rs/vantage_sql/0.6.8/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>,
+<a href="https://docs.rs/vantage_sql/0.6.8/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a>, the <code>sqlite_expr!</code> macro, error types, and the traits that make builder and
 execution methods work.</li>
 <li><strong><code>VantageResult&lt;()&gt;</code></strong> is Vantage’s own Result type. It uses <code>VantageError</code>, which tracks context
 and error chains for readable diagnostics.</li>
@@ -360,9 +359,9 @@ any <code>Result</code> with a standard error type.</p>
 
 <hr>
 <h2 id="build-a-select"><a class="header" href="#build-a-select">Build a SELECT</a></h2>
-<p><a href="https://docs.rs/vantage_sql/0.6.3/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a> is the query builder for SQLite.
+<p><a href="https://docs.rs/vantage_sql/0.6.8/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a> is the query builder for SQLite.
 Other persistences have their own —
-<a href="https://docs.rs/vantage_sql/0.6.3/vantage_sql/postgres/statements/select/struct.PostgresSelect.html"><code>PostgresSelect</code></a>,
+<a href="https://docs.rs/vantage_sql/0.6.8/vantage_sql/postgres/statements/select/struct.PostgresSelect.html"><code>PostgresSelect</code></a>,
 <a href="https://docs.rs/vantage_mongodb/0.6.1/vantage_mongodb/select/struct.MongoSelect.html"><code>MongoSelect</code></a> — and they all implement the
 <a href="https://docs.rs/vantage_expressions/0.6.1/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a> trait, so the interface is identical apart from
 vendor-specific extensions. None of them need a database connection — they’re just structs that
@@ -420,7 +419,7 @@ println!("{:?}", result);
 <p>Two steps here: <code>.expr()</code> turns the builder into an <a href="https://docs.rs/vantage_expressions/0.6.1/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a>
 — Vantage’s internal representation that keeps parameters separate from the SQL template. Then
 <a href="https://docs.rs/vantage_expressions/0.6.1/vantage_expressions/traits/datasource/trait.ExprDataSource.html#tymethod.execute"><code>db.execute()</code></a> sends it to the database.</p>
-<p>The result is <a href="https://docs.rs/vantage_sql/0.6.3/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> — a type-tagged wrapper around whatever came back. The <code>Debug</code> output
+<p>The result is <a href="https://docs.rs/vantage_sql/0.6.8/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> — a type-tagged wrapper around whatever came back. The <code>Debug</code> output
 isn’t pretty, but you should see all 6 product rows in there.</p>
 <div id="admonition-when-does-vantage-hit-the-database" class="admonition admonish-tip" role="note" aria-labelledby="admonition-when-does-vantage-hit-the-database-title">
 <div class="admonition-title">
@@ -441,7 +440,7 @@ synchronous struct manipulation. You always know when a database call happens be
 
 <hr>
 <h2 id="adding-conditions"><a class="header" href="#adding-conditions">Adding conditions</a></h2>
-<p>Our database has a soft-delete flag — <code>old_cake</code> has <code>is_deleted = 1</code>. Let’s filter it out:</p>
+<p>Our database has a soft-delete flag — “A Stale Cake” has <code>is_deleted = 1</code>. Let’s filter it out:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>let condition = sqlite_expr!("\"is_deleted\" = {}", false);
@@ -463,7 +462,7 @@ risk, ever. The preview shows it inline for readability.</p>
 it’s nested inside the select’s own expression tree. At execution time the whole tree is
 <a href="https://docs.rs/vantage_expressions/0.6.1/vantage_expressions/expression/flatten/struct.ExpressionFlattener.html">flattened</a> into a single template + parameter list that
 the database driver can bind safely.</p>
-<p>Run it — you should see 5 rows, with “Discontinued Cake” filtered out.</p>
+<p>Run it — you should see 5 rows, with “A Stale Cake” filtered out.</p>
 <div id="admonition-types-and-persistence-rendering" class="admonition admonish-info" role="note" aria-labelledby="admonition-types-and-persistence-rendering-title">
 <div class="admonition-title">
 <div id="admonition-types-and-persistence-rendering-title">
@@ -486,9 +485,10 @@ See <a href="../type-system.html">Persistence-aligned Type System</a> for detail
 
 <h2 id="typed-columns-and-operators"><a class="header" href="#typed-columns-and-operators">Typed columns and operators</a></h2>
 <p>Writing <code>\"is_deleted\"</code> in a raw expression works, but there’s a cleaner way.
-<a href="https://docs.rs/vantage_table/0.6.7/vantage_table/column/core/struct.Column.html"><code>Column&lt;T&gt;</code></a> creates a typed column reference, then chain an
-<a href="https://docs.rs/vantage_sql/0.6.3/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a> like <code>.eq()</code> to build the
-condition:</p>
+<a href="https://docs.rs/vantage_table/0.6.10/vantage_table/column/core/struct.Column.html"><code>Column&lt;T&gt;</code></a> creates a typed column reference, then chain an
+<a href="https://docs.rs/vantage_sql/0.6.8/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a> like <code>.eq()</code> to build the
+condition. (<code>Column</code> lives in the <code>vantage-table</code> crate, but the <code>vantage_sql</code> prelude re-exports
+it — no new dependency needed.)</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>let is_deleted = Column::&lt;bool&gt;::new("is_deleted");
@@ -497,7 +497,7 @@ let condition = is_deleted.eq(false);
 <p>Same result, but the type parameter <code>&lt;bool&gt;</code> ensures you can only compare against matching types.
 Try <code>is_deleted.eq(42)</code> — it won’t compile. Other operators — <code>.gt()</code>, <code>.lt()</code>, <code>.ne()</code>, <code>.in_()</code> —
 enforce the same type safety.</p>
-<p>The result is a <a href="https://docs.rs/vantage_sql/0.6.3/vantage_sql/condition/struct.SqliteCondition.html"><code>SqliteCondition</code></a> — the backend’s native condition type — ready to be passed
+<p>The result is a <a href="https://docs.rs/vantage_sql/0.6.8/vantage_sql/condition/struct.SqliteCondition.html"><code>SqliteCondition</code></a> — the backend’s native condition type — ready to be passed
 directly to <code>.with_condition()</code>.</p>
 <div id="admonition-type-safety-and-backend-specific-operations" class="admonition admonish-info" role="note" aria-labelledby="admonition-type-safety-and-backend-specific-operations-title">
 <div class="admonition-title">
@@ -510,26 +510,11 @@ directly to <code>.with_condition()</code>.</p>
 
 <div>
 <p>Each SQL backend has its own operation trait — <code>SqliteOperation</code>, <code>PostgresOperation</code>,
-<code>MysqlOperation</code> — imported automatically via the prelude. These traits are
-blanket-implemented for any <code>Expressive&lt;T&gt;</code> where <code>T: Into&lt;AnySqliteType&gt;</code>, so typed columns
-(<code>Column&lt;i64&gt;</code>, <code>Column&lt;bool&gt;</code>, etc.) all get <code>.eq()</code>, <code>.gt()</code>, and friends for free.</p>
-<p>The operation produces a <code>SqliteCondition</code> that wraps <code>Expression&lt;AnySqliteType&gt;</code>. Since the
-condition type itself implements <code>Expressive&lt;AnySqliteType&gt;</code>, you can <strong>chain</strong> operations
-across type boundaries:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let price = Column::&lt;i64&gt;::new("price");
-price.gt(10).eq(false)  // =&gt; (price &gt; 10) = 0
-<span class="boring">}</span></code></pre>
-<p>Here <code>.gt(10)</code> returns a <code>SqliteCondition</code>, and <code>.eq(false)</code> works on it because <code>bool</code> is
-<code>Expressive&lt;AnySqliteType&gt;</code>. Try <code>price.gt(10).eq("foobar")</code> — surprisingly, this compiles
-too. That’s by design: type safety is enforced on the <strong>first</strong> operation (the column level),
-but once you have a <code>SqliteCondition</code>, any <code>AnySqliteType</code>-compatible value is accepted.</p>
-<p>You can also compare columns of the same type: <code>price.eq(price.clone())</code> compiles. But
-<code>price.eq(is_deleted)</code> won’t — <code>Column&lt;bool&gt;</code> isn’t <code>Expressive&lt;i64&gt;</code>.</p>
-<p>The <code>.clone()</code> is needed because operations take ownership of their arguments — values are
-stored inside the <code>Expression</code> tree until the query is executed. If you plan to reuse a
-column in multiple conditions, clone it or create a fresh <code>Column::new()</code>.</p>
+<code>MysqlOperation</code> — imported automatically via the prelude. Type safety is enforced at the
+column level; conditions themselves are expressions, so operations chain further
+(<code>price.gt(10).eq(false)</code> reads “price &gt; 10 is false”). Operations take ownership of their
+arguments — <code>.clone()</code> a column you want to reuse. The
+<a href="../expressions.html#expressive-trait">Expressive trait</a> reference covers the chaining mechanics.</p>
 </div>
 
 </div>
@@ -557,31 +542,27 @@ let select = SqliteSelect::new()
 </div>
 
 <div>
-<p><code>sqlite_ident()</code> is one of several <strong>primitives</strong> — reusable building blocks for SQL expressions.
-They handle quoting, escaping, and vendor-specific syntax. To use them:</p>
+<p>Typed columns aren’t the only way to reference a column. <strong>Primitives</strong> are reusable building
+blocks for SQL expressions — they handle quoting, escaping, and vendor-specific syntax. The
+identifier primitive builds the same condition without declaring a type:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use vantage_sql::sqlite::sqlite_ident as ident;
 
 let condition = ident("is_deleted").eq(false);
 <span class="boring">}</span></code></pre>
-<p>Each backend has its own typed identifier: <code>sqlite_ident()</code>, <code>pg_ident()</code>, <code>mysql_ident()</code>.
-These return a backend-pinned wrapper so <code>.eq()</code>, <code>.gt()</code>, etc. work without ambiguity.</p>
-<p>There is also a generic <code>ident()</code> that works when the backend type can be inferred from
-context — for example, inside <code>sqlite_expr!()</code> or when passed to a method that expects
-a specific <code>Expressive&lt;AnySqliteType&gt;</code>. Use the typed variant when calling operations
-directly.</p>
 <p>Primitives are not part of the prelude — import them when needed. Besides identifiers, you get
-<code>Fx</code> (function calls), <code>Case</code>, <code>Concat</code>, <code>Interval</code>, and more. See the
-<a href="../sql/primitives.html">Primitives reference</a> for the full list.</p>
-<p>In Vantage, primitives, query builders, Column, Conditions and even native types
-like i64 and bool — all implement <code>Expressive&lt;T&gt;</code>, where T is your database’s AnyType
-(for SQLite it’s <code>AnySqliteType</code>, for MongoDB — <code>AnyMongoType</code>) — making them
-eligible to be parameters of expressions.</p>
+<code>Fx</code> (function calls), <code>Case</code>, <code>Concat</code>, <code>Interval</code>, and more. The
+<a href="../sql/primitives.html">Primitives reference</a> has the full list, including the typed
+(<code>sqlite_ident()</code>, <code>pg_ident()</code>) versus generic (<code>ident()</code>) identifier variants.</p>
 </div>
 
 </div>
 
+<p>Primitives, query builders, <code>Column</code>, conditions — even native values like <code>i64</code> and <code>bool</code> —
+all implement <code>Expressive&lt;T&gt;</code>, where <code>T</code> is your database’s any-type (<code>AnySqliteType</code> for
+SQLite, <code>AnyMongoType</code> for MongoDB). That shared trait is what makes any of them usable as a
+parameter inside any expression.</p>
 <hr>
 <h2 id="working-with-any-types"><a class="header" href="#working-with-any-types">Working with Any-types</a></h2>
 <p><a href="https://docs.rs/vantage_types/0.6.2/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a> is an ordered map (<code>IndexMap&lt;String, V&gt;</code>) — one record per row,
@@ -595,7 +576,7 @@ its prelude:</p>
 <span class="boring">}</span></code></pre>
 <p>So far we’ve been printing raw <code>AnySqliteType</code> with <code>Debug</code>. That works for verifying queries, but
 it’s useless for real work. When <code>db.execute()</code> returns a multi-row result, the
-<a href="https://docs.rs/vantage_sql/0.6.3/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> holds an array of maps internally. Convert it
+<a href="https://docs.rs/vantage_sql/0.6.8/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> holds an array of maps internally. Convert it
 to <code>Vec&lt;Record&lt;AnySqliteType&gt;&gt;</code> to work with individual rows:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -690,24 +671,10 @@ persistence. One struct, all backends.</p>
 
 <div>
 <p><code>#[entity]</code> converts each field directly through the persistence’s type system — your struct
-fields just need to implement <code>SqliteType</code>. Alternatively, you can convert a
-<code>Record&lt;AnySqliteType&gt;</code> into <code>Record&lt;serde_json::Value&gt;</code> and use serde, but this may lose
-type information (e.g. <code>Decimal</code> precision, date types):</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[derive(serde::Deserialize)]
-struct Product {
-    name: String,
-    price: i64,
-}
-
-for rec in records {
-    let json_rec: Record&lt;serde_json::Value&gt; = rec.into_record();
-    let product = Product::from_record(json_rec)?;
-}
-<span class="boring">}</span></code></pre>
-<p>For simple types like <code>String</code> and <code>i64</code> it’s fine, but <code>Decimal</code> values lose precision and
-dates become strings. Prefer <code>#[entity]</code> when your schema includes those types.</p>
+fields just need to implement <code>SqliteType</code>. You could instead convert to
+<code>Record&lt;serde_json::Value&gt;</code> (as above) and derive <code>serde::Deserialize</code> — but that funnels
+values through JSON, with the same precision loss. Prefer <code>#[entity]</code> when your schema
+includes decimals or dates.</p>
 </div>
 
 </div>
@@ -767,16 +734,46 @@ async fn run() -&gt; VantageResult&lt;()&gt; {
 <tr><th>Concept</th><th>What it does</th><th>More info</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://docs.rs/vantage_sql/0.6.3/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a></td><td>Builds SELECT queries via builder pattern</td><td><a href="https://docs.rs/vantage_expressions/0.6.1/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a></td></tr>
-<tr><td><a href="https://docs.rs/vantage_table/0.6.7/vantage_table/column/core/struct.Column.html"><code>Column</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
-<tr><td><a href="https://docs.rs/vantage_sql/0.6.3/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a></td><td>Ext trait giving <code>.eq()</code>, <code>.gt()</code>, etc. → <code>SqliteCondition</code></td><td></td></tr>
+<tr><td><a href="https://docs.rs/vantage_sql/0.6.8/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a></td><td>Builds SELECT queries via builder pattern</td><td><a href="https://docs.rs/vantage_expressions/0.6.1/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a></td></tr>
+<tr><td><a href="https://docs.rs/vantage_table/0.6.10/vantage_table/column/core/struct.Column.html"><code>Column</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
+<tr><td><a href="https://docs.rs/vantage_sql/0.6.8/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a></td><td>Ext trait giving <code>.eq()</code>, <code>.gt()</code>, etc. → <code>SqliteCondition</code></td><td></td></tr>
 <tr><td><code>sqlite_expr!</code></td><td>Creates expressions with typed, bound parameters</td><td><a href="https://docs.rs/vantage_expressions/0.6.1/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a></td></tr>
-<tr><td><code>db.execute()</code></td><td>Runs an expression, returns <a href="https://docs.rs/vantage_sql/0.6.3/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a></td><td><a href="https://docs.rs/vantage_expressions/0.6.1/vantage_expressions/traits/datasource/trait.ExprDataSource.html"><code>ExprDataSource</code></a></td></tr>
+<tr><td><code>db.execute()</code></td><td>Runs an expression, returns <a href="https://docs.rs/vantage_sql/0.6.8/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a></td><td><a href="https://docs.rs/vantage_expressions/0.6.1/vantage_expressions/traits/datasource/trait.ExprDataSource.html"><code>ExprDataSource</code></a></td></tr>
 <tr><td><a href="https://docs.rs/vantage_types/0.6.2/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a></td><td>Ordered map of column names to values — row-level access</td><td><code>.try_get::&lt;T&gt;()</code></td></tr>
 <tr><td><code>#[entity(SqliteType)]</code></td><td>Generates lossless record-to-struct conversion</td><td><a href="https://docs.rs/vantage_types/0.6.2/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord</code></a></td></tr>
 </tbody>
 </table>
 </div>
+<div id="admonition-going-deeper" class="admonition admonish-tip" role="note" aria-labelledby="admonition-going-deeper-title">
+<div class="admonition-title">
+<div id="admonition-going-deeper-title">
+<p>Going deeper</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-going-deeper"></a>
+</div>
+
+<div>
+<p>This chapter used the smallest useful slice of the query layer. When you need more, the reference
+half of the book has it:</p>
+<ul>
+<li><strong><a href="../expressions.html">Expressions &amp; Queries</a></strong> — how expressions nest and flatten, building
+lists with <code>from_vec</code> (multi-row INSERTs), and <code>defer()</code> — a parameter whose value is fetched
+from a <em>different</em> database at execution time.</li>
+<li><strong><a href="../sql/primitives.html">SQL Primitives</a></strong> — the building blocks we skipped: <code>or_()</code> / <code>and_()</code>
+grouping, <code>fx!</code> function calls, <code>Case</code>, <code>ternary()</code>, <code>concat_!</code>, <code>Interval</code>, and portable
+<code>date_format()</code>.</li>
+<li><strong><a href="../sql.html">SQL: PostgreSQL, MySQL &amp; SQLite</a></strong> — the other two SQL backends (same interface,
+different dialects) and the <a href="../sql/type-conversions.html">type-conversion tables</a> showing exactly
+how chrono and decimal types round-trip per column type.</li>
+<li><strong><a href="../three-paths.html">Three Paths — Query Building</a></strong> — worked examples of the heavy artillery:
+JOINs, CTEs, window functions, <code>DISTINCT ON</code>.</li>
+</ul>
+<p>None of it is required for the next chapter — come back when a query calls for it.</p>
+</div>
+
+</div>
+
 
                     </main>
 

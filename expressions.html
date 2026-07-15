@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-0df4a5b3.js";
+            window.path_to_searchindex_js = "searchindex-5e583a43.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-298e3dc9.js"></script>
+        <script src="toc-ef6241bc.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -346,6 +346,13 @@ table’s columns, conditions, and ordering — ready for execution or further c
 </ul>
 <p>You can implement <code>Expressive&lt;T&gt;</code> for your own types to make them composable into the expression
 system.</p>
+<p>Because conditions are themselves <code>Expressive</code>, operations <strong>chain across type boundaries</strong>:
+<code>price.gt(10)</code> returns a <code>SqliteCondition</code>, and <code>.eq(false)</code> works on it — reading
+“(price &gt; 10) = 0”. Type safety is enforced on the <em>first</em> operation, at the column level; once
+you hold a condition, any value compatible with the backend’s any-type is accepted
+(<code>price.gt(10).eq("foobar")</code> compiles by design). Columns of the same type compare directly
+(<code>price.eq(price.clone())</code>), and operations take ownership of their arguments — clone a column
+you plan to reuse across conditions.</p>
 
                     </main>
 

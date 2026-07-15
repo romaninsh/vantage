@@ -1,0 +1,643 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Scenery — Reactive Views - Vantage Framework</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-2459343d.css">
+        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href=".././mdbook-admonish.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../searchindex-5e583a43.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc-ef6241bc.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Vantage Framework</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="scenery--reactive-views"><a class="header" href="#scenery--reactive-views">Scenery — Reactive Views</a></h1>
+<p>Chapter 6’s CLI asks for one window of details and exits — the <em>asking</em> is still on the
+programmer. A real interface is a standing view: the user scrolls, and the window should follow;
+details land one by one, and the rows should repaint; the bucket changes, and the listing should
+notice. And it has to hold up at scale — the full GHCN archive is about <strong>122,000</strong> station
+files, of which a screen shows forty. What a UI actually needs is an ordered row set it can read
+<em>by index</em>, hydration that follows the user’s attention, and a signal whenever anything on
+screen changes.</p>
+<p><strong>Scenery</strong> is that layer. Each Scenery is a reactive view onto a Dio, exposing one access
+pattern:</p>
+<ul>
+<li><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a> — ordered rows by index, with a viewport</li>
+<li><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a> — a single record by id</li>
+<li><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a> — a computed scalar (count, sum, custom)</li>
+</ul>
+<p>All three share one reactivity mechanism: a <a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a> counter
+that bumps whenever the view’s state changes. Consumers <code>subscribe()</code> to a <code>watch</code> channel and
+redraw on each bump — the channel only ever holds the <em>latest</em> generation, so a burst of changes
+costs one repaint, not one per change.</p>
+<div id="admonition-why-scenery" class="admonition admonish-info" role="note" aria-labelledby="admonition-why-scenery-title">
+<div class="admonition-title">
+<div id="admonition-why-scenery-title">
+<p>Why ‘Scenery’?</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-why-scenery"></a>
+</div>
+
+<div>
+<p>Point a camera at a vista and you never capture the whole of it. The lens frames a scene: a
+limited cut, chosen by where you aim. But what it frames is <em>alive</em> — pan, and the scene
+follows; wait, and the light changes in front of you. A Scenery makes the same trade. It will
+never hold the entire Vista — one window of rows, one record, one number — yet within that
+frame everything flows: rows repaint as details land, the count ticks as data arrives, the
+window follows the user’s attention. Limited, but dynamic — that is the whole design.</p>
+</div>
+
+</div>
+
+<p>A Scenery is not another handle to your data — it hands you no records to keep. It maintains
+one particular <em>view</em> of the Dio’s copy, precomputed and ready for a widget to read:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th><code>Dio</code></th><th><code>Scenery</code></th></tr>
+</thead>
+<tbody>
+<tr><td><strong>Purpose</strong></td><td>Keep a live local copy of a data segment</td><td>Present that copy to a consumer, one access pattern at a time</td></tr>
+<tr><td><strong>Shape</strong></td><td>Master + cache + write queue + event bus</td><td>Ordered rows / one record / one scalar</td></tr>
+<tr><td><strong>Reads</strong></td><td>You ask — the facade answers from the cache</td><td>Precomputed — <code>row(idx)</code> / <code>value()</code> return instantly</td></tr>
+<tr><td><strong>Changes</strong></td><td>Announces them on the event bus</td><td>Reacts to the bus, recomputes, bumps its generation</td></tr>
+<tr><td><strong>Queries</strong></td><td>The master’s, carried by the facade</td><td>Its own: sort, search, filter, viewport — served locally</td></tr>
+<tr><td><strong>How many</strong></td><td>One per data segment</td><td>Many per Dio — one per view variant, shared when identical</td></tr>
+<tr><td><strong>Lifecycle</strong></td><td>Long-lived; owns cache and background tasks</td><td>Opened by a view, dropped with it</td></tr>
+<tr><td><strong>Consumer</strong></td><td>Lens callbacks, handlers, scripts</td><td>UI widgets, bound through an <em>adapter</em></td></tr>
+</tbody>
+</table>
+</div>
+<p>That last cell is where this chapter ends up. The consumer — a terminal table here, a desktop
+grid or a remote client such as a React page elsewhere — drives its scenery in one repeating
+loop:</p>
+<ol>
+<li>The consumer declares what it shows: <code>set_viewport(40..80)</code> — nothing more than “these rows
+are on screen.”</li>
+<li>The scenery turns that into work for the Dio: list pages for the spine, detail fetches for
+the rows in view.</li>
+<li>Results land in the Dio’s cache, and the event bus announces each one — <code>RecordChanged</code>,
+row by row.</li>
+<li>The scenery reacts to the bus: it updates the affected slot and bumps its <code>Generation</code>.</li>
+<li>The consumer’s watch channel ticks; it re-reads <code>row(idx)</code> for what’s visible and repaints.</li>
+</ol>
+<p>The code that runs this loop for one particular consumer is the <strong>adapter</strong> — the same handful
+of lines whether it paints a terminal, a desktop toolkit, or a wire to the browser.</p>
+<svg viewbox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="13">
+  <defs>
+    <marker id="arrow7" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="7" markerheight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#888" />
+    </marker>
+  </defs>
+  <!-- Dio container -->
+  <rect x="20" y="40" width="160" height="170" rx="12" fill="none" stroke="#8f5a2d" stroke-width="2.5" />
+  <text x="100" y="64" text-anchor="middle" fill="#8f5a2d" font-weight="bold" font-size="15">Dio</text>
+  <rect x="40" y="80" width="120" height="40" rx="8" fill="#4a7c59" />
+  <text x="100" y="105" text-anchor="middle" fill="#fff" font-weight="bold" font-size="12">cache</text>
+  <rect x="40" y="135" width="120" height="40" rx="8" fill="#4a7c59" />
+  <text x="100" y="160" text-anchor="middle" fill="#fff" font-weight="bold" font-size="12">event bus</text>
+  <text x="100" y="228" text-anchor="middle" fill="#888" font-size="11">fetches run through the Lens</text>
+  <!-- Scenery container -->
+  <rect x="300" y="40" width="160" height="170" rx="12" fill="none" stroke="#7c2d8f" stroke-width="2.5" />
+  <text x="380" y="64" text-anchor="middle" fill="#7c2d8f" font-weight="bold" font-size="15">Scenery</text>
+  <rect x="320" y="80" width="120" height="40" rx="8" fill="#7c2d8f" />
+  <text x="380" y="105" text-anchor="middle" fill="#fff" font-weight="bold" font-size="12">rows by index</text>
+  <rect x="320" y="135" width="120" height="40" rx="8" fill="#7c2d8f" />
+  <text x="380" y="160" text-anchor="middle" fill="#fff" font-weight="bold" font-size="12">Generation</text>
+  <!-- Consumer container -->
+  <rect x="580" y="40" width="160" height="170" rx="12" fill="none" stroke="#2d6a8f" stroke-width="2.5" />
+  <text x="660" y="64" text-anchor="middle" fill="#2d6a8f" font-weight="bold" font-size="15">Consumer</text>
+  <rect x="600" y="80" width="120" height="95" rx="8" fill="#2d6a8f" />
+  <text x="660" y="108" text-anchor="middle" fill="#fff" font-weight="bold" font-size="12">adapter</text>
+  <text x="660" y="130" text-anchor="middle" fill="#fff" font-size="11">UI widget or</text>
+  <text x="660" y="147" text-anchor="middle" fill="#fff" font-size="11">remote client</text>
+  <!-- 1: consumer → scenery (viewport) -->
+  <line x1="576" y1="85" x2="464" y2="85" stroke="#888" stroke-width="2" marker-end="url(#arrow7)" />
+  <text x="520" y="73" text-anchor="middle" fill="#888" font-size="11">① set_viewport</text>
+  <!-- 2: scenery → dio (hydrate) -->
+  <line x1="296" y1="85" x2="184" y2="85" stroke="#888" stroke-width="2" marker-end="url(#arrow7)" />
+  <text x="240" y="73" text-anchor="middle" fill="#888" font-size="11">② hydrate rows in view</text>
+  <!-- 3: dio → scenery (bus) -->
+  <line x1="184" y1="185" x2="296" y2="185" stroke="#888" stroke-width="2" marker-end="url(#arrow7)" />
+  <text x="240" y="203" text-anchor="middle" fill="#888" font-size="11">③ RecordChanged</text>
+  <!-- 4: scenery → consumer (tick) -->
+  <line x1="464" y1="185" x2="576" y2="185" stroke="#888" stroke-width="2" marker-end="url(#arrow7)" />
+  <text x="520" y="203" text-anchor="middle" fill="#888" font-size="11">④ Generation tick</text>
+  <!-- 5: consumer → scenery (read) -->
+  <line x1="576" y1="135" x2="464" y2="135" stroke="#888" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrow7)" />
+  <text x="520" y="123" text-anchor="middle" fill="#888" font-size="11">⑤ row(idx) — repaint</text>
+</svg>
+<h2 id="back-to-the-inventory"><a class="header" href="#back-to-the-inventory">Back to the inventory</a></h2>
+<p>Chapter 6 left the CLI listing one prefix and detailing ten fixed rows. What we actually want
+from the inventory is the tool you’d reach for daily — and that sets the requirements:</p>
+<ul>
+<li>the <strong>whole archive</strong>, not a prefix — all 122,000 station files, scrollable end to end;</li>
+<li><strong>instant open</strong>, even on the first run — an empty table that fills as the listing arrives,
+never a frozen prompt;</li>
+<li><strong>details where the user is looking</strong> — the rows on screen sprout <code>ROWS</code> and <code>LATEST</code> as
+their files are read, and the cursor drags that attention with it;</li>
+<li><strong>standing freshness</strong> — the bucket changes, the table follows, plus a running total that
+ticks upward as data lands.</li>
+</ul>
+<p>Measure chapter 6’s ending against that. It read from the Dio with
+<code>dio.vista().fetch_window(0, 10)</code> — and it works fine, for a CLI: the read is bounded to ten
+records, and it resolves once all ten have their details. Nothing blocks — it’s an async wait,
+the runtime stays free — but the <em>user</em> waits all the same: twenty seconds of silence on a cold
+cache, and every widening of the window widens the wait. For a better experience we need a more
+responsive UI:</p>
+<ol>
+<li>display results as soon as we have them — don’t hold rows hostage to their details;</li>
+<li>show data immediately and fix it reactively as better values arrive;</li>
+<li>register what the user is currently looking at, reducing what is fetched and transmitted.</li>
+</ol>
+<p>The Scenery implements exactly this:</p>
+<ul>
+<li>rows are served the moment it opens — whatever the cache already holds, with <code>…</code> standing in
+for details still pending;</li>
+<li>every landed detail updates its own row and bumps the <code>Generation</code> — one tick, one repaint;</li>
+<li><code>set_viewport(range)</code> registers the user’s attention, and only those rows hydrate.</li>
+</ul>
+<p>For the consumer, this chapter reaches for <strong>ratatui</strong> — a terminal-UI library — which Vantage
+updates in real time through a ready-made adapter. The <code>dataset-ui-adapters</code> crate ships such
+adapters for several UI frameworks (egui, Slint, GPUI, Cursive, Tauri among them), and they all
+speak the same scenery loop. Here is ours a few seconds into a cold start — the listing still
+streaming in and the first two visible rows already hydrated:</p>
+<pre><code class="language-text">FILENAME                              SIZE        ROWS      LATEST
+csv/by_station/ACW00011604.csv        41673       1231      19490814
+csv/by_station/ACW00011647.csv        481021      14355     20260710
+csv/by_station/AE000041196.csv        1998959     …         …
+…
+ 8000 rows · 2 augmented · total rows 15586 · ↑/↓ PgUp/PgDn scroll · r refresh · q quit
+</code></pre>
+<p><code>learn-6</code> starts as a copy of <code>learn-5</code>’s data side — <code>files.rs</code>, <code>readings.rs</code>, and the whole
+Dio setup carry over. Three things change: the prefix widens to the entire archive, the Lens
+learns to serve a UI, and the printing loop is replaced by a scenery-bound terminal table.</p>
+<pre><code class="language-sh">cargo add dataset-ui-adapters --features ratatui
+</code></pre>
+<p>Widening the scope is two touches. The prefix loses its country filter:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>const PREFIX: &amp;str = "csv/by_station/";
+<span class="boring">}</span></code></pre>
+<p>And the listing pages grow. Every page is one HTTP round-trip: chapter 5 fetched 100 keys at a
+time, a comfortable twelve requests for its 1,122 files — but at 122,000 files the same setting
+means 1,220 round-trips of mostly latency. S3 caps a single response at 1,000 keys, so
+<code>files.rs</code> asks for the cap and the whole archive syncs in about 122 requests:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>        // S3's per-response maximum — we're listing the whole station set.
+        .with_condition(eq("max-keys", 1000))
+<span class="boring">}</span></code></pre>
+<hr>
+<h2 id="a-lens-that-serves-a-ui"><a class="header" href="#a-lens-that-serves-a-ui">A Lens that serves a UI</a></h2>
+<p>Chapter 5’s Lens had one job: warm the cache before anyone reads. A UI inverts the priorities —
+the screen must appear <em>immediately</em>, on whatever is known so far, and data streams in behind
+it. Three additions to the builder:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let lens = Arc::new(
+    Lens::new()
+        .cache_at("cache.redb")
+        .on_start(|dio| {
+            let dio = dio.clone();
+            async move { sync(&amp;dio).await }
+        })
+        // Don't wait for the sync: the UI opens on whatever the cache
+        // holds (nothing, on a first run) and rows stream in behind it.
+        .on_start_blocking(false)
+        // The scenery's list pages come straight from the warmed cache —
+        // zero network. The master is only contacted by the refresh
+        // reconcile and the per-row detail fetches.
+        .on_list_page(|dio, q| {
+            let dio = dio.clone();
+            async move {
+                Ok(dio
+                    .cache()
+                    .list_values()
+                    .await?
+                    .into_iter()
+                    .skip(q.offset)
+                    .take(q.limit)
+                    .collect())
+            }
+        })
+        // Reconcile against the bucket once a minute: new files appear
+        // as un-hydrated rows, vanished ones drop out, changed ones are
+        // demoted for re-hydration.
+        .refresh_every(Duration::from_secs(60))
+        .build()
+        .context("Failed to build lens")?,
+);
+<span class="boring">}</span></code></pre>
+<p><strong><code>on_start_blocking(false)</code></strong> detaches the sync: <code>make_dio</code> returns at once and <code>on_start</code> runs
+as a background task. The UI’s first frame shows an empty table; a few minutes later it shows
+122,000 rows — filling in page by page in between, a thousand at a time. For that to be visible,
+the sync itself gains one line — after each landed page it announces the change on the event
+bus, and every open view re-reads:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>        dio.cache().insert_values(page.into_iter().collect()).await?;
+        dio.notify_dataset_changed();
+<span class="boring">}</span></code></pre>
+<p>(The <code>println!</code> narration from chapter 5 is gone — a terminal UI owns the screen now.)</p>
+<p><strong><code>on_list_page</code></strong> needs the most context, because it names how a <code>TableScenery</code> loads. An
+augmented Dio drives <strong>two-pass loading</strong>: a <em>list pass</em> fetches cheap rows and establishes the
+view’s order — its spine — and a <em>detail pass</em> hydrates individual rows’ augment columns as the
+viewport reaches them. The passes are separately pluggable. The detail pass is already defined —
+it’s chapter 6’s augmentation. The list pass, left alone, would ask the master — a full
+122-request S3 walk every time a view (re)builds its spine. But chapter 5 built something better:
+a cache that <em>is</em> the listing. Registering <code>on_list_page</code> overrides the list pass; the
+<a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/ops/query_descriptor/struct.QueryDescriptor.html"><code>QueryDescriptor</code></a> argument carries the window (<code>offset</code>,
+<code>limit</code> — plus conditions, sort, and search when the view has them), and our implementation is a
+window over the cache. The scenery’s spine now costs zero network.</p>
+<p><strong><code>refresh_every</code></strong> completes the freshness story. Once a minute the Dio reconciles its cache
+against the master (this <em>does</em> walk the listing — 122 requests, in the background): new files
+appear as un-hydrated rows, deleted ones drop out, and a file whose listing entry changed keeps
+showing its old numbers but is marked stale — the next time it’s on screen, the detail pass
+re-fetches it. Chapter 5 needed <code>--invalidate</code> to notice deletions; a standing view just notices.</p>
+<h2 id="creating-the-reactive-ui"><a class="header" href="#creating-the-reactive-ui">Creating the reactive UI</a></h2>
+<p>Our UI needs two things from the Dio: the rows, and a running total. Each one is a scenery.
+Let’s open them one at a time.</p>
+<h3 id="the-table"><a class="header" href="#the-table">The table</a></h3>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// One list page covers the whole cached listing (~122k station files);
+// the viewport's detail pass hydrates whatever is on screen first.
+let scenery = dio.table_scenery().page_size(200_000).open().await?;
+<span class="boring">}</span></code></pre>
+<p><code>.open()</code> seeds the scenery from the cache, spawns its reactor (the task that watches the Dio’s
+event bus), and hands back <code>Arc&lt;dyn TableScenery&gt;</code>. What you get is deliberately small and
+synchronous:</p>
+<ul>
+<li><code>row_count()</code> and <code>row(idx)</code> — an <a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/scenery/enriched_record/struct.EnrichedRecord.html"><code>EnrichedRecord</code></a>: the
+record plus a per-row status;</li>
+<li><code>set_viewport(range)</code> — more on this in a moment;</li>
+<li><code>subscribe()</code> — the generation channel from the start of the chapter.</li>
+</ul>
+<p>The builder can also chain <code>sort(col, dir)</code>, <code>search(text)</code>, and <code>where_eq(col, value)</code> — every
+one of them served locally, on a backend that can do none of it. We don’t use them here — the
+table shows the archive as-is.</p>
+<p>A UI rarely commits to one order at open time, though — and it doesn’t have to reopen. The
+handle mutates in place: <code>set_sort(col, dir)</code> and <code>set_search(text)</code>, bound to a key or a header
+click, re-point the scenery at the ordered index for the new variant, swap the visible rows in
+one atomic step (the grid never blanks mid-reorder), and restart hydration for whatever is on
+screen. Sorting back reuses the already-built index — zero list calls. Conditions are the
+exception: <code>where_eq</code> defines what the view <em>is</em>, so it’s set at open, not toggled on a live
+scenery.</p>
+<p>One thing probably caught your eye: <code>page_size(200_000)</code>?! That’s the <em>list pass</em> — how many
+spine rows one <code>on_list_page</code> call returns. It’s a separate axis from the viewport, which drives
+only the <em>detail pass</em> over rows the spine already holds. Left at the default, the spine would
+stop at the first hundred files and nothing in this UI asks for page two. Set past the archive
+size, the first list call builds the entire spine — one cheap read of the local cache.</p>
+<h3 id="the-viewport"><a class="header" href="#the-viewport">The viewport</a></h3>
+<p>The <strong>viewport</strong> is the scenery’s answer to “which rows is the user actually looking at?” — a
+plain range of row indexes, like <code>40..80</code>. It’s declared through <code>set_viewport(range)</code>, the
+method on the handle we just opened. You rarely call it yourself: whoever renders the table
+calls it as the user scrolls — later in this chapter, that’s the ratatui adapter’s job.</p>
+<p>It is the load-bearing call, because <strong>the viewport drives hydration</strong>. The rows a consumer
+declares as its viewport are the rows the detail pass works on. Framework code calls this the
+<strong>demand gate</strong>: no row is detailed unless some live view demands it. Everything else stays a
+cheap list row — and rows never observed never cost a download.</p>
+<p>Recognize it? This is chapter 6’s bounded read with the asking automated: there the programmer
+chose the window; here the viewport is the window, and it moves with the user.</p>
+<h3 id="the-running-total"><a class="header" href="#the-running-total">The running total</a></h3>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Grand total of the ROWS column — recomputes reactively as files
+// hydrate, so the status bar counts up while data arrives.
+let totals = dio.value_scenery().sum("rows").open().await?;
+<span class="boring">}</span></code></pre>
+<p>Hold on — how can it sum <code>rows</code> when most rows aren’t augmented yet? It doesn’t wait for them:</p>
+<ul>
+<li>it recomputes over the <em>cache</em> whenever the Dio announces a change;</li>
+<li>rows that have no <code>rows</code> column yet are skipped — the sum covers what has been observed so far;</li>
+<li>each detail fetch that merges <code>rows</code> into the cache fires <code>RecordChanged</code>; the scenery
+recomputes and bumps its generation only when the value actually moved.</li>
+</ul>
+<p>So the number in the status bar is honest about coverage: it starts at zero and climbs with
+hydration, one landed file at a time.</p>
+<p>(There is a third kind, <strong>RecordScenery</strong> — <code>dio.record_scenery(id)</code> — one record under the same
+contract: read it, subscribe, redraw on bump. A detail pane beside the table would use one; our
+table doesn’t need it.)</p>
+<h3 id="open-freely-drop-when-done"><a class="header" href="#open-freely-drop-when-done">Open freely, drop when done</a></h3>
+<p>Sceneries are inexpensive. A page opens as many as it needs — a grid, a running total, a detail
+pane — and identical opens share one instance under the hood (the sharing key is the scenery’s
+query — sort, search, conditions — plus the columns it demands; two views asking the same
+question get the same scenery). The other half of that contract: release them when the page
+closes. Dropping the handle stops the scenery’s tasks and withdraws its demand, so a closed
+page stops pulling data. Chapter 8 meets the one case where sharing is wrong — two remote
+viewers asking the same question but scrolling different pages — and opts out per scenery.</p>
+<h2 id="binding-to-a-terminal"><a class="header" href="#binding-to-a-terminal">Binding to a terminal</a></h2>
+<p>What remains is rendering — and none of it is specific to this app. Scrolling a virtualized
+table, forwarding the visible range as the viewport, redrawing on generation bumps: that’s a
+reusable binding, and <code>dataset-ui-adapters</code> ships it for <a href="https://ratatui.rs">ratatui</a> in its
+<code>ratatui_dio</code> module. The entire UI:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>    ratatui_dio::SceneryTable::new(scenery)
+        .with_column("FILENAME", "Key", 0)
+        .with_column("SIZE", "Size", 10)
+        .with_column("ROWS", "rows", 8)
+        .with_column("LATEST", "latest", 10)
+        .with_status_value("total rows", totals)
+        .run()
+        .await
+        .context("terminal UI failed")
+<span class="boring">}</span></code></pre>
+<p>Line by line:</p>
+<ul>
+<li><strong><code>ratatui_dio::SceneryTable::new(scenery)</code></strong> — hands the scenery to the adapter. The full
+module path marks the boundary: everything before this line was framework, everything after
+is the ratatui binding.</li>
+<li><strong><code>.with_column(header, field, width)</code></strong> — one table column: the header text, the record field
+it reads, and a width in characters (<code>0</code> = flexible fill). A field the row doesn’t have yet
+renders as <code>…</code> — which is exactly how un-hydrated rows look.</li>
+<li><strong><code>.with_status_value(label, scenery)</code></strong> — pins a <code>ValueScenery</code> into the status bar; it
+repaints whenever that scenery’s generation bumps, so our <code>total rows</code> sum ticks live.</li>
+<li><strong><code>.run()</code></strong> — takes over the terminal until <code>q</code>. It draws only the visible rows (at 122,000
+you don’t build widgets for the rest), keeps the scenery’s viewport on a <strong>ten-row band around
+the cursor</strong> — details load for the record the user is on and its neighbours, not the whole
+screen. Band-not-screen is the <em>adapter’s</em> policy, not the scenery’s: each detail fetch here
+is a multi-second download, and hydrating all forty visible rows would waste most of that work
+every time the user scrolls on. It listens to every subscribed generation for repaints, and renders the status bar: row
+count, an <strong>augmented</strong> counter (how many rows on hand are fully hydrated), your pinned
+values, and the key legend. <code>r</code> runs the Dio’s reconcile on demand, ahead of the timer.</li>
+</ul>
+<h2 id="running-it"><a class="header" href="#running-it">Running it</a></h2>
+<p><code>cargo run</code> on a cold cache is the whole system visible at once. The table appears instantly —
+empty. Within a second the first thousand filenames arrive; the row counter keeps climbing as
+the background sync streams pages, passing 122,000 a few minutes in. Meanwhile the rows around
+the cursor sprout numbers, one file at a time, as the detail pass works through the band — <code>…</code>
+becoming <code>14355  20260710</code> — and the <code>augmented</code> counter and <code>total rows</code> sum tick upward with
+each one. Move the cursor, and the band follows; jump to <code>End</code>, and the last stations of the
+alphabet get their turn. Quit, run again: everything already observed is back instantly, warm
+from <code>cache.redb</code>, and hydration resumes wherever you look next.</p>
+<p>Notice what the application never wrote: a render loop, a fetch, an event match. It reads
+<code>scenery.row(idx)</code> and <code>totals.value()</code> through a binding that repaints when a generation
+channel says so. Nothing more passes between data and display — and it’s precisely how a
+real UI binds to Vantage.</p>
+<hr>
+<h2 id="what-we-covered"><a class="header" href="#what-we-covered">What we covered</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Concept</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a></td><td>Ordered rows by index; sort/search/filter served locally</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a></td><td>Reactive aggregate — <code>count</code>, <code>sum</code>, <code>max</code>, <code>min</code>, or <code>custom</code></td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a></td><td>One record by id, same subscribe/redraw contract</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a> / <code>subscribe()</code></td><td>Latest-value watch channel — one bump, one repaint</td></tr>
+<tr><td>Two-pass loading</td><td>List pass builds the spine; detail pass hydrates rows in view</td></tr>
+<tr><td><code>on_list_page</code></td><td>Plug the list pass — ours serves pages from the chapter-5 cache</td></tr>
+<tr><td><code>set_viewport(range)</code></td><td>Declares what’s visible — and thereby what hydrates</td></tr>
+<tr><td><code>on_start_blocking(false)</code></td><td>UI first: <code>make_dio</code> returns immediately, the sync streams behind it</td></tr>
+<tr><td><code>refresh_every</code> + <code>notify_dataset_changed</code></td><td>Standing freshness: reconcile on a timer, announce every change</td></tr>
+<tr><td><code>ratatui_dio::SceneryTable</code></td><td>The ratatui binding: virtualized rows, viewport, status bar, keys</td></tr>
+</tbody>
+</table>
+</div>
+<div id="admonition-whats-next" class="admonition admonish-tip" role="note" aria-labelledby="admonition-whats-next-title">
+<div class="admonition-title">
+<div id="admonition-whats-next-title">
+<p>What’s next</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-whats-next"></a>
+</div>
+
+<div>
+<p>One terminal, one viewport. A web server is the same picture multiplied: every connected
+browser is its own standing view, each on a different page, all expecting details to stream in
+— and none of them should ever download a file another view already paid for. The final chapter
+puts this Dio behind chapter 3’s Axum server: kubernetes-style GET + watch endpoints, a React
+frontend, and a scheduler that serves every concurrent viewer fairly.</p>
+</div>
+
+</div>
+
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../intro/step6-augmentation.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../intro/step8-axum-dio.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../intro/step6-augmentation.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../intro/step8-axum-dio.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
+
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../mermaid-eefea253.min.js"></script>
+        <script src="../mermaid-init-ccf746f1.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

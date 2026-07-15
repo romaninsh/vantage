@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Scenery — Reactive Views - Vantage Framework</title>
+        <title>Serving Scenery — Axum &amp; Watch Streams - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-0df4a5b3.js";
+            window.path_to_searchindex_js = "../searchindex-5e583a43.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-298e3dc9.js"></script>
+        <script src="../toc-ef6241bc.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -175,319 +175,242 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="scenery--reactive-views"><a class="header" href="#scenery--reactive-views">Scenery — Reactive Views</a></h1>
-<p>Chapters 4–5 built the data pipeline: Vista wraps your table, Dio caches it and routes writes. But
-consumers — data grids, dashboards, CLI tools, test harnesses — don’t want to deal with cache
-management and event subscriptions directly. They want an ordered row set, a single record, or a
-computed value that stays up to date.</p>
-<p><strong>Scenery</strong> is that layer. Each Scenery is a reactive view onto a Dio that exposes a specific access
-pattern:</p>
+                        <h1 id="serving-scenery--axum--watch-streams"><a class="header" href="#serving-scenery--axum--watch-streams">Serving Scenery — Axum &amp; Watch Streams</a></h1>
+<p>Chapter 7’s client of the Dio was a terminal driving two sceneries — one showing the rows, the
+other aggregating a running sum. Sceneries scale well beyond that: the framework can drive many
+active viewers at once, and nothing requires them to live in the same process. This chapter
+sends them across the network — every connected browser tab becomes its own viewer, looking at
+its own page of the archive, with details streaming in as they land.</p>
+<p>The traditional plumbing for live updates over HTTP is a
+<a href="https://en.wikipedia.org/wiki/WebSocket">WebSocket</a>,
+<a href="https://en.wikipedia.org/wiki/Server-sent_events">server-sent events</a>, or the style the
+Kubernetes API made standard — the <strong>watch</strong>: a plain HTTP response that simply never ends,
+delivering one JSON line per change over
+<a href="https://en.wikipedia.org/wiki/Chunked_transfer_encoding">chunked transfer encoding</a>. We take
+the Kubernetes shape: every endpoint answers a plain <code>GET</code> with a snapshot, and the same URL
+with <code>?watch=true</code> keeps the connection open and streams changes for as long as the client
+stays. A watch is not a polling loop — it is a Scenery on the far end of an HTTP connection.</p>
+<p>This chapter re-uses chapter 3’s Axum server, wired to the Dio through a new adapter crate —
+and finishes with a small React app browsing the bucket the way the AWS S3 Explorer does. Worth
+pausing on what the frontend gets for free: the page renders instantly from the
+cache, cells fill themselves in as augmentation lands, and every open tab stays current — the
+responsiveness chapter 7 built for the terminal, now delivered over a wire.</p>
+<h2 id="one-flight-per-row"><a class="header" href="#one-flight-per-row">One flight per row</a></h2>
+<p>Before any of that can be safe, the framework needs an answer to a question chapter 7 never had
+to ask: what happens when <strong>several</strong> views drive augmentation at once?</p>
+<p>Until now, each scenery ran its own detail fetches, inline, for its own viewport. One terminal,
+one viewport — fine. But two browser tabs watching <em>overlapping</em> pages would each download the
+same CSVs; two tabs on <em>disjoint</em> pages would race each other with no ordering at all; and a
+tab opened mid-download had no way to say “me next”. The fetches were nobody’s job to
+coordinate.</p>
+<p>They are now the Dio’s. Every consumer that wants rows hydrated — a scenery’s viewport, a
+facade read blocking on its window — registers a queue with the Dio’s <strong>augment scheduler</strong> and
+enqueues row ids into it. A worker pool drains the queues:</p>
 <ul>
-<li><a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a> — ordered, paginated rows</li>
-<li><a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a> — a single record by id</li>
-<li><a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a> — a computed scalar (count, sum, custom)</li>
+<li><strong>Round-robin across consumers.</strong> The worker takes one id from each queue in turn, so two
+views with disjoint pages interleave — neither starves behind the other’s backlog.</li>
+<li><strong>One flight per row.</strong> An id already being fetched is never fetched again; every queue
+waiting on it is notified by the same completion. Overlapping views cost one download, not
+one per view.</li>
+<li><strong>Closing a view withdraws its work.</strong> The queue registration is owned by the scenery; when
+the last handle drops, its queued ids vanish. A fetch already in the air completes and lands
+in the cache — paid-for work is kept.</li>
+<li><strong>Workers are configurable.</strong> The default single worker keeps fetch order deterministic;
+<code>Lens::new().augment_workers(4)</code> hydrates four rows at a time when the detail source can
+take it.</li>
 </ul>
-<p>All three share the same reactivity mechanism: a <a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a> counter
-that bumps whenever the view’s state changes. Consumers subscribe via a <code>watch</code> channel and react on
-each bump.</p>
-<div id="admonition-goals-for-this-chapter" class="admonition admonish-example" role="note" aria-labelledby="admonition-goals-for-this-chapter-title">
-<div class="admonition-title">
-<div id="admonition-goals-for-this-chapter-title">
-<p>Goals for this chapter</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-goals-for-this-chapter"></a>
-</div>
-
-<div>
-<p>By the end of this page you’ll be able to:</p>
-<ol>
-<li>Open a TableScenery and read rows by index</li>
-<li>Use sequential mode (append-only) vs random-access mode (viewport-driven)</li>
-<li>Open a RecordScenery for a single record</li>
-<li>Open a ValueScenery for aggregates</li>
-<li>Subscribe to changes via the Generation counter</li>
-</ol>
-</div>
-
-</div>
-
-<hr>
-<h2 id="generation--the-reactivity-primitive"><a class="header" href="#generation--the-reactivity-primitive">Generation — the reactivity primitive</a></h2>
-<p>Every Scenery carries a monotonically increasing <code>Generation(u64)</code>. When the underlying Dio
-publishes an event that affects the view, the Scenery recomputes its state and bumps the counter.</p>
+<p>Nothing in the example code changes for this — the scheduler sits under the same
+<code>set_viewport</code> and <code>fetch_window</code> calls the previous chapters used. What changes is what you
+can now safely do: open as many sceneries as you have HTTP connections.</p>
+<p>One builder flag is new. Sceneries de-duplicate: two identical opens share one instance, which
+is right for two widgets showing the same grid — but wrong for two <em>clients</em> watching different
+pages of the same query, where each connection must keep its own viewport. The adapter opens
+its sceneries with <code>.exclusive()</code>: never shared, still counted in the <strong>demand union</strong> — the
+Dio hydrates the union of the columns every open scenery demands — and still released on drop.</p>
+<h2 id="the-adapter-diorouter"><a class="header" href="#the-adapter-diorouter">The adapter: <code>DioRouter</code></a></h2>
+<p>Everything HTTP lives in a new adapter crate, <code>vantage-api-adapters</code> — the server-side sibling
+of the <code>dataset-ui-adapters</code> crate that provided chapter 7’s ratatui binding. Where a UI
+adapter binds a scenery to a widget, an API adapter binds it to a route:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>let mut rx = scenery.subscribe();
+</span>use vantage_api_adapters::axum_dio::DioRouter;
 
-// Block until something changes
-let gen = rx.changed().await.unwrap();
-println!("updated to generation {:?}", gen);
+let api = DioRouter::new(dio.clone())
+    .with_column("filename", "Key")
+    .with_column("size", "Size")
+    .with_column("rows", "rows")
+    .with_column("latest", "latest")
+    .with_page_size(50)
+    .into_router();
 <span class="boring">}</span></code></pre>
-<p>The <code>subscribe()</code> call returns a <code>watch::Receiver&lt;Generation&gt;</code> — a Tokio channel that holds the
-latest value. Multiple subscribers share the same channel. If nothing changes, <code>changed()</code> blocks
-indefinitely. If the Scenery is dropped, the channel closes.</p>
-<div id="admonition-watch-not-stream" class="admonition admonish-info" role="note" aria-labelledby="admonition-watch-not-stream-title">
-<div class="admonition-title">
-<div id="admonition-watch-not-stream-title">
-<p>Watch, not stream</p>
+<p>Each <code>.with_column(name, field)</code> maps a record field to a JSON key — and doubles as the watch
+sceneries’ <em>demand</em>: naming <code>rows</code> and <code>latest</code> here is exactly what makes a watch connection
+drive their hydration (chapter 7’s demand gate, now per connection). <code>into_router()</code> yields a
+plain <code>axum::Router</code> with two routes, each in two modes:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Request</th><th>Answered by</th><th>Cost</th></tr>
+</thead>
+<tbody>
+<tr><td><code>GET /?offset=&amp;limit=</code></td><td>A window over the cache</td><td>Instant; never fetches</td></tr>
+<tr><td><code>GET /?watch=true&amp;…</code></td><td>An <code>.exclusive()</code> <code>TableScenery</code></td><td>Streams while connected</td></tr>
+<tr><td><code>GET /{id}</code></td><td>A bounded facade read (<code>get_value</code>)</td><td>Hydrates that one row; cached</td></tr>
+<tr><td><code>GET /{id}?watch=true</code></td><td>A <code>RecordScenery</code></td><td>Streams that record’s changes</td></tr>
+</tbody>
+</table>
 </div>
-
-<a class="admonition-anchor-link" href="#admonition-watch-not-stream"></a>
-</div>
-
-<div>
-<p><code>watch</code> only keeps the <em>latest</em> value. If three changes happen before your consumer reads, it
-sees one bump — not three. This is intentional: consumers re-read the full state on each bump,
-so intermediate states are wasted work.</p>
-</div>
-
-</div>
-
-<hr>
-<h2 id="tablescenery--ordered-rows"><a class="header" href="#tablescenery--ordered-rows">TableScenery — ordered rows</a></h2>
-<p>The most common view. Built from a Dio via a builder:</p>
+<p>The split embodies the demand philosophy: a plain <code>GET</code> is not a standing view, so it serves
+the Dio’s <em>current knowledge</em> instantly — augmented columns appear once some view has paid for
+them. A <strong>watch is the standing view</strong>: it declares its page as the viewport, hydration
+follows, and every change streams back as a Kubernetes-style NDJSON line:</p>
+<pre><code class="language-text">{"type":"ADDED","object":{"index":3,"filename":"…","size":"4880965","rows":null,"latest":null}}
+{"type":"MODIFIED","object":{"index":3,"filename":"…","size":"4880965","rows":143676,"latest":"20260531"}}
+</code></pre>
+<p>The stream diffs against what it already sent — a generation bump that changed nothing on this
+page costs nothing on the wire. And the scenery is <em>owned by the response stream</em>: when the
+client disconnects, the stream drops, the scenery’s guard aborts its tasks, its queued fetches
+are withdrawn, and its demand drains. A closed tab stops pulling — the same lifecycle rule as
+chapter 7’s closing grid, now enforced by HTTP.</p>
+<p>One honesty note against the Kubernetes original: there is no resume token (no
+<code>resourceVersion</code>). A client that reconnects gets a fresh snapshot of <code>ADDED</code> lines and a new
+watch — not a replay of what it missed while away.</p>
+<h2 id="the-server"><a class="header" href="#the-server">The server</a></h2>
+<p><code>learn-7</code> is learn-6 with the terminal swapped for the router — and the prefix narrowed back to
+chapter 5’s <code>GM</code> (1,122 files): a server should boot in seconds, and everything below works the
+same way on the full archive. The data plumbing is otherwise identical —
+<code>files.rs</code>, the augmenter, the Lens — with two differences. First, the cache is opened by hand,
+because we want a second table in the same redb file:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>use vantage_diorama::scenery::SortDir;
-
-let scenery = dio
-    .table_scenery()
-    .sort("name", SortDir::Asc)
-    .page_size(50)
-    .open()
-    .await?;
+</span>let cache = Arc::new(RedbCache::open("cache.redb").context("Failed to open cache")?);
+let contents = ContentsCache::new(cache.open_table("contents").await?);
 <span class="boring">}</span></code></pre>
-<p>The builder chains configuration, then <code>.open()</code> seeds the view from cache, spawns a reactor task,
-and returns <code>Arc&lt;dyn TableScenery&gt;</code>.</p>
-<h3 id="reading-rows"><a class="header" href="#reading-rows">Reading rows</a></h3>
+<p>A Lens normally opens <code>cache.redb</code> itself (<code>cache_at</code>); <code>cache_source(cache)</code> hands it ours
+instead. The Dio claims one named table for the listing, and <code>open_table("contents")</code> claims
+another for the cache we’re about to meet.</p>
+<p>Second, <code>on_start</code> stays <strong>blocking</strong> (the default — learn-6 turned it off to open its UI on an
+empty table). A server should answer its first request from a warm cache, so <code>make_dio</code> runs
+the chapter-5 sync to completion before <code>axum::serve</code> ever binds the port. On a restart the
+sync resumes from redb and confirms with a single request:</p>
+<pre><code class="language-text">fetched 1000 files in 831.454208ms
+fetched 122 files in 194.010875ms
+serving on http://localhost:3007
+</code></pre>
+<p>The rest of <code>main.rs</code> is mounting:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>for i in 0..scenery.row_count() {
-    if let Some(row) = scenery.row(i) {
-        let name = &amp;row.record["name"];
-        println!("  {}: {:?}", i, name);
+</span>let app = axum::Router::new()
+    .nest("/api/files", api)
+    .fallback_service(ServeDir::new("frontend/dist"));
+
+axum::serve(TcpListener::bind("0.0.0.0:3007").await?, app).await
+<span class="boring">}</span></code></pre>
+<p>Concurrency needs no further code. <code>Dio</code> is a cheap clone over shared state, redb reads run
+concurrently, and no lock is held across a network await anywhere in the read path — every
+simultaneous request simply proceeds.</p>
+<p>Neither does authentication — because there is none. The endpoints are anonymous, as in
+chapter 3: wrap the router in your tower auth middleware before exposing it; Vantage
+deliberately stays out of authn.</p>
+<h2 id="a-cache-that-earns-its-keep"><a class="header" href="#a-cache-that-earns-its-keep">A cache that earns its keep</a></h2>
+<p>The detail endpoint returns everything about one file, augment columns included — which means
+the first <code>GET /{id}</code> downloads the CSV. Chapter 6 deliberately kept <code>contents</code> out of the
+cache: at 122,000 stations, storing every casually-viewed file would grow <code>cache.redb</code> by
+gigabytes. But a server sees <em>repeat</em> traffic — the same popular stations, again and again —
+and re-downloading those is just as wasteful.</p>
+<p><code>ContentsCache</code> splits the difference with <strong>lazy admission</strong>: a file must be requested twice
+before its contents earn a slot. It is application code, not framework — the framework
+contributes <code>open_table</code> (a named key-value table in the Dio’s own redb file); the admission
+policy is entirely ours to write.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct ContentsCache {
+    table: Arc&lt;dyn CacheTable&gt;,
+    /// Keys downloaded at least once — the admission ledger.
+    seen: Mutex&lt;HashSet&lt;String&gt;&gt;,
+}
+<span class="boring">}</span></code></pre>
+<p>Its one operation is cache-first with the admission rule on the miss path:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub async fn get_or_fetch&lt;F, Fut&gt;(&amp;self, key: &amp;str, fetch: F) -&gt; VantageResult&lt;String&gt;
+<span class="boring">}</span></code></pre>
+<p>A hit is served from redb. A miss runs <code>fetch</code> either way — but only a key already in <code>seen</code> (a
+repeat request) gets its body written to the <code>contents</code> table. One-off requests leave nothing
+behind but their key. (The ledger itself is never trimmed — bare keys, fine at 122,000 files; a
+bigger keyspace would want an eviction rule, and the policy being application code makes that
+your call.) The augmenter’s <code>contents</code> lazy expression routes its download through
+it, and everything downstream — <code>rows</code>, <code>latest</code>, the detail endpoint — is unchanged:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>.with_lazy_expression("contents", move |row| {
+    // …
+    async move {
+        let body = contents
+            .get_or_fetch(&amp;key, || async move {
+                s3::get_object(&amp;aws, &amp;bucket, &amp;fetch_key).await
+            })
+            .await?;
+        Ok(body.into())
     }
-}
+})
 <span class="boring">}</span></code></pre>
-<p>Rows are accessed by index — a <code>BTreeMap&lt;usize, Arc&lt;EnrichedRecord&gt;&gt;</code> under the hood. Not every
-index is populated: the map is sparse when only part of the dataset is loaded. <code>row(i)</code> returns
-<code>None</code> for unloaded indices.</p>
-<h3 id="two-loading-strategies"><a class="header" href="#two-loading-strategies">Two loading strategies</a></h3>
-<p>TableScenery supports two modes, selected automatically based on which Lens callbacks you’ve
-configured:</p>
-<p><strong>Sequential mode</strong> — append-only paging. Use when the master can only return “the next page”
-(cursor APIs, append-only logs). No <code>total_provider</code> is registered. You call <code>request_load_more()</code>
-and the cache grows page by page:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>scenery.request_load_more();
-// cache grows: 50 → 100 → 150 → ...
-<span class="boring">}</span></code></pre>
-<div id="admonition-sequential-mode-no-skipping" class="admonition admonish-warning" role="note" aria-labelledby="admonition-sequential-mode-no-skipping-title">
-<div class="admonition-title">
-<div id="admonition-sequential-mode-no-skipping-title">
-<p>Sequential mode: no skipping</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-sequential-mode-no-skipping"></a>
-</div>
-
-<div>
-<p>In sequential mode, <code>set_viewport()</code> past the cache end <strong>clamps</strong> to whatever is already loaded
-and emits <code>ViewportClamped</code>. You can’t jump to row 900 — you have to call <code>request_load_more()</code>
-repeatedly until the cache grows that far. This matches the reality of cursor-based backends:
-they can’t skip ahead either.</p>
-</div>
-
-</div>
-
-<p><strong>Random-access mode</strong> — viewport-driven sparse paging. Use when you know the total row count and
-can fetch any range. Register <code>total_provider</code> and <code>on_load_chunk</code> on the Lens. Then:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>scenery.set_viewport(200..250);
-// on_load_chunk fires for the missing range
-// rows arrive in the sparse map
-<span class="boring">}</span></code></pre>
-<p><code>set_viewport()</code> triggers a fetch only for the portion not already cached. Scrolling back to a
-previously loaded range is instant. You can jump to any row — the master supports it.</p>
-<h3 id="table-size-row_count-estimated_total-has_more"><a class="header" href="#table-size-row_count-estimated_total-has_more">Table size: <code>row_count</code>, <code>estimated_total</code>, <code>has_more</code></a></h3>
-<p>These three methods behave differently per mode:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th></th><th>Sequential</th><th>Random-access</th></tr>
-</thead>
-<tbody>
-<tr><td><code>row_count()</code></td><td>Cache size (grows as you load more)</td><td>Total from <code>total_provider</code> (known upfront)</td></tr>
-<tr><td><code>estimated_total()</code></td><td><code>None</code> (unknown until you hit the end)</td><td><code>Some(total)</code></td></tr>
-<tr><td><code>has_more()</code></td><td>Always <code>true</code> (no total to compare against)</td><td><code>loaded &lt; total</code></td></tr>
-</tbody>
-</table>
-</div>
-<p>In sequential mode, the table size is a mystery — the master only knows “next page”. You load pages
-until <code>on_load_chunk</code> returns a short page (fewer rows than <code>page_size</code>). At that point,
-<code>estimated_total()</code> freezes to the cache size and <code>has_more()</code> flips to <code>false</code>.</p>
-<p>In random-access mode, the total is known from the start — <code>total_provider</code> runs once at open.
-Scrollbars size correctly before any data loads. The sparse map fills gaps on demand.</p>
-<div id="admonition-which-mode-do-i-get" class="admonition admonish-info" role="note" aria-labelledby="admonition-which-mode-do-i-get-title">
-<div class="admonition-title">
-<div id="admonition-which-mode-do-i-get-title">
-<p>Which mode do I get?</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-which-mode-do-i-get"></a>
-</div>
-
-<div>
-<p>It depends on your Lens configuration:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Callback registered</th><th>Mode</th><th>Pagination</th></tr>
-</thead>
-<tbody>
-<tr><td><code>total_provider</code> + <code>on_load_chunk</code></td><td>Random-access</td><td><code>set_viewport()</code></td></tr>
-<tr><td><code>on_load_chunk</code> only</td><td>Sequential</td><td><code>request_load_more()</code></td></tr>
-<tr><td>Neither</td><td>Cache-only</td><td>Whatever <code>on_start</code> seeded</td></tr>
-</tbody>
-</table>
-</div>
-<p>Check <code>master_capabilities()</code> to see what the view advertises: <code>can_fetch_page</code> → random-access,
-<code>can_fetch_next</code> → sequential.</p>
-</div>
-
-</div>
-
-<h3 id="search-and-sort"><a class="header" href="#search-and-sort">Search and sort</a></h3>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>scenery.set_search(Some("tart".into()));
-scenery.set_sort(Some("price".into()), SortDir::Desc);
-<span class="boring">}</span></code></pre>
-<p>These trigger a full reload from cache. Search and sort are applied locally against the cached data
-— they work even when the master backend doesn’t support them (capability injection from chapter 5
-in action).</p>
-<hr>
-<h2 id="recordscenery--single-record"><a class="header" href="#recordscenery--single-record">RecordScenery — single record</a></h2>
-<p>A reactive view onto one record by id:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let record = dio.record_scenery("42").await?;
-
-match record.status() {
-    RecordStatus::Fresh =&gt; {
-        let row = record.record().unwrap();
-        println!("name: {:?}", row.record["name"]);
-    }
-    RecordStatus::NotFound =&gt; println!("not in cache"),
-    RecordStatus::Error(msg) =&gt; println!("error: {}", msg),
-    _ =&gt; {}
-}
-<span class="boring">}</span></code></pre>
-<p>The record reads from cache at creation time — no master fetch on miss. If the cache doesn’t have
-the row, status is <code>NotFound</code>. The reactor listens to the Dio’s event bus and reloads when
-<code>RecordChanged</code> or <code>Invalidated</code> arrives for that id.</p>
-<p>If you already have the record (e.g. from a table row click), skip the cache read:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let record = dio.record_scenery_with("42", row_from_table);
-<span class="boring">}</span></code></pre>
-<hr>
-<h2 id="valuescenery--aggregates"><a class="header" href="#valuescenery--aggregates">ValueScenery — aggregates</a></h2>
-<p>A reactive scalar computed from the cache:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use vantage_diorama::scenery::Aggregate;
-
-let count = dio
-    .value_scenery()
-    .count()
-    .open()
-    .await?;
-
-let total = dio
-    .value_scenery()
-    .sum("price")
-    .open()
-    .await?;
-<span class="boring">}</span></code></pre>
-<p>Built-in aggregates:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Method</th><th>Computes</th></tr>
-</thead>
-<tbody>
-<tr><td><code>.count()</code></td><td>Total rows in cache</td></tr>
-<tr><td><code>.count_where(conds)</code></td><td>Rows matching field=value pairs</td></tr>
-<tr><td><code>.sum("field")</code></td><td>Sum of an integer field</td></tr>
-<tr><td><code>.max("field")</code></td><td>Maximum of an integer field</td></tr>
-<tr><td><code>.min("field")</code></td><td>Minimum of an integer field</td></tr>
-</tbody>
-</table>
-</div>
-<p>All are computed locally against the cache — no database query. The reactor recomputes on every
-<code>DioEvent</code> and bumps the generation if the value changed.</p>
-<div id="admonition-custom-aggregates" class="admonition admonish-tip" role="note" aria-labelledby="admonition-custom-aggregates-title">
-<div class="admonition-title">
-<div id="admonition-custom-aggregates-title">
-<p>Custom aggregates</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-custom-aggregates"></a>
-</div>
-
-<div>
-<p>For computations the built-in variants don’t cover:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let expensive = dio
-    .value_scenery()
-    .custom(|dio| {
-        let dio = dio.clone();
-        async move {
-            let rows = dio.cache().list_values().await?;
-            let avg = /* your logic */;
-            Ok(avg.into())
-        }
-    })
-    .open()
-    .await?;
-<span class="boring">}</span></code></pre>
-<p>The closure receives a <code>&amp;Dio</code> — same pattern as Lens callbacks.</p>
-</div>
-
-</div>
-
-<hr>
-<h2 id="putting-it-together"><a class="header" href="#putting-it-together">Putting it together</a></h2>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use vantage_diorama::scenery::SortDir;
-
-// Table view — ordered, paginated
-let table = dio
-    .table_scenery()
-    .sort("name", SortDir::Asc)
-    .page_size(50)
-    .open()
-    .await?;
-
-println!("{} rows loaded", table.row_count());
-
-// Single record
-let rec = dio.record_scenery("42").await?;
-
-// Live counter
-let count = dio.value_scenery().count().open().await?;
-let mut rx = count.subscribe();
-loop {
-    rx.changed().await?;
-    println!("count: {:?}", count.value());
-}
-<span class="boring">}</span></code></pre>
+<h2 id="watching-it-work"><a class="header" href="#watching-it-work">Watching it work</a></h2>
+<p>A plain <code>GET</code> is the cache, instantly — <code>rows</code> and <code>latest</code> are <code>null</code> because nothing has
+demanded them yet:</p>
+<pre><code class="language-text">$ curl 'localhost:3007/api/files?offset=0&amp;limit=3'
+{"total":1122,"offset":0,"limit":3,"items":[
+  {"index":0,"filename":"csv/by_station/GM000001153.csv","size":"4796352","rows":null,"latest":null},
+  …
+</code></pre>
+<p>A detail <code>GET</code> blocks on the bounded facade read — 1.8 s to download and digest 4.8 MB — and
+the same request again is a 21 ms cache hit:</p>
+<pre><code class="language-text">$ curl 'localhost:3007/api/files/csv%2Fby_station%2FGM000001153.csv'
+{"Key":"csv/by_station/GM000001153.csv", …"Size":"4796352", …"rows":140629,"latest":"19911231"}
+</code></pre>
+<p>Now the standing view. <code>curl -N</code> holds the connection; the page arrives as <code>ADDED</code> rows, then
+each CSV lands as a <code>MODIFIED</code> line the moment its download completes:</p>
+<pre><code class="language-text">$ curl -N 'localhost:3007/api/files?offset=3&amp;limit=3&amp;watch=true'
+{"type":"ADDED","object":{"index":3,"filename":"csv/by_station/GM000002288.csv","size":"4880965","rows":null,"latest":null}}
+{"type":"ADDED","object":{"index":4,"filename":"csv/by_station/GM000002698.csv","size":"6351302","rows":null,"latest":null}}
+{"type":"ADDED","object":{"index":5,"filename":"csv/by_station/GM000002716.csv","size":"5042384","rows":null,"latest":null}}
+{"type":"MODIFIED","object":{"index":3,…"rows":143676,"latest":"20260531"}}
+{"type":"MODIFIED","object":{"index":4,…"rows":186088,"latest":"20081031"}}
+{"type":"MODIFIED","object":{"index":5,…"rows":147011,"latest":"20250824"}}
+</code></pre>
+<p>And the scheduler is visible from outside. Two watches on <strong>disjoint</strong> pages, side by side:
+their <code>MODIFIED</code> lines alternate — B, A, B, A — the single worker taking one row from each
+view’s queue in turn:</p>
+<pre><code class="language-text">19:35:35 [B] {"type":"MODIFIED","object":{"index":42,…"rows":201382,…}}
+19:35:36 [A] {"type":"MODIFIED","object":{"index":40,…"rows":77595,…}}
+19:35:38 [B] {"type":"MODIFIED","object":{"index":43,…"rows":132579,…}}
+19:35:40 [A] {"type":"MODIFIED","object":{"index":41,…"rows":128335,…}}
+</code></pre>
+<p>Two watches on the <strong>same</strong> page: each row’s <code>MODIFIED</code> reaches both connections in the same
+second — one download, fanned out by the event bus to every scenery holding the row:</p>
+<pre><code class="language-text">19:36:18 [B] {"type":"MODIFIED","object":{"index":50,…"rows":135802,…}}
+19:36:18 [A] {"type":"MODIFIED","object":{"index":50,…"rows":135802,…}}
+</code></pre>
+<p>Run the first <code>GET</code> again afterwards: the page the watches paid for now answers with its
+numbers filled in. Current knowledge grew.</p>
+<h2 id="a-tiny-react-client"><a class="header" href="#a-tiny-react-client">A tiny React client</a></h2>
+<p>The frontend is one component. It fetches its page with <code>watch=true</code> and reads the NDJSON
+stream directly off <code>fetch</code> — no client library, twenty lines:</p>
+<pre><code class="language-jsx">const res = await fetch(`/api/files?offset=${offset}&amp;limit=${LIMIT}&amp;watch=true`, {
+  signal: ctl.signal,
+})
+const reader = res.body.getReader()
+// …accumulate chunks, split on '\n'…
+const event = JSON.parse(line)
+setRows(rs =&gt; ({ ...rs, [event.object.index]: event.object }))
+</code></pre>
+<p><code>ADDED</code> and <code>MODIFIED</code> merge the same way — the object lands at its index — so the table
+renders the listing immediately and the <code>Rows</code> / <code>Latest</code> cells flip from <code>…</code> to numbers as the
+watch delivers them, exactly like chapter 7’s terminal cells did. Paging aborts the fetch via
+the <code>AbortController</code>, which closes the connection, which drops the scenery server-side.
+Clicking a row hits the detail endpoint into a side panel. <code>npm run build</code> in <code>learn-7/frontend</code>
+emits <code>dist/</code>, the <code>ServeDir</code> fallback serves it, and <code>http://localhost:3007</code> is a bucket
+explorer: title, file count, Prev/Next, and a table filling itself in.</p>
 <hr>
 <h2 id="what-we-covered"><a class="header" href="#what-we-covered">What we covered</a></h2>
 <div class="table-wrapper">
@@ -496,23 +419,47 @@ loop {
 <tr><th>Concept</th><th>What it does</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a></td><td>Ordered, paginated row view with sequential or random-access loading</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a></td><td>Reactive single-record view by id</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a></td><td>Reactive aggregate (count, sum, max, min, custom)</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a></td><td>Monotonic counter bumped on every state change</td></tr>
-<tr><td><code>subscribe()</code></td><td>Returns <code>watch::Receiver&lt;Generation&gt;</code> for reactive updates</td></tr>
-<tr><td><code>set_viewport()</code></td><td>Request a row range for random-access loading</td></tr>
-<tr><td><code>request_load_more()</code></td><td>Append the next page for sequential loading</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.4/vantage_diorama/scenery/value/enum.Aggregate.html"><code>Aggregate</code></a></td><td>Enum of built-in and custom aggregate operations</td></tr>
+<tr><td>Augment scheduler</td><td>Dio-owned detail fetches: round-robin across views, one flight per row</td></tr>
+<tr><td><code>augment_workers(n)</code></td><td>Worker pool size — 1 (deterministic order) by default</td></tr>
+<tr><td><code>.exclusive()</code></td><td>A scenery that never shares — one standing view per HTTP connection</td></tr>
+<tr><td><code>DioRouter</code> (vantage-api-adapters)</td><td><code>.with_column()</code> + <code>.with_page_size()</code> → an axum router; columns double as demand</td></tr>
+<tr><td><code>GET</code> vs <code>?watch=true</code></td><td>Snapshot of current knowledge vs a Scenery streaming NDJSON events</td></tr>
+<tr><td><code>ADDED</code> / <code>MODIFIED</code> lines</td><td>Kubernetes-style watch events, diffed per row per connection</td></tr>
+<tr><td>Connection drop = scenery drop</td><td>Queued fetches withdrawn, demand drained — a closed tab stops pulling</td></tr>
+<tr><td>Blocking <code>on_start</code></td><td>Pre-fetch: the port opens only once the listing is cached</td></tr>
+<tr><td><code>cache_source</code> + <code>open_table</code></td><td>One redb file, many named tables — the Dio’s and our own</td></tr>
+<tr><td><code>ContentsCache</code></td><td>Lazy admission: downloaded once — remembered; twice — cached</td></tr>
 </tbody>
 </table>
 </div>
+<div id="admonition-the-whole-climb" class="admonition admonish-success" role="note" aria-labelledby="admonition-the-whole-climb-title">
+<div class="admonition-title">
+<div id="admonition-the-whole-climb-title">
+<p>The whole climb</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-the-whole-climb"></a>
+</div>
+
+<div>
+<p>Eight chapters ago this book started with one SQL query; it ends with a fair-scheduled,
+cache-backed watch API feeding a React frontend — and every layer still speaks through the one
+below it.</p>
+<p>From here, the reference half of the book takes over — <a href="../augmentation.html">Augmentation</a> for
+batched fetches and demand gating, <a href="../config-driven-vistas.html">Config-Driven Vistas</a> for
+defining all of this from YAML, <a href="../mda.html">Model-Driven Architecture</a> for structuring a real
+application, and <a href="../new-persistence.html">Adding a New Persistence</a> when you’re ready to extend
+the framework itself.</p>
+</div>
+
+</div>
+
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../intro/step5-dio-lens.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../intro/step7-scenery.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
@@ -526,7 +473,7 @@ loop {
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../intro/step5-dio-lens.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../intro/step7-scenery.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 

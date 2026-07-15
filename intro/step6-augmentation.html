@@ -1,0 +1,592 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Augmentation — Enriching Rows - Vantage Framework</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-2459343d.css">
+        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href=".././mdbook-admonish.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../searchindex-5e583a43.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc-ef6241bc.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Vantage Framework</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="augmentation--enriching-rows"><a class="header" href="#augmentation--enriching-rows">Augmentation — Enriching Rows</a></h1>
+<p>Chapter 5’s inventory knows every station file’s name and size — the two things an S3 listing
+gives away for free. Everything interesting is <em>inside</em> the files: how many readings a station
+has recorded, and how recently. Getting that costs one download per file, which is exactly the
+kind of expense you want to pay once and remember.</p>
+<p><strong>Augmentation</strong> is Diorama’s answer: enrich the master’s rows, one row at a time, from a
+<em>detail</em> source — and let the Dio’s cache hold the result. The listing stays the cheap, fast
+spine it was in chapter 5; each row <em>gains columns</em> it never had, hydrated on demand and
+persisted alongside the row. This chapter adds two such columns to the inventory:</p>
+<pre><code class="language-text">      SIZE     ROWS     LATEST  FILENAME
+   4796352   140629   19911231  csv/by_station/GM000001153.csv
+</code></pre>
+<p><code>ROWS</code> — how many readings the file holds; <code>LATEST</code> — the date of the most recent one. Neither
+exists anywhere in S3’s listing; both are computed from the file’s contents.</p>
+<p>We build on chapter 5’s crate unchanged — <code>learn-5</code> starts as a copy of <code>learn-4</code>
+(<code>files.rs</code> and <code>main.rs</code> exactly as they were) and this chapter only adds. One new file,
+<code>readings.rs</code>, describes the detail side; a handful of lines in <code>main.rs</code> wire it up.</p>
+<hr>
+<h2 id="the-detail-side-readingsrs"><a class="header" href="#the-detail-side-readingsrs">The detail side: <code>readings.rs</code></a></h2>
+<p>Every station file is a CSV of date-ordered readings:</p>
+<pre><code class="language-text">ID,DATE,ELEMENT,DATA_VALUE,M_FLAG,Q_FLAG,S_FLAG,OBS_TIME
+GM000001153,18910101,TMAX,-20,,,I,
+GM000001153,18910102,TMAX,-40,,,I,
+...
+</code></pre>
+<p>So the two columns we’re after are cheap <em>derivations</em>: <code>rows</code> is the line count minus the
+header, <code>latest</code> is the <code>DATE</code> field of the last line. The expensive part is getting the
+contents at all.</p>
+<p>The detail source is a table — the same <code>ListObjectsV2</code> listing as the master, in fact, with two
+differences: it declares <strong>no prefix</strong> (the augmentation will narrow it to a single file per
+fetch), and it carries the derived columns. Start <code>readings.rs</code> with its entity:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use serde::{Deserialize, Serialize};
+use vantage_aws::prelude::*;
+
+/// One file, seen through the augmenter: the listing row plus columns
+/// computed from the file's contents.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Readings {
+    #[serde(rename = "Key")]
+    pub filename: String,
+    pub rows: i64,
+    pub latest: String,
+}
+<span class="boring">}</span></code></pre>
+<h3 id="lazy-expressions"><a class="header" href="#lazy-expressions">Lazy expressions</a></h3>
+<p>Where do <code>rows</code> and <code>latest</code> come from? Chapter 2’s <code>with_expression</code> won’t do it — those
+expressions lower <em>into the backend’s query</em> (a SQL subselect), and S3 can’t compute anything
+server-side. What we need runs on our side, <strong>after</strong> the row comes back.</p>
+<p>That’s a <strong>lazy expression</strong>: a column computed in Rust, on the returned record. Lazy
+expressions apply in declaration order, and each callback <em>borrows the record as built so far</em> —
+including the columns earlier lazy expressions added. That ordering rule is the whole trick:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl Readings {
+    pub fn table(aws: AwsAccount, bucket: &amp;str) -&gt; Table&lt;AwsAccount, Readings&gt; {
+        let bucket = bucket.to_string();
+        Table::new("restxml/Contents:s3/GET /{Bucket}?list-type=2", aws.clone())
+            .with_id_column("Key")
+            .with_condition(eq("Bucket", bucket.clone()))
+            .with_lazy_expression("contents", move |row| {
+                let aws = aws.clone();
+                let bucket = bucket.clone();
+                let key = row.get("Key").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                async move { Ok(s3::get_object(&amp;aws, &amp;bucket, &amp;key).await?.into()) }
+            })
+            .with_lazy_expression("rows", |row| {
+                // Every line after the CSV header is one reading.
+                let contents = row.get("contents").and_then(|v| v.as_str()).unwrap_or_default();
+                let rows = contents.lines().count().saturating_sub(1) as i64;
+                async move { Ok(rows.into()) }
+            })
+            .with_lazy_expression("latest", |row| {
+                // Readings are date-ordered; take the last line's DATE column.
+                let contents = row.get("contents").and_then(|v| v.as_str()).unwrap_or_default();
+                let latest = contents
+                    .lines()
+                    .last()
+                    .and_then(|line| line.split(',').nth(1))
+                    .unwrap_or_default()
+                    .to_string();
+                async move { Ok(latest.into()) }
+            })
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Read it as a pipeline over one record. The listing returns <code>{Key, Size, …}</code>; then:</p>
+<ol>
+<li><strong><code>contents</code></strong> reads <code>Key</code> off the record and downloads the file —
+<code>s3::get_object</code> is the driver’s raw fetch, unsigned here just like the listing. Its return
+value is inserted into the record under <code>contents</code>. This is the expensive step, and it
+happens <strong>once</strong>.</li>
+<li><strong><code>rows</code></strong> never touches the network: it reads <code>row.get("contents")</code> — the column the
+previous expression just added — and counts lines.</li>
+<li><strong><code>latest</code></strong> reads the same <code>contents</code> and takes the last line’s date.</li>
+</ol>
+<p>One download feeds every derived column declared after it. Each callback clones what it needs
+out of the borrowed record before going async, and each expression’s name is also registered as
+a column on the table, so the derived fields are part of its schema like any other.</p>
+<div id="admonition-lazy-expressions-from-yaml" class="admonition admonish-info" role="note" aria-labelledby="admonition-lazy-expressions-from-yaml-title">
+<div class="admonition-title">
+<div id="admonition-lazy-expressions-from-yaml-title">
+<p>Lazy expressions from YAML</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-lazy-expressions-from-yaml"></a>
+</div>
+
+<div>
+<p>Like most things declared on a table, lazy columns have a config-driven form: a column spec may
+carry <code>lazy: &lt;rhai script&gt;</code>, where the script sees the record built so far as <code>row</code> and its
+final expression becomes the value — <code>row.contents.split("\n").len() - 1</code>. Declaration order
+chains the same way. See <a href="../config-driven-vistas.html">Config-Driven Vistas</a>.</p>
+</div>
+
+</div>
+
+<h2 id="why-not-just-list-this-table"><a class="header" href="#why-not-just-list-this-table">Why not just list this table?</a></h2>
+<p>It’s tempting to stop here — the augmenter table already produces every column we want, so why
+not make <em>it</em> the Dio’s master? Because lazy expressions run <strong>when data is fetched</strong>. A
+<code>list()</code> on this table triggers the whole pipeline for every row it returns: a thousand files
+means a thousand downloads inside one blocking call, and nothing comes back until the last one
+lands. That’s not a listing — it’s a batch job wearing a listing’s interface.</p>
+<p>What we’re after is different. The list of files should reach the user <strong>instantly</strong> — it’s
+chapter 5’s cached listing, it costs milliseconds. The expensive columns should then be fetched
+<strong>one row at a time</strong>, each result written into the Dio and announced on the event bus, so
+anything watching updates progressively. Loading details for every station takes a long time no
+matter what; the win is in never blocking the listing on it, and in choosing the <em>order</em> — the
+next chapter puts a viewport in charge, so the rows the user is currently looking at are
+hydrated first, and rows nobody scrolls to are never fetched at all.</p>
+<p>That split — a cheap master everyone lists, an expensive detail source consulted per row — is
+what <strong>augmentation</strong> declares.</p>
+<h2 id="wiring-the-augmentation"><a class="header" href="#wiring-the-augmentation">Wiring the augmentation</a></h2>
+<p>Back in <code>main.rs</code>. The augmenter becomes a Vista like any table, and the Dio is told how to use
+it — this is the only structural addition to chapter 5’s <code>run()</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let augmenter = aws
+    .vista_factory()
+    .from_table(Readings::table(aws.clone(), BUCKET))?;
+
+let dio = lens.make_dio(master).await?.augment(
+    Arc::new(VistaCatalog::new()),
+    vec![Augmentation {
+        detail: Detail::Fixed(Arc::new(augmenter)),
+        source: Source::Column {
+            from: "Key".into(),
+            to: Some("prefix".into()),
+        },
+        fetch: Fetch::PerRow,
+        merge: MergeRule {
+            columns: vec!["rows".into(), "latest".into()],
+        },
+    }],
+);
+<span class="boring">}</span></code></pre>
+<p>An <a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/augment/struct.Augmentation.html"><code>Augmentation</code></a> answers four questions:</p>
+<ul>
+<li><strong><code>detail</code></strong> — <em>where do detail records come from?</em> <code>Detail::Fixed</code> holds our augmenter Vista
+directly. (<code>Detail::Catalog(name)</code> resolves one by name instead — the config-driven form,
+which is also why <code>augment</code> takes a <a href="https://docs.rs/vantage_vista_factory/0.6.2/vantage_vista_factory/struct.VistaCatalog.html"><code>VistaCatalog</code></a>.
+Building an empty catalog just to satisfy the signature is admittedly awkward; the parameter
+earns its place only in the catalog form.)</li>
+<li><strong><code>source</code></strong> — <em>how does a master row select its detail record?</em> <code>Source::Column</code> maps the
+master’s <code>Key</code> onto the detail table’s <code>prefix</code> condition. A full filename used as an S3
+prefix matches exactly one object — so each fetch narrows the augmenter to a one-row listing,
+and the lazy expressions run for precisely that file.</li>
+<li><strong><code>fetch</code></strong> — <code>Fetch::PerRow</code>: one detail fetch per master row.</li>
+<li><strong><code>merge</code></strong> — <em>which detail columns land on the master row?</em> Just <code>rows</code> and <code>latest</code>.
+<code>contents</code> is deliberately absent: it exists only inside the detail fetch, feeds the derived
+columns, and is never cached. The megabytes stay out of the Dio; the two numbers stay in.</li>
+</ul>
+<h2 id="reads-hydrate"><a class="header" href="#reads-hydrate">Reads hydrate</a></h2>
+<p>Nothing has fetched anything yet — declaring an augmentation is free. The work happens on
+<em>read</em>: rows a facade read returns come back hydrated — any of them still missing its augment
+columns runs the detail fetch first, and the result is written back to the cache as complete.</p>
+<svg viewbox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="13">
+  <defs>
+    <marker id="arrow3" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="7" markerheight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#888" />
+    </marker>
+  </defs>
+  <!-- Dio container -->
+  <rect x="20" y="30" width="300" height="170" rx="12" fill="none" stroke="#8f5a2d" stroke-width="2.5" />
+  <text x="170" y="54" text-anchor="middle" fill="#8f5a2d" font-weight="bold" font-size="15">Dio</text>
+  <!-- master -->
+  <rect x="45" y="75" width="110" height="80" rx="8" fill="#4a7c59" />
+  <text x="100" y="107" text-anchor="middle" fill="#fff" font-weight="bold">master</text>
+  <text x="100" y="127" text-anchor="middle" fill="#fff" font-size="12">S3 listing</text>
+  <!-- cache -->
+  <rect x="185" y="75" width="110" height="80" rx="8" fill="#4a7c59" />
+  <text x="240" y="107" text-anchor="middle" fill="#fff" font-weight="bold">cache</text>
+  <text x="240" y="127" text-anchor="middle" fill="#fff" font-size="12">redb</text>
+  <!-- facade Vista -->
+  <rect x="560" y="55" width="170" height="70" rx="10" fill="#7c2d8f" />
+  <text x="645" y="84" text-anchor="middle" fill="#fff" font-weight="bold">facade Vista</text>
+  <text x="645" y="104" text-anchor="middle" fill="#fff" font-size="12">dio.vista()</text>
+  <!-- request: facade → dio -->
+  <line x1="556" y1="72" x2="324" y2="72" stroke="#888" stroke-width="2" marker-end="url(#arrow3)" />
+  <text x="440" y="62" text-anchor="middle" fill="#888" font-size="12">get / window — you ask</text>
+  <!-- response: dio → facade -->
+  <line x1="324" y1="108" x2="556" y2="108" stroke="#888" stroke-width="2" marker-end="url(#arrow3)" />
+  <text x="440" y="126" text-anchor="middle" fill="#888" font-size="12">hydrated rows — gaps filled first</text>
+  <!-- per-row down: dio → augmenter -->
+  <line x1="90" y1="200" x2="90" y2="256" stroke="#888" stroke-width="2" marker-end="url(#arrow3)" />
+  <text x="105" y="222" fill="#888" font-size="12">per row with a gap:</text>
+  <text x="105" y="240" fill="#888" font-size="12">Key → prefix</text>
+  <!-- per-row up: augmenter → dio (cache) -->
+  <line x1="250" y1="256" x2="250" y2="204" stroke="#888" stroke-width="2" marker-end="url(#arrow3)" />
+  <text x="265" y="222" fill="#888" font-size="12">{rows, latest} merged into the cache,</text>
+  <text x="265" y="240" fill="#888" font-size="12">RecordChanged on the bus</text>
+  <!-- augmenter Vista -->
+  <rect x="20" y="260" width="300" height="60" rx="8" fill="#4a7c59" />
+  <text x="170" y="284" text-anchor="middle" fill="#fff" font-weight="bold">augmenter Vista — Readings</text>
+  <text x="170" y="304" text-anchor="middle" fill="#fff" font-size="12">lazy: contents → rows → latest — one download</text>
+</svg>
+<p>Not every read, though. The listing must stay what chapter 5 made it — instant — so
+<code>list_values</code> through the facade returns the cheap rows untouched. Hydration belongs to
+<strong>bounded reads</strong>: <code>get_value</code> for one record, <code>fetch_window</code> for a range. The rows you ask for
+are the rows that pay:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// The listing stays instant — cheap rows, no downloads.
+let listing = dio.vista().list_values().await?;
+println!("{} files (listed in {:?})", listing.len(), start.elapsed());
+
+// Details are paid for by the rows you ask for: a window of ten.
+let window = dio.vista().fetch_window(0, 10).await?;
+for (filename, file) in &amp;window {
+    let size = file.get("Size").and_then(|v| v.as_str()).unwrap_or("");
+    let rows = file.get("rows").and_then(|v| v.as_i64()).unwrap_or(0);
+    let latest = file.get("latest").and_then(|v| v.as_str()).unwrap_or("");
+    println!("{size:&gt;10} {rows:&gt;8} {latest:&gt;10}  {filename}");
+}
+<span class="boring">}</span></code></pre>
+<p>Ten downloads is still a wait worth narrating, and the Dio announces it: one
+<code>DioEvent::Hydrating</code> with the pending count before the first fetch, then a <code>RecordChanged</code> per
+row as each lands. A dozen lines of event plumbing become the progress display:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut events = dio.subscribe_events();
+tokio::spawn(async move {
+    while let Ok(event) = events.recv().await {
+        match event {
+            DioEvent::Hydrating { pending } =&gt; println!("hydrating {pending} files…"),
+            DioEvent::RecordChanged { id } =&gt; println!("  {id}"),
+            _ =&gt; {}
+        }
+    }
+});
+<span class="boring">}</span></code></pre>
+<p>First run — chapter 5’s sync, the instant listing, then the window doing its downloads:</p>
+<pre><code class="language-text">fetched 100 files in 215ms
+...
+1122 files (listed in 16ms)
+hydrating 10 files…
+  csv/by_station/GM000001153.csv
+  csv/by_station/GM000001474.csv
+  ...
+   4796352   140629   19911231  csv/by_station/GM000001153.csv
+   7057976   206874   20260531  csv/by_station/GM000001474.csv
+   2978238    87207   19990131  csv/by_station/GM000002277.csv
+   ...
+10 files detailed in 20.2s
+</code></pre>
+<p>Real data, and readable at a glance: station <code>GM000001474</code> has 206,874 readings and is still
+reporting (May 2026); its neighbour <code>GM000001153</code> went silent at the end of 1991.</p>
+<p>Second run — new process, warm cache:</p>
+<pre><code class="language-text">fetched 0 files in 340ms
+1122 files (listed in 16ms)
+   4796352   140629   19911231  csv/by_station/GM000001153.csv
+   ...
+10 files detailed in 16ms
+</code></pre>
+<p>No <code>hydrating</code> line at all: those ten rows already carry their augment columns, so the window
+finds no gaps and never touches the network. Twenty seconds became sixteen milliseconds; the
+derived numbers live in <code>cache.redb</code> with the rest of the row. Ask for a different window —
+<code>fetch_window(500, 10)</code> — and only <em>its</em> gaps download. (<code>--invalidate</code> still clears everything,
+derived columns included — derived data is data.)</p>
+<div id="admonition-what-if-a-download-fails" class="admonition admonish-question" role="note" aria-labelledby="admonition-what-if-a-download-fails-title">
+<div class="admonition-title">
+<div id="admonition-what-if-a-download-fails-title">
+<p>What if a download fails?</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-what-if-a-download-fails"></a>
+</div>
+
+<div>
+<p>Nothing is swallowed. Each failing row broadcasts <code>DioEvent::RecordLoadFailed { id, error }</code>
+on the bus — the same listener printing our progress can print failures beside it. The bounded
+read that requested the row then returns an error (“augment hydration failed”) rather than
+handing you a window that quietly misses data. Retry by asking again: rows that <em>did</em> land are
+already cached and are never re-downloaded. Chapter 7’s reactive views are more forgiving — a
+failed row is marked <code>RowStatus::LoadFailed</code> while its cheap listing columns stay visible, and
+the fetch is retried the next time the viewport reaches for it.</p>
+</div>
+
+</div>
+
+<hr>
+<h2 id="what-we-covered"><a class="header" href="#what-we-covered">What we covered</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Concept</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>with_lazy_expression(name, callback)</code></td><td>A column computed in Rust on the returned record; chains in order</td></tr>
+<tr><td><code>s3::get_object</code></td><td>Raw object fetch through the same (unsigned) driver</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/augment/struct.Augmentation.html"><code>Augmentation</code></a></td><td>Declares detail source, row→detail mapping, fetch style, merge</td></tr>
+<tr><td><code>Detail::Fixed</code> / <code>Detail::Catalog</code></td><td>Detail Vista held directly, or resolved by name from a catalog</td></tr>
+<tr><td><code>Source::Column { from, to }</code></td><td>Master column → detail condition (our <code>Key</code> → <code>prefix</code>)</td></tr>
+<tr><td><code>MergeRule</code></td><td>Which detail columns land on the master row — and which don’t</td></tr>
+<tr><td>Bounded facade reads hydrate</td><td><code>get_value</code> / <code>fetch_window</code> fill gaps for the rows they return; <code>list_values</code> stays cheap</td></tr>
+<tr><td><code>DioEvent::Hydrating</code></td><td>Fired before a hydration sweep — the cue for progress UI</td></tr>
+</tbody>
+</table>
+</div>
+<div id="admonition-whats-next" class="admonition admonish-tip" role="note" aria-labelledby="admonition-whats-next-title">
+<div class="admonition-title">
+<div id="admonition-whats-next-title">
+<p>What’s next</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-whats-next"></a>
+</div>
+
+<div>
+<p>Our CLI asks for one fixed window and exits. A real interface is a <em>standing</em> view: the window
+should follow the user’s cursor, rows should repaint as details land, and the whole thing should
+stay current as the bucket changes. The next chapter opens <strong>Sceneries</strong> over this same Dio — a
+live terminal UI scrolling the full 122,000-station archive, hydrating the rows the user is
+looking at.</p>
+</div>
+
+</div>
+
+<div id="admonition-going-deeper" class="admonition admonish-info" role="note" aria-labelledby="admonition-going-deeper-title">
+<div class="admonition-title">
+<div id="admonition-going-deeper-title">
+<p>Going deeper</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-going-deeper"></a>
+</div>
+
+<div>
+<p>Augmentation has a reference chapter of its own — batched fetches, the gap rule, demand gating,
+and the YAML form — at <a href="../augmentation.html">Augmentation</a>.</p>
+</div>
+
+</div>
+
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../intro/step5-dio-lens.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../intro/step7-scenery.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../intro/step5-dio-lens.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../intro/step7-scenery.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
+
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../mermaid-eefea253.min.js"></script>
+        <script src="../mermaid-init-ccf746f1.js"></script>
+
+
+
+    </div>
+    </body>
+</html>
