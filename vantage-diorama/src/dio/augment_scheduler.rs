@@ -231,11 +231,16 @@ impl Drop for AugmentTicket {
 /// these tasks on drop (a parked worker would otherwise idle forever).
 pub(crate) async fn augment_worker_loop(dio: Weak<DioInner>, sched: Arc<AugmentScheduler>) {
     loop {
+        // Register for wakeups BEFORE checking the queue: an enqueue landing
+        // between an empty `next_job()` and the await would otherwise be
+        // missed (`notify_one` parks a single permit — with several idle
+        // workers the others would sleep through it).
+        let notified = sched.work_notify.notified();
         let Some(id) = sched.next_job() else {
             if dio.strong_count() == 0 {
                 return;
             }
-            sched.work_notify.notified().await;
+            notified.await;
             continue;
         };
         let Some(inner) = dio.upgrade() else {

@@ -50,6 +50,13 @@ where
 
         // Add all columns as fields (or expressions if defined)
         for column in self.columns.values() {
+            // Lazy-expression columns exist only on returned records — the
+            // source has no such field to project (SQLite would silently
+            // degrade the unknown quoted identifier to a string literal;
+            // other SQL backends would error).
+            if self.lazy_expressions.contains_key(column.name()) {
+                continue;
+            }
             if let Some(expr_fn) = self.expressions.get(column.name()) {
                 let expr = expr_fn(self.as_entity_erased());
                 self.data_source.add_select_column(

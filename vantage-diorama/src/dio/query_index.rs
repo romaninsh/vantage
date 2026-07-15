@@ -76,13 +76,13 @@ impl QueryIndex {
     ) -> (usize, Vec<String>) {
         let fetched = ids.len();
         let mut guard = self.ids.write().unwrap();
-        let appended: Vec<String> = {
-            let existing: std::collections::HashSet<&str> =
-                guard.iter().map(|s| s.as_str()).collect();
-            ids.into_iter()
-                .filter(|id| !existing.contains(id.as_str()))
-                .collect()
-        };
+        // Seed the seen-set from the index, then let each accepted id join
+        // it — this also drops ids repeated WITHIN the incoming page.
+        let mut seen: std::collections::HashSet<String> = guard.iter().cloned().collect();
+        let appended: Vec<String> = ids
+            .into_iter()
+            .filter(|id| seen.insert(id.clone()))
+            .collect();
         let base = guard.len();
         guard.extend(appended.iter().cloned());
         drop(guard);
@@ -142,6 +142,16 @@ mod tests {
         assert!(idx.is_complete(), "an empty page must end paging");
         assert_eq!(idx.len(), 0);
         assert_eq!(idx.list_pages_fetched(), 1);
+    }
+
+    /// An id repeated WITHIN one incoming page is accepted once.
+    #[test]
+    fn intra_page_duplicates_are_skipped_on_append() {
+        let idx = QueryIndex::new();
+        let (base, appended) = idx.append_page(vec!["a".into(), "a".into(), "b".into()], 3);
+        assert_eq!(base, 0);
+        assert_eq!(appended, vec!["a", "b"]);
+        assert_eq!(idx.ids(), vec!["a", "b"]);
     }
 
     /// Two sceneries racing to page the shared index both fetch the same

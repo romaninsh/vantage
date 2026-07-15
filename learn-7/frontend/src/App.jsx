@@ -18,6 +18,7 @@ export default function App() {
       const res = await fetch(`/api/files?offset=${offset}&limit=${LIMIT}&watch=true`, {
         signal: ctl.signal,
       })
+      if (!res.ok) return
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
@@ -27,9 +28,15 @@ export default function App() {
         buffer += decoder.decode(value, { stream: true })
         let nl
         while ((nl = buffer.indexOf('\n')) >= 0) {
-          const event = JSON.parse(buffer.slice(0, nl))
+          const line = buffer.slice(0, nl).trim()
           buffer = buffer.slice(nl + 1)
-          setRows(rs => ({ ...rs, [event.object.index]: event.object }))
+          if (!line) continue
+          try {
+            const event = JSON.parse(line)
+            setRows(rs => ({ ...rs, [event.object.index]: event.object }))
+          } catch (e) {
+            console.error('failed to parse stream event:', e)
+          }
         }
       }
     })().catch(() => {})

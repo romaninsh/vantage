@@ -193,11 +193,11 @@ async fn watch_listing(st: ApiState, offset: usize, limit: usize) -> ApiResult<R
         // would hydrate only the last-set window.
         .exclusive()
         // Size list pages so a fresh scenery's first page already covers the
-        // watched window.
-        .page_size((offset + limit).max(1))
+        // watched window. Saturating: an absurd offset must not panic.
+        .page_size(offset.saturating_add(limit).max(1))
         .open()
         .await?;
-    scenery.set_viewport(offset..offset + limit);
+    scenery.set_viewport(offset..offset.saturating_add(limit));
     let mut generations = scenery.subscribe();
     let columns = st.columns.clone();
 
@@ -212,10 +212,10 @@ async fn watch_listing(st: ApiState, offset: usize, limit: usize) -> ApiResult<R
             // this window. Keep asking for list pages until it reaches us;
             // each landed page bumps the generation, which re-runs this
             // check.
-            if scenery.has_more() && scenery.row_count() < offset + limit {
+            if scenery.has_more() && scenery.row_count() < offset.saturating_add(limit) {
                 scenery.request_load_more();
             }
-            let end = (offset + limit).min(scenery.row_count());
+            let end = offset.saturating_add(limit).min(scenery.row_count());
             for idx in offset..end {
                 let Some(row) = scenery.row(idx) else { continue };
                 let object = project(idx, &row.record, &columns);
@@ -269,9 +269,16 @@ async fn watch_detail(st: ApiState, id: String) -> ApiResult<Response> {
         .ok_or_else(|| not_found(&id))?;
     let scenery = st.dio.record_scenery(id).await?;
     let mut generations = scenery.subscribe();
+    // Open on the subscribed scenery's snapshot, not the pre-subscription
+    // read: a change landing between the two would otherwise never produce
+    // a MODIFIED line.
+    let initial = scenery
+        .record()
+        .map(|current| record_json(&current.record))
+        .unwrap_or_else(|| record_json(&row));
 
     let stream = async_stream::stream! {
-        let mut last = record_json(&row);
+        let mut last = initial;
         yield event_line("ADDED", last.clone());
         loop {
             if generations.changed().await.is_err() {
