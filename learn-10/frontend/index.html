@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The Vantage Bar — live inventory</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+      body {
+        background:
+          radial-gradient(1200px 600px at 15% -10%, #1e293b 0%, transparent 60%),
+          radial-gradient(1000px 500px at 100% 0%, #172554 0%, transparent 55%),
+          #0b1120;
+      }
+      @keyframes flash { 0% { transform: scale(1.35); opacity: 0.35 } 100% { transform: scale(1); opacity: 1 } }
+      .flash { animation: flash 0.5s ease-out }
+      @keyframes livedot { 0%,100% { opacity: 1 } 50% { opacity: 0.25 } }
+      .livedot { animation: livedot 1.4s ease-in-out infinite }
+      @keyframes arrive { from { opacity: 0; transform: scale(0.9) translateY(-8px) } to { opacity: 1; transform: none } }
+      .arrive { animation: arrive 0.35s cubic-bezier(.22,.61,.36,1) }
+      @keyframes dispose { to { opacity: 0; transform: scale(0.8) translateY(14px); filter: saturate(0.2) } }
+      .disposing { animation: dispose 0.5s ease-in forwards; pointer-events: none }
+      .card { transition: box-shadow .3s ease, border-color .3s ease, transform .3s ease }
+      .bar { transition: width .5s cubic-bezier(.22,.61,.36,1), background-color .4s ease }
+    </style>
+  </head>
+  <body class="min-h-screen text-slate-100 antialiased">
+    <div id="root"></div>
+    <script type="text/babel">
+      const { useEffect, useState, useRef } = React;
+      const FULL = 12; // a full crate, for the stock bar scale
+      const money = (c) => `$${(c / 100).toFixed(2)}`;
+
+      function tone(stock) {
+        if (stock <= 0) return { bar: "#475569", ring: "border-slate-700", label: "text-slate-500" };
+        if (stock <= 3) return { bar: "#f43f5e", ring: "border-rose-500/40", label: "text-rose-300" };
+        if (stock <= 7) return { bar: "#f59e0b", ring: "border-amber-500/40", label: "text-amber-300" };
+        return { bar: "#10b981", ring: "border-emerald-500/40", label: "text-emerald-300" };
+      }
+
+      function Card({ p }) {
+        const t = tone(p.stock);
+        const pct = Math.max(0, Math.min(1, p.stock / FULL)) * 100;
+        const hover = p.disposing ? "" : "hover:-translate-y-0.5 hover:shadow-xl";
+        return (
+          <div className={`card relative rounded-2xl border ${t.ring} bg-white/5 backdrop-blur p-5 shadow-lg ${hover} ${p.disposing ? "disposing" : "arrive"}`}>
+            {p.disposing && (
+              <div className="absolute inset-0 grid place-items-center rounded-2xl bg-slate-950/40">
+                <span className="rounded-full border border-rose-400/50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-rose-300">
+                  sold out
+                </span>
+              </div>
+            )}
+            <div className="flex items-baseline justify-between gap-3">
+              <h3 className="text-lg font-semibold tracking-tight truncate">{p.name}</h3>
+              <span className="text-sm font-medium text-slate-300 tabular-nums">{money(p.price)}</span>
+            </div>
+            <div className="mt-4 h-2.5 w-full rounded-full bg-white/10 overflow-hidden">
+              <div className="bar h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: t.bar }} />
+            </div>
+            <div className="mt-2 flex items-center justify-between text-sm">
+              <span key={p.stock} className={`flash font-semibold tabular-nums ${t.label}`}>
+                {p.stock > 0 ? `${p.stock} in stock` : "sold out"}
+              </span>
+              <span className="text-slate-500">of {FULL}</span>
+            </div>
+          </div>
+        );
+      }
+
+      function App() {
+        const [items, setItems] = useState({}); // id -> object (on the shelf)
+        const [leaving, setLeaving] = useState({}); // id -> object (animating out)
+        const [live, setLive] = useState(false);
+        const bufRef = useRef("");
+
+        useEffect(() => {
+          let stop = false;
+          const timers = {};
+          async function connect() {
+            try {
+              const res = await fetch("/api/products?watch=true");
+              setLive(true);
+              const reader = res.body.getReader();
+              const dec = new TextDecoder();
+              while (!stop) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                bufRef.current += dec.decode(value, { stream: true });
+                const lines = bufRef.current.split("\n");
+                bufRef.current = lines.pop();
+                for (const line of lines) {
+                  if (!line.trim()) continue;
+                  const { type, object: o } = JSON.parse(line);
+                  if (type === "DELETED") {
+                    // A drink left the shelf — dispose of it with an animation.
+                    setItems((m) => { const n = { ...m }; delete n[o.id]; return n; });
+                    setLeaving((m) => ({ ...m, [o.id]: o }));
+                    clearTimeout(timers[o.id]);
+                    timers[o.id] = setTimeout(() => {
+                      setLeaving((m) => { const n = { ...m }; delete n[o.id]; return n; });
+                    }, 500);
+                  } else {
+                    // ADDED / MODIFIED — upsert, and cancel any pending disposal.
+                    setLeaving((m) => { if (!(o.id in m)) return m; const n = { ...m }; delete n[o.id]; return n; });
+                    setItems((m) => ({ ...m, [o.id]: o }));
+                  }
+                }
+              }
+            } catch (_) { /* fall through to reconnect */ }
+            setLive(false);
+            if (!stop) setTimeout(connect, 1000);
+          }
+          connect();
+          return () => { stop = true; Object.values(timers).forEach(clearTimeout); };
+        }, []);
+
+        const list = [
+          ...Object.values(items).map((o) => ({ ...o, disposing: false })),
+          ...Object.values(leaving).map((o) => ({ ...o, disposing: true })),
+        ].sort(
+          (a, b) =>
+            a.index - b.index ||
+            // Same slot: keep the fading card ahead of the live card that
+            // shifted into its place, so DOM order stays put and they don't
+            // swap mid-animation.
+            (a.disposing === b.disposing ? 0 : a.disposing ? -1 : 1),
+        );
+
+        return (
+          <div className="mx-auto max-w-5xl px-6 py-12">
+            <header className="mb-10 flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <h1 className="text-3xl font-bold tracking-tight">🍸 The Vantage Bar</h1>
+                <p className="mt-1 text-slate-400">
+                  Live inventory over a watch stream — Postgres <code className="text-slate-300">LISTEN/NOTIFY</code>.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
+                <span className={`livedot inline-block h-2.5 w-2.5 rounded-full ${live ? "bg-emerald-400" : "bg-slate-500"}`} />
+                <span className={live ? "text-emerald-300" : "text-slate-400"}>{live ? "live" : "reconnecting…"}</span>
+              </div>
+            </header>
+
+            {list.length === 0 ? (
+              <p className="text-slate-500">Waiting for the shelf… (run the mutator to stock it)</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {list.map((p) => <Card key={p.id} p={p} />)}
+              </div>
+            )}
+
+            <footer className="mt-12 text-center text-xs text-slate-600">
+              Every card updates the moment the database changes — no polling. Served by axum; data by Vantage.
+            </footer>
+          </div>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+  </body>
+</html>

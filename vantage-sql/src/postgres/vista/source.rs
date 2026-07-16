@@ -9,15 +9,17 @@ use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_table::pagination::Pagination;
+use vantage_table::sorting::{OrderBy, SortDirection as TableSortDirection};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity, Record};
 use vantage_vista::{
-    Column as VistaColumn, ContainedSpec, Reference as VistaReference, TableShell, Vista,
-    VistaCapabilities, VistaMetadata,
+    Column as VistaColumn, ContainedSpec, Reference as VistaReference, SortDirection, TableShell,
+    Vista, VistaCapabilities, VistaMetadata,
 };
 
 use crate::postgres::PostgresDB;
 use crate::postgres::operation::PostgresOperation;
+use crate::primitives::identifier::ident;
 use crate::postgres::types::AnyPostgresType;
 use crate::types::{cbor_to_json, parse_json_host};
 
@@ -198,6 +200,30 @@ where
             .clone();
         let sql_value = AnyPostgresType::untyped(value.clone());
         self.table.add_condition(column.eq(sql_value));
+        Ok(())
+    }
+
+    fn add_order(&mut self, field: &str, dir: SortDirection) -> Result<()> {
+        if !self.table.columns().contains_key(field) {
+            return Err(error!("Unknown column for add_order", field = field));
+        }
+        // Vista's add_order is replace-semantics — drop any previously-set
+        // order before pushing the new one.
+        self.table.clear_orders();
+        let expr = postgres_expr!("{}", (ident(field)));
+        let direction = match dir {
+            SortDirection::Ascending => TableSortDirection::Ascending,
+            SortDirection::Descending => TableSortDirection::Descending,
+        };
+        self.table.add_order(OrderBy {
+            expression: expr.into(),
+            direction,
+        });
+        Ok(())
+    }
+
+    fn clear_orders(&mut self) -> Result<()> {
+        self.table.clear_orders();
         Ok(())
     }
 

@@ -33,7 +33,7 @@
 //! let app = axum::Router::new().nest("/api/files", api);
 //! ```
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -89,6 +89,7 @@ pub struct DioRouter {
     dio: Dio,
     columns: Vec<(String, String)>,
     page_size: usize,
+    key_field: Option<String>,
 }
 
 impl DioRouter {
@@ -97,6 +98,7 @@ impl DioRouter {
             dio,
             columns: Vec::new(),
             page_size: 50,
+            key_field: None,
         }
     }
 
@@ -115,6 +117,18 @@ impl DioRouter {
         self
     }
 
+    /// Diff the listing watch by the value of record field `field` (a stable
+    /// row id) instead of by position. With a key set, the watch is
+    /// identity-keyed: a row that leaves the set produces a `DELETED` event, a
+    /// row that merely shifts position is not re-sent, and `ADDED`/`MODIFIED`
+    /// track the row rather than the slot. Without it, the watch keeps its
+    /// positional behaviour (index-diffed, `ADDED`/`MODIFIED` only). The field
+    /// must be exposed via [`with_column`](Self::with_column).
+    pub fn key_by(mut self, field: impl Into<String>) -> Self {
+        self.key_field = Some(field.into());
+        self
+    }
+
     /// Build the router: `GET /` and `GET /{id}`, both honouring
     /// `?watch=true`. Nest it wherever the resource should live.
     pub fn into_router(self) -> Router {
@@ -122,6 +136,7 @@ impl DioRouter {
             dio: self.dio,
             columns: Arc::from(self.columns),
             page_size: self.page_size,
+            key_field: self.key_field.map(Arc::from),
         };
         Router::new()
             .route("/", get(listing))
@@ -135,6 +150,7 @@ struct ApiState {
     dio: Dio,
     columns: Arc<[(String, String)]>,
     page_size: usize,
+    key_field: Option<Arc<str>>,
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -202,12 +218,13 @@ async fn watch_listing(st: ApiState, offset: usize, limit: usize) -> ApiResult<R
     scenery.set_viewport(offset..offset.saturating_add(limit));
     let mut generations = scenery.subscribe();
     let columns = st.columns.clone();
+    let key_field = st.key_field.clone();
 
     let stream = async_stream::stream! {
-        // Last object sent per row index — the diff base. Only rows that
-        // actually changed produce a line, so a generation bump for an
-        // unrelated row costs nothing on the wire.
-        let mut last: BTreeMap<usize, serde_json::Value> = BTreeMap::new();
+        // Diff base. Positional watches key it by row index; identity watches
+        // (a `key_by` field is set) key it by that field's value, so a removed
+        // row can be reported as `DELETED` and a shifted row isn't re-sent.
+        let mut last: BTreeMap<String, serde_json::Value> = BTreeMap::new();
         loop {
             // The index pages lazily and is shared per-query across
             // sceneries — an earlier watch may have built it shallower than
@@ -218,17 +235,38 @@ async fn watch_listing(st: ApiState, offset: usize, limit: usize) -> ApiResult<R
                 scenery.request_load_more();
             }
             let end = offset.saturating_add(limit).min(scenery.row_count());
+            let mut seen: BTreeSet<String> = BTreeSet::new();
             for idx in offset..end {
                 let Some(row) = scenery.row(idx) else { continue };
                 let object = project(idx, &row.record, &columns);
-                let kind = match last.get(&idx) {
+                // Diff key: the identity field's value, or the row index.
+                let key = match &key_field {
+                    Some(field) => match object.get(field.as_ref()).and_then(|v| v.as_str()) {
+                        Some(id) => id.to_owned(),
+                        None => continue,
+                    },
+                    None => idx.to_string(),
+                };
+                seen.insert(key.clone());
+                let kind = match last.get(&key) {
                     Some(previous) if *previous == object => None,
                     Some(_) => Some("MODIFIED"),
                     None => Some("ADDED"),
                 };
                 if let Some(kind) = kind {
-                    last.insert(idx, object.clone());
+                    last.insert(key, object.clone());
                     yield event_line(kind, object);
+                }
+            }
+            // Identity watches report rows that left the set; positional
+            // watches never do — a shrunk list simply stops emitting the tail.
+            if key_field.is_some() {
+                let gone: Vec<String> =
+                    last.keys().filter(|k| !seen.contains(*k)).cloned().collect();
+                for key in gone {
+                    if let Some(object) = last.remove(&key) {
+                        yield event_line("DELETED", object);
+                    }
                 }
             }
             // Wait for the next generation; the sender lives as long as the

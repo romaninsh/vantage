@@ -2208,6 +2208,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "learn-10"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "rand 0.8.6",
+ "sqlx",
+ "tokio",
+ "tower-http",
+ "vantage-api-adapters",
+ "vantage-core",
+ "vantage-dataset",
+ "vantage-diorama",
+ "vantage-sql",
+ "vantage-types",
+ "vantage-vista",
+]
+
+[[package]]
 name = "learn-2"
 version = "0.1.0"
 dependencies = [

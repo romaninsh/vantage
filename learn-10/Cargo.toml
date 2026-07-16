@@ -1,0 +1,20 @@
+[package]
+name = "learn-10"
+version = "0.1.0"
+edition = "2024"
+publish = false
+default-run = "learn-10"
+
+[dependencies]
+vantage-api-adapters = { path = "../vantage-api-adapters", features = ["axum"] }
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.6", features = ["fs"] }
+vantage-sql = { path = "../vantage-sql", features = ["postgres", "vista"] }
+vantage-diorama = { path = "../vantage-diorama" }
+vantage-vista = { path = "../vantage-vista" }
+vantage-dataset = { path = "../vantage-dataset" }
+vantage-types = { path = "../vantage-types" }
+vantage-core = { path = "../vantage-core" }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres"] }
+rand = "0.8"
