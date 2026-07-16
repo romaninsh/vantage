@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.3 — 2026-07-16
+
+- Fixed `AnySurrealType`'s JSON conversion dropping CBOR tags. `From<AnySurrealType> for
+  serde_json::Value` previously round-tripped through a plain `ciborium`/`serde` re-encode, which
+  silently discards CBOR tags — a datetime (`Tag(12, [seconds, nanos])`, SurrealDB's compact
+  encoding) surfaced as the raw `[seconds, nanos]` array instead of a timestamp, and record ids,
+  UUIDs, decimals, and durations were similarly unformatted whenever this path was hit. The
+  conversion now understands SurrealDB's tags directly, rendering the same textual form SurrealDB's
+  own JSON API produces (an RFC 3339 string for datetimes, `table:id` for record ids, etc.).
+
 ## 0.6.2 — 2026-07-16
 
 - Live subscriptions. `SurrealTableShell` implements `watch_vista` over
