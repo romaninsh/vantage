@@ -452,17 +452,11 @@ impl RestApi {
 
             // The HTTP body parses as JSON for free; convert to CBOR
             // at this single boundary so the rest of the pipeline
-            // (Table, Vista) sees the universal carrier.
+            // (Table, Vista) sees the universal carrier. json_to_cbor
+            // is total — JSON is a strict subset of CBOR.
             let mut record: Record<CborValue> = Record::new();
             for (k, v) in obj {
-                let cbor = CborValue::serialized(v).map_err(|e| {
-                    error!(
-                        "JSON → CBOR conversion failed",
-                        field = k.clone(),
-                        detail = e.to_string()
-                    )
-                })?;
-                record.insert(k.clone(), cbor);
+                record.insert(k.clone(), vantage_types::json_to_cbor(v.clone()));
             }
 
             records.insert(id, record);

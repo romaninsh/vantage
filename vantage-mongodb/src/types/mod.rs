@@ -52,6 +52,7 @@ impl MongoTypeVariants {
 }
 
 mod bool;
+pub mod cbor;
 mod numbers;
 mod object_id;
 mod string;

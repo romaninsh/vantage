@@ -33,15 +33,21 @@ pub(crate) fn dynamic_to_cbor(d: Dynamic) -> Result<CborValue, Box<EvalAltResult
     }
 }
 
-/// CBOR → Rhai `Dynamic`. `ciborium::Value` is non-exhaustive (tags, etc.);
-/// unknown variants degrade to unit.
+/// CBOR → Rhai `Dynamic`. Tagged values render their presentation form
+/// (record ids as `"table:id"`, datetimes/UUIDs/decimals as their text —
+/// the same shapes the UI grid shows) instead of degrading to unit.
 pub(crate) fn cbor_to_dynamic(v: &CborValue) -> Dynamic {
     match v {
         CborValue::Null => Dynamic::UNIT,
         CborValue::Bool(b) => Dynamic::from_bool(*b),
         CborValue::Integer(i) => {
             let n: i128 = (*i).into();
-            Dynamic::from_int(n as i64)
+            match i64::try_from(n) {
+                Ok(v) => Dynamic::from_int(v),
+                // Beyond i64 (rhai's only int): decimal string, not a
+                // silent wrap-around.
+                Err(_) => Dynamic::from(n.to_string()),
+            }
         }
         CborValue::Float(f) => Dynamic::from_float(*f),
         CborValue::Text(s) => Dynamic::from(s.clone()),
@@ -58,6 +64,15 @@ pub(crate) fn cbor_to_dynamic(v: &CborValue) -> Dynamic {
                 }
             }
             Dynamic::from_map(map)
+        }
+        CborValue::Tag(..) => {
+            // Normalise the tagged value to plain CBOR via its JSON
+            // presentation, then convert that.
+            let plain = vantage_types::json_to_cbor(vantage_types::cbor_to_json(
+                &vantage_types::PresentationDialect,
+                v.clone(),
+            ));
+            cbor_to_dynamic(&plain)
         }
         _ => Dynamic::UNIT,
     }
@@ -79,6 +94,44 @@ pub(crate) fn map_to_record(map: RhaiMap) -> Result<Record<CborValue>, Box<EvalA
         out.push((k.to_string(), dynamic_to_cbor(v)?));
     }
     Ok(out.into_iter().collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tagged_record_id_renders_as_table_colon_id() {
+        // A SurrealDB Thing used to degrade to UNIT here, so the same row
+        // rendered differently in a data script than in the UI grid.
+        let thing = CborValue::Tag(
+            8,
+            Box::new(CborValue::Array(vec![
+                CborValue::Text("user".into()),
+                CborValue::Text("1".into()),
+            ])),
+        );
+        assert_eq!(cbor_to_dynamic(&thing).into_string().unwrap(), "user:1");
+    }
+
+    #[test]
+    fn tagged_datetime_renders_inner_text() {
+        let dt = CborValue::Tag(0, Box::new(CborValue::Text("2026-01-01T00:00:00Z".into())));
+        assert_eq!(
+            cbor_to_dynamic(&dt).into_string().unwrap(),
+            "2026-01-01T00:00:00Z"
+        );
+    }
+
+    #[test]
+    fn big_integer_becomes_decimal_string_not_wraparound() {
+        let n = i128::from(i64::MIN) - 1;
+        let big = CborValue::Integer(n.try_into().unwrap());
+        assert_eq!(
+            cbor_to_dynamic(&big).into_string().unwrap(),
+            n.to_string()
+        );
+    }
 }
 
 /// Rhai `Dynamic` → `serde_json::Value` for handing a script's result back to a

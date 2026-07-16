@@ -174,25 +174,15 @@ pub(crate) fn build_query_form(
 }
 
 fn cbor_to_string(v: &CborValue) -> String {
-    match v {
-        CborValue::Text(s) => s.clone(),
-        CborValue::Integer(i) => {
-            let n: i128 = (*i).into();
-            n.to_string()
-        }
-        CborValue::Float(f) => f.to_string(),
-        CborValue::Bool(b) => b.to_string(),
-        CborValue::Null => String::new(),
-        other => cbor_to_json(other).to_string(),
-    }
+    vantage_types::cbor_to_string(&vantage_types::PlainDialect, v)
 }
 
-/// CBOR → JSON via ciborium's serde bridge. Used at the wire boundary
-/// when emitting request bodies. Falls back to `null` for the rare
-/// CBOR shapes JSON can't represent (which AWS conditions don't
-/// produce).
+/// CBOR → JSON via the shared walker. Used at the wire boundary when
+/// emitting request bodies. Total — tagged values render their payload
+/// instead of collapsing to `null` (the serde-bridge failure mode this
+/// used to have).
 fn cbor_to_json(v: &CborValue) -> JsonValue {
-    v.deserialized::<JsonValue>().unwrap_or(JsonValue::Null)
+    vantage_types::cbor_to_json(&vantage_types::PlainDialect, v.clone())
 }
 
 #[cfg(test)]

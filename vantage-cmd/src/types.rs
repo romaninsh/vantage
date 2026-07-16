@@ -9,32 +9,23 @@
 
 use ciborium::Value as CborValue;
 use serde_json::Value as JsonValue;
-use vantage_types::{RichText, Style, TerminalRender};
+use vantage_types::{PlainDialect, RichText, Style, TerminalRender, cbor_json};
 
-/// CBOR → JSON via ciborium's serde bridge. Falls back to `null` for the
-/// rare CBOR shapes JSON can't represent.
+/// CBOR → JSON via the shared walker. Total — tagged values render their
+/// payload instead of collapsing the whole value to `null` (the failure
+/// mode of ciborium's serde bridge, which this used to route through).
 pub(crate) fn cbor_to_json(v: &CborValue) -> JsonValue {
-    v.deserialized::<JsonValue>().unwrap_or(JsonValue::Null)
+    cbor_json::cbor_to_json(&PlainDialect, v.clone())
 }
 
-/// JSON → CBOR via ciborium's serde bridge.
+/// JSON → CBOR. Total and lossless.
 pub(crate) fn json_to_cbor(v: &JsonValue) -> CborValue {
-    CborValue::serialized(v).unwrap_or(CborValue::Null)
+    cbor_json::json_to_cbor(v.clone())
 }
 
 /// Render a CBOR scalar to a plain string (used for ids / aggregates).
 pub(crate) fn cbor_to_string(v: &CborValue) -> String {
-    match v {
-        CborValue::Text(s) => s.clone(),
-        CborValue::Integer(i) => {
-            let n: i128 = (*i).into();
-            n.to_string()
-        }
-        CborValue::Float(f) => f.to_string(),
-        CborValue::Bool(b) => b.to_string(),
-        CborValue::Null => String::new(),
-        other => cbor_to_json(other).to_string(),
-    }
+    cbor_json::cbor_to_string(&PlainDialect, v)
 }
 
 /// One value in a command-backed record, at the rendering boundary.
@@ -132,5 +123,24 @@ impl TerminalRender for AnyCmdType {
             AnyCmdType::Null => RichText::styled("—", Style::Muted),
             AnyCmdType::Other(v) => v.render(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tagged_value_survives_json_conversion() {
+        // The serde-bridge shortcut this replaced collapsed any tagged
+        // value (and its whole containing map) to Null.
+        let v = CborValue::Map(vec![(
+            CborValue::Text("when".into()),
+            CborValue::Tag(0, Box::new(CborValue::Text("2026-01-01T00:00:00Z".into()))),
+        )]);
+        assert_eq!(
+            cbor_to_json(&v),
+            serde_json::json!({"when": "2026-01-01T00:00:00Z"})
+        );
     }
 }
