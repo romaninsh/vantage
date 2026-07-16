@@ -14,7 +14,7 @@ use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity, Record};
 use vantage_vista::{
     Column as VistaColumn, ContainedSpec, Reference as VistaReference, SortDirection, TableShell,
-    Vista, VistaCapabilities, VistaMetadata,
+    Vista, VistaCapabilities, VistaChange, VistaChangeStream, VistaMetadata,
 };
 
 use crate::postgres::PostgresDB;
@@ -280,6 +280,38 @@ where
             parse_json_host,
             |c| CborValue::Text(cbor_to_json(c).to_string()),
         )
+    }
+
+    /// Watch the table via Postgres `LISTEN/NOTIFY` and stream a coarse
+    /// [`VistaChange::Invalidated`] on every notification.
+    ///
+    /// Postgres notifications carry no row payload, so this is the
+    /// invalidate-and-reconcile end of the spectrum (SurrealDB's LIVE feed emits
+    /// the fine-grained variants instead) — the consumer re-reads the set on each
+    /// signal. The channel is `{table}_changed` by convention; the application
+    /// installs a trigger that `pg_notify`s it on every write (see learn-10's
+    /// `db::setup`). Advertised via [`VistaCapabilities::can_subscribe`].
+    async fn watch_vista(&self, _vista: &Vista) -> Result<VistaChangeStream> {
+        let channel = format!("{}_changed", self.table.table_name());
+        let pool = self.table.data_source().pool().clone();
+
+        let stream = async_stream::try_stream! {
+            let mut listener = sqlx::postgres::PgListener::connect_with(&pool)
+                .await
+                .map_err(|e| error!("open pg listener", details = e.to_string()))?;
+            listener
+                .listen(&channel)
+                .await
+                .map_err(|e| error!("LISTEN failed", channel = channel.clone(), details = e.to_string()))?;
+            loop {
+                listener
+                    .recv()
+                    .await
+                    .map_err(|e| error!("recv notification", details = e.to_string()))?;
+                yield VistaChange::Invalidated;
+            }
+        };
+        Ok(Box::pin(stream))
     }
 
     fn capabilities(&self) -> &VistaCapabilities {

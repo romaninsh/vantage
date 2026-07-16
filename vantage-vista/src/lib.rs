@@ -35,7 +35,7 @@ pub use rhai::{
     run_script,
 };
 pub use sort::SortDirection;
-pub use source::TableShell;
+pub use source::{TableShell, VistaChange, VistaChangeStream};
 pub use spec::{
     ColumnSpec, ContainedYaml, JoinKey, NoExtras, ReferenceSpec, ReferenceSugar, VistaSpec,
 };

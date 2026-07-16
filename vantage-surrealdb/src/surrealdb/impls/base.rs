@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use indexmap::IndexMap;
-use surreal_client::SurrealClient;
+use surreal_client::{LiveStream, SurrealClient};
+use vantage_core::{Result, error};
 use vantage_expressions::{Expression, ExpressionFlattener, Flatten};
 
 use crate::{AnySurrealType, surrealdb::SurrealDB};
@@ -11,6 +12,20 @@ impl SurrealDB {
         Self {
             inner: Arc::new(tokio::sync::Mutex::new(client)),
         }
+    }
+
+    /// Start a SurrealDB `LIVE SELECT` on `resource` (a table name) and return
+    /// the change-notification stream. Backs the Vista `watch` path. The client
+    /// is cloned out so the live RPC doesn't hold the datasource lock while it
+    /// waits.
+    pub async fn live(&self, resource: &str) -> Result<LiveStream> {
+        let client = self.inner.lock().await.clone();
+        client.live(resource).await.map_err(|e| {
+            error!(
+                format!("surrealdb live query failed: {e}"),
+                resource = resource
+            )
+        })
     }
 
     /// Convert {} placeholders to $_arg1, $_arg2, etc. and extract parameters

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.1 — 2026-07-16
+
+- Live queries. `SurrealClient::live(resource)` issues a `LIVE SELECT` and returns
+  a `LiveStream` of `Notification { action, record_id, data }`; `kill(id)` releases
+  it. The `ws_cbor` engine's read loop now demultiplexes unsolicited notification
+  frames (matched by live-query id) from ordinary responses, so a single WebSocket
+  carries both. Backs the framework's `dio.watch()` over SurrealDB.
+
 ## 0.6.0 — unreleased
 
 - Coordinated 0.6 release; internal dependencies realigned to 0.6. No changes beyond 0.5.2.

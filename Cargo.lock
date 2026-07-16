@@ -2226,6 +2226,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "learn-11"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "rand 0.8.6",
+ "surreal-client",
+ "tokio",
+ "tower-http",
+ "vantage-api-adapters",
+ "vantage-core",
+ "vantage-dataset",
+ "vantage-diorama",
+ "vantage-surrealdb",
+ "vantage-table",
+ "vantage-types",
+ "vantage-vista",
+]
+
+[[package]]
 name = "learn-2"
 version = "0.1.0"
 dependencies = [
@@ -4525,7 +4544,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "surreal-client"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "base64",
@@ -5362,7 +5381,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vantage-api-adapters"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -5558,7 +5577,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.6.17"
+version = "0.6.18"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5688,8 +5707,9 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
+ "async-stream",
  "async-trait",
  "chrono",
  "ciborium",
@@ -5715,13 +5735,15 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
+ "async-stream",
  "async-trait",
  "bakery_model3",
  "base64",
  "chrono",
  "ciborium",
+ "futures",
  "hex",
  "indexmap",
  "md5",
@@ -5798,7 +5820,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.9"
+version = "0.6.10"
 dependencies = [
  "async-stream",
  "async-trait",

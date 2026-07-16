@@ -3,7 +3,9 @@
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use serde_json::Value;
+use tokio::sync::mpsc;
 
+use crate::live::Notification;
 use crate::{Engine, Result};
 
 /// Wrapper around an Engine that logs all RPC operations
@@ -60,6 +62,17 @@ impl Engine for DebugEngine {
         let response = self.inner.send_message_cbor(method, params).await?;
         println!("✅ CBOR Response: {:?}", response);
         Ok(response)
+    }
+
+    async fn register_live(
+        &mut self,
+        query_id: &str,
+    ) -> Result<mpsc::UnboundedReceiver<Notification>> {
+        self.inner.register_live(query_id).await
+    }
+
+    async fn unregister_live(&mut self, query_id: &str) {
+        self.inner.unregister_live(query_id).await
     }
 }
 

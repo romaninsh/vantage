@@ -597,4 +597,148 @@ impl Dio {
         }
         result
     }
+
+    // ---- Live subscription --------------------------------------------------
+
+    /// Apply a single upstream [`ChangeEvent`] to the cache and publish the
+    /// matching internal bus event, in one turnkey call.
+    ///
+    /// This is the fine-grained ingress a live-stream forwarder wants: unlike
+    /// [`handle_event`](Self::handle_event) (which only dispatches to a user
+    /// `on_event` callback), this reconciles the cache itself and fires the
+    /// membership-correct [`DioEvent`]:
+    /// - `Inserted` → cache upsert + [`DioEvent::RecordInserted`] (a new row —
+    ///   sceneries re-derive their index so it appears);
+    /// - `Updated` → cache upsert + [`DioEvent::RecordChanged`] (a repaint of an
+    ///   existing row);
+    /// - `Deleted` → cache delete + [`DioEvent::RecordRemoved`];
+    /// - `Invalidated` → full [`refresh`](Self::refresh).
+    ///
+    /// A `None` value on `Inserted`/`Updated` publishes the event without
+    /// touching the cache (notify-only); push sources that carry the row (the
+    /// SurrealDB LIVE path) always supply it.
+    pub async fn apply_change(&self, evt: ChangeEvent) -> Result<()> {
+        match evt {
+            ChangeEvent::Inserted { id, new } => {
+                if let Some(record) = new {
+                    self.inner.cache.insert_value(&id, &record).await?;
+                }
+                let _ = self.inner.event_bus.send(DioEvent::RecordInserted { id });
+            }
+            ChangeEvent::Updated { id, new } => {
+                if let Some(record) = new {
+                    self.inner.cache.insert_value(&id, &record).await?;
+                }
+                let _ = self.inner.event_bus.send(DioEvent::RecordChanged { id });
+            }
+            ChangeEvent::Deleted { id } => {
+                self.inner.cache.delete_value(&id).await?;
+                let _ = self.inner.event_bus.send(DioEvent::RecordRemoved { id });
+            }
+            ChangeEvent::Invalidated => {
+                self.refresh().await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Start watching the master Vista and apply every change it pushes.
+    ///
+    /// Transparent by design: if the master advertises
+    /// [`can_watch`](vantage_vista::Vista::can_watch) (SurrealDB LIVE, Postgres
+    /// `LISTEN/NOTIFY`), this subscribes and pipes each [`VistaChange`] through
+    /// [`apply_change`](Self::apply_change) on a background task — no polling. If
+    /// it doesn't, this is a no-op and the caller's `refresh_every` timer keeps
+    /// the cache fresh instead. Either way the reactive stack behaves the same;
+    /// only the freshness mechanism differs.
+    ///
+    /// Failure is self-correcting rather than silent — critical, since the task
+    /// is detached and can't return an error:
+    /// - a change that fails to apply triggers a full [`refresh`](Self::refresh)
+    ///   so the cache can't drift out of step with the backend;
+    /// - if the subscription drops (a WebSocket close ends the stream), the task
+    ///   backs off, **re-subscribes**, and refreshes to close the gap of changes
+    ///   missed while disconnected — it does not silently stop pushing.
+    ///
+    /// The initial subscription is established synchronously so a
+    /// misconfiguration surfaces to the caller here. The background task holds a
+    /// `Weak` to the Dio, so it exits on its own once the last `Dio` handle drops.
+    pub async fn watch(&self) -> Result<()> {
+        let master = self.master();
+        if !master.can_watch() {
+            return Ok(());
+        }
+        let mut stream = master.watch().await?;
+        let weak = Arc::downgrade(&self.inner);
+
+        tokio::spawn(async move {
+            use futures::StreamExt;
+            let base = std::time::Duration::from_millis(200);
+            let mut backoff = base;
+
+            'session: loop {
+                // Drain the current subscription.
+                while let Some(item) = stream.next().await {
+                    let Some(inner) = weak.upgrade() else { return };
+                    let dio = Dio { inner };
+                    match item {
+                        Ok(change) => match dio.apply_change(change.into()).await {
+                            Ok(()) => backoff = base,
+                            Err(e) => {
+                                // One row failed to apply — the cache may be out
+                                // of step for that id. Reconcile the whole set so
+                                // the view can't drift silently.
+                                tracing::error!(error = %e, "watch: apply failed; reconciling");
+                                let _ = dio.refresh().await;
+                            }
+                        },
+                        Err(e) => {
+                            tracing::warn!(error = %e, "watch: stream error; resubscribing");
+                            break;
+                        }
+                    }
+                }
+
+                // The subscription ended (a dropped connection yields `None`).
+                // Push is gone; reconnect with backoff instead of exiting, then
+                // reconcile to recover anything missed during the gap.
+                loop {
+                    tokio::time::sleep(backoff).await;
+                    backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
+                    let Some(inner) = weak.upgrade() else { return };
+                    let dio = Dio { inner };
+                    match dio.master().watch().await {
+                        Ok(fresh) => {
+                            stream = fresh;
+                            let _ = dio.refresh().await;
+                            tracing::info!("watch: resubscribed and reconciled");
+                            continue 'session;
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, "watch: resubscribe failed; retrying");
+                        }
+                    }
+                }
+            }
+        });
+        Ok(())
+    }
+}
+
+impl From<vantage_vista::VistaChange> for ChangeEvent {
+    fn from(change: vantage_vista::VistaChange) -> Self {
+        use vantage_vista::VistaChange as V;
+        match change {
+            V::Inserted { id, value } => ChangeEvent::Inserted {
+                id,
+                new: Some(value),
+            },
+            V::Updated { id, value } => ChangeEvent::Updated {
+                id,
+                new: Some(value),
+            },
+            V::Deleted { id } => ChangeEvent::Deleted { id },
+            V::Invalidated => ChangeEvent::Invalidated,
+        }
+    }
 }

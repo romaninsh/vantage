@@ -344,6 +344,26 @@ impl Vista {
     pub fn get_ref_target(&self, relation: &str) -> Result<Vista> {
         self.source.get_ref_target(relation)
     }
+
+    // ---- live subscription -------------------------------------------------
+
+    /// Whether the driver can push changes as they happen (SurrealDB LIVE,
+    /// Postgres `LISTEN/NOTIFY`). When `false`, consumers reconcile by
+    /// re-reading (`list_values`) on a timer instead.
+    pub fn can_watch(&self) -> bool {
+        self.capabilities.can_subscribe
+    }
+
+    /// Subscribe to changes and stream them as [`VistaChange`](crate::source::VistaChange)s.
+    ///
+    /// Each change carries the record in the same projected shape as
+    /// `list_values`, so it can be applied to a cache without a re-read.
+    /// Returns `Unsupported` when the driver does not advertise
+    /// [`can_subscribe`](VistaCapabilities::can_subscribe) — check
+    /// [`can_watch`](Self::can_watch) first.
+    pub async fn watch(&self) -> Result<crate::source::VistaChangeStream> {
+        self.source.watch_vista(self).await
+    }
 }
 
 /// Deterministic, type-tagged rendering of a [`CborValue`] for

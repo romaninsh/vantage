@@ -3,6 +3,7 @@ use std::sync::Arc;
 use ciborium::Value as CborValue;
 use serde_json::{Value, json};
 
+use crate::live::LiveStream;
 use crate::{Engine, RecordId, RecordRange, Result, SessionState, SurrealError, Table};
 
 pub struct SurrealClient {
@@ -399,6 +400,47 @@ impl SurrealClient {
         ))
     }
 
+    /// Start a live query on a table (or record) and stream change
+    /// notifications.
+    ///
+    /// Issues the `live` RPC, then registers the returned live-query id with
+    /// the engine so its read loop forwards every matching `CREATE`/`UPDATE`/
+    /// `DELETE` frame onto the returned [`LiveStream`]. Requires a WebSocket
+    /// connection — request/response-only engines return an error from
+    /// [`Engine::register_live`].
+    ///
+    /// The stream stays open until the connection closes; call [`kill`](Self::kill)
+    /// with the stream's [`query_id`](LiveStream::query_id) to release the
+    /// server-side query early.
+    pub async fn live(&self, resource: &str) -> Result<LiveStream> {
+        let mut engine = self.engine.lock().await;
+
+        let params = CborValue::Array(vec![CborValue::Text(resource.to_string())]);
+        let response = engine.send_message_cbor("live", params).await?;
+
+        let query_id = cbor_uuid_string(&response).ok_or_else(|| {
+            SurrealError::Protocol(format!(
+                "live query did not return a usable id: {:?}",
+                response
+            ))
+        })?;
+
+        let rx = engine.register_live(&query_id).await?;
+        Ok(LiveStream { query_id, rx })
+    }
+
+    /// Stop a live query by its id (the [`LiveStream::query_id`]).
+    ///
+    /// Sends the `kill` RPC and drops the local subscriber so no further
+    /// notifications are delivered for that id.
+    pub async fn kill(&self, query_id: &str) -> Result<()> {
+        let mut engine = self.engine.lock().await;
+        let params = CborValue::Array(vec![CborValue::Text(query_id.to_string())]);
+        engine.send_message_cbor("kill", params).await?;
+        engine.unregister_live(query_id).await;
+        Ok(())
+    }
+
     /// Execute a custom SurrealQL query with CBOR parameters
     pub async fn query_cbor(&self, sql: &str, variables: CborValue) -> Result<CborValue> {
         let mut engine = self.engine.lock().await;
@@ -416,6 +458,24 @@ impl SurrealClient {
         }
 
         Ok(response)
+    }
+}
+
+/// Render the `live` RPC result (a CBOR UUID) into the same string form the
+/// engine derives from notification frame ids, so a live subscription matches
+/// its notifications. SurrealDB encodes UUIDs as tag 37 over a 16-byte string;
+/// a plain text id is accepted too.
+fn cbor_uuid_string(v: &CborValue) -> Option<String> {
+    match v {
+        CborValue::Text(t) => Some(t.clone()),
+        CborValue::Tag(_, inner) => cbor_uuid_string(inner),
+        CborValue::Bytes(b) if b.len() == 16 => Some(
+            uuid::Uuid::from_slice(b)
+                .map(|u| u.to_string())
+                .unwrap_or_else(|_| hex::encode(b)),
+        ),
+        CborValue::Bytes(b) => Some(hex::encode(b)),
+        _ => None,
     }
 }
 

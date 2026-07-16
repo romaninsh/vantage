@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.9 — 2026-07-16
+
+- Postgres live subscriptions. The Postgres Vista advertises `can_subscribe` and
+  implements `watch_vista` via `PgListener`, streaming a coarse
+  `VistaChange::Invalidated` on every `LISTEN/NOTIFY` on the `{table}_changed`
+  channel (which the application feeds from a trigger). This lets `dio.watch()`
+  drive a Postgres-backed reactive view with no hand-written listener — the same
+  call the SurrealDB path uses.
+
 ## 0.6.8 — 2026-07-15
 
 - SQLite vista factory honours the column spec's `lazy: <rhai script>` form —
