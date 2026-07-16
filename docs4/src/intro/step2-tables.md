@@ -667,8 +667,9 @@ this one stops:
 ```admonish tip title="A sneak peek at what's next"
 The pattern you've just built scales well beyond a product catalog:
 
-- **Client-side caching and reactive data** — chapters 5–8 of this guide put a model behind a
-  persistent cache with live updates streaming to a terminal UI and a React frontend.
+- **Client-side caching and reactive data** — the second half of this guide puts a model behind a
+  persistent cache with live updates streaming to a UI, over a slow external API or your own
+  relational database — whichever path matches your problem.
 - **Cross-persistence traversal** — follow a relationship from a Postgres table into a MongoDB
   collection, expressed in Rust, executed efficiently on each side.
 - **UI framework integration** — the same model drives desktop, terminal, and web UIs through

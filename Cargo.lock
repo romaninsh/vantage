@@ -2288,6 +2288,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "learn-8"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "sqlx",
+ "tokio",
+ "vantage-api-adapters",
+ "vantage-core",
+ "vantage-diorama",
+ "vantage-sql",
+ "vantage-types",
+]
+
+[[package]]
+name = "learn-9"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "sqlx",
+ "tokio",
+ "vantage-api-adapters",
+ "vantage-core",
+ "vantage-diorama",
+ "vantage-sql",
+ "vantage-types",
+]
+
+[[package]]
 name = "leb128fmt"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

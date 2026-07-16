@@ -35,7 +35,7 @@ A few principles run through every layer of the framework:
 - **Fail loudly, retry safely.** No panics, no silent zeros or match-alls; operations are
   idempotent wherever possible, so retrying is always an option.
 - **Be aware of observers.** Data knows who is watching: changes stream to subscribers, and edits
-  reconcile instead of clobbering. (This is live mode — chapters 5 through 8 build it up.)
+  reconcile instead of clobbering. (This is live mode — the second half of the guide builds it up.)
 
 ## Three ways to work with data
 
@@ -103,11 +103,24 @@ If you want the finished tool, start with Vantage UI. If you want the foundation
 Vantage covers a lot of ground — multiple databases, type systems, entity frameworks, UI adapters —
 but none of that matters until you've seen it do something useful.
 
-This guide introduces Vantage concepts one at a time, each building on the last. We'll start with
-something you already know — SQL — and work our way up to the bigger abstractions. Along the way we
-build a small product catalog that starts as a CLI, becomes an HTTP API, and switches databases
-without touching its handlers — then point the same machinery at a live cloud API and end with a
-cached, reactive view of it: first in the terminal, then served over HTTP to a React frontend.
+This guide introduces Vantage concepts one at a time, each building on the last. We start with
+something you already know — SQL — and build a shared **foundation**: a small product catalog that
+begins as a CLI, becomes an HTTP API, and switches databases without touching its handlers, then
+erases into a runtime-generic data handle.
+
+From there the guide **forks by the shape of your problem**. The reactive stack that sits on top —
+caching, change events, watchable views — is the same whichever backend is underneath, so you
+follow it down whichever path is yours:
+
+- **A facade over an API you don't control** — a slow, read-only cloud API that can't sort,
+  search, or paginate. Diorama caches it and fills the gaps.
+- **A live view in front of your own database** — a relational database you own and write to.
+  Diorama gives it a cached, watchable facade, and the path ends by moving the same app from
+  SQLite to PostgreSQL with a single switch.
+
+Same abstractions, opposite backends — that contrast is the point.
+
+### The foundation
 
 1. **[SQLite and the Query Builder](./intro/step1-first-query.md)** — connect to a database, build
    and execute typed queries, map rows to structs.
@@ -118,18 +131,12 @@ cached, reactive view of it: first in the terminal, then served over HTTP to a R
    editing only the model.
 4. **[Vista — the Universal Data Handle](./intro/step4-vista.md)** — erase the entity and backend
    into a schema-bearing runtime handle, with explicit capability contracts.
-5. **[Dio & Lens — Caching and Events](./intro/step5-dio-lens.md)** — build a bucket inventory
-   over a real cloud API: a persistent, resumable local cache turns a seconds-long listing into
-   milliseconds, with an event bus announcing every change.
-6. **[Augmentation — Enriching Rows](./intro/step6-augmentation.md)** — give every listed file
-   columns computed from its contents, fetched once per file through lazy expressions and cached
-   with the row.
-7. **[Scenery — Reactive Views](./intro/step7-scenery.md)** — reactive views over the Dio; finish
-   with a live terminal UI that scrolls 122,000 files and loads details for the rows at your
-   cursor.
-8. **[Serving Scenery — Axum & Watch Streams](./intro/step8-axum-dio.md)** — put the Dio behind
-   HTTP: kubernetes-style GET + watch endpoints streaming augmentation to a React frontend, with
-   concurrent viewers served fairly from one download per row.
+
+### Choose your path
+
+With a Vista in hand, **[pick the path that matches your data](./intro/fork.md)** — a facade over
+an API you don't control, or a live view over your own relational database. Both build the same
+caching, reactive, watch-streaming stack; they differ only in the backend beneath it.
 
 You'll need basic Rust experience (structs, traits, async/await, cargo). No prior Vantage knowledge
 required.
