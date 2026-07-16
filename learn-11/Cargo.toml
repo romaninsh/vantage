@@ -5,6 +5,13 @@ edition = "2024"
 publish = false
 default-run = "learn-11"
 
+# learn-10 has a `mutator` bin too; only one can be documented (same
+# output path), and these chapter crates don't need docs anyway.
+[[bin]]
+name = "mutator"
+path = "src/bin/mutator.rs"
+doc = false
+
 [dependencies]
 vantage-api-adapters = { path = "../vantage-api-adapters", features = ["axum"] }
 axum = "0.8"

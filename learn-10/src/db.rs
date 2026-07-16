@@ -3,7 +3,8 @@
 //! The previous chapter migrated this app off SQLite. Having committed to one
 //! backend, the code drops every `#[cfg]` and uses Postgres directly — starting
 //! with a trigger that `NOTIFY`s on every change to `product`, which the
-//! listener in [`crate::notify`] turns into an instant cache refresh.
+//! listener in the binary's `notify` module turns into an instant cache
+//! refresh.
 
 use vantage_sql::postgres::PostgresDB;
 use vantage_sql::prelude::*;
