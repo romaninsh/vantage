@@ -163,8 +163,9 @@ impl From<JsonValue> for AnyPostgresType {
         if val.is_null() {
             return AnyPostgresType::untyped(CborValue::Null);
         }
-        let cbor = json_to_cbor(val);
-        AnyPostgresType::from_cbor(&cbor).expect("json_to_cbor produced unconvertible CBOR")
+        // json_to_cbor is total and From<CborValue> classifies without
+        // failing — no panic path.
+        AnyPostgresType::from(json_to_cbor(val))
     }
 }
 

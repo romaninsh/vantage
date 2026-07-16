@@ -7,92 +7,52 @@
 //! cases CBOR carries faithfully and JSON cannot — are best-effort here. Use
 //! `SurrealClient::query_cbor` when fidelity matters.
 //!
-//! Bytes are encoded as base64 to match SurrealDB's JSON wire format.
-//! NaN/inf become `null` (JSON convention). u64 values above `i64::MAX` are
+//! The walk itself is `vantage_types::cbor_json`; this module only supplies
+//! the rendering policy: bytes are encoded as base64 to match SurrealDB's
+//! JSON wire format, record ids (`Tag(8)`) become `"table:id"`, NaN/inf
+//! become `null` (JSON convention). u64 values above `i64::MAX` are
 //! preserved on the way out (CBOR `Integer` carries them) and round-trip via
 //! `serde_json::Number`'s arbitrary-precision support.
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use ciborium::Value as CborValue;
-use ciborium::value::Integer;
-use serde_json::{Map, Number, Value};
+use serde_json::{Number, Value};
+use vantage_types::cbor_json::{self, CborDialect};
+
+/// Rendering policy for the JSON convenience path.
+pub(crate) struct SurrealJsonDialect;
+
+impl CborDialect for SurrealJsonDialect {
+    fn bytes_to_json(&self, bytes: Vec<u8>) -> Value {
+        Value::String(BASE64.encode(bytes))
+    }
+
+    /// Integers beyond `u64` (only negatives below `i64::MIN` in CBOR):
+    /// best-effort f64, matching SurrealDB's own JSON output.
+    fn big_int_to_json(&self, n: i128) -> Value {
+        Number::from_f64(n as f64).map_or(Value::Null, Value::Number)
+    }
+
+    fn tag_to_json(&self, tag: u64, inner: CborValue) -> Value {
+        // SurrealDB recordid: Tag(8, [table, id]) -> "table:id".
+        if tag == 8
+            && let CborValue::Array(parts) = &inner
+            && let [CborValue::Text(table), CborValue::Text(id)] = parts.as_slice()
+        {
+            return Value::String(format!("{table}:{id}"));
+        }
+        // Any other tag: drop it, render the payload.
+        cbor_json::cbor_to_json(self, inner)
+    }
+}
 
 pub(crate) fn json_to_cbor(value: Value) -> CborValue {
-    match value {
-        Value::Null => CborValue::Null,
-        Value::Bool(b) => CborValue::Bool(b),
-        Value::Number(n) => number_to_cbor(n),
-        Value::String(s) => CborValue::Text(s),
-        Value::Array(arr) => CborValue::Array(arr.into_iter().map(json_to_cbor).collect()),
-        Value::Object(obj) => CborValue::Map(
-            obj.into_iter()
-                .map(|(k, v)| (CborValue::Text(k), json_to_cbor(v)))
-                .collect(),
-        ),
-    }
+    cbor_json::json_to_cbor(value)
 }
 
 pub(crate) fn cbor_to_json(value: CborValue) -> Value {
-    match value {
-        CborValue::Null => Value::Null,
-        CborValue::Bool(b) => Value::Bool(b),
-        CborValue::Integer(i) => integer_to_json(i),
-        CborValue::Float(f) => Number::from_f64(f)
-            .map(Value::Number)
-            .unwrap_or(Value::Null),
-        CborValue::Text(s) => Value::String(s),
-        CborValue::Bytes(b) => Value::String(BASE64.encode(b)),
-        CborValue::Array(arr) => Value::Array(arr.into_iter().map(cbor_to_json).collect()),
-        CborValue::Map(entries) => {
-            let mut obj = Map::with_capacity(entries.len());
-            for (k, v) in entries {
-                let key = match k {
-                    CborValue::Text(s) => s,
-                    other => format!("{:?}", other),
-                };
-                obj.insert(key, cbor_to_json(v));
-            }
-            Value::Object(obj)
-        }
-        // SurrealDB recordid: Tag(8, [table, id]) -> "table:id"
-        CborValue::Tag(8, inner) => {
-            if let CborValue::Array(parts) = inner.as_ref()
-                && parts.len() == 2
-                && let (CborValue::Text(table), CborValue::Text(id)) = (&parts[0], &parts[1])
-            {
-                return Value::String(format!("{}:{}", table, id));
-            }
-            cbor_to_json(*inner)
-        }
-        CborValue::Tag(_, inner) => cbor_to_json(*inner),
-        other => Value::String(format!("{:?}", other)),
-    }
-}
-
-fn number_to_cbor(n: Number) -> CborValue {
-    if let Some(i) = n.as_i64() {
-        CborValue::Integer(Integer::from(i))
-    } else if let Some(u) = n.as_u64() {
-        CborValue::Integer(Integer::from(u))
-    } else if let Some(f) = n.as_f64() {
-        CborValue::Float(f)
-    } else {
-        CborValue::Null
-    }
-}
-
-fn integer_to_json(i: Integer) -> Value {
-    if let Ok(v) = i64::try_from(i) {
-        return Value::Number(v.into());
-    }
-    if let Ok(v) = u64::try_from(i) {
-        return Value::Number(v.into());
-    }
-    let raw: i128 = i.into();
-    Number::from_f64(raw as f64)
-        .map(Value::Number)
-        .unwrap_or(Value::Null)
+    cbor_json::cbor_to_json(&SurrealJsonDialect, value)
 }
 
 #[cfg(test)]
@@ -155,5 +115,17 @@ mod tests {
     fn cbor_tag_unwraps_to_inner() {
         let cbor = CborValue::Tag(0, Box::new(CborValue::Text("2024-01-01".to_string())));
         assert_eq!(cbor_to_json(cbor), Value::String("2024-01-01".to_string()));
+    }
+
+    #[test]
+    fn record_id_becomes_table_colon_id() {
+        let cbor = CborValue::Tag(
+            8,
+            Box::new(CborValue::Array(vec![
+                CborValue::Text("users".into()),
+                CborValue::Text("john".into()),
+            ])),
+        );
+        assert_eq!(cbor_to_json(cbor), Value::String("users:john".to_string()));
     }
 }
