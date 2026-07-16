@@ -46,25 +46,30 @@ impl SurrealUpdate {
 
 impl Expressive<AnySurrealType> for SurrealUpdate {
     fn expr(&self) -> Expr {
+        use vantage_expressions::ExpressiveEnum;
+
+        let verb = if self.upsert { "UPSERT" } else { "UPDATE" };
         let raw = match self.mode {
             UpdateMode::Set => {
                 if self.fields.is_empty() {
-                    crate::surreal_expr!("UPDATE {}", (self.target))
+                    let template = format!("{verb} {{}}");
+                    vantage_expressions::Expression::new(
+                        template,
+                        vec![ExpressiveEnum::Nested(self.target.clone())],
+                    )
                 } else {
                     let placeholders: Vec<String> = self
                         .fields
                         .keys()
                         .map(|k| format!("{} = {{}}", Identifier::new(k).expr().preview()))
                         .collect();
-                    let template = format!("UPDATE {{}} SET {}", placeholders.join(", "));
+                    let template = format!("{verb} {{}} SET {}", placeholders.join(", "));
 
-                    let mut params: Vec<vantage_expressions::ExpressiveEnum<AnySurrealType>> =
-                        vec![vantage_expressions::ExpressiveEnum::Nested(
-                            self.target.clone(),
-                        )];
+                    let mut params: Vec<ExpressiveEnum<AnySurrealType>> =
+                        vec![ExpressiveEnum::Nested(self.target.clone())];
 
                     for value in self.fields.values() {
-                        params.push(vantage_expressions::ExpressiveEnum::Scalar(value.clone()));
+                        params.push(ExpressiveEnum::Scalar(value.clone()));
                     }
 
                     vantage_expressions::Expression::new(template, params)
@@ -72,11 +77,25 @@ impl Expressive<AnySurrealType> for SurrealUpdate {
             }
             UpdateMode::Content => {
                 let obj = self.fields_as_object();
-                crate::surreal_expr!("UPDATE {} CONTENT {}", (self.target), obj)
+                let template = format!("{verb} {{}} CONTENT {{}}");
+                vantage_expressions::Expression::new(
+                    template,
+                    vec![
+                        ExpressiveEnum::Nested(self.target.clone()),
+                        ExpressiveEnum::Scalar(obj),
+                    ],
+                )
             }
             UpdateMode::Merge => {
                 let obj = self.fields_as_object();
-                crate::surreal_expr!("UPDATE {} MERGE {}", (self.target), obj)
+                let template = format!("{verb} {{}} MERGE {{}}");
+                vantage_expressions::Expression::new(
+                    template,
+                    vec![
+                        ExpressiveEnum::Nested(self.target.clone()),
+                        ExpressiveEnum::Scalar(obj),
+                    ],
+                )
             }
         };
         self.append_where(raw)

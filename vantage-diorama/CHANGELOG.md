@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.18 — 2026-07-16
+
+- `Dio::watch()` — transparent live updates. When the master Vista advertises
+  `can_watch` it subscribes and pipes each change through the new
+  `Dio::apply_change(ChangeEvent)`, which reconciles the cache and fires the
+  membership-correct bus event (`RecordInserted` — now with a producer — for a
+  new row, `RecordChanged` for an update, `RecordRemoved` for a delete, a full
+  refresh for a coarse invalidation). When the master can't push, `watch()` is a
+  no-op and any `refresh_every` timer keeps things fresh — the reactive stack
+  behaves identically either way. Failure is self-correcting, not silent: a
+  change that fails to apply triggers a reconcile, and a dropped subscription
+  backs off, re-subscribes, and refreshes rather than freezing the view.
+
 ## 0.6.17 — 2026-07-15
 
 **Central augment scheduler, notify_* rename, exclusive sceneries**

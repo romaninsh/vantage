@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering::SeqCst};
 use tokio::net::TcpStream;
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_tungstenite::MaybeTlsStream;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
@@ -21,11 +21,73 @@ use tokio_tungstenite::tungstenite::http::header::SEC_WEBSOCKET_PROTOCOL;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
 use tracing::{Instrument as _, warn};
 
+use crate::live::{Action, Notification};
 use crate::SurrealConnection;
 use crate::{
     engine::Engine,
     error::{Result, SurrealError},
 };
+
+/// Live-query subscribers, keyed by the server's live-query id.
+type LiveSubscribers = Arc<Mutex<HashMap<String, mpsc::UnboundedSender<Notification>>>>;
+
+/// Normalise a CBOR id to a stable string key.
+///
+/// Request ids arrive as numeric text; live-query ids arrive as CBOR UUIDs
+/// (tag 37 wrapping a 16-byte string). Both the `live` RPC result and the
+/// unsolicited notification frames encode the query id the same way, so
+/// normalising both through here makes them compare equal.
+fn cbor_id_key(v: &CborValue) -> Option<String> {
+    match v {
+        CborValue::Text(t) => Some(t.clone()),
+        CborValue::Integer(i) => {
+            let n: i128 = (*i).into();
+            Some(n.to_string())
+        }
+        CborValue::Tag(_, inner) => cbor_id_key(inner),
+        CborValue::Bytes(b) if b.len() == 16 => Some(
+            uuid::Uuid::from_slice(b)
+                .map(|u| u.to_string())
+                .unwrap_or_else(|_| hex::encode(b)),
+        ),
+        CborValue::Bytes(b) => Some(hex::encode(b)),
+        _ => None,
+    }
+}
+
+/// Pull a [`Notification`] out of a live-query frame's inner `result` map.
+///
+/// The map SurrealDB delivers is `{ action, id, record, result, session }`:
+/// `action` is `CREATE`/`UPDATE`/`DELETE`, `id` is the live-query uuid, and
+/// the nested `result` is the affected record. Returns `None` if it doesn't
+/// look like a notification (so ordinary map-shaped responses fall through).
+fn parse_notification(inner: &[(CborValue, CborValue)]) -> Option<Notification> {
+    let mut action = None;
+    let mut query_id = None;
+    let mut record_id = None;
+    let mut data = None;
+    for (k, v) in inner {
+        if let CborValue::Text(k) = k {
+            match k.as_str() {
+                "action" => {
+                    if let CborValue::Text(a) = v {
+                        action = Action::parse(a);
+                    }
+                }
+                "id" => query_id = cbor_id_key(v),
+                "record" => record_id = Some(v.clone()),
+                "result" => data = Some(v.clone()),
+                _ => {}
+            }
+        }
+    }
+    Some(Notification {
+        query_id: query_id?,
+        action: action?,
+        record_id: record_id.unwrap_or(CborValue::Null),
+        data: data.unwrap_or(CborValue::Null),
+    })
+}
 
 /// Request structure for CBOR WebSocket protocol
 #[derive(Debug, Clone)]
@@ -47,6 +109,7 @@ pub struct WsCborEngine {
     stream: Arc<Mutex<SplitStream<WsStream>>>,
     msg_id: AtomicU64,
     pending_requests: Arc<Mutex<HashMap<String, oneshot::Sender<CborValue>>>>,
+    live_subscribers: LiveSubscribers,
     task_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
@@ -90,6 +153,7 @@ impl WsCborEngine {
             stream: Arc::new(Mutex::new(stream)),
             msg_id: AtomicU64::new(0),
             pending_requests: Arc::new(Mutex::new(HashMap::new())),
+            live_subscribers: Arc::new(Mutex::new(HashMap::new())),
             task_handle: None,
         };
 
@@ -104,6 +168,7 @@ impl WsCborEngine {
     fn handle_messages(&self) -> tokio::task::JoinHandle<()> {
         let stream = Arc::clone(&self.stream);
         let pending_requests = Arc::clone(&self.pending_requests);
+        let live_subscribers = Arc::clone(&self.live_subscribers);
 
         tokio::spawn(
             async move {
@@ -127,50 +192,65 @@ impl WsCborEngine {
                             // Ignore text messages - we only use CBOR binary
                         }
                         Message::Binary(binary) => {
-                            // Parse CBOR response: {id, result} or {id, error}
-                            match ciborium::from_reader(binary.as_ref()) {
-                                Ok(cbor_response) => {
-                                    if let CborValue::Map(map) = cbor_response {
-                                        let mut id_str = None;
-                                        let mut result = None;
-                                        let mut error = None;
+                            // Two frame shapes share this channel:
+                            //   response:     {id, result|error}         (id matches a request)
+                            //   notification: {id, action, result}        (id is a live-query uuid)
+                            match ciborium::from_reader::<CborValue, _>(binary.as_ref()) {
+                                Ok(CborValue::Map(map)) => {
+                                    let mut top_id = None;
+                                    let mut result = None;
+                                    let mut error = None;
 
-                                        for (key, value) in &map {
-                                            if let CborValue::Text(k) = key {
-                                                match k.as_str() {
-                                                    "id" => {
-                                                        if let CborValue::Text(id) = value {
-                                                            id_str = Some(id.clone());
-                                                        }
-                                                    }
-                                                    "result" => result = Some(value.clone()),
-                                                    "error" => error = Some(value.clone()),
-                                                    _ => {}
-                                                }
+                                    for (key, value) in &map {
+                                        if let CborValue::Text(k) = key {
+                                            match k.as_str() {
+                                                "id" => top_id = Some(value.clone()),
+                                                "result" => result = Some(value.clone()),
+                                                "error" => error = Some(value.clone()),
+                                                _ => {}
                                             }
                                         }
+                                    }
 
-                                        if let Some(id) = id_str {
-                                            let tx = {
-                                                let mut pending = pending_requests.lock().await;
-                                                pending.remove(&id)
-                                            };
+                                    // Live-query notifications carry no top-level id;
+                                    // the live-query id and action live inside `result`:
+                                    //   { result: { action, id: <uuid>, result: <record> } }
+                                    if top_id.is_none()
+                                        && let Some(CborValue::Map(inner)) = &result
+                                        && let Some(n) = parse_notification(inner)
+                                    {
+                                        let tx = {
+                                            let subs = live_subscribers.lock().await;
+                                            subs.get(&n.query_id).cloned()
+                                        };
+                                        if let Some(tx) = tx {
+                                            let _ = tx.send(n);
+                                        }
+                                        continue;
+                                    }
 
-                                            if let Some(tx) = tx {
-                                                if let Some(err) = error {
-                                                    let _ = tx.send(CborValue::Map(vec![(
-                                                        CborValue::Text("error".to_string()),
-                                                        err,
-                                                    )]));
-                                                } else if let Some(res) = result {
-                                                    let _ = tx.send(res);
-                                                } else {
-                                                    let _ = tx.send(CborValue::Null);
-                                                }
+                                    // Otherwise it is a reply — route it to the waiter.
+                                    if let Some(id) = top_id.as_ref().and_then(cbor_id_key) {
+                                        let tx = {
+                                            let mut pending = pending_requests.lock().await;
+                                            pending.remove(&id)
+                                        };
+
+                                        if let Some(tx) = tx {
+                                            if let Some(err) = error {
+                                                let _ = tx.send(CborValue::Map(vec![(
+                                                    CborValue::Text("error".to_string()),
+                                                    err,
+                                                )]));
+                                            } else if let Some(res) = result {
+                                                let _ = tx.send(res);
+                                            } else {
+                                                let _ = tx.send(CborValue::Null);
                                             }
                                         }
                                     }
                                 }
+                                Ok(_) => {}
                                 Err(e) => {
                                     warn!(error = %e, bytes = binary.len(), "CBOR parse failed");
                                 }
@@ -275,6 +355,21 @@ impl Engine for WsCborEngine {
         }
 
         Ok(response)
+    }
+
+    async fn register_live(
+        &mut self,
+        query_id: &str,
+    ) -> Result<mpsc::UnboundedReceiver<Notification>> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let mut subs = self.live_subscribers.lock().await;
+        subs.insert(query_id.to_string(), tx);
+        Ok(rx)
+    }
+
+    async fn unregister_live(&mut self, query_id: &str) {
+        let mut subs = self.live_subscribers.lock().await;
+        subs.remove(query_id);
     }
 }
 

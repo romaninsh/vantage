@@ -78,6 +78,9 @@ impl SurrealVistaFactory {
                 can_insert: !read_only,
                 can_update: !read_only,
                 can_delete: !read_only,
+                // Real tables can be watched with LIVE SELECT; query-sourced
+                // (rhai/base) vistas can't, so they stay unwatchable.
+                can_subscribe: !read_only,
                 can_order: true,
                 can_search: true,
                 can_set_page_size: true,

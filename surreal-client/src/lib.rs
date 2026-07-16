@@ -9,6 +9,7 @@ pub mod connection;
 pub mod engine;
 pub mod engines;
 pub mod error;
+pub mod live;
 pub mod mocks;
 pub mod params;
 #[cfg(feature = "pool")]
@@ -23,6 +24,7 @@ pub use connection::SurrealConnection;
 pub use engine::Engine;
 pub use engines::{DebugEngine, WsCborEngine};
 pub use error::{Result, SurrealError};
+pub use live::{Action, LiveStream, Notification};
 pub use mocks::{MockSurrealEngine, SurrealMockBuilder};
 pub use record::{RecordId, RecordIdValue, RecordRange, Table, escape_identifier};
 pub use session::SessionState;
