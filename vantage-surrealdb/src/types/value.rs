@@ -344,7 +344,10 @@ mod tests {
                 CborValue::Integer(0i64.into()),
             ])),
         );
-        assert_eq!(cbor_to_json(&cbor), JsonValue::String("PT1H30M".to_string()));
+        assert_eq!(
+            cbor_to_json(&cbor),
+            JsonValue::String("PT1H30M".to_string())
+        );
     }
 
     #[test]
@@ -363,8 +366,14 @@ mod tests {
 
     #[test]
     fn plain_values_still_convert_correctly() {
-        assert_eq!(cbor_to_json(&CborValue::Integer(42i64.into())), JsonValue::from(42));
-        assert_eq!(cbor_to_json(&CborValue::Text("hi".into())), JsonValue::from("hi"));
+        assert_eq!(
+            cbor_to_json(&CborValue::Integer(42i64.into())),
+            JsonValue::from(42)
+        );
+        assert_eq!(
+            cbor_to_json(&CborValue::Text("hi".into())),
+            JsonValue::from("hi")
+        );
         assert_eq!(cbor_to_json(&CborValue::Bool(true)), JsonValue::from(true));
         assert_eq!(cbor_to_json(&CborValue::Null), JsonValue::Null);
     }
