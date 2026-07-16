@@ -14,7 +14,7 @@ use crate::db::Db;
 
 /// The same product model as before — but its `#[entity]` marker now lists
 /// whichever backend is compiled in, and its `table()` builder is written
-/// against the [`Db`](crate::db::Db) alias. Nothing else about the model moves
+/// against the [`Db`] alias. Nothing else about the model moves
 /// when the database does.
 #[cfg_attr(not(feature = "pg"), entity(SqliteType))]
 #[cfg_attr(feature = "pg", entity(PostgresType))]
