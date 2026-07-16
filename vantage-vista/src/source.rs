@@ -15,6 +15,51 @@ use crate::{
     vista::Vista,
 };
 
+/// A single change observed on the underlying set by a live subscription.
+///
+/// This is the *push* counterpart to `list_vista_values`: a driver whose
+/// backend can stream changes (SurrealDB LIVE, Postgres `LISTEN/NOTIFY`,
+/// a Mongo change stream) emits one of these per affected row. The `value`
+/// carried on `Inserted`/`Updated` is the record in the **same projected,
+/// id-keyed shape** the driver returns from `list_vista_values`, so consumers
+/// can drop it straight into a cache without re-reading.
+#[derive(Debug, Clone)]
+pub enum VistaChange {
+    /// A row entered the set.
+    Inserted {
+        id: String,
+        value: Record<CborValue>,
+    },
+    /// An existing row's contents changed.
+    Updated {
+        id: String,
+        value: Record<CborValue>,
+    },
+    /// A row left the set.
+    Deleted { id: String },
+    /// "Something changed, but I can't say what" — a coarse invalidation. The
+    /// consumer should reconcile by re-reading the whole set. This is what a
+    /// payload-less push (Postgres `LISTEN/NOTIFY`) can offer; drivers that
+    /// carry the row (SurrealDB LIVE) emit the fine-grained variants instead.
+    Invalidated,
+}
+
+impl VistaChange {
+    /// The id of the affected row, or `None` for a coarse [`Invalidated`](Self::Invalidated).
+    pub fn id(&self) -> Option<&str> {
+        match self {
+            VistaChange::Inserted { id, .. }
+            | VistaChange::Updated { id, .. }
+            | VistaChange::Deleted { id } => Some(id),
+            VistaChange::Invalidated => None,
+        }
+    }
+}
+
+/// A stream of [`VistaChange`]s from a live subscription. `'static` and `Send`
+/// so it can be handed to a background task.
+pub type VistaChangeStream = Pin<Box<dyn Stream<Item = Result<VistaChange>> + Send>>;
+
 /// Per-driver executor for a `Vista`.
 ///
 /// Implementations live in driver crates (vantage-sqlite, vantage-mongodb,
@@ -430,6 +475,22 @@ pub trait TableShell: Send + Sync + 'static {
     /// graceful degradation, not all-or-nothing.
     #[cfg(feature = "rhai")]
     fn register_rhai_extensions(&self, _engine: &mut rhai::Engine) {}
+
+    // ---- Live subscription -------------------------------------------------
+
+    /// Subscribe to changes on the set and stream them as [`VistaChange`]s.
+    ///
+    /// Drivers whose backend can push changes (SurrealDB LIVE, Postgres
+    /// `LISTEN/NOTIFY`) override this and advertise
+    /// [`can_subscribe`](VistaCapabilities::can_subscribe). Each emitted change
+    /// carries the record in the same projected shape as
+    /// [`list_vista_values`](Self::list_vista_values), so a consumer can apply
+    /// it to a cache directly. The default produces `Unimplemented` (when
+    /// `can_subscribe: true`) or `Unsupported` (when `false`); callers branch on
+    /// `vista.capabilities().can_subscribe` first.
+    async fn watch_vista(&self, _vista: &Vista) -> Result<VistaChangeStream> {
+        Err(self.default_error("watch_vista", "can_subscribe"))
+    }
 
     // ---- Capability advertisement -----------------------------------------
 

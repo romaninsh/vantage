@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.6.2 — unreleased
+
+- `wss://` connections now work: `tokio-tungstenite` is built with the `rustls-tls-webpki-roots` feature,
+  so TLS endpoints (including SurrealDB Cloud instances) no longer fail the handshake.
+- JWT/token auth is implemented. `SurrealConnection::auth_token(..)` (and DSN token auth) now issue the
+  SurrealDB `authenticate` RPC instead of erroring with "Unsupported authentication method", enabling
+  connection to instances reached with a brokered access token.
+- Token auth no longer issues a `use` after `authenticate`. A JWT is already scoped to the namespace
+  and database carried in its claims, and re-selecting the namespace is a privileged action a
+  database-scoped access actor isn't permitted to perform (SurrealDB answers with an IAM `NotAllowed`),
+  which broke connecting to a Cloud instance with a brokered token when a namespace/database was set.
+
+## 0.6.1 — 2026-07-16
+
+- Live queries. `SurrealClient::live(resource)` issues a `LIVE SELECT` and returns
+  a `LiveStream` of `Notification { action, record_id, data }`; `kill(id)` releases
+  it. The `ws_cbor` engine's read loop now demultiplexes unsolicited notification
+  frames (matched by live-query id) from ordinary responses, so a single WebSocket
+  carries both. Backs the framework's `dio.watch()` over SurrealDB.
+
 ## 0.6.0 — unreleased
 
 - Coordinated 0.6 release; internal dependencies realigned to 0.6. No changes beyond 0.5.2.

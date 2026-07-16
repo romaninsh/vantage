@@ -1,6 +1,6 @@
 [package]
 name = "vantage-sql"
-version = "0.6.8"
+version = "0.6.9"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -33,6 +33,7 @@ uuid = "1"
 chrono = { version = "0.4", features = ["serde"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde = { version = "1.0", features = ["derive"] }
+async-stream = "0.3"
 ciborium = "0.2"
 hex = "0.4"
 indexmap = { version = "2.14.0", features = ["serde"] }

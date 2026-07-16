@@ -71,4 +71,9 @@ pub struct SurrealUpdate {
     pub fields: IndexMap<String, AnySurrealType>,
     /// Optional WHERE conditions (combined with AND).
     pub conditions: Vec<Expr>,
+    /// Render as `UPSERT` rather than `UPDATE`. Since SurrealDB 2.0 a plain
+    /// `UPDATE` on a non-existent record is a no-op (returns nothing); `UPSERT`
+    /// creates it. Set for replace-style writes that must create the row if
+    /// missing.
+    pub upsert: bool,
 }

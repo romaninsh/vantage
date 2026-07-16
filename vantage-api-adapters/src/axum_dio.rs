@@ -199,6 +199,20 @@ async fn listing(State(st): State<ApiState>, Query(q): Query<ListParams>) -> Api
 /// the response stream — when the client disconnects the stream drops, the
 /// scenery's guard aborts its tasks, and its queued augment work is
 /// withdrawn.
+/// A stable string key for an identity-watch diff.
+///
+/// Strings key by their raw value (the common case: a text id). Other JSON —
+/// numeric ids, Mongo `ObjectId` objects, SurrealDB `Thing` tags — keys by its
+/// canonical serialization, so `key_by` works for any backend whose id isn't a
+/// bare string. `null`/absent yields no key (the row is skipped from the diff).
+fn stable_key(v: &serde_json::Value) -> Option<String> {
+    match v {
+        serde_json::Value::Null => None,
+        serde_json::Value::String(s) => Some(s.clone()),
+        other => serde_json::to_string(other).ok(),
+    }
+}
+
 async fn watch_listing(st: ApiState, offset: usize, limit: usize) -> ApiResult<Response> {
     let demand: Vec<String> = st.columns.iter().map(|(_, field)| field.clone()).collect();
     let scenery = st
@@ -241,8 +255,8 @@ async fn watch_listing(st: ApiState, offset: usize, limit: usize) -> ApiResult<R
                 let object = project(idx, &row.record, &columns);
                 // Diff key: the identity field's value, or the row index.
                 let key = match &key_field {
-                    Some(field) => match object.get(field.as_ref()).and_then(|v| v.as_str()) {
-                        Some(id) => id.to_owned(),
+                    Some(field) => match object.get(field.as_ref()).and_then(stable_key) {
+                        Some(id) => id,
                         None => continue,
                     },
                     None => idx.to_string(),

@@ -181,7 +181,8 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
     assert!(caps.can_insert);
     assert!(caps.can_update);
     assert!(caps.can_delete);
-    assert!(!caps.can_subscribe);
+    // A read-write Postgres Vista is watchable via LISTEN/NOTIFY.
+    assert!(caps.can_subscribe);
     Ok(())
 }
 

@@ -1,11 +1,22 @@
+//! The reactive server — SurrealDB.
+//!
+//! Identical in shape to the Postgres chapter's server, with two lines changed:
+//! the Vista comes from `SurrealVistaFactory` instead of `db.vista_factory()`,
+//! and the live feed is a single transparent `dio.watch()` instead of a
+//! hand-wired NOTIFY listener. The Dio, Lens, `DioRouter`, and React frontend
+//! are byte-for-byte the same reactive stack — the whole point of the exercise.
+
+use std::process::Termination;
 use std::sync::Arc;
 
-use learn_10::db;
-use learn_10::product::Product;
+use learn_11::db;
+use learn_11::product::Product;
 use tower_http::services::ServeDir;
 use vantage_api_adapters::axum_dio::DioRouter;
+use vantage_core::{Context, Result};
+use vantage_dataset::prelude::*;
 use vantage_diorama::prelude::*;
-use vantage_sql::prelude::*;
+use vantage_surrealdb::vista::factory::SurrealVistaFactory;
 use vantage_vista::SortDirection;
 
 #[tokio::main]
@@ -15,17 +26,18 @@ async fn main() {
     }
 }
 
-async fn run() -> VantageResult<()> {
+async fn run() -> Result<()> {
     let db = db::connect().await?;
-    db::setup(&db).await?;
 
     // Order the shelf by creation time, so a drink keeps its place as it sells
     // and new deliveries append at the end.
-    let mut master = db.vista_factory().from_table(Product::table(db.clone()))?;
+    let mut master =
+        SurrealVistaFactory::new(db.clone()).from_table(Product::surreal_table(db.clone()))?;
     master.add_order("created", SortDirection::Ascending)?;
 
-    // Eager cache, and no refresh timer at all: the NOTIFY listener refreshes
-    // the instant a write lands, never on a poll.
+    // Eager cache, no refresh timer: `dio.watch()` reconciles the instant a
+    // change lands. `on_refresh` still matters — the watch task falls back to it
+    // to reconcile if the live subscription ever drops and re-subscribes.
     let lens = Arc::new(
         Lens::new()
             .cache_in_memory()
@@ -51,13 +63,12 @@ async fn run() -> VantageResult<()> {
     );
     let dio = lens.make_dio(master).await?;
 
-    // Refresh the moment Postgres says the table changed. `dio.watch()` sees the
-    // master Vista advertises `can_watch` and subscribes over `LISTEN/NOTIFY`
-    // (on the `product_changed` channel our trigger feeds) — no hand-written
-    // listener. Nothing in *this* process ever writes to `product`; the separate
-    // `mutator` binary does, so whatever you see arrived over the database. This
-    // is the exact same call the SurrealDB chapter makes — the backend-agnostic
-    // payoff of the watch capability.
+    // The transparent live feed. Because the master Vista advertises
+    // `can_watch`, this subscribes to SurrealDB `LIVE SELECT` and applies each
+    // CREATE/UPDATE/DELETE to the cache as it happens — no polling, no
+    // backend-specific code here. Nothing in *this* process writes to `product`;
+    // the separate `mutator` binary does, so whatever you see arrived over the
+    // database.
     dio.watch().await?;
 
     let api = DioRouter::new(dio.clone())
@@ -65,8 +76,8 @@ async fn run() -> VantageResult<()> {
         .with_column("name", "name")
         .with_column("price", "price")
         .with_column("stock", "stock")
-        // Identity-keyed watch: the stream reports a sold-out drink as a
-        // `DELETED` event (by id), so the frontend can animate its removal.
+        // Identity-keyed watch: a sold-out drink is reported as a `DELETED`
+        // event (by id), so the frontend can animate its removal.
         .key_by("id")
         .with_page_size(50)
         .into_router();
@@ -77,9 +88,9 @@ async fn run() -> VantageResult<()> {
         .nest("/api/products", api)
         .fallback_service(ServeDir::new(frontend));
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3010")
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3011")
         .await
-        .context("bind :3010")?;
-    println!("serving on http://localhost:3010  (run the mutator to fill the shelf)");
+        .context("bind :3011")?;
+    println!("serving on http://localhost:3011  (run the mutator to fill the shelf)");
     axum::serve(listener, app).await.context("server failed")
 }
