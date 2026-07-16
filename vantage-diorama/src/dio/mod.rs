@@ -179,10 +179,7 @@ impl DioInner {
                 continue;
             };
             any_live = true;
-            match scenery.demanded_columns() {
-                None => return None,
-                Some(columns) => union.extend(columns),
-            }
+            union.extend(scenery.demanded_columns()?);
         }
         // No live views at all: stay permissive (a detail pass mid-flight on
         // a closing scenery must not stall on an empty union).
