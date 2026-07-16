@@ -35,12 +35,20 @@ impl CborDialect for SurrealJsonDialect {
     }
 
     fn tag_to_json(&self, tag: u64, inner: CborValue) -> Value {
-        // SurrealDB recordid: Tag(8, [table, id]) -> "table:id".
+        // SurrealDB recordid: Tag(8, [table, id]) -> "table:id". Non-text
+        // id parts (numeric/compound record ids) stringify, so `user:42`
+        // still renders canonically.
         if tag == 8
             && let CborValue::Array(parts) = &inner
-            && let [CborValue::Text(table), CborValue::Text(id)] = parts.as_slice()
+            && let [CborValue::Text(table), id] = parts.as_slice()
         {
-            return Value::String(format!("{table}:{id}"));
+            return match id {
+                CborValue::Text(id) => Value::String(format!("{table}:{id}")),
+                other => Value::String(format!(
+                    "{table}:{}",
+                    cbor_json::cbor_to_string(self, other)
+                )),
+            };
         }
         // Any other tag: drop it, render the payload.
         cbor_json::cbor_to_json(self, inner)
@@ -127,5 +135,17 @@ mod tests {
             ])),
         );
         assert_eq!(cbor_to_json(cbor), Value::String("users:john".to_string()));
+    }
+
+    #[test]
+    fn numeric_record_id_stringifies() {
+        let cbor = CborValue::Tag(
+            8,
+            Box::new(CborValue::Array(vec![
+                CborValue::Text("users".into()),
+                CborValue::Integer(42.into()),
+            ])),
+        );
+        assert_eq!(cbor_to_json(cbor), Value::String("users:42".to_string()));
     }
 }

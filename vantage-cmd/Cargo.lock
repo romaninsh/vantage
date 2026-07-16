@@ -1428,7 +1428,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cli-util"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -1445,7 +1445,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cmd"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1536,7 +1536,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "ciborium",
  "indexmap",
@@ -1558,7 +1558,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.10"
+version = "0.6.11"
 dependencies = [
  "async-stream",
  "async-trait",

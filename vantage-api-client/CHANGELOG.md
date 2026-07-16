@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.6 — 2026-07-16
+
+- GraphQL CBOR bridges and the REST HTTP→CBOR boundary use the shared `vantage-types`
+  walker (total — no error branch, and tagged values no longer collapse to `null`).
+
 ## 0.6.5 — 2026-06-29
 
 - REST: the count probe is quieter under `.debug(true)`. The count query and its

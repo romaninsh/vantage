@@ -7,7 +7,7 @@ use base64::Engine as _;
 use ciborium::Value as CborValue;
 use serde_json::Value as JsonValue;
 use vantage_expressions::{Expression, Expressive};
-use vantage_types::cbor_json::{CborDialect, cbor_to_json, json_to_cbor};
+use vantage_types::cbor_json::{CborDialect, cbor_to_json, cbor_to_string, json_to_cbor};
 
 /// AnySurrealType implements SurrealType as a passthrough — it already holds
 /// a ciborium::Value internally, so to_cbor/from_cbor just clone the inner value.
@@ -93,14 +93,19 @@ impl CborDialect for SurrealDialect {
             (0 | 9 | 10 | 13, CborValue::Text(s)) => JsonValue::String(s),
             // NONE.
             (6, _) => JsonValue::Null,
-            // Record id: Tag(8, [table, id]) -> "table:id".
-            (8, CborValue::Array(parts))
-                if matches!(parts.as_slice(), [CborValue::Text(_), CborValue::Text(_)]) =>
-            {
-                let [CborValue::Text(table), CborValue::Text(id)] = parts.as_slice() else {
+            // Record id: Tag(8, [table, id]) -> "table:id". Non-text id
+            // parts (numeric/compound record ids) stringify, so `user:42`
+            // still renders canonically.
+            (8, CborValue::Array(parts)) if matches!(parts.as_slice(), [CborValue::Text(_), _]) => {
+                let mut it = parts.into_iter();
+                let (table, id) = (it.next().expect("len 2"), it.next().expect("len 2"));
+                let (CborValue::Text(table), id) = (table, id) else {
                     unreachable!()
                 };
-                JsonValue::String(format!("{table}:{id}"))
+                match id {
+                    CborValue::Text(id) => JsonValue::String(format!("{table}:{id}")),
+                    other => JsonValue::String(format!("{table}:{}", cbor_to_string(self, &other))),
+                }
             }
             // Compact datetime: Tag(12, [seconds, nanos]) -> RFC 3339 string.
             (12, inner) => compact_datetime_to_json(inner),
@@ -274,6 +279,21 @@ mod tests {
         assert_eq!(
             cbor_to_json(&cbor),
             JsonValue::String("login_audit:abc123".to_string())
+        );
+    }
+
+    #[test]
+    fn numeric_record_id_stringifies() {
+        let cbor = CborValue::Tag(
+            8,
+            Box::new(CborValue::Array(vec![
+                CborValue::Text("user".to_string()),
+                CborValue::Integer(42i64.into()),
+            ])),
+        );
+        assert_eq!(
+            cbor_to_json(&cbor),
+            JsonValue::String("user:42".to_string())
         );
     }
 

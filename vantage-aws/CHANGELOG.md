@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.3 — 2026-07-16
+
+- CBOR↔JSON at the wire boundary uses the shared `vantage-types` walker: tagged values
+  render their payload instead of collapsing to `null`, and the `json_to_cbor`
+  `.expect()` is gone. The duplicate `cbor_to_string` renderers fold onto the shared one.
+
 ## 0.6.2 — 2026-07-15
 
 - `AwsAccount::public(region)` — unsigned requests for anonymous access to

@@ -89,14 +89,13 @@ impl CborDialect for PresentationDialect {
                 let mut it = parts.into_iter();
                 let (table, id) = (it.next().expect("len 2"), it.next().expect("len 2"));
                 match (table, id) {
-                    (CborValue::Text(t), CborValue::Text(i)) => JsonValue::String(format!("{t}:{i}")),
+                    (CborValue::Text(t), CborValue::Text(i)) => {
+                        JsonValue::String(format!("{t}:{i}"))
+                    }
                     (CborValue::Text(t), other) => {
                         JsonValue::String(format!("{t}:{}", cbor_to_string(self, &other)))
                     }
-                    (a, b) => JsonValue::Array(vec![
-                        cbor_to_json(self, a),
-                        cbor_to_json(self, b),
-                    ]),
+                    (a, b) => JsonValue::Array(vec![cbor_to_json(self, a), cbor_to_json(self, b)]),
                 }
             }
             // SurrealDB NONE marker.
@@ -133,11 +132,9 @@ pub fn cbor_to_json<D: CborDialect + ?Sized>(dialect: &D, value: CborValue) -> J
         CborValue::Float(f) => dialect.float_to_json(f),
         CborValue::Text(s) => JsonValue::String(s),
         CborValue::Bytes(b) => dialect.bytes_to_json(b),
-        CborValue::Array(arr) => JsonValue::Array(
-            arr.into_iter()
-                .map(|v| cbor_to_json(dialect, v))
-                .collect(),
-        ),
+        CborValue::Array(arr) => {
+            JsonValue::Array(arr.into_iter().map(|v| cbor_to_json(dialect, v)).collect())
+        }
         CborValue::Map(entries) => {
             let mut obj = serde_json::Map::with_capacity(entries.len());
             for (k, v) in entries {
@@ -196,9 +193,7 @@ pub fn json_to_cbor(value: JsonValue) -> CborValue {
             }
         }
         JsonValue::String(s) => CborValue::Text(s),
-        JsonValue::Array(arr) => {
-            CborValue::Array(arr.into_iter().map(json_to_cbor).collect())
-        }
+        JsonValue::Array(arr) => CborValue::Array(arr.into_iter().map(json_to_cbor).collect()),
         JsonValue::Object(map) => CborValue::Map(
             map.into_iter()
                 .map(|(k, v)| (CborValue::Text(k), json_to_cbor(v)))
@@ -225,8 +220,14 @@ mod tests {
 
     #[test]
     fn scalars_convert_directly() {
-        assert_eq!(cbor_to_json(&PlainDialect, CborValue::Null), JsonValue::Null);
-        assert_eq!(cbor_to_json(&PlainDialect, CborValue::Bool(true)), json!(true));
+        assert_eq!(
+            cbor_to_json(&PlainDialect, CborValue::Null),
+            JsonValue::Null
+        );
+        assert_eq!(
+            cbor_to_json(&PlainDialect, CborValue::Bool(true)),
+            json!(true)
+        );
         assert_eq!(
             cbor_to_json(&PlainDialect, CborValue::Integer(42.into())),
             json!(42)
@@ -417,10 +418,7 @@ mod tests {
             cbor_to_string(&PlainDialect, &CborValue::Integer(42.into())),
             "42"
         );
-        assert_eq!(
-            cbor_to_string(&PlainDialect, &CborValue::Float(1.5)),
-            "1.5"
-        );
+        assert_eq!(cbor_to_string(&PlainDialect, &CborValue::Float(1.5)), "1.5");
         assert_eq!(
             cbor_to_string(&PlainDialect, &CborValue::Bool(true)),
             "true"
