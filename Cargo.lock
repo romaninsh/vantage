@@ -4601,7 +4601,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "surreal-client"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "async-trait",
  "base64",
@@ -5470,7 +5470,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-client"
-version = "0.6.5"
+version = "0.6.6"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5523,7 +5523,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5548,7 +5548,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cli-util"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5566,7 +5566,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cmd"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5600,7 +5600,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-csv"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5702,7 +5702,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-log-writer"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5725,7 +5725,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-mongodb"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "bson",
@@ -5771,7 +5771,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.6.9"
+version = "0.6.10"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -5799,7 +5799,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -5858,7 +5858,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "ciborium",
  "csv",
@@ -5884,7 +5884,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.10"
+version = "0.6.11"
 dependencies = [
  "async-stream",
  "async-trait",

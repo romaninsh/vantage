@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.3 — 2026-07-16
+
+- `cbor_json` module (behind the `serde` feature): one shared CBOR↔JSON walker with
+  per-backend rendering policy expressed as a `CborDialect` trait (hooks for tags, bytes,
+  non-finite floats, integers beyond u64, and map keys). Includes total `json_to_cbor`
+  and `cbor_to_string`, plus `PlainDialect` (neutral defaults) and `PresentationDialect`
+  (SurrealDB record ids as `"table:id"`, NONE as null, datetime/UUID/decimal/duration
+  text kept, binary UUIDs as hex). Replaces the divergent hand-written walkers and the
+  tag-lossy serde round-trips previously scattered across the driver crates.
+- `vantage_type_system!`'s generated `From<Value>` constructs the `Any*` type directly
+  instead of routing through `from_*(&value).expect(...)` — one less clone and no dead
+  panic path.
+
 ## 0.6.2 — 2026-06-25
 
 - `InvariantValue` trait: a value type's null check (`is_null`) and equality (`value_eq`) — the two

@@ -153,10 +153,12 @@ impl From<AnyMongoType> for serde_json::Value {
 
 impl From<serde_json::Value> for AnyMongoType {
     fn from(val: serde_json::Value) -> Self {
-        // Bson's Deserialize rejects malformed extended JSON (e.g.
-        // `{"$oid": "not-a-hex-id"}`); fall back to the structural
-        // conversion instead of panicking.
-        let bson = serde_json::from_value::<bson::Bson>(val.clone()).unwrap_or_else(|_| {
+        // Deserialize from the borrow (`&Value` is a `Deserializer`) so the
+        // value stays available for the fallback: Bson's Deserialize rejects
+        // malformed extended JSON (e.g. `{"$oid": "not-a-hex-id"}`), and we
+        // fall back to the structural conversion instead of panicking.
+        use serde::Deserialize as _;
+        let bson = bson::Bson::deserialize(&val).unwrap_or_else(|_| {
             crate::types::cbor::cbor_to_bson(&vantage_types::json_to_cbor(val))
         });
         AnyMongoType::untyped(bson)

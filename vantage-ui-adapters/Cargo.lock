@@ -10918,7 +10918,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "ciborium",
  "indexmap 2.14.0",
@@ -10940,7 +10940,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.10"
+version = "0.6.11"
 dependencies = [
  "async-stream",
  "async-trait",

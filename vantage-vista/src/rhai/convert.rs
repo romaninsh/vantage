@@ -127,10 +127,7 @@ mod tests {
     fn big_integer_becomes_decimal_string_not_wraparound() {
         let n = i128::from(i64::MIN) - 1;
         let big = CborValue::Integer(n.try_into().unwrap());
-        assert_eq!(
-            cbor_to_dynamic(&big).into_string().unwrap(),
-            n.to_string()
-        );
+        assert_eq!(cbor_to_dynamic(&big).into_string().unwrap(), n.to_string());
     }
 }
 
