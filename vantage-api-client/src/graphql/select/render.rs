@@ -128,7 +128,7 @@ impl GraphqlSelect {
         } else if !limit.is_empty() || !skip.is_empty() {
             format!(
                 "({})",
-                &format!("{}{}", limit, skip).trim_start_matches(", ")
+                format!("{}{}", limit, skip).trim_start_matches(", ")
             )
         } else {
             String::new()
