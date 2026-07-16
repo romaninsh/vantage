@@ -341,7 +341,11 @@ where
 {
     let mut metadata = VistaMetadata::new();
     for (name, col) in table.columns() {
-        let mut vc = VistaColumn::new(name.clone(), col.get_type().to_string());
+        // MySQL can ORDER BY any column server-side. Every column gets
+        // the ORDERABLE flag at construction; consumers branch on it
+        // before calling `Vista::add_order`.
+        let mut vc = VistaColumn::new(name.clone(), col.get_type().to_string())
+            .with_flag(vista_flags::ORDERABLE);
         if col.flags().contains(&ColumnFlag::Hidden) {
             vc = vc.with_flag(vista_flags::HIDDEN);
         }
