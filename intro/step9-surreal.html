@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Serving Scenery — Axum &amp; Watch Streams - Vantage Framework</title>
+        <title>Switching to SurrealDB - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,295 +175,136 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="serving-scenery--axum--watch-streams"><a class="header" href="#serving-scenery--axum--watch-streams">Serving Scenery — Axum &amp; Watch Streams</a></h1>
-<p>Chapter 7’s client of the Dio was a terminal driving two sceneries — one showing the rows, the
-other aggregating a running sum. Sceneries scale well beyond that: the framework can drive many
-active viewers at once, and nothing requires them to live in the same process. This chapter
-sends them across the network — every connected browser tab becomes its own viewer, looking at
-its own page of the archive, with details streaming in as they land.</p>
-<p>The traditional plumbing for live updates over HTTP is a
-<a href="https://en.wikipedia.org/wiki/WebSocket">WebSocket</a>,
-<a href="https://en.wikipedia.org/wiki/Server-sent_events">server-sent events</a>, or the style the
-Kubernetes API made standard — the <strong>watch</strong>: a plain HTTP response that simply never ends,
-delivering one JSON line per change over
-<a href="https://en.wikipedia.org/wiki/Chunked_transfer_encoding">chunked transfer encoding</a>. We take
-the Kubernetes shape: every endpoint answers a plain <code>GET</code> with a snapshot, and the same URL
-with <code>?watch=true</code> keeps the connection open and streams changes for as long as the client
-stays. A watch is not a polling loop — it is a Scenery on the far end of an HTTP connection.</p>
-<p>This chapter re-uses chapter 3’s Axum server, wired to the Dio through a new adapter crate —
-and finishes with a small React app browsing the bucket the way the AWS S3 Explorer does. Worth
-pausing on what the frontend gets for free: the page renders instantly from the
-cache, cells fill themselves in as augmentation lands, and every open tab stays current — the
-responsiveness chapter 7 built for the terminal, now delivered over a wire.</p>
-<h2 id="one-flight-per-row"><a class="header" href="#one-flight-per-row">One flight per row</a></h2>
-<p>Before any of that can be safe, the framework needs an answer to a question chapter 7 never had
-to ask: what happens when <strong>several</strong> views drive augmentation at once?</p>
-<p>Until now, each scenery ran its own detail fetches, inline, for its own viewport. One terminal,
-one viewport — fine. But two browser tabs watching <em>overlapping</em> pages would each download the
-same CSVs; two tabs on <em>disjoint</em> pages would race each other with no ordering at all; and a
-tab opened mid-download had no way to say “me next”. The fetches were nobody’s job to
-coordinate.</p>
-<p>They are now the Dio’s. Every consumer that wants rows hydrated — a scenery’s viewport, a
-facade read blocking on its window — registers a queue with the Dio’s <strong>augment scheduler</strong> and
-enqueues row ids into it. A worker pool drains the queues:</p>
-<ul>
-<li><strong>Round-robin across consumers.</strong> The worker takes one id from each queue in turn, so two
-views with disjoint pages interleave — neither starves behind the other’s backlog.</li>
-<li><strong>One flight per row.</strong> An id already being fetched is never fetched again; every queue
-waiting on it is notified by the same completion. Overlapping views cost one download, not
-one per view.</li>
-<li><strong>Closing a view withdraws its work.</strong> The queue registration is owned by the scenery; when
-the last handle drops, its queued ids vanish. A fetch already in the air completes and lands
-in the cache — paid-for work is kept.</li>
-<li><strong>Workers are configurable.</strong> The default single worker keeps fetch order deterministic;
-<code>Lens::new().augment_workers(4)</code> hydrates four rows at a time when the detail source can
-take it.</li>
-</ul>
-<p>Nothing in the example code changes for this — the scheduler sits under the same
-<code>set_viewport</code> and <code>fetch_window</code> calls the previous chapters used. What changes is what you
-can now safely do: open as many sceneries as you have HTTP connections.</p>
-<p>One builder flag is new. Sceneries de-duplicate: two identical opens share one instance, which
-is right for two widgets showing the same grid — but wrong for two <em>clients</em> watching different
-pages of the same query, where each connection must keep its own viewport. The adapter opens
-its sceneries with <code>.exclusive()</code>: never shared, still counted in the <strong>demand union</strong> — the
-Dio hydrates the union of the columns every open scenery demands — and still released on drop.</p>
-<h2 id="the-adapter-diorouter"><a class="header" href="#the-adapter-diorouter">The adapter: <code>DioRouter</code></a></h2>
-<p>Everything HTTP lives in a new adapter crate, <code>vantage-api-adapters</code> — the server-side sibling
-of the <code>dataset-ui-adapters</code> crate that provided chapter 7’s ratatui binding. Where a UI
-adapter binds a scenery to a widget, an API adapter binds it to a route:</p>
+                        <h1 id="switching-to-surrealdb"><a class="header" href="#switching-to-surrealdb">Switching to SurrealDB</a></h1>
+<p>Postgres was a migration <em>within</em> SQL — a different server, the same dialect family. SurrealDB is a
+different database entirely: multi-model, schemaless by default, and reached over a WebSocket rather
+than a pooled SQL connection. Adopting it is the real test of the claim the whole path has been
+making. The goal here is to change <strong>as little as possible</strong> — and then to cash in the one thing
+SurrealDB does better than a SQL server: it can push the <em>actual change</em>, not just a ping.</p>
+<p>The finished crate is <a href="https://github.com/romaninsh/vantage/tree/main/learn-11"><code>learn-11</code></a>. Set it
+next to <code>learn-10</code> and the diff is small and boring — which is the result we want.</p>
+<h2 id="what-changes"><a class="header" href="#what-changes">What changes</a></h2>
+<p>Three touch-points name the backend, and nothing else does.</p>
+<p><strong>The entity marker</strong> — swap the backend in the attribute list:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>use vantage_api_adapters::axum_dio::DioRouter;
-
-let api = DioRouter::new(dio.clone())
-    .with_column("filename", "Key")
-    .with_column("size", "Size")
-    .with_column("rows", "rows")
-    .with_column("latest", "latest")
-    .with_page_size(50)
-    .into_router();
-<span class="boring">}</span></code></pre>
-<p>Each <code>.with_column(name, field)</code> maps a record field to a JSON key — and doubles as the watch
-sceneries’ <em>demand</em>: naming <code>rows</code> and <code>latest</code> here is exactly what makes a watch connection
-drive their hydration (chapter 7’s demand gate, now per connection). <code>into_router()</code> yields a
-plain <code>axum::Router</code> with two routes, each in two modes:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Request</th><th>Answered by</th><th>Cost</th></tr>
-</thead>
-<tbody>
-<tr><td><code>GET /?offset=&amp;limit=</code></td><td>A window over the cache</td><td>Instant; never fetches</td></tr>
-<tr><td><code>GET /?watch=true&amp;…</code></td><td>An <code>.exclusive()</code> <code>TableScenery</code></td><td>Streams while connected</td></tr>
-<tr><td><code>GET /{id}</code></td><td>A bounded facade read (<code>get_value</code>)</td><td>Hydrates that one row; cached</td></tr>
-<tr><td><code>GET /{id}?watch=true</code></td><td>A <code>RecordScenery</code></td><td>Streams that record’s changes</td></tr>
-</tbody>
-</table>
-</div>
-<p>The split embodies the demand philosophy: a plain <code>GET</code> is not a standing view, so it serves
-the Dio’s <em>current knowledge</em> instantly — augmented columns appear once some view has paid for
-them. A <strong>watch is the standing view</strong>: it declares its page as the viewport, hydration
-follows, and every change streams back as a Kubernetes-style NDJSON line:</p>
-<pre><code class="language-text">{"type":"ADDED","object":{"index":3,"filename":"…","size":"4880965","rows":null,"latest":null}}
-{"type":"MODIFIED","object":{"index":3,"filename":"…","size":"4880965","rows":143676,"latest":"20260531"}}
-</code></pre>
-<p>The stream diffs against what it already sent — a generation bump that changed nothing on this
-page costs nothing on the wire. And the scenery is <em>owned by the response stream</em>: when the
-client disconnects, the stream drops, the scenery’s guard aborts its tasks, its queued fetches
-are withdrawn, and its demand drains. A closed tab stops pulling — the same lifecycle rule as
-chapter 7’s closing grid, now enforced by HTTP.</p>
-<p>One honesty note against the Kubernetes original: there is no resume token (no
-<code>resourceVersion</code>). A client that reconnects gets a fresh snapshot of <code>ADDED</code> lines and a new
-watch — not a replay of what it missed while away.</p>
-<h2 id="the-server"><a class="header" href="#the-server">The server</a></h2>
-<p><code>learn-7</code> is learn-6 with the terminal swapped for the router — and the prefix narrowed back to
-chapter 5’s <code>GM</code> (1,122 files): a server should boot in seconds, and everything below works the
-same way on the full archive. The data plumbing is otherwise identical —
-<code>files.rs</code>, the augmenter, the Lens — with two differences. First, the cache is opened by hand,
-because we want a second table in the same redb file:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let cache = Arc::new(RedbCache::open("cache.redb").context("Failed to open cache")?);
-let contents = ContentsCache::new(cache.open_table("contents").await?);
-<span class="boring">}</span></code></pre>
-<p>A Lens normally opens <code>cache.redb</code> itself (<code>cache_at</code>); <code>cache_source(cache)</code> hands it ours
-instead. The Dio claims one named table for the listing, and <code>open_table("contents")</code> claims
-another for the cache we’re about to meet.</p>
-<p>Second, <code>on_start</code> stays <strong>blocking</strong> (the default — learn-6 turned it off to open its UI on an
-empty table). A server should answer its first request from a warm cache, so <code>make_dio</code> runs
-the chapter-5 sync to completion before <code>axum::serve</code> ever binds the port. On a restart the
-sync resumes from redb and confirms with a single request:</p>
-<pre><code class="language-text">fetched 1000 files in 831.454208ms
-fetched 122 files in 194.010875ms
-serving on http://localhost:3007
-</code></pre>
-<p>The rest of <code>main.rs</code> is mounting:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let app = axum::Router::new()
-    .nest("/api/files", api)
-    .fallback_service(ServeDir::new("frontend/dist"));
-
-axum::serve(TcpListener::bind("0.0.0.0:3007").await?, app).await
-<span class="boring">}</span></code></pre>
-<p>Concurrency needs no further code. <code>Dio</code> is a cheap clone over shared state, redb reads run
-concurrently, and no lock is held across a network await anywhere in the read path — every
-simultaneous request simply proceeds.</p>
-<p>Neither does authentication — because there is none. The endpoints are anonymous, as in
-chapter 3: wrap the router in your tower auth middleware before exposing it; Vantage
-deliberately stays out of authn.</p>
-<h2 id="a-cache-that-earns-its-keep"><a class="header" href="#a-cache-that-earns-its-keep">A cache that earns its keep</a></h2>
-<p>The detail endpoint returns everything about one file, augment columns included — which means
-the first <code>GET /{id}</code> downloads the CSV. Chapter 6 deliberately kept <code>contents</code> out of the
-cache: at 122,000 stations, storing every casually-viewed file would grow <code>cache.redb</code> by
-gigabytes. But a server sees <em>repeat</em> traffic — the same popular stations, again and again —
-and re-downloading those is just as wasteful.</p>
-<p><code>ContentsCache</code> splits the difference with <strong>lazy admission</strong>: a file must be requested twice
-before its contents earn a slot. It is application code, not framework — the framework
-contributes <code>open_table</code> (a named key-value table in the Dio’s own redb file); the admission
-policy is entirely ours to write.</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>pub struct ContentsCache {
-    table: Arc&lt;dyn CacheTable&gt;,
-    /// Keys downloaded at least once — the admission ledger.
-    seen: Mutex&lt;HashSet&lt;String&gt;&gt;,
+</span>#[entity(SurrealType)]           // was: #[entity(PostgresType)]
+#[derive(Debug, Clone, Default)]
+pub struct Product {
+    pub name: String,
+    pub price: i64,
+    pub stock: i64,
+    pub created: i64,
 }
 <span class="boring">}</span></code></pre>
-<p>Its one operation is cache-first with the admission rule on the miss path:</p>
+<p><strong>The table builder</strong> — the same columns, built against <code>SurrealDB</code>; SurrealDB’s native id is a
+<code>Thing</code> (<code>product:⟨key⟩</code>):</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>pub async fn get_or_fetch&lt;F, Fut&gt;(&amp;self, key: &amp;str, fetch: F) -&gt; VantageResult&lt;String&gt;
+</span>pub fn surreal_table(db: SurrealDB) -&gt; Table&lt;SurrealDB, Product&gt; {
+    Table::new("product", db)
+        .with_id_column("id")
+        .with_column_of::&lt;String&gt;("name")
+        .with_column_of::&lt;i64&gt;("price")
+        .with_column_of::&lt;i64&gt;("stock")
+        .with_column_of::&lt;i64&gt;("created")
+}
 <span class="boring">}</span></code></pre>
-<p>A hit is served from redb. A miss runs <code>fetch</code> either way — but only a key already in <code>seen</code> (a
-repeat request) gets its body written to the <code>contents</code> table. One-off requests leave nothing
-behind but their key. (The ledger itself is never trimmed — bare keys, fine at 122,000 files; a
-bigger keyspace would want an eviction rule, and the policy being application code makes that
-your call.) The augmenter’s <code>contents</code> lazy expression routes its download through
-it, and everything downstream — <code>rows</code>, <code>latest</code>, the detail endpoint — is unchanged:</p>
+<p><strong>Connect and setup</strong> — a DSN instead of a <code>DATABASE_URL</code>, and — notably — <strong>no trigger</strong>. Where
+Postgres needed a <code>pg_notify</code> function and an <code>AFTER … FOR EACH STATEMENT</code> trigger, SurrealDB emits
+change frames on its own. Setup is just making sure the table exists:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>.with_lazy_expression("contents", move |row| {
-    // …
-    async move {
-        let body = contents
-            .get_or_fetch(&amp;key, || async move {
-                s3::get_object(&amp;aws, &amp;bucket, &amp;fetch_key).await
-            })
-            .await?;
-        Ok(body.into())
-    }
-})
+</span>let client = SurrealConnection::dsn(&amp;dsn)?.connect().await?;
+// The one bit of schema. SurrealDB streams changes natively via LIVE SELECT,
+// so there is nothing else to wire.
+client.query("DEFINE TABLE IF NOT EXISTS product SCHEMALESS", None).await?;
+let db = SurrealDB::new(client);
 <span class="boring">}</span></code></pre>
-<h2 id="watching-it-work"><a class="header" href="#watching-it-work">Watching it work</a></h2>
-<p>A plain <code>GET</code> is the cache, instantly — <code>rows</code> and <code>latest</code> are <code>null</code> because nothing has
-demanded them yet:</p>
-<pre><code class="language-text">$ curl 'localhost:3007/api/files?offset=0&amp;limit=3'
-{"total":1122,"offset":0,"limit":3,"items":[
-  {"index":0,"filename":"csv/by_station/GM000001153.csv","size":"4796352","rows":null,"latest":null},
-  …
+<p>The till (the mutator) is the same active-entity code as before; only the id it hands <code>new_entity</code>
+is a <code>Thing</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>table.new_entity(
+    Thing::new("product", key),          // was: a String id
+    Product { name, price, stock, created },
+).save().await?;
+<span class="boring">}</span></code></pre>
+<h2 id="what-doesnt-change"><a class="header" href="#what-doesnt-change">What doesn’t change</a></h2>
+<p>The server’s reactive core is untouched. The Vista comes from <code>SurrealVistaFactory</code> instead of
+<code>db.vista_factory()</code>, and then every line is identical to the Postgres chapter — including the one
+that matters:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut master = SurrealVistaFactory::new(db.clone())
+    .from_table(Product::surreal_table(db.clone()))?;
+master.add_order("created", SortDirection::Ascending)?;
+
+let dio = lens.make_dio(master).await?;   // same Lens, same cache, same on_start/on_refresh
+dio.watch().await?;                        // the same call — now backed by LIVE SELECT
+<span class="boring">}</span></code></pre>
+<p>And the <strong>frontend is byte-for-byte the same file</strong> as <code>learn-10</code>. The React page consumes
+<code>?watch=true</code> and animates the shelf; it never learns which database is behind the stream. Diff the
+two <code>frontend/index.html</code> files and you get nothing — the clearest statement the guide can make that
+the reactive layer, up to and including the UI, does not depend on the backend.</p>
+<h2 id="the-payoff-precise-push-no-re-query"><a class="header" href="#the-payoff-precise-push-no-re-query">The payoff: precise push, no re-query</a></h2>
+<p><code>dio.watch()</code> looks the same, but underneath it is doing something better than it could on Postgres.
+SurrealDB’s <code>LIVE SELECT</code> delivers a <strong>typed, per-row</strong> notification — the action (<code>CREATE</code> /
+<code>UPDATE</code> / <code>DELETE</code>) <em>and</em> the affected record — for every change. So the Dio applies each change
+directly to its cache: a create inserts one row, an update repaints one row, a delete removes one
+row. There is no “something changed, re-read everything” step, because the change already arrived in
+full.</p>
+<pre><code class="language-text">$ curl -N 'localhost:3011/api/products?watch=true'
+{"type":"ADDED","object":{"index":0,"id":{"@@TAGGED@@":[8,["product","d51..."]]},"name":"Mojito","price":1000,"stock":11}}
+{"type":"MODIFIED","object":{"index":0,"id":{"@@TAGGED@@":[8,["product","d51..."]]},"name":"Mojito","price":1000,"stock":10}}
+{"type":"DELETED","object":{"index":0,"id":{"@@TAGGED@@":[8,["product","d59..."]]},"name":"Boulevardier","price":1400,"stock":1}}
 </code></pre>
-<p>A detail <code>GET</code> blocks on the bounded facade read — 1.8 s to download and digest 4.8 MB — and
-the same request again is a 21 ms cache hit:</p>
-<pre><code class="language-text">$ curl 'localhost:3007/api/files/csv%2Fby_station%2FGM000001153.csv'
-{"Key":"csv/by_station/GM000001153.csv", …"Size":"4796352", …"rows":140629,"latest":"19911231"}
-</code></pre>
-<p>Now the standing view. <code>curl -N</code> holds the connection; the page arrives as <code>ADDED</code> rows, then
-each CSV lands as a <code>MODIFIED</code> line the moment its download completes:</p>
-<pre><code class="language-text">$ curl -N 'localhost:3007/api/files?offset=3&amp;limit=3&amp;watch=true'
-{"type":"ADDED","object":{"index":3,"filename":"csv/by_station/GM000002288.csv","size":"4880965","rows":null,"latest":null}}
-{"type":"ADDED","object":{"index":4,"filename":"csv/by_station/GM000002698.csv","size":"6351302","rows":null,"latest":null}}
-{"type":"ADDED","object":{"index":5,"filename":"csv/by_station/GM000002716.csv","size":"5042384","rows":null,"latest":null}}
-{"type":"MODIFIED","object":{"index":3,…"rows":143676,"latest":"20260531"}}
-{"type":"MODIFIED","object":{"index":4,…"rows":186088,"latest":"20081031"}}
-{"type":"MODIFIED","object":{"index":5,…"rows":147011,"latest":"20250824"}}
-</code></pre>
-<p>And the scheduler is visible from outside. Two watches on <strong>disjoint</strong> pages, side by side:
-their <code>MODIFIED</code> lines alternate — B, A, B, A — the single worker taking one row from each
-view’s queue in turn:</p>
-<pre><code class="language-text">19:35:35 [B] {"type":"MODIFIED","object":{"index":42,…"rows":201382,…}}
-19:35:36 [A] {"type":"MODIFIED","object":{"index":40,…"rows":77595,…}}
-19:35:38 [B] {"type":"MODIFIED","object":{"index":43,…"rows":132579,…}}
-19:35:40 [A] {"type":"MODIFIED","object":{"index":41,…"rows":128335,…}}
-</code></pre>
-<p>Two watches on the <strong>same</strong> page: each row’s <code>MODIFIED</code> reaches both connections in the same
-second — one download, fanned out by the event bus to every scenery holding the row:</p>
-<pre><code class="language-text">19:36:18 [B] {"type":"MODIFIED","object":{"index":50,…"rows":135802,…}}
-19:36:18 [A] {"type":"MODIFIED","object":{"index":50,…"rows":135802,…}}
-</code></pre>
-<p>Run the first <code>GET</code> again afterwards: the page the watches paid for now answers with its
-numbers filled in. Current knowledge grew.</p>
-<h2 id="a-tiny-react-client"><a class="header" href="#a-tiny-react-client">A tiny React client</a></h2>
-<p>The frontend is one component. It fetches its page with <code>watch=true</code> and reads the NDJSON
-stream directly off <code>fetch</code> — no client library, twenty lines:</p>
-<pre><code class="language-jsx">const res = await fetch(`/api/files?offset=${offset}&amp;limit=${LIMIT}&amp;watch=true`, {
-  signal: ctl.signal,
-})
-const reader = res.body.getReader()
-// …accumulate chunks, split on '\n'…
-const event = JSON.parse(line)
-setRows(rs =&gt; ({ ...rs, [event.object.index]: event.object }))
-</code></pre>
-<p><code>ADDED</code> and <code>MODIFIED</code> merge the same way — the object lands at its index — so the table
-renders the listing immediately and the <code>Rows</code> / <code>Latest</code> cells flip from <code>…</code> to numbers as the
-watch delivers them, exactly like chapter 7’s terminal cells did. Paging aborts the fetch via
-the <code>AbortController</code>, which closes the connection, which drops the scenery server-side.
-Clicking a row hits the detail endpoint into a side panel. <code>npm run build</code> in <code>learn-7/frontend</code>
-emits <code>dist/</code>, the <code>ServeDir</code> fallback serves it, and <code>http://localhost:3007</code> is a bucket
-explorer: title, file count, Prev/Next, and a table filling itself in.</p>
-<hr>
-<h2 id="what-we-covered"><a class="header" href="#what-we-covered">What we covered</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Concept</th><th>What it does</th></tr>
-</thead>
-<tbody>
-<tr><td>Augment scheduler</td><td>Dio-owned detail fetches: round-robin across views, one flight per row</td></tr>
-<tr><td><code>augment_workers(n)</code></td><td>Worker pool size — 1 (deterministic order) by default</td></tr>
-<tr><td><code>.exclusive()</code></td><td>A scenery that never shares — one standing view per HTTP connection</td></tr>
-<tr><td><code>DioRouter</code> (vantage-api-adapters)</td><td><code>.with_column()</code> + <code>.with_page_size()</code> → an axum router; columns double as demand</td></tr>
-<tr><td><code>GET</code> vs <code>?watch=true</code></td><td>Snapshot of current knowledge vs a Scenery streaming NDJSON events</td></tr>
-<tr><td><code>ADDED</code> / <code>MODIFIED</code> lines</td><td>Kubernetes-style watch events, diffed per row per connection</td></tr>
-<tr><td>Connection drop = scenery drop</td><td>Queued fetches withdrawn, demand drained — a closed tab stops pulling</td></tr>
-<tr><td>Blocking <code>on_start</code></td><td>Pre-fetch: the port opens only once the listing is cached</td></tr>
-<tr><td><code>cache_source</code> + <code>open_table</code></td><td>One redb file, many named tables — the Dio’s and our own</td></tr>
-<tr><td><code>ContentsCache</code></td><td>Lazy admission: downloaded once — remembered; twice — cached</td></tr>
-</tbody>
-</table>
-</div>
-<div id="admonition-the-whole-climb" class="admonition admonish-success" role="note" aria-labelledby="admonition-the-whole-climb-title">
+<p>(The id arrives as a SurrealDB <code>Thing</code> rather than a bare string — the frontend’s <code>idOf</code> helper
+normalises either shape to a stable key, which is why the same UI serves both backends.)</p>
+<div id="admonition-one-capability-three-freshness-models" class="admonition admonish-success" role="note" aria-labelledby="admonition-one-capability-three-freshness-models-title">
 <div class="admonition-title">
-<div id="admonition-the-whole-climb-title">
-<p>The whole climb</p>
+<div id="admonition-one-capability-three-freshness-models-title">
+<p>One capability, three freshness models</p>
 </div>
 
-<a class="admonition-anchor-link" href="#admonition-the-whole-climb"></a>
+<a class="admonition-anchor-link" href="#admonition-one-capability-three-freshness-models"></a>
 </div>
 
 <div>
-<p>Eight chapters ago this book started with one SQL query; it ends with a fair-scheduled,
-cache-backed watch API feeding a React frontend — and every layer still speaks through the one
-below it.</p>
-<p>From here, the reference half of the book takes over — <a href="../augmentation.html">Augmentation</a> for
-batched fetches and demand gating, <a href="../config-driven-vistas.html">Config-Driven Vistas</a> for
-defining all of this from YAML, <a href="../mda.html">Model-Driven Architecture</a> for structuring a real
-application, and <a href="../new-persistence.html">Adding a New Persistence</a> when you’re ready to extend
-the framework itself.</p>
+<p>The <code>product</code> shelf has now run behind three backends, and the app above <code>make_dio</code> never changed:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Backend</th><th>How <code>dio.watch()</code> learns of a change</th><th>Granularity</th></tr>
+</thead>
+<tbody>
+<tr><td>SQLite</td><td>a <code>refresh_every</code> timer (it can’t push)</td><td>poll, whole-set</td></tr>
+<tr><td>PostgreSQL</td><td><code>LISTEN/NOTIFY</code> — a payload-less ping → reconcile</td><td><strong>coarse</strong> push, re-read on each write</td></tr>
+<tr><td>SurrealDB</td><td><code>LIVE SELECT</code> — the action + the row</td><td><strong>fine-grained</strong> push, apply the row directly</td></tr>
+</tbody>
+</table>
+</div>
+<p>Poll, coarse push, fine push — the same <code>dio.watch()</code> call, chosen transparently from what the Vista
+advertises. You pick the database your problem has; the freshness you get is the best that database
+can offer, and the code that consumes it is the code you already wrote.</p>
 </div>
 
 </div>
 
+<p>From here the reference half of the book takes over — <a href="../surrealdb.html">SurrealDB</a> for the driver
+details, <a href="../sql.html">SQL</a> for the dialects, <a href="../config-driven-vistas.html">Config-Driven Vistas</a> for
+declaring all of this from YAML, and <a href="../new-persistence.html">Adding a New Persistence</a> when your
+backend isn’t one Vantage already speaks.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../intro/step7-scenery.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../intro/step8-sql-notify.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../intro/step5-sql-dio.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../history.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -473,11 +314,11 @@ the framework itself.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../intro/step7-scenery.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../intro/step8-sql-notify.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../intro/step5-sql-dio.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../history.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

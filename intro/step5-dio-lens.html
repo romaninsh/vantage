@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-9783c949.js";
+            window.path_to_searchindex_js = "../searchindex-a8bd78a9.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-66e26be0.js"></script>
+        <script src="../toc-76a8932f.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -554,7 +554,7 @@ for when persistence isn’t wanted.</li>
 <li><strong><code>.on_start(...)</code></strong> fires once, inside <code>make_dio</code>. Callbacks receive <code>&amp;Dio</code> and clone it to
 hold across <code>.await</code> — a cheap <code>Arc</code> bump; every Lens callback follows this shape.</li>
 <li><strong><code>make_dio</code></strong> does the rest in one call: opens a cache table named after the master, spawns
-the write worker, runs <code>on_start</code>, and hands back the <a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a>.</li>
+the write worker, runs <code>on_start</code>, and hands back the <a href="https://docs.rs/vantage_diorama/0.6.18/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a>.</li>
 </ul>
 <p><code>sync</code> is where the cursor pays off. Instead of one big <code>list_values()</code>, it pulls the listing
 <strong>one page at a time</strong> and seeds the cursor from the cache:</p>
@@ -646,7 +646,7 @@ escape hatch back to the truth.</p>
 <hr>
 <h2 id="the-event-bus"><a class="header" href="#the-event-bus">The event bus</a></h2>
 <p>One more thing <code>make_dio</code> set up, invisibly: every Dio carries a <strong>broadcast event bus</strong>.
-Anything that changes data announces it there as a <a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/dio/event_bus/enum.DioEvent.html"><code>DioEvent</code></a> —
+Anything that changes data announces it there as a <a href="https://docs.rs/vantage_diorama/0.6.18/vantage_diorama/dio/event_bus/enum.DioEvent.html"><code>DioEvent</code></a> —
 <code>DatasetChanged</code> when the set of records was rewritten wholesale, <code>RecordChanged</code> /
 <code>RecordInserted</code> / <code>RecordRemoved</code> for row-level changes, <code>Refreshing</code> when a reconcile starts,
 <code>WriteFailed</code> when a queued write fails. Nothing in this chapter listens yet; chapter 7’s
@@ -671,7 +671,7 @@ everything” announcement. Chapter 7’s live view does exactly that.</p>
 <p>Our S3 listing has no way to notify us, so freshness is <em>pulled</em>: <code>sync</code> on start,
 <code>--invalidate</code> by hand, or <code>refresh_every(duration)</code> on a timer (chapter 7’s live view uses it).
 Backends that can push — a SurrealDB live query, a Kafka topic, a webhook — feed
-<a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a>s into <code>dio.handle_event(...)</code> and reconcile through
+<a href="https://docs.rs/vantage_diorama/0.6.18/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a>s into <code>dio.handle_event(...)</code> and reconcile through
 an <code>on_event</code> callback instead, using the same row-level helpers. Same cache, same events — only
 the trigger differs.</p>
 </div>
@@ -690,7 +690,7 @@ the trigger differs.</p>
 <div>
 <p>S3’s listing Vista advertises <code>can_insert: false</code>, and the facade won’t pretend otherwise — by
 default. Register an <strong><code>on_write</code></strong> callback on the Lens and the write queue becomes yours:
-each queued <a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a> is handed to your closure, which can append to
+each queued <a href="https://docs.rs/vantage_diorama/0.6.18/vantage_diorama/ops/write_op/enum.WriteOp.html"><code>WriteOp</code></a> is handed to your closure, which can append to
 a journal, call a different API, or write a queue — this is exactly the introduction’s
 “a read-only CSV file accepts writes by routing them into a queue”. Without <code>on_write</code>, queued
 ops are applied to the master directly, and a master that can’t take them surfaces
@@ -726,13 +726,13 @@ ops are applied to the master directly, and a master that can’t take them surf
 <tbody>
 <tr><td><code>AwsAccount::public(region)</code></td><td>Unsigned requests — public buckets, no credentials</td></tr>
 <tr><td>Cursor in the table name (<code>@req=resp</code>)</td><td>Auto-pagination: one <code>list()</code>, as many requests as needed</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a></td><td>Shared infrastructure: cache, callbacks, refresh policy</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a></td><td>Binding of master Vista + Lens; owns cache, queue, event bus</td></tr>
-<tr><td><code>cache_at</code> / <a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a></td><td>Persistent (redb) or in-memory storage for cached rows</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.18/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a></td><td>Shared infrastructure: cache, callbacks, refresh policy</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.18/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a></td><td>Binding of master Vista + Lens; owns cache, queue, event bus</td></tr>
+<tr><td><code>cache_at</code> / <a href="https://docs.rs/vantage_diorama/0.6.18/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a></td><td>Persistent (redb) or in-memory storage for cached rows</td></tr>
 <tr><td><code>fetch_next(token)</code></td><td>One page per call; S3’s token is the last key — durable</td></tr>
 <tr><td><code>dio.cache()</code> / <code>dio.master()</code></td><td>The two sides of the Dio, directly addressable from callbacks</td></tr>
 <tr><td><code>dio.vista()</code></td><td>Facade Vista: reads from cache, writes through the queue</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/dio/event_bus/enum.DioEvent.html"><code>DioEvent</code></a></td><td>Bus event: invalidated, record-level changes, write failures</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.18/vantage_diorama/dio/event_bus/enum.DioEvent.html"><code>DioEvent</code></a></td><td>Bus event: invalidated, record-level changes, write failures</td></tr>
 </tbody>
 </table>
 </div>

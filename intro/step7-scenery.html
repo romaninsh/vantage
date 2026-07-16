@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-9783c949.js";
+            window.path_to_searchindex_js = "../searchindex-a8bd78a9.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-66e26be0.js"></script>
+        <script src="../toc-76a8932f.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -186,11 +186,11 @@ screen changes.</p>
 <p><strong>Scenery</strong> is that layer. Each Scenery is a reactive view onto a Dio, exposing one access
 pattern:</p>
 <ul>
-<li><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a> — ordered rows by index, with a viewport</li>
-<li><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a> — a single record by id</li>
-<li><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a> — a computed scalar (count, sum, custom)</li>
+<li><a href="https://docs.rs/vantage_diorama/0.6.18/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a> — ordered rows by index, with a viewport</li>
+<li><a href="https://docs.rs/vantage_diorama/0.6.18/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a> — a single record by id</li>
+<li><a href="https://docs.rs/vantage_diorama/0.6.18/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a> — a computed scalar (count, sum, custom)</li>
 </ul>
-<p>All three share one reactivity mechanism: a <a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a> counter
+<p>All three share one reactivity mechanism: a <a href="https://docs.rs/vantage_diorama/0.6.18/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a> counter
 that bumps whenever the view’s state changes. Consumers <code>subscribe()</code> to a <code>watch</code> channel and
 redraw on each bump — the channel only ever holds the <em>latest</em> generation, so a burst of changes
 costs one repaint, not one per change.</p>
@@ -412,7 +412,7 @@ viewport reaches them. The passes are separately pluggable. The detail pass is a
 it’s chapter 6’s augmentation. The list pass, left alone, would ask the master — a full
 122-request S3 walk every time a view (re)builds its spine. But chapter 5 built something better:
 a cache that <em>is</em> the listing. Registering <code>on_list_page</code> overrides the list pass; the
-<a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/ops/query_descriptor/struct.QueryDescriptor.html"><code>QueryDescriptor</code></a> argument carries the window (<code>offset</code>,
+<a href="https://docs.rs/vantage_diorama/0.6.18/vantage_diorama/ops/query_descriptor/struct.QueryDescriptor.html"><code>QueryDescriptor</code></a> argument carries the window (<code>offset</code>,
 <code>limit</code> — plus conditions, sort, and search when the view has them), and our implementation is a
 window over the cache. The scenery’s spine now costs zero network.</p>
 <p><strong><code>refresh_every</code></strong> completes the freshness story. Once a minute the Dio reconciles its cache
@@ -434,7 +434,7 @@ let scenery = dio.table_scenery().page_size(200_000).open().await?;
 event bus), and hands back <code>Arc&lt;dyn TableScenery&gt;</code>. What you get is deliberately small and
 synchronous:</p>
 <ul>
-<li><code>row_count()</code> and <code>row(idx)</code> — an <a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/scenery/enriched_record/struct.EnrichedRecord.html"><code>EnrichedRecord</code></a>: the
+<li><code>row_count()</code> and <code>row(idx)</code> — an <a href="https://docs.rs/vantage_diorama/0.6.18/vantage_diorama/scenery/enriched_record/struct.EnrichedRecord.html"><code>EnrichedRecord</code></a>: the
 record plus a per-row status;</li>
 <li><code>set_viewport(range)</code> — more on this in a moment;</li>
 <li><code>subscribe()</code> — the generation channel from the start of the chapter.</li>
@@ -549,10 +549,10 @@ real UI binds to Vantage.</p>
 <tr><th>Concept</th><th>What it does</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a></td><td>Ordered rows by index; sort/search/filter served locally</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a></td><td>Reactive aggregate — <code>count</code>, <code>sum</code>, <code>max</code>, <code>min</code>, or <code>custom</code></td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a></td><td>One record by id, same subscribe/redraw contract</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.6.17/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a> / <code>subscribe()</code></td><td>Latest-value watch channel — one bump, one repaint</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.18/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a></td><td>Ordered rows by index; sort/search/filter served locally</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.18/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a></td><td>Reactive aggregate — <code>count</code>, <code>sum</code>, <code>max</code>, <code>min</code>, or <code>custom</code></td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.18/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a></td><td>One record by id, same subscribe/redraw contract</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.6.18/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a> / <code>subscribe()</code></td><td>Latest-value watch channel — one bump, one repaint</td></tr>
 <tr><td>Two-pass loading</td><td>List pass builds the spine; detail pass hydrates rows in view</td></tr>
 <tr><td><code>on_list_page</code></td><td>Plug the list pass — ours serves pages from the chapter-5 cache</td></tr>
 <tr><td><code>set_viewport(range)</code></td><td>Declares what’s visible — and thereby what hydrates</td></tr>
