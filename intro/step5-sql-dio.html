@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Augmentation - Vantage Framework</title>
+        <title>A Live API over SQL - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -12,34 +12,34 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
-        <link rel="icon" href="favicon-de23e50b.svg">
-        <link rel="shortcut icon" href="favicon-8114d1fc.png">
-        <link rel="stylesheet" href="css/variables-8adf115d.css">
-        <link rel="stylesheet" href="css/general-2459343d.css">
-        <link rel="stylesheet" href="css/chrome-ae938929.css">
-        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-2459343d.css">
+        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
 
         <!-- Highlight.js Stylesheets -->
-        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
-        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
-        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
 
         <!-- Custom theme stylesheets -->
-        <link rel="stylesheet" href="./mdbook-admonish.css">
+        <link rel="stylesheet" href=".././mdbook-admonish.css">
 
 
         <!-- Provide site root and default themes to javascript -->
         <script>
-            const path_to_root = "";
+            const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-9783c949.js";
+            window.path_to_searchindex_js = "../searchindex-9783c949.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-66e26be0.js"></script>
+        <script src="../toc-66e26be0.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -106,7 +106,7 @@
             <!-- populated by js -->
             <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
             <noscript>
-                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
             </noscript>
             <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -141,7 +141,7 @@
                     <h1 class="menu-title">Vantage Framework</h1>
 
                     <div class="right-buttons">
-                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
                         </a>
 
@@ -175,184 +175,164 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="augmentation"><a class="header" href="#augmentation">Augmentation</a></h1>
-<p>A <code>Vista</code> reads one table from one backend. But a row is often only half the
-story: an S3 bucket listing tells you a file’s key and size, not how many
-resources the terraform state inside it declares. A REST list of repositories
-doesn’t carry the CI status that lives behind a shell command. The data you want
-to show lives in a <em>second</em> source, keyed off the first.</p>
-<p><strong>Augmentation wires two Vistas into one <code>Dio</code></strong>: a <em>master</em> that is listed, and
-a <em>detail</em> source that is loaded one row at a time and merged on top. The two can
-be the same Vista (a backend whose list and detail are separate operations) or
-entirely different backends — a REST master enriched by a <code>cmd</code> detail, or the
-reverse. The detail source is resolved by name through the
-<a href="./new-persistence/step8-vista-integration.html"><code>VistaCatalog</code></a>, so it is
-persistence-agnostic.</p>
-<h2 id="why-this-lives-in-the-dio-not-the-vista"><a class="header" href="#why-this-lives-in-the-dio-not-the-vista">Why this lives in the Dio, not the Vista</a></h2>
-<p>This is a join, and joins are governed by the capability contract. A SQL Vista
-can join its own tables; a REST Vista cannot; two <em>different</em> backends can never
-push a join down to either engine. Where the backend can’t, the layer above fills
-the gap — that is the whole job of the Dio.</p>
-<p>So augmentation is deliberately a <code>Dio</code>-layer feature. A <code>Vista</code> honestly
-describes one backend and has no cache, no viewport, and no catalog; declaring
-“enrich from another Vista, loaded lazily and cached” on it would be a promise it
-can’t keep. The <code>Dio</code> has all three, so it owns the augmentation: it lists the
-master cheaply, and for each row the user actually scrolls to, it fetches the
-detail and stitches the columns together. It is a per-row join, executed
-client-side, exactly where a push-down is impossible.</p>
-<div id="admonition-it-reduces-to-the-old-two-pass" class="admonition admonish-note" role="note" aria-labelledby="admonition-it-reduces-to-the-old-two-pass-title">
+                        <h1 id="dio--lens-over-sql"><a class="header" href="#dio--lens-over-sql">Dio &amp; Lens over SQL</a></h1>
+<p>This path builds a live, cached, watchable view in front of a SQL database you own. We start from
+a Vista over a SQLite <code>product</code> table — a runtime handle that can already sort, search, paginate,
+and write. It is a fully capable backend, which raises a fair question: if the database already
+does all that, what is a caching-and-events layer even for?</p>
+<p>For the two things a capable backend doesn’t hand you on its own. A <code>Dio</code> keeps a <strong>live local
+copy</strong> of a data segment — reads answered from memory, not round-trips — and it <strong>announces every
+change</strong> on an event bus, so a view can watch the data instead of re-polling it. (A slow, read-only
+API needs a third thing from Diorama — the <em>injection</em> of capabilities the backend lacks, like
+sorting a listing it cannot sort. A SQL database needs none of that; here the live cache and the
+change stream are the whole story.)</p>
+<div id="admonition-this-path-assumes-the-introduction" class="admonition admonish-info" role="note" aria-labelledby="admonition-this-path-assumes-the-introduction-title">
 <div class="admonition-title">
-<div id="admonition-it-reduces-to-the-old-two-pass-title">
-<p>It reduces to the old two-pass</p>
+<div id="admonition-this-path-assumes-the-introduction-title">
+<p>This path assumes the Introduction</p>
 </div>
 
-<a class="admonition-anchor-link" href="#admonition-it-reduces-to-the-old-two-pass"></a>
+<a class="admonition-anchor-link" href="#admonition-this-path-assumes-the-introduction"></a>
 </div>
 
 <div>
-<p>The previous progressive-loading path — a <code>cmd</code> table with a <code>detail</code> script —
-is just the special case where the detail source <em>is</em> the master and the key is
-the id. Expressed as augmentation it is <code>table: &lt;self&gt;, source: id, fetch: per_row</code>. Nothing about that behaviour changed; it stopped being a backend quirk.</p>
+<p>We build straight on two ideas from the <a href="./introduction.html">Introduction</a>: a
+<a href="./step2-tables.html"><strong>Table</strong></a> — your typed model — and a <a href="./step4-vista.html"><strong>Vista</strong></a>, the
+runtime handle a datasource’s factory wraps that model in. If either is new, read the Introduction
+first; this path picks up exactly where it ends.</p>
 </div>
 
 </div>
 
-<h2 id="how-it-runs"><a class="header" href="#how-it-runs">How it runs</a></h2>
-<p>Augmentation engages the two-pass machinery:</p>
-<ol>
-<li><strong>List pass</strong> — the master is listed cheaply (a page at a time). Each row is
-written to the cache as <code>Incomplete</code>, carrying only the columns the list
-returns. When the master can serve windows (<code>can_fetch_window</code>) the page is
-pushed down; otherwise the set is listed and windowed locally.</li>
-<li><strong>Detail pass</strong> — viewport-driven. For each visible <code>Incomplete</code> row, every
-augmentation resolves its detail Vista, fetches the matching record, and
-merges the chosen columns onto the cached row, which flips to <code>Fresh</code>. Rows
-off-screen are never fetched; rows already hydrated are never re-fetched.</li>
-</ol>
-<p>A failed detail fetch marks only that row, leaving its cheap columns intact — the
-rest of the page hydrates normally.</p>
-<h2 id="declaring-it"><a class="header" href="#declaring-it">Declaring it</a></h2>
-<p>On the <code>Lens</code>, supply the catalog and one or more augmentations:</p>
+<p>We’ll build a bar’s shelf: a handful of products, each with a <code>stock</code> count, behind a cached,
+watchable API. A background “till” will sell items so the data actually moves. This chapter builds
+the cache; the next serves it as a live watch; the last moves the whole thing to PostgreSQL
+without touching a line of the model.</p>
+<p>The full crate is <a href="https://github.com/romaninsh/vantage/tree/main/learn-8"><code>learn-8</code></a>.</p>
+<h2 id="the-model"><a class="header" href="#the-model">The model</a></h2>
+<p>The Introduction’s <code>Product</code>, with one column added — <code>stock</code>, the units on the shelf:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>let lens = Lens::new()
-    .cache_at(cache_path)
-    .catalog(catalog)                       // resolves `table:` names
-    .augment(vec![augmentation])            // ≥1 engages two-pass
-    .build()?;
-<span class="boring">}</span></code></pre>
-<p>Each <code>Augmentation</code> has four parts:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>Augmentation {
-    table:  "tfstate_detail".into(),  // catalog name of the detail Vista
-    source: Source::Column { from: "key".into(), to: None },
-    fetch:  Fetch::PerRow,
-    merge:  MergeRule { columns: vec!["resources".into(), "serial".into()] },
+</span>// src/product.rs
+use vantage_sql::prelude::*;
+use vantage_types::prelude::*;
+
+#[entity(SqliteType)]
+#[derive(Debug, Clone, Default)]
+pub struct Product {
+    pub name: String,
+    pub price: i64,
+    pub stock: i64,
+}
+
+impl Product {
+    pub fn table(db: SqliteDB) -&gt; Table&lt;SqliteDB, Product&gt; {
+        Table::new("product", db)
+            .with_id_column("id")
+            .with_column_of::&lt;String&gt;("name")
+            .with_column_of::&lt;i64&gt;("price")
+            .with_column_of::&lt;i64&gt;("stock")
+    }
 }
 <span class="boring">}</span></code></pre>
-<p><code>source</code> and <code>fetch</code> are two orthogonal axes:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th><code>Source</code></th><th>how a master row selects its detail</th></tr>
-</thead>
-<tbody>
-<tr><td><code>Id</code></td><td><code>master.id → detail.id</code></td></tr>
-<tr><td><code>Column { from, to }</code></td><td><code>master[from] → detail[to</code> <em>or</em> <code>detail.id]</code></td></tr>
-<tr><td><code>Build(closure)</code></td><td>arbitrary narrowing from the whole row — per-row only</td></tr>
-</tbody>
-</table>
-</div>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th><code>Fetch</code></th><th>how the detail is read</th></tr>
-</thead>
-<tbody>
-<tr><td><code>PerRow</code></td><td>one record per master row (<code>get_value</code>, or narrow-and-take-first)</td></tr>
-<tr><td><code>Custom(closure)</code></td><td>a caller-supplied async fetch</td></tr>
-<tr><td><code>Batched</code></td><td>one set query across the window’s keys — <em>planned</em></td></tr>
-</tbody>
-</table>
-</div>
-<p><code>Id</code> and id-keyed <code>Column</code> sources read by key through <code>get_value</code> — the uniform
-“one record by key” primitive (a <code>cmd</code> detail script, a SQL <code>WHERE id =</code>, a REST
-<code>GET /{id}</code>). They can name a target column, so they are the batchable shapes.
-<code>Build</code> returns an arbitrary narrowed Vista that can’t be coalesced into a set, so
-it is per-row only — the type enforces what can and can’t batch, rather than a
-runtime check.</p>
-<h3 id="from-yaml"><a class="header" href="#from-yaml">From YAML</a></h3>
-<p>The same declaration is data, lowered with <code>lower_augment</code>:</p>
-<pre><code class="language-yaml">augment:
-  - table: tfstate_detail
-    source: { kind: column, from: key }
-    fetch:  { kind: per_row }
-    merge:  [resources, serial, outputs]
-</code></pre>
-<h3 id="rhai-as-a-closure-factory"><a class="header" href="#rhai-as-a-closure-factory">Rhai as a closure factory</a></h3>
-<p>The runtime types carry <strong>closures</strong>, not script strings — <code>Source::Build</code> is a
-<code>Fn(&amp;row, base) -&gt; Vista</code>. Rhai is one factory that produces such a closure;
-hand-written Rust is another. A <code>{ kind: script, code: "..." }</code> source lowers (under
-the <code>rhai</code> feature) to a <code>Build</code> closure that narrows the base detail Vista using
-the master <code>row</code>:</p>
-<pre><code class="language-rhai">self.add_condition_eq("key", row.key)
-</code></pre>
-<p>This is the same machinery a reference build-script uses, pointed at a possibly
-different persistence. The diorama core never sees a script string; all engine
-assembly stays in <code>vantage-vista</code>.</p>
-<h2 id="merging"><a class="header" href="#merging">Merging</a></h2>
-<p><code>merge.columns</code> lists the detail columns to lift; an empty list lifts all of
-them. The detail record is the authoritative hydration of the row, so on a name
-clash its value wins — it overwrites the cheap list-pass value and adds its new
-columns. (An empty list plus overwrite is exactly the old cmd two-pass: the
-detail script returns the full record, which replaces the stub.) The augmented
-<code>Dio</code> therefore advertises the union of the master’s columns and the lifted
-detail columns — the “Dio advertises a superset” principle: below it, sources are
-partial; above it, the view is whole.</p>
-<h2 id="anticipated-objections"><a class="header" href="#anticipated-objections">Anticipated objections</a></h2>
-<p><strong>Why not model the detail as a foreign-key relation?</strong> A relation resolves
-<em>within</em> one persistence and can be pushed down as a join. The detail here may be
-a different backend entirely; there is nothing to join on and no engine that could
-honour it. Augmentation is the cross-Vista form, stitched by the Dio.</p>
-<p><strong>Why one row at a time?</strong> Because the expensive work should follow the user’s
-attention. The list pass is cheap and immediate; only rows that reach the viewport
-pay for their detail, and they pay once.</p>
-<h2 id="whats-next"><a class="header" href="#whats-next">What’s next</a></h2>
-<p>Three things are planned but not yet implemented; each fails honestly today rather
-than degrading silently:</p>
+<p>Nothing here knows it is about to be cached, watched, or served from Postgres. That is the whole
+bet of the four-layer model — the entity is written once and the layers above it decide what to do
+with it.</p>
+<h2 id="the-master"><a class="header" href="#the-master">The master</a></h2>
+<p>The master is the <code>product</code> table as a Vista — built exactly the way the
+<a href="./step4-vista.html">Introduction</a> built one: hand the table to its datasource’s Vista factory.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let db = SqliteDB::connect(&amp;url).await?;
+let master = db.vista_factory().from_table(Product::table(db.clone()))?;
+<span class="boring">}</span></code></pre>
+<p>Ask this Vista what it can do and it answers <em>yes</em> to everything — <code>can_order</code>, <code>can_fetch_window</code>,
+<code>can_insert</code>, <code>can_update</code>, <code>can_delete</code>. Contrast that with the S3 path, where the Vista admits it
+cannot sort or search. There is no gap to fill here, so there is no capability injection in this
+path. What we still want is the cache.</p>
+<h2 id="the-lens-eager-and-reactive"><a class="header" href="#the-lens-eager-and-reactive">The lens: eager and reactive</a></h2>
+<p>A slow, paginated backend like S3 is loaded a page at a time, resuming from a cursor. A SQL table
+needs none of that ceremony — it hands back the whole set in one call — so this path uses the
+<strong>eager</strong> shape of a Lens: load everything on start, then reconcile on a timer.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let lens = Arc::new(
+    Lens::new()
+        .cache_in_memory()
+        .on_start(|dio| {
+            let dio = dio.clone();
+            async move {
+                let rows = dio.master().list_values().await?;
+                dio.cache().insert_values(rows).await?;
+                Ok(())
+            }
+        })
+        .on_refresh(|dio| {
+            let dio = dio.clone();
+            async move {
+                let rows = dio.master().list_values().await?;
+                dio.cache().clear().await?;
+                dio.cache().insert_values(rows).await?;
+                Ok(())
+            }
+        })
+        .refresh_every(Duration::from_secs(1))
+        .build()?,
+);
+let dio = lens.make_dio(master).await?;
+<span class="boring">}</span></code></pre>
+<p>Three builder calls carry the whole behaviour:</p>
 <ul>
-<li><strong><code>Batched</code> fetch</strong> — collect the window’s distinct keys into one set query and
-scatter the results back, for <code>Id</code>/<code>Column</code> sources.</li>
-<li><strong>Detail-key cache</strong> — dedupe fetches across master rows that share a key
-(non-unique <code>Column</code> sources).</li>
-<li><strong>Scripted fetch</strong> — Rhai fetch verbs choosing how to pull.</li>
+<li><strong><code>cache_in_memory()</code></strong> — the cache is ephemeral; a restart re-reads the table. (The S3 path
+persists its cache with <code>cache_at("cache.redb")</code> because re-listing a remote bucket is expensive.
+Re-reading a local table is not.)</li>
+<li><strong><code>on_start</code></strong> — before the server answers a single request, <code>list_values()</code> pulls the entire
+table into the cache. <code>make_dio</code> blocks on this, so the first read is already warm.</li>
+<li><strong><code>on_refresh</code> + <code>refresh_every</code></strong> — once a second, the cache is rebuilt from the master. This is
+what makes the copy <em>live</em>: a sale the till commits, or an edit you type into <code>sqlite3</code>, is
+reconciled on the next tick, and a <code>DatasetChanged</code> event goes out to every watcher. The
+clear-then-reload is deliberate — a product that has sold out is simply absent from the master’s
+answer, so clearing first drops it cleanly.</li>
 </ul>
-<h2 id="checklist"><a class="header" href="#checklist">Checklist</a></h2>
-<p>To augment a master with a second source:</p>
-<ol>
-<li><strong>Register the detail model</strong> in the <code>VistaCatalog</code> by name.</li>
-<li><strong>Build the <code>Augmentation</code></strong> — pick a <code>Source</code> (id, column, or a closure) and a
-<code>Fetch</code> (<code>PerRow</code> for now), and list the <code>merge</code> columns.</li>
-<li><strong>Wire the Lens</strong> — <code>.catalog(...)</code> then <code>.augment(vec![...])</code>; building it
-engages the two-pass passes automatically.</li>
-<li><strong>Show the columns</strong> — the lifted detail columns appear on hydrated rows
-alongside the master’s.</li>
-</ol>
-<p>A runnable end-to-end example (two in-memory Vistas, list pass then detail pass)
-lives in <code>vantage-diorama/examples/augmentation.rs</code>:</p>
-<pre><code class="language-console">cargo run -p vantage-diorama --example augmentation
-</code></pre>
+<h2 id="reads-come-from-the-cache"><a class="header" href="#reads-come-from-the-cache">Reads come from the cache</a></h2>
+<p>From here on, reads never touch SQLite. <code>make_dio</code> returned a <code>Dio</code>, and everything a consumer asks
+of it — a listing, a page, a single record — is answered from the in-memory cache the <code>on_start</code>
+warmed. The database is consulted only by the once-a-second reconcile, never by a reader. The next
+chapter puts a <code>DioRouter</code> over this Dio and you’ll see a plain <code>GET</code> return the shelf instantly,
+without a query reaching the table.</p>
+<p>That is the inversion the whole guide has been climbing toward: the backend is the source of truth,
+but the handle you <em>read</em> is a local, live mirror of it.</p>
+<div id="admonition-what-a-capable-backend-changes--and-what-it-doesnt" class="admonition admonish-note" role="note" aria-labelledby="admonition-what-a-capable-backend-changes--and-what-it-doesnt-title">
+<div class="admonition-title">
+<div id="admonition-what-a-capable-backend-changes--and-what-it-doesnt-title">
+<p>What a capable backend changes — and what it doesn’t</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-what-a-capable-backend-changes--and-what-it-doesnt"></a>
+</div>
+
+<div>
+<p>The lens shape changed — eager full-load instead of paged, in-memory instead of redb, no
+augmentation because a SQL row already carries its columns. What <em>didn’t</em> change is everything
+above <code>make_dio</code>: the <code>Dio</code>, its event bus, and the sceneries and watch server the next chapter
+opens over it are byte-for-byte the same code the S3 path uses. The reactive stack never learns
+which backend it sits on.</p>
+</div>
+
+</div>
+
+<p>Next: serve this Dio as a Kubernetes-style watch, and turn on the till so the shelf moves while
+you look at it.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="new-persistence/step9-contained-relations.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../intro/step8-axum-dio.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="type-system.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../intro/step6-sql-watch.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -362,11 +342,11 @@ lives in <code>vantage-diorama/examples/augmentation.rs</code>:</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="new-persistence/step9-contained-relations.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../intro/step8-axum-dio.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="type-system.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../intro/step6-sql-watch.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
@@ -386,17 +366,17 @@ lives in <code>vantage-diorama/examples/augmentation.rs</code>:</p>
         </script>
 
 
-        <script src="elasticlunr-ef4e11c1.min.js"></script>
-        <script src="mark-09e88c2c.min.js"></script>
-        <script src="searcher-c2a407aa.js"></script>
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
 
-        <script src="clipboard-1626706a.min.js"></script>
-        <script src="highlight-abc7f01d.js"></script>
-        <script src="book-a0b12cfe.js"></script>
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-a0b12cfe.js"></script>
 
         <!-- Custom JS scripts -->
-        <script src="mermaid-eefea253.min.js"></script>
-        <script src="mermaid-init-ccf746f1.js"></script>
+        <script src="../mermaid-eefea253.min.js"></script>
+        <script src="../mermaid-init-ccf746f1.js"></script>
 
 
 

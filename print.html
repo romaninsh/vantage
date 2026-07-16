@@ -37,10 +37,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-5e583a43.js";
+            window.path_to_searchindex_js = "searchindex-9783c949.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-ef6241bc.js"></script>
+        <script src="toc-66e26be0.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -207,7 +207,7 @@ to your model once and apply everywhere the entity is used.</li>
 <li><strong>Fail loudly, retry safely.</strong> No panics, no silent zeros or match-alls; operations are
 idempotent wherever possible, so retrying is always an option.</li>
 <li><strong>Be aware of observers.</strong> Data knows who is watching: changes stream to subscribers, and edits
-reconcile instead of clobbering. (This is live mode — chapters 5 through 8 build it up.)</li>
+reconcile instead of clobbering. (This is live mode — the second half of the guide builds it up.)</li>
 </ul>
 <h2 id="three-ways-to-work-with-data"><a class="header" href="#three-ways-to-work-with-data">Three ways to work with data</a></h2>
 <p>Vantage lets you choose how strongly typed your data access is — per component, not per project:</p>
@@ -260,11 +260,22 @@ can carry further than the stock app does.</p>
 <h2 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h2>
 <p>Vantage covers a lot of ground — multiple databases, type systems, entity frameworks, UI adapters —
 but none of that matters until you’ve seen it do something useful.</p>
-<p>This guide introduces Vantage concepts one at a time, each building on the last. We’ll start with
-something you already know — SQL — and work our way up to the bigger abstractions. Along the way we
-build a small product catalog that starts as a CLI, becomes an HTTP API, and switches databases
-without touching its handlers — then point the same machinery at a live cloud API and end with a
-cached, reactive view of it: first in the terminal, then served over HTTP to a React frontend.</p>
+<p>This guide introduces Vantage concepts one at a time, each building on the last. We start with
+something you already know — SQL — and build a shared <strong>foundation</strong>: a small product catalog that
+begins as a CLI, becomes an HTTP API, and switches databases without touching its handlers, then
+erases into a runtime-generic data handle.</p>
+<p>From there the guide <strong>forks by the shape of your problem</strong>. The reactive stack that sits on top —
+caching, change events, watchable views — is the same whichever backend is underneath, so you
+follow it down whichever path is yours:</p>
+<ul>
+<li><strong>A facade over an API you don’t control</strong> — a slow, read-only cloud API that can’t sort,
+search, or paginate. Diorama caches it and fills the gaps.</li>
+<li><strong>A live view in front of your own database</strong> — a relational database you own and write to.
+Diorama gives it a cached, watchable facade, and the path ends by moving the same app from
+SQLite to PostgreSQL with a single switch.</li>
+</ul>
+<p>Same abstractions, opposite backends — that contrast is the point.</p>
+<h3 id="the-foundation"><a class="header" href="#the-foundation">The foundation</a></h3>
 <ol>
 <li><strong><a href="#sqlite-and-the-query-builder">SQLite and the Query Builder</a></strong> — connect to a database, build
 and execute typed queries, map rows to structs.</li>
@@ -275,19 +286,11 @@ generic CRUD handler for every entity, then migrate the whole server from SQLite
 editing only the model.</li>
 <li><strong><a href="#vista--the-universal-data-handle">Vista — the Universal Data Handle</a></strong> — erase the entity and backend
 into a schema-bearing runtime handle, with explicit capability contracts.</li>
-<li><strong><a href="#dio--lens--caching-and-events">Dio &amp; Lens — Caching and Events</a></strong> — build a bucket inventory
-over a real cloud API: a persistent, resumable local cache turns a seconds-long listing into
-milliseconds, with an event bus announcing every change.</li>
-<li><strong><a href="#augmentation--enriching-rows">Augmentation — Enriching Rows</a></strong> — give every listed file
-columns computed from its contents, fetched once per file through lazy expressions and cached
-with the row.</li>
-<li><strong><a href="#scenery--reactive-views">Scenery — Reactive Views</a></strong> — reactive views over the Dio; finish
-with a live terminal UI that scrolls 122,000 files and loads details for the rows at your
-cursor.</li>
-<li><strong><a href="#serving-scenery--axum--watch-streams">Serving Scenery — Axum &amp; Watch Streams</a></strong> — put the Dio behind
-HTTP: kubernetes-style GET + watch endpoints streaming augmentation to a React frontend, with
-concurrent viewers served fairly from one download per row.</li>
 </ol>
+<h3 id="choose-your-path"><a class="header" href="#choose-your-path">Choose your path</a></h3>
+<p>With a Vista in hand, <strong><a href="#choose-your-path-1">pick the path that matches your data</a></strong> — a facade over
+an API you don’t control, or a live view over your own relational database. Both build the same
+caching, reactive, watch-streaming stack; they differ only in the backend beneath it.</p>
 <p>You’ll need basic Rust experience (structs, traits, async/await, cargo). No prior Vantage knowledge
 required.</p>
 <p><strong>Start here:</strong> <a href="#sqlite-and-the-query-builder">SQLite and the Query Builder</a></p>
@@ -1594,8 +1597,9 @@ relates to raw query building and custom persistences, and when to reach for eac
 <div>
 <p>The pattern you’ve just built scales well beyond a product catalog:</p>
 <ul>
-<li><strong>Client-side caching and reactive data</strong> — chapters 5–8 of this guide put a model behind a
-persistent cache with live updates streaming to a terminal UI and a React frontend.</li>
+<li><strong>Client-side caching and reactive data</strong> — the second half of this guide puts a model behind a
+persistent cache with live updates streaming to a UI, over a slow external API or your own
+relational database — whichever path matches your problem.</li>
 <li><strong>Cross-persistence traversal</strong> — follow a relationship from a Postgres table into a MongoDB
 collection, expressed in Rust, executed efficiently on each side.</li>
 <li><strong>UI framework integration</strong> — the same model drives desktop, terminal, and web UIs through
@@ -3109,6 +3113,118 @@ MongoDB Vista, an AWS Vista — anything the framework can produce.</p>
 
 </div>
 
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="choose-your-path-1"><a class="header" href="#choose-your-path-1">Choose Your Path</a></h1>
+<p>You now have a <strong>Vista</strong> — a runtime handle over your data that works the same no matter what’s
+behind it. Everything up to here was the foundation. Everything past here is the <strong>reactive
+stack</strong>: a local cache, an event bus, and watchable views that update as the data changes.</p>
+<p>That stack is backend-agnostic, and the rest of the guide proves it by forking here into two
+paths. Both build the <em>same</em> layers — Dio, Lens, Augmentation, Scenery, and a watch-streaming
+HTTP server — and differ only in the backend underneath. Pick the one shaped like your problem;
+the code you write is nearly identical either way.</p>
+<h2 id="which-one-is-yours"><a class="header" href="#which-one-is-yours">Which one is yours?</a></h2>
+<div id="admonition-path-a--a-facade-over-an-api-you-dont-control" class="admonition admonish-example" role="note" aria-labelledby="admonition-path-a--a-facade-over-an-api-you-dont-control-title">
+<div class="admonition-title">
+<div id="admonition-path-a--a-facade-over-an-api-you-dont-control-title">
+<p>Path A · A facade over an API you don’t control</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-path-a--a-facade-over-an-api-you-dont-control"></a>
+</div>
+
+<div>
+<svg viewbox="0 0 624 76" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="12.5" fill="currentColor" role="img" aria-label="A React or terminal UI reads from a cache, backed by a Vista over the slow read-only AWS S3 API.">
+  <defs><marker id="pa-arw" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="7" markerheight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#888" /></marker></defs>
+  <rect x="6" y="16" width="130" height="46" rx="7" fill="#5b8cb0" fill-opacity="0.18" stroke="#5b8cb0" stroke-width="1.5" />
+  <text x="71" y="35" text-anchor="middle">React / TUI</text>
+  <text x="71" y="51" text-anchor="middle" font-size="11" opacity="0.6">ratatui, web</text>
+  <line x1="166" y1="39" x2="140" y2="39" stroke="#888" stroke-width="1.8" marker-end="url(#pa-arw)" />
+  <rect x="170" y="16" width="130" height="46" rx="7" fill="#c08a4a" fill-opacity="0.2" stroke="#c08a4a" stroke-width="2.2" />
+  <text x="235" y="35" text-anchor="middle" font-weight="bold">Cache</text>
+  <text x="235" y="51" text-anchor="middle" font-size="11" opacity="0.6">Dio · events</text>
+  <line x1="330" y1="39" x2="304" y2="39" stroke="#888" stroke-width="1.8" marker-end="url(#pa-arw)" />
+  <rect x="334" y="16" width="130" height="46" rx="7" fill="#a98a6a" fill-opacity="0.18" stroke="#a98a6a" stroke-width="1.5" />
+  <text x="399" y="35" text-anchor="middle">Vista</text>
+  <text x="399" y="51" text-anchor="middle" font-size="11" opacity="0.6">AWS S3</text>
+  <line x1="494" y1="39" x2="468" y2="39" stroke="#888" stroke-width="1.8" marker-end="url(#pa-arw)" />
+  <rect x="490" y="16" width="130" height="46" rx="7" fill="#5aa06f" fill-opacity="0.28" stroke="#5aa06f" stroke-width="1.8" />
+  <text x="555" y="35" text-anchor="middle" font-weight="bold">AWS API</text>
+  <text x="555" y="51" text-anchor="middle" font-size="11" opacity="0.6">slow, read-only</text>
+</svg>
+<p>Your data lives behind something slow you cannot change — a cloud API, a legacy service, a
+third-party endpoint. It is read-only, hundreds of milliseconds away, and cannot sort, search, or
+paginate. You want a fast, queryable local view of it.</p>
+<p>The example builds an inventory of a public <strong>S3</strong> bucket (NOAA’s climate archive) — thousands of
+files served seamlessly and responsively. Diorama caches the listing, <strong>injects the capabilities
+S3 lacks</strong>, and enriches each row from its contents; the path ends with a terminal UI (ratatui)
+and an Axum API feeding a React frontend.</p>
+<p><strong><a href="#dio--lens--caching-and-events">Take Path A →</a></strong> — steps 5–8.</p>
+</div>
+
+</div>
+
+<div id="admonition-path-b--a-live-view-in-front-of-your-own-database" class="admonition admonish-tip" role="note" aria-labelledby="admonition-path-b--a-live-view-in-front-of-your-own-database-title">
+<div class="admonition-title">
+<div id="admonition-path-b--a-live-view-in-front-of-your-own-database-title">
+<p>Path B · A live view in front of your own database</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-path-b--a-live-view-in-front-of-your-own-database"></a>
+</div>
+
+<div>
+<svg viewbox="0 0 624 76" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="12.5" fill="currentColor" role="img" aria-label="A React or terminal UI reads from a cache, backed by a Vista over a PostgreSQL database you control.">
+  <defs><marker id="pb-arw" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="7" markerheight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#888" /></marker></defs>
+  <rect x="6" y="16" width="130" height="46" rx="7" fill="#5b8cb0" fill-opacity="0.18" stroke="#5b8cb0" stroke-width="1.5" />
+  <text x="71" y="35" text-anchor="middle">React / TUI</text>
+  <text x="71" y="51" text-anchor="middle" font-size="11" opacity="0.6">ratatui, web</text>
+  <line x1="166" y1="39" x2="140" y2="39" stroke="#888" stroke-width="1.8" marker-end="url(#pb-arw)" />
+  <rect x="170" y="16" width="130" height="46" rx="7" fill="#c08a4a" fill-opacity="0.2" stroke="#c08a4a" stroke-width="2.2" />
+  <text x="235" y="35" text-anchor="middle" font-weight="bold">Cache</text>
+  <text x="235" y="51" text-anchor="middle" font-size="11" opacity="0.6">Dio · events</text>
+  <line x1="330" y1="39" x2="304" y2="39" stroke="#888" stroke-width="1.8" marker-end="url(#pb-arw)" />
+  <rect x="334" y="16" width="130" height="46" rx="7" fill="#a98a6a" fill-opacity="0.18" stroke="#a98a6a" stroke-width="1.5" />
+  <text x="399" y="35" text-anchor="middle">Vista</text>
+  <text x="399" y="51" text-anchor="middle" font-size="11" opacity="0.6">Postgres</text>
+  <line x1="494" y1="39" x2="468" y2="39" stroke="#888" stroke-width="1.8" marker-end="url(#pb-arw)" />
+  <rect x="490" y="16" width="130" height="46" rx="7" fill="#5aa06f" fill-opacity="0.28" stroke="#5aa06f" stroke-width="1.8" />
+  <text x="555" y="35" text-anchor="middle" font-weight="bold">PostgreSQL</text>
+  <text x="555" y="51" text-anchor="middle" font-size="11" opacity="0.6">you control it</text>
+</svg>
+<p>Your data lives in a <strong>relational database you own</strong> — you read it, write it, and it already
+sorts, searches, and joins. What you want is a <em>live, cached, watchable facade</em> in front of it:
+instant reads, changes streaming to every viewer, writes routed on your terms.</p>
+<p>The example builds a bar’s product inventory whose stock ticks down in real time as items sell.
+The same caching, reactive, watch-streaming stack — and the path ends by moving the app from
+<strong>SQLite to PostgreSQL</strong> with a single switch, proving the backend was never load-bearing.</p>
+<p><strong><a href="#dio--lens-over-sql">Take Path B →</a></strong> — steps 5–7.</p>
+</div>
+
+</div>
+
+<h2 id="why-the-guide-leads-with-s3"><a class="header" href="#why-the-guide-leads-with-s3">Why the guide leads with S3</a></h2>
+<p>If you own a SQL database, an S3 bucket may look like a strange place to <em>start</em> teaching caching
+and reactivity. That is deliberate. A slow, read-only, capability-poor backend makes the value of
+the layer above <strong>visible</strong>: every millisecond the cache saves, and every sort the backend cannot
+do but Diorama can, is obvious. A capable SQL database would hide the very problem the reactive
+stack solves — so Path A teaches it where it shows, and Path B proves it was never about S3.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th>Path A — Custom API (S3)</th><th>Path B — Relational DB (SQL)</th></tr>
+</thead>
+<tbody>
+<tr><td>Backend</td><td>slow, remote, read-only</td><td>fast, local, writable</td></tr>
+<tr><td>Sort / search</td><td>no — Diorama injects it</td><td>yes — natively</td></tr>
+<tr><td>Writes</td><td>routed elsewhere (the master can’t take them)</td><td>routed to the database</td></tr>
+<tr><td>Reactivity source</td><td>periodic reconcile (S3 can’t push)</td><td>your own writes + reconcile</td></tr>
+<tr><td>The payoff</td><td>a rich handle over a poor backend</td><td>a live facade, then a backend swap</td></tr>
+</tbody>
+</table>
+</div>
+<p>Both paths converge on the same idea: <strong>once a Dio wraps a Vista, nothing above it knows or cares
+what the backend is.</strong> Read whichever path is yours — or both, and watch the code stay the same
+while the backend changes underneath it.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="dio--lens--caching-and-events"><a class="header" href="#dio--lens--caching-and-events">Dio &amp; Lens — Caching and Events</a></h1>
 <p>Chapter 4 gave you Vista — a universal handle that works with any backend. But every call still hits
@@ -4731,6 +4847,387 @@ the framework itself.</p>
 
 </div>
 
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="dio--lens-over-sql"><a class="header" href="#dio--lens-over-sql">Dio &amp; Lens over SQL</a></h1>
+<p>This path builds a live, cached, watchable view in front of a SQL database you own. We start from
+a Vista over a SQLite <code>product</code> table — a runtime handle that can already sort, search, paginate,
+and write. It is a fully capable backend, which raises a fair question: if the database already
+does all that, what is a caching-and-events layer even for?</p>
+<p>For the two things a capable backend doesn’t hand you on its own. A <code>Dio</code> keeps a <strong>live local
+copy</strong> of a data segment — reads answered from memory, not round-trips — and it <strong>announces every
+change</strong> on an event bus, so a view can watch the data instead of re-polling it. (A slow, read-only
+API needs a third thing from Diorama — the <em>injection</em> of capabilities the backend lacks, like
+sorting a listing it cannot sort. A SQL database needs none of that; here the live cache and the
+change stream are the whole story.)</p>
+<div id="admonition-this-path-assumes-the-introduction" class="admonition admonish-info" role="note" aria-labelledby="admonition-this-path-assumes-the-introduction-title">
+<div class="admonition-title">
+<div id="admonition-this-path-assumes-the-introduction-title">
+<p>This path assumes the Introduction</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-this-path-assumes-the-introduction"></a>
+</div>
+
+<div>
+<p>We build straight on two ideas from the <a href="intro/introduction.html">Introduction</a>: a
+<a href="#tables-and-typed-data-access"><strong>Table</strong></a> — your typed model — and a <a href="#vista--the-universal-data-handle"><strong>Vista</strong></a>, the
+runtime handle a datasource’s factory wraps that model in. If either is new, read the Introduction
+first; this path picks up exactly where it ends.</p>
+</div>
+
+</div>
+
+<p>We’ll build a bar’s shelf: a handful of products, each with a <code>stock</code> count, behind a cached,
+watchable API. A background “till” will sell items so the data actually moves. This chapter builds
+the cache; the next serves it as a live watch; the last moves the whole thing to PostgreSQL
+without touching a line of the model.</p>
+<p>The full crate is <a href="https://github.com/romaninsh/vantage/tree/main/learn-8"><code>learn-8</code></a>.</p>
+<h2 id="the-model"><a class="header" href="#the-model">The model</a></h2>
+<p>The Introduction’s <code>Product</code>, with one column added — <code>stock</code>, the units on the shelf:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// src/product.rs
+use vantage_sql::prelude::*;
+use vantage_types::prelude::*;
+
+#[entity(SqliteType)]
+#[derive(Debug, Clone, Default)]
+pub struct Product {
+    pub name: String,
+    pub price: i64,
+    pub stock: i64,
+}
+
+impl Product {
+    pub fn table(db: SqliteDB) -&gt; Table&lt;SqliteDB, Product&gt; {
+        Table::new("product", db)
+            .with_id_column("id")
+            .with_column_of::&lt;String&gt;("name")
+            .with_column_of::&lt;i64&gt;("price")
+            .with_column_of::&lt;i64&gt;("stock")
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Nothing here knows it is about to be cached, watched, or served from Postgres. That is the whole
+bet of the four-layer model — the entity is written once and the layers above it decide what to do
+with it.</p>
+<h2 id="the-master"><a class="header" href="#the-master">The master</a></h2>
+<p>The master is the <code>product</code> table as a Vista — built exactly the way the
+<a href="#vista--the-universal-data-handle">Introduction</a> built one: hand the table to its datasource’s Vista factory.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let db = SqliteDB::connect(&amp;url).await?;
+let master = db.vista_factory().from_table(Product::table(db.clone()))?;
+<span class="boring">}</span></code></pre>
+<p>Ask this Vista what it can do and it answers <em>yes</em> to everything — <code>can_order</code>, <code>can_fetch_window</code>,
+<code>can_insert</code>, <code>can_update</code>, <code>can_delete</code>. Contrast that with the S3 path, where the Vista admits it
+cannot sort or search. There is no gap to fill here, so there is no capability injection in this
+path. What we still want is the cache.</p>
+<h2 id="the-lens-eager-and-reactive"><a class="header" href="#the-lens-eager-and-reactive">The lens: eager and reactive</a></h2>
+<p>A slow, paginated backend like S3 is loaded a page at a time, resuming from a cursor. A SQL table
+needs none of that ceremony — it hands back the whole set in one call — so this path uses the
+<strong>eager</strong> shape of a Lens: load everything on start, then reconcile on a timer.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let lens = Arc::new(
+    Lens::new()
+        .cache_in_memory()
+        .on_start(|dio| {
+            let dio = dio.clone();
+            async move {
+                let rows = dio.master().list_values().await?;
+                dio.cache().insert_values(rows).await?;
+                Ok(())
+            }
+        })
+        .on_refresh(|dio| {
+            let dio = dio.clone();
+            async move {
+                let rows = dio.master().list_values().await?;
+                dio.cache().clear().await?;
+                dio.cache().insert_values(rows).await?;
+                Ok(())
+            }
+        })
+        .refresh_every(Duration::from_secs(1))
+        .build()?,
+);
+let dio = lens.make_dio(master).await?;
+<span class="boring">}</span></code></pre>
+<p>Three builder calls carry the whole behaviour:</p>
+<ul>
+<li><strong><code>cache_in_memory()</code></strong> — the cache is ephemeral; a restart re-reads the table. (The S3 path
+persists its cache with <code>cache_at("cache.redb")</code> because re-listing a remote bucket is expensive.
+Re-reading a local table is not.)</li>
+<li><strong><code>on_start</code></strong> — before the server answers a single request, <code>list_values()</code> pulls the entire
+table into the cache. <code>make_dio</code> blocks on this, so the first read is already warm.</li>
+<li><strong><code>on_refresh</code> + <code>refresh_every</code></strong> — once a second, the cache is rebuilt from the master. This is
+what makes the copy <em>live</em>: a sale the till commits, or an edit you type into <code>sqlite3</code>, is
+reconciled on the next tick, and a <code>DatasetChanged</code> event goes out to every watcher. The
+clear-then-reload is deliberate — a product that has sold out is simply absent from the master’s
+answer, so clearing first drops it cleanly.</li>
+</ul>
+<h2 id="reads-come-from-the-cache-1"><a class="header" href="#reads-come-from-the-cache-1">Reads come from the cache</a></h2>
+<p>From here on, reads never touch SQLite. <code>make_dio</code> returned a <code>Dio</code>, and everything a consumer asks
+of it — a listing, a page, a single record — is answered from the in-memory cache the <code>on_start</code>
+warmed. The database is consulted only by the once-a-second reconcile, never by a reader. The next
+chapter puts a <code>DioRouter</code> over this Dio and you’ll see a plain <code>GET</code> return the shelf instantly,
+without a query reaching the table.</p>
+<p>That is the inversion the whole guide has been climbing toward: the backend is the source of truth,
+but the handle you <em>read</em> is a local, live mirror of it.</p>
+<div id="admonition-what-a-capable-backend-changes--and-what-it-doesnt" class="admonition admonish-note" role="note" aria-labelledby="admonition-what-a-capable-backend-changes--and-what-it-doesnt-title">
+<div class="admonition-title">
+<div id="admonition-what-a-capable-backend-changes--and-what-it-doesnt-title">
+<p>What a capable backend changes — and what it doesn’t</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-what-a-capable-backend-changes--and-what-it-doesnt"></a>
+</div>
+
+<div>
+<p>The lens shape changed — eager full-load instead of paged, in-memory instead of redb, no
+augmentation because a SQL row already carries its columns. What <em>didn’t</em> change is everything
+above <code>make_dio</code>: the <code>Dio</code>, its event bus, and the sceneries and watch server the next chapter
+opens over it are byte-for-byte the same code the S3 path uses. The reactive stack never learns
+which backend it sits on.</p>
+</div>
+
+</div>
+
+<p>Next: serve this Dio as a Kubernetes-style watch, and turn on the till so the shelf moves while
+you look at it.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="serving--watching-live-stock"><a class="header" href="#serving--watching-live-stock">Serving &amp; Watching Live Stock</a></h1>
+<p>Last chapter left a <code>Dio</code> holding a live copy of the <code>product</code> table. Now we put it behind HTTP —
+using the <strong>same adapter the S3 path uses</strong>. <code>DioRouter</code> neither knows nor cares that its Dio is backed
+by SQL instead of S3; it binds a Dio to a pair of routes, GET and watch, and that is all it needs.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_api_adapters::axum_dio::DioRouter;
+
+let api = DioRouter::new(dio.clone())
+    .with_column("name", "name")
+    .with_column("price", "price")
+    .with_column("stock", "stock")
+    .with_page_size(50)
+    .into_router();
+
+let app = axum::Router::new().nest("/api/products", api);
+axum::serve(listener, app).await?;
+<span class="boring">}</span></code></pre>
+<p>A plain <code>GET</code> is the cache, answered instantly — never a query against SQLite:</p>
+<pre><code class="language-text">$ curl 'localhost:3008/api/products?offset=0&amp;limit=10'
+{"total":5,"offset":0,"limit":10,"items":[
+  {"index":0,"name":"Espresso","price":280,"stock":12},
+  {"index":1,"name":"Cappuccino","price":340,"stock":8},
+  {"index":2,"name":"Cold Brew","price":420,"stock":5},
+  {"index":3,"name":"Croissant","price":260,"stock":6},
+  {"index":4,"name":"Cheesecake","price":520,"stock":2}]}
+</code></pre>
+<h2 id="a-till-to-make-it-move"><a class="header" href="#a-till-to-make-it-move">A till to make it move</a></h2>
+<p>A cache over a table nobody writes is just a slow constant. To see the reactive stack work, the
+data has to change — so the app runs a <strong>till</strong>: a background task that sells one unit of a random
+product every 800ms, removes anything that sells out, and every so often takes a delivery. These
+are ordinary SQL writes, on the same connection the master reads from:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// src/sim.rs — the interesting line
+sqlx::query(
+    "UPDATE product SET stock = stock - 1
+     WHERE id = (SELECT id FROM product WHERE stock &gt; 0 ORDER BY RANDOM() LIMIT 1)",
+)
+.execute(db.pool())
+.await?;
+<span class="boring">}</span></code></pre>
+<p>The server itself never calls the till and the till never calls the server. They meet only through
+the database and the once-a-second reconcile — which is precisely the point: <strong>any</strong> writer, in any
+process, moves the shelf. The <code>sqlite3</code> CLI will do just as well, as we’ll see.</p>
+<h2 id="the-watch"><a class="header" href="#the-watch">The watch</a></h2>
+<p><code>curl -N</code> holds the connection open. The page arrives as <code>ADDED</code> lines — the current shelf — and
+then every sale streams back as a <code>MODIFIED</code> line the moment the reconcile picks it up:</p>
+<pre><code class="language-text">$ curl -N 'localhost:3008/api/products?watch=true'
+{"type":"ADDED","object":{"index":0,"name":"Espresso","price":280,"stock":12}}
+{"type":"ADDED","object":{"index":1,"name":"Cappuccino","price":340,"stock":8}}
+{"type":"ADDED","object":{"index":2,"name":"Cold Brew","price":420,"stock":5}}
+{"type":"ADDED","object":{"index":3,"name":"Croissant","price":260,"stock":6}}
+{"type":"ADDED","object":{"index":4,"name":"Cheesecake","price":520,"stock":2}}
+{"type":"MODIFIED","object":{"index":4,"name":"Cheesecake","price":520,"stock":1}}
+{"type":"MODIFIED","object":{"index":2,"name":"Cold Brew","price":420,"stock":4}}
+{"type":"MODIFIED","object":{"index":0,"name":"Espresso","price":280,"stock":9}}
+</code></pre>
+<p>That is the reactive stack running over SQL, end to end: a SQL write, reconciled into the cache, a
+<code>DatasetChanged</code> event, a scenery re-derive, a diff against what this connection last saw, one
+NDJSON line on the wire. Nothing in that chain is specific to SQL — it is the same machinery the
+S3 path serves the NOAA bucket with.</p>
+<div id="admonition-two-events-not-three" class="admonition admonish-note" role="note" aria-labelledby="admonition-two-events-not-three-title">
+<div class="admonition-title">
+<div id="admonition-two-events-not-three-title">
+<p>Two events, not three</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-two-events-not-three"></a>
+</div>
+
+<div>
+<p><code>DioRouter</code> emits only <code>ADDED</code> and <code>MODIFIED</code>, never <code>DELETED</code> — it diffs each page <strong>by
+position</strong>. So a delivery that grows the shelf appears as an <code>ADDED</code> at a new index, but a product
+that <em>sells out</em> shows up as the list shrinking and the rows below it shifting up (each shifted
+index reported as <code>MODIFIED</code>), not as an explicit removal. A watch client reconstructs “gone” from
+the shrinking <code>total</code>. Translating removals into a <code>DELETED</code> line would mean extending the adapter —
+a fair exercise, and a reminder that the adapter is ordinary code, not framework magic.</p>
+</div>
+
+</div>
+
+<h2 id="it-really-is-the-database"><a class="header" href="#it-really-is-the-database">It really is the database</a></h2>
+<p>The strongest proof that this isn’t an in-process illusion: change the table from <strong>outside</strong> the
+app entirely. With a watch open, in another terminal:</p>
+<pre><code class="language-text">$ sqlite3 learn-8/products.db "UPDATE product SET price=999 WHERE id='p1'"
+</code></pre>
+<p>and the open watch stream reflects it within the second:</p>
+<pre><code class="language-text">{"type":"MODIFIED","object":{"index":0,"name":"Espresso","price":999,"stock":11}}
+</code></pre>
+<p>No API call, no shared memory — a separate process wrote a row, the reconcile read it, and the
+change fanned out to every watcher. The Dio is a mirror of the database, not a copy that happens to
+agree with it.</p>
+<p>Next: the same app, the same shelf, the same watch — served from PostgreSQL instead of a file,
+changed by flipping one compile flag.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="moving-to-postgresql"><a class="header" href="#moving-to-postgresql">Moving to PostgreSQL</a></h1>
+<p>A file on disk is a fine place for a bar to start. When it outgrows one — concurrent writers, a
+second instance, a backup story — you reach for a real database server. In most stacks that is a
+migration project. Here it is a refactor that touches one new file and two attributes, and then a
+compile flag decides which backend the binary speaks.</p>
+<p>The finished crate is <a href="https://github.com/romaninsh/vantage/tree/main/learn-9"><code>learn-9</code></a> — the
+same app as <code>learn-8</code>, made backend-parametric.</p>
+<h2 id="name-the-backend-once"><a class="header" href="#name-the-backend-once">Name the backend once</a></h2>
+<p><code>learn-8</code> wrote <code>SqliteDB</code> in a handful of places. The refactor pulls every one of them into a
+single alias, so the concrete backend is named in exactly one file:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// src/db.rs — the only file that names a database
+use vantage_sql::prelude::*;
+
+#[cfg(not(feature = "pg"))]
+pub type Db = vantage_sql::sqlite::SqliteDB;
+#[cfg(feature = "pg")]
+pub type Db = vantage_sql::postgres::PostgresDB;
+
+pub async fn connect() -&gt; VantageResult&lt;Db&gt; {
+    #[cfg(not(feature = "pg"))]
+    let url = format!("sqlite:{}?mode=rwc", concat!(env!("CARGO_MANIFEST_DIR"), "/products.db"));
+    #[cfg(feature = "pg")]
+    let url = std::env::var("DATABASE_URL")
+        .map_err(|_| vantage_core::error!("DATABASE_URL must be set for the `pg` build"))?;
+
+    Db::connect(&amp;url).await.context("connect db")
+}
+<span class="boring">}</span></code></pre>
+<p><code>PostgresDB::connect</code>, <code>db.pool()</code>, and <code>db.vista_factory().from_table(...)</code> are the same calls as
+their SQLite twins — the two backends implement one interface — so <code>connect()</code> is the whole of the
+connection difference: a file path on one side, a <code>DATABASE_URL</code> on the other.</p>
+<h2 id="two-attributes-on-the-model"><a class="header" href="#two-attributes-on-the-model">Two attributes on the model</a></h2>
+<p>The entity marker names whichever backend is compiled in; the table builder now takes the <code>Db</code>
+alias instead of <code>SqliteDB</code>. That is the entire change to the model:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// src/product.rs
+#[cfg_attr(not(feature = "pg"), entity(SqliteType))]
+#[cfg_attr(feature = "pg",       entity(PostgresType))]
+#[derive(Debug, Clone, Default)]
+pub struct Product {
+    pub name: String,
+    pub price: i64,
+    pub stock: i64,
+}
+
+impl Product {
+    pub fn table(db: Db) -&gt; Table&lt;Db, Product&gt; {
+        Table::new("product", db)
+            .with_id_column("id")
+            .with_column_of::&lt;String&gt;("name")
+            .with_column_of::&lt;i64&gt;("price")
+            .with_column_of::&lt;i64&gt;("stock")
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>The builder <em>body</em> — the columns, the id — does not move. <code>#[entity(...)]</code> is a list of the
+backends a struct serves, not a choice of one; listing <code>PostgresType</code> alongside <code>SqliteType</code> just
+generates a second set of conversions. The same <code>Product</code> could serve six backends at once, as
+<code>bakery_model3</code> does.</p>
+<p><strong>Everything else — <code>main.rs</code>, <code>sim.rs</code>, the lens, the Dio, the <code>DioRouter</code> — is unchanged.</strong> It
+was written against <code>Db</code> and the portable data-set methods, so it never named a backend to begin
+with. The reconcile still calls <code>master().list_values()</code>; the till still runs the same
+<code>UPDATE … ORDER BY RANDOM()</code>; the watch still streams <code>ADDED</code>/<code>MODIFIED</code>.</p>
+<div id="admonition-why-the-sql-didnt-have-to-change-either" class="admonition admonish-tip" role="note" aria-labelledby="admonition-why-the-sql-didnt-have-to-change-either-title">
+<div class="admonition-title">
+<div id="admonition-why-the-sql-didnt-have-to-change-either-title">
+<p>Why the SQL didn’t have to change either</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-why-the-sql-didnt-have-to-change-either"></a>
+</div>
+
+<div>
+<p>The till uses <code>$1</code> placeholders, <code>ON CONFLICT (id) DO NOTHING</code>, and <code>RANDOM()</code> — all of which
+SQLite and PostgreSQL both accept — and the schema uses <code>BIGINT</code>, which is SQLite’s INTEGER
+affinity and Postgres’s 64-bit integer. Where the dialects genuinely differ (SQLite’s <code>INTEGER</code> for
+booleans vs Postgres’s real <code>BOOLEAN</code>, say), the difference lives in the schema strings in
+<code>db.rs</code> — never in the model or the app.</p>
+</div>
+
+</div>
+
+<h2 id="run-it-on-postgres"><a class="header" href="#run-it-on-postgres">Run it on Postgres</a></h2>
+<p>Start a local Postgres (the repo ships the script), point <code>DATABASE_URL</code> at it, and build with the
+flag:</p>
+<pre><code class="language-text">$ vantage-sql/scripts/postgres/start.sh          # docker: postgres:17-alpine on :5433
+$ export DATABASE_URL='postgres://vantage:vantage@localhost:5433/vantage'
+$ cargo run -p learn-9 --no-default-features --features pg
+serving on http://localhost:3009 — try: curl -N 'localhost:3009/api/products?watch=true'
+</code></pre>
+<p>The shelf serves and streams exactly as it did on SQLite — same routes, same NDJSON, same till:</p>
+<pre><code class="language-text">$ curl -N 'localhost:3009/api/products?watch=true'
+{"type":"ADDED","object":{"index":0,"name":"Espresso","price":280,"stock":12}}
+{"type":"ADDED","object":{"index":1,"name":"Cappuccino","price":340,"stock":8}}
+...
+{"type":"MODIFIED","object":{"index":4,"name":"Cheesecake","price":520,"stock":1}}
+</code></pre>
+<p>And the it-really-is-the-database proof works over Postgres too — edit a row with <code>psql</code>, watch it
+land:</p>
+<pre><code class="language-text">$ psql "$DATABASE_URL" -c "UPDATE product SET price=777 WHERE id='p2'"
+{"type":"MODIFIED","object":{"index":1,"name":"Cappuccino","price":777,"stock":6}}
+</code></pre>
+<h2 id="what-this-proves"><a class="header" href="#what-this-proves">What this proves</a></h2>
+<p>The reactive stack — cache, events, sceneries, watch server — ran unchanged over a file-backed
+SQLite database and a networked PostgreSQL server, and the code that moved between them was one
+alias and two attributes. This is not a toy path: the repo’s <code>tests/postgres/6_vista.rs</code> exercises
+a Vista over a real Postgres, and the <code>launch-control</code> example deploys the identical model to AWS
+Lambda against Aurora Postgres while defaulting to SQLite locally.</p>
+<div id="admonition-the-fork-converges" class="admonition admonish-success" role="note" aria-labelledby="admonition-the-fork-converges-title">
+<div class="admonition-title">
+<div id="admonition-the-fork-converges-title">
+<p>The fork converges</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-the-fork-converges"></a>
+</div>
+
+<div>
+<p>The guide’s other path wraps a slow, read-only S3 bucket; this one wraps a fast, writable SQL table
+that then became a Postgres server. They need different lenses — paged versus eager,
+capability-injecting versus not — but above <code>make_dio</code> they run the <em>same</em> Dio, the <em>same</em>
+sceneries, and the <em>same</em> watch adapter. That is the claim the whole guide was built to earn:
+<strong>the reactive layer does not depend on the backend.</strong> Choose the backend your problem has; the
+stack above it is the one you just learned.</p>
+</div>
+
+</div>
+
+<p>From here the reference half of the book takes over — <a href="#sql-postgresql-mysql--sqlite">SQL</a> for the dialect details,
+<a href="#config-driven-vistas-yaml--rhai">Config-Driven Vistas</a> for defining all of this from YAML, and
+<a href="#adding-a-new-persistence">Adding a New Persistence</a> when your backend isn’t one of the ones Vantage
+already speaks.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="the-vantage-journey"><a class="header" href="#the-vantage-journey">The Vantage Journey</a></h1>
 <p>Vantage didn’t start as a multi-backend entity framework. It started as a weekend experiment to see

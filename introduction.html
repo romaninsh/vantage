@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-5e583a43.js";
+            window.path_to_searchindex_js = "searchindex-9783c949.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-ef6241bc.js"></script>
+        <script src="toc-66e26be0.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -206,7 +206,7 @@ to your model once and apply everywhere the entity is used.</li>
 <li><strong>Fail loudly, retry safely.</strong> No panics, no silent zeros or match-alls; operations are
 idempotent wherever possible, so retrying is always an option.</li>
 <li><strong>Be aware of observers.</strong> Data knows who is watching: changes stream to subscribers, and edits
-reconcile instead of clobbering. (This is live mode — chapters 5 through 8 build it up.)</li>
+reconcile instead of clobbering. (This is live mode — the second half of the guide builds it up.)</li>
 </ul>
 <h2 id="three-ways-to-work-with-data"><a class="header" href="#three-ways-to-work-with-data">Three ways to work with data</a></h2>
 <p>Vantage lets you choose how strongly typed your data access is — per component, not per project:</p>
@@ -259,11 +259,22 @@ can carry further than the stock app does.</p>
 <h2 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h2>
 <p>Vantage covers a lot of ground — multiple databases, type systems, entity frameworks, UI adapters —
 but none of that matters until you’ve seen it do something useful.</p>
-<p>This guide introduces Vantage concepts one at a time, each building on the last. We’ll start with
-something you already know — SQL — and work our way up to the bigger abstractions. Along the way we
-build a small product catalog that starts as a CLI, becomes an HTTP API, and switches databases
-without touching its handlers — then point the same machinery at a live cloud API and end with a
-cached, reactive view of it: first in the terminal, then served over HTTP to a React frontend.</p>
+<p>This guide introduces Vantage concepts one at a time, each building on the last. We start with
+something you already know — SQL — and build a shared <strong>foundation</strong>: a small product catalog that
+begins as a CLI, becomes an HTTP API, and switches databases without touching its handlers, then
+erases into a runtime-generic data handle.</p>
+<p>From there the guide <strong>forks by the shape of your problem</strong>. The reactive stack that sits on top —
+caching, change events, watchable views — is the same whichever backend is underneath, so you
+follow it down whichever path is yours:</p>
+<ul>
+<li><strong>A facade over an API you don’t control</strong> — a slow, read-only cloud API that can’t sort,
+search, or paginate. Diorama caches it and fills the gaps.</li>
+<li><strong>A live view in front of your own database</strong> — a relational database you own and write to.
+Diorama gives it a cached, watchable facade, and the path ends by moving the same app from
+SQLite to PostgreSQL with a single switch.</li>
+</ul>
+<p>Same abstractions, opposite backends — that contrast is the point.</p>
+<h3 id="the-foundation"><a class="header" href="#the-foundation">The foundation</a></h3>
 <ol>
 <li><strong><a href="./intro/step1-first-query.html">SQLite and the Query Builder</a></strong> — connect to a database, build
 and execute typed queries, map rows to structs.</li>
@@ -274,19 +285,11 @@ generic CRUD handler for every entity, then migrate the whole server from SQLite
 editing only the model.</li>
 <li><strong><a href="./intro/step4-vista.html">Vista — the Universal Data Handle</a></strong> — erase the entity and backend
 into a schema-bearing runtime handle, with explicit capability contracts.</li>
-<li><strong><a href="./intro/step5-dio-lens.html">Dio &amp; Lens — Caching and Events</a></strong> — build a bucket inventory
-over a real cloud API: a persistent, resumable local cache turns a seconds-long listing into
-milliseconds, with an event bus announcing every change.</li>
-<li><strong><a href="./intro/step6-augmentation.html">Augmentation — Enriching Rows</a></strong> — give every listed file
-columns computed from its contents, fetched once per file through lazy expressions and cached
-with the row.</li>
-<li><strong><a href="./intro/step7-scenery.html">Scenery — Reactive Views</a></strong> — reactive views over the Dio; finish
-with a live terminal UI that scrolls 122,000 files and loads details for the rows at your
-cursor.</li>
-<li><strong><a href="./intro/step8-axum-dio.html">Serving Scenery — Axum &amp; Watch Streams</a></strong> — put the Dio behind
-HTTP: kubernetes-style GET + watch endpoints streaming augmentation to a React frontend, with
-concurrent viewers served fairly from one download per row.</li>
 </ol>
+<h3 id="choose-your-path"><a class="header" href="#choose-your-path">Choose your path</a></h3>
+<p>With a Vista in hand, <strong><a href="./intro/fork.html">pick the path that matches your data</a></strong> — a facade over
+an API you don’t control, or a live view over your own relational database. Both build the same
+caching, reactive, watch-streaming stack; they differ only in the backend beneath it.</p>
 <p>You’ll need basic Rust experience (structs, traits, async/await, cargo). No prior Vantage knowledge
 required.</p>
 <p><strong>Start here:</strong> <a href="./intro/step1-first-query.html">SQLite and the Query Builder</a></p>
