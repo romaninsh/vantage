@@ -38,7 +38,7 @@ async fn step(db: &SqliteDB, tick: u64) -> VantageResult<()> {
         .context("sell-out")?;
 
     // Every tenth tick a delivery restocks the bar.
-    if tick % 10 == 0 {
+    if tick.is_multiple_of(10) {
         let id = format!("d{tick}");
         sqlx::query(
             "INSERT INTO product (id, name, price, stock) VALUES ($1, $2, $3, $4)
