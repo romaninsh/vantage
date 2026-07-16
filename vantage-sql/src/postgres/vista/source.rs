@@ -19,8 +19,8 @@ use vantage_vista::{
 
 use crate::postgres::PostgresDB;
 use crate::postgres::operation::PostgresOperation;
-use crate::primitives::identifier::ident;
 use crate::postgres::types::AnyPostgresType;
+use crate::primitives::identifier::ident;
 use crate::types::{cbor_to_json, parse_json_host};
 
 pub struct PostgresTableShell<E = EmptyEntity>

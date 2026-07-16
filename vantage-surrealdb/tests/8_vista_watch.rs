@@ -65,9 +65,12 @@ async fn vista_watch_reports_insert_update_delete() -> TestResult {
         .await?;
 
     let db = SurrealDB::new(connect(&database).await);
-    let vista = SurrealVistaFactory::new(db.clone())
-        .from_table(product_table(db.clone(), &table_name))?;
-    assert!(vista.can_watch(), "surreal from_table vista should be watchable");
+    let vista =
+        SurrealVistaFactory::new(db.clone()).from_table(product_table(db.clone(), &table_name))?;
+    assert!(
+        vista.can_watch(),
+        "surreal from_table vista should be watchable"
+    );
 
     let mut stream = vista.watch().await?;
 
@@ -81,7 +84,10 @@ async fn vista_watch_reports_insert_update_delete() -> TestResult {
     match next_change(&mut stream).await {
         VistaChange::Inserted { id, value } => {
             assert!(id.ends_with(":negroni"), "unexpected id: {id}");
-            let name = value.get("name").map(|v| format!("{v:?}")).unwrap_or_default();
+            let name = value
+                .get("name")
+                .map(|v| format!("{v:?}"))
+                .unwrap_or_default();
             assert!(name.contains("Negroni"), "record should carry name: {name}");
         }
         other => panic!("expected Inserted, got {other:?}"),

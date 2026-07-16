@@ -269,7 +269,9 @@ impl SurrealConnection {
                 // access token is brokered out of band). `authenticate` takes the
                 // raw token; the `use` step below selects ns/db when configured.
                 let auth_params = CborValue::Array(vec![CborValue::Text(token.clone())]);
-                engine.send_message_cbor("authenticate", auth_params).await?;
+                engine
+                    .send_message_cbor("authenticate", auth_params)
+                    .await?;
             }
             _ => {
                 return Err(SurrealError::Connection(
@@ -285,9 +287,7 @@ impl SurrealConnection {
         // perform — SurrealDB answers `use` with an IAM `NotAllowed`. So skip `use`
         // for token auth and rely on the token's own scope.
         let is_token_auth = matches!(self.auth, Some(AuthParams::Token(_)));
-        if !is_token_auth
-            && let Some(namespace) = &self.namespace
-        {
+        if !is_token_auth && let Some(namespace) = &self.namespace {
             let use_params = CborValue::Array(vec![
                 CborValue::Text(namespace.clone()),
                 CborValue::Text(self.database.as_ref().unwrap_or(&String::new()).clone()),
