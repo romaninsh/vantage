@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.2 — 2026-07-16
+
+- Live subscriptions. `SurrealTableShell` implements `watch_vista` over
+  surreal-client's new `LIVE SELECT`, mapping each `CREATE`/`UPDATE`/`DELETE`
+  to a fine-grained `VistaChange`; a real-table vista advertises `can_subscribe`.
+  Each create/update re-reads the row through the same `get_vista_value` path the
+  initial snapshot uses, so a live update is byte-identical to the listing.
+- Fixed `replace` (and so `ActiveEntity::save` on a fresh record) silently doing
+  nothing. Since SurrealDB 2.0 a plain `UPDATE` on a non-existent record is a
+  no-op; `replace`'s contract is create-if-missing, so it now renders `UPSERT`
+  (new `SurrealUpdate::upsert()`).
+
 ## 0.6.1 — 2026-06-25
 
 - `AnySurrealType` declares `null_when: ciborium::Value::Null`, so it implements `InvariantValue`

@@ -13,6 +13,8 @@
 - [A Live API over SQL](./intro/step5-sql-dio.md)
   - [Serving & Watching Live Stock](./intro/step6-sql-watch.md)
   - [Moving to PostgreSQL](./intro/step7-sql-postgres.md)
+  - [Real-Time Push with LISTEN/NOTIFY](./intro/step8-sql-notify.md)
+  - [Switching to SurrealDB](./intro/step9-surreal.md)
 - [Historical Timeline](./history.md)
   - [What's New in 0.4](./whats-new-04.md)
   - [What's New in 0.5](./whats-new-in-05.md)

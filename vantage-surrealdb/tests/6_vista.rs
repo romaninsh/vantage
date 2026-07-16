@@ -227,7 +227,8 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
     assert!(caps.can_insert);
     assert!(caps.can_update);
     assert!(caps.can_delete);
-    assert!(!caps.can_subscribe);
+    // A read-write SurrealDB Vista is watchable via LIVE queries.
+    assert!(caps.can_subscribe);
     assert_eq!(vista.driver(), "surrealdb");
 
     Ok(())

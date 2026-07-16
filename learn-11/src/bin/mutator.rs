@@ -1,30 +1,30 @@
 //! The bar's till — a *separate process* from the server.
 //!
-//! Run the server (`cargo run -p learn-10`) and this (`cargo run -p learn-10
+//! Run the server (`cargo run -p learn-11`) and this (`cargo run -p learn-11
 //! --bin mutator`) side by side. The server never writes to `product`; every
 //! change on screen comes from this binary, through the database, via
-//! `LISTEN/NOTIFY`. That separation is the point: it proves the UI updates
-//! because the *database* changed, not because one process poked another.
+//! SurrealDB `LIVE SELECT`. That separation is the point: it proves the UI
+//! updates because the *database* changed, not because one process poked
+//! another.
 //!
-//! It makes exactly one change at a time — a single sale (or a delivery when
-//! the shelf runs low) — with a short *random* pause between them, so updates
-//! arrive irregularly and never look like a poll on a fixed interval. Stock
-//! only ever goes down; a drink that sells its last unit leaves the shelf.
-//!
-//! Writes go through Vantage's **active-entity** API: `list_entities()` hands
-//! back drinks that carry their own id and datasource, so selling one is just
-//! `drink.stock -= 1; drink.save()` and clearing it is `drink.delete()` — no
-//! table or id threaded through the call.
+//! This is the same till as the Postgres chapter — the only backend-specific
+//! lines are the datasource type and the `Thing` record id. Writes go through
+//! Vantage's **active-entity** API: `list_entities()` hands back drinks that
+//! carry their own id and datasource, so selling one is just
+//! `drink.stock -= 1; drink.save()` and clearing it is `drink.delete()`.
 
+use std::process::Termination;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use learn_10::db;
-use learn_10::product::Product;
+use learn_11::db;
+use learn_11::product::Product;
 use rand::Rng;
 use rand::seq::SliceRandom;
+use vantage_core::Result;
 use vantage_dataset::prelude::ActiveEntitySet;
-use vantage_sql::postgres::PostgresDB;
-use vantage_sql::prelude::*;
+use vantage_surrealdb::surrealdb::SurrealDB;
+use vantage_surrealdb::thing::Thing;
+use vantage_table::table::Table;
 
 /// The bar menu deliveries are drawn from: (name, price in cents).
 const MENU: &[(&str, i64)] = &[
@@ -58,9 +58,8 @@ async fn main() {
     }
 }
 
-async fn run() -> VantageResult<()> {
+async fn run() -> Result<()> {
     let db = db::connect().await?;
-    db::setup(&db).await?;
     println!("mutator running — one change at a time (Ctrl-C to stop)");
 
     let mut sold_since_delivery: i64 = 0;
@@ -70,7 +69,7 @@ async fn run() -> VantageResult<()> {
         let pause = rand::thread_rng().gen_range(200..1000);
         tokio::time::sleep(Duration::from_millis(pause)).await;
 
-        let table = Product::table(db.clone());
+        let table = Product::surreal_table(db.clone());
         // The whole shelf, as active entities — each knows how to save or
         // delete itself.
         let mut shelf = table.list_entities().await?;
@@ -105,16 +104,16 @@ async fn run() -> VantageResult<()> {
 }
 
 /// A delivery: a named drink arrives with a full crate of stock.
-async fn deliver(table: &Table<PostgresDB, Product>) -> VantageResult<()> {
-    let (name, price, stock, id) = {
+async fn deliver(table: &Table<SurrealDB, Product>) -> Result<()> {
+    let (name, price, stock, key) = {
         let mut r = rand::thread_rng();
         let (name, price) = *MENU.choose(&mut r).unwrap();
-        let id = format!("d{}", r.gen_range(0..1_000_000_000u32));
-        (name, price, r.gen_range(10..15), id)
+        let key = format!("d{}", r.gen_range(0..1_000_000_000u32));
+        (name, price, r.gen_range(10..15), key)
     };
     table
         .new_entity(
-            id,
+            Thing::new("product", key),
             Product {
                 name: name.to_string(),
                 price,

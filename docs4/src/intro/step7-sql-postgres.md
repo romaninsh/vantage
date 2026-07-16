@@ -129,7 +129,7 @@ sceneries, and the *same* watch adapter. That is the claim the whole guide was b
 stack above it is the one you just learned.
 ```
 
-From here the reference half of the book takes over — [SQL](../sql.md) for the dialect details,
-[Config-Driven Vistas](../config-driven-vistas.md) for defining all of this from YAML, and
-[Adding a New Persistence](../new-persistence.md) when your backend isn't one of the ones Vantage
-already speaks.
+There is still one thing left on the table. The app reconciles on a one-second timer — it re-reads
+the table whether or not anything changed, and it is always up to a beat behind. A file on disk
+can't do better; a *server* can. Next, we commit to Postgres and trade that poll for real-time
+push: the database tells us the moment a row changes.

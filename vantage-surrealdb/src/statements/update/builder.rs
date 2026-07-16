@@ -14,6 +14,7 @@ impl SurrealUpdate {
             mode: UpdateMode::Set,
             fields: indexmap::IndexMap::new(),
             conditions: Vec::new(),
+            upsert: false,
         }
     }
 
@@ -24,7 +25,16 @@ impl SurrealUpdate {
             mode: UpdateMode::Set,
             fields: indexmap::IndexMap::new(),
             conditions: Vec::new(),
+            upsert: false,
         }
+    }
+
+    /// Render as `UPSERT` instead of `UPDATE`, so the target record is created
+    /// when it doesn't already exist (plain `UPDATE` is a no-op on a missing
+    /// record since SurrealDB 2.0).
+    pub fn upsert(mut self) -> Self {
+        self.upsert = true;
+        self
     }
 
     /// Switch to CONTENT mode: replaces all fields on the target record.

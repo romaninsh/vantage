@@ -346,7 +346,14 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let update = SurrealUpdate::new(id.clone()).content().with_record(record);
+        // `replace` must create the row when it's missing (its documented
+        // contract, and what `ActiveEntity::save` relies on). A plain `UPDATE`
+        // is a no-op on a non-existent record since SurrealDB 2.0, so use
+        // `UPSERT`.
+        let update = SurrealUpdate::new(id.clone())
+            .upsert()
+            .content()
+            .with_record(record);
         let result = self.execute(&update.expr()).await?;
         let map = extract_first_map(result)?;
         let id_field = table

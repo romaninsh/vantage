@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.10 — 2026-07-16
+
+- Live subscriptions. A driver that can push changes advertises the existing
+  `VistaCapabilities::can_subscribe` and implements `TableShell::watch_vista`,
+  surfaced as `Vista::watch()` → a stream of `VistaChange` (`Inserted`/`Updated`/
+  `Deleted` carrying the projected row, or a coarse `Invalidated`) plus
+  `Vista::can_watch()`. The default `watch_vista` refuses via the standard
+  capability error, so non-watchable drivers are unaffected.
+
 ## 0.6.9 — 2026-07-15
 
 - `vantage_vista::prelude` — one use-line for consumers: `Vista`,

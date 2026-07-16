@@ -16,6 +16,7 @@
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
+use surreal_client::Action;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_table::conditions::ConditionHandle;
@@ -26,7 +27,7 @@ use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Entity, Record};
 use vantage_vista::{
     Column as VistaColumn, ContainedSpec, Reference as VistaReference, SortDirection, TableShell,
-    Vista, VistaCapabilities, VistaMetadata,
+    Vista, VistaCapabilities, VistaChange, VistaChangeStream, VistaMetadata,
 };
 
 use crate::identifier::Identifier;
@@ -412,6 +413,54 @@ where
             None
         };
         Ok((records, next_token))
+    }
+
+    /// Watch the wrapped table with a SurrealDB `LIVE SELECT` and stream each
+    /// change as a [`VistaChange`].
+    ///
+    /// SurrealDB delivers `CREATE`/`UPDATE`/`DELETE` frames carrying the
+    /// affected record's `Thing`. To guarantee a live-updated row is byte-for-
+    /// byte the same shape as the initial `list_vista_values` snapshot (so the
+    /// consumer's index doesn't see a phantom second key), each `CREATE`/`UPDATE`
+    /// re-reads the row through [`get_vista_value`](Self::get_vista_value)'s exact
+    /// path rather than reshaping the pushed payload. `DELETE` needs no read.
+    ///
+    /// The subscription follows the whole table; a narrowed vista's conditions
+    /// are honoured by the consumer's cache/scenery, not pushed into the LIVE
+    /// query (a v1 limitation — fine for an unconditioned master).
+    async fn watch_vista(&self, _vista: &Vista) -> Result<VistaChangeStream> {
+        let table_name = self.table.table_name().to_string();
+        let live = self.table.data_source().live(&table_name).await?;
+        let table = self.table.clone();
+
+        let stream = async_stream::try_stream! {
+            let mut live = live;
+            while let Some(note) = live.recv().await {
+                let Some(thing) = Thing::from_cbor(note.record_id.clone()) else {
+                    continue;
+                };
+                let id = thing.to_string();
+                match note.action {
+                    Action::Delete => yield VistaChange::Deleted { id },
+                    Action::Create | Action::Update => {
+                        // Re-read the authoritative, projected row.
+                        match table.get_value(thing.clone()).await? {
+                            Some(record) => {
+                                let value = to_cbor_record(record);
+                                if note.action == Action::Create {
+                                    yield VistaChange::Inserted { id, value };
+                                } else {
+                                    yield VistaChange::Updated { id, value };
+                                }
+                            }
+                            // Gone between notification and read — treat as removed.
+                            None => yield VistaChange::Deleted { id },
+                        }
+                    }
+                }
+            }
+        };
+        Ok(Box::pin(stream))
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
