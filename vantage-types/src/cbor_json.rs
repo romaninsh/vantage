@@ -71,6 +71,47 @@ pub struct PlainDialect;
 
 impl CborDialect for PlainDialect {}
 
+/// Human-facing presentation of tagged CBOR, as used by grids, scripts
+/// and MCP surfaces: SurrealDB record ids (`Tag(8)`) render as
+/// `"table:id"`, `NONE` (`Tag(6)`) as `null`, datetimes / UUIDs /
+/// decimals / durations (`Tag(0|9|10|13)`) keep their inner text, and
+/// binary UUIDs (`Tag(37)`) render as hex. Everything else follows the
+/// [`PlainDialect`] defaults.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PresentationDialect;
+
+impl CborDialect for PresentationDialect {
+    fn tag_to_json(&self, tag: u64, inner: CborValue) -> JsonValue {
+        match (tag, inner) {
+            // SurrealDB record id: Tag(8, [table, id]) -> "table:id",
+            // stringifying a non-text id part (`user:42`).
+            (8, CborValue::Array(parts)) if parts.len() == 2 => {
+                let mut it = parts.into_iter();
+                let (table, id) = (it.next().expect("len 2"), it.next().expect("len 2"));
+                match (table, id) {
+                    (CborValue::Text(t), CborValue::Text(i)) => JsonValue::String(format!("{t}:{i}")),
+                    (CborValue::Text(t), other) => {
+                        JsonValue::String(format!("{t}:{}", cbor_to_string(self, &other)))
+                    }
+                    (a, b) => JsonValue::Array(vec![
+                        cbor_to_json(self, a),
+                        cbor_to_json(self, b),
+                    ]),
+                }
+            }
+            // SurrealDB NONE marker.
+            (6, _) => JsonValue::Null,
+            // RFC 3339 datetime (0), UUID (9), Decimal (10), Duration (13)
+            // — all carry their displayable form as the inner text.
+            (0 | 9 | 10 | 13, CborValue::Text(s)) => JsonValue::String(s),
+            // UUID carried as raw bytes.
+            (37, CborValue::Bytes(b)) => JsonValue::String(hex_encode(&b)),
+            // Anything else: drop the tag, render the payload.
+            (_, inner) => cbor_to_json(self, inner),
+        }
+    }
+}
+
 /// Convert a CBOR value to JSON under the given dialect.
 ///
 /// Total — never panics, never fails. What JSON cannot express is
@@ -300,6 +341,38 @@ mod tests {
                 CborValue::Tag(1, Box::new(CborValue::Bytes(vec![1, 2])))
             ),
             json!("b64:2")
+        );
+    }
+
+    #[test]
+    fn presentation_dialect_renders_surreal_tags() {
+        let thing = CborValue::Tag(
+            8,
+            Box::new(CborValue::Array(vec![
+                CborValue::Text("client".into()),
+                CborValue::Text("abc".into()),
+            ])),
+        );
+        assert_eq!(
+            cbor_to_json(&PresentationDialect, thing),
+            json!("client:abc")
+        );
+        let none = CborValue::Tag(6, Box::new(CborValue::Null));
+        assert_eq!(cbor_to_json(&PresentationDialect, none), JsonValue::Null);
+        let dec = CborValue::Tag(10, Box::new(CborValue::Text("12.34".into())));
+        assert_eq!(cbor_to_json(&PresentationDialect, dec), json!("12.34"));
+        let uuid = CborValue::Tag(37, Box::new(CborValue::Bytes(vec![0xab, 0xcd])));
+        assert_eq!(cbor_to_json(&PresentationDialect, uuid), json!("abcd"));
+        let numeric_id = CborValue::Tag(
+            8,
+            Box::new(CborValue::Array(vec![
+                CborValue::Text("user".into()),
+                CborValue::Integer(42.into()),
+            ])),
+        );
+        assert_eq!(
+            cbor_to_json(&PresentationDialect, numeric_id),
+            json!("user:42")
         );
     }
 
