@@ -34,6 +34,19 @@
       const FULL = 12; // a full crate, for the stock bar scale
       const money = (c) => `$${(c / 100).toFixed(2)}`;
 
+      // The id can be a plain string (SQL) or a tagged/compound value like a
+      // SurrealDB Thing, e.g. { "@@TAGGED@@": [8, ["product", "d123"]] }.
+      // Normalise either to a stable string key. (Not part of Vantage — just
+      // this UI, which is identical across every backend.)
+      function idOf(o) {
+        const raw = o.id;
+        if (raw && typeof raw === "object" && raw["@@TAGGED@@"]) {
+          const inner = raw["@@TAGGED@@"][1];
+          if (Array.isArray(inner)) return inner.join(":");
+        }
+        return typeof raw === "string" ? raw : JSON.stringify(raw);
+      }
+
       function tone(stock) {
         if (stock <= 0) return { bar: "#475569", ring: "border-slate-700", label: "text-slate-500" };
         if (stock <= 3) return { bar: "#f43f5e", ring: "border-rose-500/40", label: "text-rose-300" };
@@ -95,18 +108,19 @@
                 for (const line of lines) {
                   if (!line.trim()) continue;
                   const { type, object: o } = JSON.parse(line);
+                  const id = idOf(o);
                   if (type === "DELETED") {
                     // A drink left the shelf — dispose of it with an animation.
-                    setItems((m) => { const n = { ...m }; delete n[o.id]; return n; });
-                    setLeaving((m) => ({ ...m, [o.id]: o }));
-                    clearTimeout(timers[o.id]);
-                    timers[o.id] = setTimeout(() => {
-                      setLeaving((m) => { const n = { ...m }; delete n[o.id]; return n; });
+                    setItems((m) => { const n = { ...m }; delete n[id]; return n; });
+                    setLeaving((m) => ({ ...m, [id]: o }));
+                    clearTimeout(timers[id]);
+                    timers[id] = setTimeout(() => {
+                      setLeaving((m) => { const n = { ...m }; delete n[id]; return n; });
                     }, 500);
                   } else {
                     // ADDED / MODIFIED — upsert, and cancel any pending disposal.
-                    setLeaving((m) => { if (!(o.id in m)) return m; const n = { ...m }; delete n[o.id]; return n; });
-                    setItems((m) => ({ ...m, [o.id]: o }));
+                    setLeaving((m) => { if (!(id in m)) return m; const n = { ...m }; delete n[id]; return n; });
+                    setItems((m) => ({ ...m, [id]: o }));
                   }
                 }
               }
@@ -136,7 +150,7 @@
               <div>
                 <h1 className="text-3xl font-bold tracking-tight">🍸 The Vantage Bar</h1>
                 <p className="mt-1 text-slate-400">
-                  Live inventory over a watch stream — Postgres <code className="text-slate-300">LISTEN/NOTIFY</code>.
+                  Live inventory over a watch stream — pushed, never polled.
                 </p>
               </div>
               <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
@@ -149,7 +163,7 @@
               <p className="text-slate-500">Waiting for the shelf… (run the mutator to stock it)</p>
             ) : (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {list.map((p) => <Card key={p.id} p={p} />)}
+                {list.map((p) => <Card key={idOf(p)} p={p} />)}
               </div>
             )}
 

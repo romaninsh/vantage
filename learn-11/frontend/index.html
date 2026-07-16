@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>The Vantage Bar — live inventory (SurrealDB)</title>
+    <title>The Vantage Bar — live inventory</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -34,9 +34,10 @@
       const FULL = 12; // a full crate, for the stock bar scale
       const money = (c) => `$${(c / 100).toFixed(2)}`;
 
-      // SurrealDB ids arrive as a tagged Thing, e.g.
-      // { "@@TAGGED@@": [8, ["product", "d123"]] }. Normalise to "product:d123"
-      // so it's a stable string key. (Not part of Vantage — just this UI.)
+      // The id can be a plain string (SQL) or a tagged/compound value like a
+      // SurrealDB Thing, e.g. { "@@TAGGED@@": [8, ["product", "d123"]] }.
+      // Normalise either to a stable string key. (Not part of Vantage — just
+      // this UI, which is identical across every backend.)
       function idOf(o) {
         const raw = o.id;
         if (raw && typeof raw === "object" && raw["@@TAGGED@@"]) {
@@ -149,7 +150,7 @@
               <div>
                 <h1 className="text-3xl font-bold tracking-tight">🍸 The Vantage Bar</h1>
                 <p className="mt-1 text-slate-400">
-                  Live inventory over a watch stream — SurrealDB <code className="text-slate-300">LIVE SELECT</code>.
+                  Live inventory over a watch stream — pushed, never polled.
                 </p>
               </div>
               <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
