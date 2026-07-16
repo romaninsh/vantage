@@ -2,12 +2,16 @@
 pub use vantage_types_entity::entity;
 
 // Include type_system module with regular macros
+#[cfg(feature = "serde")]
+pub mod cbor_json;
 pub mod null;
 pub mod prelude;
 pub mod record;
 pub mod terminal_render;
 pub mod type_system;
 
+#[cfg(feature = "serde")]
+pub use cbor_json::{CborDialect, PlainDialect, cbor_to_json, cbor_to_string, json_to_cbor};
 pub use null::InvariantValue;
 pub use record::{IntoRecord, Record, TryFromRecord, TryIntoRecord};
 pub use terminal_render::{RichText, Span, Style, TerminalRender};
