@@ -96,41 +96,6 @@ pub(crate) fn map_to_record(map: RhaiMap) -> Result<Record<CborValue>, Box<EvalA
     Ok(out.into_iter().collect())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn tagged_record_id_renders_as_table_colon_id() {
-        // A SurrealDB Thing used to degrade to UNIT here, so the same row
-        // rendered differently in a data script than in the UI grid.
-        let thing = CborValue::Tag(
-            8,
-            Box::new(CborValue::Array(vec![
-                CborValue::Text("user".into()),
-                CborValue::Text("1".into()),
-            ])),
-        );
-        assert_eq!(cbor_to_dynamic(&thing).into_string().unwrap(), "user:1");
-    }
-
-    #[test]
-    fn tagged_datetime_renders_inner_text() {
-        let dt = CborValue::Tag(0, Box::new(CborValue::Text("2026-01-01T00:00:00Z".into())));
-        assert_eq!(
-            cbor_to_dynamic(&dt).into_string().unwrap(),
-            "2026-01-01T00:00:00Z"
-        );
-    }
-
-    #[test]
-    fn big_integer_becomes_decimal_string_not_wraparound() {
-        let n = i128::from(i64::MIN) - 1;
-        let big = CborValue::Integer(n.try_into().unwrap());
-        assert_eq!(cbor_to_dynamic(&big).into_string().unwrap(), n.to_string());
-    }
-}
-
 /// Rhai `Dynamic` → `serde_json::Value` for handing a script's result back to a
 /// caller (e.g. over MCP). `rhai` is built without its `serde` feature, so the
 /// conversion is explicit; unknown types fall back to their display string.
@@ -169,4 +134,39 @@ pub(crate) fn dynamic_to_json(d: &Dynamic) -> serde_json::Value {
         return Value::Object(obj);
     }
     Value::String(d.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tagged_record_id_renders_as_table_colon_id() {
+        // A SurrealDB Thing used to degrade to UNIT here, so the same row
+        // rendered differently in a data script than in the UI grid.
+        let thing = CborValue::Tag(
+            8,
+            Box::new(CborValue::Array(vec![
+                CborValue::Text("user".into()),
+                CborValue::Text("1".into()),
+            ])),
+        );
+        assert_eq!(cbor_to_dynamic(&thing).into_string().unwrap(), "user:1");
+    }
+
+    #[test]
+    fn tagged_datetime_renders_inner_text() {
+        let dt = CborValue::Tag(0, Box::new(CborValue::Text("2026-01-01T00:00:00Z".into())));
+        assert_eq!(
+            cbor_to_dynamic(&dt).into_string().unwrap(),
+            "2026-01-01T00:00:00Z"
+        );
+    }
+
+    #[test]
+    fn big_integer_becomes_decimal_string_not_wraparound() {
+        let n = i128::from(i64::MIN) - 1;
+        let big = CborValue::Integer(n.try_into().unwrap());
+        assert_eq!(cbor_to_dynamic(&big).into_string().unwrap(), n.to_string());
+    }
 }
