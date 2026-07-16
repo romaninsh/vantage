@@ -78,8 +78,8 @@ S3 path serves the NOAA bucket with.
 position**. So a delivery that grows the shelf appears as an `ADDED` at a new index, but a product
 that *sells out* shows up as the list shrinking and the rows below it shifting up (each shifted
 index reported as `MODIFIED`), not as an explicit removal. A watch client reconstructs "gone" from
-the shrinking `total`. Translating removals into a `DELETED` line would mean extending the adapter —
-a fair exercise, and a reminder that the adapter is ordinary code, not framework magic.
+the shrinking `total`. Getting a real `DELETED` line is a one-call opt-in — key the watch by
+identity with `.key_by("id")` — which the [live-push chapter](./step8-sql-notify.md) turns on.
 ```
 
 ## It really is the database
