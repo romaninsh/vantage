@@ -115,6 +115,13 @@ pub struct WsCborEngine {
 
 impl WsCborEngine {
     pub async fn from_connection(connect: &SurrealConnection) -> Result<Self> {
+        // rustls 0.23 needs a process-wide crypto provider before any `wss://`
+        // handshake. Install ring once; a competing prior install is fine.
+        static TLS_PROVIDER: std::sync::Once = std::sync::Once::new();
+        TLS_PROVIDER.call_once(|| {
+            let _ = rustls::crypto::ring::default_provider().install_default();
+        });
+
         let base_url = connect
             .url
             .as_ref()
