@@ -3,12 +3,12 @@ use vantage_types::prelude::*;
 
 // The `#[entity]` marker below expands to impls over the backend's value type
 // (`AnySqliteType` / `AnyPostgresType`); bring the selected one into scope.
-#[cfg(not(feature = "pg"))]
-#[allow(unused_imports)]
-use vantage_sql::sqlite::AnySqliteType;
 #[cfg(feature = "pg")]
 #[allow(unused_imports)]
 use vantage_sql::postgres::AnyPostgresType;
+#[cfg(not(feature = "pg"))]
+#[allow(unused_imports)]
+use vantage_sql::sqlite::AnySqliteType;
 
 use crate::db::Db;
 

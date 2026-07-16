@@ -90,7 +90,12 @@ async fn run() -> Result<()> {
                 drink.delete().await?;
             } else {
                 drink.stock -= 1;
-                println!("🍸 sold {}: {} → {}", drink.name, drink.stock + 1, drink.stock);
+                println!(
+                    "🍸 sold {}: {} → {}",
+                    drink.name,
+                    drink.stock + 1,
+                    drink.stock
+                );
                 drink.save().await?;
             }
             sold_since_delivery += 1;

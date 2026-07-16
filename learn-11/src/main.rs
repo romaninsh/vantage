@@ -31,8 +31,8 @@ async fn run() -> Result<()> {
 
     // Order the shelf by creation time, so a drink keeps its place as it sells
     // and new deliveries append at the end.
-    let mut master = SurrealVistaFactory::new(db.clone())
-        .from_table(Product::surreal_table(db.clone()))?;
+    let mut master =
+        SurrealVistaFactory::new(db.clone()).from_table(Product::surreal_table(db.clone()))?;
     master.add_order("created", SortDirection::Ascending)?;
 
     // Eager cache, no refresh timer: `dio.watch()` reconciles the instant a

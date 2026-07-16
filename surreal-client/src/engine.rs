@@ -4,8 +4,8 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 
 use super::error::Result;
-use crate::live::Notification;
 use crate::SurrealError;
+use crate::live::Notification;
 
 /// Wire abstraction for SurrealDB RPC. The CBOR method is the real wire path;
 /// the JSON method is a default convenience that transcodes through it.

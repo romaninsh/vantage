@@ -21,8 +21,8 @@ use tokio_tungstenite::tungstenite::http::header::SEC_WEBSOCKET_PROTOCOL;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
 use tracing::{Instrument as _, warn};
 
-use crate::live::{Action, Notification};
 use crate::SurrealConnection;
+use crate::live::{Action, Notification};
 use crate::{
     engine::Engine,
     error::{Result, SurrealError},
