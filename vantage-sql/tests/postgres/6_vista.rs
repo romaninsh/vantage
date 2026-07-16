@@ -547,3 +547,36 @@ fn numeric(v: Option<&CborValue>) -> Option<i64> {
         _ => None,
     }
 }
+
+#[tokio::test]
+async fn vista_add_order_ascending_descending_and_clear() -> TestResult {
+    use vantage_vista::SortDirection;
+
+    let (db, name) = setup("order").await;
+    let table = product_table(db.clone(), &name);
+    let mut vista = db.vista_factory().from_table(table)?;
+
+    // A table-sourced Postgres Vista advertises ordering and flags every column
+    // ORDERABLE, so `add_order` works without going through YAML.
+    assert!(vista.capabilities().can_order);
+
+    // sort ascending by price → a (10), b (20), c (30)
+    vista.add_order("price", SortDirection::Ascending)?;
+    let rows = vista.list_values().await?;
+    let ids: Vec<&String> = rows.keys().collect();
+    assert_eq!(ids, ["a", "b", "c"]);
+
+    // replace-semantics: switch to descending name → c (Gamma), b (Beta), a (Alpha)
+    vista.add_order("name", SortDirection::Descending)?;
+    let rows = vista.list_values().await?;
+    let ids: Vec<&String> = rows.keys().collect();
+    assert_eq!(ids, ["c", "b", "a"]);
+
+    // clear → every row still present (order unconstrained)
+    vista.clear_orders()?;
+    let rows = vista.list_values().await?;
+    let mut ids: Vec<String> = rows.keys().cloned().collect();
+    ids.sort();
+    assert_eq!(ids, ["a", "b", "c"]);
+    Ok(())
+}
