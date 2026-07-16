@@ -1,0 +1,20 @@
+[package]
+name = "learn-9"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[features]
+default = ["sqlite"]
+sqlite = ["vantage-sql/sqlite"]
+pg = ["vantage-sql/postgres"]
+
+[dependencies]
+vantage-api-adapters = { path = "../vantage-api-adapters", features = ["axum"] }
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+vantage-sql = { path = "../vantage-sql", default-features = false, features = ["vista"] }
+vantage-diorama = { path = "../vantage-diorama" }
+vantage-types = { path = "../vantage-types" }
+vantage-core = { path = "../vantage-core" }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio"] }
