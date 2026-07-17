@@ -377,16 +377,30 @@ async fn dropping_a_scenery_withdraws_its_queued_ids() {
 
     drop(scenery);
     fx.gate.add_permits(64);
-    tokio::time::sleep(Duration::from_millis(100)).await;
 
+    // The fetch already in flight (r0) completes and lands in cache. Poll
+    // for it rather than sleeping a fixed interval — a slow CI runner can
+    // take longer than any fixed window (`eventually` can't await the
+    // async cache read, hence the inline loop).
+    let mut landed = false;
+    for _ in 0..200 {
+        let r0 = fx.dio.cache().get_value("r0").await.unwrap().unwrap();
+        if r0.get("size").is_some() {
+            landed = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert!(landed, "in-flight fetch landed in cache");
+
+    // Quiescence window: after the withdrawal nothing else may fetch.
+    tokio::time::sleep(Duration::from_millis(100)).await;
     let log = fx.log.lock().unwrap().clone();
     assert_eq!(
         log,
         vec!["r0".to_string()],
         "only the in-flight fetch ran; queued ids were withdrawn"
     );
-    let r0 = fx.dio.cache().get_value("r0").await.unwrap().unwrap();
-    assert!(r0.get("size").is_some(), "in-flight fetch landed in cache");
     let r1 = fx.dio.cache().get_value("r1").await.unwrap().unwrap();
     assert!(r1.get("size").is_none(), "withdrawn row was never fetched");
 }
