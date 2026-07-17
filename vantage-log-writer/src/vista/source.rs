@@ -37,7 +37,7 @@ fn cbor_record_to_json(record: &Record<CborValue>) -> Record<Value> {
     record
         .iter()
         .map(|(k, v)| {
-            let json = serde_json::to_value(v).unwrap_or(Value::Null);
+            let json = vantage_types::cbor_to_json(&vantage_types::PlainDialect, v.clone());
             (k.clone(), json)
         })
         .collect()
@@ -103,10 +103,7 @@ impl TableShell for LogWriterTableShell {
         let stored = self.table.insert_value(id, &json_record).await?;
         Ok(stored
             .into_iter()
-            .map(|(k, v)| {
-                let cbor = ciborium::Value::serialized(&v).unwrap_or(ciborium::Value::Null);
-                (k, cbor)
-            })
+            .map(|(k, v)| (k, vantage_types::json_to_cbor(v)))
             .collect())
     }
 

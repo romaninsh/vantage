@@ -172,8 +172,9 @@ impl From<JsonValue> for AnySqliteType {
         if val.is_null() {
             return AnySqliteType::untyped(CborValue::Null);
         }
-        let cbor = json_to_cbor(val);
-        AnySqliteType::from_cbor(&cbor).expect("json_to_cbor produced unconvertible CBOR")
+        // json_to_cbor is total and From<CborValue> classifies without
+        // failing — no panic path.
+        AnySqliteType::from(json_to_cbor(val))
     }
 }
 

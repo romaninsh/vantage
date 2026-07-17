@@ -285,11 +285,14 @@ impl VantageTableAdapter {
                     .map(|name| match record.get(name) {
                         // Vista carries Record<ciborium::Value>; convert to
                         // serde_json::Value once for the existing cell
-                        // mapper. Lossy bits (binary/tags) fall through to
-                        // serde's default JSON representation.
+                        // mapper. The presentation dialect renders tagged
+                        // values (record ids, datetimes) as their display
+                        // text instead of nulling them.
                         Some(value) => {
-                            let json =
-                                serde_json::to_value(value).unwrap_or(serde_json::Value::Null);
+                            let json = vantage_types::cbor_to_json(
+                                &vantage_types::PresentationDialect,
+                                value.clone(),
+                            );
                             json_to_cell(&json)
                         }
                         None => CellValue::Null,

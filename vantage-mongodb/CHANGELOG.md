@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.2 — 2026-07-16
+
+- `AnyMongoType`'s CBOR bridge uses the same structural bson↔cbor converters as the
+  Vista source (now un-gated in `types::cbor`; the `vista::cbor` path re-exports), so
+  both surfaces render values identically — ObjectId as its hex string, Binary as bytes.
+  Previously the bridge round-tripped through serde_json and collapsed tagged values to
+  `null`.
+- The JSON bridge no longer panics on malformed extended JSON (`{"$oid": …}` with a bad
+  payload) or unserializable BSON — both fall back to the structural conversion.
+
 ## 0.6.1 — 2026-06-25
 
 - `AnyMongoType` declares `null_when: bson::Bson::Null`, so it implements `InvariantValue`

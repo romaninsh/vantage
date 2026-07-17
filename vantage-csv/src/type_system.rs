@@ -339,21 +339,20 @@ pub fn record_to_json(
 //
 // `AnyTable` carries `Record<ciborium::Value>` across the type-erased
 // boundary. CSV is a string-based format with no native CBOR
-// representation; we round-trip via JSON so we get the same lossy
-// behaviour as the JSON bridge above (binary → "[binary]" etc., handled
-// by serde's CBOR↔JSON conversion).
+// representation; we route through JSON so we get the same lossy
+// behaviour as the JSON bridge above. The shared walker is total —
+// tagged CBOR values render their payload instead of collapsing to
+// Null (the failure mode of the serde round-trip this used to use).
 
 impl From<ciborium::Value> for AnyCsvType {
     fn from(v: ciborium::Value) -> Self {
-        let json: serde_json::Value = serde_json::to_value(&v).unwrap_or(serde_json::Value::Null);
-        AnyCsvType::from(json)
+        AnyCsvType::from(vantage_types::cbor_to_json(&vantage_types::PlainDialect, v))
     }
 }
 
 impl From<AnyCsvType> for ciborium::Value {
     fn from(csv: AnyCsvType) -> Self {
-        let json = serde_json::Value::from(csv);
-        ciborium::Value::serialized(&json).unwrap_or(ciborium::Value::Null)
+        vantage_types::json_to_cbor(serde_json::Value::from(csv))
     }
 }
 

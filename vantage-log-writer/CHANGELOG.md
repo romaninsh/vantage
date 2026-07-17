@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1 — unreleased
+
+- CBOR↔JSON at the insert boundary uses the shared `vantage-types` walker; tagged
+  values no longer collapse to `null`.
+
 ## 0.6.0 — unreleased
 
 - Coordinated 0.6 release; internal dependencies realigned to 0.6. No public API changes.

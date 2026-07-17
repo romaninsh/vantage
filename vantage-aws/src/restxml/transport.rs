@@ -350,26 +350,11 @@ fn query_part_encode(s: &str) -> String {
     out
 }
 
-/// Render a CBOR scalar for use in a path / query string. Matches the
-/// shape of `condition::cbor_to_string` — kept local to avoid making
-/// that module's helper public.
+/// Render a CBOR scalar for use in a path / query string: scalars bare,
+/// compound values (which shouldn't reach here for REST APIs) as their
+/// JSON rendering so we don't drop data silently.
 fn cbor_scalar_to_string(v: &ciborium::Value) -> String {
-    match v {
-        ciborium::Value::Text(s) => s.clone(),
-        ciborium::Value::Integer(i) => {
-            let n: i128 = (*i).into();
-            n.to_string()
-        }
-        ciborium::Value::Float(f) => f.to_string(),
-        ciborium::Value::Bool(b) => b.to_string(),
-        ciborium::Value::Null => String::new(),
-        // Compound values shouldn't reach here for REST APIs, but
-        // defensively render via JSON so we don't drop data silently.
-        other => other
-            .deserialized::<serde_json::Value>()
-            .map(|v| v.to_string())
-            .unwrap_or_default(),
-    }
+    vantage_types::cbor_to_string(&vantage_types::PlainDialect, v)
 }
 
 #[cfg(test)]

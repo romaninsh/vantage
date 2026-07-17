@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.4 — 2026-07-16
+
+- CBOR→JSON conversion is the shared `vantage-types` walker under a local
+  `SurrealDialect`; tag rendering unchanged (record ids, compact datetimes/durations,
+  UUIDs, decimals). `From<JsonValue>` no longer carries an `.expect()` panic path, and
+  the commented-out legacy converters are gone.
+
 ## 0.6.3 — 2026-07-16
 
 - Fixed `AnySurrealType`'s JSON conversion dropping CBOR tags. `From<AnySurrealType> for

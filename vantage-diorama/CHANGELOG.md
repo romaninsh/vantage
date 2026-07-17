@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.19 — 2026-07-17
+
+- Docs: qualify the `VistaChange` intra-doc link in `Dio::watch` (rustdoc
+  `-D warnings` under 1.97).
+
 ## 0.6.18 — 2026-07-16
 
 - `Dio::watch()` — transparent live updates. When the master Vista advertises

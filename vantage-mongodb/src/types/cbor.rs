@@ -1,4 +1,5 @@
-//! BSON ↔ CBOR bridge used by the Vista source.
+//! BSON ↔ CBOR bridge used by the Vista source and the `AnyMongoType`
+//! CBOR conversions.
 //!
 //! Lossy paths (`ObjectId`, `DateTime`, `Decimal128`, `Regex`, `JavaScriptCode`,
 //! `Symbol`) collapse to a string representation; `Timestamp` becomes a CBOR

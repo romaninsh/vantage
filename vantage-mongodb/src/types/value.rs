@@ -135,39 +135,48 @@ impl Expressive<AnyMongoType> for AnyMongoType {
     }
 }
 // Into<serde_json::Value> for AnyTable::from_table() bridge.
-// Uses serde round-trip: Bson -> serde_json::Value via Bson's Serialize impl,
-// and serde_json::Value -> Bson via Bson's Deserialize impl.
+// Uses serde: Bson -> serde_json::Value via Bson's Serialize impl (extended
+// JSON for ObjectId/DateTime/…), and serde_json::Value -> Bson via Bson's
+// Deserialize impl. Neither direction panics: the rare failure falls back
+// to the structural bson<->cbor bridge instead of `.expect()`.
 impl From<AnyMongoType> for serde_json::Value {
     fn from(val: AnyMongoType) -> Self {
-        // Bson implements Serialize, serde_json::Value implements Deserialize
-        serde_json::to_value(val.into_value()).expect("Bson value should always serialize to JSON")
+        let bson = val.into_value();
+        serde_json::to_value(&bson).unwrap_or_else(|_| {
+            vantage_types::cbor_to_json(
+                &vantage_types::PlainDialect,
+                crate::types::cbor::bson_to_cbor(&bson),
+            )
+        })
     }
 }
 
 impl From<serde_json::Value> for AnyMongoType {
     fn from(val: serde_json::Value) -> Self {
-        // serde_json::Value implements Serialize, Bson implements Deserialize
-        let bson: bson::Bson =
-            serde_json::from_value(val).expect("JSON value should always deserialize to Bson");
+        // Deserialize from the borrow (`&Value` is a `Deserializer`) so the
+        // value stays available for the fallback: Bson's Deserialize rejects
+        // malformed extended JSON (e.g. `{"$oid": "not-a-hex-id"}`), and we
+        // fall back to the structural conversion instead of panicking.
+        use serde::Deserialize as _;
+        let bson = bson::Bson::deserialize(&val).unwrap_or_else(|_| {
+            crate::types::cbor::cbor_to_bson(&vantage_types::json_to_cbor(val))
+        });
         AnyMongoType::untyped(bson)
     }
 }
 
-// CBOR bridge for `AnyTable` interop. Round-trips via serde_json since
-// neither bson nor ciborium has a direct conversion path; both are
-// serde-friendly so the round-trip is short and lossy in the same way as
-// the JSON bridge above (binary, NaN, etc. fall back to their JSON
-// representation).
+// CBOR bridge for `AnyTable` interop — the same structural bson<->cbor
+// bridge the Vista source uses, so both surfaces render values identically
+// (ObjectId as its hex string, Binary as bytes). The previous serde_json
+// round-trip collapsed any tagged CBOR value to Null.
 impl From<AnyMongoType> for ciborium::Value {
     fn from(val: AnyMongoType) -> Self {
-        let json: serde_json::Value = val.into();
-        ciborium::Value::serialized(&json).unwrap_or(ciborium::Value::Null)
+        crate::types::cbor::bson_to_cbor(&val.into_value())
     }
 }
 
 impl From<ciborium::Value> for AnyMongoType {
     fn from(val: ciborium::Value) -> Self {
-        let json: serde_json::Value = serde_json::to_value(&val).unwrap_or(serde_json::Value::Null);
-        AnyMongoType::from(json)
+        AnyMongoType::untyped(crate::types::cbor::cbor_to_bson(&val))
     }
 }

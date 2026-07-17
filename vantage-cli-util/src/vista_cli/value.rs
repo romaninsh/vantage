@@ -122,31 +122,7 @@ pub fn auto_detect(value: &str) -> CborValue {
 /// Lossless for the JSON type set (the JSON Number's int-vs-float
 /// distinction maps onto CBOR's `Integer` vs `Float`).
 pub fn json_to_cbor(j: serde_json::Value) -> CborValue {
-    use serde_json::Value as J;
-    match j {
-        J::Null => CborValue::Null,
-        J::Bool(b) => CborValue::Bool(b),
-        J::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                CborValue::Integer(i.into())
-            } else if let Some(u) = n.as_u64() {
-                // u64 in (i64::MAX, u64::MAX]; `ciborium::value::Integer`
-                // takes a `u64` directly.
-                CborValue::Integer(u.into())
-            } else if let Some(f) = n.as_f64() {
-                CborValue::Float(f)
-            } else {
-                CborValue::Null
-            }
-        }
-        J::String(s) => CborValue::Text(s),
-        J::Array(arr) => CborValue::Array(arr.into_iter().map(json_to_cbor).collect()),
-        J::Object(map) => CborValue::Map(
-            map.into_iter()
-                .map(|(k, v)| (CborValue::Text(k), json_to_cbor(v)))
-                .collect(),
-        ),
-    }
+    vantage_types::cbor_json::json_to_cbor(j)
 }
 
 /// Parse a comma-separated value list for `field:in=a,b,c`. Each

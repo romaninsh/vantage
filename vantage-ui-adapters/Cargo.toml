@@ -13,7 +13,7 @@ thiserror = "2.0"
 async-trait = "0.1"
 vantage-table = { path = "../vantage-table" }
 vantage-dataset = { path = "../vantage-dataset" }
-vantage-types = { path = "../vantage-types" }
+vantage-types = { path = "../vantage-types", features = ["serde"] }
 vantage-vista = { path = "../vantage-vista" }
 vantage-diorama = { path = "../vantage-diorama", optional = true }
 ciborium = "0.2"

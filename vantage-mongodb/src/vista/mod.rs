@@ -9,11 +9,13 @@
 //! BSON values surface to consumers as CBOR; ObjectIds stringify at the
 //! `Vista` boundary (matching how `MongoId` already serializes for HTTP).
 
-pub mod cbor;
 pub mod factory;
 pub mod source;
 pub mod spec;
 
+/// Kept at its historical path; the bridge itself lives in `types::cbor`
+/// so the non-vista `AnyMongoType` conversions can use it too.
+pub use crate::types::cbor;
 pub use cbor::{bson_to_cbor, cbor_to_bson};
 pub use factory::MongoVistaFactory;
 pub use source::MongoTableShell;

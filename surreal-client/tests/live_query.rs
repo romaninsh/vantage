@@ -7,7 +7,6 @@
 //! Run: `cargo test --test live_query`
 
 use futures::StreamExt;
-use serde_json::json;
 use surreal_client::{Action, SurrealConnection};
 
 const DB_URL: &str = "ws://localhost:8000";
@@ -96,30 +95,8 @@ async fn next(stream: &mut surreal_client::LiveStream) -> surreal_client::Notifi
         .expect("live stream closed unexpectedly")
 }
 
-/// Minimal CBOR→JSON for assertions (SurrealDB wraps records in tags we ignore).
+/// CBOR→JSON for assertions (SurrealDB wraps records in tags; the plain
+/// dialect unwraps them).
 fn cbor_to_json(v: &ciborium::Value) -> serde_json::Value {
-    use ciborium::Value as C;
-    match v {
-        C::Null => serde_json::Value::Null,
-        C::Bool(b) => json!(b),
-        C::Integer(i) => {
-            let n: i128 = (*i).into();
-            json!(n as i64)
-        }
-        C::Float(f) => json!(f),
-        C::Text(s) => json!(s),
-        C::Bytes(b) => json!(hex::encode(b)),
-        C::Tag(_, inner) => cbor_to_json(inner),
-        C::Array(a) => serde_json::Value::Array(a.iter().map(cbor_to_json).collect()),
-        C::Map(m) => {
-            let mut obj = serde_json::Map::new();
-            for (k, val) in m {
-                if let C::Text(key) = k {
-                    obj.insert(key.clone(), cbor_to_json(val));
-                }
-            }
-            serde_json::Value::Object(obj)
-        }
-        _ => serde_json::Value::Null,
-    }
+    vantage_types::cbor_json::cbor_to_json(&vantage_types::PlainDialect, v.clone())
 }
