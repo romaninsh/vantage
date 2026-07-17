@@ -105,7 +105,11 @@ macro_rules! vantage_type_system {
 
             impl From<$value_type> for [<Any $trait_name>] {
                 fn from(value: $value_type) -> Self {
-                    Self::[<from_ $method_name>](&value).expect("Failed to convert value to type")
+                    let type_variant = [<$trait_name Variants>]::[<from_ $method_name>](&value);
+                    Self {
+                        value,
+                        type_variant,
+                    }
                 }
             }
 

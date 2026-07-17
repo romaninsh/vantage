@@ -643,7 +643,8 @@ impl Dio {
     ///
     /// Transparent by design: if the master advertises
     /// [`can_watch`](vantage_vista::Vista::can_watch) (SurrealDB LIVE, Postgres
-    /// `LISTEN/NOTIFY`), this subscribes and pipes each [`VistaChange`] through
+    /// `LISTEN/NOTIFY`), this subscribes and pipes each
+    /// [`VistaChange`](vantage_vista::VistaChange) through
     /// [`apply_change`](Self::apply_change) on a background task — no polling. If
     /// it doesn't, this is a no-op and the caller's `refresh_every` timer keeps
     /// the cache fresh instead. Either way the reactive stack behaves the same;

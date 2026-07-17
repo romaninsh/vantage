@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1 — unreleased
+
+- CBOR↔JSON helpers use the shared `vantage-types` walker: tagged values render their
+  payload instead of collapsing to `null` through ciborium's serde bridge.
+
 ## 0.6.0 — unreleased
 
 - Coordinated 0.6 release; internal dependencies realigned to 0.6. No public API changes.

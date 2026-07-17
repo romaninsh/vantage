@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.10 — 2026-07-16
+
+- CBOR↔JSON bridge is the shared `vantage-types` walker under a local `SqlDialect`;
+  behavior unchanged (NaN/Infinity as strings, UTF-8-else-hex bytes, `Tag(10)` decimals
+  as numbers). The `From<JsonValue>` conversions in all three drivers no longer carry an
+  `.expect()` panic path.
+
 ## 0.6.9 — 2026-07-16
 
 - Postgres live subscriptions. The Postgres Vista advertises `can_subscribe` and

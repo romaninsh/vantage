@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1 — unreleased
+
+- `json_to_cbor` delegates to the shared `vantage-types` conversion.
+
 ## 0.6.0 — unreleased
 
 - Coordinated 0.6 release; internal dependencies realigned to 0.6. No public API changes.

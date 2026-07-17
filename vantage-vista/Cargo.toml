@@ -1,6 +1,6 @@
 [package]
 name = "vantage-vista"
-version = "0.6.10"
+version = "0.6.11"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Universal, schema-bearing data handle for the Vantage data framework"
@@ -34,7 +34,7 @@ tokio = { version = "1.52", features = ["rt", "rt-multi-thread"], optional = tru
 # (`list`/`get_some`/`count`/`capabilities`/`columns`/`references`) and the
 # `run_script` runner. Backends layer their vendor expression vocabulary on top
 # via `TableShell::register_rhai_extensions`.
-rhai = ["dep:rhai", "dep:serde_json", "dep:tokio"]
+rhai = ["dep:rhai", "dep:serde_json", "dep:tokio", "vantage-types/serde"]
 
 [dev-dependencies]
 tokio = { version = "1.52", features = ["macros", "rt-multi-thread"] }

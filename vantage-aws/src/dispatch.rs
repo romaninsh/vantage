@@ -315,11 +315,10 @@ pub(crate) fn parse_table_name(name: &str) -> Result<OperationDescriptor<'_>> {
     })
 }
 
-/// JSON → CBOR via ciborium's serde bridge. JSON's value space is a
-/// strict subset of CBOR's, so this is lossless and never fails for
-/// well-formed `serde_json::Value`.
+/// JSON → CBOR via the shared walker. JSON's value space is a strict
+/// subset of CBOR's, so this is total and lossless.
 pub(crate) fn json_to_cbor(v: JsonValue) -> CborValue {
-    CborValue::serialized(&v).expect("json → cbor cannot fail")
+    vantage_types::cbor_json::json_to_cbor(v)
 }
 
 /// Walk a dotted path (`"Buckets.Bucket"`) through a JSON value, taking

@@ -9,6 +9,7 @@
 
 use ciborium::Value as CborValue;
 use serde_json::Value as JsonValue;
+use vantage_types::cbor_json::{self, CborDialect};
 
 /// Parse a contained relation's host-column value into a CBOR map/array.
 /// A SQL `TEXT` column holding JSON comes back as `CborValue::Text` (parse it);
@@ -23,81 +24,46 @@ pub(crate) fn parse_json_host(v: &CborValue) -> Option<CborValue> {
     }
 }
 
-/// Convert a `serde_json::Value` into a `ciborium::Value`.
-pub(crate) fn json_to_cbor(val: JsonValue) -> CborValue {
-    match val {
-        JsonValue::Null => CborValue::Null,
-        JsonValue::Bool(b) => CborValue::Bool(b),
-        JsonValue::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                CborValue::Integer(i.into())
-            } else if let Some(u) = n.as_u64() {
-                CborValue::Integer(u.into())
-            } else if let Some(f) = n.as_f64() {
-                CborValue::Float(f)
-            } else {
-                CborValue::Text(n.to_string())
-            }
-        }
-        JsonValue::String(s) => CborValue::Text(s),
-        JsonValue::Array(arr) => CborValue::Array(arr.into_iter().map(json_to_cbor).collect()),
-        JsonValue::Object(map) => CborValue::Map(
-            map.into_iter()
-                .map(|(k, v)| (CborValue::Text(k), json_to_cbor(v)))
-                .collect(),
-        ),
-    }
-}
-
-/// Convert a `ciborium::Value` into a `serde_json::Value`.
+/// Rendering policy for the SQL drivers' JSON bridge.
 ///
-/// Lossy for some types: tags are stripped, bytes become hex strings,
-/// NaN/Infinity become string representations, and decimals are converted
-/// to f64 (losing trailing zeros and precision beyond ~15 digits).
-pub(crate) fn cbor_to_json(val: CborValue) -> JsonValue {
-    match val {
-        CborValue::Null => JsonValue::Null,
-        CborValue::Bool(b) => JsonValue::Bool(b),
-        CborValue::Integer(i) => {
-            let n = i128::from(i);
-            if let Ok(v) = i64::try_from(n) {
-                JsonValue::Number(v.into())
-            } else if let Ok(v) = u64::try_from(n) {
-                JsonValue::Number(v.into())
-            } else {
-                JsonValue::String(n.to_string())
-            }
-        }
-        CborValue::Float(f) => {
-            // NaN and Infinity have no JSON representation — preserve as string
-            serde_json::Number::from_f64(f)
-                .map(JsonValue::Number)
-                .unwrap_or_else(|| JsonValue::String(f.to_string()))
-        }
-        CborValue::Text(s) => JsonValue::String(s),
-        CborValue::Bytes(b) => match String::from_utf8(b) {
+/// Value-preserving rather than shape-preserving: every CBOR value
+/// produces a JSON value that retains the original data (possibly as a
+/// string when JSON has no matching type). NaN/Infinity become string
+/// representations, bytes become UTF-8 or hex strings, and decimals are
+/// converted to f64 (losing trailing zeros and precision beyond ~15
+/// digits).
+pub(crate) struct SqlDialect;
+
+impl CborDialect for SqlDialect {
+    /// NaN and Infinity have no JSON representation — preserve as string.
+    fn float_to_json(&self, f: f64) -> JsonValue {
+        serde_json::Number::from_f64(f)
+            .map(JsonValue::Number)
+            .unwrap_or_else(|| JsonValue::String(f.to_string()))
+    }
+
+    /// Bytes that are valid UTF-8 pass through as text; the rest as hex.
+    fn bytes_to_json(&self, bytes: Vec<u8>) -> JsonValue {
+        match String::from_utf8(bytes) {
             Ok(s) => JsonValue::String(s),
-            Err(e) => JsonValue::String(hex::encode(e.as_bytes())),
-        },
-        CborValue::Array(arr) => JsonValue::Array(arr.into_iter().map(cbor_to_json).collect()),
-        CborValue::Map(map) => {
-            let obj: serde_json::Map<String, JsonValue> = map
-                .into_iter()
-                .map(|(k, v)| {
-                    let key = match k {
-                        CborValue::Text(s) => s,
-                        other => format!("{:?}", other),
-                    };
-                    (key, cbor_to_json(v))
-                })
-                .collect();
-            JsonValue::Object(obj)
+            Err(e) => JsonValue::String(cbor_json::hex_encode(e.as_bytes())),
         }
-        CborValue::Tag(10, inner) => {
+    }
+
+    fn map_key_to_string(&self, key: CborValue) -> String {
+        match key {
+            CborValue::Text(s) => s,
+            other => format!("{:?}", other),
+        }
+    }
+
+    fn tag_to_json(&self, tag: u64, inner: CborValue) -> JsonValue {
+        match (tag, inner) {
             // Decimal — try to produce a JSON number, fall back to string.
-            // JSON bridge is lossy by design; trailing zeros and high precision
-            // may be lost but the numeric value is preserved when f64 suffices.
-            if let CborValue::Text(s) = *inner {
+            // JSON bridge is lossy by design; trailing zeros and high
+            // precision may be lost but the numeric value is preserved
+            // when f64 suffices.
+            (10, CborValue::Text(s)) => {
                 if let Ok(i) = s.parse::<i64>() {
                     JsonValue::Number(i.into())
                 } else if let Ok(f) = s.parse::<f64>() {
@@ -107,13 +73,22 @@ pub(crate) fn cbor_to_json(val: CborValue) -> JsonValue {
                 } else {
                     JsonValue::String(s)
                 }
-            } else {
-                cbor_to_json(*inner)
             }
+            // Other tags are stripped; the payload renders as-is.
+            (_, inner) => cbor_json::cbor_to_json(self, inner),
         }
-        CborValue::Tag(_, inner) => cbor_to_json(*inner),
-        _ => JsonValue::Null,
     }
+}
+
+/// Convert a `serde_json::Value` into a `ciborium::Value`. Lossless.
+pub(crate) fn json_to_cbor(val: JsonValue) -> CborValue {
+    cbor_json::json_to_cbor(val)
+}
+
+/// Convert a `ciborium::Value` into a `serde_json::Value` under
+/// [`SqlDialect`].
+pub(crate) fn cbor_to_json(val: CborValue) -> JsonValue {
+    cbor_json::cbor_to_json(&SqlDialect, val)
 }
 
 #[cfg(test)]

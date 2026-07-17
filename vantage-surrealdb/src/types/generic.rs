@@ -33,15 +33,10 @@ impl<T: SurrealType> SurrealType for IndexMap<String, T> {
             CborValue::Map(m) => {
                 let mut index_map = IndexMap::new();
                 for (k, v) in m {
-                    if let CborValue::Text(key) = k {
-                        if let Some(value) = T::from_cbor(v) {
-                            index_map.insert(key, value);
-                        } else {
-                            return None;
-                        }
-                    } else {
+                    let CborValue::Text(key) = k else {
                         return None;
-                    }
+                    };
+                    index_map.insert(key, T::from_cbor(v)?);
                 }
                 Some(index_map)
             }

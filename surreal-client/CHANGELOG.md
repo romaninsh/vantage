@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.3 — unreleased
+
+- The JSON convenience transcoding routes through the shared `vantage-types` walker
+  (`SurrealJsonDialect`); behavior unchanged (base64 bytes, `Tag(8)` → `"table:id"`,
+  NaN/Infinity → null).
+
 ## 0.6.2 — unreleased
 
 - `wss://` connections now work: `tokio-tungstenite` is built with the `rustls-tls-webpki-roots` feature,

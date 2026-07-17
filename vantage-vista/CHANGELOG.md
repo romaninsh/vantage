@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.11 — 2026-07-16
+
+- Rhai `cbor_to_dynamic` renders tagged values in their presentation form (record ids
+  as `"table:id"`, datetime/UUID/decimal text) instead of degrading to unit — a data
+  script now sees the same shapes the UI grid shows. Integers beyond `i64` become
+  decimal strings instead of silently wrapping.
+
 ## 0.6.10 — 2026-07-16
 
 - Live subscriptions. A driver that can push changes advertises the existing

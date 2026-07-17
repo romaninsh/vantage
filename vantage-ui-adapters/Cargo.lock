@@ -10860,10 +10860,11 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.6.17"
+version = "0.6.18"
 dependencies = [
  "async-trait",
  "ciborium",
+ "futures",
  "indexmap 2.14.0",
  "redb",
  "serde",
@@ -10917,7 +10918,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "ciborium",
  "indexmap 2.14.0",
@@ -10939,7 +10940,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.9"
+version = "0.6.11"
 dependencies = [
  "async-stream",
  "async-trait",

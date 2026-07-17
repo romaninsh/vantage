@@ -157,8 +157,9 @@ impl From<JsonValue> for AnyMysqlType {
         if val.is_null() {
             return AnyMysqlType::untyped(CborValue::Null);
         }
-        let cbor = json_to_cbor(val);
-        AnyMysqlType::from_cbor(&cbor).expect("json_to_cbor produced unconvertible CBOR")
+        // json_to_cbor is total and From<CborValue> classifies without
+        // failing — no panic path.
+        AnyMysqlType::from(json_to_cbor(val))
     }
 }
 
