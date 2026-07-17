@@ -5641,7 +5641,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.6.18"
+version = "0.6.19"
 dependencies = [
  "async-trait",
  "ciborium",
