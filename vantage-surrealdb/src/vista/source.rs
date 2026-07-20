@@ -222,7 +222,19 @@ where
             .get(field)
             .ok_or_else(|| error!("Unknown column for eq condition", field = field))?
             .clone();
-        let surreal_value = AnySurrealType::from(value.clone());
+        // Id-column comparisons coerce a string value into a Thing —
+        // SurrealDB compares record ids by type, so a quoted string
+        // (`id = "MG78-N25S"` or `id = "tag:MG78-N25S"`) never matches.
+        // `parse_id` accepts both the bare-key and `table:key` forms.
+        // This is what lets a cross-persistence relation narrow a surreal
+        // table from a plain string held by another backend's row.
+        let id_field = self.metadata.id_column.as_deref().unwrap_or("id");
+        let surreal_value = match value {
+            CborValue::Text(s) if field == id_field => {
+                AnySurrealType::from(self.parse_id(s).to_cbor())
+            }
+            _ => AnySurrealType::from(value.clone()),
+        };
         self.table.add_condition(column.eq(surreal_value));
         Ok(())
     }

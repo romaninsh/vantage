@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.7 — 2026-07-20
+
+- `lazy:` computed columns on REST tables, behind the new `rhai` feature — a
+  Rhai script runs per returned record via `vantage-vista`'s shared
+  lazy-expression evaluator. The windowed fetch path (`fetch_window`) applies
+  them directly, since it bypasses `list_values` where they'd normally run.
+
 ## 0.6.6 — 2026-07-16
 
 - GraphQL CBOR bridges and the REST HTTP→CBOR boundary use the shared `vantage-types`

@@ -51,9 +51,13 @@ pub fn ident_as_alias(id: Identifier, alias: &str) -> Expr {
     )
 }
 
-pub fn ident_index(id: Identifier, col: &str) -> RhaiIdent {
-    let prefix = id.expr().preview();
-    RhaiIdent(Identifier::new(format!("{}.{}", prefix, col)))
+/// Field access on an identifier (the string `[...]` indexer):
+/// `ident("batch")["name"]` → the path `batch.name`, each segment escaped
+/// separately. Joining into a single `Identifier` would render the whole
+/// path as one ⟨batch.name⟩-escaped name — a literal field lookup, not a
+/// record-link traversal.
+pub fn ident_index(id: Identifier, col: &str) -> RhaiExpr {
+    RhaiExpr(id.dot(col))
 }
 
 pub fn expr_as_alias(e: Expr, alias: &str) -> Expr {

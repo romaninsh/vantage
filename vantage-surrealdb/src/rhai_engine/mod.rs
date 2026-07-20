@@ -152,7 +152,7 @@ pub fn register_surreal_onto(engine: &mut rhai::Engine) {
         });
 
         // ── Indexer: t["col"] / expr["field"] ─────────────────
-        engine.register_indexer_get(|id: &mut Id, col: &str| -> Id {
+        engine.register_indexer_get(|id: &mut Id, col: &str| -> Ex {
             crate::rhai_engine::constructors::ident_index(id.0.clone(), col)
         });
         engine.register_indexer_get(|e: &mut Ex, col: &str| -> Ex {

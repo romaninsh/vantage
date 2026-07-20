@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.20 — 2026-07-20
+
+- A detached lens `on_start` seed now announces itself once it lands
+  (`notify_dataset_changed`). The seed writes through the raw cache with
+  no events, so a scenery that opened over the still-cold cache previously
+  rendered zero rows until a manual refresh.
+
 ## 0.6.19 — 2026-07-17
 
 - Docs: qualify the `VistaChange` intra-doc link in `Dio::watch` (rustdoc
