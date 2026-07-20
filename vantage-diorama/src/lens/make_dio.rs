@@ -71,10 +71,18 @@ impl Lens {
                 let dio_for_task = dio.clone();
                 let lens_for_task = self.clone();
                 self.runtime.spawn(async move {
-                    if let Some(cb) = lens_for_task.callbacks.on_start.as_ref()
-                        && let Err(e) = cb(&dio_for_task).await
-                    {
-                        tracing::error!(error = %e, "on_start callback failed");
+                    if let Some(cb) = lens_for_task.callbacks.on_start.as_ref() {
+                        match cb(&dio_for_task).await {
+                            // The detached seed writes through the raw cache
+                            // (no events), and any scenery that opened over
+                            // the still-cold cache rendered zero rows —
+                            // announce the landed dataset or those sceneries
+                            // stay blank until a manual refresh.
+                            Ok(()) => dio_for_task.notify_dataset_changed(),
+                            Err(e) => {
+                                tracing::error!(error = %e, "on_start callback failed");
+                            }
+                        }
                     }
                 });
             }

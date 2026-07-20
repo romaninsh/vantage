@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.6.5 — 2026-07-20
+
+- `expr:` computed columns: a column's Rhai script now lowers into a
+  server-side `(<expr>) AS <name>` projection, including traversal through
+  record links (e.g. `ident("batch")["name"]`). The Rhai indexer that builds
+  those paths (`t["col"]`) now escapes each segment separately instead of
+  joining them into one literal identifier, so `batch.name` renders as a
+  real traversal rather than a single escaped field name.
+- `get_table_value` (single-record reads) now runs the table's own narrowed
+  `select` instead of a bare `SELECT * FROM ONLY <id>`, so `expr:` columns
+  project on the detail read path too, not just lists.
+- A query-sourced table can key rows by a plain scalar (a `GROUP BY month`
+  aggregate's id is text like `"2025-08"`); those rows now synthesize a
+  `Thing` from the table name instead of being dropped for lacking a
+  record-id-shaped id field.
+- An `eq` condition on the id column coerces a string value (bare key or
+  `table:key`) into a `Thing` before comparing — SurrealDB compares record
+  ids by type, so a quoted string never matched. This is what lets a
+  cross-persistence relation narrow a surreal table from a plain string held
+  by another backend's row.
+
 ## 0.6.4 — 2026-07-16
 
 - CBOR→JSON conversion is the shared `vantage-types` walker under a local

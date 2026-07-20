@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.12 — 2026-07-20
+
+- `ColumnSpec::expr` / `with_expr` — a server-side computed column: a Rhai
+  script evaluated once at build time into a query expression (not per-row),
+  so it can traverse record links or call backend functions and still
+  participate in the query itself. Complements the existing per-row `lazy:`.
+
 ## 0.6.11 — 2026-07-16
 
 - Rhai `cbor_to_dynamic` renders tagged values in their presentation form (record ids

@@ -39,3 +39,28 @@ pub(crate) fn eval_to_select(
         )
     })
 }
+
+/// Run `code`, returning the expression it builds — the vocabulary is the
+/// same as query-sourced scripts (`ident(...)`, operators, `expr("raw")`).
+/// Accepts a bare identifier result (`ident("batch")["name"]` yields an
+/// expression, `ident("x")` alone an identifier) so both shapes work.
+pub(crate) fn eval_to_expr(code: &str) -> vantage_core::Result<crate::Expr> {
+    use vantage_expressions::Expressive as _;
+    let engine = __create_engine();
+    let value = engine.eval::<rhai::Dynamic>(code).map_err(|e| {
+        vantage_core::error!(
+            "Rhai column expression failed to evaluate",
+            detail = e.to_string()
+        )
+    })?;
+    if value.is::<Ex>() {
+        return Ok(value.cast::<Ex>().into_inner());
+    }
+    if value.is::<Id>() {
+        return Ok(value.cast::<Id>().into_inner().expr());
+    }
+    Err(vantage_core::error!(
+        "Rhai column expression must evaluate to an expression or identifier",
+        got = value.type_name()
+    ))
+}

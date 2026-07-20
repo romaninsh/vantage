@@ -225,6 +225,9 @@ pub(crate) fn build_surreal_table(
         if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
             table.add_title_field(name);
         }
+        if let Some(code) = &col_spec.expr {
+            table = add_expr_column(table, name, code)?;
+        }
     }
 
     let id_column = resolve_id_column(spec);
@@ -262,6 +265,31 @@ pub(crate) fn build_surreal_table(
 
     let table = table.with_contained_specs(&spec.contained, build_column)?;
     Ok(table)
+}
+
+/// Lower a column's `expr:` script into a server-side computed column via
+/// `Table::with_expression` — the select then projects `(<expr>) AS <name>`
+/// instead of the bare field.
+#[cfg(feature = "rhai")]
+fn add_expr_column(
+    table: Table<SurrealDB, EmptyEntity>,
+    name: &str,
+    code: &str,
+) -> Result<Table<SurrealDB, EmptyEntity>> {
+    let expr = crate::vista::rhai_source::eval_to_expr(code)?;
+    Ok(table.with_expression(name, move |_| expr.clone()))
+}
+
+#[cfg(not(feature = "rhai"))]
+fn add_expr_column(
+    _table: Table<SurrealDB, EmptyEntity>,
+    name: &str,
+    _code: &str,
+) -> Result<Table<SurrealDB, EmptyEntity>> {
+    Err(error!(
+        "column declares an `expr:` script but vantage-surrealdb was built without the `rhai` feature",
+        column = name
+    ))
 }
 
 /// Build a query-sourced table from a `rhai:` script.
@@ -485,6 +513,84 @@ mod tests {
         let map: IndexMap<String, SurrealVistaSpec> = specs.into_iter().collect();
         let map = Arc::new(map);
         Arc::new(move |name: &str| map.get(name).cloned())
+    }
+
+    #[cfg(feature = "rhai")]
+    #[test]
+    fn expr_column_projects_into_select() {
+        let yaml = r#"
+name: tag
+columns:
+  id: { type: string, flags: [id] }
+  batch: { type: string }
+  batch_name: { type: string, expr: 'ident("batch")["name"]' }
+"#;
+        let spec = parse(yaml);
+        let table = build_surreal_table(&spec, test_db(), None).expect("build");
+        let preview = table.select().preview();
+        println!("QUERY: {preview}");
+        assert!(
+            preview.contains("batch.name") && preview.contains("AS batch_name"),
+            "expr column must project as (batch.name) AS batch_name, got: {preview}"
+        );
+    }
+
+    #[test]
+    fn has_many_traversal_condition_from_thing_and_string_ids() {
+        let batch_yaml = r#"
+name: batch
+columns:
+  id: { type: string, flags: [id] }
+  name: { type: string }
+references:
+  tags:
+    table: tag
+    kind: has_many
+    foreign_key: batch
+"#;
+        let tag_yaml = r#"
+name: tag
+columns:
+  id: { type: string, flags: [id] }
+  batch: { type: string }
+"#;
+        let batch_spec = parse(batch_yaml);
+        let tag_spec = parse(tag_yaml);
+        let resolver = registry_resolver(vec![("tag".to_string(), tag_spec)]);
+        let table =
+            build_surreal_table(&batch_spec, test_db(), Some(resolver)).expect("build batch");
+
+        // Parent row with a Tag(8) record id (what SurrealDB actually returns).
+        let thing_cbor = ciborium::Value::Tag(
+            8,
+            Box::new(ciborium::Value::Array(vec![
+                ciborium::Value::Text("batch".into()),
+                ciborium::Value::Text("0jz7".into()),
+            ])),
+        );
+        let mut row: vantage_types::Record<AnySurrealType> = vantage_types::Record::new();
+        row.insert("id".into(), AnySurrealType::from(thing_cbor));
+        let target = table
+            .get_ref_from_row::<EmptyEntity>("tags", &row)
+            .expect("traverse");
+        let q = target.select().preview();
+        println!("THING QUERY: {q}");
+        assert!(
+            q.contains("batch = batch:0jz7"),
+            "Thing id must render as a record literal, got: {q}"
+        );
+
+        // Parent row with the id as a plain string (e.g. re-parsed from text).
+        let mut row: vantage_types::Record<AnySurrealType> = vantage_types::Record::new();
+        row.insert(
+            "id".into(),
+            AnySurrealType::from(ciborium::Value::Text("batch:0jz7".into())),
+        );
+        let target = table
+            .get_ref_from_row::<EmptyEntity>("tags", &row)
+            .expect("traverse");
+        let q = target.select().preview();
+        println!("STRING QUERY: {q}");
     }
 
     #[test]
