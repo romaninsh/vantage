@@ -28,7 +28,7 @@ impl MongoType for AnyMongoType {
     }
 }
 
-/// Vec<AnyMongoType> is a MongoType — used by column_table_values_expr to
+/// `Vec<AnyMongoType>` is a MongoType — used by column_table_values_expr to
 /// return a list of column values wrapped in an AnyMongoType.
 impl MongoType for Vec<AnyMongoType> {
     type Target = MongoTypeArrayMarker;
@@ -75,7 +75,7 @@ impl_from_for_any_mongo!(i32, i64, f64, bool, String, bson::oid::ObjectId);
 impl From<&str> for AnyMongoType {
     /// Converts a `&str` into an `AnyMongoType`. 24-character hex strings are
     /// treated as `ObjectId`, anything else stays a plain `String`. This mirrors
-    /// [`MongoId::from_str`] and makes id comparisons like `column.eq("68c1...")`
+    /// `MongoId::from_str` and makes id comparisons like `column.eq("68c1...")`
     /// work without an explicit `MongoId::parse` step.
     fn from(val: &str) -> Self {
         if val.len() == 24
