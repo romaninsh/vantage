@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-a8bd78a9.js";
+            window.path_to_searchindex_js = "searchindex-ed6e910d.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-76a8932f.js"></script>
@@ -186,6 +186,7 @@ shared model crate — decoupled from any specific persistence, UI, or API layer
 <li><a href="#table-constructors">Table constructors</a></li>
 <li><a href="#relationships">Relationships</a></li>
 <li><a href="#computed-fields">Computed fields</a></li>
+<li><a href="#implicit-references--dotted-columns">Implicit references — dotted columns</a></li>
 <li><a href="#connection-management">Connection management</a></li>
 <li><a href="#using-the-model">Using the model</a></li>
 <li><a href="#type-erased-access">Type-erased access</a></li>
@@ -337,6 +338,38 @@ subqueries:</p>
 //   AS order_count FROM client
 <span class="boring">}</span></code></pre>
 <p>These fields appear in <code>ReadableValueSet</code> results alongside physical columns.</p>
+<hr>
+<h2 id="implicit-references--dotted-columns"><a class="header" href="#implicit-references--dotted-columns">Implicit references — dotted columns</a></h2>
+<p>Surfacing a related row’s field is common enough that it has a declarative form. A <strong>dotted name</strong> in
+<code>with_active_columns</code> traverses declared <code>has_one</code> relations and imports the target’s field as a
+read-only column, aliased under the literal dotted name — no hand-written expression:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let orders = Order::sqlite_table(db)
+    .with_active_columns(&amp;["id", "client.name", "client.bakery.name"])?;
+// SELECT id,
+//   (SELECT name FROM client WHERE client.id = client_order.client_id) AS "client.name",
+//   (SELECT name FROM bakery WHERE bakery.id = client.bakery_id …)     AS "client.bakery.name"
+// FROM client_order
+<span class="boring">}</span></code></pre>
+<p><code>client.name</code> is one hop; <code>client.bakery.name</code> recurses through two. Each backend lowers the
+traversal into its own query — SQL nests correlated scalar subqueries, SurrealDB emits a native idiom
+path (<code>client.name</code>, each segment escaped separately). The row comes back with a <strong>flat key</strong> equal to
+the dotted name (<code>row.get("client.bakery.name")</code>).</p>
+<p>A plain (non-dotted) entry simply restricts projection to that column — <code>with_active_columns</code> is also
+how you narrow a wide table to the columns you actually read. Everything is validated when the table
+is built, so mistakes surface immediately rather than at fetch time:</p>
+<ul>
+<li>an unknown column or relation is a <strong>build-time error</strong>;</li>
+<li>a <code>has_many</code> hop is rejected (traversal is <code>has_one</code>-only — a to-many field is a set, not a value);</li>
+<li>a backend that can lower neither a subquery nor an idiom path (MongoDB, CSV, REST) refuses dotted
+names up front; same-datasource only.</li>
+</ul>
+<p>Imported columns are read-only: they are flagged <code>calculated</code> for consumers and stripped from every
+write payload, so a read-modify-save round-trip never tries to persist <code>client.name</code> as a real field.
+This is the declarative counterpart to the manual <code>with_expression</code> + <code>get_subquery_as</code> recipe above —
+reach for <code>with_expression</code> when you need an arbitrary expression, and a dotted column when you just
+want a related field.</p>
 <hr>
 <h2 id="connection-management"><a class="header" href="#connection-management">Connection management</a></h2>
 <p>The model crate owns database connections. <code>bakery_model3</code> uses a <code>OnceLock&lt;SurrealDB&gt;</code> pattern for

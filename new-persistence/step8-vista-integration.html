@@ -36,7 +36,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-a8bd78a9.js";
+            window.path_to_searchindex_js = "../searchindex-ed6e910d.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-76a8932f.js"></script>
@@ -524,7 +524,7 @@ nothing rewires it into the Vista surface unless you write the glue (SQLite’s 
 each hop fetches a row and traverses from it without falling out of Vista.</li>
 <li>Traversal here is strictly <strong>same-persistence</strong> — a Vista describes one backend. Cross-backend
 relations live one layer up in <code>vantage-vista-factory</code>’s
-<a href="https://docs.rs/vantage_vista_factory/0.6.2/vantage_vista_factory/index.html"><code>VistaCatalog</code></a>, which resolves the target by name in <em>its</em> driver and
+<a href="vantage_vista_factory"><code>VistaCatalog</code></a>, which resolves the target by name in <em>its</em> driver and
 narrows it with universal eq-conditions. Your shell doesn’t need any code for that to work.</li>
 </ul>
 <h4 id="native-conditions-from-outside-add_raw_condition"><a class="header" href="#native-conditions-from-outside-add_raw_condition">Native conditions from outside: <code>add_raw_condition</code></a></h4>
