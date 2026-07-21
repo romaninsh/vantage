@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.3 — 2026-07-21
+
+- Docs: fixed rustdoc doc-comment links (`Vec<AnyMongoType>`, `MongoId::from_str`)
+  so the workspace docs book builds clean under `-D warnings`.
+
 ## 0.6.2 — 2026-07-16
 
 - `AnyMongoType`'s CBOR bridge uses the same structural bson↔cbor converters as the
