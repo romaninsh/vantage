@@ -34,7 +34,7 @@ Almost all of it is backend-agnostic and already done:
   The closure builds the contained record's schema — same shape as `with_one`'s `build_target`,
   same type system, evaluated lazily. `vista_contained()` surfaces these as `ContainedSpec`s.
 
-- **The sub-Vista** is [`vantage_vista::build_contained_vista`]. It materializes the column's
+- **The sub-Vista** is `vantage_vista::build_contained_vista`. It materializes the column's
   records into an in-memory `ImTable`, serves reads from it, and on every write re-serializes the
   whole collection and calls a **writeback** closure. That writeback — patch the parent row's host
   column — is the only persistence-specific part you supply.
