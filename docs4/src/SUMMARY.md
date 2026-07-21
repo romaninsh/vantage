@@ -24,7 +24,7 @@
   - [Traversing Sets and Records](./relations/traversal.md)
   - [Expressions & Subqueries](./relations/expressions.md)
   - [Implicit References](./relations/implicit-references.md)
-  - [Relations on Vistas](./relations/vistas.md)
+  - [Vista, YAML and Rhai](./relations/vistas.md)
   - [Relations and Dio](./relations/dio.md)
 - [Model-Driven Architecture](./mda.md)
   - [Three Paths for Developers](./three-paths.md)

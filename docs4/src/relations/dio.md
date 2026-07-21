@@ -20,18 +20,20 @@ cache's point of view, a traversed column and a plain column are indistinguishab
 
 The practical consequence is the master/detail pattern in a UI: **traverse at the Vista, cache at
 the Dio**. Take a row from the cached master, call `Vista::get_ref(relation, row)` to build the
-narrowed detail Vista — the same erased traversal from the [Vistas chapter](./vistas.md) — and put a
+narrowed detail Vista — the same erased traversal from the [Vistas chapter](./vistas.md), or
+`VistaCatalog::traverse_from` when the detail may live in another datasource — and put a
 Dio in front of *that* for the detail pane. Each narrowed detail set gets its own cache entry, so
 switching between master rows switches between already-cached detail sets rather than re-narrowing
 one shared cache.
 
-### The relation the layers below cannot express
+### The join the layers below cannot express
 
-Every relation form so far shares one assumption: both sides live in the same persistence. That is
-what lets a SQL Vista push traversal down as a join or a correlated subquery. The assumption breaks
-the moment the related data lives in a *different* backend — a REST Vista cannot join at all, and
-two different backends can never push a join down to either engine. There is nothing to join on and
-no engine that could honour it.
+The [`VistaCatalog`](./vistas.md) can already *navigate* across datasources — hand it a parent row
+and it returns the related set from another backend. What nothing below the Dio can do is *merge*:
+show master rows whose columns come from two sources at once. That is a join, and joins are
+governed by the capability contract — a SQL Vista can join its own tables, a REST Vista cannot,
+and two different backends can never push a join down to either engine. A Vista also has nowhere
+to put stitched rows: no cache, no viewport, no notion of "only visible rows pay".
 
 Where the backend can't, the layer above fills the gap — that is the whole job of the Dio.
 **Augmentation wires two Vistas into one `Dio`**: a *master* that is listed, and a *detail* source
@@ -121,7 +123,8 @@ depends on where the data lives and who should pay for the fetch.
 #### Path A: implicit references (same datasource, in-query)
 
 One query; the backend does the work. The value is present on every row, including off-screen ones,
-it is validated at build time, and it carries read-only column semantics. Choose this when both
+it is validated when the table is constructed, and it carries read-only column semantics. Choose
+this when both
 tables live in one datasource that supports traversal (SQL, SurrealDB) — see
 [Implicit References](./implicit-references.md).
 

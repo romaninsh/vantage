@@ -42,6 +42,13 @@ when a client has ten orders. It also nests arbitrarily, which joins don't do gr
 you're not paying for the nesting: the database's optimizer flattens a correlated subquery where a
 join would be equivalent.
 
+```admonish note title="A driver may still join"
+The correlated shape is the contract, not a mandate about execution. Lowering is a per-datasource
+concern, and a driver implementation is free to use a JOIN — or anything else — where that is the
+reliable choice for its engine, as long as the result keeps the source's row shape: one row per
+source record, the related value as a column.
+```
+
 ### Aggregates over a relation
 
 `get_subquery_as` returns a full `Table`, so the aggregate query-builders work on it:
@@ -100,18 +107,11 @@ This is what lets one correlated subquery nest inside another: a two-hop lookup 
 `outer.select_expression( (inner_subquery) )`. It is also the machinery under the next chapter's
 implicit references, which automate exactly this recipe.
 
-### Backend support
-
-Correlated subqueries need backend support — the correlation condition comes from the backend's
-`related_correlated_condition`, and not every backend can express one. The honest contract:
-
-- **SQL backends and SurrealDB** implement it. This recipe works.
-- **MongoDB, CSV, REST, CMD** leave the default, which panics. These backends have no correlated
-  subqueries to lower to, so this is a SQL/SurrealDB technique — not a portable one.
-
 ```admonish info title="Cross-backend enrichment lives at the Dio layer"
-If you need per-row related values across backends that can't correlate, there's a different tool
-for that: augmentation, covered in [Relations and Dio](./dio.md).
+This whole chapter is a SQL/SurrealDB technique — the backend-support contract is on
+[Form 2 of the previous chapter](./traversal.md). If you need per-row related values across
+backends that can't correlate, there's a different tool for that: augmentation, covered in
+[Relations and Dio](./dio.md).
 ```
 
 ### SurrealDB notes
@@ -136,7 +136,6 @@ At this point you should be able to:
    expressions can build on each other inside one query.
 4. **Nest subqueries** — `select_expression(expr)` wraps any expression as a scalar subquery, one
    inside another.
-5. **Know where it runs** — SQL and SurrealDB correlate; MongoDB, CSV, REST, and CMD don't.
 
 Next: [Implicit References](./implicit-references.md) — the declarative form of everything in this
 chapter's first half.

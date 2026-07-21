@@ -1,4 +1,4 @@
-# Relations on Vistas
+# Vista, YAML and Rhai
 
 Everything so far assumed you could write `Table<SqliteDB, Order>` in your source code. Generic
 consumers can't. A UI grid, an admin panel, a scripting surface, a config-driven tool — none of
@@ -15,23 +15,38 @@ that they survive in three forms:
 3. **Capabilities** — an honest contract about which traversal forms this backend actually
    serves, so a consumer knows what to offer before trying.
 
-### Getting a Vista
+### The factory
 
-A `Vista` comes from the backend's vista factory (covered in
-[Vista integration](../new-persistence/step8-vista-integration.md)):
+A `Vista` is never constructed by hand — construction goes through a **vista factory** (the
+`VistaFactory` trait, covered in
+[Vista integration](../new-persistence/step8-vista-integration.md)). The factory's defining
+ability is working **by name**: where typed code passes `User::table(db)`, a generic consumer
+asks for `"users"` and gets a Vista back. How the name resolves is the factory's business —
+typically it loads table specs from files — and that indirection is what lets config-driven
+tools, scripts, and by-name traversal address models they have no Rust types for.
 
-```rust
-let vistas = vec![
-    db.vista_factory().from_table(Client::surreal_table(db.clone()))?,
-    sqlite.vista_factory().from_table(Product::sqlite_table(sqlite.clone()))?,
-    csv.vista_factory().from_table(Order::csv_table(csv.clone()))?,
-];
-```
+Behind a name, a vista is built one of two ways:
 
-The part that matters for this page: `from_table` folds the table's relations into
-`VistaMetadata` — name, target, cardinality, foreign key. The erased handle carries enough to
-introspect the relations and to traverse them. Nothing about the relation is lost in the erasure;
-only the compile-time names are.
+1. **From a typed table** — `from_table` wraps the table your model already builds:
+
+   ```rust
+   let vistas = vec![
+       db.vista_factory().from_table(Client::surreal_table(db.clone()))?,
+       sqlite.vista_factory().from_table(Product::sqlite_table(sqlite.clone()))?,
+       csv.vista_factory().from_table(Order::csv_table(csv.clone()))?,
+   ];
+   ```
+
+2. **From a YAML spec** — no Rust model at all: columns, relations, and computed fields declared
+   as data ([Config-Driven Vistas](../config-driven-vistas.md)). This path is how the
+   declarations in the last section of this page become live, traversable relations. A spec's
+   *source* doesn't have to be a physical table, either — a `rhai:` block builds it from a query
+   (a query-sourced vista), and a `base:` block derives it from another spec.
+
+Whichever route constructs it, the factory folds the table's relations into `VistaMetadata` —
+name, target, cardinality, foreign key. The erased handle carries enough to introspect the
+relations and to traverse them. Nothing about the relation is lost in the erasure; only the
+compile-time names are.
 
 ### Metadata: introspecting relations
 
@@ -114,10 +129,47 @@ Consumers branch on these before offering the corresponding affordance: a report
 readable by name (`capability_flag("can_traverse_to_set")`) and appear in the rhai capabilities
 map, so scripts and config-driven tools can branch the same way.
 
-### Declaring relations in YAML
+### Across datasources: the VistaCatalog
+
+Everything above stays inside one datasource — a `Vista`'s references forward to the wrapped
+table, and a single Vista deliberately knows nothing about *other* datasources. Cross-persistence
+traversal lives one layer up, in the `VistaCatalog` (`vantage-vista-factory`): a name → Vista
+catalog spanning many datasources, plus reference traversal between the models it holds.
+
+You register models by name — each as a `ModelLoader` closure that builds a fresh, unconditioned
+Vista, from whichever backend backs it — and then register relations *between* catalog models:
+
+```rust
+let mut cat = VistaCatalog::new();
+cat.register("client", Arc::new(|| /* build the client Vista — one datasource */));
+cat.register("bakery", Arc::new(|| /* build the bakery Vista — possibly another */));
+
+cat.register_relation(
+    "client",
+    Relation::single_key("bakery", "bakery", ReferenceKind::HasOne, "id", "bakery_id"),
+);
+
+// From a loaded client row, traverse into the (possibly foreign) bakery model:
+let bakery = cat.traverse(&cat.relations_for("client")[0], &client_row)?;
+```
+
+A `Relation` is a single-key (`target.foreign_key == parent_row[narrow_via]`) or multi-key join
+description; `traverse` builds the target by name and pushes one eq-condition per key. How each
+condition is honoured — SQL `WHERE`, in-memory filter, REST path/query param — is the target
+driver's concern at fetch time.
+
+`traverse_from` is the unified entry point: it prefers the parent Vista's own
+**same-persistence** reference when the shell declares it and advertises
+`can_traverse_to_record` (that path stays entirely inside one driver), and otherwise falls back
+to a registered **cross-persistence** `Relation`. The catalog is also what the Dio layer's
+augmentation uses to resolve its detail sources — the [next page](./dio.md) picks that up.
+
+### Declaring relations in YAML and Rhai
 
 Config-driven vistas (full chapter: [Config-driven vistas](../config-driven-vistas.md)) declare
-relations in the table spec — either as column-level sugar or a top-level map:
+relations in the table spec — either as column-level sugar or a top-level map. The factory reads
+the spec, registers the relations, and the resulting `Vista` traverses them exactly like one built
+`from_table`:
 
 ```yaml
 columns:
@@ -138,14 +190,32 @@ The column-level `references: batch` sugar names the relation after the *target 
 the common case. The full form (`references: { table, kind, foreign_key, name }`) can name it
 differently — you need that when two relations point at the same table.
 
-A reference may also carry a `rhai:` build script for traversals that need more than an FK match
-(conditions, ordering). That's the `can_build_ref_via_script` path from the capabilities list —
-the reference resolves through the script engine instead of the fixed eq-condition.
+When a relation needs more than a plain foreign-key match — extra conditions, ordering, a search —
+give the reference a `rhai:` build script:
+
+```yaml
+references:
+  recent_orders:
+    table: order
+    kind: has_many
+    foreign_key: client
+    rhai: |
+      table("order").add_condition_eq("client", row.id).add_order("created_at", "desc")
+```
+
+The script runs lazily when the relation is traversed, with the parent record in scope as `row`,
+and must return a Vista — start it with `table("<name>")` and chain the conventional verbs
+(`add_condition_eq`, `add_order`, `add_search`, `set_page_size`, `with_id`). Without `rhai:`, the
+relation falls back to the plain `foreign_key` match. This is the `can_build_ref_via_script` path
+from the capabilities list — the reference resolves through the script engine instead of the
+fixed eq-condition.
 
 Imported dotted columns — like `batch.name` above, the YAML form of
-[implicit references](./implicit-references.md) — arrive in metadata flagged `calculated`. That
-flag means read-only for consumers: the value comes from a traversal, not from a column you can
-write. This is how a UI knows not to offer editing on them.
+[implicit references](./implicit-references.md) — go through the same traversal import as the
+Rust API, with the same construction-time validation: a bad dotted column fails the spec load,
+not the first fetch. They arrive in metadata flagged `calculated`. That flag means read-only for
+consumers: the value comes from a traversal, not from a column you can write. This is how a UI
+knows not to offer editing on them.
 
 The key difference: at the typed layer *you* know which traversal forms are safe — you wrote the
 code against a backend you chose. At the erased layer, the *capabilities* say so. Same relations,
@@ -162,9 +232,13 @@ At this point you should be able to:
 3. **Branch on the four traversal capabilities** — `can_traverse_to_record`,
    `can_traverse_to_set`, `can_build_ref_via_script`, `can_traverse_in_columns` — before
    offering an affordance.
-4. **Declare relations in YAML** — column-level `references:` sugar, the full top-level form,
-   and implicit dotted columns through a relation.
-5. **Explain why `calculated` columns are read-only** in generic UIs — their values come from
+4. **Traverse across datasources** — register models and `Relation`s on a `VistaCatalog`;
+   `traverse_from` prefers the same-persistence reference and falls back to the catalog join.
+5. **Declare relations in YAML and Rhai** — column-level `references:` sugar, the full top-level
+   form, implicit dotted columns through a relation, and `rhai:` build scripts for traversals
+   that need more than an FK match — all consumed by the same vista factory that wraps typed
+   tables.
+6. **Explain why `calculated` columns are read-only** in generic UIs — their values come from
    traversal, not from a writable column.
 
 Next: [what happens above the Vista](./dio.md) — combining erased handles across backends.

@@ -10,6 +10,12 @@ traverses the declared `has_one` relation `"client"`, imports the target's `name
 projects it as a read-only column aliased under the literal dotted name — no hand-written
 expression. This feature is also called **implicit references**.
 
+The first segment addresses the relation by its **registry name** — whatever you named it in
+`with_one` — not by the foreign-key column. `bakery_model3` declares
+`with_one("client", "client_id", …)`, so the path is `client.name` on SQL and SurrealDB alike; a
+model that names its relations after the FK columns would write `client_id.name` instead. Either
+convention works — the segment just has to match the declared name.
+
 `with_active_columns` does two jobs at once:
 
 1. **Plain names restrict projection.** Only the listed columns are selected — useful on its own for
@@ -63,25 +69,27 @@ There is no nested object to unwrap — `row.get("client.bakery.name")` is a pla
 record. The full example lives in `bakery_model3/examples/implicit-references.rs`; run it with
 `cargo run -p bakery_model3 --example implicit-references`.
 
-### Build-time validation
+### Validation at table construction
 
-A design pillar of implicit references: every failure surfaces when the table is built, never as a
-silently empty column at fetch time. Concretely:
+Dotted names are ordinary strings, so the compiler cannot vet them. Instead,
+`with_active_columns` returns `Result` and validates everything as it runs — when the table
+definition is constructed, typically in model or startup code, before any query is made. A
+mistake surfaces there, never as a silently empty column at fetch time:
 
-- An unknown column or unknown relation in a dotted name → build error.
-- A `has_many` hop → build error. Traversal is `has_one`-only, because a to-many field is a set, not
-  a value. If you want an aggregate over the set — a count, a sum — that's the previous chapter's
-  `get_count_query` territory.
-- A backend that can lower neither a correlated subquery nor a native path (MongoDB, CSV, REST)
-  refuses dotted names up front: its `TableSource::supports_traversal` is `false`. Traversal is also
-  same-datasource only — enriching rows with fields from a *different* datasource belongs to Dio
-  augmentation ([Dio](./dio.md)).
+- an unknown column or unknown relation in a dotted name;
+- a `has_many` hop — traversal is `has_one`-only, because a to-many field is a set, not a value
+  (for an aggregate over the set, a count or a sum, use the previous chapter's
+  `get_count_query`);
+- a backend that can lower neither a correlated subquery nor a native path (MongoDB, CSV, REST) —
+  its `TableSource::supports_traversal` is `false`, and dotted names are refused up front.
+  Traversal is also same-datasource only; enriching rows with fields from a *different*
+  datasource belongs to Dio augmentation ([Dio](./dio.md)).
 
 ### Why not let a bad dotted name fail at fetch time?
 
 Because a fetch-time failure in a projection is invisible. The query still runs, the column comes
 back empty, and nothing tells you whether the relation was misspelled or the data is genuinely
-absent. Building the table is the moment you have full knowledge — the relation registry, the
+absent. Constructing the table is the moment you have full knowledge — the relation registry, the
 target's columns, the backend's capabilities — so that's where every check runs.
 
 ### Read-only semantics
@@ -125,7 +133,9 @@ You still can, and sometimes you should. The key difference: reach for `with_exp
 Reach for a dotted column when you just want a related field. The dotted form adds what the manual
 recipe can't:
 
-- **Build-time validation** — the manual recipe happily aliases a subquery over a misspelled column.
+- **Proper errors** — the manual recipe's checks are `Option`/`unwrap` panics (`select_column`
+  returns `None` for a misspelled column); the dotted form returns `Result`, with an error naming
+  the bad relation, column, cardinality, or backend.
 - **A typed imported column** — the definition is cloned from the target's column, so type metadata
   travels with it.
 - **Enforced read-only write semantics** — a `with_expression` column has no write-path story at
@@ -142,22 +152,6 @@ recipe can't:
   in the active set; they stay projected.
 - Same-datasource only, by design — see [Dio](./dio.md) for the cross-datasource alternative.
 
-### The YAML surface
-
-In config-driven vistas (see [Config-Driven Vistas](../config-driven-vistas.md)), a dotted column
-**name** in a table spec declares the same thing declaratively — the driver factory routes it
-through the traversal import, with the same build-time validation:
-
-```yaml
-columns:
-  - name: batch
-    type: string
-    references: batch
-  - name: batch.name          # relation "batch" → column "name" on the target
-    type: string
-    optional: true
-```
-
 ### Conclusion
 
 At this point you should be able to:
@@ -166,12 +160,12 @@ At this point you should be able to:
    projects).
 2. **Import related fields** with dotted names — one hop or many, over declared `has_one` relations.
 3. **Read them back** via flat keys equal to the dotted name.
-4. **Predict every build-time error** — unknown column, unknown relation, `has_many` hop, backend
-   without traversal support.
+4. **Predict every construction-time error** — unknown column, unknown relation, `has_many` hop,
+   backend without traversal support.
 5. **Explain the write-path semantics** — stripped from full-record writes, rejected in a patch.
 6. **Choose the right tool** — dotted column for a related field, `with_expression` for an arbitrary
    expression.
-7. **Declare the same thing in YAML** for config-driven vistas.
 
-The next page, [Vistas](./vistas.md), covers how the `calculated` flag and the
-`can_traverse_in_columns` capability surface at the erased layer.
+The next page, [Vista, YAML and Rhai](./vistas.md), covers how the same declarations work from
+YAML specs, and how the `calculated` flag and the `can_traverse_in_columns` capability surface at
+the erased layer.
