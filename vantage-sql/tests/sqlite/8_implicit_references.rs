@@ -5,8 +5,8 @@
 //! into a nested correlated scalar subquery. Uses a self-contained in-memory
 //! database so the write-strip case can insert.
 
-use vantage_expressions::ExprDataSource;
 use vantage_dataset::traits::{ReadableValueSet, WritableValueSet};
+use vantage_expressions::ExprDataSource;
 #[allow(unused_imports)]
 use vantage_sql::sqlite::SqliteType;
 use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
@@ -129,7 +129,10 @@ async fn two_hop_nests_subqueries() {
         .unwrap();
 
     let preview = orders.select().preview();
-    assert!(preview.contains("client.bakery.name"), "alias missing: {preview}");
+    assert!(
+        preview.contains("client.bakery.name"),
+        "alias missing: {preview}"
+    );
     assert!(preview.contains("bakery"), "no bakery ref: {preview}");
 
     let rows = orders.list_values().await.unwrap();
@@ -178,7 +181,10 @@ async fn imported_columns_are_stripped_on_write() {
         .unwrap();
 
     let mut rec: Record<AnySqliteType> = Record::new();
-    rec.insert("client_id".to_string(), AnySqliteType::from("c1".to_string()));
+    rec.insert(
+        "client_id".to_string(),
+        AnySqliteType::from("c1".to_string()),
+    );
     rec.insert(
         "client.name".to_string(),
         AnySqliteType::from("should be dropped".to_string()),

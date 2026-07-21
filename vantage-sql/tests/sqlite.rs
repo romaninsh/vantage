@@ -22,10 +22,10 @@ mod sqlite {
     mod expressions;
     #[path = "2_identifier.rs"]
     mod identifier;
-    #[path = "2_insert.rs"]
-    mod insert;
     #[path = "8_implicit_references.rs"]
     mod implicit_references;
+    #[path = "2_insert.rs"]
+    mod insert;
     #[path = "5_invariants.rs"]
     mod invariants;
     #[path = "2_primitives.rs"]

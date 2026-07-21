@@ -275,7 +275,10 @@ where
     {
         match hops.split_first() {
             None => self.get_column_expr(column).ok_or_else(|| {
-                error!("implicit reference target has no such column", column = column)
+                error!(
+                    "implicit reference target has no such column",
+                    column = column
+                )
             }),
             Some((head, tail)) => {
                 let target: Table<T, EmptyEntity> = self.get_subquery_erased(head)?;
