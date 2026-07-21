@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.6.12 — 2026-07-21
+
+- `Table::with_active_columns(&["id", "client.name", "client.bakery.name"])` —
+  **implicit references**. A plain name restricts projection to that column; a
+  dotted name traverses declared `has_one` relations and imports the target's
+  field as a read-only column aliased under the literal dotted name. Recursion
+  is supported (`a.b.c`). Everything is validated when the table is built:
+  unknown column/relation, a `has_many` hop, or a backend without traversal
+  support are all build-time errors, never fetch-time surprises. SQL backends
+  lower each hop into a nested correlated scalar subquery; a backend may
+  override the new `TableSource::traversal_path_expr` hook to emit a native path
+  instead (SurrealDB does). Imported columns are stripped from insert/replace/
+  patch payloads so a read-modify-save round-trip never persists them.
+- New `TableSource::supports_traversal` / `traversal_path_expr` hooks (default
+  `false` / `None`); `Table::select_expression` extracted from `select_column`
+  so a traversal expression can nest.
+
 ## 0.6.11 — 2026-07-20
 
 - `Table::apply_lazy_expressions` is public — a driver shell that bypasses

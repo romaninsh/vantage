@@ -394,6 +394,25 @@ impl TableSource for MockTableSource {
         )
     }
 
+    fn supports_traversal(&self) -> bool {
+        true
+    }
+
+    fn related_correlated_condition(
+        &self,
+        target_table: &str,
+        target_field: &str,
+        source_table: &str,
+        source_column: &str,
+    ) -> Self::Condition {
+        // Correlated equality rendered as a literal string — mirrors the
+        // table-qualified form the SQL backends emit, enough for preview tests.
+        Expression::new(
+            format!("{target_table}.{target_field} = {source_table}.{source_column}"),
+            vec![],
+        )
+    }
+
     fn column_table_values_expr<'a, E, Type: ColumnType>(
         &'a self,
         table: &Table<Self, E>,

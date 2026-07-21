@@ -60,4 +60,12 @@ pub struct VistaCapabilities {
     /// engine *and* a by-name target resolver advertise `true`; others leave
     /// it `false` and ignore any `build_script` (the FK path still works).
     pub can_build_ref_via_script: bool,
+    /// Implicit references in the column list — a dotted column name
+    /// (`country.name`) traverses `has_one` relations and imports the target's
+    /// field as a read-only, `calculated` column, lowered into the backend's
+    /// own query (a nested correlated subquery for SQL, a native idiom path for
+    /// SurrealDB). Same backend-support profile as
+    /// [`can_traverse_to_set`](Self::can_traverse_to_set): SQL and SurrealDB
+    /// advertise `true`; CSV/Mongo/REST leave it `false`.
+    pub can_traverse_in_columns: bool,
 }

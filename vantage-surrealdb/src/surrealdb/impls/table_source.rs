@@ -476,6 +476,26 @@ impl TableSource for SurrealDB {
         )
     }
 
+    fn supports_traversal(&self) -> bool {
+        true
+    }
+
+    fn traversal_path_expr(&self, hops: &[&str], column: &str) -> Option<Expression<Self::Value>> {
+        // A SurrealQL idiom path: each segment escaped on its own, joined by
+        // literal dots so SurrealDB traverses the record links
+        // (`batch.golf_course.name`). Joining first and escaping once would
+        // instead render a single ⟨batch.golf_course.name⟩ literal field — a
+        // dead lookup, not a traversal. Multi-hop comes for free.
+        let path = hops
+            .iter()
+            .copied()
+            .chain(std::iter::once(column))
+            .map(surreal_client::escape_identifier)
+            .collect::<Vec<_>>()
+            .join(".");
+        Some(Expression::new(path, vec![]))
+    }
+
     fn column_table_values_expr<'a, E, Type: ColumnType>(
         &'a self,
         table: &Table<Self, E>,

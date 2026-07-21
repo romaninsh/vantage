@@ -60,6 +60,9 @@ impl DioShell {
             can_traverse_to_record: master_caps.can_traverse_to_record,
             can_traverse_to_set: master_caps.can_traverse_to_set,
             can_build_ref_via_script: master_caps.can_build_ref_via_script,
+            // Column traversal is lowered into the master's query; the cache
+            // passes it through unchanged.
+            can_traverse_in_columns: master_caps.can_traverse_in_columns,
         };
         Self {
             dio,

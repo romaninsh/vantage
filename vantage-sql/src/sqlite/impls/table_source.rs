@@ -414,6 +414,13 @@ impl TableSource for SqliteDB {
         tgt_col.in_(fk_values.expr())
     }
 
+    // Implicit references lower into the generic nested correlated-subquery
+    // chain built on `related_correlated_condition` below; no native path
+    // override is needed.
+    fn supports_traversal(&self) -> bool {
+        true
+    }
+
     fn related_correlated_condition(
         &self,
         target_table: &str,

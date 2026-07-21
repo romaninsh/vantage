@@ -31,6 +31,7 @@ where
         let erased = self.as_entity_erased();
         let mut record = record.clone();
         run_before(self.before_insert_hooks(), &mut record, erased).await?;
+        self.strip_imported_columns(&mut record);
         enforce_invariants(&mut record, self.invariants())?;
         let result = self
             .data_source()
@@ -49,6 +50,7 @@ where
         let erased = self.as_entity_erased();
         let mut record = record.clone();
         run_before(self.before_update_hooks(), &mut record, erased).await?;
+        self.strip_imported_columns(&mut record);
         enforce_invariants(&mut record, self.invariants())?;
         let result = self
             .data_source()
@@ -67,6 +69,7 @@ where
         let erased = self.as_entity_erased();
         let mut partial = partial.clone();
         run_before(self.before_update_hooks(), &mut partial, erased).await?;
+        self.strip_imported_columns(&mut partial);
         enforce_invariants(&mut partial, self.invariants())?;
         let result = self
             .data_source()
