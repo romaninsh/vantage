@@ -66,6 +66,16 @@ where
         partial: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>> {
         let id = id.into();
+        // A patch is explicit intent per key — unlike a full-record round-trip
+        // there is nothing incidental to strip, so a read-only imported column
+        // in the payload is an error, not a silent drop (stripping it could
+        // even leave an empty patch that "succeeds" while changing nothing).
+        if let Some(name) = partial.keys().find(|k| self.is_imported_column(k)) {
+            return Err(vantage_core::error!(
+                "cannot patch read-only implicit-reference column",
+                column = name.as_str()
+            ));
+        }
         let erased = self.as_entity_erased();
         let mut partial = partial.clone();
         run_before(self.before_update_hooks(), &mut partial, erased).await?;

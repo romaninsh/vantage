@@ -161,6 +161,9 @@ impl TableSource for PostgresDB {
         let conditions: Vec<Expression<AnyPostgresType>> = table
             .columns()
             .values()
+            // Imported implicit-reference columns exist only as projection
+            // aliases — a WHERE on the dotted identifier errors at fetch time.
+            .filter(|col| !table.is_imported_column(col.name()))
             .map(|col| {
                 let p = pattern.clone();
                 postgres_expr!("{}::text LIKE {} ESCAPE '$'", (ident(col.name())), p)

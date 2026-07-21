@@ -265,6 +265,19 @@ pub(crate) fn build_surreal_table(
     }
 
     let table = table.with_contained_specs(&spec.contained, build_column)?;
+
+    // A dotted spec column (`batch.name`) is an implicit reference — route it
+    // through `with_active_columns` so it becomes a validated traversal import.
+    // Left as a literal column it would project a single-escaped ⟨batch.name⟩
+    // field lookup: a dead column that renders NONE in every row. The active
+    // set must then name every column, so pass the full declared set.
+    let table = if spec.columns.keys().any(|n| n.contains('.')) {
+        let names: Vec<String> = table.columns().keys().cloned().collect();
+        let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        table.with_active_columns(&name_refs)?
+    } else {
+        table
+    };
     Ok(table)
 }
 
@@ -468,9 +481,21 @@ where
 {
     let mut metadata = VistaMetadata::new();
     for (name, col) in table.columns() {
-        // SurrealDB sorts on any field; flag every column ORDERABLE.
-        let mut vc = VistaColumn::new(name.clone(), col.get_type().to_string())
-            .with_flag(vista_flags::ORDERABLE);
+        let mut vc = VistaColumn::new(name.clone(), col.get_type().to_string());
+        // SurrealDB sorts on any physical field; flag those ORDERABLE. An
+        // imported implicit-reference column exists only as a projection
+        // alias — ordering by its dotted name would address a nonexistent
+        // field and silently not sort, so it gets CALCULATED instead.
+        if table.is_imported_column(name) {
+            vc = vc.with_flag(vista_flags::CALCULATED);
+        } else {
+            vc = vc.with_flag(vista_flags::ORDERABLE);
+            // expr:/lazy computed columns stay orderable (they order by
+            // their projected alias) but are read-only for consumers.
+            if table.is_calculated_column(name) {
+                vc = vc.with_flag(vista_flags::CALCULATED);
+            }
+        }
         if col.flags().contains(&ColumnFlag::Hidden) {
             vc = vc.with_flag(vista_flags::HIDDEN);
         }
@@ -537,6 +562,81 @@ mod tests {
         // path — so traversal survives.
         let reserved = db.traversal_path_expr(&["SELECT"], "name").unwrap();
         assert_eq!(reserved.preview(), "⟨SELECT⟩.name");
+    }
+
+    /// A dotted spec column routes through the traversal import: the idiom
+    /// descends the relation's **link field** (here `batch`), not its registry
+    /// name (`owner`), the flat dotted alias is escaped as a single
+    /// identifier, and metadata flags the column `calculated` (not orderable —
+    /// the dotted name is a projection alias, not a sortable field).
+    #[test]
+    fn factory_routes_dotted_spec_column_through_traversal() {
+        let batch_yaml = r#"
+name: batch
+columns:
+  id: { type: string, flags: [id] }
+  name: { type: string }
+"#;
+        let tag_yaml = r#"
+name: tag
+columns:
+  id: { type: string, flags: [id] }
+  status: { type: string }
+  batch: { type: string }
+  owner.name: { type: string }
+references:
+  owner:
+    table: batch
+    kind: has_one
+    foreign_key: batch
+"#;
+        let resolver = registry_resolver(vec![("batch".to_string(), parse(batch_yaml))]);
+        let table =
+            build_surreal_table(&parse(tag_yaml), test_db(), Some(resolver)).expect("build tag");
+
+        let preview = table.select().preview();
+        println!("QUERY: {preview}");
+        assert!(
+            preview.contains("batch.name"),
+            "idiom must descend the link field `batch`: {preview}"
+        );
+        assert!(
+            preview.contains("⟨owner.name⟩"),
+            "dotted alias must be a single escaped identifier: {preview}"
+        );
+        assert!(
+            !preview.contains("(owner.name)"),
+            "relation name must not be used as the idiom path: {preview}"
+        );
+
+        let metadata = metadata_from_table(&table);
+        let col = metadata.columns.get("owner.name").expect("metadata column");
+        assert!(
+            col.flags.iter().any(|f| f == vista_flags::CALCULATED),
+            "imported column must be flagged calculated: {:?}",
+            col.flags
+        );
+        assert!(
+            !col.flags.iter().any(|f| f == vista_flags::ORDERABLE),
+            "imported column must not be orderable: {:?}",
+            col.flags
+        );
+        let status = metadata.columns.get("status").expect("status column");
+        assert!(status.flags.iter().any(|f| f == vista_flags::ORDERABLE));
+    }
+
+    /// A dotted spec column naming an unknown relation fails the build —
+    /// the factory propagates `with_active_columns`' build-time error instead
+    /// of leaving a dead literal column.
+    #[test]
+    fn factory_rejects_dotted_spec_column_with_unknown_relation() {
+        let yaml = r#"
+name: tag
+columns:
+  id: { type: string, flags: [id] }
+  nope.name: { type: string }
+"#;
+        assert!(build_surreal_table(&parse(yaml), test_db(), None).is_err());
     }
 
     #[cfg(feature = "rhai")]

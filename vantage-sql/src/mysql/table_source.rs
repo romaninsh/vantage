@@ -143,6 +143,9 @@ impl TableSource for MysqlDB {
         let conditions: Vec<Expression<AnyMysqlType>> = table
             .columns()
             .values()
+            // Imported implicit-reference columns exist only as projection
+            // aliases — a WHERE on the dotted identifier errors at fetch time.
+            .filter(|col| !table.is_imported_column(col.name()))
             .map(|col| {
                 let p = pattern.clone();
                 mysql_expr!("{} LIKE {} ESCAPE '$'", (ident(col.name())), p)

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.7 — 2026-07-21
+
+- Implicit-references review fixes: the idiom path descends each hop's *link
+  field* (a relation named `owner` over a link field `batch` lowers to
+  `batch.name`), not the relation's registry name — which could validate at
+  build yet query a nonexistent field.
+- The vista factory routes dotted spec columns (`batch.name:`) through the
+  traversal import — a build-time-validated implicit reference instead of a
+  dead ⟨batch.name⟩ literal lookup — and flags computed columns `calculated`
+  in metadata; imported ones are additionally not orderable (the dotted name
+  is a projection alias, not a field). Quicksearch skips imported columns
+  (the escaped dotted identifier would silently never match).
+
 ## 0.6.6 — 2026-07-21
 
 - Implicit references (`Table::with_active_columns`) lower into a native

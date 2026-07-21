@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.12 — 2026-07-21
+
+- Implicit-references review fixes: vista factories flag computed columns
+  (implicit-reference imports, expression, lazy) `calculated` in metadata.
+  Quicksearch skips imported columns — the dotted identifier is not a real
+  field in a WHERE clause (SQLite would degrade it to a string literal and
+  match wrong rows; Postgres/MySQL would error at fetch time).
+
 ## 0.6.11 — 2026-07-21
 
 - SQLite / Postgres / MySQL advertise `TableSource::supports_traversal`, so

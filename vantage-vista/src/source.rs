@@ -513,9 +513,11 @@ pub trait TableShell: Send + Sync + 'static {
             "can_set_page_size" => caps.can_set_page_size,
             "can_fetch_page" => caps.can_fetch_page,
             "can_fetch_next" => caps.can_fetch_next,
+            "can_fetch_window" => caps.can_fetch_window,
             "can_traverse_to_record" => caps.can_traverse_to_record,
             "can_traverse_to_set" => caps.can_traverse_to_set,
             "can_build_ref_via_script" => caps.can_build_ref_via_script,
+            "can_traverse_in_columns" => caps.can_traverse_in_columns,
             _ => false,
         }
     }

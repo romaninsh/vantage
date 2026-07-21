@@ -602,6 +602,15 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         Ok(reference.cardinality())
     }
 
+    /// Look up the foreign-key/link field for a registered relation. For a
+    /// `has_one` this is the source-side column carrying the link — the field
+    /// a backend-native traversal (e.g. a SurrealDB idiom path) descends
+    /// through, which need not match the relation's registry name.
+    pub fn ref_foreign_key(&self, relation: &str) -> Result<String> {
+        let (reference, _) = self.lookup_ref(relation)?;
+        Ok(reference.foreign_key().to_string())
+    }
+
     /// List all registered relations with their cardinality.
     pub fn ref_kinds(&self) -> Vec<(String, vantage_vista::ReferenceKind)> {
         self.refs

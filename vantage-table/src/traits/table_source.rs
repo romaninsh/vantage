@@ -281,11 +281,13 @@ pub trait TableSource: DataSource + Clone + 'static {
 
     /// Build a correlated condition: `target_table.target_field = source_table.source_column`.
     ///
-    /// Used by `get_subquery_as` for embedding correlated subqueries inside SELECT
-    /// expressions (e.g. `(SELECT COUNT(*) FROM order WHERE order.client_id = client.id)`).
-    ///
-    /// SQL backends produce table-qualified equality; non-SQL backends may not support
-    /// correlated subqueries and should leave the default (which panics).
+    /// Used by `get_subquery_as` / `get_subquery_erased` for embedding correlated
+    /// subqueries inside SELECT expressions (e.g.
+    /// `(SELECT COUNT(*) FROM order WHERE order.client_id = client.id)`), and by
+    /// the generic implicit-reference lowering. SQL and SurrealDB backends
+    /// produce table-qualified equality; backends without correlated subqueries
+    /// leave the default (which panics — they must also keep
+    /// [`supports_traversal`](Self::supports_traversal) `false`).
     fn related_correlated_condition(
         &self,
         target_table: &str,
@@ -300,7 +302,7 @@ pub trait TableSource: DataSource + Clone + 'static {
     /// Whether this backend can lower a dotted active column
     /// (`"country.name"`) into its own query — a nested correlated subquery for
     /// SQL, a native idiom path for SurrealDB. Backends that can build neither
-    /// (MongoDB, CSV, REST, CMD) leave the default `false`, and
+    /// (e.g. MongoDB, CSV, REST) leave the default `false`, and
     /// [`Table::with_active_columns`](crate::table::Table::with_active_columns)
     /// rejects dotted names against them at build time rather than at fetch time.
     fn supports_traversal(&self) -> bool {
@@ -310,9 +312,11 @@ pub trait TableSource: DataSource + Clone + 'static {
     /// Build a backend-native path expression for a dotted active column,
     /// tried before the generic correlated-subquery chain.
     ///
-    /// `hops` names the `has_one` relations to traverse and `column` the final
-    /// field. The default returns `None`, so backends fall back to the generic
-    /// chain built on [`related_correlated_condition`](Self::related_correlated_condition).
+    /// `hops` holds each traversed relation's **foreign-key/link field** (not
+    /// its registry name — a relation named `owner` over a link field `client`
+    /// must lower to `client.…`), and `column` the final field. The default
+    /// returns `None`, so backends fall back to the generic chain built on
+    /// [`related_correlated_condition`](Self::related_correlated_condition).
     /// SurrealDB overrides this to emit an idiom path (`batch.golf_course.name`,
     /// each segment escaped separately); multi-hop comes for free. The returned
     /// expression is unaliased — `select()` aliases it to the dotted name.

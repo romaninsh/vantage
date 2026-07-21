@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.13 — 2026-07-21
+
+- Implicit-references review fixes: the generated-id insert path
+  (`insert_return_id_value`, which typed-entity inserts funnel through) strips
+  imported columns like the other write paths; a `patch` naming an imported
+  column is rejected with an explicit read-only error instead of silently
+  no-opping; expression-only columns (registered via `with_expression` with no
+  column def) can be named in an active set.
+- `traversal_path_expr` receives each hop's foreign-key/link *field* (not the
+  relation's registry name), so a relation named differently from its link
+  column still lowers correctly on native-path backends.
+- New `Table::is_imported_column` / `is_calculated_column` accessors let driver
+  factories flag computed columns `calculated` in vista metadata.
+
 ## 0.6.12 — 2026-07-21
 
 - `Table::with_active_columns(&["id", "client.name", "client.bakery.name"])` —

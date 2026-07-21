@@ -347,6 +347,11 @@ where
         // before calling `Vista::add_order`.
         let mut vc = VistaColumn::new(name.clone(), col.get_type().to_string())
             .with_flag(vista_flags::ORDERABLE);
+        // Computed columns (implicit-reference imports, expression, lazy)
+        // are read-only for consumers.
+        if table.is_calculated_column(name) {
+            vc = vc.with_flag(vista_flags::CALCULATED);
+        }
         if col.flags().contains(&ColumnFlag::Hidden) {
             vc = vc.with_flag(vista_flags::HIDDEN);
         }

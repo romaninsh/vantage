@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.14 — 2026-07-21
+
+- `can_traverse_in_columns` — and the previously missing `can_fetch_window` —
+  are readable by name via `capability_flag` and the rhai capabilities map.
+- `flags::CALCULATED` doc matched to actual behavior (applied by driver
+  factories via `Table::is_calculated_column`).
+
 ## 0.6.13 — 2026-07-21
 
 - `flags::CALCULATED` (`"calculated"`) — a read-only, source-computed column
