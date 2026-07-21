@@ -77,7 +77,7 @@ Augmentation {
 ```
 
 - `source` picks how a master row selects its detail: `Source::Id` matches master.id → detail.id;
-  `Source::Column { from, to }` matches master[from] → detail[to], or detail.id when `to` is `None`;
+  `Source::Column { from, to }` matches `master[from]` → `detail[to]`, or detail.id when `to` is `None`;
   `Source::Build(closure)` performs arbitrary narrowing from the whole row, and is per-row only.
 - `fetch` picks how the detail is read: `Fetch::PerRow` today; `Batched` is planned.
 - `merge.columns` lists the detail columns to lift. Empty means all; on a name clash the detail
