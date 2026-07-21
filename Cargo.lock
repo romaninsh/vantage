@@ -5771,7 +5771,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.6.11"
+version = "0.6.12"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -5799,7 +5799,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -5832,7 +5832,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.6.12"
+version = "0.6.13"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -5884,7 +5884,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.13"
+version = "0.6.14"
 dependencies = [
  "async-stream",
  "async-trait",

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.14 — 2026-07-21
+
+- `can_traverse_in_columns` — and the previously missing `can_fetch_window` —
+  are readable by name via `capability_flag` and the rhai capabilities map.
+- `flags::CALCULATED` doc matched to actual behavior (applied by driver
+  factories via `Table::is_calculated_column`).
+
 ## 0.6.13 — 2026-07-21
 
 - `flags::CALCULATED` (`"calculated"`) — a read-only, source-computed column
@@ -7,9 +14,7 @@
   Consumers render it read-only and exclude it from forms and write payloads.
 - `VistaCapabilities::can_traverse_in_columns` — whether a backend can lower a
   dotted column (`country.name`) into its own query. SQL and SurrealDB shells
-  advertise `true`; CSV/Mongo/REST leave it `false`. Readable by name via
-  `capability_flag` and the rhai capabilities map (which also gained the
-  previously missing `can_fetch_window` arm).
+  advertise `true`; CSV/Mongo/REST leave it `false`.
 
 ## 0.6.12 — 2026-07-20
 
