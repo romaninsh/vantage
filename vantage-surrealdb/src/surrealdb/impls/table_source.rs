@@ -23,9 +23,15 @@ use crate::thing::Thing;
 use crate::types::{AnySurrealType, SurrealType};
 
 /// Parse a CBOR map into a Record and optionally extract the ID field as a Thing.
+///
+/// The id field is usually a record id (`Tag(8)` or a `table:key` string),
+/// but a query-sourced table may key rows by a plain scalar — a `GROUP BY
+/// month` aggregate's id is the text `"2025-08"`. Those synthesize a Thing
+/// under `table_name` so every row still gets an addressable id.
 fn parse_cbor_row(
     map: Vec<(ciborium::Value, ciborium::Value)>,
     id_field_name: &str,
+    table_name: &str,
 ) -> (Option<Thing>, Record<AnySurrealType>) {
     let mut fields = IndexMap::new();
     let mut thing: Option<Thing> = None;
@@ -36,7 +42,13 @@ fn parse_cbor_row(
             _ => continue,
         };
         if key == id_field_name {
-            thing = Thing::from_cbor(v.clone());
+            thing = Thing::from_cbor(v.clone()).or_else(|| match &v {
+                ciborium::Value::Text(s) => Some(Thing::new(table_name, s.clone())),
+                ciborium::Value::Integer(i) => {
+                    Some(Thing::new(table_name, i128::from(*i).to_string()))
+                }
+                _ => None,
+            });
         }
         match AnySurrealType::from_cbor(&v) {
             Some(val) => {
@@ -175,7 +187,7 @@ impl TableSource for SurrealDB {
                 _ => continue,
             };
 
-            let (thing, record) = parse_cbor_row(map, &id_field_name);
+            let (thing, record) = parse_cbor_row(map, &id_field_name, table.table_name());
             let id = thing.ok_or_else(|| {
                 error!(
                     "list_table_values: row missing id field",
@@ -196,28 +208,39 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let query = crate::surreal_expr!("SELECT * FROM ONLY {}", (id.clone()));
-        let result = self.execute(&query).await?;
+        let id_field_name = table
+            .id_field()
+            .map(|c| c.name().to_string())
+            .unwrap_or_else(|| "id".to_string());
 
-        // `SELECT ... FROM ONLY` returns NONE (Tag(6, _)) or plain Null when
-        // no row matches.
-        let value = result.into_value();
-        if matches!(value, ciborium::Value::Null | ciborium::Value::Tag(6, _)) {
+        // Narrow the table's own select rather than `SELECT * FROM ONLY <id>`
+        // — the table's select projects computed `with_expression` columns
+        // (e.g. record-link lookups), which a bare `*` fetch would silently
+        // drop from the single-record read path.
+        let id_column: Column<AnySurrealType> = Column::new(&id_field_name);
+        let narrowed = table
+            .clone()
+            .with_condition(SurrealOperation::eq(&id_column, id.clone()));
+        let mut select = narrowed.select();
+        select.limit = Some(1);
+        let result = self.execute(&select.expr()).await?;
+
+        let arr = result
+            .into_value()
+            .into_array()
+            .map_err(|_| error!("get_table_value: expected array result"))?;
+
+        let Some(item) = arr.into_iter().next() else {
             return Ok(None);
-        }
-
-        let map = value.into_map().map_err(|_| {
+        };
+        let map = item.into_map().map_err(|_| {
             error!(
                 "get_table_value: expected map result",
                 id = format!("{:?}", id)
             )
         })?;
 
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
-        let (_thing, record) = parse_cbor_row(map, &id_field_name);
+        let (_thing, record) = parse_cbor_row(map, &id_field_name, table.table_name());
         Ok(Some(record))
     }
 
@@ -252,7 +275,7 @@ impl TableSource for SurrealDB {
             _ => return Ok(None),
         };
 
-        let (thing, record) = parse_cbor_row(map, &id_field_name);
+        let (thing, record) = parse_cbor_row(map, &id_field_name, table.table_name());
         match thing {
             Some(id) => Ok(Some((id, record))),
             None => Ok(None),
@@ -333,7 +356,7 @@ impl TableSource for SurrealDB {
             .id_field()
             .map(|c| c.name().to_string())
             .unwrap_or_else(|| "id".to_string());
-        let (_thing, rec) = parse_cbor_row(map, &id_field);
+        let (_thing, rec) = parse_cbor_row(map, &id_field, table.table_name());
         Ok(rec)
     }
 
@@ -360,7 +383,7 @@ impl TableSource for SurrealDB {
             .id_field()
             .map(|c| c.name().to_string())
             .unwrap_or_else(|| "id".to_string());
-        let (_thing, rec) = parse_cbor_row(map, &id_field);
+        let (_thing, rec) = parse_cbor_row(map, &id_field, table.table_name());
         Ok(rec)
     }
 
@@ -380,7 +403,7 @@ impl TableSource for SurrealDB {
             .id_field()
             .map(|c| c.name().to_string())
             .unwrap_or_else(|| "id".to_string());
-        let (_thing, rec) = parse_cbor_row(map, &id_field);
+        let (_thing, rec) = parse_cbor_row(map, &id_field, table.table_name());
         Ok(rec)
     }
 
@@ -419,7 +442,7 @@ impl TableSource for SurrealDB {
         let query = Expression::new(format!("{} RETURN id", base.template), base.parameters);
         let result = self.execute(&query).await?;
         let map = extract_first_map(result)?;
-        let (thing, _rec) = parse_cbor_row(map, "id");
+        let (thing, _rec) = parse_cbor_row(map, "id", table.table_name());
         thing.ok_or_else(|| error!("insert_table_return_id_value: no id returned"))
     }
 

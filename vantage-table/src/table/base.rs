@@ -152,7 +152,9 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// Each callback borrows the record as built so far; the value it
     /// returns is inserted under the expression's name before the next
     /// callback runs. See [`Self::with_lazy_expression`].
-    pub(crate) async fn apply_lazy_expressions(
+    /// Public so driver shells that bypass the `list_values` read path
+    /// (e.g. a REST shell's windowed fetch) can still apply lazy columns.
+    pub async fn apply_lazy_expressions(
         &self,
         record: &mut vantage_types::Record<T::Value>,
     ) -> vantage_core::Result<()> {
