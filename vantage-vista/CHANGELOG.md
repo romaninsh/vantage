@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.13 — 2026-07-21
+
+- `flags::CALCULATED` (`"calculated"`) — a read-only, source-computed column
+  (an implicit-reference traversal, an `expr:` script, or a lazy column).
+  Consumers render it read-only and exclude it from forms and write payloads.
+- `VistaCapabilities::can_traverse_in_columns` — whether a backend can lower a
+  dotted column (`country.name`) into its own query. SQL and SurrealDB shells
+  advertise `true`; CSV/Mongo/REST leave it `false`.
+
 ## 0.6.12 — 2026-07-20
 
 - `ColumnSpec::expr` / `with_expr` — a server-side computed column: a Rhai

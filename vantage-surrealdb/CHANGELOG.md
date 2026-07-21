@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.6 — 2026-07-21
+
+- Implicit references (`Table::with_active_columns`) lower into a native
+  SurrealQL idiom path via the new `TableSource::traversal_path_expr` hook —
+  each segment escaped on its own so `batch.golf_course.name` traverses the
+  record links rather than looking up one `⟨batch.golf_course.name⟩` literal
+  field. Multi-hop comes for free. The vista factory advertises
+  `can_traverse_in_columns`.
+
 ## 0.6.5 — 2026-07-20
 
 - `expr:` computed columns: a column's Rhai script now lowers into a

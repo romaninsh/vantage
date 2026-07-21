@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.11 — 2026-07-21
+
+- SQLite / Postgres / MySQL advertise `TableSource::supports_traversal`, so
+  implicit references (`Table::with_active_columns`) lower into nested
+  correlated scalar subqueries on their existing `related_correlated_condition`
+  — no native-path override needed. The vista factories advertise
+  `can_traverse_in_columns`.
+
 ## 0.6.10 — 2026-07-16
 
 - CBOR↔JSON bridge is the shared `vantage-types` walker under a local `SqlDialect`;

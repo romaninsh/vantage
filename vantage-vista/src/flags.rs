@@ -11,3 +11,7 @@ pub const SEARCHABLE: &str = "searchable";
 pub const ORDERABLE: &str = "orderable";
 pub const MANDATORY: &str = "mandatory";
 pub const HIDDEN: &str = "hidden";
+/// Read-only, source-computed column: an implicit-reference traversal
+/// (`country.name`), an `expr:` script, or a lazy computed column. Consumers
+/// render it read-only and exclude it from forms and write payloads.
+pub const CALCULATED: &str = "calculated";

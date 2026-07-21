@@ -78,6 +78,7 @@ impl SqliteVistaFactory {
                 can_fetch_next: true,
                 can_traverse_to_record: true,
                 can_traverse_to_set: true,
+                can_traverse_in_columns: true,
                 ..VistaCapabilities::default()
             },
             metadata,

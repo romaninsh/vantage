@@ -88,6 +88,7 @@ impl SurrealVistaFactory {
                 can_fetch_next: true,
                 can_traverse_to_record: true,
                 can_traverse_to_set: true,
+                can_traverse_in_columns: true,
                 // Per-reference scripted traversal only works when the script
                 // engine is compiled in; without `rhai`, any `build_script` is
                 // ignored and the FK eq-condition path still serves.
@@ -513,6 +514,29 @@ mod tests {
         let map: IndexMap<String, SurrealVistaSpec> = specs.into_iter().collect();
         let map = Arc::new(map);
         Arc::new(move |name: &str| map.get(name).cloned())
+    }
+
+    /// SurrealDB lowers an implicit reference into a native idiom path, each
+    /// segment escaped on its own so the record links are traversed
+    /// (`batch.golf_course.name`) rather than looked up as one literal field.
+    #[test]
+    fn traversal_path_expr_builds_escaped_idiom_path() {
+        use vantage_table::traits::table_source::TableSource;
+        let db = test_db();
+        assert!(db.supports_traversal());
+
+        let one = db.traversal_path_expr(&["batch"], "name").unwrap();
+        assert_eq!(one.preview(), "batch.name");
+
+        let two = db
+            .traversal_path_expr(&["batch", "golf_course"], "name")
+            .unwrap();
+        assert_eq!(two.preview(), "batch.golf_course.name");
+
+        // A reserved keyword segment is escaped independently — not the whole
+        // path — so traversal survives.
+        let reserved = db.traversal_path_expr(&["SELECT"], "name").unwrap();
+        assert_eq!(reserved.preview(), "⟨SELECT⟩.name");
     }
 
     #[cfg(feature = "rhai")]

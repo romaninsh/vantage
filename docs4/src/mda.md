@@ -169,6 +169,43 @@ These fields appear in `ReadableValueSet` results alongside physical columns.
 
 ---
 
+## Implicit references — dotted columns
+
+Surfacing a related row's field is common enough that it has a declarative form. A **dotted name** in
+`with_active_columns` traverses declared `has_one` relations and imports the target's field as a
+read-only column, aliased under the literal dotted name — no hand-written expression:
+
+```rust
+let orders = Order::sqlite_table(db)
+    .with_active_columns(&["id", "client.name", "client.bakery.name"])?;
+// SELECT id,
+//   (SELECT name FROM client WHERE client.id = client_order.client_id) AS "client.name",
+//   (SELECT name FROM bakery WHERE bakery.id = client.bakery_id …)     AS "client.bakery.name"
+// FROM client_order
+```
+
+`client.name` is one hop; `client.bakery.name` recurses through two. Each backend lowers the
+traversal into its own query — SQL nests correlated scalar subqueries, SurrealDB emits a native idiom
+path (`client.name`, each segment escaped separately). The row comes back with a **flat key** equal to
+the dotted name (`row.get("client.bakery.name")`).
+
+A plain (non-dotted) entry simply restricts projection to that column — `with_active_columns` is also
+how you narrow a wide table to the columns you actually read. Everything is validated when the table
+is built, so mistakes surface immediately rather than at fetch time:
+
+- an unknown column or relation is a **build-time error**;
+- a `has_many` hop is rejected (traversal is `has_one`-only — a to-many field is a set, not a value);
+- a backend that can lower neither a subquery nor an idiom path (MongoDB, CSV, REST) refuses dotted
+  names up front; same-datasource only.
+
+Imported columns are read-only: they are flagged `calculated` for consumers and stripped from every
+write payload, so a read-modify-save round-trip never tries to persist `client.name` as a real field.
+This is the declarative counterpart to the manual `with_expression` + `get_subquery_as` recipe above —
+reach for `with_expression` when you need an arbitrary expression, and a dotted column when you just
+want a related field.
+
+---
+
 ## Connection management
 
 The model crate owns database connections. `bakery_model3` uses a `OnceLock<SurrealDB>` pattern for

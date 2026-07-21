@@ -125,6 +125,12 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
                 if col.flags().contains(&ColumnFlag::Hidden) {
                     vc = vc.hidden();
                 }
+                // Imported implicit-reference columns are read-only: flag them
+                // `calculated` so consumers render them read-only and keep them
+                // out of forms/write payloads (mirrors the write-side strip).
+                if self.imported_columns.contains(name) {
+                    vc = vc.with_flag(vantage_vista::flags::CALCULATED);
+                }
                 vc
             })
             .collect()
@@ -402,12 +408,6 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         relation: &str,
     ) -> Result<Table<T, E2>> {
         let (reference, relation_str) = self.lookup_ref(relation)?;
-
-        let source_id = self
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
-
         let mut target: Table<T, E2> = *reference
             .build_target(self.data_source() as &dyn std::any::Any)
             .downcast::<Table<T, E2>>()
@@ -417,14 +417,47 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
                     relation = relation_str.as_str()
                 )
             })?;
+        self.attach_correlated_condition(reference, &mut target);
+        Ok(target)
+    }
 
+    /// Entity-erased [`get_subquery_as`](Self::get_subquery_as): builds the
+    /// correlated target as `Table<T, EmptyEntity>` without the caller naming
+    /// the target's concrete entity type. Used by implicit-reference traversal,
+    /// which walks relations by name and cannot know each hop's entity type.
+    pub fn get_subquery_erased(&self, relation: &str) -> Result<Table<T, EmptyEntity>> {
+        let (reference, relation_str) = self.lookup_ref(relation)?;
+        let mut target: Table<T, EmptyEntity> = *reference
+            .build_target_erased(self.data_source() as &dyn std::any::Any)
+            .downcast::<Table<T, EmptyEntity>>()
+            .map_err(|_| {
+                error!(
+                    "Failed to downcast related table",
+                    relation = relation_str.as_str()
+                )
+            })?;
+        self.attach_correlated_condition(reference, &mut target);
+        Ok(target)
+    }
+
+    /// Attach the correlated join condition binding `target` back to `self`
+    /// (`target.<id> = self.<foreign_key>`). Shared by the typed and erased
+    /// subquery builders, which otherwise differ only in the target entity type
+    /// and which `build_target*` closure produced `target`.
+    fn attach_correlated_condition<E2: Entity<T::Value> + 'static>(
+        &self,
+        reference: &dyn Reference,
+        target: &mut Table<T, E2>,
+    ) {
+        let source_id = self
+            .id_field()
+            .map(|c| c.name().to_string())
+            .unwrap_or_else(|| "id".to_string());
         let target_id = target
             .id_field()
             .map(|c| c.name().to_string())
             .unwrap_or_else(|| "id".to_string());
-
         let (src_col, tgt_col) = reference.columns(&source_id, &target_id);
-
         let condition = self.data_source().related_correlated_condition(
             target.table_name(),
             &tgt_col,
@@ -432,7 +465,22 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
             &src_col,
         );
         target.add_condition(condition);
+    }
 
+    /// Entity-erased [`get_ref_target`](Self::get_ref_target): the bare target
+    /// (no condition) as `Table<T, EmptyEntity>`. Used to walk an
+    /// implicit-reference chain and read the final target's column definitions.
+    pub fn get_ref_target_erased(&self, relation: &str) -> Result<Table<T, EmptyEntity>> {
+        let (reference, relation_str) = self.lookup_ref(relation)?;
+        let target: Table<T, EmptyEntity> = *reference
+            .build_target_erased(self.data_source() as &dyn std::any::Any)
+            .downcast::<Table<T, EmptyEntity>>()
+            .map_err(|_| {
+                error!(
+                    "Failed to downcast related table",
+                    relation = relation_str.as_str()
+                )
+            })?;
         Ok(target)
     }
 

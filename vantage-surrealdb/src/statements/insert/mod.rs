@@ -1,7 +1,7 @@
 //! SurrealDB `CREATE` statement builder.
 //!
 //! Builds parameterized `CREATE table SET ...` or `CREATE table:id SET ...`
-//! expressions for execution via [`ExprDataSource::execute()`].
+//! expressions for execution via `ExprDataSource::execute()`.
 //!
 //! # Examples
 //!

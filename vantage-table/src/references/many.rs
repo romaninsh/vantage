@@ -79,6 +79,13 @@ where
         Box::new((self.build_target)(ds.clone()))
     }
 
+    fn build_target_erased(&self, data_source: &dyn Any) -> Box<dyn Any> {
+        let ds = data_source
+            .downcast_ref::<T>()
+            .expect("data source type mismatch in HasMany::build_target_erased");
+        Box::new((self.build_target)(ds.clone()).into_entity::<EmptyEntity>())
+    }
+
     fn cardinality(&self) -> vantage_vista::ReferenceKind {
         vantage_vista::ReferenceKind::HasMany
     }

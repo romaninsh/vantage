@@ -71,7 +71,7 @@ impl SurrealUpdate {
         self
     }
 
-    /// Bulk-load fields from a Record<AnySurrealType>.
+    /// Bulk-load fields from a `Record<AnySurrealType>`.
     pub fn with_record(mut self, record: &vantage_types::Record<AnySurrealType>) -> Self {
         for (k, v) in record.iter() {
             self.fields.insert(k.clone(), v.clone());

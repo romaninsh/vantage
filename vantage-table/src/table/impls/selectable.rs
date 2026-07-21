@@ -1,7 +1,7 @@
-use vantage_core::Result;
+use vantage_core::{Result, error};
 use vantage_expressions::traits::selectable::Selectable;
 use vantage_expressions::{Expression, Expressive, SelectableDataSource, expr_any};
-use vantage_types::Entity;
+use vantage_types::{EmptyEntity, Entity};
 
 use crate::{
     column::core::ColumnType,
@@ -57,6 +57,11 @@ where
             if self.lazy_expressions.contains_key(column.name()) {
                 continue;
             }
+            // With an active-column set, project only its members. The id
+            // column is always projected — consumers rely on it to key rows.
+            if !self.is_active(column.name()) {
+                continue;
+            }
             if let Some(expr_fn) = self.expressions.get(column.name()) {
                 let expr = expr_fn(self.as_entity_erased());
                 self.data_source.add_select_column(
@@ -75,7 +80,7 @@ where
 
         // Add expressions that don't correspond to any column
         for (name, expr_fn) in &self.expressions {
-            if !self.columns.contains_key(name) {
+            if !self.columns.contains_key(name) && self.is_active(name) {
                 let expr = expr_fn(self.as_entity_erased());
                 self.data_source.add_select_column(
                     &mut select,
@@ -142,12 +147,177 @@ where
         T::Column<T::AnyType>: Expressive<T::Value>,
         T::Select: Expressive<T::Value>,
     {
-        let expr = self.get_column_expr(field)?;
+        Some(self.select_expression(self.get_column_expr(field)?))
+    }
+
+    /// Wrap an arbitrary expression as a single-column subquery over this
+    /// table's source and conditions: `(SELECT <expr> FROM table WHERE …)`.
+    ///
+    /// Extracted from [`select_column`](Self::select_column) so a traversal
+    /// expression can nest one subquery inside another (multi-hop implicit
+    /// references). Fields and ordering are cleared — only `expr` is projected.
+    pub fn select_expression(&self, expr: Expression<T::Value>) -> Expression<T::Value>
+    where
+        T::Select: Expressive<T::Value>,
+    {
         let mut select = self.select_empty();
         select.clear_fields();
         select.clear_order_by();
         select.add_expression(expr);
-        Some(select.expr())
+        select.expr()
+    }
+
+    /// Whether `name` is projected by [`select`](Self::select). With no active
+    /// set every column is active; otherwise only the set's members are, plus
+    /// the id column (always projected — consumers key rows by it).
+    fn is_active(&self, name: &str) -> bool {
+        match &self.active_columns {
+            None => true,
+            Some(set) => set.contains(name) || self.id_field.as_deref() == Some(name),
+        }
+    }
+
+    /// Restrict this table to an explicit set of columns, and import **implicit
+    /// references** — dotted names that traverse declared `has_one` relations
+    /// and surface the target's field as a read-only, typed column aliased
+    /// under the literal dotted name.
+    ///
+    /// ```rust,ignore
+    /// let orders = Order::sqlite_table(db)
+    ///     .with_active_columns(&["id", "client.name", "client.bakery.name"])?;
+    /// // SELECT id,
+    /// //   (SELECT name FROM client WHERE client.id = client_order.client_id) AS "client.name",
+    /// //   (SELECT name FROM bakery WHERE bakery.id = client.bakery_id …)     AS "client.bakery.name"
+    /// // FROM client_order
+    /// ```
+    ///
+    /// A non-dotted entry restricts projection to that existing column
+    /// (exactly today's declared columns). A dotted entry `a.b…c` resolves `a`,
+    /// `b`… as `has_one` relations and `c` as a column on the final target.
+    /// Everything is validated here, so every failure is a **build-time** error,
+    /// never a fetch-time surprise: unknown column, unknown relation, a
+    /// `has_many` hop, or a backend that cannot lower traversal into its query
+    /// (MongoDB, CSV, REST, CMD). Same-datasource only; cross-datasource
+    /// traversal is a Diorama augmentation concern.
+    pub fn with_active_columns(mut self, cols: &[&str]) -> Result<Self>
+    where
+        T: 'static,
+        E: 'static,
+        T::Column<T::AnyType>: Expressive<T::Value>,
+        T::Select: Expressive<T::Value>,
+    {
+        for &col in cols {
+            let parts: Vec<&str> = col.split('.').collect();
+            if parts.iter().any(|p| p.is_empty()) {
+                return Err(error!("invalid active column name", column = col));
+            }
+
+            if parts.len() >= 2 {
+                let column = parts[parts.len() - 1];
+                let hops = &parts[..parts.len() - 1];
+
+                if !self.data_source().supports_traversal() {
+                    return Err(error!(
+                        "backend does not support implicit-reference traversal in columns",
+                        column = col
+                    ));
+                }
+
+                // Validate the has_one chain and that the final column exists.
+                let target = self.resolve_has_one_target(hops)?;
+                if !target.columns().contains_key(column) {
+                    return Err(error!(
+                        "implicit reference target has no such column",
+                        column = column
+                    ));
+                }
+
+                // Lower to an expression: native path (SurrealDB idiom) first,
+                // else the generic nested correlated-subquery chain.
+                let expr = match self.data_source().traversal_path_expr(hops, column) {
+                    Some(e) => e,
+                    None => self.traverse_rest_generic(hops, column)?,
+                };
+
+                let dotted = col.to_string();
+                if !self.columns.contains_key(&dotted) {
+                    let column_def = self.data_source.create_column::<T::AnyType>(&dotted);
+                    self.add_column(column_def);
+                }
+                self = self.with_expression(&dotted, move |_| expr.clone());
+                self.imported_columns.insert(dotted.clone());
+                self.active_columns
+                    .get_or_insert_with(Default::default)
+                    .insert(dotted);
+            } else {
+                if !self.columns.contains_key(col) {
+                    return Err(error!("unknown active column", column = col));
+                }
+                self.active_columns
+                    .get_or_insert_with(Default::default)
+                    .insert(col.to_string());
+            }
+        }
+        Ok(self)
+    }
+
+    /// Recursively lower a dotted implicit reference into nested correlated
+    /// subqueries. One hop wraps the recursion's inner expression in a
+    /// `get_subquery_as` target via [`select_expression`](Self::select_expression);
+    /// the base case projects the final column. Used only when the backend has
+    /// no native [`traversal_path_expr`](crate::prelude::TableSource::traversal_path_expr).
+    fn traverse_rest_generic(&self, hops: &[&str], column: &str) -> Result<Expression<T::Value>>
+    where
+        T: 'static,
+        E: 'static,
+        T::Column<T::AnyType>: Expressive<T::Value>,
+        T::Select: Expressive<T::Value>,
+    {
+        match hops.split_first() {
+            None => self.get_column_expr(column).ok_or_else(|| {
+                error!(
+                    "implicit reference target has no such column",
+                    column = column
+                )
+            }),
+            Some((head, tail)) => {
+                let target: Table<T, EmptyEntity> = self.get_subquery_erased(head)?;
+                let inner = target.traverse_rest_generic(tail, column)?;
+                // The base case returns a bare column; a deeper hop returns a
+                // SELECT that must be parenthesized before it can nest as a
+                // scalar inside this hop's SELECT.
+                let inner = if tail.is_empty() {
+                    inner
+                } else {
+                    expr_any!("({})", (inner))
+                };
+                Ok(target.select_expression(inner))
+            }
+        }
+    }
+
+    /// Walk a chain of `has_one` hops and return the final target table,
+    /// erroring at build time on an unknown relation or a `has_many` hop.
+    fn resolve_has_one_target(&self, hops: &[&str]) -> Result<Table<T, EmptyEntity>>
+    where
+        T: 'static,
+        E: 'static,
+    {
+        let (head, tail) = hops
+            .split_first()
+            .ok_or_else(|| error!("empty implicit reference path"))?;
+        if self.ref_cardinality(head)? != vantage_vista::ReferenceKind::HasOne {
+            return Err(error!(
+                "implicit reference hop must traverse a has_one relation",
+                relation = *head
+            ));
+        }
+        let target: Table<T, EmptyEntity> = self.get_ref_target_erased(head)?;
+        if tail.is_empty() {
+            Ok(target)
+        } else {
+            target.resolve_has_one_target(tail)
+        }
     }
 }
 

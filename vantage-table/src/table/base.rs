@@ -59,6 +59,16 @@ where
     pub(super) contained: Vec<crate::references::ContainedRelation<T>>,
     pub(super) expressions: IndexMap<String, ExpressionFn<T>>,
     pub(super) lazy_expressions: IndexMap<String, LazyExpressionFn<T>>,
+    /// When `Some`, `select()` projects only these column names (plus the id
+    /// column, always). `None` keeps the default "project every column"
+    /// behavior. The set holds both plain column names and dotted implicit
+    /// references (`"country.name"`); set via [`Self::with_active_columns`].
+    pub(super) active_columns: Option<indexmap::IndexSet<String>>,
+    /// Dotted implicit-reference columns imported by traversal
+    /// (`"country.name"`). These are read-only, expression-backed projections;
+    /// they are tracked here so write paths never persist them (a SCHEMALESS
+    /// store would otherwise create a literal `country.name` field).
+    pub(super) imported_columns: indexmap::IndexSet<String>,
     pub(super) pagination: Option<Pagination>,
     pub(super) title_field: Option<String>,
     pub(super) title_fields: Vec<String>,
@@ -97,6 +107,8 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             contained: Vec::new(),
             expressions: IndexMap::new(),
             lazy_expressions: IndexMap::new(),
+            active_columns: None,
+            imported_columns: indexmap::IndexSet::new(),
             pagination: None,
             title_field: None,
             title_fields: Vec::new(),
@@ -126,6 +138,8 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             contained: self.contained,
             expressions: self.expressions,
             lazy_expressions: self.lazy_expressions,
+            active_columns: self.active_columns,
+            imported_columns: self.imported_columns,
             pagination: self.pagination,
             title_field: self.title_field,
             title_fields: self.title_fields,
@@ -163,6 +177,17 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             record.insert(name.clone(), value);
         }
         Ok(())
+    }
+
+    /// Drop imported implicit-reference columns (`"country.name"`) from a write
+    /// payload. They are read-only, expression-backed projections that no
+    /// backend can honestly store; a round-trip (read → modify → save) would
+    /// otherwise carry them back, and a SCHEMALESS store would create a literal
+    /// `country.name` field. Called before invariants on every write path.
+    pub(super) fn strip_imported_columns(&self, record: &mut vantage_types::Record<T::Value>) {
+        for name in &self.imported_columns {
+            record.shift_remove(name);
+        }
     }
 
     /// Snapshot the table's relations as Vista references (name, target type,

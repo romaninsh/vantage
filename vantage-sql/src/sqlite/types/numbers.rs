@@ -3,7 +3,7 @@
 //! Uses ciborium::Value (CBOR) as the underlying storage:
 //! - Integer types (i8..i64, u8..u32) → CborValue::Integer
 //! - Float types (f32, f64) → CborValue::Float
-//! - Option<T> delegates to T, with Null for None
+//! - `Option<T>` delegates to `T`, with Null for None
 //!
 //! `from_cbor` accepts Text as a fallback — allows extraction from TEXT
 //! columns where the database returns strings instead of native numeric types.

@@ -8,7 +8,7 @@ use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 /// The function name is automatically uppercased. Arguments are expressions
 /// that get rendered comma-separated inside the parentheses.
 ///
-/// Prefer the [`fx!`] macro for ergonomic construction — it calls `.expr()`
+/// Prefer the `fx!` macro for ergonomic construction — it calls `.expr()`
 /// on each argument automatically.
 ///
 /// # Examples

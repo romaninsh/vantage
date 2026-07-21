@@ -297,6 +297,30 @@ pub trait TableSource: DataSource + Clone + 'static {
         unimplemented!("correlated subqueries not supported by this backend")
     }
 
+    /// Whether this backend can lower a dotted active column
+    /// (`"country.name"`) into its own query — a nested correlated subquery for
+    /// SQL, a native idiom path for SurrealDB. Backends that can build neither
+    /// (MongoDB, CSV, REST, CMD) leave the default `false`, and
+    /// [`Table::with_active_columns`](crate::table::Table::with_active_columns)
+    /// rejects dotted names against them at build time rather than at fetch time.
+    fn supports_traversal(&self) -> bool {
+        false
+    }
+
+    /// Build a backend-native path expression for a dotted active column,
+    /// tried before the generic correlated-subquery chain.
+    ///
+    /// `hops` names the `has_one` relations to traverse and `column` the final
+    /// field. The default returns `None`, so backends fall back to the generic
+    /// chain built on [`related_correlated_condition`](Self::related_correlated_condition).
+    /// SurrealDB overrides this to emit an idiom path (`batch.golf_course.name`,
+    /// each segment escaped separately); multi-hop comes for free. The returned
+    /// expression is unaliased — `select()` aliases it to the dotted name.
+    fn traversal_path_expr(&self, hops: &[&str], column: &str) -> Option<Expression<Self::Value>> {
+        let _ = (hops, column);
+        None
+    }
+
     /// Return an associated expression that, when resolved, yields all values
     /// of the given typed column from this table (respecting current conditions).
     ///

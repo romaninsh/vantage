@@ -43,6 +43,13 @@ pub trait Reference: Send + Sync {
     /// applying the join condition.
     fn build_target(&self, data_source: &dyn Any) -> Box<dyn Any>;
 
+    /// Produce a fresh target table with its entity type erased to
+    /// `EmptyEntity`, wrapped in `Box<dyn Any>` for downcast to
+    /// `Table<T, EmptyEntity>`. Unlike [`build_target`](Self::build_target),
+    /// the caller need not know the concrete target entity type — used by
+    /// implicit-reference traversal, which walks relations by name.
+    fn build_target_erased(&self, data_source: &dyn Any) -> Box<dyn Any>;
+
     /// Cardinality of this relation. `HasOne` if traversing yields at most
     /// one record (the FK lives on the source); `HasMany` if it can yield
     /// any number (the FK lives on the target). Surfaced by

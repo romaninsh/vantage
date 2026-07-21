@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.21 — 2026-07-21
+
+- The Dio shell passes `VistaCapabilities::can_traverse_in_columns` through from
+  the master vista unchanged (column traversal is lowered into the master's
+  query; the cache neither adds nor removes it).
+
 ## 0.6.20 — 2026-07-20
 
 - A detached lens `on_start` seed now announces itself once it lands

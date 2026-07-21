@@ -1,6 +1,6 @@
 //! # SurrealDB Select Query Builder
 //!
-//! Builds SELECT query for SurrealDB. Implements [`Selectable`] protocol.
+//! Builds SELECT query for SurrealDB. Implements the `Selectable` protocol.
 
 pub mod builder;
 pub mod exec;

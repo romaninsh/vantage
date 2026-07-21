@@ -465,6 +465,10 @@ impl TableSource for PostgresDB {
         tgt_col.in_(fk_values.expr())
     }
 
+    fn supports_traversal(&self) -> bool {
+        true
+    }
+
     fn related_correlated_condition(
         &self,
         target_table: &str,
