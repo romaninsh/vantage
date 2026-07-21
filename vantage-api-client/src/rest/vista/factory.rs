@@ -229,6 +229,9 @@ impl RestApiVistaFactory {
             if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
                 table.add_title_field(name);
             }
+            if let Some(code) = &col_spec.lazy {
+                add_lazy_column(&mut table, name, code)?;
+            }
         }
 
         if !table.columns().contains_key(&id_column) {
@@ -241,6 +244,35 @@ impl RestApiVistaFactory {
 
         Ok(table)
     }
+}
+
+/// Lower a column's `lazy:` script onto the table — a Rhai closure run in
+/// Rust on each returned record (`row` in scope), never sent to the API.
+/// The REST carrier is already CBOR, so no per-value conversion is needed.
+#[cfg(feature = "rhai")]
+fn add_lazy_column(table: &mut Table<RestApi, EmptyEntity>, name: &str, code: &str) -> Result<()> {
+    let script = vantage_vista::lazy_value_closure(code.to_string());
+    table.add_lazy_expression(
+        name,
+        Arc::new(move |record| {
+            let row = record.clone();
+            let script = script.clone();
+            Box::pin(async move { script(&row) })
+        }),
+    );
+    Ok(())
+}
+
+#[cfg(not(feature = "rhai"))]
+fn add_lazy_column(
+    _table: &mut Table<RestApi, EmptyEntity>,
+    name: &str,
+    _code: &str,
+) -> Result<()> {
+    Err(error!(
+        "column declares a `lazy:` script but vantage-api-client was built without the `rhai` feature",
+        column = name
+    ))
 }
 
 /// Pick the id column from an `id_column:` field or the first column

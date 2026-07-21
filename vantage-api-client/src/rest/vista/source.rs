@@ -155,7 +155,14 @@ impl TableShell for RestApiTableShell {
                 self.table.conditions(),
             )
             .await?;
-        Ok(records.into_iter().collect())
+        // This path fetches straight from the API layer (windowed), so the
+        // table's `list_values` never runs — apply lazy computed columns
+        // here or `lazy:` cells stay empty in the lazily-scrolled grid.
+        let mut records: Vec<(String, Record<CborValue>)> = records.into_iter().collect();
+        for (_, rec) in records.iter_mut() {
+            self.table.apply_lazy_expressions(rec).await?;
+        }
+        Ok(records)
     }
 
     fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {

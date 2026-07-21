@@ -1,10 +1,15 @@
 [package]
 edition = "2024"
 name = "vantage-api-client"
-version = "0.6.6"
+version = "0.6.7"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
 description = "Vantage extension for REST and GraphQL HTTP API backends"
+
+[features]
+# `lazy:` computed columns on REST tables — Rhai scripts run per returned
+# record via vantage-vista's shared lazy-expression evaluator.
+rhai = ["vantage-vista/rhai"]
 
 [dependencies]
 async-trait = "0.1"

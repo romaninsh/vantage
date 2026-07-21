@@ -97,6 +97,15 @@ pub struct ColumnSpec<C = NoExtras> {
     /// `Table::add_lazy_expression`; never part of the backend query.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lazy: Option<String>,
+    /// Rhai script for a *server-side* computed column. Evaluated once at
+    /// build time with the driver's expression vocabulary (`ident(...)`,
+    /// operators, `expr("raw")`, …) into a query expression, then lowered
+    /// via `Table::with_expression` — the backend projects it as
+    /// `(<expr>) AS <column>`. Unlike `lazy:` it participates in the
+    /// query, so it can traverse record links or call backend functions.
+    /// Computed columns are read-only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expr: Option<String>,
     #[serde(flatten, default)]
     pub driver: C,
 }
@@ -108,6 +117,7 @@ impl<C: Default> ColumnSpec<C> {
             flags: Vec::new(),
             references: None,
             lazy: None,
+            expr: None,
             driver: C::default(),
         }
     }
@@ -124,6 +134,11 @@ impl<C: Default> ColumnSpec<C> {
 
     pub fn with_lazy(mut self, script: impl Into<String>) -> Self {
         self.lazy = Some(script.into());
+        self
+    }
+
+    pub fn with_expr(mut self, script: impl Into<String>) -> Self {
+        self.expr = Some(script.into());
         self
     }
 }

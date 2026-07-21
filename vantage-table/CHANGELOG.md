@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.11 — 2026-07-20
+
+- `Table::apply_lazy_expressions` is public — a driver shell that bypasses
+  the `list_values` read path (e.g. a REST shell's windowed fetch) can now
+  apply `lazy:` columns to the rows it fetches directly.
+
 ## 0.6.10 — 2026-07-15
 
 - `Table::with_lazy_expression(name, callback)` — a column computed in Rust on
