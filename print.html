@@ -37,7 +37,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-ed6e910d.js";
+            window.path_to_searchindex_js = "searchindex-af00d5df.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-76a8932f.js"></script>
@@ -7250,7 +7250,8 @@ read-only column, aliased under the literal dotted name — no hand-written expr
     .with_active_columns(&amp;["id", "client.name", "client.bakery.name"])?;
 // SELECT id,
 //   (SELECT name FROM client WHERE client.id = client_order.client_id) AS "client.name",
-//   (SELECT name FROM bakery WHERE bakery.id = client.bakery_id …)     AS "client.bakery.name"
+//   (SELECT (SELECT name FROM bakery WHERE bakery.id = client.bakery_id)
+//      FROM client WHERE client.id = client_order.client_id)           AS "client.bakery.name"
 // FROM client_order
 <span class="boring">}</span></code></pre>
 <p><code>client.name</code> is one hop; <code>client.bakery.name</code> recurses through two. Each backend lowers the
@@ -7263,11 +7264,14 @@ is built, so mistakes surface immediately rather than at fetch time:</p>
 <ul>
 <li>an unknown column or relation is a <strong>build-time error</strong>;</li>
 <li>a <code>has_many</code> hop is rejected (traversal is <code>has_one</code>-only — a to-many field is a set, not a value);</li>
-<li>a backend that can lower neither a subquery nor an idiom path (MongoDB, CSV, REST) refuses dotted
-names up front; same-datasource only.</li>
+<li>a backend that can lower neither a subquery nor an idiom path (e.g. MongoDB, CSV, REST) refuses
+dotted names up front; same-datasource only.</li>
 </ul>
-<p>Imported columns are read-only: they are flagged <code>calculated</code> for consumers and stripped from every
-write payload, so a read-modify-save round-trip never tries to persist <code>client.name</code> as a real field.
+<p>Imported columns are read-only: they are flagged <code>calculated</code> for consumers, stripped from
+full-record write payloads (insert, replace, generated-id insert) so a read-modify-save round-trip
+never tries to persist <code>client.name</code> as a real field, and rejected outright in a <code>patch</code> — a partial
+payload naming a read-only column is explicit intent, and silently dropping it would turn the patch
+into a successful no-op.
 This is the declarative counterpart to the manual <code>with_expression</code> + <code>get_subquery_as</code> recipe above —
 reach for <code>with_expression</code> when you need an arbitrary expression, and a dotted column when you just
 want a related field.</p>
