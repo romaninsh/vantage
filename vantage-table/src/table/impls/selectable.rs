@@ -187,18 +187,19 @@ where
     ///     .with_active_columns(&["id", "client.name", "client.bakery.name"])?;
     /// // SELECT id,
     /// //   (SELECT name FROM client WHERE client.id = client_order.client_id) AS "client.name",
-    /// //   (SELECT name FROM bakery WHERE bakery.id = client.bakery_id …)     AS "client.bakery.name"
+    /// //   (SELECT (SELECT name FROM bakery WHERE bakery.id = client.bakery_id)
+    /// //      FROM client WHERE client.id = client_order.client_id)           AS "client.bakery.name"
     /// // FROM client_order
     /// ```
     ///
-    /// A non-dotted entry restricts projection to that existing column
-    /// (exactly today's declared columns). A dotted entry `a.b…c` resolves `a`,
-    /// `b`… as `has_one` relations and `c` as a column on the final target.
-    /// Everything is validated here, so every failure is a **build-time** error,
-    /// never a fetch-time surprise: unknown column, unknown relation, a
-    /// `has_many` hop, or a backend that cannot lower traversal into its query
-    /// (MongoDB, CSV, REST, CMD). Same-datasource only; cross-datasource
-    /// traversal is a Diorama augmentation concern.
+    /// A non-dotted entry restricts projection to an existing column or
+    /// expression column (exactly today's declared set). A dotted entry `a.b…c`
+    /// resolves `a`, `b`… as `has_one` relations and `c` as a column on the
+    /// final target. Everything is validated here, so every failure is a
+    /// **build-time** error, never a fetch-time surprise: unknown column,
+    /// unknown relation, a `has_many` hop, or a backend that cannot lower
+    /// traversal into its query (e.g. MongoDB, CSV, REST). Same-datasource
+    /// only; cross-datasource traversal is a Diorama augmentation concern.
     pub fn with_active_columns(mut self, cols: &[&str]) -> Result<Self>
     where
         T: 'static,
@@ -224,7 +225,7 @@ where
                 }
 
                 // Validate the has_one chain and that the final column exists.
-                let target = self.resolve_has_one_target(hops)?;
+                let (target, fk_hops) = self.resolve_has_one_target(hops)?;
                 if !target.columns().contains_key(column) {
                     return Err(error!(
                         "implicit reference target has no such column",
@@ -232,9 +233,15 @@ where
                     ));
                 }
 
-                // Lower to an expression: native path (SurrealDB idiom) first,
-                // else the generic nested correlated-subquery chain.
-                let expr = match self.data_source().traversal_path_expr(hops, column) {
+                // Lower to an expression: native path first, else the generic
+                // nested correlated-subquery chain. The native path receives
+                // the foreign-key/link *fields*, not the relation names — a
+                // SurrealDB idiom path traverses record-link fields, and a
+                // relation is free to be named differently from its FK
+                // (`with_one("owner", "client", …)` must lower to
+                // `client.name`, not the nonexistent `owner.name`).
+                let fk_refs: Vec<&str> = fk_hops.iter().map(String::as_str).collect();
+                let expr = match self.data_source().traversal_path_expr(&fk_refs, column) {
                     Some(e) => e,
                     None => self.traverse_rest_generic(hops, column)?,
                 };
@@ -250,7 +257,10 @@ where
                     .get_or_insert_with(Default::default)
                     .insert(dotted);
             } else {
-                if !self.columns.contains_key(col) {
+                // Expression columns registered via `with_expression` alone
+                // (no column def) are projectable too — activating them must
+                // work, or an active set would silently drop them for good.
+                if !self.columns.contains_key(col) && !self.expressions.contains_key(col) {
                     return Err(error!("unknown active column", column = col));
                 }
                 self.active_columns
@@ -296,9 +306,12 @@ where
         }
     }
 
-    /// Walk a chain of `has_one` hops and return the final target table,
-    /// erroring at build time on an unknown relation or a `has_many` hop.
-    fn resolve_has_one_target(&self, hops: &[&str]) -> Result<Table<T, EmptyEntity>>
+    /// Walk a chain of `has_one` hops and return the final target table along
+    /// with each hop's foreign-key/link field (in hop order), erroring at
+    /// build time on an unknown relation or a `has_many` hop. The FK fields
+    /// feed the backend-native path lowering, which traverses fields — the
+    /// relation *names* only address the refs registry.
+    fn resolve_has_one_target(&self, hops: &[&str]) -> Result<(Table<T, EmptyEntity>, Vec<String>)>
     where
         T: 'static,
         E: 'static,
@@ -312,11 +325,14 @@ where
                 relation = *head
             ));
         }
+        let fk = self.ref_foreign_key(head)?;
         let target: Table<T, EmptyEntity> = self.get_ref_target_erased(head)?;
         if tail.is_empty() {
-            Ok(target)
+            Ok((target, vec![fk]))
         } else {
-            target.resolve_has_one_target(tail)
+            let (final_target, mut fks) = target.resolve_has_one_target(tail)?;
+            fks.insert(0, fk);
+            Ok((final_target, fks))
         }
     }
 }
@@ -351,6 +367,11 @@ where
     /// may extend the query in place (joins referencing the base tables) or wrap
     /// it as a subquery (to filter/sort on a computed alias). Conditions already
     /// baked into the base select are not re-applied.
+    ///
+    /// Implicit references are **not** inherited: the derived table starts with
+    /// no active set, and listing an imported dotted column in `columns` copies
+    /// only its bare definition (no traversal expression, no read-only
+    /// tracking). Re-declare traversals on the derived table if needed.
     pub fn derive_from<E2: Entity<V> + 'static>(
         source: &Table<T, E2>,
         alias: impl Into<String>,

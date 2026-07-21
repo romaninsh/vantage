@@ -392,11 +392,17 @@ where
 {
     let mut metadata = VistaMetadata::new();
     for (name, col) in table.columns() {
-        // SQLite can ORDER BY any column server-side. Every column gets
+        // SQLite can ORDER BY any column server-side — including computed
+        // ones, which resolve via their output alias. Every column gets
         // the ORDERABLE flag at construction; consumers branch on it
         // before calling `Vista::add_order`.
         let mut vc = VistaColumn::new(name.clone(), col.get_type().to_string())
             .with_flag(vista_flags::ORDERABLE);
+        // Computed columns (implicit-reference imports, expression, lazy)
+        // are read-only for consumers.
+        if table.is_calculated_column(name) {
+            vc = vc.with_flag(vista_flags::CALCULATED);
+        }
         if col.flags().contains(&ColumnFlag::Hidden) {
             vc = vc.with_flag(vista_flags::HIDDEN);
         }

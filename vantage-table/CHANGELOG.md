@@ -11,11 +11,20 @@
   support are all build-time errors, never fetch-time surprises. SQL backends
   lower each hop into a nested correlated scalar subquery; a backend may
   override the new `TableSource::traversal_path_expr` hook to emit a native path
-  instead (SurrealDB does). Imported columns are stripped from insert/replace/
-  patch payloads so a read-modify-save round-trip never persists them.
+  instead (SurrealDB does). Imported columns are stripped from full-record
+  write payloads (insert, replace, and the generated-id insert path) so a
+  read-modify-save round-trip never persists them; a `patch` naming an
+  imported column is rejected with an explicit read-only error instead of
+  silently no-opping.
 - New `TableSource::supports_traversal` / `traversal_path_expr` hooks (default
   `false` / `None`); `Table::select_expression` extracted from `select_column`
-  so a traversal expression can nest.
+  so a traversal expression can nest. `traversal_path_expr` receives each
+  hop's foreign-key/link *field* (not the relation's registry name), so a
+  relation named differently from its link column still lowers correctly.
+- Expression-only columns (registered via `with_expression` with no column
+  def) can be named in the active set; `Table::is_imported_column` /
+  `is_calculated_column` accessors let driver factories flag computed columns
+  `calculated` in vista metadata.
 
 ## 0.6.11 — 2026-07-20
 

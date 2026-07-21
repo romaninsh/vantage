@@ -28,6 +28,7 @@ pub(crate) fn capabilities_map(vista: &Vista) -> RhaiMap {
     put("can_traverse_to_record", c.can_traverse_to_record);
     put("can_traverse_to_set", c.can_traverse_to_set);
     put("can_build_ref_via_script", c.can_build_ref_via_script);
+    put("can_traverse_in_columns", c.can_traverse_in_columns);
     m
 }
 

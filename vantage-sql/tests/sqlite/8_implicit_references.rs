@@ -5,7 +5,7 @@
 //! into a nested correlated scalar subquery. Uses a self-contained in-memory
 //! database so the write-strip case can insert.
 
-use vantage_dataset::traits::{ReadableValueSet, WritableValueSet};
+use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_expressions::ExprDataSource;
 #[allow(unused_imports)]
 use vantage_sql::sqlite::SqliteType;
@@ -107,7 +107,10 @@ async fn one_hop_projects_correlated_subquery() {
     assert!(preview.contains("client.name"), "alias missing: {preview}");
     assert!(preview.contains("client_id"), "base col missing: {preview}");
     // A correlated subquery over the client table, not a join.
-    assert!(preview.contains("client"), "no client ref: {preview}");
+    assert!(
+        preview.contains(r#""client"."id" = "client_order"."client_id""#),
+        "no correlated subquery: {preview}"
+    );
 
     let rows = orders.list_values().await.unwrap();
     assert_eq!(rows.len(), 2);
@@ -206,4 +209,126 @@ async fn imported_columns_are_stripped_on_write() {
         stored.get("client.name").map(ToString::to_string),
         Some("'Marty'".to_string())
     );
+}
+
+/// The generated-id insert path (`insert_return_id_value`, which the typed
+/// entity insert funnels through) must strip imported columns just like the
+/// explicit-id path — otherwise a round-tripped record fails the INSERT.
+#[tokio::test]
+async fn imported_columns_are_stripped_on_insert_return_id() {
+    let db = setup().await;
+    let orders = order_table(db)
+        .with_active_columns(&["id", "client_id", "client.name"])
+        .unwrap();
+
+    let mut rec: Record<AnySqliteType> = Record::new();
+    // Explicit id: the TEXT primary key has no DEFAULT, so a generated id
+    // would come back NULL — irrelevant to what this test pins down.
+    rec.insert("id".to_string(), AnySqliteType::from("o9".to_string()));
+    rec.insert(
+        "client_id".to_string(),
+        AnySqliteType::from("c1".to_string()),
+    );
+    rec.insert(
+        "client.name".to_string(),
+        AnySqliteType::from("should be dropped".to_string()),
+    );
+
+    // Succeeds only if the imported column is stripped on this path too.
+    let id = orders.insert_return_id_value(&rec).await.unwrap();
+    let stored = orders.get_value(id).await.unwrap().unwrap();
+    assert_eq!(
+        stored.get("client.name").map(ToString::to_string),
+        Some("'Marty'".to_string())
+    );
+}
+
+/// A patch is explicit intent per key: patching a read-only imported column
+/// is rejected loudly instead of silently no-opping.
+#[tokio::test]
+async fn patch_on_imported_column_errors() {
+    let db = setup().await;
+    let orders = order_table(db)
+        .with_active_columns(&["id", "client_id", "client.name"])
+        .unwrap();
+
+    let mut patch: Record<AnySqliteType> = Record::new();
+    patch.insert(
+        "client.name".to_string(),
+        AnySqliteType::from("nope".to_string()),
+    );
+    let err = orders.patch_value("o1", &patch).await.unwrap_err();
+    assert!(
+        err.to_string().contains("read-only"),
+        "unexpected error: {err}"
+    );
+
+    // Sanity: patching a real column still works.
+    let mut ok_patch: Record<AnySqliteType> = Record::new();
+    ok_patch.insert(
+        "client_id".to_string(),
+        AnySqliteType::from("c1".to_string()),
+    );
+    orders.patch_value("o1", &ok_patch).await.unwrap();
+}
+
+/// The active set restricts projection: a declared column left out of the set
+/// is absent from both the query and the returned rows.
+#[tokio::test]
+async fn inactive_columns_are_not_projected() {
+    let db = setup().await;
+    let orders = order_table(db)
+        .with_active_columns(&["id", "client_id"])
+        .unwrap();
+
+    let preview = orders.select().preview();
+    assert!(
+        !preview.contains("is_deleted"),
+        "inactive column projected: {preview}"
+    );
+
+    let rows = orders.list_values().await.unwrap();
+    for row in rows.values() {
+        assert!(row.get("is_deleted").is_none());
+        assert!(row.get("client_id").is_some());
+    }
+}
+
+/// The id column is always projected, even when the active set omits it —
+/// consumers key rows by it.
+#[tokio::test]
+async fn id_column_is_always_projected() {
+    let db = setup().await;
+    let orders = order_table(db).with_active_columns(&["client_id"]).unwrap();
+
+    let rows = orders.list_values().await.unwrap();
+    assert_eq!(rows.len(), 2);
+    for row in rows.values() {
+        assert!(row.get("id").is_some(), "id missing from row: {row:?}");
+    }
+}
+
+/// A column registered only as an expression (no column def) can be named in
+/// the active set and stays projected.
+#[tokio::test]
+async fn expression_only_column_can_be_activated() {
+    let db = setup().await;
+    let orders = order_table(db)
+        .with_expression("client_upper", |_| sqlite_expr!("UPPER(client_id)"))
+        .with_active_columns(&["id", "client_upper"])
+        .unwrap();
+
+    let preview = orders.select().preview();
+    assert!(
+        preview.contains("client_upper"),
+        "expression column dropped: {preview}"
+    );
+
+    let rows = orders.list_values().await.unwrap();
+    for row in rows.values() {
+        assert_eq!(
+            row.get("client_upper").map(ToString::to_string),
+            Some("'C1'".to_string())
+        );
+    }
 }

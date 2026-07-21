@@ -144,6 +144,10 @@ impl TableSource for SurrealDB {
         let parts: Vec<Expression<AnySurrealType>> = table
             .columns()
             .values()
+            // Imported implicit-reference columns exist only as projection
+            // aliases; the escaped dotted identifier addresses a nonexistent
+            // field and would silently never match.
+            .filter(|col| !table.is_imported_column(col.name()))
             .map(|col| {
                 let needle = search_value.to_lowercase();
                 crate::surreal_expr!(

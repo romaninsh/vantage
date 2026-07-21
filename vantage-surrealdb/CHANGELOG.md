@@ -6,8 +6,15 @@
   SurrealQL idiom path via the new `TableSource::traversal_path_expr` hook —
   each segment escaped on its own so `batch.golf_course.name` traverses the
   record links rather than looking up one `⟨batch.golf_course.name⟩` literal
-  field. Multi-hop comes for free. The vista factory advertises
-  `can_traverse_in_columns`.
+  field. Multi-hop comes for free. The idiom descends each hop's *link field*
+  (a relation named `owner` over a link field `batch` lowers to `batch.name`).
+  The vista factory advertises `can_traverse_in_columns`, routes dotted spec
+  columns (`batch.name:`) through the traversal import (a build-time-validated
+  implicit reference instead of a dead ⟨batch.name⟩ literal lookup), and flags
+  computed columns `calculated` in metadata — imported ones are additionally
+  not orderable, since the dotted name is a projection alias, not a field.
+  Quicksearch skips imported columns (the escaped dotted identifier would
+  silently never match).
 
 ## 0.6.5 — 2026-07-20
 

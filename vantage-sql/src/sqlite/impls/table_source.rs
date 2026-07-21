@@ -136,6 +136,10 @@ impl TableSource for SqliteDB {
         let conditions: Vec<Expression<AnySqliteType>> = table
             .columns()
             .values()
+            // Imported implicit-reference columns exist only as projection
+            // aliases; in a WHERE clause the dotted identifier degrades to a
+            // string literal and silently matches wrong rows.
+            .filter(|col| !table.is_imported_column(col.name()))
             .map(|col| {
                 let p = pattern.clone();
                 sqlite_expr!("{} LIKE {} ESCAPE '$'", (ident(col.name())), p)

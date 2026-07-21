@@ -180,7 +180,8 @@ let orders = Order::sqlite_table(db)
     .with_active_columns(&["id", "client.name", "client.bakery.name"])?;
 // SELECT id,
 //   (SELECT name FROM client WHERE client.id = client_order.client_id) AS "client.name",
-//   (SELECT name FROM bakery WHERE bakery.id = client.bakery_id …)     AS "client.bakery.name"
+//   (SELECT (SELECT name FROM bakery WHERE bakery.id = client.bakery_id)
+//      FROM client WHERE client.id = client_order.client_id)           AS "client.bakery.name"
 // FROM client_order
 ```
 
@@ -195,11 +196,14 @@ is built, so mistakes surface immediately rather than at fetch time:
 
 - an unknown column or relation is a **build-time error**;
 - a `has_many` hop is rejected (traversal is `has_one`-only — a to-many field is a set, not a value);
-- a backend that can lower neither a subquery nor an idiom path (MongoDB, CSV, REST) refuses dotted
-  names up front; same-datasource only.
+- a backend that can lower neither a subquery nor an idiom path (e.g. MongoDB, CSV, REST) refuses
+  dotted names up front; same-datasource only.
 
-Imported columns are read-only: they are flagged `calculated` for consumers and stripped from every
-write payload, so a read-modify-save round-trip never tries to persist `client.name` as a real field.
+Imported columns are read-only: they are flagged `calculated` for consumers, stripped from
+full-record write payloads (insert, replace, generated-id insert) so a read-modify-save round-trip
+never tries to persist `client.name` as a real field, and rejected outright in a `patch` — a partial
+payload naming a read-only column is explicit intent, and silently dropping it would turn the patch
+into a successful no-op.
 This is the declarative counterpart to the manual `with_expression` + `get_subquery_as` recipe above —
 reach for `with_expression` when you need an arbitrary expression, and a dotted column when you just
 want a related field.

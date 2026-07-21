@@ -6,7 +6,11 @@
   implicit references (`Table::with_active_columns`) lower into nested
   correlated scalar subqueries on their existing `related_correlated_condition`
   — no native-path override needed. The vista factories advertise
-  `can_traverse_in_columns`.
+  `can_traverse_in_columns` and flag computed columns (implicit-reference
+  imports, expression, lazy) `calculated` in metadata. Quicksearch skips
+  imported columns — in a WHERE clause the dotted identifier is not a real
+  field (SQLite would degrade it to a string literal and match wrong rows;
+  Postgres/MySQL would error at fetch time).
 
 ## 0.6.10 — 2026-07-16
 

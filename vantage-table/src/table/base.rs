@@ -183,11 +183,32 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// payload. They are read-only, expression-backed projections that no
     /// backend can honestly store; a round-trip (read → modify → save) would
     /// otherwise carry them back, and a SCHEMALESS store would create a literal
-    /// `country.name` field. Called before invariants on every write path.
+    /// `country.name` field. Called before invariants on the full-record write
+    /// paths (insert, insert-returning-id, replace); `patch_value` instead
+    /// rejects imported keys outright, since a partial payload is explicit
+    /// intent per key.
     pub(super) fn strip_imported_columns(&self, record: &mut vantage_types::Record<T::Value>) {
         for name in &self.imported_columns {
             record.shift_remove(name);
         }
+    }
+
+    /// Whether `name` is an imported implicit-reference column
+    /// (`"country.name"`) — an expression-backed traversal projection that is
+    /// read-only and must never be persisted, ordered, or searched as if it
+    /// were a physical field.
+    pub fn is_imported_column(&self, name: &str) -> bool {
+        self.imported_columns.contains(name)
+    }
+
+    /// Whether `name` is computed rather than stored: an imported
+    /// implicit-reference column, a server-side expression column, or a lazy
+    /// (post-fetch) computed column. Driver factories flag such columns
+    /// `calculated` in vista metadata so consumers render them read-only.
+    pub fn is_calculated_column(&self, name: &str) -> bool {
+        self.imported_columns.contains(name)
+            || self.expressions.contains_key(name)
+            || self.lazy_expressions.contains_key(name)
     }
 
     /// Snapshot the table's relations as Vista references (name, target type,

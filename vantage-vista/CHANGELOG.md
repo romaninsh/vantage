@@ -7,7 +7,9 @@
   Consumers render it read-only and exclude it from forms and write payloads.
 - `VistaCapabilities::can_traverse_in_columns` — whether a backend can lower a
   dotted column (`country.name`) into its own query. SQL and SurrealDB shells
-  advertise `true`; CSV/Mongo/REST leave it `false`.
+  advertise `true`; CSV/Mongo/REST leave it `false`. Readable by name via
+  `capability_flag` and the rhai capabilities map (which also gained the
+  previously missing `can_fetch_window` arm).
 
 ## 0.6.12 — 2026-07-20
 
