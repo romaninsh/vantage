@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.2 — 2026-07-22
+
+- Docs: drop the intra-doc link to the private `QueuedFlash` in the
+  `worker` module docs (rustdoc `-D warnings`).
+
 ## 0.7.1 — 2026-07-22
 
 **Flash-pipeline hardening: effective caps, reconcile-while-pending, drain-not-drop**
