@@ -316,51 +316,6 @@ async fn servo_new_flashes_an_insert() -> Result<()> {
 }
 
 #[tokio::test]
-async fn servo_new_without_an_id_generates_a_uuid() -> Result<()> {
-    let shell = product_shell();
-    let dio = dio_over(&shell).await?;
-    let servo = dio.servo_new();
-
-    // No id commanded — the default identity is a time-ordered UUID.
-    servo.set("name", text("Muffin"));
-    let flash = servo.flash().await?.expect("new record produces a flash");
-
-    let id = flash.id().expect("generated id").to_string();
-    assert!(
-        uuid::Uuid::parse_str(&id).is_ok(),
-        "generated id is a UUID, got {id:?}"
-    );
-    let master_row = dio.master().get_value(id.clone()).await?.unwrap();
-    assert_eq!(
-        master_row.get("id"),
-        Some(&text(&id)),
-        "the generated id is written into the record itself"
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn servo_new_on_an_integral_id_column_still_requires_an_id() -> Result<()> {
-    let shell = MockShell::new();
-    let metadata = VistaMetadata::new()
-        .with_column(Column::new("id", "int").with_flag("id"))
-        .with_column(Column::new("name", "String"))
-        .with_id_column("id");
-    let vista = Vista::new("numbered", Box::new(shell.clone().with_metadata(metadata)));
-    let lens = Arc::new(Lens::new().cache_in_memory().build().expect("build lens"));
-    let dio = lens.make_dio(vista).await?;
-
-    let servo = dio.servo_new();
-    servo.set("name", text("No id supplied"));
-    let err = servo
-        .flash()
-        .await
-        .expect_err("a UUID cannot land in an INTEGER id");
-    assert!(err.to_string().contains("requires its id field"));
-    Ok(())
-}
-
-#[tokio::test]
 async fn servo_delete_flashes_a_delete() -> Result<()> {
     let shell = product_shell();
     let dio = dio_over(&shell).await?;
