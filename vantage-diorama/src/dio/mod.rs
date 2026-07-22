@@ -5,6 +5,7 @@ pub mod event_bus;
 pub mod hot_tier;
 pub mod impls;
 mod optimistic;
+pub(crate) mod pending;
 pub(crate) mod query_index;
 pub mod refresh;
 pub mod shell;
@@ -18,7 +19,7 @@ use vantage_core::Result;
 use vantage_vista::Vista;
 
 use crate::lens::{CacheTable, Lens};
-use crate::ops::{ChangeEvent, ChangeFlash};
+use crate::ops::ChangeEvent;
 use crate::scenery::record::spawn_record_scenery;
 use crate::scenery::{
     RecordScenery, RecordStatus, TableScenery, TableSceneryBuilder, ValueSceneryBuilder,
@@ -73,6 +74,20 @@ pub struct Dio {
     pub(crate) inner: Arc<DioInner>,
 }
 
+/// The Dio's *effective* write capabilities — the one gate UI chrome
+/// asks before offering add/edit/delete.
+///
+/// Defaults to the master Vista's own capabilities; registering an
+/// `on_flash` route lifts all three, because the route — not the
+/// master — is then the writer (a read-only CSV becomes editable, with
+/// changes landing wherever the route sends them).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WriteCapabilities {
+    pub can_insert: bool,
+    pub can_update: bool,
+    pub can_delete: bool,
+}
+
 pub(crate) struct DioInner {
     pub(crate) lens: Arc<Lens>,
     /// The master Vista, swappable so a [`reload`](Dio::reload) can re-point the
@@ -81,8 +96,12 @@ pub(crate) struct DioInner {
     pub(crate) master: std::sync::RwLock<Arc<Vista>>,
     pub(crate) cache: Arc<dyn CacheTable>,
     pub(crate) cache_table_name: String,
-    pub(crate) write_queue: mpsc::Sender<ChangeFlash>,
+    pub(crate) write_queue: mpsc::Sender<worker::QueuedFlash>,
     pub(crate) event_bus: broadcast::Sender<DioEvent>,
+    /// Rows with an optimistic flash in flight — reconcile-shaped cache
+    /// writers skip them so a stale master snapshot can't clobber a
+    /// staged value. See [`pending::PendingFlashes`].
+    pub(crate) pending_flashes: Arc<pending::PendingFlashes>,
     pub(crate) refresh_task: Mutex<Option<JoinHandle<()>>>,
     pub(crate) write_worker: Mutex<Option<JoinHandle<()>>>,
     pub(crate) hot_tier: Arc<HotTier>,
@@ -134,6 +153,19 @@ impl Drop for DioInner {
 }
 
 impl DioInner {
+    /// See [`Dio::write_capabilities`]. Lives on the inner so
+    /// [`DioShell`] can share the one definition of capability lifting.
+    pub(crate) fn write_capabilities(&self) -> WriteCapabilities {
+        let routed = self.lens.callbacks.on_flash.is_some();
+        let master = self.master.read().unwrap().clone();
+        let caps = master.capabilities();
+        WriteCapabilities {
+            can_insert: caps.can_insert || routed,
+            can_update: caps.can_update || routed,
+            can_delete: caps.can_delete || routed,
+        }
+    }
+
     /// Fetch (or lazily create) the [`QueryIndex`](crate::dio::query_index::QueryIndex)
     /// for `key`. Repeated calls with the same key return the same `Arc`, so
     /// all sceneries on a query variant share one ordered index.
@@ -572,6 +604,50 @@ impl Dio {
     /// re-deriving their index and re-reading their full state.
     pub fn notify_dataset_changed(&self) {
         let _ = self.inner.event_bus.send(DioEvent::DatasetChanged);
+    }
+
+    /// The Dio's effective write capabilities — master caps, lifted to
+    /// fully writable when an `on_flash` route is registered. UI chrome
+    /// gates its add/edit/delete affordances on this, nothing else.
+    pub fn write_capabilities(&self) -> WriteCapabilities {
+        self.inner.write_capabilities()
+    }
+
+    /// Reconcile one row from a master snapshot into the cache —
+    /// **skipping it if a flash is in flight** for that id, so a
+    /// snapshot taken before the write can't clobber the staged value.
+    /// Returns `true` if the row was written, `false` if it was left
+    /// alone.
+    ///
+    /// This is the cache write an `on_refresh` callback should use for
+    /// rows it copied from the master. [`patched`](Self::patched) stays
+    /// the ingress for *push* changes (a live stream is authoritative
+    /// and fresh by definition); reconciles are snapshots and may be
+    /// stale — hence the guard. Emits no events; the surrounding
+    /// refresh flow announces `DatasetChanged` when it completes.
+    pub async fn reconcile_value(
+        &self,
+        id: impl Into<String>,
+        record: &Record<CborValue>,
+    ) -> Result<bool> {
+        let id = id.into();
+        if self.inner.pending_flashes.contains(&id) {
+            return Ok(false);
+        }
+        self.inner.cache.insert_value(&id, record).await?;
+        Ok(true)
+    }
+
+    /// Bulk [`reconcile_value`](Self::reconcile_value): write every row
+    /// whose id has no flash in flight.
+    pub async fn reconcile_values(
+        &self,
+        rows: impl IntoIterator<Item = (String, Record<CborValue>)>,
+    ) -> Result<()> {
+        for (id, record) in rows {
+            self.reconcile_value(id, &record).await?;
+        }
+        Ok(())
     }
 
     /// Write `record` to the cache under `id` and publish

@@ -164,9 +164,15 @@ impl DioShell {
     }
 
     async fn enqueue(&self, flash: ChangeFlash) -> Result<()> {
+        // The queued flash carries its own keep-alive: even if every
+        // external handle drops right after this returns, the pipeline
+        // stays alive until the write lands.
         self.dio
             .write_queue
-            .send(flash)
+            .send(crate::dio::worker::QueuedFlash {
+                flash,
+                keep_alive: self.dio.clone(),
+            })
             .await
             .map_err(|e| error!("Dio write queue closed", detail = e.to_string()))
     }

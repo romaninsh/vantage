@@ -29,20 +29,19 @@ impl DioShell {
         let references = master.source.references().clone();
         let id_column = master.source.id_column().map(str::to_string);
         drop(master);
-        let cbs = &dio.lens.callbacks;
-        let has_flash_route = cbs.on_flash.is_some();
-        let has_on_event = cbs.on_event.is_some();
+        let has_on_event = dio.lens.callbacks.on_event.is_some();
+        let write_caps = dio.write_capabilities();
 
         // Capability lifting rules (architecture doc):
-        //   can_insert/update/delete = master.X OR an on_flash route registered
+        //   can_insert/update/delete = Dio::write_capabilities (master OR route)
         //   can_subscribe            = always true (Dio fans out events)
         //   can_invalidate           = master.can_invalidate OR on_event registered
         //   can_count                = always true (cache answers locally)
         let capabilities = VistaCapabilities {
             can_count: true,
-            can_insert: master_caps.can_insert || has_flash_route,
-            can_update: master_caps.can_update || has_flash_route,
-            can_delete: master_caps.can_delete || has_flash_route,
+            can_insert: write_caps.can_insert,
+            can_update: write_caps.can_update,
+            can_delete: write_caps.can_delete,
             can_subscribe: true,
             can_invalidate: master_caps.can_invalidate || has_on_event,
             // Read-side query controls reflect the cache today. Stage 5b

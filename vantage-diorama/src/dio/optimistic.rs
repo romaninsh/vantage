@@ -42,6 +42,11 @@ impl Dio {
             return crate::dio::worker::run_write_through(self, flash).await;
         };
 
+        // Mark the row in flight for the whole optimistic window —
+        // reconcile-shaped writers leave it alone until the guard drops
+        // (commit or rollback, every exit path).
+        let _pending = self.inner.pending_flashes.begin(id.clone());
+
         // 1. Snapshot the pre-image so a failed write can roll back exactly,
         //    and complete the flash with it for downstream routes.
         let pre = self.inner.cache.get_value(&id).await?;
@@ -55,8 +60,13 @@ impl Dio {
             .send(DioEvent::WritePending { id: id.clone() });
 
         // 3. Run the real write-through.
-        match crate::dio::worker::run_write_through(self, flash).await {
+        match crate::dio::worker::run_write_through(self, flash.clone()).await {
             Ok(()) => {
+                // Re-assert the confirmed fields over whatever raced into
+                // the cache mid-flight: a stale writer that bypassed the
+                // pending guard loses exactly the fields this flash wrote,
+                // and keeps everything else it brought.
+                reassert_confirmed(&self.inner, &flash).await?;
                 let _ = self.inner.event_bus.send(DioEvent::RecordChanged { id });
                 Ok(())
             }
@@ -107,6 +117,30 @@ impl Dio {
     /// Delete the row at `id` optimistically.
     pub async fn flash_delete(&self, id: impl Into<String>) -> Result<()> {
         self.flash(ChangeFlash::delete(id)).await
+    }
+}
+
+/// After the write-through confirms, make the cache agree with the
+/// confirmed fields. The staged value normally still stands, but a
+/// writer that bypassed [`Dio::reconcile_value`]'s pending guard may
+/// have clobbered the row mid-flight with a pre-write snapshot. Merging
+/// the flash's own fields onto the *current* row re-asserts exactly what
+/// was confirmed while keeping any fresher values that arrived for other
+/// fields.
+async fn reassert_confirmed(inner: &DioInner, flash: &ChangeFlash) -> Result<()> {
+    let Some(id) = flash.id() else {
+        return Ok(());
+    };
+    match flash.kind() {
+        FlashKind::Insert | FlashKind::Replace | FlashKind::Patch => {
+            let mut merged = inner.cache.get_value(id).await?.unwrap_or_default();
+            for (k, v) in flash.patch() {
+                merged.insert(k.clone(), v.clone());
+            }
+            inner.cache.insert_value(id, &merged).await
+        }
+        FlashKind::Delete => inner.cache.delete_value(id).await,
+        FlashKind::Clear => Ok(()),
     }
 }
 

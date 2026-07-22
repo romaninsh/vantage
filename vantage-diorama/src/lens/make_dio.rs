@@ -46,6 +46,7 @@ impl Lens {
             cache_table_name,
             write_queue: write_tx,
             event_bus,
+            pending_flashes: Arc::new(crate::dio::pending::PendingFlashes::new()),
             refresh_task: Mutex::new(None),
             write_worker: Mutex::new(None),
             hot_tier: Arc::new(HotTier::new()),
@@ -92,10 +93,9 @@ impl Lens {
     }
 }
 
-async fn spawn_write_worker(dio: &Dio, rx: mpsc::Receiver<crate::ops::ChangeFlash>) {
-    let inner_weak = Arc::downgrade(&dio.inner);
+async fn spawn_write_worker(dio: &Dio, rx: mpsc::Receiver<crate::dio::worker::QueuedFlash>) {
     let handle = dio.inner.lens.runtime.spawn(async move {
-        write_worker_loop(inner_weak, rx).await;
+        write_worker_loop(rx).await;
     });
     *dio.inner.write_worker.lock().await = Some(handle);
 }
