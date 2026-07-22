@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.7.0 — 2026-07-22
+
+**Servo & ChangeFlash — the outbound half of the photography lexicon**
+
+- **`ChangeFlash` replaces `WriteOp`** as the single outbound currency of the
+  write pipeline (breaking). Inbound light is a `ChangeEvent`; outbound light
+  is a flash. A flash is frozen at fire time and self-contained: `kind`
+  (`Insert | Replace | Patch | Delete | Clear`), `id`, the `patch` (only the
+  fields that changed), the `before` pre-image, and the derived `after`
+  merge. `Clear` replaces `DeleteAll` and keeps its no-optimism
+  special-casing; delete flashes now carry the pre-image for routing and
+  audit. `flash.active_record(dest)` binds the merged record to any
+  `WritableValueSet` — take the change, re-bind it to wherever it should
+  land, `save()`.
+- **`on_flash` replaces `on_write`** (breaking): the Lens write route now
+  receives the full `ChangeFlash`. Registering a route still lifts
+  `can_insert/can_update/can_delete` on the facade regardless of the
+  master's own capabilities.
+- **`Servo` — the editing companion**, opened via `dio.servo(id)` /
+  `dio.servo_new()`. A form is a servo loop over a record: `data` holds the
+  commanded setpoints, `baseline` the measured upstream state, and the dirty
+  set is the **error signal**, computed by diff. Untouched fields run in
+  continuous tracking — upstream changes update them live and they stay
+  clean; touched fields lock and hold, and upstream converging on the
+  setpoint releases the lock by itself. `servo.flash()` freezes the error
+  signal into an immutable flash carrying only the changed fields and emits
+  it through the optimistic path; `revert()` releases setpoints; `status()`
+  reports `Tracking | Pending | Failed`; `subscribe()` follows the scenery
+  generation-watch contract. A servo holds a strong Dio handle so the write
+  pipeline stays alive while a form is open.
+- The optimistic entry points moved into the flash lexicon (breaking):
+  `dio.flash(change_flash)` (was `write_optimistic`) plus `flash_patch`,
+  `flash_insert`, `flash_replace`, `flash_delete` conveniences. The route
+  now always receives a flash with its pre-image filled.
+
 ## 0.6.21 — 2026-07-21
 
 - The Dio shell passes `VistaCapabilities::can_traverse_in_columns` through from

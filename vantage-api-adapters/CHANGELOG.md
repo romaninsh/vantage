@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2 — 2026-07-22
+
+- Depend on vantage-diorama 0.7 (WriteOp retired for ChangeFlash; no
+  adapter-side behavior change).
+
 ## 0.1.1 — 2026-07-16
 
 - `DioRouter::key_by` now accepts non-string ids. The identity-watch diff keyed a
