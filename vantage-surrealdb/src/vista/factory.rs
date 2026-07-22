@@ -714,7 +714,59 @@ columns:
             .get_ref_from_row::<EmptyEntity>("tags", &row)
             .expect("traverse");
         let q = target.select().preview();
-        println!("STRING QUERY: {q}");
+        assert!(
+            q.contains("batch = batch:0jz7"),
+            "string id must be coerced to a record literal, got: {q}"
+        );
+        // The insert invariant must carry the coerced record id too — a child
+        // inserted into this set stores a link, not a string FK.
+        let invariant = target.invariants().get("batch").expect("batch invariant");
+        assert!(
+            matches!(invariant.value(), ciborium::Value::Tag(8, _)),
+            "invariant must hold a Tag(8) record id, got: {:?}",
+            invariant.value()
+        );
+    }
+
+    #[test]
+    fn has_one_traversal_coerces_string_fk_to_record_literal() {
+        let tag_yaml = r#"
+name: tag
+columns:
+  id: { type: string, flags: [id] }
+  batch: { type: string }
+references:
+  batch:
+    table: batch
+    kind: has_one
+    foreign_key: batch
+"#;
+        let batch_yaml = r#"
+name: batch
+columns:
+  id: { type: string, flags: [id] }
+  name: { type: string }
+"#;
+        let tag_spec = parse(tag_yaml);
+        let batch_spec = parse(batch_yaml);
+        let resolver = registry_resolver(vec![("batch".to_string(), batch_spec)]);
+        let table = build_surreal_table(&tag_spec, test_db(), Some(resolver)).expect("build tag");
+
+        // FK arriving in string form (e.g. a row that round-tripped through
+        // a script) must narrow the target by record literal, not by string.
+        let mut row: vantage_types::Record<AnySurrealType> = vantage_types::Record::new();
+        row.insert(
+            "batch".into(),
+            AnySurrealType::from(ciborium::Value::Text("batch:0jz7".into())),
+        );
+        let target = table
+            .get_ref_from_row::<EmptyEntity>("batch", &row)
+            .expect("traverse");
+        let q = target.select().preview();
+        assert!(
+            q.contains("id = batch:0jz7"),
+            "string FK must be coerced to a record literal, got: {q}"
+        );
     }
 
     #[test]

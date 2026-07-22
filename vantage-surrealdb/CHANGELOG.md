@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.8 — 2026-07-22
+
+- Reference narrowing coerces string-form record ids: `coerce_reference_value`
+  re-tags a `"table:key"` `Text` join value into a record id (`Tag(8)`), so
+  `get_ref` from a row that round-tripped through JSON/rhai renders
+  `batch = batch:0jz7` instead of a quoted string that matches nothing, and a
+  child inserted through the narrowed set stores a record link, not a string
+  foreign key. Plain scalar strings pass through untouched.
+
 ## 0.6.7 — 2026-07-21
 
 - Implicit-references review fixes: the idiom path descends each hop's *link

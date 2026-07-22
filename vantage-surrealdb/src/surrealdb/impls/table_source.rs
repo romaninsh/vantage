@@ -105,6 +105,20 @@ impl TableSource for SurrealDB {
         Ok(SurrealOperation::eq(&column, value))
     }
 
+    /// A join value in `"table:key"` string form (a record id that
+    /// round-tripped through JSON or a script) is re-tagged into a record
+    /// id, so narrowing renders a record literal and inserts store a link.
+    /// `Thing`'s parse requires the `table:key` shape, so a plain scalar
+    /// string passes through untouched; non-text values are already native.
+    fn coerce_reference_value(&self, value: Self::Value) -> Self::Value {
+        if matches!(value.value(), ciborium::Value::Text(_))
+            && let Some(thing) = Thing::from_cbor(value.value().clone())
+        {
+            return AnySurrealType::from(thing.to_cbor());
+        }
+        value
+    }
+
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
         Column::new(name)
     }
