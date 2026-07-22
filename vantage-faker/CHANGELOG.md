@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.6 — 2026-07-22
+
+- Track vantage-diorama 0.7 (Servo + ChangeFlash). No faker API changes —
+  the crate only consumes `ChangeEvent`, which is unchanged.
+
 ## 0.6.5 — 2026-07-15
 
 - Track vantage-diorama 0.6.17: the `scenery_cli` example calls
