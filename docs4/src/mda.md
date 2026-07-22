@@ -206,7 +206,9 @@ payload naming a read-only column is explicit intent, and silently dropping it w
 into a successful no-op.
 This is the declarative counterpart to the manual `with_expression` + `get_subquery_as` recipe above —
 reach for `with_expression` when you need an arbitrary expression, and a dotted column when you just
-want a related field.
+want a related field. The full treatment — traversal forms, validation, write semantics, per-backend
+lowering, and how relations surface on Vistas and Dio — is the
+[Relations & Traversal](relations.md) guide.
 
 ---
 
