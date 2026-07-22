@@ -325,6 +325,19 @@ impl Dio {
         self.inner.lens.make_dio_as(target, cache_table_name).await
     }
 
+    /// Traverse a reference to its **bare** target — the relation's table
+    /// with no row condition — as a new [`Dio`] sharing this Dio's
+    /// [`Lens`]. Where [`get_ref`](Self::get_ref) narrows the target to
+    /// one parent's related rows, this hands back *every eligible row* —
+    /// what a reference picker lists, or where a new related row would be
+    /// inserted. The cache table is the target's own name, so a page
+    /// already showing the target keeps this Dio warm.
+    pub async fn get_ref_target(&self, relation: &str) -> Result<Dio> {
+        let target = self.master().get_ref_target(relation)?;
+        let cache_table_name = target.name().to_string();
+        self.inner.lens.make_dio_as(target, cache_table_name).await
+    }
+
     /// Re-point this Dio at a freshly-built master Vista and rebuild its cache
     /// from it — the "its VistaFactory reloaded, the dataset may be wholly
     /// different" path. The swap is **non-blanking**: open sceneries keep

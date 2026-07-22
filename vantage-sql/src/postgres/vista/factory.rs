@@ -139,7 +139,15 @@ pub(crate) fn build_postgres_table(
         }
     };
 
+    // Dotted spec columns (`author.name`) are implicit-reference imports —
+    // they lower through `with_active_columns` below, after the references
+    // they traverse are registered; a raw `add_column` would select a
+    // nonexistent identifier.
+    let has_dotted = spec.columns.keys().any(|n| n.contains('.'));
     for (name, col_spec) in &spec.columns {
+        if name.contains('.') {
+            continue;
+        }
         table.add_column(build_column(name, col_spec)?);
         if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
             table.add_title_field(name);
@@ -177,6 +185,12 @@ pub(crate) fn build_postgres_table(
             ReferenceKind::HasOne => table.with_one::<EmptyEntity>(rel_name, &fk, build_child),
             ReferenceKind::HasMany => table.with_many::<EmptyEntity>(rel_name, &fk, build_child),
         };
+    }
+
+    if has_dotted {
+        // Lower the dotted imports now that their relations are declared.
+        let names: Vec<&str> = spec.columns.keys().map(String::as_str).collect();
+        table = table.with_active_columns(&names)?;
     }
 
     let table = table.with_contained_specs(&spec.contained, build_column)?;
