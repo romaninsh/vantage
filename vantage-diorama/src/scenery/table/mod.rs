@@ -18,6 +18,7 @@
 //! on its own output.
 
 mod builder;
+mod capped;
 mod helpers;
 mod loader;
 mod reactor;
@@ -35,6 +36,7 @@ use crate::dio::Generation;
 use super::enriched_record::EnrichedRecord;
 
 pub use builder::TableSceneryBuilder;
+pub use capped::CappedScenery;
 pub(crate) use state::TableSceneryState;
 
 /// UI-side sort direction. Mirrors `vantage_vista::SortDirection` but
