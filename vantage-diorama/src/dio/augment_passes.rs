@@ -176,6 +176,11 @@ pub(crate) async fn refresh(dio: &Dio) -> Result<()> {
     let augmented = dio.inner.augmented_columns.read().unwrap().clone();
 
     for (id, list_row) in &fresh {
+        // A row with a flash in flight keeps its staged value — this
+        // snapshot may predate the write. The next refresh reconciles it.
+        if dio.inner.pending_flashes.contains(id) {
+            continue;
+        }
         let gap = has_augment_gap(list_row, &augmented);
         let status = if gap {
             CacheStatus::Incomplete
@@ -216,7 +221,7 @@ pub(crate) async fn refresh(dio: &Dio) -> Result<()> {
         }
     }
     for id in existing.keys() {
-        if !fresh.contains_key(id) {
+        if !fresh.contains_key(id) && !dio.inner.pending_flashes.contains(id) {
             cache.delete_value(id).await?;
         }
     }

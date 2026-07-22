@@ -4,6 +4,7 @@ use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_types::Record;
 
+use crate::dio::pending::PendingFlashes;
 use crate::lens::cache_backend::CacheTable;
 
 /// Trait the calling Scenery implements so a `ChunkSink` can stuff a
@@ -23,6 +24,9 @@ pub trait SceneryChunkTarget: Send + Sync {
 pub struct ChunkSink {
     pub(crate) target: Weak<dyn SceneryChunkTarget>,
     pub(crate) cache: Arc<dyn CacheTable>,
+    /// Rows with a flash in flight — a chunk refetch is a reconcile, so
+    /// its (possibly pre-write) snapshot must not clobber a staged value.
+    pub(crate) pending: Arc<PendingFlashes>,
 }
 
 impl std::fmt::Debug for ChunkSink {
@@ -48,6 +52,14 @@ impl ChunkSink {
         let Some(target) = self.target.upgrade() else {
             return Err(vantage_core::error!("ChunkSink: scenery dropped"));
         };
+        // A row with a flash in flight keeps its staged value: the slot
+        // binds to what the cache holds, and the fetched (possibly
+        // pre-write) snapshot is dropped.
+        if self.pending.contains(&id) {
+            let staged = self.cache.get_value(&id).await?.unwrap_or(record);
+            target.write_chunk_row(idx, id, staged);
+            return Ok(());
+        }
         self.cache.insert_value(&id, &record).await?;
         target.write_chunk_row(idx, id, record);
         Ok(())

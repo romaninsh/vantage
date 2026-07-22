@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.7.1 — 2026-07-22
+
+**Flash-pipeline hardening: effective caps, reconcile-while-pending, drain-not-drop**
+
+- **`Dio::write_capabilities()`** — the effective write capabilities, and
+  the one gate UI chrome asks before offering add/edit/delete. Master
+  caps by default; a registered `on_flash` route lifts all three, because
+  the route — not the master — is then the writer (a read-only CSV
+  becomes editable, changes landing wherever the route sends them). The
+  facade's capability lifting now shares this one definition.
+- **Reconcile-while-pending**: a refresh carrying a master snapshot taken
+  *before* an in-flight flash can no longer clobber the staged value.
+  Rows with a flash in flight are tracked internally; the new
+  `Dio::reconcile_value` / `reconcile_values` (the cache write an
+  `on_refresh` callback should use for master-copied rows) skip them, as
+  do the augment refresh pass (including its vanished-row delete) and
+  `ChunkSink::push` (which binds the staged value to the slot instead).
+  `patched` stays the ingress for push changes — a live stream is fresh
+  by definition; snapshots may be stale, hence the guard. On confirm the
+  flash also **re-asserts** exactly the fields it wrote over anything
+  that raced into the cache mid-flight, keeping fresher values for
+  fields it never touched.
+- **Drain, not drop**: every queued flash now carries a strong handle to
+  the pipeline, so fire-and-forget writes already accepted keep the Dio
+  (master, cache, routes, event bus) alive until they land — dropping
+  every external handle no longer discards queued work. The worker then
+  exits cleanly on its own.
+
 ## 0.7.0 — 2026-07-22
 
 **Servo & ChangeFlash — the outbound half of the photography lexicon**

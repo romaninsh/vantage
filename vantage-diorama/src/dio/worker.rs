@@ -1,13 +1,19 @@
-//! Write-queue worker — consumes [`ChangeFlash`]es from `DioInner::write_queue`.
+//! Write-queue worker — consumes [`QueuedFlash`]es from `DioInner::write_queue`.
 //!
 //! For each flash the worker either invokes the lens's `on_flash` route
 //! (when registered) or applies the flash directly to `dio.master()`.
 //! Route errors are logged via `tracing` and emitted on the event
-//! bus as [`DioEvent::WriteFailed`]; the worker keeps running until
-//! the last external Dio handle drops (at which point the sender side
-//! of the channel disappears and `recv()` returns `None`).
+//! bus as [`DioEvent::WriteFailed`].
+//!
+//! **Drain, not drop**: every queued flash carries a strong
+//! `Arc<DioInner>`, so flashes already accepted keep the whole pipeline
+//! (master, cache, routes, event bus) alive until they land — dropping
+//! the last external handle never discards queued work. Once the queue
+//! is empty and the last keep-alive drops, `DioInner` drops, its sender
+//! side disappears, `recv()` returns `None`, and the worker exits
+//! cleanly.
 
-use std::sync::Weak;
+use std::sync::Arc;
 
 use tokio::sync::mpsc;
 use vantage_core::{Result, error};
@@ -16,17 +22,21 @@ use vantage_dataset::traits::WritableValueSet;
 use crate::dio::{Dio, DioEvent, DioInner};
 use crate::ops::{ChangeFlash, FlashKind};
 
-/// The per-Dio write worker loop. Only holds a `Weak<DioInner>` so the
-/// cycle (Dio → channel → worker → Dio) breaks when external handles
-/// drop. Each iteration upgrades the Weak to build a real Dio for the
-/// callback; if upgrade fails (very narrow race: flash sent right before
-/// the last external Dio dropped), the flash is discarded.
-pub(crate) async fn write_worker_loop(inner: Weak<DioInner>, mut rx: mpsc::Receiver<ChangeFlash>) {
-    while let Some(flash) = rx.recv().await {
-        let Some(strong) = inner.upgrade() else {
-            return;
-        };
-        let dio = Dio { inner: strong };
+/// One unit of queued work: the flash plus the strong handle that keeps
+/// the pipeline alive until it lands. The temporary reference cycle
+/// (`DioInner` → sender → channel buffer → `Arc<DioInner>`) resolves as
+/// the worker drains — that transience is exactly the keep-alive
+/// guarantee.
+pub(crate) struct QueuedFlash {
+    pub(crate) flash: ChangeFlash,
+    pub(crate) keep_alive: Arc<DioInner>,
+}
+
+/// The per-Dio write worker loop. Owns nothing but the receiver; each
+/// message brings its own `Arc<DioInner>`.
+pub(crate) async fn write_worker_loop(mut rx: mpsc::Receiver<QueuedFlash>) {
+    while let Some(QueuedFlash { flash, keep_alive }) = rx.recv().await {
+        let dio = Dio { inner: keep_alive };
         let id_for_event = flash.id().map(str::to_string);
         let outcome = run_write_through(&dio, flash).await;
         if let Err(err) = outcome {

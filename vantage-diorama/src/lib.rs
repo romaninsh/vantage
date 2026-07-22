@@ -17,7 +17,7 @@ pub use augment::{
 };
 pub use composition::Diorama;
 pub use dio::diagnostics::{DioDiagnostics, SceneryDiagnostic};
-pub use dio::{Dio, DioEvent, DioShell, Generation};
+pub use dio::{Dio, DioEvent, DioShell, Generation, WriteCapabilities};
 pub use error::{DioError, LensBuildError};
 pub use lens::{
     Activity, ActivitySignal, CacheBackend, CacheStatus, CacheTable, ChunkRow, ChunkSink,
@@ -41,7 +41,7 @@ pub use vantage_vista::VistaCapabilities;
 /// ```
 pub mod prelude {
     pub use crate::augment::{Augmentation, Detail, Fetch, MergeRule, Source};
-    pub use crate::dio::{Dio, DioEvent, Generation};
+    pub use crate::dio::{Dio, DioEvent, Generation, WriteCapabilities};
     pub use crate::lens::{CacheBackend, CacheStatus, CacheTable, Lens, RedbCache};
     pub use crate::ops::{ChangeEvent, ChangeFlash, FlashKind};
     pub use crate::scenery::{

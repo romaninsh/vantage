@@ -259,6 +259,7 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
     let sink = ChunkSink {
         target: Arc::downgrade(&state) as std::sync::Weak<dyn crate::lens::SceneryChunkTarget>,
         cache: dio_inner.cache.clone(),
+        pending: dio_inner.pending_flashes.clone(),
     };
 
     let dio = Dio {
