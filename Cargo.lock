@@ -5657,6 +5657,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "uuid",
  "vantage-cmd",
  "vantage-core",
  "vantage-csv",

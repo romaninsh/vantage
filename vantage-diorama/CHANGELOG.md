@@ -2,6 +2,12 @@
 
 ## 0.7.2 — 2026-07-22
 
+- New records get a default identity: a servo insert without an id now
+  generates a **time-ordered UUID (v7)** and writes it into the record,
+  so create forms no longer demand a hand-typed id. Id columns declared
+  integral (a SQL `INTEGER PRIMARY KEY`) still require an explicit id —
+  the error says so up front instead of surfacing a backend datatype
+  mismatch later.
 - Docs: drop the intra-doc link to the private `QueuedFlash` in the
   `worker` module docs (rustdoc `-D warnings`).
 

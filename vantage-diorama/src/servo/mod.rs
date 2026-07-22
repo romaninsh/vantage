@@ -229,11 +229,12 @@ impl Servo {
                     if data.is_empty() {
                         return Ok(None);
                     }
+                    let mut record = data.clone();
                     let id = match self.state.id.read().unwrap().clone() {
                         Some(id) => id,
-                        None => self.id_from_record(&data)?,
+                        None => self.insert_identity(&mut record)?,
                     };
-                    ChangeFlash::insert(id, data.clone())
+                    ChangeFlash::insert(id, record)
                 }
             }
         };
@@ -293,24 +294,55 @@ impl Servo {
         self.state.absorb(incoming);
     }
 
-    /// Resolve an insert id from the record's id column.
-    fn id_from_record(&self, data: &Record<CborValue>) -> Result<String> {
-        let id_column = self
-            .dio
-            .master()
-            .get_id_column()
-            .unwrap_or("id")
-            .to_string();
-        let id = data
+    /// Resolve an insert id from the record's id column, generating a
+    /// **time-ordered UUID (v7)** when the record doesn't carry one —
+    /// the default identity for new records. The generated id is
+    /// written into the record so the row and its key agree.
+    ///
+    /// A UUID cannot land in an id column declared integral (a SQL
+    /// `INTEGER PRIMARY KEY`), so those still require an explicit id —
+    /// the error says so instead of failing later with a datatype
+    /// mismatch from the backend.
+    fn insert_identity(&self, record: &mut Record<CborValue>) -> Result<String> {
+        let master = self.dio.master();
+        let id_column = master.get_id_column().unwrap_or("id").to_string();
+        if let Some(id) = record
             .get(&id_column)
             .map(cbor_scalar_string)
-            .filter(|s| !s.is_empty());
-        id.ok_or_else(|| {
-            vantage_core::error!(
-                "flashing a new record requires its id field",
-                id_column = id_column
-            )
-        })
+            .filter(|s| !s.is_empty())
+        {
+            return Ok(id);
+        }
+        let declared = master
+            .get_column(&id_column)
+            .map(|c| c.original_type.to_lowercase())
+            .unwrap_or_default();
+        if matches!(
+            declared.as_str(),
+            "int"
+                | "i8"
+                | "i16"
+                | "i32"
+                | "i64"
+                | "u8"
+                | "u16"
+                | "u32"
+                | "u64"
+                | "integer"
+                | "bigint"
+                | "smallint"
+                | "serial"
+                | "bigserial"
+        ) {
+            return Err(vantage_core::error!(
+                "flashing a new record requires its id field (integral id columns get no generated UUID)",
+                id_column = id_column,
+                declared_type = declared
+            ));
+        }
+        let id = uuid::Uuid::now_v7().to_string();
+        record.insert(id_column, CborValue::Text(id.clone()));
+        Ok(id)
     }
 }
 
