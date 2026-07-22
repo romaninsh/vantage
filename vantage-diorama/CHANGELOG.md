@@ -35,6 +35,17 @@
   `flash_insert`, `flash_replace`, `flash_delete` conveniences. The route
   now always receives a flash with its pre-image filled.
 
+## 0.6.22 — 2026-07-22
+
+- New `CappedScenery` — a row-cap decorator over `TableScenery`. Every
+  consumer of the trait sees at most `cap` rows (`row_count`, `row`,
+  `estimated_total`, `has_more` all bounded); viewports clamp to the cap and
+  `request_load_more` stops at it, while refresh, sort, search, and
+  subscription delegate to the wrapped scenery. The view a UI-level `limit:`
+  produces — capping the scenery instead of the hydration viewport means a
+  master without windowed loading is never asked to serve a viewport
+  contract it can't.
+
 ## 0.6.21 — 2026-07-21
 
 - The Dio shell passes `VistaCapabilities::can_traverse_in_columns` through from

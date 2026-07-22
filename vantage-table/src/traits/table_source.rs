@@ -67,6 +67,20 @@ pub trait TableSource: DataSource + Clone + 'static {
         ))
     }
 
+    /// Coerce a reference join value into the backend's native id form.
+    ///
+    /// Reference traversal (`resolve_from_row`) reads the join value raw out
+    /// of the parent row and uses it for both the narrowing eq-condition and
+    /// the target's insert invariant. On scalar-FK backends any value compares
+    /// as-is, so the default is identity. Backends with a richer id type
+    /// override: SurrealDB re-tags a `"table:key"` string — a record id that
+    /// round-tripped through JSON or a script — back into a record id, so the
+    /// condition renders a record literal (and an inserted child stores a
+    /// link), not a quoted string that matches nothing.
+    fn coerce_reference_value(&self, value: Self::Value) -> Self::Value {
+        value
+    }
+
     /// Create a new column with the given name
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type>;
 

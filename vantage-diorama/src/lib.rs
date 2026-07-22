@@ -27,8 +27,8 @@ pub use lens::{
 };
 pub use ops::{ChangeEvent, ChangeFlash, FlashKind, QueryDescriptor};
 pub use scenery::{
-    Aggregate, CustomAggregate, EnrichedRecord, RecordScenery, RecordStatus, RowStatus,
-    RowStatusSummary, SortDir, TableScenery, TableSceneryBuilder, ValueScenery,
+    Aggregate, CappedScenery, CustomAggregate, EnrichedRecord, RecordScenery, RecordStatus,
+    RowStatus, RowStatusSummary, SortDir, TableScenery, TableSceneryBuilder, ValueScenery,
     ValueSceneryBuilder, ValueStatus, boxed_custom_aggregate,
 };
 pub use servo::{Servo, ServoStatus};
