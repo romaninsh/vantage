@@ -189,8 +189,8 @@ fn partial_name(name: &str) -> Record<CborValue> {
     r
 }
 
-/// Lens whose `on_write` blocks on `gate` until released, so a test can observe
-/// the `PendingWrite` window before the write-through completes.
+/// Lens whose `on_flash` route blocks on `gate` until released, so a test can
+/// observe the `PendingWrite` window before the write-through completes.
 async fn build_lens_gated_write(cache_path: std::path::PathBuf, gate: Arc<Notify>) -> Arc<Lens> {
     Arc::new(
         Lens::new()
@@ -202,7 +202,7 @@ async fn build_lens_gated_write(cache_path: std::path::PathBuf, gate: Arc<Notify
                     dio.cache().insert_values(rows).await
                 }
             })
-            .on_write(move |_dio, _op| {
+            .on_flash(move |_dio, _flash| {
                 let gate = gate.clone();
                 async move {
                     gate.notified().await;
@@ -214,7 +214,7 @@ async fn build_lens_gated_write(cache_path: std::path::PathBuf, gate: Arc<Notify
     )
 }
 
-/// Lens whose `on_write` always errors — drives the rollback path.
+/// Lens whose `on_flash` route always errors — drives the rollback path.
 async fn build_lens_erroring_write(cache_path: std::path::PathBuf) -> Arc<Lens> {
     Arc::new(
         Lens::new()
@@ -226,7 +226,7 @@ async fn build_lens_erroring_write(cache_path: std::path::PathBuf) -> Arc<Lens> 
                     dio.cache().insert_values(rows).await
                 }
             })
-            .on_write(|_dio, _op| async move { Err(vantage_core::error!("upstream rejected")) })
+            .on_flash(|_dio, _flash| async move { Err(vantage_core::error!("upstream rejected")) })
             .build()
             .expect("build lens"),
     )
@@ -246,10 +246,9 @@ async fn optimistic_patch_shows_pending_then_fresh() -> Result<()> {
     let g0 = u64::from(*gen_rx.borrow_and_update());
 
     // Run the write on a task — it stages the value + emits WritePending, then
-    // blocks in on_write until we release the gate.
+    // blocks in the on_flash route until we release the gate.
     let dio2 = dio.clone();
-    let handle =
-        tokio::spawn(async move { dio2.patch_optimistic("a", partial_name("edited")).await });
+    let handle = tokio::spawn(async move { dio2.flash_patch("a", partial_name("edited")).await });
 
     wait_for_gen(&mut gen_rx, g0).await;
     let r = scenery.record().expect("record present");
@@ -291,7 +290,7 @@ async fn optimistic_patch_rolls_back_to_write_failed() -> Result<()> {
 
     let scenery = dio.record_scenery("a").await?;
 
-    let outcome = dio.patch_optimistic("a", partial_name("edited")).await;
+    let outcome = dio.flash_patch("a", partial_name("edited")).await;
     assert!(
         outcome.is_err(),
         "a rejecting write-through must surface the error"
@@ -329,8 +328,8 @@ async fn optimistic_edit_reflects_in_a_second_record_scenery() -> Result<()> {
     let s1 = dio.record_scenery("a").await?;
     let s2 = dio.record_scenery("a").await?;
 
-    // No on_write → default write-through to master; commits.
-    dio.patch_optimistic("a", partial_name("shared")).await?;
+    // No on_flash route → default write-through to master; commits.
+    dio.flash_patch("a", partial_name("shared")).await?;
 
     for (label, s) in [("s1", &s1), ("s2", &s2)] {
         let mut seen = false;

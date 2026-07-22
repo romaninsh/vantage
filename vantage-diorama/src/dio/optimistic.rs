@@ -1,5 +1,5 @@
-//! Optimistic write path — stage a write in the cache and notify views
-//! *before* the write-through confirms, then either commit or roll back.
+//! Optimistic flash path — stage a [`ChangeFlash`] in the cache and notify
+//! views *before* the write-through confirms, then either commit or roll back.
 //!
 //! This is what makes form edits feel instant: the new value is visible the
 //! moment the user hits save (rows flip to
@@ -9,8 +9,8 @@
 //! reads the one cache row, the edit reflects across every bound scenery at
 //! once.
 //!
-//! Contract: in this path the cache is **framework-managed**. The `on_write`
-//! callback should be master-authoritative (write upstream); it may also touch
+//! Contract: in this path the cache is **framework-managed**. The `on_flash`
+//! route should be master-authoritative (write upstream); it may also touch
 //! the cache, but the optimistic stage and the rollback are what views observe.
 
 use vantage_core::Result;
@@ -19,10 +19,10 @@ use vantage_types::Record;
 use ciborium::Value as CborValue;
 
 use crate::dio::{Dio, DioEvent, DioInner};
-use crate::ops::WriteOp;
+use crate::ops::{ChangeFlash, FlashKind};
 
 impl Dio {
-    /// Apply `op` optimistically: stage it in the cache, publish
+    /// Emit `flash` optimistically: stage it in the cache, publish
     /// [`WritePending`](DioEvent::WritePending) so views show the new value as
     /// `PendingWrite`, run the write-through, then either confirm (publish
     /// [`RecordChanged`](DioEvent::RecordChanged), rows settle to `Fresh`) or
@@ -31,25 +31,31 @@ impl Dio {
     /// `WriteFailed`).
     ///
     /// Returns `Ok(())` once committed, or the write-through's error after a
-    /// successful rollback. `DeleteAll` has no single-row pre-image to stage,
+    /// successful rollback. `Clear` has no single-row pre-image to stage,
     /// so it runs straight through the write-through with no optimism.
-    pub async fn write_optimistic(&self, op: WriteOp) -> Result<()> {
-        let Some(id) = op.id().map(str::to_string) else {
-            return crate::dio::worker::run_write_through(self, op).await;
+    ///
+    /// The flash reaches the `on_flash` route with its pre-image filled: if
+    /// the emitter didn't supply `before`, the cache snapshot taken here is
+    /// attached, so routes always see a self-contained flash.
+    pub async fn flash(&self, mut flash: ChangeFlash) -> Result<()> {
+        let Some(id) = flash.id().map(str::to_string) else {
+            return crate::dio::worker::run_write_through(self, flash).await;
         };
 
-        // 1. Snapshot the pre-image so a failed write can roll back exactly.
+        // 1. Snapshot the pre-image so a failed write can roll back exactly,
+        //    and complete the flash with it for downstream routes.
         let pre = self.inner.cache.get_value(&id).await?;
+        flash.ensure_before(pre.as_ref());
 
         // 2. Stage the optimistic value and announce it — views update now.
-        apply_to_cache(&self.inner, &op, pre.as_ref()).await?;
+        stage_in_cache(&self.inner, &flash, pre.as_ref()).await?;
         let _ = self
             .inner
             .event_bus
             .send(DioEvent::WritePending { id: id.clone() });
 
         // 3. Run the real write-through.
-        match crate::dio::worker::run_write_through(self, op).await {
+        match crate::dio::worker::run_write_through(self, flash).await {
             Ok(()) => {
                 let _ = self.inner.event_bus.send(DioEvent::RecordChanged { id });
                 Ok(())
@@ -69,40 +75,61 @@ impl Dio {
         }
     }
 
-    /// Convenience for the common form-edit case: merge `partial` into the row
-    /// at `id` optimistically.
-    pub async fn patch_optimistic(
+    /// Convenience for the common form-edit case: merge `partial` into the
+    /// row at `id` optimistically.
+    pub async fn flash_patch(
         &self,
         id: impl Into<String>,
         partial: Record<CborValue>,
     ) -> Result<()> {
-        self.write_optimistic(WriteOp::Patch {
-            id: id.into(),
-            partial,
-        })
-        .await
+        self.flash(ChangeFlash::new(FlashKind::Patch, Some(id.into()), partial))
+            .await
+    }
+
+    /// Insert a new row optimistically.
+    pub async fn flash_insert(
+        &self,
+        id: impl Into<String>,
+        record: Record<CborValue>,
+    ) -> Result<()> {
+        self.flash(ChangeFlash::insert(id, record)).await
+    }
+
+    /// Replace the row at `id` optimistically (drops absent fields).
+    pub async fn flash_replace(
+        &self,
+        id: impl Into<String>,
+        record: Record<CborValue>,
+    ) -> Result<()> {
+        self.flash(ChangeFlash::replace(id, record)).await
+    }
+
+    /// Delete the row at `id` optimistically.
+    pub async fn flash_delete(&self, id: impl Into<String>) -> Result<()> {
+        self.flash(ChangeFlash::delete(id)).await
     }
 }
 
-/// Write the op's optimistic result into the cache. `Patch` merges onto the
-/// pre-image so untouched columns survive (the cache stores whole rows).
-async fn apply_to_cache(
+/// Write the flash's optimistic result into the cache. `Patch` merges onto
+/// the pre-image so untouched columns survive (the cache stores whole rows).
+async fn stage_in_cache(
     inner: &DioInner,
-    op: &WriteOp,
+    flash: &ChangeFlash,
     pre: Option<&Record<CborValue>>,
 ) -> Result<()> {
-    match op {
-        WriteOp::Insert { id, record } | WriteOp::Replace { id, record } => {
-            inner.cache.insert_value(id, record).await
-        }
-        WriteOp::Patch { id, partial } => {
+    let Some(id) = flash.id() else {
+        return Ok(());
+    };
+    match flash.kind() {
+        FlashKind::Insert | FlashKind::Replace => inner.cache.insert_value(id, flash.patch()).await,
+        FlashKind::Patch => {
             let mut merged = pre.cloned().unwrap_or_default();
-            for (k, v) in partial {
+            for (k, v) in flash.patch() {
                 merged.insert(k.clone(), v.clone());
             }
             inner.cache.insert_value(id, &merged).await
         }
-        WriteOp::Delete { id } => inner.cache.delete_value(id).await,
-        WriteOp::DeleteAll => Ok(()),
+        FlashKind::Delete => inner.cache.delete_value(id).await,
+        FlashKind::Clear => Ok(()),
     }
 }

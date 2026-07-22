@@ -8,7 +8,7 @@ use tokio::sync::{Mutex, Notify, broadcast};
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_diorama::{
-    CacheBackend, ChangeEvent, Dio, DioEvent, Lens, MemoryCache, TableScenery, WriteOp,
+    CacheBackend, ChangeEvent, Dio, DioEvent, FlashKind, Lens, MemoryCache, TableScenery,
 };
 use vantage_vista::Vista;
 
@@ -17,14 +17,14 @@ use super::spies::Spies;
 use super::sqlite_runtime::dispatch;
 
 #[derive(Clone, Copy, Default, Debug)]
-pub enum OnWriteMode {
+pub enum OnFlashMode {
     #[default]
     Unset,
     /// Counter-only — proves the worker fired, nothing else.
     Pass,
     /// Always errors — the `WriteFailed` event-bus path.
     Error,
-    /// Mirror: apply the op to both master and cache, so subsequent
+    /// Mirror: apply the flash to both master and cache, so subsequent
     /// facade reads see fresh data without round-tripping the upstream.
     Mirror,
 }
@@ -79,7 +79,7 @@ pub struct LensBuilderState {
     pub on_start_load_master: bool,
     pub on_start_load_kind: OnStartLoad,
     pub on_start_blocking: Option<bool>,
-    pub on_write_mode: OnWriteMode,
+    pub on_flash_mode: OnFlashMode,
     pub on_event_mode: OnEventMode,
     pub total_provider_kind: TotalProviderKind,
     pub on_load_chunk_kind: OnLoadChunkKind,
@@ -327,11 +327,11 @@ impl LensBuilderState {
             });
         }
 
-        match self.on_write_mode {
-            OnWriteMode::Unset => {}
-            OnWriteMode::Pass => {
-                let counter = spies.on_write.clone();
-                b = b.on_write(move |_dio, _op| {
+        match self.on_flash_mode {
+            OnFlashMode::Unset => {}
+            OnFlashMode::Pass => {
+                let counter = spies.on_flash.clone();
+                b = b.on_flash(move |_dio, _flash| {
                     let counter = counter.clone();
                     async move {
                         counter.fetch_add(1, Ordering::SeqCst);
@@ -339,26 +339,29 @@ impl LensBuilderState {
                     }
                 });
             }
-            OnWriteMode::Error => {
-                let counter = spies.on_write.clone();
-                b = b.on_write(move |_dio, _op| {
+            OnFlashMode::Error => {
+                let counter = spies.on_flash.clone();
+                b = b.on_flash(move |_dio, _flash| {
                     let counter = counter.clone();
                     async move {
                         counter.fetch_add(1, Ordering::SeqCst);
-                        Err(vantage_core::error!("on_write rejected"))
+                        Err(vantage_core::error!("on_flash rejected"))
                     }
                 });
             }
-            OnWriteMode::Mirror => {
+            OnFlashMode::Mirror => {
                 use vantage_dataset::traits::WritableValueSet;
-                let counter = spies.on_write.clone();
-                b = b.on_write(move |dio, op| {
+                let counter = spies.on_flash.clone();
+                b = b.on_flash(move |dio, flash| {
                     let dio = dio.clone();
                     let counter = counter.clone();
                     async move {
                         counter.fetch_add(1, Ordering::SeqCst);
-                        match op {
-                            WriteOp::Insert { id, record } => {
+                        let id = flash.id().map(str::to_string);
+                        match flash.kind() {
+                            FlashKind::Insert => {
+                                let id = id.expect("insert flash has an id");
+                                let record = flash.patch().clone();
                                 if bridge {
                                     let dio_io = dio.clone();
                                     let id_io = id.clone();
@@ -372,7 +375,9 @@ impl LensBuilderState {
                                 }
                                 dio.cache().insert_value(&id, &record).await?;
                             }
-                            WriteOp::Replace { id, record } => {
+                            FlashKind::Replace => {
+                                let id = id.expect("replace flash has an id");
+                                let record = flash.patch().clone();
                                 if bridge {
                                     let dio_io = dio.clone();
                                     let id_io = id.clone();
@@ -386,7 +391,9 @@ impl LensBuilderState {
                                 }
                                 dio.cache().insert_value(&id, &record).await?;
                             }
-                            WriteOp::Patch { id, partial } => {
+                            FlashKind::Patch => {
+                                let id = id.expect("patch flash has an id");
+                                let partial = flash.patch().clone();
                                 if bridge {
                                     let dio_io = dio.clone();
                                     let id_io = id.clone();
@@ -411,7 +418,8 @@ impl LensBuilderState {
                                 }
                                 dio.cache().insert_value(&id, &merged).await?;
                             }
-                            WriteOp::Delete { id } => {
+                            FlashKind::Delete => {
+                                let id = id.expect("delete flash has an id");
                                 if bridge {
                                     let dio_io = dio.clone();
                                     let id_io = id.clone();
@@ -422,7 +430,7 @@ impl LensBuilderState {
                                 }
                                 dio.cache().delete_value(&id).await?;
                             }
-                            WriteOp::DeleteAll => {
+                            FlashKind::Clear => {
                                 if bridge {
                                     let dio_io = dio.clone();
                                     dispatch(async move { dio_io.master().delete_all().await })

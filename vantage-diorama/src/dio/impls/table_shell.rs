@@ -6,7 +6,7 @@ use vantage_types::Record;
 use vantage_vista::{Column, Reference, TableShell, Vista, VistaCapabilities};
 
 use crate::dio::shell::DioShell;
-use crate::ops::WriteOp;
+use crate::ops::ChangeFlash;
 
 #[async_trait]
 impl TableShell for DioShell {
@@ -91,7 +91,7 @@ impl TableShell for DioShell {
     // `DioEvent::WriteFailed`. The synthesized record echoes the input
     // (with the id injected) — callers that need authoritative
     // server-side data should refetch via `get_value` after the write
-    // completes (`on_write` typically updates the cache too).
+    // completes (an `on_flash` route typically updates the cache too).
 
     async fn insert_vista_value(
         &self,
@@ -99,11 +99,8 @@ impl TableShell for DioShell {
         id: &String,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.enqueue(WriteOp::Insert {
-            id: id.clone(),
-            record: record.clone(),
-        })
-        .await?;
+        self.enqueue(ChangeFlash::insert(id.clone(), record.clone()))
+            .await?;
         Ok(with_injected_id(record, id))
     }
 
@@ -113,11 +110,8 @@ impl TableShell for DioShell {
         id: &String,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.enqueue(WriteOp::Replace {
-            id: id.clone(),
-            record: record.clone(),
-        })
-        .await?;
+        self.enqueue(ChangeFlash::replace(id.clone(), record.clone()))
+            .await?;
         Ok(with_injected_id(record, id))
     }
 
@@ -127,20 +121,21 @@ impl TableShell for DioShell {
         id: &String,
         partial: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.enqueue(WriteOp::Patch {
-            id: id.clone(),
-            partial: partial.clone(),
-        })
+        self.enqueue(ChangeFlash::new(
+            crate::ops::FlashKind::Patch,
+            Some(id.clone()),
+            partial.clone(),
+        ))
         .await?;
         Ok(with_injected_id(partial, id))
     }
 
     async fn delete_vista_value(&self, _vista: &Vista, id: &String) -> Result<()> {
-        self.enqueue(WriteOp::Delete { id: id.clone() }).await
+        self.enqueue(ChangeFlash::delete(id.clone())).await
     }
 
     async fn delete_vista_all_values(&self, _vista: &Vista) -> Result<()> {
-        self.enqueue(WriteOp::DeleteAll).await
+        self.enqueue(ChangeFlash::clear()).await
     }
 
     // ---- Capability + identity ------------------------------------------------
@@ -168,10 +163,10 @@ impl DioShell {
         crate::dio::augment_passes::hydrate_gaps(&dio, rows).await
     }
 
-    async fn enqueue(&self, op: WriteOp) -> Result<()> {
+    async fn enqueue(&self, flash: ChangeFlash) -> Result<()> {
         self.dio
             .write_queue
-            .send(op)
+            .send(flash)
             .await
             .map_err(|e| error!("Dio write queue closed", detail = e.to_string()))
     }

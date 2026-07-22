@@ -3,4 +3,4 @@ source: vantage-diorama/tests/bdd_support/steps/assertions.rs
 assertion_line: 30
 expression: events
 ---
-- "WriteFailed { id: Some(\"b\"), error: \"on_write rejected\" }"
+- "WriteFailed { id: Some(\"b\"), error: \"on_flash rejected\" }"

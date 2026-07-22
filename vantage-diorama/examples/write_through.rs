@@ -1,5 +1,5 @@
-//! Stage 3 demo: a writable in-memory master + redb cache + `on_write`
-//! that mirrors every write into both. Inserts go through the facade
+//! Stage 3 demo: a writable in-memory master + redb cache + an `on_flash`
+//! route that mirrors every flash into both. Inserts go through the facade
 //! Vista, get enqueued, the worker drains, and subsequent reads (from
 //! the cache) show the result.
 //!
@@ -13,7 +13,7 @@ use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
 use vantage_dataset::prelude::{ReadableValueSet, WritableValueSet};
-use vantage_diorama::{Lens, WriteOp};
+use vantage_diorama::{FlashKind, Lens};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
 
@@ -38,47 +38,37 @@ async fn main() -> Result<()> {
     let lens = Arc::new(
         Lens::new()
             .cache_at(tmp.path().join("cache.redb"))
-            .on_write(|dio, op| {
+            .on_flash(|dio, flash| {
                 let dio = dio.clone();
                 async move {
-                    match &op {
-                        WriteOp::Insert { id, .. } => {
-                            println!("on_write: Insert {id} → master + cache")
+                    let label = flash.id().unwrap_or("*");
+                    println!("on_flash: {:?} {label} → master + cache", flash.kind());
+                    match flash.kind() {
+                        FlashKind::Insert => {
+                            let id = flash.id().expect("insert has id").to_string();
+                            dio.master().insert_value(id.clone(), flash.patch()).await?;
+                            dio.cache().insert_value(&id, flash.patch()).await?;
                         }
-                        WriteOp::Delete { id } => {
-                            println!("on_write: Delete {id} → master + cache")
+                        FlashKind::Replace => {
+                            let id = flash.id().expect("replace has id").to_string();
+                            dio.master()
+                                .replace_value(id.clone(), flash.patch())
+                                .await?;
+                            dio.cache().insert_value(&id, flash.patch()).await?;
                         }
-                        WriteOp::Replace { id, .. } => {
-                            println!("on_write: Replace {id} → master + cache")
-                        }
-                        WriteOp::Patch { id, .. } => {
-                            println!("on_write: Patch {id} → master + cache")
-                        }
-                        WriteOp::DeleteAll => println!("on_write: DeleteAll → master + cache"),
-                    }
-                    match op {
-                        WriteOp::Insert { id, record } => {
-                            dio.master().insert_value(id.clone(), &record).await?;
-                            dio.cache().insert_value(&id, &record).await?;
-                        }
-                        WriteOp::Replace { id, record } => {
-                            dio.master().replace_value(id.clone(), &record).await?;
-                            dio.cache().insert_value(&id, &record).await?;
-                        }
-                        WriteOp::Patch { id, partial } => {
-                            dio.master().patch_value(id.clone(), &partial).await?;
-                            // Patch on cache: read-modify-write.
-                            let mut merged = dio.cache().get_value(&id).await?.unwrap_or_default();
-                            for (k, v) in &partial {
-                                merged.insert(k.clone(), v.clone());
-                            }
+                        FlashKind::Patch => {
+                            let id = flash.id().expect("patch has id").to_string();
+                            dio.master().patch_value(id.clone(), flash.patch()).await?;
+                            // The flash already knows the merged result.
+                            let merged = flash.after().expect("patch has an after");
                             dio.cache().insert_value(&id, &merged).await?;
                         }
-                        WriteOp::Delete { id } => {
+                        FlashKind::Delete => {
+                            let id = flash.id().expect("delete has id").to_string();
                             dio.master().delete(id.clone()).await?;
                             dio.cache().delete_value(&id).await?;
                         }
-                        WriteOp::DeleteAll => {
+                        FlashKind::Clear => {
                             dio.master().delete_all().await?;
                             dio.cache().clear().await?;
                         }

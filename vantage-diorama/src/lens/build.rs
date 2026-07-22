@@ -26,7 +26,7 @@ impl LensBuilder {
         let callbacks = LensCallbacks {
             on_start: self.on_start,
             on_refresh: self.on_refresh,
-            on_write: self.on_write,
+            on_flash: self.on_flash,
             on_event: self.on_event,
             total_provider: self.total_provider,
             on_load_chunk: self.on_load_chunk,

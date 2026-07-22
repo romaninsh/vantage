@@ -92,7 +92,7 @@ impl Lens {
     }
 }
 
-async fn spawn_write_worker(dio: &Dio, rx: mpsc::Receiver<crate::ops::WriteOp>) {
+async fn spawn_write_worker(dio: &Dio, rx: mpsc::Receiver<crate::ops::ChangeFlash>) {
     let inner_weak = Arc::downgrade(&dio.inner);
     let handle = dio.inner.lens.runtime.spawn(async move {
         write_worker_loop(inner_weak, rx).await;

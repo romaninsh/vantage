@@ -9,7 +9,7 @@ pub struct Spies {
     pub on_start: Arc<AtomicU64>,
     pub on_refresh: Arc<AtomicU64>,
     pub on_event: Arc<AtomicU64>,
-    pub on_write: Arc<AtomicU64>,
+    pub on_flash: Arc<AtomicU64>,
     pub total_provider: Arc<AtomicU64>,
     pub on_load_chunk: Arc<AtomicU64>,
     /// Bumped by the test `on_start` / `on_load_chunk` closures right

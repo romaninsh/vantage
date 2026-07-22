@@ -44,7 +44,7 @@ Feature: Event path
       | id | title |
       | a  | one   |
     And a lens with on_start that copies master to cache
-    And an on_write callback that always errors
+    And an on_flash route that always errors
     When the dio is created
     And the table scenery is opened
     Then the table scenery generation is 1

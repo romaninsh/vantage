@@ -1,15 +1,14 @@
-//! Phase-3 steps: write-queue routing through `on_write` (vs the default
+//! Phase-3 steps: write-queue routing through `on_flash` (vs the default
 //! to-master path), capability lifting on the facade, and the
-//! `WriteFailed` event published when a callback errors.
+//! `WriteFailed` event published when a route errors.
 
 use ciborium::Value as CborValue;
 use cucumber::{gherkin::Step, given, then, when};
 use vantage_dataset::traits::{ReadableValueSet, WritableValueSet};
-use vantage_diorama::WriteOp;
 use vantage_types::Record;
 
 use crate::bdd_support::{
-    backend::BackendKind, sqlite_runtime::dispatch, world::DioramaWorld, world::OnWriteMode,
+    backend::BackendKind, sqlite_runtime::dispatch, world::DioramaWorld, world::OnFlashMode,
 };
 
 /// Parse a gherkin data table whose first row is the header (with an `id`
@@ -41,19 +40,19 @@ fn parse_record_table(step: &Step, step_phrase: &str) -> Vec<(String, Record<Cbo
     out
 }
 
-#[given("an on_write callback that records calls")]
-async fn on_write_records(w: &mut DioramaWorld) {
-    w.lens_builder.on_write_mode = OnWriteMode::Pass;
+#[given("an on_flash route that records calls")]
+async fn on_flash_records(w: &mut DioramaWorld) {
+    w.lens_builder.on_flash_mode = OnFlashMode::Pass;
 }
 
-#[given("an on_write callback that always errors")]
-async fn on_write_errors(w: &mut DioramaWorld) {
-    w.lens_builder.on_write_mode = OnWriteMode::Error;
+#[given("an on_flash route that always errors")]
+async fn on_flash_errors(w: &mut DioramaWorld) {
+    w.lens_builder.on_flash_mode = OnFlashMode::Error;
 }
 
-#[given("an on_write callback that mirrors to master and cache")]
-async fn on_write_mirrors(w: &mut DioramaWorld) {
-    w.lens_builder.on_write_mode = OnWriteMode::Mirror;
+#[given("an on_flash route that mirrors to master and cache")]
+async fn on_flash_mirrors(w: &mut DioramaWorld) {
+    w.lens_builder.on_flash_mode = OnFlashMode::Mirror;
 }
 
 #[when("the write queue drains")]
@@ -115,7 +114,7 @@ async fn optimistic_patch(w: &mut DioramaWorld, id: String, field: String, value
     partial.insert(field, CborValue::Text(value));
     // Drives the whole optimistic flow (stage → write-through → commit/rollback).
     // A rollback returns Err; the scenario asserts the reverted state, so swallow it.
-    let _ = dio.write_optimistic(WriteOp::Patch { id, partial }).await;
+    let _ = dio.flash_patch(id, partial).await;
     w.settle().await;
 }
 
@@ -161,10 +160,10 @@ async fn facade_capability(w: &mut DioramaWorld, flag: String, expected: String)
     );
 }
 
-#[then(regex = r"^on_write has been called (\d+) times?$")]
-async fn assert_on_write_count(w: &mut DioramaWorld, n: u64) {
-    let got = w.spies.on_write.load(std::sync::atomic::Ordering::SeqCst);
-    assert_eq!(got, n, "expected on_write={n}, got {got}");
+#[then(regex = r"^on_flash has been called (\d+) times?$")]
+async fn assert_on_flash_count(w: &mut DioramaWorld, n: u64) {
+    let got = w.spies.on_flash.load(std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(got, n, "expected on_flash={n}, got {got}");
 }
 
 #[then(regex = r"^the master has (\d+) rows?$")]

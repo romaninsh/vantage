@@ -18,11 +18,12 @@ use vantage_core::Result;
 use vantage_vista::Vista;
 
 use crate::lens::{CacheTable, Lens};
-use crate::ops::{ChangeEvent, WriteOp};
+use crate::ops::{ChangeEvent, ChangeFlash};
 use crate::scenery::record::spawn_record_scenery;
 use crate::scenery::{
     RecordScenery, RecordStatus, TableScenery, TableSceneryBuilder, ValueSceneryBuilder,
 };
+use crate::servo::{Servo, spawn_servo};
 
 use ciborium::Value as CborValue;
 use vantage_types::Record;
@@ -33,7 +34,7 @@ pub use shell::DioShell;
 
 /// Stringify a scalar CBOR id for use inside a cache table name. Non-scalars
 /// yield an empty string (the name then degrades to the shared, id-less form).
-fn cbor_scalar_string(v: &CborValue) -> String {
+pub(crate) fn cbor_scalar_string(v: &CborValue) -> String {
     match v {
         CborValue::Text(s) => s.clone(),
         CborValue::Integer(i) => i128::from(*i).to_string(),
@@ -80,7 +81,7 @@ pub(crate) struct DioInner {
     pub(crate) master: std::sync::RwLock<Arc<Vista>>,
     pub(crate) cache: Arc<dyn CacheTable>,
     pub(crate) cache_table_name: String,
-    pub(crate) write_queue: mpsc::Sender<WriteOp>,
+    pub(crate) write_queue: mpsc::Sender<ChangeFlash>,
     pub(crate) event_bus: broadcast::Sender<DioEvent>,
     pub(crate) refresh_task: Mutex<Option<JoinHandle<()>>>,
     pub(crate) write_worker: Mutex<Option<JoinHandle<()>>>,
@@ -447,6 +448,31 @@ impl Dio {
             initial_record,
             initial_status,
         ))
+    }
+
+    /// Open a [`Servo`] — the editing companion — for the record at `id`.
+    ///
+    /// The servo's baseline seeds from the cache (a missing row starts
+    /// empty and becomes an insert on the first
+    /// [`flash`](crate::servo::Servo::flash)) and then tracks the record
+    /// live: untouched fields follow upstream changes and stay clean,
+    /// touched fields lock and hold. The servo holds a strong handle to
+    /// this Dio, keeping the write pipeline alive while a form is open.
+    pub async fn servo(&self, id: impl Into<String>) -> Result<Servo> {
+        let id = id.into();
+        let servo = spawn_servo(self, Some(id.clone()));
+        if let Some(initial) = self.inner.cache.get_value(&id).await? {
+            servo.absorb(Some(initial));
+        }
+        Ok(servo)
+    }
+
+    /// Open a [`Servo`] for a record that does not exist yet. Command
+    /// its fields with [`set`](crate::servo::Servo::set) (including the
+    /// id column) and the first [`flash`](crate::servo::Servo::flash)
+    /// emits an insert.
+    pub fn servo_new(&self) -> Servo {
+        spawn_servo(self, None)
     }
 
     /// Open a reactive view onto a single record with the row already
