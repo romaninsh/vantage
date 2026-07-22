@@ -120,6 +120,8 @@ where
                 field = src_col.as_str()
             )
         })?;
+        // Rows arriving from a script/JSON surface carry ids in string form.
+        let join_value = ds.coerce_reference_value(join_value);
 
         let condition = ds.eq_value_condition(&tgt_col, join_value.clone())?;
         target.add_condition(condition);

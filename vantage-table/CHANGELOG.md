@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.14 — 2026-07-22
+
+- New `TableSource::coerce_reference_value` hook (default: identity). Reference
+  traversal (`HasOne`/`HasMany::resolve_from_row`) now passes the join value
+  read from the parent row through it before building the narrowing
+  eq-condition and the target's insert invariant, so backends with a native id
+  type can normalize string-form ids that round-tripped through JSON or a
+  script.
+
 ## 0.6.13 — 2026-07-21
 
 - Implicit-references review fixes: the generated-id insert path
