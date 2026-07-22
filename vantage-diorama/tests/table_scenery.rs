@@ -7,7 +7,7 @@ use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Lens, SortDir};
+use vantage_diorama::{Lens, SortDir, TableScenery};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
 
@@ -256,5 +256,35 @@ async fn scenery_outlives_dio_handle_drop() -> Result<()> {
     // memory (just no future reloads).
     drop(dio);
     assert_eq!(scenery.row_count(), 3);
+    Ok(())
+}
+
+/// A `CappedScenery` bounds every read to the cap while delegating
+/// behaviour (refresh, sort, subscribe) to the wrapped scenery.
+#[tokio::test]
+async fn capped_scenery_bounds_the_view() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let lens = build_lens(tmp.path().join("cache.redb")).await?;
+    let dio = lens.make_dio(seeded_master()).await?;
+
+    let scenery = dio.table_scenery().open().await?;
+    let capped = vantage_diorama::CappedScenery::wrap(scenery.clone(), 2);
+    assert_eq!(capped.row_count(), 2);
+    assert!(capped.row(1).is_some());
+    assert!(capped.row(2).is_none()); // exists beneath, hidden by the cap
+    assert!(!capped.has_more()); // the capped view is complete at the cap
+
+    // Sorting still reaches the wrapped scenery, and the cap then shows
+    // the top of the NEW order.
+    let mut gen_rx = capped.subscribe();
+    let initial = u64::from(*gen_rx.borrow_and_update());
+    capped.set_sort(Some("price".to_string()), SortDir::Asc);
+    wait_for_gen(&mut gen_rx, initial).await;
+    let r0 = capped.row(0).unwrap();
+    assert_eq!(r0.record.get("name"), Some(&cbor_text("beta"))); // price 10
+
+    // A cap wider than the data doesn't invent rows.
+    let wide = vantage_diorama::CappedScenery::wrap(scenery, 10);
+    assert_eq!(wide.row_count(), 3);
     Ok(())
 }
