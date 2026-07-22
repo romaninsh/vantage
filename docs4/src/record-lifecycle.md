@@ -15,9 +15,9 @@ everything here works the same on SQLite, Postgres, MySQL, Mongo, etc.
 
 ## Traversing from a loaded record: `get_ref`
 
-`Table::get_ref_as` / `get_ref_from_row` traverse a relation from a *table*. The `GetRefExt` trait
-adds the record-level equivalent: traverse straight from a loaded `ActiveEntity` (typed) or
-`ActiveRecord` (untyped).
+`Table::get_ref_as` / `get_ref_from_row` traverse a relation from a *table* (both covered in
+[Relations & Traversal](relations/traversal.md)). The `GetRefExt` trait adds the record-level
+equivalent: traverse straight from a loaded `ActiveEntity` (typed) or `ActiveRecord` (untyped).
 
 ```rust
 use vantage_table::prelude::GetRefExt;
@@ -32,7 +32,9 @@ crew.insert_return_id(&LaunchCrew { astronaut_id: Some(a), role: Some("Pilot".in
 `get_ref::<E2>(relation)` returns a `Table<T, E2>` scoped to the parent. For a typed `ActiveEntity`
 the entity's id is injected into the row before traversal (so has-many relations resolve); an
 untyped `ActiveRecord` already holds the raw row and forwards directly. The same method exists on
-both handles.
+both handles — `GetRefExt` carries blanket implementations for each, generic over any
+`TableSource` (the handles themselves live in `vantage-dataset` and know nothing about `Table`,
+which is why this arrives as an extension trait).
 
 ## Set invariants
 
