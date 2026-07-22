@@ -19,16 +19,15 @@ use vantage_core::Result;
 
 use crate::dio::Dio;
 use crate::error::LensBuildError;
-use crate::ops::{ChangeEvent, QueryDescriptor, WriteOp};
+use crate::ops::{ChangeEvent, ChangeFlash, QueryDescriptor};
 
 pub use activity::{Activity, ActivitySignal};
 pub use cache_backend::{CacheBackend, CacheStatus, CacheTable};
 pub use callbacks::{
-    DioCallback, DioEventCallback, DioListPageCallback, DioLoadChunkCallback,
-    DioLoadDetailCallback, DioTotalProviderCallback, DioWriteCallback, LensCallbacks,
-    boxed_dio_callback, boxed_dio_event_callback, boxed_dio_write_callback,
-    boxed_list_page_callback, boxed_load_chunk_callback, boxed_load_detail_callback,
-    boxed_total_provider_callback,
+    DioCallback, DioEventCallback, DioFlashCallback, DioListPageCallback, DioLoadChunkCallback,
+    DioLoadDetailCallback, DioTotalProviderCallback, LensCallbacks, boxed_dio_callback,
+    boxed_dio_event_callback, boxed_dio_flash_callback, boxed_list_page_callback,
+    boxed_load_chunk_callback, boxed_load_detail_callback, boxed_total_provider_callback,
 };
 pub use chunk_sink::{ChunkRow, ChunkSink, SceneryChunkTarget};
 pub use defaults::LensDefaults;
@@ -83,7 +82,7 @@ pub struct LensBuilder {
     pub(crate) deferred_cache_error: Option<LensBuildError>,
     pub(crate) on_start: Option<DioCallback>,
     pub(crate) on_refresh: Option<DioCallback>,
-    pub(crate) on_write: Option<DioWriteCallback>,
+    pub(crate) on_flash: Option<DioFlashCallback>,
     pub(crate) on_event: Option<DioEventCallback>,
     pub(crate) total_provider: Option<DioTotalProviderCallback>,
     pub(crate) on_load_chunk: Option<DioLoadChunkCallback>,
@@ -107,7 +106,7 @@ impl LensBuilder {
             deferred_cache_error: None,
             on_start: None,
             on_refresh: None,
-            on_write: None,
+            on_flash: None,
             on_event: None,
             total_provider: None,
             on_load_chunk: None,
@@ -192,15 +191,21 @@ impl LensBuilder {
         self
     }
 
-    /// Register the `on_write` callback. Fires for every WriteOp the
-    /// Dio's write queue receives. When not registered, the worker
-    /// applies the op directly to `dio.master()`.
-    pub fn on_write<F, Fut>(mut self, f: F) -> Self
+    /// Register the `on_flash` callback — the write route. Fires for
+    /// every [`ChangeFlash`] the Dio's write pipeline carries. When not
+    /// registered, the flash is applied directly to `dio.master()`.
+    ///
+    /// Registering a route makes the Dio *writable regardless of the
+    /// master's own capabilities* — a read-only master (a CSV file, a
+    /// third-party API) becomes editable with the changes landing
+    /// wherever the route sends them. `Ok` resolves the write and the
+    /// optimistically-staged cache value stands; `Err` rolls it back.
+    pub fn on_flash<F, Fut>(mut self, f: F) -> Self
     where
-        F: for<'a> Fn(&'a Dio, WriteOp) -> Fut + Send + Sync + 'static,
+        F: for<'a> Fn(&'a Dio, ChangeFlash) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
-        self.on_write = Some(boxed_dio_write_callback(f));
+        self.on_flash = Some(boxed_dio_flash_callback(f));
         self
     }
 

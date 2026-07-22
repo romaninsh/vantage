@@ -40,7 +40,7 @@ async fn notify_dataset_changed(w: &mut DioramaWorld) {
 
 #[then(regex = r#"^the cache record "([^"]+)" has (\w+) "([^"]+)"$"#)]
 async fn cache_record_field(w: &mut DioramaWorld, id: String, field: String, expected: String) {
-    // Poll the cache for the expected value. The mirror on_write callback
+    // Poll the cache for the expected value. The mirror on_flash route
     // may still be draining spawn_blocking (redb) ops after drain_write_queue's
     // virtual-time advances — bounded busy-poll with tiny advances gives the
     // blocking pool real wall-clock time to catch up.

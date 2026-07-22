@@ -9,7 +9,7 @@ use vantage_types::Record;
 use crate::SortDir;
 use crate::dio::Dio;
 use crate::lens::chunk_sink::ChunkSink;
-use crate::ops::{ChangeEvent, QueryDescriptor, WriteOp};
+use crate::ops::{ChangeEvent, ChangeFlash, QueryDescriptor};
 
 /// Future returned by a Dio callback. Borrows from the supplied `&Dio`.
 pub type DioCallbackFuture<'a> = Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>;
@@ -20,8 +20,14 @@ pub type DioCallbackFuture<'a> = Pin<Box<dyn Future<Output = Result<()>> + Send 
 pub type DioCallback =
     Box<dyn for<'a> Fn(&'a Dio) -> DioCallbackFuture<'a> + Send + Sync + 'static>;
 
-pub type DioWriteCallback =
-    Box<dyn for<'a> Fn(&'a Dio, WriteOp) -> DioCallbackFuture<'a> + Send + Sync + 'static>;
+/// The write-routing callback: every [`ChangeFlash`] the Dio's write
+/// pipeline carries is handed here when registered. `Ok` resolves the
+/// write (for an optimistic flash the staged cache value stands);
+/// `Err` triggers rollback and surfaces as
+/// [`WriteReverted`](crate::DioEvent::WriteReverted) /
+/// [`WriteFailed`](crate::DioEvent::WriteFailed).
+pub type DioFlashCallback =
+    Box<dyn for<'a> Fn(&'a Dio, ChangeFlash) -> DioCallbackFuture<'a> + Send + Sync + 'static>;
 
 pub type DioEventCallback =
     Box<dyn for<'a> Fn(&'a Dio, ChangeEvent) -> DioCallbackFuture<'a> + Send + Sync + 'static>;
@@ -87,7 +93,7 @@ pub type DioLoadDetailCallback =
 pub struct LensCallbacks {
     pub on_start: Option<DioCallback>,
     pub on_refresh: Option<DioCallback>,
-    pub on_write: Option<DioWriteCallback>,
+    pub on_flash: Option<DioFlashCallback>,
     pub on_event: Option<DioEventCallback>,
     pub total_provider: Option<DioTotalProviderCallback>,
     pub on_load_chunk: Option<DioLoadChunkCallback>,
@@ -110,13 +116,13 @@ where
     Box::new(move |dio| Box::pin(f(dio)))
 }
 
-/// Wrap a user closure into a [`DioWriteCallback`].
-pub fn boxed_dio_write_callback<F, Fut>(f: F) -> DioWriteCallback
+/// Wrap a user closure into a [`DioFlashCallback`].
+pub fn boxed_dio_flash_callback<F, Fut>(f: F) -> DioFlashCallback
 where
-    F: for<'a> Fn(&'a Dio, WriteOp) -> Fut + Send + Sync + 'static,
+    F: for<'a> Fn(&'a Dio, ChangeFlash) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = Result<()>> + Send + 'static,
 {
-    Box::new(move |dio, op| Box::pin(f(dio, op)))
+    Box::new(move |dio, flash| Box::pin(f(dio, flash)))
 }
 
 /// Wrap a user closure into a [`DioEventCallback`].

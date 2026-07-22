@@ -9,6 +9,7 @@ pub mod error;
 pub mod lens;
 pub mod ops;
 pub mod scenery;
+pub mod servo;
 
 pub use augment::{
     AugmentSpec, Augmentation, BuildFn, Detail, Fetch, FetchFn, FetchSpec, MergeRule, SetOp,
@@ -20,16 +21,17 @@ pub use dio::{Dio, DioEvent, DioShell, Generation};
 pub use error::{DioError, LensBuildError};
 pub use lens::{
     Activity, ActivitySignal, CacheBackend, CacheStatus, CacheTable, ChunkRow, ChunkSink,
-    DioCallback, DioEventCallback, DioLoadChunkCallback, DioTotalProviderCallback,
-    DioWriteCallback, Lens, LensBuilder, LensCallbacks, LensDefaults, MemoryCache,
+    DioCallback, DioEventCallback, DioFlashCallback, DioLoadChunkCallback,
+    DioTotalProviderCallback, Lens, LensBuilder, LensCallbacks, LensDefaults, MemoryCache,
     MemoryCacheTable, RedbCache, RedbCacheTable,
 };
-pub use ops::{ChangeEvent, QueryDescriptor, WriteOp};
+pub use ops::{ChangeEvent, ChangeFlash, FlashKind, QueryDescriptor};
 pub use scenery::{
     Aggregate, CappedScenery, CustomAggregate, EnrichedRecord, RecordScenery, RecordStatus,
     RowStatus, RowStatusSummary, SortDir, TableScenery, TableSceneryBuilder, ValueScenery,
     ValueSceneryBuilder, ValueStatus, boxed_custom_aggregate,
 };
+pub use servo::{Servo, ServoStatus};
 pub use vantage_vista::VistaCapabilities;
 
 /// Common imports for working with vantage-diorama.
@@ -41,9 +43,10 @@ pub mod prelude {
     pub use crate::augment::{Augmentation, Detail, Fetch, MergeRule, Source};
     pub use crate::dio::{Dio, DioEvent, Generation};
     pub use crate::lens::{CacheBackend, CacheStatus, CacheTable, Lens, RedbCache};
-    pub use crate::ops::{ChangeEvent, WriteOp};
+    pub use crate::ops::{ChangeEvent, ChangeFlash, FlashKind};
     pub use crate::scenery::{
         EnrichedRecord, RecordScenery, RecordStatus, RowStatus, SortDir, TableScenery, ValueScenery,
     };
+    pub use crate::servo::{Servo, ServoStatus};
     pub use vantage_vista_factory::VistaCatalog;
 }
