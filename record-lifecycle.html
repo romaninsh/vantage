@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-af00d5df.js";
+            window.path_to_searchindex_js = "searchindex-afe28e67.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-76a8932f.js"></script>
+        <script src="toc-249b33b5.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -186,9 +186,9 @@ loaded record, the foreign-key <strong>invariants</strong> that traversal sets u
 you can attach for audit, validation, soft-delete, and after-effects. They are backend-agnostic —
 everything here works the same on SQLite, Postgres, MySQL, Mongo, etc.</p>
 <h2 id="traversing-from-a-loaded-record-get_ref"><a class="header" href="#traversing-from-a-loaded-record-get_ref">Traversing from a loaded record: <code>get_ref</code></a></h2>
-<p><code>Table::get_ref_as</code> / <code>get_ref_from_row</code> traverse a relation from a <em>table</em>. The <code>GetRefExt</code> trait
-adds the record-level equivalent: traverse straight from a loaded <code>ActiveEntity</code> (typed) or
-<code>ActiveRecord</code> (untyped).</p>
+<p><code>Table::get_ref_as</code> / <code>get_ref_from_row</code> traverse a relation from a <em>table</em> (both covered in
+<a href="relations/traversal.html">Relations &amp; Traversal</a>). The <code>GetRefExt</code> trait adds the record-level
+equivalent: traverse straight from a loaded <code>ActiveEntity</code> (typed) or <code>ActiveRecord</code> (untyped).</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use vantage_table::prelude::GetRefExt;
@@ -202,7 +202,9 @@ crew.insert_return_id(&amp;LaunchCrew { astronaut_id: Some(a), role: Some("Pilot
 <p><code>get_ref::&lt;E2&gt;(relation)</code> returns a <code>Table&lt;T, E2&gt;</code> scoped to the parent. For a typed <code>ActiveEntity</code>
 the entity’s id is injected into the row before traversal (so has-many relations resolve); an
 untyped <code>ActiveRecord</code> already holds the raw row and forwards directly. The same method exists on
-both handles.</p>
+both handles — <code>GetRefExt</code> carries blanket implementations for each, generic over any
+<code>TableSource</code> (the handles themselves live in <code>vantage-dataset</code> and know nothing about <code>Table</code>,
+which is why this arrives as an extension trait).</p>
 <h2 id="set-invariants"><a class="header" href="#set-invariants">Set invariants</a></h2>
 <p>A table narrowed by a literal <code>column = value</code> is a <strong>set</strong>, and every row written into it must
 <em>conform</em> to that definition. Vantage records the pair as an <strong>invariant</strong> and enforces it on
@@ -355,7 +357,7 @@ return type annotated explicitly so it coerces to the hook type.</p>
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="mda.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="relations.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -369,7 +371,7 @@ return type annotated explicitly so it coerces to the hook type.</p>
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="mda.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="relations.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

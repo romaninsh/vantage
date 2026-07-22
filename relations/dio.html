@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Serving &amp; Watching Live Stock - Vantage Framework</title>
+        <title>Relations and Dio - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,111 +175,153 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="serving--watching-live-stock"><a class="header" href="#serving--watching-live-stock">Serving &amp; Watching Live Stock</a></h1>
-<p>Last chapter left a <code>Dio</code> holding a live copy of the <code>product</code> table. Now we put it behind HTTP —
-using the <strong>same adapter the S3 path uses</strong>. <code>DioRouter</code> neither knows nor cares that its Dio is backed
-by SQL instead of S3; it binds a Dio to a pair of routes, GET and watch, and that is all it needs.</p>
+                        <h1 id="relations-and-dio"><a class="header" href="#relations-and-dio">Relations and Dio</a></h1>
+<p>Everything in this guide so far has executed at or below the Vista: typed relations on the Table,
+traversal narrowing, subquery expressions, implicit references. This final chapter climbs one layer
+higher. A <code>Dio</code> keeps a live local copy of a data segment (a cache), reads through a <code>Lens</code>,
+announces changes on an event bus, and serves reactive views (<code>Scenery</code>). You built one in the intro
+paths (<a href="../intro/step5-sql-dio.html">Dio over SQL</a>, <a href="../intro/step7-scenery.html">Scenery</a>).</p>
+<p>Two questions matter here: what happens to the relation machinery you already know once a Dio sits
+on top — and what relation shape exists <em>only</em> at the Dio layer, because nothing below it can
+express one.</p>
+<h3 id="same-persistence-relations-resolve-beneath-the-dio"><a class="header" href="#same-persistence-relations-resolve-beneath-the-dio">Same-persistence relations resolve beneath the Dio</a></h3>
+<p>Traversal, subquery expressions, and implicit references all happen in the Table or Vista <em>under</em>
+the Dio. The Dio caches the resulting rows like any others. If your table declares
+<code>with_active_columns(&amp;["id", "client.name"])</code>, the <code>client.name</code> column is already part of each row
+when it enters the cache — nothing at the Dio layer knows or cares that it was traversed. From the
+cache’s point of view, a traversed column and a plain column are indistinguishable.</p>
+<p>The practical consequence is the master/detail pattern in a UI: <strong>traverse at the Vista, cache at
+the Dio</strong>. Take a row from the cached master, call <code>Vista::get_ref(relation, row)</code> to build the
+narrowed detail Vista — the same erased traversal from the <a href="./vistas.html">Vistas chapter</a>, or
+<code>VistaCatalog::traverse_from</code> when the detail may live in another datasource — and put a
+Dio in front of <em>that</em> for the detail pane. Each narrowed detail set gets its own cache entry, so
+switching between master rows switches between already-cached detail sets rather than re-narrowing
+one shared cache.</p>
+<h3 id="the-join-the-layers-below-cannot-express"><a class="header" href="#the-join-the-layers-below-cannot-express">The join the layers below cannot express</a></h3>
+<p>The <a href="./vistas.html"><code>VistaCatalog</code></a> can already <em>navigate</em> across datasources — hand it a parent row
+and it returns the related set from another backend. What nothing below the Dio can do is <em>merge</em>:
+show master rows whose columns come from two sources at once. That is a join, and joins are
+governed by the capability contract — a SQL Vista can join its own tables, a REST Vista cannot,
+and two different backends can never push a join down to either engine. A Vista also has nowhere
+to put stitched rows: no cache, no viewport, no notion of “only visible rows pay”.</p>
+<p>Where the backend can’t, the layer above fills the gap — that is the whole job of the Dio.
+<strong>Augmentation wires two Vistas into one <code>Dio</code></strong>: a <em>master</em> that is listed, and a <em>detail</em> source
+loaded one row at a time and merged on top. The detail is resolved by name through the
+<code>VistaCatalog</code>, so it is persistence-agnostic — a REST master enriched by a <code>cmd</code> detail, or a SQL
+master enriched from another database.</p>
+<p>It runs in two passes:</p>
+<ol>
+<li><strong>List pass</strong> — the master is listed cheaply; each row enters the cache marked <code>Incomplete</code>.</li>
+<li><strong>Detail pass</strong> — viewport-driven: for each <em>visible</em> incomplete row, the augmentation resolves
+its detail Vista, fetches the matching record, merges the chosen columns, and the row flips to
+<code>Fresh</code>.</li>
+</ol>
+<p>Rows off-screen are never fetched; hydrated rows are never re-fetched. A failed detail fetch marks
+only that row.</p>
+<h3 id="declaring-an-augmentation"><a class="header" href="#declaring-an-augmentation">Declaring an augmentation</a></h3>
+<p>Augmentations are configured on the <code>Lens</code>. The catalog is what makes the detail side resolvable by
+name; supplying at least one augmentation is what engages the two-pass behavior:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>use vantage_api_adapters::axum_dio::DioRouter;
-
-let api = DioRouter::new(dio.clone())
-    .with_column("name", "name")
-    .with_column("price", "price")
-    .with_column("stock", "stock")
-    .with_page_size(50)
-    .into_router();
-
-let app = axum::Router::new().nest("/api/products", api);
-axum::serve(listener, app).await?;
+</span>let lens = Lens::new()
+    .cache_at(cache_path)
+    .catalog(catalog)                       // resolves `table:` names
+    .augment(vec![augmentation])            // ≥1 engages two-pass
+    .build()?;
 <span class="boring">}</span></code></pre>
-<p>A plain <code>GET</code> is the cache, answered instantly — never a query against SQLite:</p>
-<pre><code class="language-text">$ curl 'localhost:3008/api/products?offset=0&amp;limit=10'
-{"total":5,"offset":0,"limit":10,"items":[
-  {"index":0,"name":"Espresso","price":280,"stock":12},
-  {"index":1,"name":"Cappuccino","price":340,"stock":8},
-  {"index":2,"name":"Cold Brew","price":420,"stock":5},
-  {"index":3,"name":"Croissant","price":260,"stock":6},
-  {"index":4,"name":"Cheesecake","price":520,"stock":2}]}
-</code></pre>
-<h2 id="a-till-to-make-it-move"><a class="header" href="#a-till-to-make-it-move">A till to make it move</a></h2>
-<p>A cache over a table nobody writes is just a slow constant. To see the reactive stack work, the
-data has to change — so the app runs a <strong>till</strong>: a background task that sells one unit of a random
-product every 800ms, removes anything that sells out, and every so often takes a delivery. These
-are ordinary SQL writes, on the same connection the master reads from:</p>
+<p>Each augmentation answers four questions — which detail Vista, how a master row selects its detail,
+how it is fetched, and which columns to lift:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>// src/sim.rs — the interesting line
-sqlx::query(
-    "UPDATE product SET stock = stock - 1
-     WHERE id = (SELECT id FROM product WHERE stock &gt; 0 ORDER BY RANDOM() LIMIT 1)",
-)
-.execute(db.pool())
-.await?;
+</span>Augmentation {
+    table:  "tfstate_detail".into(),  // catalog name of the detail Vista
+    source: Source::Column { from: "key".into(), to: None },
+    fetch:  Fetch::PerRow,
+    merge:  MergeRule { columns: vec!["resources".into(), "serial".into()] },
+}
 <span class="boring">}</span></code></pre>
-<p>The server itself never calls the till and the till never calls the server. They meet only through
-the database and the once-a-second reconcile — which is precisely the point: <strong>any</strong> writer, in any
-process, moves the shelf. The <code>sqlite3</code> CLI will do just as well, as we’ll see.</p>
-<h2 id="the-watch"><a class="header" href="#the-watch">The watch</a></h2>
-<p><code>curl -N</code> holds the connection open. The page arrives as <code>ADDED</code> lines — the current shelf — and
-then every sale streams back as a <code>MODIFIED</code> line the moment the reconcile picks it up:</p>
-<pre><code class="language-text">$ curl -N 'localhost:3008/api/products?watch=true'
-{"type":"ADDED","object":{"index":0,"name":"Espresso","price":280,"stock":12}}
-{"type":"ADDED","object":{"index":1,"name":"Cappuccino","price":340,"stock":8}}
-{"type":"ADDED","object":{"index":2,"name":"Cold Brew","price":420,"stock":5}}
-{"type":"ADDED","object":{"index":3,"name":"Croissant","price":260,"stock":6}}
-{"type":"ADDED","object":{"index":4,"name":"Cheesecake","price":520,"stock":2}}
-{"type":"MODIFIED","object":{"index":4,"name":"Cheesecake","price":520,"stock":1}}
-{"type":"MODIFIED","object":{"index":2,"name":"Cold Brew","price":420,"stock":4}}
-{"type":"MODIFIED","object":{"index":0,"name":"Espresso","price":280,"stock":9}}
+<ul>
+<li><code>source</code> picks how a master row selects its detail: <code>Source::Id</code> matches master.id → detail.id;
+<code>Source::Column { from, to }</code> matches <code>master[from]</code> → <code>detail[to]</code>, or detail.id when <code>to</code> is <code>None</code>;
+<code>Source::Build(closure)</code> performs arbitrary narrowing from the whole row, and is per-row only.</li>
+<li><code>fetch</code> picks how the detail is read: <code>Fetch::PerRow</code> today; <code>Batched</code> is planned.</li>
+<li><code>merge.columns</code> lists the detail columns to lift. Empty means all; on a name clash the detail
+wins.</li>
+</ul>
+<p>The same declaration works from YAML:</p>
+<pre><code class="language-yaml">augment:
+  - table: tfstate_detail
+    source: { kind: column, from: key }
+    fetch:  { kind: per_row }
+    merge:  [resources, serial, outputs]
 </code></pre>
-<p>That is the reactive stack running over SQL, end to end: a SQL write, reconciled into the cache, a
-<code>DatasetChanged</code> event, a scenery re-derive, a diff against what this connection last saw, one
-NDJSON line on the wire. Nothing in that chain is specific to SQL — it is the same machinery the
-S3 path serves the NOAA bucket with.</p>
-<div id="admonition-two-events-not-three" class="admonition admonish-note" role="note" aria-labelledby="admonition-two-events-not-three-title">
+<div id="admonition-script-sources" class="admonition admonish-info" role="note" aria-labelledby="admonition-script-sources-title">
 <div class="admonition-title">
-<div id="admonition-two-events-not-three-title">
-<p>Two events, not three</p>
+<div id="admonition-script-sources-title">
+<p>Script sources</p>
 </div>
 
-<a class="admonition-anchor-link" href="#admonition-two-events-not-three"></a>
+<a class="admonition-anchor-link" href="#admonition-script-sources"></a>
 </div>
 
 <div>
-<p><code>DioRouter</code> emits only <code>ADDED</code> and <code>MODIFIED</code>, never <code>DELETED</code> — it diffs each page <strong>by
-position</strong>. So a delivery that grows the shelf appears as an <code>ADDED</code> at a new index, but a product
-that <em>sells out</em> shows up as the list shrinking and the rows below it shifting up (each shifted
-index reported as <code>MODIFIED</code>), not as an explicit removal. A watch client reconstructs “gone” from
-the shrinking <code>total</code>. Getting a real <code>DELETED</code> line is a one-call opt-in — key the watch by
-identity with <code>.key_by("id")</code> — which the <a href="./step8-sql-notify.html">live-push chapter</a> turns on.</p>
+<p>A <code>{ kind: script, code: "self.add_condition_eq(\"key\", row.key)" }</code> source lowers (under the
+<code>rhai</code> feature) to a <code>Build</code> closure — the same machinery as a reference build-script, pointed at a
+possibly different persistence.</p>
 </div>
 
 </div>
 
-<h2 id="it-really-is-the-database"><a class="header" href="#it-really-is-the-database">It really is the database</a></h2>
-<p>The strongest proof that this isn’t an in-process illusion: change the table from <strong>outside</strong> the
-app entirely. With a watch open, in another terminal:</p>
-<pre><code class="language-text">$ sqlite3 learn-8/products.db "UPDATE product SET price=999 WHERE id='p1'"
+<p>To see the two passes run, try the example — two in-memory Vistas, list pass then detail pass:</p>
+<pre><code>cargo run -p vantage-diorama --example augmentation
 </code></pre>
-<p>and the open watch stream reflects it within the second:</p>
-<pre><code class="language-text">{"type":"MODIFIED","object":{"index":0,"name":"Espresso","price":999,"stock":11}}
-</code></pre>
-<p>No API call, no shared memory — a separate process wrote a row, the reconcile read it, and the
-change fanned out to every watcher. The Dio is a mirror of the database, not a copy that happens to
-agree with it.</p>
-<p>Next: the same app, the same shelf, the same watch — served from PostgreSQL instead of a file,
-changed by flipping one compile flag.</p>
+<p>The full treatment of augmentation — merge rules, capability reasoning, the planned <code>Batched</code> fetch
+and keyed caching — is in the <a href="../augmentation.html">Augmentation chapter</a>; the tutorial form is
+<a href="../intro/step6-augmentation.html">intro step 6</a>.</p>
+<h3 id="why-not-model-the-detail-as-a-foreign-key-relation"><a class="header" href="#why-not-model-the-detail-as-a-foreign-key-relation">Why not model the detail as a foreign-key relation?</a></h3>
+<p>A relation resolves <em>within</em> one persistence and can be pushed down as a join. The detail here may
+be a different backend entirely; there is nothing to join on and no engine that could honour it.
+Augmentation is the cross-Vista form, stitched by the Dio.</p>
+<h3 id="choosing-between-implicit-references-and-augmentation"><a class="header" href="#choosing-between-implicit-references-and-augmentation">Choosing between implicit references and augmentation</a></h3>
+<p>Both produce the same user-visible result: a row enriched with related fields. Which one to use
+depends on where the data lives and who should pay for the fetch.</p>
+<h4 id="path-a-implicit-references-same-datasource-in-query"><a class="header" href="#path-a-implicit-references-same-datasource-in-query">Path A: implicit references (same datasource, in-query)</a></h4>
+<p>One query; the backend does the work. The value is present on every row, including off-screen ones,
+it is validated when the table is constructed, and it carries read-only column semantics. Choose
+this when both
+tables live in one datasource that supports traversal (SQL, SurrealDB) — see
+<a href="./implicit-references.html">Implicit References</a>.</p>
+<h4 id="path-b-augmentation-any-two-datasources-per-row-client-side-join"><a class="header" href="#path-b-augmentation-any-two-datasources-per-row-client-side-join">Path B: augmentation (any two datasources, per-row client-side join)</a></h4>
+<p>Two passes; expensive work follows the user’s attention — only viewport rows pay, and only once.
+It works across arbitrary backends, and failed details degrade per-row, not per-page. Choose this
+when the sources differ, or when the detail is expensive and you want viewport-driven hydration
+even within one backend.</p>
+<p>The key difference: implicit references push the join <em>down</em> into the engine; augmentation lifts it
+<em>up</em> into the cache. Same user-visible result — a row enriched with related fields — chosen by where
+the data lives and who should pay for the fetch.</p>
+<h3 id="guide-conclusion"><a class="header" href="#guide-conclusion">Guide conclusion</a></h3>
+<p>This closes the Relations &amp; Traversal guide. At this point you should be able to:</p>
+<ol>
+<li><strong>Say where each relation form executes</strong> — traversal and implicit references in the engine,
+erased traversal through the Vista handle, augmentation in the Dio’s cache.</li>
+<li><strong>Build master/detail</strong> — <code>Vista::get_ref(relation, row)</code> for the narrowed detail Vista, with a
+Dio (and its own cache entry) per detail set.</li>
+<li><strong>Declare an augmentation</strong> — catalog + source + fetch + merge — in Rust or YAML.</li>
+<li><strong>Choose deliberately</strong> between implicit references and augmentation based on where the data
+lives and who should pay for the fetch.</li>
+</ol>
+<p>Relations in Vantage are declared once on the model and then travel — into queries, through
+erasure, and up into the cache — each layer serving the form the one below can’t.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../intro/step5-sql-dio.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../relations/vistas.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../intro/step7-sql-postgres.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../mda.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -289,11 +331,11 @@ changed by flipping one compile flag.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../intro/step5-sql-dio.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../relations/vistas.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../intro/step7-sql-postgres.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../mda.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

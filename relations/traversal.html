@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Serving &amp; Watching Live Stock - Vantage Framework</title>
+        <title>Traversing Sets and Records - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,111 +175,243 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="serving--watching-live-stock"><a class="header" href="#serving--watching-live-stock">Serving &amp; Watching Live Stock</a></h1>
-<p>Last chapter left a <code>Dio</code> holding a live copy of the <code>product</code> table. Now we put it behind HTTP —
-using the <strong>same adapter the S3 path uses</strong>. <code>DioRouter</code> neither knows nor cares that its Dio is backed
-by SQL instead of S3; it binds a Dio to a pair of routes, GET and watch, and that is all it needs.</p>
+                        <h1 id="traversing-sets-and-records"><a class="header" href="#traversing-sets-and-records">Traversing Sets and Records</a></h1>
+<p>The <a href="../relations.html">previous chapter</a> declared the bakery model: Bakery → Clients
+(<code>client.bakery_id</code>) → Orders (<code>client_order.client_id</code>), with the relations <code>"orders"</code>,
+<code>"client"</code>, and <code>"bakery"</code> registered via <code>with_one</code> / <code>with_many</code>. Declaring a relation stores
+the join recipe. This chapter is about using it: turning “the orders of these clients” into an
+actual query.</p>
+<p>There are four traversal forms. They differ in <em>what you have in hand when you traverse</em> — a set
+(conditions, no data), a loaded row, or a loaded record object — and, between the two set forms,
+in <em>how the condition is applied</em> to the target. Each form exists because each starting point
+lets the backend do something different.</p>
+<h2 id="form-1--set-to-set-get_ref_as"><a class="header" href="#form-1--set-to-set-get_ref_as">Form 1 — set-to-set: <code>get_ref_as</code></a></h2>
+<p>You have a <em>set</em> — a table narrowed by conditions, possibly matching many rows, none of them
+loaded. <code>Table::get_ref_as::&lt;E2&gt;(relation)</code> traverses from the whole set at once:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>use vantage_api_adapters::axum_dio::DioRouter;
+</span>let mut paying = Client::sqlite_table(db.clone());
+paying.add_condition(paying["is_paying_client"].eq(true));
 
-let api = DioRouter::new(dio.clone())
-    .with_column("name", "name")
-    .with_column("price", "price")
-    .with_column("stock", "stock")
-    .with_page_size(50)
-    .into_router();
-
-let app = axum::Router::new().nest("/api/products", api);
-axum::serve(listener, app).await?;
+let orders = paying.get_ref_as::&lt;Order&gt;("orders")?;
+// SELECT ... FROM "client_order"
+// WHERE "client_id" IN (SELECT "id" FROM "client" WHERE "is_paying_client" = 1)
 <span class="boring">}</span></code></pre>
-<p>A plain <code>GET</code> is the cache, answered instantly — never a query against SQLite:</p>
-<pre><code class="language-text">$ curl 'localhost:3008/api/products?offset=0&amp;limit=10'
-{"total":5,"offset":0,"limit":10,"items":[
-  {"index":0,"name":"Espresso","price":280,"stock":12},
-  {"index":1,"name":"Cappuccino","price":340,"stock":8},
-  {"index":2,"name":"Cold Brew","price":420,"stock":5},
-  {"index":3,"name":"Croissant","price":260,"stock":6},
-  {"index":4,"name":"Cheesecake","price":520,"stock":2}]}
-</code></pre>
-<h2 id="a-till-to-make-it-move"><a class="header" href="#a-till-to-make-it-move">A till to make it move</a></h2>
-<p>A cache over a table nobody writes is just a slow constant. To see the reactive stack work, the
-data has to change — so the app runs a <strong>till</strong>: a background task that sells one unit of a random
-product every 800ms, removes anything that sells out, and every so often takes a delivery. These
-are ordinary SQL writes, on the same connection the master reads from:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// src/sim.rs — the interesting line
-sqlx::query(
-    "UPDATE product SET stock = stock - 1
-     WHERE id = (SELECT id FROM product WHERE stock &gt; 0 ORDER BY RANDOM() LIMIT 1)",
-)
-.execute(db.pool())
-.await?;
-<span class="boring">}</span></code></pre>
-<p>The server itself never calls the till and the till never calls the server. They meet only through
-the database and the once-a-second reconcile — which is precisely the point: <strong>any</strong> writer, in any
-process, moves the shelf. The <code>sqlite3</code> CLI will do just as well, as we’ll see.</p>
-<h2 id="the-watch"><a class="header" href="#the-watch">The watch</a></h2>
-<p><code>curl -N</code> holds the connection open. The page arrives as <code>ADDED</code> lines — the current shelf — and
-then every sale streams back as a <code>MODIFIED</code> line the moment the reconcile picks it up:</p>
-<pre><code class="language-text">$ curl -N 'localhost:3008/api/products?watch=true'
-{"type":"ADDED","object":{"index":0,"name":"Espresso","price":280,"stock":12}}
-{"type":"ADDED","object":{"index":1,"name":"Cappuccino","price":340,"stock":8}}
-{"type":"ADDED","object":{"index":2,"name":"Cold Brew","price":420,"stock":5}}
-{"type":"ADDED","object":{"index":3,"name":"Croissant","price":260,"stock":6}}
-{"type":"ADDED","object":{"index":4,"name":"Cheesecake","price":520,"stock":2}}
-{"type":"MODIFIED","object":{"index":4,"name":"Cheesecake","price":520,"stock":1}}
-{"type":"MODIFIED","object":{"index":2,"name":"Cold Brew","price":420,"stock":4}}
-{"type":"MODIFIED","object":{"index":0,"name":"Espresso","price":280,"stock":9}}
-</code></pre>
-<p>That is the reactive stack running over SQL, end to end: a SQL write, reconciled into the cache, a
-<code>DatasetChanged</code> event, a scenery re-derive, a diff against what this connection last saw, one
-NDJSON line on the wire. Nothing in that chain is specific to SQL — it is the same machinery the
-S3 path serves the NOAA bucket with.</p>
-<div id="admonition-two-events-not-three" class="admonition admonish-note" role="note" aria-labelledby="admonition-two-events-not-three-title">
+<p>No client rows are fetched. The traversal generates an <code>IN (subquery)</code> condition on the target,
+and the subquery is whatever conditions the source set carries. Narrow <code>paying</code> further and the
+subquery narrows with it — the traversal call never changes. That composability is the point:
+you build the set that describes <em>which</em> parents you mean, and the child set inherits that
+description.</p>
+<p>In application code these calls hide behind the model’s extension traits —
+<code>paying.ref_orders()</code>, <code>orders.ref_client()</code> — so the string and the turbofish live once, next
+to the table definition
+(<a href="../relations.html#coercion--pinning-get_refs-type">Coercion — pinning <code>get_ref</code>’s type</a>).
+This chapter spells out the underlying calls so you can see what each form generates.</p>
+<p>How the <code>IN</code> condition is built is per-backend — each backend implements
+<code>TableSource::related_in_condition</code>:</p>
+<ul>
+<li><strong>SQL</strong> builds the subquery you see above: <code>"client_id" IN (SELECT "id" FROM "client" WHERE …)</code>.</li>
+<li><strong>MongoDB</strong> has no subqueries, so it builds a deferred <code>{ field: { "$in": [...] } }</code> document —
+the parent ids are resolved when the child query runs.</li>
+<li><strong>CSV</strong> fetches the join values in memory and builds an IN condition from them.</li>
+</ul>
+<div id="admonition-mongodb-the-deferred-condition" class="admonition admonish-info" role="note" aria-labelledby="admonition-mongodb-the-deferred-condition-title">
 <div class="admonition-title">
-<div id="admonition-two-events-not-three-title">
-<p>Two events, not three</p>
+<div id="admonition-mongodb-the-deferred-condition-title">
+<p>MongoDB: the deferred condition</p>
 </div>
 
-<a class="admonition-anchor-link" href="#admonition-two-events-not-three"></a>
+<a class="admonition-anchor-link" href="#admonition-mongodb-the-deferred-condition"></a>
 </div>
 
 <div>
-<p><code>DioRouter</code> emits only <code>ADDED</code> and <code>MODIFIED</code>, never <code>DELETED</code> — it diffs each page <strong>by
-position</strong>. So a delivery that grows the shelf appears as an <code>ADDED</code> at a new index, but a product
-that <em>sells out</em> shows up as the list shrinking and the rows below it shifting up (each shifted
-index reported as <code>MODIFIED</code>), not as an explicit removal. A watch client reconstructs “gone” from
-the shrinking <code>total</code>. Getting a real <code>DELETED</code> line is a one-call opt-in — key the watch by
-identity with <code>.key_by("id")</code> — which the <a href="./step8-sql-notify.html">live-push chapter</a> turns on.</p>
+<p>MongoDB’s <code>related_in_condition</code> returns a <strong>deferred</strong> condition — a closure, not a document.
+Nothing runs when you traverse; the closure runs when the <em>child</em> query executes. At that point
+it issues a projected <code>find</code> on the source collection — only the join column, with the source
+set’s own filter applied — collects the values, and emits <code>{ field: { "$in": [...] } }</code> for the
+child query. It also absorbs a representation mismatch: ids may be stored as <code>ObjectId</code> on one
+side and as the hex string on the other, so every collected value is pushed in <em>both</em> forms and
+<code>$in</code> matches either. The set-to-set contract survives — you still hand the target one
+condition — it just costs two round-trips at fetch time instead of one nested query.</p>
 </div>
 
 </div>
 
-<h2 id="it-really-is-the-database"><a class="header" href="#it-really-is-the-database">It really is the database</a></h2>
-<p>The strongest proof that this isn’t an in-process illusion: change the table from <strong>outside</strong> the
-app entirely. With a watch open, in another terminal:</p>
-<pre><code class="language-text">$ sqlite3 learn-8/products.db "UPDATE product SET price=999 WHERE id='p1'"
-</code></pre>
-<p>and the open watch stream reflects it within the second:</p>
-<pre><code class="language-text">{"type":"MODIFIED","object":{"index":0,"name":"Espresso","price":999,"stock":11}}
-</code></pre>
-<p>No API call, no shared memory — a separate process wrote a row, the reconcile read it, and the
-change fanned out to every watcher. The Dio is a mirror of the database, not a copy that happens to
-agree with it.</p>
-<p>Next: the same app, the same shelf, the same watch — served from PostgreSQL instead of a file,
-changed by flipping one compile flag.</p>
+<div id="admonition-csv-an-in-memory-in-list" class="admonition admonish-info" role="note" aria-labelledby="admonition-csv-an-in-memory-in-list-title">
+<div class="admonition-title">
+<div id="admonition-csv-an-in-memory-in-list-title">
+<p>CSV: an in-memory IN list</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-csv-an-in-memory-in-list"></a>
+</div>
+
+<div>
+<p>CSV has no query engine at all — its condition type is an ordinary Vantage expression that the
+driver <em>evaluates per row in Rust</em> while reading the file. <code>related_in_condition</code> builds
+<code>target_column.in_(values)</code>, where <code>values</code> is itself deferred: at fetch time it lists the source
+table (with its conditions applied the same in-memory way), pulls the join column out of each
+row, and yields the list as a single value. Filtering the target is then a per-row membership
+check. Same declared relation, same traversal call — no database anywhere.</p>
+</div>
+
+</div>
+
+<p>Use this form when the parent is a set — filtered, unfiltered, one row or a thousand.</p>
+<h2 id="form-2--set-to-set-for-embedding-get_subquery_as"><a class="header" href="#form-2--set-to-set-for-embedding-get_subquery_as">Form 2 — set-to-set, for embedding: <code>get_subquery_as</code></a></h2>
+<p>Technically set-to-set as well — same starting point, same declared relation — but the condition
+is applied differently. Where <code>get_ref_as</code> narrows the target with <code>IN (subquery)</code> so the related
+rows can be <em>fetched</em> on their own, <code>Table::get_subquery_as::&lt;E2&gt;(relation)</code> attaches a
+<strong>correlated</strong> condition — target column against source column, row by row:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let orders = clients.get_ref_as::&lt;Order&gt;("orders")?;      // fetch:  WHERE client_id IN (SELECT id FROM client …)
+let orders = clients.get_subquery_as::&lt;Order&gt;("orders")?; // embed:  WHERE client_id = client.id
+<span class="boring">}</span></code></pre>
+<p>A correlated table is useless to fetch standalone — its condition references the source’s rows —
+but it is exactly right to <em>embed</em> as a scalar subquery inside the source’s own SELECT: a
+client’s <code>order_count</code>, an order’s <code>client.name</code>. The embedding recipe (<code>select_column</code>,
+aggregates, composition) is the subject of the <a href="./expressions.html">next chapter</a>.</p>
+<div id="admonition-sql-and-surrealdb-only" class="admonition admonish-warning" role="note" aria-labelledby="admonition-sql-and-surrealdb-only-title">
+<div class="admonition-title">
+<div id="admonition-sql-and-surrealdb-only-title">
+<p>SQL and SurrealDB only</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-sql-and-surrealdb-only"></a>
+</div>
+
+<div>
+<p>This form needs the backend to express a correlated condition
+(<code>TableSource::related_correlated_condition</code>), and only SQL backends and SurrealDB can. MongoDB,
+CSV, REST, and CMD have no correlated-subquery expressions to lower to — the default
+implementation panics rather than degrading silently. The fetching forms (1, 3, 4) remain
+available everywhere.</p>
+</div>
+
+</div>
+
+<h2 id="form-3--row-in-hand-get_ref_from_row"><a class="header" href="#form-3--row-in-hand-get_ref_from_row">Form 3 — row-in-hand: <code>get_ref_from_row</code></a></h2>
+<p>You already hold a loaded row — a <code>Record&lt;T::Value&gt;</code> that came back from the database. There is
+nothing to compute: the join value is sitting in the row. <code>Table::get_ref_from_row::&lt;E2&gt;(relation, &amp;row)</code> reads it out and applies it as a single eq-condition on the target:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let orders = clients.get_ref_from_row::&lt;Order&gt;("orders", &amp;row)?;
+// WHERE "client_id" = &lt;the id read out of row&gt; — one eq-condition
+<span class="boring">}</span></code></pre>
+<p>Which field gets read depends on the relation’s direction: a <code>HasOne</code> relation reads its stored
+foreign-key column from the row; a <code>HasMany</code> relation reads the source’s id field. No subquery,
+no deferred fetch — <code>row</code> already carries the value.</p>
+<div id="admonition-plumbing-not-user-facing-api" class="admonition admonish-info" role="note" aria-labelledby="admonition-plumbing-not-user-facing-api-title">
+<div class="admonition-title">
+<div id="admonition-plumbing-not-user-facing-api-title">
+<p>Plumbing, not user-facing API</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-plumbing-not-user-facing-api"></a>
+</div>
+
+<div>
+<p>You will rarely call this directly: it exists as the primitive beneath the blanket <code>get_ref</code>
+implementations for <code>ActiveRecord</code> and <code>ActiveEntity</code> (form 4), and the erased <code>Vista::get_ref</code>
+forwards here too. When a UI shows a clicked row’s children, this is the form doing the work —
+one equality filter — but the caller holds a record handle or a Vista, not a raw row.</p>
+</div>
+
+</div>
+
+<h2 id="form-4--record-level-getrefextget_ref"><a class="header" href="#form-4--record-level-getrefextget_ref">Form 4 — record-level: <code>GetRefExt::get_ref</code></a></h2>
+<p>The same traversal as form 3, called from a loaded handle instead of a raw row:
+<code>launch.get_ref::&lt;LaunchCrew&gt;("launch_crew")</code> works on an <code>ActiveEntity</code> (typed — its id is
+injected into the row first, so has-many relations resolve) and on an <code>ActiveRecord</code> (untyped —
+the raw row forwards directly). The method comes from the <code>GetRefExt</code> extension trait in
+<code>vantage-table</code>, with blanket implementations for both handles over any <code>TableSource</code>. The
+worked example (loading a record, traversing, inserting a child) lives in
+<a href="../record-lifecycle.html#traversing-from-a-loaded-record-get_ref">Records: Traversal, Invariants &amp; Hooks</a>.</p>
+<h2 id="the-bare-target-get_ref_target"><a class="header" href="#the-bare-target-get_ref_target">The bare target: <code>get_ref_target</code></a></h2>
+<p>Sometimes you want the relation’s target table with <em>no</em> condition at all —
+<code>Table::get_ref_target::&lt;E2&gt;(relation)</code> builds exactly that. Where the traversal forms narrow
+the target to related rows, <code>get_ref_target</code> hands you the table you’d insert a new related row
+into before any join value exists (this is what Vista’s nested insert uses).</p>
+<h2 id="contained-relations"><a class="header" href="#contained-relations">Contained relations</a></h2>
+<p>Some backends embed related data <em>inside</em> the row instead of linking to another table.
+SurrealDB’s <code>Order</code> carries an embedded <code>array&lt;object&gt;</code> of order lines — declared as a column
+(so it is selected) <em>and</em> as a contains-many relation whose record schema is built by a closure.
+From <code>bakery_model3/src/order.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub fn surreal_table(db: SurrealDB) -&gt; Table&lt;SurrealDB, Order&gt; {
+    Table::new("order", db)
+        .with_id_column("id")
+        .with_column_of::&lt;Thing&gt;("client")
+        .with_column_of::&lt;bool&gt;("is_deleted")
+        // `lines` is an embedded `array&lt;object&gt;` of `{ product, quantity,
+        // price }` — declared as a column so it's selected, and as a
+        // contains-many relation whose record schema is built by the
+        // closure (like `with_many`).
+        .with_column_of::&lt;AnySurrealType&gt;("lines")
+        .with_one("client", "client", Client::surreal_table)
+        .with_contained_many(
+            "lines",
+            "lines",
+            |db| {
+                Table::new("lines", db)
+                    .with_column_of::&lt;Thing&gt;("product")
+                    .with_column_of::&lt;i64&gt;("quantity")
+                    .with_column_of::&lt;i64&gt;("price")
+                    // a line traverses out to the real product table
+                    .with_one("product", "product", Product::surreal_table)
+            },
+            None,
+        )
+}
+<span class="boring">}</span></code></pre>
+<p>Contained relations are a K/V-and-document-store shape: the value already holds the related
+data, so “traversal” is descent into the row, not a query. Note that a contained record can
+still hold references back out — a line’s <code>product</code> field is a <code>with_one</code> to the real product
+table, so from an embedded line you traverse out with the same forms as anywhere else.</p>
+<div id="admonition-surrealdb-record-ids-in-narrowings" class="admonition admonish-note" role="note" aria-labelledby="admonition-surrealdb-record-ids-in-narrowings-title">
+<div class="admonition-title">
+<div id="admonition-surrealdb-record-ids-in-narrowings-title">
+<p>SurrealDB record ids in narrowings</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-surrealdb-record-ids-in-narrowings"></a>
+</div>
+
+<div>
+<p>Join values in SurrealDB are record ids (<code>Thing</code>), not scalar foreign keys. A string of the
+shape <code>"table:key"</code> handed into a narrowing — from a script surface or JSON, say — is coerced
+back into a record id by the backend (<code>coerce_reference_value</code> on <code>TableSource</code>; the identity
+function on scalar-FK backends). String ids narrow correctly; they don’t silently match nothing.</p>
+</div>
+
+</div>
+
+<h2 id="conclusion"><a class="header" href="#conclusion">Conclusion</a></h2>
+<p>You can now:</p>
+<ol>
+<li><strong>Traverse a filtered set</strong> with <code>get_ref_as</code> — conditions compose into an <code>IN (subquery)</code>
+on the target.</li>
+<li><strong>Correlate instead of fetch</strong> with <code>get_subquery_as</code> — same relation, a per-row condition,
+built for embedding in the source’s SELECT.</li>
+<li><strong>Traverse from a loaded row or record</strong> with <code>get_ref_from_row</code> / <code>get_ref</code> — one
+eq-condition, supported by every backend.</li>
+<li><strong>Obtain a bare insert target</strong> with <code>get_ref_target</code> — the relation’s target with no
+condition.</li>
+<li><strong>Declare embedded/contained relations</strong> on document stores with <code>with_contained_many</code>,
+where traversal is descent rather than a query.</li>
+</ol>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../intro/step5-sql-dio.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../relations.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../intro/step7-sql-postgres.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../relations/expressions.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -289,11 +421,11 @@ changed by flipping one compile flag.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../intro/step5-sql-dio.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../relations.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../intro/step7-sql-postgres.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../relations/expressions.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

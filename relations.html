@@ -1,0 +1,611 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Relations &amp; Traversal - Vantage Framework</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-2459343d.css">
+        <link rel="stylesheet" href="css/chrome-ae938929.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="./mdbook-admonish.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "searchindex-afe28e67.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-249b33b5.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Vantage Framework</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="relations--traversal"><a class="header" href="#relations--traversal">Relations &amp; Traversal</a></h1>
+<p>Vantage treats a relation as something you <em>traverse</em>, not something you <em>load</em>. Declared once on
+the model, a relation gives you:</p>
+<ol>
+<li><strong>Set-to-set traversal</strong> — narrow “clients” down to the paying ones, traverse, and you hold
+“orders of paying clients” as a new set. One query when it executes; no loop over IDs.</li>
+<li><strong>Related values inside queries</strong> — a client row carrying its <code>order_count</code>, an order carrying
+its <code>client.name</code> — computed by the database through correlated subqueries or native link paths.</li>
+<li><strong>The same vocabulary on every backend</strong> — relations are declared on the model, not read from
+foreign-key constraints, so CSV files, REST APIs, and document stores get the same treatment as
+SQL.</li>
+<li><strong>Relations that survive the stack</strong> — the declaration travels from the typed <code>Table</code> through
+the type-erased <code>Vista</code> into the cached <code>Dio</code>; where two datasources meet, the Dio stitches the
+join client-side.</li>
+</ol>
+<p>If you come from an ORM, the shape is different enough to spell out:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th>typical ORM</th><th>Vantage</th></tr>
+</thead>
+<tbody>
+<tr><td>Traversal returns</td><td>loaded objects (lazy or eager)</td><td>a new set — a query definition, no data loaded</td></tr>
+<tr><td>N+1 queries</td><td>managed with eager-loading hints</td><td>don’t arise: traversal is one subquery</td></tr>
+<tr><td>Declared</td><td>derived from schema / migrations</td><td>on the model; works without FK constraints</td></tr>
+<tr><td>Backends</td><td>the SQL database</td><td>SQL, SurrealDB, MongoDB, CSV, REST, DynamoDB, …</td></tr>
+<tr><td>Related fields</td><td>JOIN and map, or embedded objects</td><td>subquery expressions, implicit references</td></tr>
+<tr><td>Across two databases</td><td>out of scope</td><td>catalog traversal; augmentation joins per row in the cache</td></tr>
+</tbody>
+</table>
+</div>
+<p>Our running example is <code>bakery_model3</code> — an example model crate that ships in the Vantage
+repository. It defines one set of entities (bakeries, clients, orders, products) with table
+constructors for several datasources — SQLite, PostgreSQL, SurrealDB, MongoDB, CSV, DynamoDB —
+and doubles as a test fixture for the framework itself.
+<a href="mda.html">Model-Driven Architecture</a> walks through its anatomy; here we just borrow it as the
+example.</p>
+<p>Three of its tables belong together: a <code>Bakery</code> has many <code>Clients</code>, and each <code>Client</code> has many
+<code>Orders</code>. In SQL terms, <code>client.bakery_id</code> points at a bakery and <code>client_order.client_id</code> points
+at a client:</p>
+<pre class="mermaid">erDiagram
+    bakery ||--o{ client : "client.bakery_id"
+    client ||--o{ client_order : "client_order.client_id"
+</pre>
+
+<p>Almost every real question you’d ask of this data crosses one of those links —
+“orders of paying clients”, “which bakery does this order belong to” — so this guide is about how
+Vantage models those links and how you cross them.</p>
+<p>You met relations briefly in the <a href="intro/step2-tables.html">Introduction</a>, where a product catalog
+picked up <code>with_many</code> and <code>get_ref_as</code>; this guide covers the same machinery in depth, with a fuller
+model. We work SQL-first here (SQLite), with SurrealDB and other backends in notes along the way. The chapters after this one dig into traversal forms, subquery
+expressions, implicit references, and how relations survive into the type-erased <code>Vista</code> and cached
+<code>Dio</code> layers — this page sets up the vocabulary they all share.</p>
+<h2 id="one-relation-four-layers"><a class="header" href="#one-relation-four-layers">One relation, four layers</a></h2>
+<p>An ORM or a data mapper typically has exactly one place where references live: on the mapped
+object. <code>client.orders()</code> loads objects, and that is the whole story. In Vantage the <em>same
+declared relation</em> is traversable at (approximately) four layers. Each layer traverses with what
+it has in hand and gives you back a handle native to that layer — you never drop down a level to
+cross a link:</p>
+<p>The traversal method is called <code>get_ref</code> at every layer — what changes is what you hold when you
+call it, and when you’d want to:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>level</th><th>when you reach for it</th></tr>
+</thead>
+<tbody>
+<tr><td>Record → Table</td><td>You hold an <code>ActiveRecord</code> or <code>ActiveEntity</code> — physical row data, loaded. <code>client_record.get_ref("orders")?</code> hands back a table narrowed to that client. Models typically wrap this in typed methods, so application code calls <code>client_record.ref_orders()</code> and gets a <code>Table&lt;SqliteDB, Order&gt;</code>.</td></tr>
+<tr><td>Table → Table</td><td>True set traversal — no data loaded on either side. Start with the table of VIP clients, traverse to their orders, aggregate: one query, and you hold the sum of all VIP clients’ orders.</td></tr>
+<tr><td>Vista → Vista</td><td>Type-erased, for generic consumers. Record and table traversal stay inside one datasource; a <code>Vista</code> respects the relationships declared on the wrapped table, and the <code>VistaCatalog</code> additionally lets you register relations between catalog models — including targets in a <em>different</em> datasource.</td></tr>
+<tr><td>Dio</td><td>Not a new traversal — the caching layer over the ones above. A traversed detail set gets its own live cache, and <em>augmentation</em> merges a related source’s columns into the master’s cached rows, one visible row at a time.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Why is there a Dio layer at all, if the catalog already crosses datasources? Because catalog
+traversal <em>navigates</em> — it hands you the related set, and every read of it is a live round-trip.
+The Dio owns what navigation lacks: a cache, a viewport, and change events. It caches each
+traversed detail set, and it hosts augmentation — not navigation <em>to</em> related rows but a per-row
+join <em>into</em> the master’s rows, which needs exactly that cache and viewport.
+<a href="relations/dio.html">Relations and Dio</a> works through both.</p>
+<p>The rest of this page covers the first vocabulary — declaring the relation. The child chapters
+then walk the layers: <a href="relations/traversal.html">tables</a>, <a href="relations/vistas.html">vistas</a>, and
+<a href="relations/dio.html">dio</a>.</p>
+<h2 id="what-a-relation-is"><a class="header" href="#what-a-relation-is">What a relation is</a></h2>
+<p>A relation in Vantage is a declared, named link between two table definitions. It lives on the
+<strong>table definition</strong> — the model — not on the entity struct, and not in the database. Vantage never
+introspects foreign-key constraints; whether your SQLite schema actually declares
+<code>FOREIGN KEY (client_id) REFERENCES client(id)</code> is invisible to it. A relation is exactly three
+things:</p>
+<ol>
+<li><strong>A name</strong> — the string you traverse by, like <code>"orders"</code>.</li>
+<li><strong>A foreign-key field</strong> — the column that carries the link.</li>
+<li><strong>A target-table constructor</strong> — a function that builds the table on the other end.</li>
+</ol>
+<p>Two properties follow from this shape. <strong>References are one-sided</strong>: a declaration gives <em>this</em>
+table a way to reach the target — nothing is declared on the target, and no back-reference is
+required. If you want to traverse the other direction, declare that separately (the bakery model
+does: <code>orders</code> on <code>Client</code>, <code>client</code> on <code>Order</code>).</p>
+<p>And because traversal produces <em>sets</em>, <strong>the same pair of tables can be linked by any number of
+references</strong> — same target, same foreign key, different conditions. The constructor argument is
+what makes this natural: pass a closure that narrows the target, and the relation names a
+<em>meaningful subset</em>, not just a foreign key:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>.with_many("paid_invoices", "client_id", |db| {
+    let mut t = Invoice::table(db);
+    t.add_condition(t["status"].eq("paid"));
+    t
+})
+.with_many("due_invoices", "client_id", |db| {
+    let mut t = Invoice::table(db);
+    t.add_condition(t["status"].eq("due"));
+    t
+})
+<span class="boring">}</span></code></pre>
+<p>With the extension-trait convention (below), application code reads
+<code>client.ref_paid_invoices()</code> / <code>client.ref_due_invoices()</code> — one invoice table underneath, two
+named ways to reach it.</p>
+<h3 id="why-not-read-the-foreign-keys-from-the-database"><a class="header" href="#why-not-read-the-foreign-keys-from-the-database">Why not read the foreign keys from the database?</a></h3>
+<p>Because most of the backends Vantage talks to don’t have any. CSV files, REST APIs, and MongoDB
+have no foreign-key concept to introspect, yet their data is just as related. Declaring the
+relation on the model means the same declaration works everywhere — the link between clients and
+orders exists whether the rows live in Postgres or in a spreadsheet export.</p>
+<h2 id="two-cardinalities"><a class="header" href="#two-cardinalities">Two cardinalities</a></h2>
+<p>There are two declaration methods, and the difference between them comes down to one question:
+which table holds the foreign key?</p>
+<ul>
+<li><strong><code>with_one("name", "fk_field", constructor)</code></strong> — the FK lives on <strong>this</strong> table. Traversal
+yields at most one row: many-to-one. An order has one client.</li>
+<li><strong><code>with_many("name", "fk_field", constructor)</code></strong> — the FK lives on the <strong>target</strong> table.
+Traversal yields a set: one-to-many. A client has many orders.</li>
+</ul>
+<p>Both declarations describe the same underlying link — one foreign-key column, viewed from either
+end:</p>
+<pre class="mermaid">graph LR
+    order["client_order&lt;br/&gt;(carries client_id)"]
+    client["client&lt;br/&gt;(has id)"]
+    order -- "with_one('client')" --&gt; client
+    client -- "with_many('orders')" --&gt; order
+</pre>
+
+<p>The two are more similar than the names suggest. Both take the same closure and use it the same
+way: build the target table, then pin it with a single eq-condition. The only difference is the
+condition’s orientation — <code>with_one</code> reads the foreign key <em>out of the source row</em> and pins the
+target’s id; <code>with_many</code> reads the source row’s <em>id</em> and pins the target’s foreign-key column.
+Same closure, same eq-condition, read from opposite ends of the link.</p>
+<p>Internally these become <code>HasOne</code> and <code>HasMany</code> implementations of the <code>Reference</code> trait
+(<code>vantage-table/src/references/</code>), and the cardinality is surfaced as <code>ReferenceKind::HasOne</code> /
+<code>ReferenceKind::HasMany</code> for anything that needs to reason about relations generically — the vista
+layer will, later.</p>
+<h3 id="you-could-write-it-yourself"><a class="header" href="#you-could-write-it-yourself">You could write it yourself</a></h3>
+<p><code>with_one</code>, <code>with_many</code>, and <code>get_ref</code> are convenience. A traversal is just “build a table, add a
+condition from what I’m holding” — and nothing stops you from writing exactly that as an
+extension method on a loaded record, without registering any reference at all. It doesn’t even
+have to stay in the same datasource:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub trait ClientMailLog {
+    fn ref_mail_log(&amp;self) -&gt; Table&lt;Mailchimp, MailLogEntry&gt;;
+}
+
+impl&lt;'a&gt; ClientMailLog for ActiveEntity&lt;'a, Table&lt;SqliteDB, Client&gt;, Client&gt; {
+    fn ref_mail_log(&amp;self) -&gt; Table&lt;Mailchimp, MailLogEntry&gt; {
+        let mut log = MailLogEntry::table(mailchimp());
+        log.add_condition(log["email"].eq(self.email.clone()));
+        log
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>(<code>self.email</code> works because <code>ActiveEntity</code> derefs to the entity struct — the loaded <code>Client</code>’s
+fields are right there. An untyped <code>ActiveRecord</code> derefs to the raw <code>Record</code> instead, where the
+same value is <code>self.get("email")</code>.)</p>
+<p>From the caller’s side <code>client.ref_mail_log()</code> is indistinguishable from a declared relation —
+but there is no foreign key here, no registry entry, just a Mailchimp-backed table conditioned by
+the client’s email. What the declared forms add over hand-rolling is everything that needs the
+<em>registry</em>: string-addressable traversal for the generic layers (vistas, implicit references),
+and the foreign-key invariant on inserts. Reach for a hand-rolled method when the link doesn’t
+fit an FK eq-match; declare a relation when you want the machinery.</p>
+<h3 id="coercion--pinning-get_refs-type"><a class="header" href="#coercion--pinning-get_refs-type">Coercion — pinning <code>get_ref</code>’s type</a></h3>
+<p>A relation is addressed by string, and a string carries no type. <code>get_ref</code> therefore cannot
+<em>infer</em> what entity comes back — it is generic, and the caller chooses:
+<code>get_ref::&lt;Order&gt;("orders")</code>. The turbofish is an assertion, not a check: the registry knows
+which table the relation builds, but the entity type you name is simply coerced onto the result.
+Name the wrong one and you find out at runtime, when rows fail to deserialize — not from the
+compiler.</p>
+<p>This uncertainty is exactly why the model wraps every relation once, in an extension trait next
+to the table definition:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub trait ClientTable {
+    fn ref_orders(&amp;self) -&gt; Table&lt;SqliteDB, Order&gt;;
+}
+
+impl ClientTable for Table&lt;SqliteDB, Client&gt; {
+    fn ref_orders(&amp;self) -&gt; Table&lt;SqliteDB, Order&gt; {
+        self.get_ref_as("orders").unwrap()
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>And the same on the other side — <code>Order</code> gets <code>ref_client()</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub trait OrderTable {
+    fn ref_client(&amp;self) -&gt; Table&lt;SqliteDB, Client&gt;;
+}
+
+impl OrderTable for Table&lt;SqliteDB, Order&gt; {
+    fn ref_client(&amp;self) -&gt; Table&lt;SqliteDB, Client&gt; {
+        self.get_ref_as("client").unwrap()
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>The coercion happens in one place — where the right answer is obvious — and the <code>unwrap()</code> is
+safe there too: <code>"orders"</code> is declared on every <code>Client</code> table the model produces, so a typo
+panics in development, not silently at runtime. This is the convention to follow throughout a
+model crate: every declared relation surfaces as a typed <code>ref_&lt;name&gt;()</code> method, callers write
+<code>clients.ref_orders()</code> / <code>orders.ref_client()</code>, and the strings and turbofish exist in exactly
+one place with no opportunity to name the wrong entity. The
+<a href="intro/step2-tables.html">Introduction</a> used the same pattern, and
+<a href="mda.html">Model-Driven Architecture</a> covers where these traits live in a model crate.</p>
+<h2 id="declaring-relations-on-the-model"><a class="header" href="#declaring-relations-on-the-model">Declaring relations on the model</a></h2>
+<p>Here is <code>Client</code> from <code>bakery_model3/src/client.rs</code> — the entity struct and its SQLite table
+constructor:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[entity(CsvType, SurrealType, SqliteType, PostgresType, MongoType, DynamoType)]
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Client {
+    pub name: String,
+    pub email: String,
+    pub contact_details: String,
+    pub is_paying_client: bool,
+    pub bakery_id: Option&lt;String&gt;,
+}
+
+impl Client {
+    pub fn sqlite_table(db: SqliteDB) -&gt; Table&lt;SqliteDB, Client&gt; {
+        Table::new("client", db)
+            .with_id_column("id")
+            .with_column_of::&lt;String&gt;("name")
+            .with_column_of::&lt;String&gt;("email")
+            .with_column_of::&lt;String&gt;("contact_details")
+            .with_column_of::&lt;bool&gt;("is_paying_client")
+            .with_column_of::&lt;String&gt;("bakery_id")
+            .with_one("bakery", "bakery_id", Bakery::sqlite_table)
+            .with_many("orders", "client_id", Order::sqlite_table)
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Notice that the struct knows nothing about relations. <code>bakery_id</code> is just an <code>Option&lt;String&gt;</code> field
+like any other; the links are declared on the table definition, where the columns and conditions
+already live.</p>
+<p>And here is the other end, from <code>order.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl Order {
+    pub fn sqlite_table(db: SqliteDB) -&gt; Table&lt;SqliteDB, Order&gt; {
+        Table::new("client_order", db)
+            .with_id_column("id")
+            .with_column_of::&lt;String&gt;("client_id")
+            .with_column_of::&lt;bool&gt;("is_deleted")
+            .with_one("client", "client_id", Client::sqlite_table)
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>The same underlying relation appears from both ends: <code>Client</code> declares
+<code>with_many("orders", "client_id", …)</code> and <code>Order</code> declares <code>with_one("client", "client_id", …)</code>.
+Each side is declared independently and each is usable independently — you could declare only one
+of them if you never traverse the other direction. And both name the same column: <code>"client_id"</code> on
+the <code>client_order</code> table. For <code>with_many</code> that’s the FK on the <em>target</em> table; for <code>with_one</code> it’s
+the FK on the <em>source</em> — here <code>Order</code> happens to be the FK-carrying side both times.</p>
+<h3 id="the-constructor-argument"><a class="header" href="#the-constructor-argument">The constructor argument</a></h3>
+<p>The third argument — <code>Order::sqlite_table</code> — is not a table, it’s a function. It’s the very same
+constructor the model already exposes; you’re just passing it by name instead of calling it. That
+buys two things. First, declaring a relation costs nothing up front: the target table is only
+constructed when the relation is actually traversed. Second, and more importantly, when the target
+<em>is</em> constructed, it’s the real model definition — its own columns, its own conditions, its own
+relations. If <code>Order::sqlite_table</code> filtered out soft-deleted rows, every traversal that reaches
+orders through a relation would inherit that filter. There is no second, weaker definition of
+“orders” that relations quietly use.</p>
+<h2 id="a-first-traversal"><a class="header" href="#a-first-traversal">A first traversal</a></h2>
+<p>Traversal is set-to-set: narrow the source set, traverse, and the target set arrives already
+narrowed by the relationship. Here’s “orders of paying clients”:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut paying = Client::sqlite_table(db.clone());
+paying.add_condition(paying["is_paying_client"].eq(true));
+
+// Table&lt;SqliteDB, Order&gt;, narrowed to orders of paying clients
+let orders = paying.get_ref_as::&lt;Order&gt;("orders")?;
+<span class="boring">}</span></code></pre>
+<p>No query has run yet — <code>orders</code> is a <code>Table&lt;SqliteDB, Order&gt;</code> like any other, and you can add
+conditions, select columns, or traverse further. When it does execute, the narrowing happens via a
+subquery — not a JOIN, and not a round-trip to fetch client IDs first. The shape (illustrative):</p>
+<pre><code class="language-sql">SELECT ... FROM "client_order"
+WHERE "client_id" IN (SELECT "id" FROM "client" WHERE "is_paying_client" = 1)
+</code></pre>
+<p>This is the payoff of set-to-set thinking: “orders of paying clients” is one narrowing plus one
+traversal, executed as a single query — never a loop over IDs.</p>
+<p>In application code, the string and the turbofish disappear behind the wrapper from the
+<a href="#coercion--pinning-get_refs-type">coercion section</a> above:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let orders = paying.ref_orders();   // Table&lt;SqliteDB, Order&gt; — type inferred, no string
+<span class="boring">}</span></code></pre>
+<p>The next chapter covers the full range of traversal forms; this is just the first taste.</p>
+<h2 id="surrealdb-record-links-instead-of-foreign-keys"><a class="header" href="#surrealdb-record-links-instead-of-foreign-keys">SurrealDB: record links instead of foreign keys</a></h2>
+<p>SurrealDB stores relations as <strong>record links</strong> — the FK column holds a typed record id (a <code>Thing</code>,
+rendered <code>table:key</code>) rather than a scalar. The declaration shape is identical; only the field
+differs. From the same <code>bakery_model3/src/client.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub fn surreal_table(db: SurrealDB) -&gt; Table&lt;SurrealDB, Client&gt; {
+    Table::new("client", db)
+        .with_id_column("id")
+        .with_column_of::&lt;String&gt;("name")
+        .with_column_of::&lt;String&gt;("email")
+        .with_column_of::&lt;String&gt;("contact_details")
+        .with_column_of::&lt;bool&gt;("is_paying_client")
+        .with_one("bakery", "bakery", Bakery::surreal_table)
+        .with_many("orders", "client", Order::surreal_table)
+}
+<span class="boring">}</span></code></pre>
+<p>What changes is the column’s <em>content</em>, not its name — that is a database-design choice. Any
+column can hold a record link: you could equally keep calling it <code>bakery_id</code> and store a <code>Thing</code>
+in it, and the declaration would name that column instead. <code>bakery_model3</code> happens to follow the
+common SurrealDB convention of naming the link column after the target (<code>"bakery"</code>), which is why
+its declarations differ from the SQLite ones only in that argument. Either way, the relation
+<em>name</em> is free to differ from the link field; nothing couples them.</p>
+<div id="admonition-other-backends" class="admonition admonish-info" role="note" aria-labelledby="admonition-other-backends-title">
+<div class="admonition-title">
+<div id="admonition-other-backends-title">
+<p>Other backends</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-other-backends"></a>
+</div>
+
+<div>
+<p>MongoDB, CSV, and DynamoDB declare relations exactly the same way, with scalar foreign keys —
+<code>bakery_model3</code> has <code>mongo_table</code>, <code>csv_table</code>, and <code>dynamo_table</code> constructors of the same shape.
+Traversal itself is easy and every table supports it: it only <em>attaches a condition</em> to the
+target. The heavy lifting is honouring that condition when the related data is actually fetched —
+SQL pushes it down as a <code>WHERE</code>, while CSV filters in memory to fulfil the same <code>Table</code> contract.
+The next chapter covers what each traversal form generates per backend.</p>
+</div>
+
+</div>
+
+<h2 id="writing-into-a-traversed-set"><a class="header" href="#writing-into-a-traversed-set">Writing into a traversed set</a></h2>
+<p>A traversed set is not read-only. Insert into it, and the new record <em>belongs</em> to the set you
+traversed to:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>client.ref_orders().insert_return_id(&amp;order).await?;
+<span class="boring">}</span></code></pre>
+<p>The order’s <code>client_id</code> is filled in automatically — you don’t set it, and if you set a
+<em>conflicting</em> one the write is rejected. How that enforcement works (set invariants, lifecycle
+hooks) is covered in <a href="record-lifecycle.html">Records: Traversal, Invariants &amp; Hooks</a>.</p>
+<h2 id="where-this-guide-goes"><a class="header" href="#where-this-guide-goes">Where this guide goes</a></h2>
+<p>You now have the vocabulary: a relation is a named <code>(name, fk_field, constructor)</code> triple on the
+table definition, in one of two cardinalities, traversed set-to-set. The child chapters each take
+one thread further:</p>
+<ul>
+<li><strong><a href="relations/traversal.html">Traversing Sets and Records</a></strong> — the full range of traversal forms:
+set-to-set (fetching and embedding), row-in-hand, record-level, and contained.</li>
+<li><strong><a href="relations/expressions.html">Expressions &amp; Subqueries</a></strong> — correlated lookups, counts, and how
+relation-derived expressions compose.</li>
+<li><strong><a href="relations/implicit-references.html">Implicit References</a></strong> — dotted column names, the
+declarative way to pull a field across a relation.</li>
+<li><strong><a href="relations/vistas.html">Vista, YAML and Rhai</a></strong> — vista factories, traversal after type
+erasure, capability checks, and declaring relations in YAML and Rhai.</li>
+<li><strong><a href="relations/dio.html">Relations and Dio</a></strong> — where cross-datasource enrichment lives.</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="record-lifecycle.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="relations/traversal.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="record-lifecycle.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="relations/traversal.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-c2a407aa.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="mermaid-eefea253.min.js"></script>
+        <script src="mermaid-init-ccf746f1.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

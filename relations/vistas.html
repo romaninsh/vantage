@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Serving &amp; Watching Live Stock - Vantage Framework</title>
+        <title>Vista, YAML and Rhai - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,111 +175,238 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="serving--watching-live-stock"><a class="header" href="#serving--watching-live-stock">Serving &amp; Watching Live Stock</a></h1>
-<p>Last chapter left a <code>Dio</code> holding a live copy of the <code>product</code> table. Now we put it behind HTTP —
-using the <strong>same adapter the S3 path uses</strong>. <code>DioRouter</code> neither knows nor cares that its Dio is backed
-by SQL instead of S3; it binds a Dio to a pair of routes, GET and watch, and that is all it needs.</p>
+                        <h1 id="vista-yaml-and-rhai"><a class="header" href="#vista-yaml-and-rhai">Vista, YAML and Rhai</a></h1>
+<p>Everything so far assumed you could write <code>Table&lt;SqliteDB, Order&gt;</code> in your source code. Generic
+consumers can’t. A UI grid, an admin panel, a scripting surface, a config-driven tool — none of
+them know your model types at compile time. What they hold is a <code>Vista</code>: the schema-bearing
+runtime handle introduced in <a href="../intro/step4-vista.html">the Vista chapter</a>.</p>
+<p>The question this page answers: what happens to relations when the type is erased? The answer is
+that they survive in three forms:</p>
+<ol>
+<li><strong>Metadata</strong> — the relation names, targets, and cardinalities are introspectable, so a
+consumer can discover them at runtime.</li>
+<li><strong>Traversal</strong> — <code>get_ref</code> still works. Hand it a loaded row, get back a new <code>Vista</code> narrowed
+to the related rows.</li>
+<li><strong>Capabilities</strong> — an honest contract about which traversal forms this backend actually
+serves, so a consumer knows what to offer before trying.</li>
+</ol>
+<h3 id="the-factory"><a class="header" href="#the-factory">The factory</a></h3>
+<p>A <code>Vista</code> is never constructed by hand — construction goes through a <strong>vista factory</strong> (the
+<code>VistaFactory</code> trait, covered in
+<a href="../new-persistence/step8-vista-integration.html">Vista integration</a>). The factory’s defining
+ability is working <strong>by name</strong>: where typed code passes <code>User::table(db)</code>, a generic consumer
+asks for <code>"users"</code> and gets a Vista back. How the name resolves is the factory’s business —
+typically it loads table specs from files — and that indirection is what lets config-driven
+tools, scripts, and by-name traversal address models they have no Rust types for.</p>
+<p>Behind a name, a vista is built one of two ways:</p>
+<ol>
+<li>
+<p><strong>From a typed table</strong> — <code>from_table</code> wraps the table your model already builds:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>use vantage_api_adapters::axum_dio::DioRouter;
-
-let api = DioRouter::new(dio.clone())
-    .with_column("name", "name")
-    .with_column("price", "price")
-    .with_column("stock", "stock")
-    .with_page_size(50)
-    .into_router();
-
-let app = axum::Router::new().nest("/api/products", api);
-axum::serve(listener, app).await?;
+</span>let vistas = vec![
+    db.vista_factory().from_table(Client::surreal_table(db.clone()))?,
+    sqlite.vista_factory().from_table(Product::sqlite_table(sqlite.clone()))?,
+    csv.vista_factory().from_table(Order::csv_table(csv.clone()))?,
+];
 <span class="boring">}</span></code></pre>
-<p>A plain <code>GET</code> is the cache, answered instantly — never a query against SQLite:</p>
-<pre><code class="language-text">$ curl 'localhost:3008/api/products?offset=0&amp;limit=10'
-{"total":5,"offset":0,"limit":10,"items":[
-  {"index":0,"name":"Espresso","price":280,"stock":12},
-  {"index":1,"name":"Cappuccino","price":340,"stock":8},
-  {"index":2,"name":"Cold Brew","price":420,"stock":5},
-  {"index":3,"name":"Croissant","price":260,"stock":6},
-  {"index":4,"name":"Cheesecake","price":520,"stock":2}]}
-</code></pre>
-<h2 id="a-till-to-make-it-move"><a class="header" href="#a-till-to-make-it-move">A till to make it move</a></h2>
-<p>A cache over a table nobody writes is just a slow constant. To see the reactive stack work, the
-data has to change — so the app runs a <strong>till</strong>: a background task that sells one unit of a random
-product every 800ms, removes anything that sells out, and every so often takes a delivery. These
-are ordinary SQL writes, on the same connection the master reads from:</p>
+</li>
+<li>
+<p><strong>From a YAML spec</strong> — no Rust model at all: columns, relations, and computed fields declared
+as data (<a href="../config-driven-vistas.html">Config-Driven Vistas</a>). This path is how the
+declarations in the last section of this page become live, traversable relations. A spec’s
+<em>source</em> doesn’t have to be a physical table, either — a <code>rhai:</code> block builds it from a query
+(a query-sourced vista), and a <code>base:</code> block derives it from another spec.</p>
+</li>
+</ol>
+<p>Whichever route constructs it, the factory folds the table’s relations into <code>VistaMetadata</code> —
+name, target, cardinality, foreign key. The erased handle carries enough to introspect the
+relations and to traverse them. Nothing about the relation is lost in the erasure; only the
+compile-time names are.</p>
+<h3 id="metadata-introspecting-relations"><a class="header" href="#metadata-introspecting-relations">Metadata: introspecting relations</a></h3>
+<p><code>Vista</code> exposes the relation metadata directly:</p>
+<ul>
+<li><code>get_references() -&gt; Vec&lt;String&gt;</code> — the relation names.</li>
+<li><code>list_references() -&gt; Vec&lt;(String, ReferenceKind)&gt;</code> — names paired with cardinality
+(<code>ReferenceKind::HasOne</code> / <code>HasMany</code>).</li>
+<li><code>get_reference(name) -&gt; Option&lt;&amp;Reference&gt;</code> — the full reference entry.</li>
+<li><code>list_contained()</code> — contained (embedded) relations with their kind.</li>
+</ul>
+<p>This is what lets a UI render relation tabs or context-menu entries without knowing the model.
+<code>list_references</code> tells it “orders (has_many), country (has_one)” — enough to label a tab and
+decide whether the target is a single row or a set — and it learned that from the handle, not
+from your source code.</p>
+<h3 id="traversal-get_ref-on-a-loaded-row"><a class="header" href="#traversal-get_ref-on-a-loaded-row">Traversal: get_ref on a loaded row</a></h3>
+<p>The erased twin of the typed <code>get_ref_from_row</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>// src/sim.rs — the interesting line
-sqlx::query(
-    "UPDATE product SET stock = stock - 1
-     WHERE id = (SELECT id FROM product WHERE stock &gt; 0 ORDER BY RANDOM() LIMIT 1)",
-)
-.execute(db.pool())
-.await?;
+</span>pub fn get_ref(&amp;self, relation: &amp;str, row: &amp;Record&lt;CborValue&gt;) -&gt; Result&lt;Vista&gt;
 <span class="boring">}</span></code></pre>
-<p>The server itself never calls the till and the till never calls the server. They meet only through
-the database and the once-a-second reconcile — which is precisely the point: <strong>any</strong> writer, in any
-process, moves the shelf. The <code>sqlite3</code> CLI will do just as well, as we’ll see.</p>
-<h2 id="the-watch"><a class="header" href="#the-watch">The watch</a></h2>
-<p><code>curl -N</code> holds the connection open. The page arrives as <code>ADDED</code> lines — the current shelf — and
-then every sale streams back as a <code>MODIFIED</code> line the moment the reconcile picks it up:</p>
-<pre><code class="language-text">$ curl -N 'localhost:3008/api/products?watch=true'
-{"type":"ADDED","object":{"index":0,"name":"Espresso","price":280,"stock":12}}
-{"type":"ADDED","object":{"index":1,"name":"Cappuccino","price":340,"stock":8}}
-{"type":"ADDED","object":{"index":2,"name":"Cold Brew","price":420,"stock":5}}
-{"type":"ADDED","object":{"index":3,"name":"Croissant","price":260,"stock":6}}
-{"type":"ADDED","object":{"index":4,"name":"Cheesecake","price":520,"stock":2}}
-{"type":"MODIFIED","object":{"index":4,"name":"Cheesecake","price":520,"stock":1}}
-{"type":"MODIFIED","object":{"index":2,"name":"Cold Brew","price":420,"stock":4}}
-{"type":"MODIFIED","object":{"index":0,"name":"Espresso","price":280,"stock":9}}
-</code></pre>
-<p>That is the reactive stack running over SQL, end to end: a SQL write, reconciled into the cache, a
-<code>DatasetChanged</code> event, a scenery re-derive, a diff against what this connection last saw, one
-NDJSON line on the wire. Nothing in that chain is specific to SQL — it is the same machinery the
-S3 path serves the NOAA bucket with.</p>
-<div id="admonition-two-events-not-three" class="admonition admonish-note" role="note" aria-labelledby="admonition-two-events-not-three-title">
+<p>Hand it a loaded row — <code>Record&lt;CborValue&gt;</code> is the erased record type — and get back a new <code>Vista</code>
+narrowed to the related rows. The relation is named by string because that’s all a generic
+consumer has; the metadata folded in by the factory supplies the target and foreign key.</p>
+<p>There is also <code>get_ref_target(relation) -&gt; Result&lt;Vista&gt;</code> — the bare, unconditioned target. This
+is the insert destination for nested creates: when a UI wants to add a related row, it needs the
+target table without any narrowing applied.</p>
+<p>Both return <code>Vista</code>, so traversal chains and the consumer never leaves the erased world. A grid
+that drills from clients into orders into line items is calling <code>get_ref</code> three times, each time
+holding nothing more specific than a <code>Vista</code> and a row.</p>
+<div id="admonition-record-ids-that-round-tripped-through-json" class="admonition admonish-info" role="note" aria-labelledby="admonition-record-ids-that-round-tripped-through-json-title">
 <div class="admonition-title">
-<div id="admonition-two-events-not-three-title">
-<p>Two events, not three</p>
+<div id="admonition-record-ids-that-round-tripped-through-json-title">
+<p>Record ids that round-tripped through JSON</p>
 </div>
 
-<a class="admonition-anchor-link" href="#admonition-two-events-not-three"></a>
+<a class="admonition-anchor-link" href="#admonition-record-ids-that-round-tripped-through-json"></a>
 </div>
 
 <div>
-<p><code>DioRouter</code> emits only <code>ADDED</code> and <code>MODIFIED</code>, never <code>DELETED</code> — it diffs each page <strong>by
-position</strong>. So a delivery that grows the shelf appears as an <code>ADDED</code> at a new index, but a product
-that <em>sells out</em> shows up as the list shrinking and the rows below it shifting up (each shifted
-index reported as <code>MODIFIED</code>), not as an explicit removal. A watch client reconstructs “gone” from
-the shrinking <code>total</code>. Getting a real <code>DELETED</code> line is a one-call opt-in — key the watch by
-identity with <code>.key_by("id")</code> — which the <a href="./step8-sql-notify.html">live-push chapter</a> turns on.</p>
+<p>At the erased layer, SurrealDB record ids travel as strings (<code>"table:key"</code>). The backend coerces
+a string-shaped record id back into a typed record id when narrowing, so a row that round-tripped
+through JSON or a script still traverses correctly.</p>
 </div>
 
 </div>
 
-<h2 id="it-really-is-the-database"><a class="header" href="#it-really-is-the-database">It really is the database</a></h2>
-<p>The strongest proof that this isn’t an in-process illusion: change the table from <strong>outside</strong> the
-app entirely. With a watch open, in another terminal:</p>
-<pre><code class="language-text">$ sqlite3 learn-8/products.db "UPDATE product SET price=999 WHERE id='p1'"
+<h3 id="the-scripting-surface"><a class="header" href="#the-scripting-surface">The scripting surface</a></h3>
+<p>The same traversal is exposed to Rhai data scripts (the <code>vantage-vista</code> rhai feature). A script
+holding a row can hop a relation:</p>
+<pre><code class="language-rhai">let t = table("tag");
+let row = t.get_some();
+let course = t.get_ref("golf_course", row);
 </code></pre>
-<p>and the open watch stream reflects it within the second:</p>
-<pre><code class="language-text">{"type":"MODIFIED","object":{"index":0,"name":"Espresso","price":999,"stock":11}}
+<p>There’s no separate scripting implementation here — the erased <code>Vista</code> is what the script engine
+wraps, and <code>get_ref</code> there follows the same metadata.</p>
+<h3 id="capabilities-the-honest-contract"><a class="header" href="#capabilities-the-honest-contract">Capabilities: the honest contract</a></h3>
+<p>Not every backend serves every traversal form — the <a href="./traversal.html">traversal chapter</a> already
+showed that set-level traversal needs subqueries. At the typed layer, you knew that when you wrote
+the code. At the erased layer, the consumer has to ask. That’s what <code>VistaCapabilities</code> is for.
+The flags relevant to relations:</p>
+<ul>
+<li><code>can_traverse_to_record</code> — “Record-level reference traversal via <code>get_ref(relation, row)</code> —
+read the join value out of a known row and narrow the target with a plain eq-condition. Every
+backend that can filter by equality supports this (SQL, CSV, Mongo, Surreal, REST/GraphQL).”</li>
+<li><code>can_traverse_to_set</code> — “Set-level reference traversal — narrow the target with an
+<code>IN (subquery)</code> derived from the parent’s own conditions (the <code>get_ref_as</code> / reports path).
+Requires the backend to support subqueries; SQL and SurrealDB do, CSV/Mongo/REST do not.”</li>
+<li><code>can_build_ref_via_script</code> — “Per-reference Rhai-scripted traversal — a reference carrying a
+<code>build_script</code> resolves through the script engine … rather than the fixed FK eq-condition
+path.”</li>
+<li><code>can_traverse_in_columns</code> — whether the backend can lower a dotted active column
+(<code>country.name</code>) into its own query; <code>true</code> for SQL and SurrealDB shells, <code>false</code> for
+CSV/Mongo/REST.</li>
+</ul>
+<p>Consumers branch on these before offering the corresponding affordance: a report builder checks
+<code>can_traverse_to_set</code> before offering set-level aggregation; a grid checks
+<code>can_traverse_in_columns</code> before letting the user add a dotted column. The flags are also
+readable by name (<code>capability_flag("can_traverse_to_set")</code>) and appear in the rhai capabilities
+map, so scripts and config-driven tools can branch the same way.</p>
+<h3 id="across-datasources-the-vistacatalog"><a class="header" href="#across-datasources-the-vistacatalog">Across datasources: the VistaCatalog</a></h3>
+<p>Everything above stays inside one datasource — a <code>Vista</code>’s references forward to the wrapped
+table, and a single Vista deliberately knows nothing about <em>other</em> datasources. Cross-persistence
+traversal lives one layer up, in the <code>VistaCatalog</code> (<code>vantage-vista-factory</code>): a name → Vista
+catalog spanning many datasources, plus reference traversal between the models it holds.</p>
+<p>You register models by name — each as a <code>ModelLoader</code> closure that builds a fresh, unconditioned
+Vista, from whichever backend backs it — and then register relations <em>between</em> catalog models:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut cat = VistaCatalog::new();
+cat.register("client", Arc::new(|| /* build the client Vista — one datasource */));
+cat.register("bakery", Arc::new(|| /* build the bakery Vista — possibly another */));
+
+cat.register_relation(
+    "client",
+    Relation::single_key("bakery", "bakery", ReferenceKind::HasOne, "id", "bakery_id"),
+);
+
+// From a loaded client row, traverse into the (possibly foreign) bakery model:
+let bakery = cat.traverse(&amp;cat.relations_for("client")[0], &amp;client_row)?;
+<span class="boring">}</span></code></pre>
+<p>A <code>Relation</code> is a single-key (<code>target.foreign_key == parent_row[narrow_via]</code>) or multi-key join
+description; <code>traverse</code> builds the target by name and pushes one eq-condition per key. How each
+condition is honoured — SQL <code>WHERE</code>, in-memory filter, REST path/query param — is the target
+driver’s concern at fetch time.</p>
+<p><code>traverse_from</code> is the unified entry point: it prefers the parent Vista’s own
+<strong>same-persistence</strong> reference when the shell declares it and advertises
+<code>can_traverse_to_record</code> (that path stays entirely inside one driver), and otherwise falls back
+to a registered <strong>cross-persistence</strong> <code>Relation</code>. The catalog is also what the Dio layer’s
+augmentation uses to resolve its detail sources — the <a href="./dio.html">next page</a> picks that up.</p>
+<h3 id="declaring-relations-in-yaml-and-rhai"><a class="header" href="#declaring-relations-in-yaml-and-rhai">Declaring relations in YAML and Rhai</a></h3>
+<p>Config-driven vistas (full chapter: <a href="../config-driven-vistas.html">Config-driven vistas</a>) declare
+relations in the table spec — either as column-level sugar or a top-level map. The factory reads
+the spec, registers the relations, and the resulting <code>Vista</code> traverses them exactly like one built
+<code>from_table</code>:</p>
+<pre><code class="language-yaml">columns:
+  - name: batch
+    type: string
+    references: batch        # sugar: has_one to table "batch", FK = this column
+  - name: batch.name         # implicit reference through that relation
+    type: string
+    optional: true
+references:
+  tags:
+    table: tag
+    kind: has_many
+    foreign_key: batch
 </code></pre>
-<p>No API call, no shared memory — a separate process wrote a row, the reconcile read it, and the
-change fanned out to every watcher. The Dio is a mirror of the database, not a copy that happens to
-agree with it.</p>
-<p>Next: the same app, the same shelf, the same watch — served from PostgreSQL instead of a file,
-changed by flipping one compile flag.</p>
+<p>The column-level <code>references: batch</code> sugar names the relation after the <em>target table</em>, which is
+the common case. The full form (<code>references: { table, kind, foreign_key, name }</code>) can name it
+differently — you need that when two relations point at the same table.</p>
+<p>When a relation needs more than a plain foreign-key match — extra conditions, ordering, a search —
+give the reference a <code>rhai:</code> build script:</p>
+<pre><code class="language-yaml">references:
+  recent_orders:
+    table: order
+    kind: has_many
+    foreign_key: client
+    rhai: |
+      table("order").add_condition_eq("client", row.id).add_order("created_at", "desc")
+</code></pre>
+<p>The script runs lazily when the relation is traversed, with the parent record in scope as <code>row</code>,
+and must return a Vista — start it with <code>table("&lt;name&gt;")</code> and chain the conventional verbs
+(<code>add_condition_eq</code>, <code>add_order</code>, <code>add_search</code>, <code>set_page_size</code>, <code>with_id</code>). Without <code>rhai:</code>, the
+relation falls back to the plain <code>foreign_key</code> match. This is the <code>can_build_ref_via_script</code> path
+from the capabilities list — the reference resolves through the script engine instead of the
+fixed eq-condition.</p>
+<p>Imported dotted columns — like <code>batch.name</code> above, the YAML form of
+<a href="./implicit-references.html">implicit references</a> — go through the same traversal import as the
+Rust API, with the same construction-time validation: a bad dotted column fails the spec load,
+not the first fetch. They arrive in metadata flagged <code>calculated</code>. That flag means read-only for
+consumers: the value comes from a traversal, not from a column you can write. This is how a UI
+knows not to offer editing on them.</p>
+<p>The key difference: at the typed layer <em>you</em> know which traversal forms are safe — you wrote the
+code against a backend you chose. At the erased layer, the <em>capabilities</em> say so. Same relations,
+discovered instead of known.</p>
+<h3 id="conclusion"><a class="header" href="#conclusion">Conclusion</a></h3>
+<p>At this point you should be able to:</p>
+<ol>
+<li><strong>Enumerate a Vista’s relations</strong> — <code>get_references</code>, <code>list_references</code> with cardinality,
+<code>get_reference</code> for the full entry, <code>list_contained</code> for embedded relations.</li>
+<li><strong>Traverse from a loaded erased row</strong> — <code>get_ref(relation, row)</code> returns a narrowed <code>Vista</code>;
+<code>get_ref_target(relation)</code> returns the bare target for nested creates.</li>
+<li><strong>Branch on the four traversal capabilities</strong> — <code>can_traverse_to_record</code>,
+<code>can_traverse_to_set</code>, <code>can_build_ref_via_script</code>, <code>can_traverse_in_columns</code> — before
+offering an affordance.</li>
+<li><strong>Traverse across datasources</strong> — register models and <code>Relation</code>s on a <code>VistaCatalog</code>;
+<code>traverse_from</code> prefers the same-persistence reference and falls back to the catalog join.</li>
+<li><strong>Declare relations in YAML and Rhai</strong> — column-level <code>references:</code> sugar, the full top-level
+form, implicit dotted columns through a relation, and <code>rhai:</code> build scripts for traversals
+that need more than an FK match — all consumed by the same vista factory that wraps typed
+tables.</li>
+<li><strong>Explain why <code>calculated</code> columns are read-only</strong> in generic UIs — their values come from
+traversal, not from a writable column.</li>
+</ol>
+<p>Next: <a href="./dio.html">what happens above the Vista</a> — combining erased handles across backends.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../intro/step5-sql-dio.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../relations/implicit-references.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../intro/step7-sql-postgres.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../relations/dio.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -289,11 +416,11 @@ changed by flipping one compile flag.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../intro/step5-sql-dio.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../relations/implicit-references.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../intro/step7-sql-postgres.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../relations/dio.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

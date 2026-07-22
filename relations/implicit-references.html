@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Serving &amp; Watching Live Stock - Vantage Framework</title>
+        <title>Implicit References - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,111 +175,165 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="serving--watching-live-stock"><a class="header" href="#serving--watching-live-stock">Serving &amp; Watching Live Stock</a></h1>
-<p>Last chapter left a <code>Dio</code> holding a live copy of the <code>product</code> table. Now we put it behind HTTP —
-using the <strong>same adapter the S3 path uses</strong>. <code>DioRouter</code> neither knows nor cares that its Dio is backed
-by SQL instead of S3; it binds a Dio to a pair of routes, GET and watch, and that is all it needs.</p>
+                        <h1 id="implicit-references"><a class="header" href="#implicit-references">Implicit References</a></h1>
+<p>The previous chapter (<a href="./expressions.html">Expressions &amp; Subqueries</a>) closed with a recipe: take a
+relation, call <code>get_subquery_as</code> to build a correlated subquery for one field, and register it with
+<code>with_expression</code> so it projects as a column. That recipe works, but surfacing a related row’s field
+is common enough to deserve a declarative form.</p>
+<p>That form is a <strong>dotted name</strong> in <code>Table::with_active_columns</code>. Write <code>"client.name"</code> and the table
+traverses the declared <code>has_one</code> relation <code>"client"</code>, imports the target’s <code>name</code> field, and
+projects it as a read-only column aliased under the literal dotted name — no hand-written
+expression. This feature is also called <strong>implicit references</strong>.</p>
+<p>The first segment addresses the relation by its <strong>registry name</strong> — whatever you named it in
+<code>with_one</code> — not by the foreign-key column. <code>bakery_model3</code> declares
+<code>with_one("client", "client_id", …)</code>, so the path is <code>client.name</code> on SQL and SurrealDB alike; a
+model that names its relations after the FK columns would write <code>client_id.name</code> instead. Either
+convention works — the segment just has to match the declared name.</p>
+<p><code>with_active_columns</code> does two jobs at once:</p>
+<ol>
+<li><strong>Plain names restrict projection.</strong> Only the listed columns are selected — useful on its own for
+narrowing wide tables. The id column is always projected regardless.</li>
+<li><strong>Dotted names traverse relations.</strong> Each dot is one <code>has_one</code> hop from the current table to its
+target.</li>
+</ol>
+<h3 id="one-hop-and-two-hops"><a class="header" href="#one-hop-and-two-hops">One hop and two hops</a></h3>
+<p>Using the bakery model from this guide — Orders relate to Client via <code>client_order.client_id</code>, and
+Client relates to Bakery via <code>client.bakery_id</code>, declared as relations <code>"client"</code> and <code>"bakery"</code>
+with <code>with_one</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>use vantage_api_adapters::axum_dio::DioRouter;
-
-let api = DioRouter::new(dio.clone())
-    .with_column("name", "name")
-    .with_column("price", "price")
-    .with_column("stock", "stock")
-    .with_page_size(50)
-    .into_router();
-
-let app = axum::Router::new().nest("/api/products", api);
-axum::serve(listener, app).await?;
+</span>// Plain names restrict projection; dotted names traverse has_one relations.
+let orders = Order::sqlite_table(db).with_active_columns(&amp;[
+    "id",
+    "client_id",
+    "client.name",        // one hop:  client_order -&gt; client
+    "client.bakery.name", // two hops: client_order -&gt; client -&gt; bakery
+])?;
 <span class="boring">}</span></code></pre>
-<p>A plain <code>GET</code> is the cache, answered instantly — never a query against SQLite:</p>
-<pre><code class="language-text">$ curl 'localhost:3008/api/products?offset=0&amp;limit=10'
-{"total":5,"offset":0,"limit":10,"items":[
-  {"index":0,"name":"Espresso","price":280,"stock":12},
-  {"index":1,"name":"Cappuccino","price":340,"stock":8},
-  {"index":2,"name":"Cold Brew","price":420,"stock":5},
-  {"index":3,"name":"Croissant","price":260,"stock":6},
-  {"index":4,"name":"Cheesecake","price":520,"stock":2}]}
+<p><code>client.name</code> is one hop. <code>client.bakery.name</code> recurses through two — traversal supports an
+arbitrary depth of <code>has_one</code> hops out of the box. On a SQL backend this lowers to nested correlated
+scalar subqueries:</p>
+<pre><code class="language-sql">SELECT id,
+  (SELECT name FROM client WHERE client.id = client_order.client_id) AS "client.name",
+  (SELECT (SELECT name FROM bakery WHERE bakery.id = client.bakery_id)
+     FROM client WHERE client.id = client_order.client_id)           AS "client.bakery.name"
+FROM client_order
 </code></pre>
-<h2 id="a-till-to-make-it-move"><a class="header" href="#a-till-to-make-it-move">A till to make it move</a></h2>
-<p>A cache over a table nobody writes is just a slow constant. To see the reactive stack work, the
-data has to change — so the app runs a <strong>till</strong>: a background task that sells one unit of a random
-product every 800ms, removes anything that sells out, and every so often takes a delivery. These
-are ordinary SQL writes, on the same connection the master reads from:</p>
+<p>The alias is the dotted name itself, so rows come back with a <strong>flat key equal to the dotted name</strong>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>// src/sim.rs — the interesting line
-sqlx::query(
-    "UPDATE product SET stock = stock - 1
-     WHERE id = (SELECT id FROM product WHERE stock &gt; 0 ORDER BY RANDOM() LIMIT 1)",
-)
-.execute(db.pool())
-.await?;
+</span>for row in orders.list_values().await?.values() {
+    let get = |k: &amp;str| row.get(k).map(|v| format!("{v}")).unwrap_or_default();
+    println!(
+        "  order {}: client.name={}, client.bakery.name={}",
+        get("id"),
+        get("client.name"),
+        get("client.bakery.name"),
+    );
+}
 <span class="boring">}</span></code></pre>
-<p>The server itself never calls the till and the till never calls the server. They meet only through
-the database and the once-a-second reconcile — which is precisely the point: <strong>any</strong> writer, in any
-process, moves the shelf. The <code>sqlite3</code> CLI will do just as well, as we’ll see.</p>
-<h2 id="the-watch"><a class="header" href="#the-watch">The watch</a></h2>
-<p><code>curl -N</code> holds the connection open. The page arrives as <code>ADDED</code> lines — the current shelf — and
-then every sale streams back as a <code>MODIFIED</code> line the moment the reconcile picks it up:</p>
-<pre><code class="language-text">$ curl -N 'localhost:3008/api/products?watch=true'
-{"type":"ADDED","object":{"index":0,"name":"Espresso","price":280,"stock":12}}
-{"type":"ADDED","object":{"index":1,"name":"Cappuccino","price":340,"stock":8}}
-{"type":"ADDED","object":{"index":2,"name":"Cold Brew","price":420,"stock":5}}
-{"type":"ADDED","object":{"index":3,"name":"Croissant","price":260,"stock":6}}
-{"type":"ADDED","object":{"index":4,"name":"Cheesecake","price":520,"stock":2}}
-{"type":"MODIFIED","object":{"index":4,"name":"Cheesecake","price":520,"stock":1}}
-{"type":"MODIFIED","object":{"index":2,"name":"Cold Brew","price":420,"stock":4}}
-{"type":"MODIFIED","object":{"index":0,"name":"Espresso","price":280,"stock":9}}
-</code></pre>
-<p>That is the reactive stack running over SQL, end to end: a SQL write, reconciled into the cache, a
-<code>DatasetChanged</code> event, a scenery re-derive, a diff against what this connection last saw, one
-NDJSON line on the wire. Nothing in that chain is specific to SQL — it is the same machinery the
-S3 path serves the NOAA bucket with.</p>
-<div id="admonition-two-events-not-three" class="admonition admonish-note" role="note" aria-labelledby="admonition-two-events-not-three-title">
-<div class="admonition-title">
-<div id="admonition-two-events-not-three-title">
-<p>Two events, not three</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-two-events-not-three"></a>
-</div>
-
-<div>
-<p><code>DioRouter</code> emits only <code>ADDED</code> and <code>MODIFIED</code>, never <code>DELETED</code> — it diffs each page <strong>by
-position</strong>. So a delivery that grows the shelf appears as an <code>ADDED</code> at a new index, but a product
-that <em>sells out</em> shows up as the list shrinking and the rows below it shifting up (each shifted
-index reported as <code>MODIFIED</code>), not as an explicit removal. A watch client reconstructs “gone” from
-the shrinking <code>total</code>. Getting a real <code>DELETED</code> line is a one-call opt-in — key the watch by
-identity with <code>.key_by("id")</code> — which the <a href="./step8-sql-notify.html">live-push chapter</a> turns on.</p>
-</div>
-
-</div>
-
-<h2 id="it-really-is-the-database"><a class="header" href="#it-really-is-the-database">It really is the database</a></h2>
-<p>The strongest proof that this isn’t an in-process illusion: change the table from <strong>outside</strong> the
-app entirely. With a watch open, in another terminal:</p>
-<pre><code class="language-text">$ sqlite3 learn-8/products.db "UPDATE product SET price=999 WHERE id='p1'"
-</code></pre>
-<p>and the open watch stream reflects it within the second:</p>
-<pre><code class="language-text">{"type":"MODIFIED","object":{"index":0,"name":"Espresso","price":999,"stock":11}}
-</code></pre>
-<p>No API call, no shared memory — a separate process wrote a row, the reconcile read it, and the
-change fanned out to every watcher. The Dio is a mirror of the database, not a copy that happens to
-agree with it.</p>
-<p>Next: the same app, the same shelf, the same watch — served from PostgreSQL instead of a file,
-changed by flipping one compile flag.</p>
+<p>There is no nested object to unwrap — <code>row.get("client.bakery.name")</code> is a plain lookup on a flat
+record. The full example lives in <code>bakery_model3/examples/implicit-references.rs</code>; run it with
+<code>cargo run -p bakery_model3 --example implicit-references</code>.</p>
+<h3 id="validation-at-table-construction"><a class="header" href="#validation-at-table-construction">Validation at table construction</a></h3>
+<p>Dotted names are ordinary strings, so the compiler cannot vet them. Instead,
+<code>with_active_columns</code> returns <code>Result</code> and validates everything as it runs — when the table
+definition is constructed, typically in model or startup code, before any query is made. A
+mistake surfaces there, never as a silently empty column at fetch time:</p>
+<ul>
+<li>an unknown column or unknown relation in a dotted name;</li>
+<li>a <code>has_many</code> hop — traversal is <code>has_one</code>-only, because a to-many field is a set, not a value
+(for an aggregate over the set, a count or a sum, use the previous chapter’s
+<code>get_count_query</code>);</li>
+<li>a backend that can lower neither a correlated subquery nor a native path (MongoDB, CSV, REST) —
+its <code>TableSource::supports_traversal</code> is <code>false</code>, and dotted names are refused up front.
+Traversal is also same-datasource only; enriching rows with fields from a <em>different</em>
+datasource belongs to Dio augmentation (<a href="./dio.html">Dio</a>).</li>
+</ul>
+<h3 id="why-not-let-a-bad-dotted-name-fail-at-fetch-time"><a class="header" href="#why-not-let-a-bad-dotted-name-fail-at-fetch-time">Why not let a bad dotted name fail at fetch time?</a></h3>
+<p>Because a fetch-time failure in a projection is invisible. The query still runs, the column comes
+back empty, and nothing tells you whether the relation was misspelled or the data is genuinely
+absent. Constructing the table is the moment you have full knowledge — the relation registry, the
+target’s columns, the backend’s capabilities — so that’s where every check runs.</p>
+<h3 id="read-only-semantics"><a class="header" href="#read-only-semantics">Read-only semantics</a></h3>
+<p>An imported column is a computed projection. No backend can honestly store <code>client.name</code> on the
+<code>client_order</code> table — the value lives in a different row of a different table. So imported columns
+carry write-path enforcement:</p>
+<ul>
+<li>They are flagged <code>calculated</code> in vista metadata, so downstream consumers know the column is
+derived (see <a href="./vistas.html">Vistas</a>).</li>
+<li>They are <strong>stripped from full-record write payloads</strong> — insert, replace, generated-id insert. A
+read-modify-save round-trip never persists <code>client.name</code> as a real field.</li>
+<li>They are <strong>rejected outright in a <code>patch</code></strong>. A partial payload naming a read-only column is
+explicit intent, and silently dropping it would turn the patch into a successful no-op.</li>
+</ul>
+<p>The key difference: strip vs reject. A full-record payload naturally contains everything you read —
+including imported columns — so stripping them is the correct interpretation. A patch payload
+contains only what you chose to send, so a read-only column there is a mistake worth an error.</p>
+<p>Imported columns are also excluded from quicksearch and (on SurrealDB) not orderable — the dotted
+name is a projection alias, not a physical field.</p>
+<h3 id="per-backend-lowering"><a class="header" href="#per-backend-lowering">Per-backend lowering</a></h3>
+<p>SQL backends lower dotted names through the generic chain: nested correlated scalar subqueries built
+on the same <code>get_subquery_as</code>/<code>select_expression</code> machinery from the previous chapter. A backend
+that already supports that recipe gets implicit references with nothing backend-specific to
+implement.</p>
+<p>SurrealDB overrides <code>TableSource::traversal_path_expr</code> and emits a native <strong>idiom path</strong> instead —
+<code>client.name</code> — with each segment escaped separately. Escaping the joined path as one identifier
+would produce a literal ⟨client.name⟩ field lookup: a dead column that matches nothing. The idiom
+descends each hop’s <strong>link field</strong>, not the relation’s registry name — a relation declared
+<code>with_one("owner", "client", …)</code> still lowers to <code>client.name</code>. Multi-hop comes for free in the
+idiom.</p>
+<h3 id="why-not-just-use-with_expression"><a class="header" href="#why-not-just-use-with_expression">Why not just use with_expression?</a></h3>
+<p>You still can, and sometimes you should. The key difference: reach for <code>with_expression</code> +
+<code>get_subquery_as</code> when you need an <em>arbitrary expression</em> — arithmetic, aggregates, raw escapes.
+Reach for a dotted column when you just want a related field. The dotted form adds what the manual
+recipe can’t:</p>
+<ul>
+<li><strong>Proper errors</strong> — the manual recipe’s checks are <code>Option</code>/<code>unwrap</code> panics (<code>select_column</code>
+returns <code>None</code> for a misspelled column); the dotted form returns <code>Result</code>, with an error naming
+the bad relation, column, cardinality, or backend.</li>
+<li><strong>A typed imported column</strong> — the definition is cloned from the target’s column, so type metadata
+travels with it.</li>
+<li><strong>Enforced read-only write semantics</strong> — a <code>with_expression</code> column has no write-path story at
+all.</li>
+</ul>
+<h3 id="gotchas"><a class="header" href="#gotchas">Gotchas</a></h3>
+<ul>
+<li><code>Table::derive_from</code> does not inherit implicit references. A derived table starts with no active
+set, and listing an imported dotted column in its column inheritance copies only a bare
+definition. Re-declare the dotted names on the derived table.</li>
+<li>Columns added after <code>with_active_columns</code> are not in the active set and won’t project — declare
+the active set last.</li>
+<li>Expression-only columns (registered via <code>with_expression</code> with no column definition) may be named
+in the active set; they stay projected.</li>
+<li>Same-datasource only, by design — see <a href="./dio.html">Dio</a> for the cross-datasource alternative.</li>
+</ul>
+<h3 id="conclusion"><a class="header" href="#conclusion">Conclusion</a></h3>
+<p>At this point you should be able to:</p>
+<ol>
+<li><strong>Restrict projection</strong> with plain names in <code>with_active_columns</code> (the id column always
+projects).</li>
+<li><strong>Import related fields</strong> with dotted names — one hop or many, over declared <code>has_one</code> relations.</li>
+<li><strong>Read them back</strong> via flat keys equal to the dotted name.</li>
+<li><strong>Predict every construction-time error</strong> — unknown column, unknown relation, <code>has_many</code> hop,
+backend without traversal support.</li>
+<li><strong>Explain the write-path semantics</strong> — stripped from full-record writes, rejected in a patch.</li>
+<li><strong>Choose the right tool</strong> — dotted column for a related field, <code>with_expression</code> for an arbitrary
+expression.</li>
+</ol>
+<p>The next page, <a href="./vistas.html">Vista, YAML and Rhai</a>, covers how the same declarations work from
+YAML specs, and how the <code>calculated</code> flag and the <code>can_traverse_in_columns</code> capability surface at
+the erased layer.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../intro/step5-sql-dio.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../relations/expressions.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../intro/step7-sql-postgres.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../relations/vistas.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -289,11 +343,11 @@ changed by flipping one compile flag.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../intro/step5-sql-dio.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../relations/expressions.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../intro/step7-sql-postgres.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../relations/vistas.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

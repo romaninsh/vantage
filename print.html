@@ -37,10 +37,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-af00d5df.js";
+            window.path_to_searchindex_js = "searchindex-afe28e67.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-76a8932f.js"></script>
+        <script src="toc-249b33b5.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -6915,9 +6915,9 @@ loaded record, the foreign-key <strong>invariants</strong> that traversal sets u
 you can attach for audit, validation, soft-delete, and after-effects. They are backend-agnostic —
 everything here works the same on SQLite, Postgres, MySQL, Mongo, etc.</p>
 <h2 id="traversing-from-a-loaded-record-get_ref"><a class="header" href="#traversing-from-a-loaded-record-get_ref">Traversing from a loaded record: <code>get_ref</code></a></h2>
-<p><code>Table::get_ref_as</code> / <code>get_ref_from_row</code> traverse a relation from a <em>table</em>. The <code>GetRefExt</code> trait
-adds the record-level equivalent: traverse straight from a loaded <code>ActiveEntity</code> (typed) or
-<code>ActiveRecord</code> (untyped).</p>
+<p><code>Table::get_ref_as</code> / <code>get_ref_from_row</code> traverse a relation from a <em>table</em> (both covered in
+<a href="#traversing-sets-and-records">Relations &amp; Traversal</a>). The <code>GetRefExt</code> trait adds the record-level
+equivalent: traverse straight from a loaded <code>ActiveEntity</code> (typed) or <code>ActiveRecord</code> (untyped).</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use vantage_table::prelude::GetRefExt;
@@ -6931,7 +6931,9 @@ crew.insert_return_id(&amp;LaunchCrew { astronaut_id: Some(a), role: Some("Pilot
 <p><code>get_ref::&lt;E2&gt;(relation)</code> returns a <code>Table&lt;T, E2&gt;</code> scoped to the parent. For a typed <code>ActiveEntity</code>
 the entity’s id is injected into the row before traversal (so has-many relations resolve); an
 untyped <code>ActiveRecord</code> already holds the raw row and forwards directly. The same method exists on
-both handles.</p>
+both handles — <code>GetRefExt</code> carries blanket implementations for each, generic over any
+<code>TableSource</code> (the handles themselves live in <code>vantage-dataset</code> and know nothing about <code>Table</code>,
+which is why this arrives as an extension trait).</p>
 <h2 id="set-invariants"><a class="header" href="#set-invariants">Set invariants</a></h2>
 <p>A table narrowed by a literal <code>column = value</code> is a <strong>set</strong>, and every row written into it must
 <em>conform</em> to that definition. Vantage records the pair as an <strong>invariant</strong> and enforces it on
@@ -7075,6 +7077,1260 @@ fn soft_delete&lt;'a&gt;(
 <p>To pull in outside context (e.g. an <code>updated_by</code> actor), have the hook capture an <code>Arc</code> or read a
 task-local — the closure runs in async context. A capturing closure works too, but needs its boxed
 return type annotated explicitly so it coerces to the hook type.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="relations--traversal"><a class="header" href="#relations--traversal">Relations &amp; Traversal</a></h1>
+<p>Vantage treats a relation as something you <em>traverse</em>, not something you <em>load</em>. Declared once on
+the model, a relation gives you:</p>
+<ol>
+<li><strong>Set-to-set traversal</strong> — narrow “clients” down to the paying ones, traverse, and you hold
+“orders of paying clients” as a new set. One query when it executes; no loop over IDs.</li>
+<li><strong>Related values inside queries</strong> — a client row carrying its <code>order_count</code>, an order carrying
+its <code>client.name</code> — computed by the database through correlated subqueries or native link paths.</li>
+<li><strong>The same vocabulary on every backend</strong> — relations are declared on the model, not read from
+foreign-key constraints, so CSV files, REST APIs, and document stores get the same treatment as
+SQL.</li>
+<li><strong>Relations that survive the stack</strong> — the declaration travels from the typed <code>Table</code> through
+the type-erased <code>Vista</code> into the cached <code>Dio</code>; where two datasources meet, the Dio stitches the
+join client-side.</li>
+</ol>
+<p>If you come from an ORM, the shape is different enough to spell out:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th>typical ORM</th><th>Vantage</th></tr>
+</thead>
+<tbody>
+<tr><td>Traversal returns</td><td>loaded objects (lazy or eager)</td><td>a new set — a query definition, no data loaded</td></tr>
+<tr><td>N+1 queries</td><td>managed with eager-loading hints</td><td>don’t arise: traversal is one subquery</td></tr>
+<tr><td>Declared</td><td>derived from schema / migrations</td><td>on the model; works without FK constraints</td></tr>
+<tr><td>Backends</td><td>the SQL database</td><td>SQL, SurrealDB, MongoDB, CSV, REST, DynamoDB, …</td></tr>
+<tr><td>Related fields</td><td>JOIN and map, or embedded objects</td><td>subquery expressions, implicit references</td></tr>
+<tr><td>Across two databases</td><td>out of scope</td><td>catalog traversal; augmentation joins per row in the cache</td></tr>
+</tbody>
+</table>
+</div>
+<p>Our running example is <code>bakery_model3</code> — an example model crate that ships in the Vantage
+repository. It defines one set of entities (bakeries, clients, orders, products) with table
+constructors for several datasources — SQLite, PostgreSQL, SurrealDB, MongoDB, CSV, DynamoDB —
+and doubles as a test fixture for the framework itself.
+<a href="#model-driven-architecture">Model-Driven Architecture</a> walks through its anatomy; here we just borrow it as the
+example.</p>
+<p>Three of its tables belong together: a <code>Bakery</code> has many <code>Clients</code>, and each <code>Client</code> has many
+<code>Orders</code>. In SQL terms, <code>client.bakery_id</code> points at a bakery and <code>client_order.client_id</code> points
+at a client:</p>
+<pre class="mermaid">erDiagram
+    bakery ||--o{ client : "client.bakery_id"
+    client ||--o{ client_order : "client_order.client_id"
+</pre>
+
+<p>Almost every real question you’d ask of this data crosses one of those links —
+“orders of paying clients”, “which bakery does this order belong to” — so this guide is about how
+Vantage models those links and how you cross them.</p>
+<p>You met relations briefly in the <a href="#tables-and-typed-data-access">Introduction</a>, where a product catalog
+picked up <code>with_many</code> and <code>get_ref_as</code>; this guide covers the same machinery in depth, with a fuller
+model. We work SQL-first here (SQLite), with SurrealDB and other backends in notes along the way. The chapters after this one dig into traversal forms, subquery
+expressions, implicit references, and how relations survive into the type-erased <code>Vista</code> and cached
+<code>Dio</code> layers — this page sets up the vocabulary they all share.</p>
+<h2 id="one-relation-four-layers"><a class="header" href="#one-relation-four-layers">One relation, four layers</a></h2>
+<p>An ORM or a data mapper typically has exactly one place where references live: on the mapped
+object. <code>client.orders()</code> loads objects, and that is the whole story. In Vantage the <em>same
+declared relation</em> is traversable at (approximately) four layers. Each layer traverses with what
+it has in hand and gives you back a handle native to that layer — you never drop down a level to
+cross a link:</p>
+<p>The traversal method is called <code>get_ref</code> at every layer — what changes is what you hold when you
+call it, and when you’d want to:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>level</th><th>when you reach for it</th></tr>
+</thead>
+<tbody>
+<tr><td>Record → Table</td><td>You hold an <code>ActiveRecord</code> or <code>ActiveEntity</code> — physical row data, loaded. <code>client_record.get_ref("orders")?</code> hands back a table narrowed to that client. Models typically wrap this in typed methods, so application code calls <code>client_record.ref_orders()</code> and gets a <code>Table&lt;SqliteDB, Order&gt;</code>.</td></tr>
+<tr><td>Table → Table</td><td>True set traversal — no data loaded on either side. Start with the table of VIP clients, traverse to their orders, aggregate: one query, and you hold the sum of all VIP clients’ orders.</td></tr>
+<tr><td>Vista → Vista</td><td>Type-erased, for generic consumers. Record and table traversal stay inside one datasource; a <code>Vista</code> respects the relationships declared on the wrapped table, and the <code>VistaCatalog</code> additionally lets you register relations between catalog models — including targets in a <em>different</em> datasource.</td></tr>
+<tr><td>Dio</td><td>Not a new traversal — the caching layer over the ones above. A traversed detail set gets its own live cache, and <em>augmentation</em> merges a related source’s columns into the master’s cached rows, one visible row at a time.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Why is there a Dio layer at all, if the catalog already crosses datasources? Because catalog
+traversal <em>navigates</em> — it hands you the related set, and every read of it is a live round-trip.
+The Dio owns what navigation lacks: a cache, a viewport, and change events. It caches each
+traversed detail set, and it hosts augmentation — not navigation <em>to</em> related rows but a per-row
+join <em>into</em> the master’s rows, which needs exactly that cache and viewport.
+<a href="#relations-and-dio">Relations and Dio</a> works through both.</p>
+<p>The rest of this page covers the first vocabulary — declaring the relation. The child chapters
+then walk the layers: <a href="#traversing-sets-and-records">tables</a>, <a href="#vista-yaml-and-rhai">vistas</a>, and
+<a href="#relations-and-dio">dio</a>.</p>
+<h2 id="what-a-relation-is"><a class="header" href="#what-a-relation-is">What a relation is</a></h2>
+<p>A relation in Vantage is a declared, named link between two table definitions. It lives on the
+<strong>table definition</strong> — the model — not on the entity struct, and not in the database. Vantage never
+introspects foreign-key constraints; whether your SQLite schema actually declares
+<code>FOREIGN KEY (client_id) REFERENCES client(id)</code> is invisible to it. A relation is exactly three
+things:</p>
+<ol>
+<li><strong>A name</strong> — the string you traverse by, like <code>"orders"</code>.</li>
+<li><strong>A foreign-key field</strong> — the column that carries the link.</li>
+<li><strong>A target-table constructor</strong> — a function that builds the table on the other end.</li>
+</ol>
+<p>Two properties follow from this shape. <strong>References are one-sided</strong>: a declaration gives <em>this</em>
+table a way to reach the target — nothing is declared on the target, and no back-reference is
+required. If you want to traverse the other direction, declare that separately (the bakery model
+does: <code>orders</code> on <code>Client</code>, <code>client</code> on <code>Order</code>).</p>
+<p>And because traversal produces <em>sets</em>, <strong>the same pair of tables can be linked by any number of
+references</strong> — same target, same foreign key, different conditions. The constructor argument is
+what makes this natural: pass a closure that narrows the target, and the relation names a
+<em>meaningful subset</em>, not just a foreign key:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>.with_many("paid_invoices", "client_id", |db| {
+    let mut t = Invoice::table(db);
+    t.add_condition(t["status"].eq("paid"));
+    t
+})
+.with_many("due_invoices", "client_id", |db| {
+    let mut t = Invoice::table(db);
+    t.add_condition(t["status"].eq("due"));
+    t
+})
+<span class="boring">}</span></code></pre>
+<p>With the extension-trait convention (below), application code reads
+<code>client.ref_paid_invoices()</code> / <code>client.ref_due_invoices()</code> — one invoice table underneath, two
+named ways to reach it.</p>
+<h3 id="why-not-read-the-foreign-keys-from-the-database"><a class="header" href="#why-not-read-the-foreign-keys-from-the-database">Why not read the foreign keys from the database?</a></h3>
+<p>Because most of the backends Vantage talks to don’t have any. CSV files, REST APIs, and MongoDB
+have no foreign-key concept to introspect, yet their data is just as related. Declaring the
+relation on the model means the same declaration works everywhere — the link between clients and
+orders exists whether the rows live in Postgres or in a spreadsheet export.</p>
+<h2 id="two-cardinalities"><a class="header" href="#two-cardinalities">Two cardinalities</a></h2>
+<p>There are two declaration methods, and the difference between them comes down to one question:
+which table holds the foreign key?</p>
+<ul>
+<li><strong><code>with_one("name", "fk_field", constructor)</code></strong> — the FK lives on <strong>this</strong> table. Traversal
+yields at most one row: many-to-one. An order has one client.</li>
+<li><strong><code>with_many("name", "fk_field", constructor)</code></strong> — the FK lives on the <strong>target</strong> table.
+Traversal yields a set: one-to-many. A client has many orders.</li>
+</ul>
+<p>Both declarations describe the same underlying link — one foreign-key column, viewed from either
+end:</p>
+<pre class="mermaid">graph LR
+    order["client_order&lt;br/&gt;(carries client_id)"]
+    client["client&lt;br/&gt;(has id)"]
+    order -- "with_one('client')" --&gt; client
+    client -- "with_many('orders')" --&gt; order
+</pre>
+
+<p>The two are more similar than the names suggest. Both take the same closure and use it the same
+way: build the target table, then pin it with a single eq-condition. The only difference is the
+condition’s orientation — <code>with_one</code> reads the foreign key <em>out of the source row</em> and pins the
+target’s id; <code>with_many</code> reads the source row’s <em>id</em> and pins the target’s foreign-key column.
+Same closure, same eq-condition, read from opposite ends of the link.</p>
+<p>Internally these become <code>HasOne</code> and <code>HasMany</code> implementations of the <code>Reference</code> trait
+(<code>vantage-table/src/references/</code>), and the cardinality is surfaced as <code>ReferenceKind::HasOne</code> /
+<code>ReferenceKind::HasMany</code> for anything that needs to reason about relations generically — the vista
+layer will, later.</p>
+<h3 id="you-could-write-it-yourself"><a class="header" href="#you-could-write-it-yourself">You could write it yourself</a></h3>
+<p><code>with_one</code>, <code>with_many</code>, and <code>get_ref</code> are convenience. A traversal is just “build a table, add a
+condition from what I’m holding” — and nothing stops you from writing exactly that as an
+extension method on a loaded record, without registering any reference at all. It doesn’t even
+have to stay in the same datasource:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub trait ClientMailLog {
+    fn ref_mail_log(&amp;self) -&gt; Table&lt;Mailchimp, MailLogEntry&gt;;
+}
+
+impl&lt;'a&gt; ClientMailLog for ActiveEntity&lt;'a, Table&lt;SqliteDB, Client&gt;, Client&gt; {
+    fn ref_mail_log(&amp;self) -&gt; Table&lt;Mailchimp, MailLogEntry&gt; {
+        let mut log = MailLogEntry::table(mailchimp());
+        log.add_condition(log["email"].eq(self.email.clone()));
+        log
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>(<code>self.email</code> works because <code>ActiveEntity</code> derefs to the entity struct — the loaded <code>Client</code>’s
+fields are right there. An untyped <code>ActiveRecord</code> derefs to the raw <code>Record</code> instead, where the
+same value is <code>self.get("email")</code>.)</p>
+<p>From the caller’s side <code>client.ref_mail_log()</code> is indistinguishable from a declared relation —
+but there is no foreign key here, no registry entry, just a Mailchimp-backed table conditioned by
+the client’s email. What the declared forms add over hand-rolling is everything that needs the
+<em>registry</em>: string-addressable traversal for the generic layers (vistas, implicit references),
+and the foreign-key invariant on inserts. Reach for a hand-rolled method when the link doesn’t
+fit an FK eq-match; declare a relation when you want the machinery.</p>
+<h3 id="coercion--pinning-get_refs-type"><a class="header" href="#coercion--pinning-get_refs-type">Coercion — pinning <code>get_ref</code>’s type</a></h3>
+<p>A relation is addressed by string, and a string carries no type. <code>get_ref</code> therefore cannot
+<em>infer</em> what entity comes back — it is generic, and the caller chooses:
+<code>get_ref::&lt;Order&gt;("orders")</code>. The turbofish is an assertion, not a check: the registry knows
+which table the relation builds, but the entity type you name is simply coerced onto the result.
+Name the wrong one and you find out at runtime, when rows fail to deserialize — not from the
+compiler.</p>
+<p>This uncertainty is exactly why the model wraps every relation once, in an extension trait next
+to the table definition:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub trait ClientTable {
+    fn ref_orders(&amp;self) -&gt; Table&lt;SqliteDB, Order&gt;;
+}
+
+impl ClientTable for Table&lt;SqliteDB, Client&gt; {
+    fn ref_orders(&amp;self) -&gt; Table&lt;SqliteDB, Order&gt; {
+        self.get_ref_as("orders").unwrap()
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>And the same on the other side — <code>Order</code> gets <code>ref_client()</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub trait OrderTable {
+    fn ref_client(&amp;self) -&gt; Table&lt;SqliteDB, Client&gt;;
+}
+
+impl OrderTable for Table&lt;SqliteDB, Order&gt; {
+    fn ref_client(&amp;self) -&gt; Table&lt;SqliteDB, Client&gt; {
+        self.get_ref_as("client").unwrap()
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>The coercion happens in one place — where the right answer is obvious — and the <code>unwrap()</code> is
+safe there too: <code>"orders"</code> is declared on every <code>Client</code> table the model produces, so a typo
+panics in development, not silently at runtime. This is the convention to follow throughout a
+model crate: every declared relation surfaces as a typed <code>ref_&lt;name&gt;()</code> method, callers write
+<code>clients.ref_orders()</code> / <code>orders.ref_client()</code>, and the strings and turbofish exist in exactly
+one place with no opportunity to name the wrong entity. The
+<a href="#tables-and-typed-data-access">Introduction</a> used the same pattern, and
+<a href="#model-driven-architecture">Model-Driven Architecture</a> covers where these traits live in a model crate.</p>
+<h2 id="declaring-relations-on-the-model"><a class="header" href="#declaring-relations-on-the-model">Declaring relations on the model</a></h2>
+<p>Here is <code>Client</code> from <code>bakery_model3/src/client.rs</code> — the entity struct and its SQLite table
+constructor:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[entity(CsvType, SurrealType, SqliteType, PostgresType, MongoType, DynamoType)]
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Client {
+    pub name: String,
+    pub email: String,
+    pub contact_details: String,
+    pub is_paying_client: bool,
+    pub bakery_id: Option&lt;String&gt;,
+}
+
+impl Client {
+    pub fn sqlite_table(db: SqliteDB) -&gt; Table&lt;SqliteDB, Client&gt; {
+        Table::new("client", db)
+            .with_id_column("id")
+            .with_column_of::&lt;String&gt;("name")
+            .with_column_of::&lt;String&gt;("email")
+            .with_column_of::&lt;String&gt;("contact_details")
+            .with_column_of::&lt;bool&gt;("is_paying_client")
+            .with_column_of::&lt;String&gt;("bakery_id")
+            .with_one("bakery", "bakery_id", Bakery::sqlite_table)
+            .with_many("orders", "client_id", Order::sqlite_table)
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Notice that the struct knows nothing about relations. <code>bakery_id</code> is just an <code>Option&lt;String&gt;</code> field
+like any other; the links are declared on the table definition, where the columns and conditions
+already live.</p>
+<p>And here is the other end, from <code>order.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl Order {
+    pub fn sqlite_table(db: SqliteDB) -&gt; Table&lt;SqliteDB, Order&gt; {
+        Table::new("client_order", db)
+            .with_id_column("id")
+            .with_column_of::&lt;String&gt;("client_id")
+            .with_column_of::&lt;bool&gt;("is_deleted")
+            .with_one("client", "client_id", Client::sqlite_table)
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>The same underlying relation appears from both ends: <code>Client</code> declares
+<code>with_many("orders", "client_id", …)</code> and <code>Order</code> declares <code>with_one("client", "client_id", …)</code>.
+Each side is declared independently and each is usable independently — you could declare only one
+of them if you never traverse the other direction. And both name the same column: <code>"client_id"</code> on
+the <code>client_order</code> table. For <code>with_many</code> that’s the FK on the <em>target</em> table; for <code>with_one</code> it’s
+the FK on the <em>source</em> — here <code>Order</code> happens to be the FK-carrying side both times.</p>
+<h3 id="the-constructor-argument"><a class="header" href="#the-constructor-argument">The constructor argument</a></h3>
+<p>The third argument — <code>Order::sqlite_table</code> — is not a table, it’s a function. It’s the very same
+constructor the model already exposes; you’re just passing it by name instead of calling it. That
+buys two things. First, declaring a relation costs nothing up front: the target table is only
+constructed when the relation is actually traversed. Second, and more importantly, when the target
+<em>is</em> constructed, it’s the real model definition — its own columns, its own conditions, its own
+relations. If <code>Order::sqlite_table</code> filtered out soft-deleted rows, every traversal that reaches
+orders through a relation would inherit that filter. There is no second, weaker definition of
+“orders” that relations quietly use.</p>
+<h2 id="a-first-traversal"><a class="header" href="#a-first-traversal">A first traversal</a></h2>
+<p>Traversal is set-to-set: narrow the source set, traverse, and the target set arrives already
+narrowed by the relationship. Here’s “orders of paying clients”:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut paying = Client::sqlite_table(db.clone());
+paying.add_condition(paying["is_paying_client"].eq(true));
+
+// Table&lt;SqliteDB, Order&gt;, narrowed to orders of paying clients
+let orders = paying.get_ref_as::&lt;Order&gt;("orders")?;
+<span class="boring">}</span></code></pre>
+<p>No query has run yet — <code>orders</code> is a <code>Table&lt;SqliteDB, Order&gt;</code> like any other, and you can add
+conditions, select columns, or traverse further. When it does execute, the narrowing happens via a
+subquery — not a JOIN, and not a round-trip to fetch client IDs first. The shape (illustrative):</p>
+<pre><code class="language-sql">SELECT ... FROM "client_order"
+WHERE "client_id" IN (SELECT "id" FROM "client" WHERE "is_paying_client" = 1)
+</code></pre>
+<p>This is the payoff of set-to-set thinking: “orders of paying clients” is one narrowing plus one
+traversal, executed as a single query — never a loop over IDs.</p>
+<p>In application code, the string and the turbofish disappear behind the wrapper from the
+<a href="#coercion--pinning-get_refs-type">coercion section</a> above:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let orders = paying.ref_orders();   // Table&lt;SqliteDB, Order&gt; — type inferred, no string
+<span class="boring">}</span></code></pre>
+<p>The next chapter covers the full range of traversal forms; this is just the first taste.</p>
+<h2 id="surrealdb-record-links-instead-of-foreign-keys"><a class="header" href="#surrealdb-record-links-instead-of-foreign-keys">SurrealDB: record links instead of foreign keys</a></h2>
+<p>SurrealDB stores relations as <strong>record links</strong> — the FK column holds a typed record id (a <code>Thing</code>,
+rendered <code>table:key</code>) rather than a scalar. The declaration shape is identical; only the field
+differs. From the same <code>bakery_model3/src/client.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub fn surreal_table(db: SurrealDB) -&gt; Table&lt;SurrealDB, Client&gt; {
+    Table::new("client", db)
+        .with_id_column("id")
+        .with_column_of::&lt;String&gt;("name")
+        .with_column_of::&lt;String&gt;("email")
+        .with_column_of::&lt;String&gt;("contact_details")
+        .with_column_of::&lt;bool&gt;("is_paying_client")
+        .with_one("bakery", "bakery", Bakery::surreal_table)
+        .with_many("orders", "client", Order::surreal_table)
+}
+<span class="boring">}</span></code></pre>
+<p>What changes is the column’s <em>content</em>, not its name — that is a database-design choice. Any
+column can hold a record link: you could equally keep calling it <code>bakery_id</code> and store a <code>Thing</code>
+in it, and the declaration would name that column instead. <code>bakery_model3</code> happens to follow the
+common SurrealDB convention of naming the link column after the target (<code>"bakery"</code>), which is why
+its declarations differ from the SQLite ones only in that argument. Either way, the relation
+<em>name</em> is free to differ from the link field; nothing couples them.</p>
+<div id="admonition-other-backends" class="admonition admonish-info" role="note" aria-labelledby="admonition-other-backends-title">
+<div class="admonition-title">
+<div id="admonition-other-backends-title">
+<p>Other backends</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-other-backends"></a>
+</div>
+
+<div>
+<p>MongoDB, CSV, and DynamoDB declare relations exactly the same way, with scalar foreign keys —
+<code>bakery_model3</code> has <code>mongo_table</code>, <code>csv_table</code>, and <code>dynamo_table</code> constructors of the same shape.
+Traversal itself is easy and every table supports it: it only <em>attaches a condition</em> to the
+target. The heavy lifting is honouring that condition when the related data is actually fetched —
+SQL pushes it down as a <code>WHERE</code>, while CSV filters in memory to fulfil the same <code>Table</code> contract.
+The next chapter covers what each traversal form generates per backend.</p>
+</div>
+
+</div>
+
+<h2 id="writing-into-a-traversed-set"><a class="header" href="#writing-into-a-traversed-set">Writing into a traversed set</a></h2>
+<p>A traversed set is not read-only. Insert into it, and the new record <em>belongs</em> to the set you
+traversed to:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>client.ref_orders().insert_return_id(&amp;order).await?;
+<span class="boring">}</span></code></pre>
+<p>The order’s <code>client_id</code> is filled in automatically — you don’t set it, and if you set a
+<em>conflicting</em> one the write is rejected. How that enforcement works (set invariants, lifecycle
+hooks) is covered in <a href="#records-traversal-invariants--hooks">Records: Traversal, Invariants &amp; Hooks</a>.</p>
+<h2 id="where-this-guide-goes"><a class="header" href="#where-this-guide-goes">Where this guide goes</a></h2>
+<p>You now have the vocabulary: a relation is a named <code>(name, fk_field, constructor)</code> triple on the
+table definition, in one of two cardinalities, traversed set-to-set. The child chapters each take
+one thread further:</p>
+<ul>
+<li><strong><a href="#traversing-sets-and-records">Traversing Sets and Records</a></strong> — the full range of traversal forms:
+set-to-set (fetching and embedding), row-in-hand, record-level, and contained.</li>
+<li><strong><a href="#expressions--subqueries">Expressions &amp; Subqueries</a></strong> — correlated lookups, counts, and how
+relation-derived expressions compose.</li>
+<li><strong><a href="#implicit-references">Implicit References</a></strong> — dotted column names, the
+declarative way to pull a field across a relation.</li>
+<li><strong><a href="#vista-yaml-and-rhai">Vista, YAML and Rhai</a></strong> — vista factories, traversal after type
+erasure, capability checks, and declaring relations in YAML and Rhai.</li>
+<li><strong><a href="#relations-and-dio">Relations and Dio</a></strong> — where cross-datasource enrichment lives.</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="traversing-sets-and-records"><a class="header" href="#traversing-sets-and-records">Traversing Sets and Records</a></h1>
+<p>The <a href="#relations--traversal">previous chapter</a> declared the bakery model: Bakery → Clients
+(<code>client.bakery_id</code>) → Orders (<code>client_order.client_id</code>), with the relations <code>"orders"</code>,
+<code>"client"</code>, and <code>"bakery"</code> registered via <code>with_one</code> / <code>with_many</code>. Declaring a relation stores
+the join recipe. This chapter is about using it: turning “the orders of these clients” into an
+actual query.</p>
+<p>There are four traversal forms. They differ in <em>what you have in hand when you traverse</em> — a set
+(conditions, no data), a loaded row, or a loaded record object — and, between the two set forms,
+in <em>how the condition is applied</em> to the target. Each form exists because each starting point
+lets the backend do something different.</p>
+<h2 id="form-1--set-to-set-get_ref_as"><a class="header" href="#form-1--set-to-set-get_ref_as">Form 1 — set-to-set: <code>get_ref_as</code></a></h2>
+<p>You have a <em>set</em> — a table narrowed by conditions, possibly matching many rows, none of them
+loaded. <code>Table::get_ref_as::&lt;E2&gt;(relation)</code> traverses from the whole set at once:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut paying = Client::sqlite_table(db.clone());
+paying.add_condition(paying["is_paying_client"].eq(true));
+
+let orders = paying.get_ref_as::&lt;Order&gt;("orders")?;
+// SELECT ... FROM "client_order"
+// WHERE "client_id" IN (SELECT "id" FROM "client" WHERE "is_paying_client" = 1)
+<span class="boring">}</span></code></pre>
+<p>No client rows are fetched. The traversal generates an <code>IN (subquery)</code> condition on the target,
+and the subquery is whatever conditions the source set carries. Narrow <code>paying</code> further and the
+subquery narrows with it — the traversal call never changes. That composability is the point:
+you build the set that describes <em>which</em> parents you mean, and the child set inherits that
+description.</p>
+<p>In application code these calls hide behind the model’s extension traits —
+<code>paying.ref_orders()</code>, <code>orders.ref_client()</code> — so the string and the turbofish live once, next
+to the table definition
+(<a href="#coercion--pinning-get_refs-type">Coercion — pinning <code>get_ref</code>’s type</a>).
+This chapter spells out the underlying calls so you can see what each form generates.</p>
+<p>How the <code>IN</code> condition is built is per-backend — each backend implements
+<code>TableSource::related_in_condition</code>:</p>
+<ul>
+<li><strong>SQL</strong> builds the subquery you see above: <code>"client_id" IN (SELECT "id" FROM "client" WHERE …)</code>.</li>
+<li><strong>MongoDB</strong> has no subqueries, so it builds a deferred <code>{ field: { "$in": [...] } }</code> document —
+the parent ids are resolved when the child query runs.</li>
+<li><strong>CSV</strong> fetches the join values in memory and builds an IN condition from them.</li>
+</ul>
+<div id="admonition-mongodb-the-deferred-condition" class="admonition admonish-info" role="note" aria-labelledby="admonition-mongodb-the-deferred-condition-title">
+<div class="admonition-title">
+<div id="admonition-mongodb-the-deferred-condition-title">
+<p>MongoDB: the deferred condition</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-mongodb-the-deferred-condition"></a>
+</div>
+
+<div>
+<p>MongoDB’s <code>related_in_condition</code> returns a <strong>deferred</strong> condition — a closure, not a document.
+Nothing runs when you traverse; the closure runs when the <em>child</em> query executes. At that point
+it issues a projected <code>find</code> on the source collection — only the join column, with the source
+set’s own filter applied — collects the values, and emits <code>{ field: { "$in": [...] } }</code> for the
+child query. It also absorbs a representation mismatch: ids may be stored as <code>ObjectId</code> on one
+side and as the hex string on the other, so every collected value is pushed in <em>both</em> forms and
+<code>$in</code> matches either. The set-to-set contract survives — you still hand the target one
+condition — it just costs two round-trips at fetch time instead of one nested query.</p>
+</div>
+
+</div>
+
+<div id="admonition-csv-an-in-memory-in-list" class="admonition admonish-info" role="note" aria-labelledby="admonition-csv-an-in-memory-in-list-title">
+<div class="admonition-title">
+<div id="admonition-csv-an-in-memory-in-list-title">
+<p>CSV: an in-memory IN list</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-csv-an-in-memory-in-list"></a>
+</div>
+
+<div>
+<p>CSV has no query engine at all — its condition type is an ordinary Vantage expression that the
+driver <em>evaluates per row in Rust</em> while reading the file. <code>related_in_condition</code> builds
+<code>target_column.in_(values)</code>, where <code>values</code> is itself deferred: at fetch time it lists the source
+table (with its conditions applied the same in-memory way), pulls the join column out of each
+row, and yields the list as a single value. Filtering the target is then a per-row membership
+check. Same declared relation, same traversal call — no database anywhere.</p>
+</div>
+
+</div>
+
+<p>Use this form when the parent is a set — filtered, unfiltered, one row or a thousand.</p>
+<h2 id="form-2--set-to-set-for-embedding-get_subquery_as"><a class="header" href="#form-2--set-to-set-for-embedding-get_subquery_as">Form 2 — set-to-set, for embedding: <code>get_subquery_as</code></a></h2>
+<p>Technically set-to-set as well — same starting point, same declared relation — but the condition
+is applied differently. Where <code>get_ref_as</code> narrows the target with <code>IN (subquery)</code> so the related
+rows can be <em>fetched</em> on their own, <code>Table::get_subquery_as::&lt;E2&gt;(relation)</code> attaches a
+<strong>correlated</strong> condition — target column against source column, row by row:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let orders = clients.get_ref_as::&lt;Order&gt;("orders")?;      // fetch:  WHERE client_id IN (SELECT id FROM client …)
+let orders = clients.get_subquery_as::&lt;Order&gt;("orders")?; // embed:  WHERE client_id = client.id
+<span class="boring">}</span></code></pre>
+<p>A correlated table is useless to fetch standalone — its condition references the source’s rows —
+but it is exactly right to <em>embed</em> as a scalar subquery inside the source’s own SELECT: a
+client’s <code>order_count</code>, an order’s <code>client.name</code>. The embedding recipe (<code>select_column</code>,
+aggregates, composition) is the subject of the <a href="#expressions--subqueries">next chapter</a>.</p>
+<div id="admonition-sql-and-surrealdb-only" class="admonition admonish-warning" role="note" aria-labelledby="admonition-sql-and-surrealdb-only-title">
+<div class="admonition-title">
+<div id="admonition-sql-and-surrealdb-only-title">
+<p>SQL and SurrealDB only</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-sql-and-surrealdb-only"></a>
+</div>
+
+<div>
+<p>This form needs the backend to express a correlated condition
+(<code>TableSource::related_correlated_condition</code>), and only SQL backends and SurrealDB can. MongoDB,
+CSV, REST, and CMD have no correlated-subquery expressions to lower to — the default
+implementation panics rather than degrading silently. The fetching forms (1, 3, 4) remain
+available everywhere.</p>
+</div>
+
+</div>
+
+<h2 id="form-3--row-in-hand-get_ref_from_row"><a class="header" href="#form-3--row-in-hand-get_ref_from_row">Form 3 — row-in-hand: <code>get_ref_from_row</code></a></h2>
+<p>You already hold a loaded row — a <code>Record&lt;T::Value&gt;</code> that came back from the database. There is
+nothing to compute: the join value is sitting in the row. <code>Table::get_ref_from_row::&lt;E2&gt;(relation, &amp;row)</code> reads it out and applies it as a single eq-condition on the target:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let orders = clients.get_ref_from_row::&lt;Order&gt;("orders", &amp;row)?;
+// WHERE "client_id" = &lt;the id read out of row&gt; — one eq-condition
+<span class="boring">}</span></code></pre>
+<p>Which field gets read depends on the relation’s direction: a <code>HasOne</code> relation reads its stored
+foreign-key column from the row; a <code>HasMany</code> relation reads the source’s id field. No subquery,
+no deferred fetch — <code>row</code> already carries the value.</p>
+<div id="admonition-plumbing-not-user-facing-api" class="admonition admonish-info" role="note" aria-labelledby="admonition-plumbing-not-user-facing-api-title">
+<div class="admonition-title">
+<div id="admonition-plumbing-not-user-facing-api-title">
+<p>Plumbing, not user-facing API</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-plumbing-not-user-facing-api"></a>
+</div>
+
+<div>
+<p>You will rarely call this directly: it exists as the primitive beneath the blanket <code>get_ref</code>
+implementations for <code>ActiveRecord</code> and <code>ActiveEntity</code> (form 4), and the erased <code>Vista::get_ref</code>
+forwards here too. When a UI shows a clicked row’s children, this is the form doing the work —
+one equality filter — but the caller holds a record handle or a Vista, not a raw row.</p>
+</div>
+
+</div>
+
+<h2 id="form-4--record-level-getrefextget_ref"><a class="header" href="#form-4--record-level-getrefextget_ref">Form 4 — record-level: <code>GetRefExt::get_ref</code></a></h2>
+<p>The same traversal as form 3, called from a loaded handle instead of a raw row:
+<code>launch.get_ref::&lt;LaunchCrew&gt;("launch_crew")</code> works on an <code>ActiveEntity</code> (typed — its id is
+injected into the row first, so has-many relations resolve) and on an <code>ActiveRecord</code> (untyped —
+the raw row forwards directly). The method comes from the <code>GetRefExt</code> extension trait in
+<code>vantage-table</code>, with blanket implementations for both handles over any <code>TableSource</code>. The
+worked example (loading a record, traversing, inserting a child) lives in
+<a href="#traversing-from-a-loaded-record-get_ref">Records: Traversal, Invariants &amp; Hooks</a>.</p>
+<h2 id="the-bare-target-get_ref_target"><a class="header" href="#the-bare-target-get_ref_target">The bare target: <code>get_ref_target</code></a></h2>
+<p>Sometimes you want the relation’s target table with <em>no</em> condition at all —
+<code>Table::get_ref_target::&lt;E2&gt;(relation)</code> builds exactly that. Where the traversal forms narrow
+the target to related rows, <code>get_ref_target</code> hands you the table you’d insert a new related row
+into before any join value exists (this is what Vista’s nested insert uses).</p>
+<h2 id="contained-relations"><a class="header" href="#contained-relations">Contained relations</a></h2>
+<p>Some backends embed related data <em>inside</em> the row instead of linking to another table.
+SurrealDB’s <code>Order</code> carries an embedded <code>array&lt;object&gt;</code> of order lines — declared as a column
+(so it is selected) <em>and</em> as a contains-many relation whose record schema is built by a closure.
+From <code>bakery_model3/src/order.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub fn surreal_table(db: SurrealDB) -&gt; Table&lt;SurrealDB, Order&gt; {
+    Table::new("order", db)
+        .with_id_column("id")
+        .with_column_of::&lt;Thing&gt;("client")
+        .with_column_of::&lt;bool&gt;("is_deleted")
+        // `lines` is an embedded `array&lt;object&gt;` of `{ product, quantity,
+        // price }` — declared as a column so it's selected, and as a
+        // contains-many relation whose record schema is built by the
+        // closure (like `with_many`).
+        .with_column_of::&lt;AnySurrealType&gt;("lines")
+        .with_one("client", "client", Client::surreal_table)
+        .with_contained_many(
+            "lines",
+            "lines",
+            |db| {
+                Table::new("lines", db)
+                    .with_column_of::&lt;Thing&gt;("product")
+                    .with_column_of::&lt;i64&gt;("quantity")
+                    .with_column_of::&lt;i64&gt;("price")
+                    // a line traverses out to the real product table
+                    .with_one("product", "product", Product::surreal_table)
+            },
+            None,
+        )
+}
+<span class="boring">}</span></code></pre>
+<p>Contained relations are a K/V-and-document-store shape: the value already holds the related
+data, so “traversal” is descent into the row, not a query. Note that a contained record can
+still hold references back out — a line’s <code>product</code> field is a <code>with_one</code> to the real product
+table, so from an embedded line you traverse out with the same forms as anywhere else.</p>
+<div id="admonition-surrealdb-record-ids-in-narrowings" class="admonition admonish-note" role="note" aria-labelledby="admonition-surrealdb-record-ids-in-narrowings-title">
+<div class="admonition-title">
+<div id="admonition-surrealdb-record-ids-in-narrowings-title">
+<p>SurrealDB record ids in narrowings</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-surrealdb-record-ids-in-narrowings"></a>
+</div>
+
+<div>
+<p>Join values in SurrealDB are record ids (<code>Thing</code>), not scalar foreign keys. A string of the
+shape <code>"table:key"</code> handed into a narrowing — from a script surface or JSON, say — is coerced
+back into a record id by the backend (<code>coerce_reference_value</code> on <code>TableSource</code>; the identity
+function on scalar-FK backends). String ids narrow correctly; they don’t silently match nothing.</p>
+</div>
+
+</div>
+
+<h2 id="conclusion"><a class="header" href="#conclusion">Conclusion</a></h2>
+<p>You can now:</p>
+<ol>
+<li><strong>Traverse a filtered set</strong> with <code>get_ref_as</code> — conditions compose into an <code>IN (subquery)</code>
+on the target.</li>
+<li><strong>Correlate instead of fetch</strong> with <code>get_subquery_as</code> — same relation, a per-row condition,
+built for embedding in the source’s SELECT.</li>
+<li><strong>Traverse from a loaded row or record</strong> with <code>get_ref_from_row</code> / <code>get_ref</code> — one
+eq-condition, supported by every backend.</li>
+<li><strong>Obtain a bare insert target</strong> with <code>get_ref_target</code> — the relation’s target with no
+condition.</li>
+<li><strong>Declare embedded/contained relations</strong> on document stores with <code>with_contained_many</code>,
+where traversal is descent rather than a query.</li>
+</ol>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="expressions--subqueries"><a class="header" href="#expressions--subqueries">Expressions &amp; Subqueries</a></h1>
+<p>The previous chapter used relations to <em>fetch</em> related rows — traverse from a client to their
+orders, get the orders back as a set. This chapter uses relations <em>inside</em> a query: a client row
+that carries its own order count, computed by the database, delivered as just another column.</p>
+<p>The recipe has three parts:</p>
+<ol>
+<li><strong><code>Table::with_expression(name, |t| …)</code></strong> — adds a computed field to the table. It’s evaluated
+as part of the SELECT, alongside the physical columns.</li>
+<li><strong><code>Table::get_subquery_as::&lt;E2&gt;(relation)</code></strong> — builds the relation’s target table with a
+<strong>correlated condition</strong>. For the clients → orders relation that condition is
+<code>client_order.client_id = client.id</code> — the direction is always <code>target.&lt;id&gt; = source.&lt;fk&gt;</code>,
+supplied by the backend through <code>TableSource::related_correlated_condition</code>. This table is
+explicitly designed for embedding as a scalar subquery.</li>
+<li><strong><code>select_column("field")</code></strong> — projects a single column from that subquery, so it can sit where
+a scalar value is expected.</li>
+</ol>
+<p>Here’s the shape, straight from the <code>select_column</code> rustdoc:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>.with_expression("category", |t| {
+    t.get_subquery_as::&lt;Category&gt;("category").unwrap()
+        .select_column("name")
+        .expect("Category has a 'name' column")
+})
+<span class="boring">}</span></code></pre>
+<p>The key difference from the previous chapter: <code>get_ref_as</code> narrows with <code>IN (subquery)</code> to <em>fetch</em>
+related rows; <code>get_subquery_as</code> correlates to <em>embed</em> a related value per row. Same relation
+declaration, two different query shapes.</p>
+<p><code>select_column</code> returns <code>Option&lt;Expression&lt;T::Value&gt;&gt;</code> — <code>None</code> when the field isn’t a column on
+the target table. When the column is hardcoded and known to exist, <code>.expect(...)</code> is the honest
+choice: it panics in development, where you can fix the typo, rather than silently at runtime.</p>
+<h3 id="why-not-a-join"><a class="header" href="#why-not-a-join">Why not a JOIN?</a></h3>
+<p>Vantage composes <em>sets</em>. A correlated scalar subquery keeps the row shape of the source table —
+one row per client, one extra column — with no join-key bookkeeping and no row multiplication
+when a client has ten orders. It also nests arbitrarily, which joins don’t do gracefully. And
+you’re not paying for the nesting: the database’s optimizer flattens a correlated subquery where a
+join would be equivalent.</p>
+<div id="admonition-a-driver-may-still-join" class="admonition admonish-note" role="note" aria-labelledby="admonition-a-driver-may-still-join-title">
+<div class="admonition-title">
+<div id="admonition-a-driver-may-still-join-title">
+<p>A driver may still join</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-a-driver-may-still-join"></a>
+</div>
+
+<div>
+<p>The correlated shape is the contract, not a mandate about execution. Lowering is a per-datasource
+concern, and a driver implementation is free to use a JOIN — or anything else — where that is the
+reliable choice for its engine, as long as the result keeps the source’s row shape: one row per
+source record, the related value as a column.</p>
+</div>
+
+</div>
+
+<h3 id="aggregates-over-a-relation"><a class="header" href="#aggregates-over-a-relation">Aggregates over a relation</a></h3>
+<p><code>get_subquery_as</code> returns a full <code>Table</code>, so the aggregate query-builders work on it:
+<code>get_count_query()</code> and <code>get_sum_query(&amp;col)</code>. Both wrap their output in parentheses, so they nest
+safely inside the outer SELECT.</p>
+<p>Here’s the real thing — verbatim from <code>bakery_model3/src/client.rs</code>, a client table whose
+<code>order_count</code> is computed by the database:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub fn surreal_table(db: SurrealDB) -&gt; Table&lt;SurrealDB, Client&gt; {
+    Table::new("client", db)
+        .with_id_column("id")
+        .with_column_of::&lt;String&gt;("name")
+        .with_column_of::&lt;String&gt;("email")
+        .with_column_of::&lt;String&gt;("contact_details")
+        .with_column_of::&lt;bool&gt;("is_paying_client")
+        .with_one("bakery", "bakery", Bakery::surreal_table)
+        .with_many("orders", "client", Order::surreal_table)
+        .with_expression("order_count", |t| {
+            let orders = t.get_subquery_as::&lt;Order&gt;("orders").unwrap();
+            orders.get_count_query()
+        })
+}
+<span class="boring">}</span></code></pre>
+<p>The generated query has this shape (illustrative):</p>
+<pre><code class="language-sql">SELECT *, (SELECT COUNT(*) FROM order WHERE order.client = client.id) AS order_count
+FROM client
+</code></pre>
+<p>The expression field shows up in <code>ReadableValueSet</code> results alongside the physical columns. To get
+it onto your entity struct, add a matching <code>Option</code> field — it deserializes like any other column.</p>
+<h3 id="composing-expressions-1"><a class="header" href="#composing-expressions-1">Composing expressions</a></h3>
+<p>Expressions can reference other expressions. <code>get_column_expr(name)</code> resolves a name to either a
+real column or a computed expression, so one expression can build on another — a <code>title</code> composed
+of <code>name</code> and a count subquery via <code>concat_!</code>, for instance. All of it renders into a single
+query. The nesting looks redundant on paper, but SQL engines optimize it away; there is no extra
+round trip.</p>
+<p>The Table chapter walks through a concrete title-composition example step by step — see
+<a href="#tables-and-typed-data-access">Working with Tables</a> rather than repeating it here.</p>
+<h3 id="nesting-arbitrary-expressions--select_expression"><a class="header" href="#nesting-arbitrary-expressions--select_expression">Nesting arbitrary expressions — select_expression</a></h3>
+<p><code>select_column</code> is sugar over a more general form. <code>Table::select_expression(expr)</code> wraps <em>any</em>
+expression as a single-column subquery over the table’s source and conditions —
+<code>SELECT &lt;expr&gt; FROM table WHERE …</code> — clearing fields and ordering, since a scalar subquery has
+exactly one output and no meaningful sort.</p>
+<p>This is what lets one correlated subquery nest inside another: a two-hop lookup is
+<code>outer.select_expression( (inner_subquery) )</code>. It is also the machinery under the next chapter’s
+implicit references, which automate exactly this recipe.</p>
+<div id="admonition-cross-backend-enrichment-lives-at-the-dio-layer" class="admonition admonish-info" role="note" aria-labelledby="admonition-cross-backend-enrichment-lives-at-the-dio-layer-title">
+<div class="admonition-title">
+<div id="admonition-cross-backend-enrichment-lives-at-the-dio-layer-title">
+<p>Cross-backend enrichment lives at the Dio layer</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-cross-backend-enrichment-lives-at-the-dio-layer"></a>
+</div>
+
+<div>
+<p>This whole chapter is a SQL/SurrealDB technique — the backend-support contract is on
+<a href="#traversing-sets-and-records">Form 2 of the previous chapter</a>. If you need per-row related values across
+backends that can’t correlate, there’s a different tool for that: augmentation, covered in
+<a href="#relations-and-dio">Relations and Dio</a>.</p>
+</div>
+
+</div>
+
+<h3 id="surrealdb-notes"><a class="header" href="#surrealdb-notes">SurrealDB notes</a></h3>
+<p>SurrealDB’s record links give it a second way to express a related field: a native idiom path.
+<code>client.name</code> on an order traverses the link in place — no subquery at all, and often cheaper.
+The <a href="#implicit-references">implicit references</a> chapter uses exactly that lowering
+automatically.</p>
+<p>Correlated subqueries still work too. The <code>order_count</code> example above runs on SurrealDB as
+written — <code>order.client = client.id</code> correlates through the record link.</p>
+<h3 id="conclusion-1"><a class="header" href="#conclusion-1">Conclusion</a></h3>
+<p>At this point you should be able to:</p>
+<ol>
+<li><strong>Embed a related field</strong> as a computed column — <code>with_expression</code> +
+<code>get_subquery_as::&lt;E2&gt;(relation)</code> + <code>select_column("field")</code>.</li>
+<li><strong>Add relation aggregates</strong> — <code>get_count_query()</code> and <code>get_sum_query(&amp;col)</code> on the subquery
+table.</li>
+<li><strong>Compose expressions</strong> — <code>get_column_expr(name)</code> resolves columns and expressions alike, so
+expressions can build on each other inside one query.</li>
+<li><strong>Nest subqueries</strong> — <code>select_expression(expr)</code> wraps any expression as a scalar subquery, one
+inside another.</li>
+</ol>
+<p>Next: <a href="#implicit-references">Implicit References</a> — the declarative form of everything in this
+chapter’s first half.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="implicit-references"><a class="header" href="#implicit-references">Implicit References</a></h1>
+<p>The previous chapter (<a href="#expressions--subqueries">Expressions &amp; Subqueries</a>) closed with a recipe: take a
+relation, call <code>get_subquery_as</code> to build a correlated subquery for one field, and register it with
+<code>with_expression</code> so it projects as a column. That recipe works, but surfacing a related row’s field
+is common enough to deserve a declarative form.</p>
+<p>That form is a <strong>dotted name</strong> in <code>Table::with_active_columns</code>. Write <code>"client.name"</code> and the table
+traverses the declared <code>has_one</code> relation <code>"client"</code>, imports the target’s <code>name</code> field, and
+projects it as a read-only column aliased under the literal dotted name — no hand-written
+expression. This feature is also called <strong>implicit references</strong>.</p>
+<p>The first segment addresses the relation by its <strong>registry name</strong> — whatever you named it in
+<code>with_one</code> — not by the foreign-key column. <code>bakery_model3</code> declares
+<code>with_one("client", "client_id", …)</code>, so the path is <code>client.name</code> on SQL and SurrealDB alike; a
+model that names its relations after the FK columns would write <code>client_id.name</code> instead. Either
+convention works — the segment just has to match the declared name.</p>
+<p><code>with_active_columns</code> does two jobs at once:</p>
+<ol>
+<li><strong>Plain names restrict projection.</strong> Only the listed columns are selected — useful on its own for
+narrowing wide tables. The id column is always projected regardless.</li>
+<li><strong>Dotted names traverse relations.</strong> Each dot is one <code>has_one</code> hop from the current table to its
+target.</li>
+</ol>
+<h3 id="one-hop-and-two-hops"><a class="header" href="#one-hop-and-two-hops">One hop and two hops</a></h3>
+<p>Using the bakery model from this guide — Orders relate to Client via <code>client_order.client_id</code>, and
+Client relates to Bakery via <code>client.bakery_id</code>, declared as relations <code>"client"</code> and <code>"bakery"</code>
+with <code>with_one</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Plain names restrict projection; dotted names traverse has_one relations.
+let orders = Order::sqlite_table(db).with_active_columns(&amp;[
+    "id",
+    "client_id",
+    "client.name",        // one hop:  client_order -&gt; client
+    "client.bakery.name", // two hops: client_order -&gt; client -&gt; bakery
+])?;
+<span class="boring">}</span></code></pre>
+<p><code>client.name</code> is one hop. <code>client.bakery.name</code> recurses through two — traversal supports an
+arbitrary depth of <code>has_one</code> hops out of the box. On a SQL backend this lowers to nested correlated
+scalar subqueries:</p>
+<pre><code class="language-sql">SELECT id,
+  (SELECT name FROM client WHERE client.id = client_order.client_id) AS "client.name",
+  (SELECT (SELECT name FROM bakery WHERE bakery.id = client.bakery_id)
+     FROM client WHERE client.id = client_order.client_id)           AS "client.bakery.name"
+FROM client_order
+</code></pre>
+<p>The alias is the dotted name itself, so rows come back with a <strong>flat key equal to the dotted name</strong>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>for row in orders.list_values().await?.values() {
+    let get = |k: &amp;str| row.get(k).map(|v| format!("{v}")).unwrap_or_default();
+    println!(
+        "  order {}: client.name={}, client.bakery.name={}",
+        get("id"),
+        get("client.name"),
+        get("client.bakery.name"),
+    );
+}
+<span class="boring">}</span></code></pre>
+<p>There is no nested object to unwrap — <code>row.get("client.bakery.name")</code> is a plain lookup on a flat
+record. The full example lives in <code>bakery_model3/examples/implicit-references.rs</code>; run it with
+<code>cargo run -p bakery_model3 --example implicit-references</code>.</p>
+<h3 id="validation-at-table-construction"><a class="header" href="#validation-at-table-construction">Validation at table construction</a></h3>
+<p>Dotted names are ordinary strings, so the compiler cannot vet them. Instead,
+<code>with_active_columns</code> returns <code>Result</code> and validates everything as it runs — when the table
+definition is constructed, typically in model or startup code, before any query is made. A
+mistake surfaces there, never as a silently empty column at fetch time:</p>
+<ul>
+<li>an unknown column or unknown relation in a dotted name;</li>
+<li>a <code>has_many</code> hop — traversal is <code>has_one</code>-only, because a to-many field is a set, not a value
+(for an aggregate over the set, a count or a sum, use the previous chapter’s
+<code>get_count_query</code>);</li>
+<li>a backend that can lower neither a correlated subquery nor a native path (MongoDB, CSV, REST) —
+its <code>TableSource::supports_traversal</code> is <code>false</code>, and dotted names are refused up front.
+Traversal is also same-datasource only; enriching rows with fields from a <em>different</em>
+datasource belongs to Dio augmentation (<a href="#relations-and-dio">Dio</a>).</li>
+</ul>
+<h3 id="why-not-let-a-bad-dotted-name-fail-at-fetch-time"><a class="header" href="#why-not-let-a-bad-dotted-name-fail-at-fetch-time">Why not let a bad dotted name fail at fetch time?</a></h3>
+<p>Because a fetch-time failure in a projection is invisible. The query still runs, the column comes
+back empty, and nothing tells you whether the relation was misspelled or the data is genuinely
+absent. Constructing the table is the moment you have full knowledge — the relation registry, the
+target’s columns, the backend’s capabilities — so that’s where every check runs.</p>
+<h3 id="read-only-semantics"><a class="header" href="#read-only-semantics">Read-only semantics</a></h3>
+<p>An imported column is a computed projection. No backend can honestly store <code>client.name</code> on the
+<code>client_order</code> table — the value lives in a different row of a different table. So imported columns
+carry write-path enforcement:</p>
+<ul>
+<li>They are flagged <code>calculated</code> in vista metadata, so downstream consumers know the column is
+derived (see <a href="#vista-yaml-and-rhai">Vistas</a>).</li>
+<li>They are <strong>stripped from full-record write payloads</strong> — insert, replace, generated-id insert. A
+read-modify-save round-trip never persists <code>client.name</code> as a real field.</li>
+<li>They are <strong>rejected outright in a <code>patch</code></strong>. A partial payload naming a read-only column is
+explicit intent, and silently dropping it would turn the patch into a successful no-op.</li>
+</ul>
+<p>The key difference: strip vs reject. A full-record payload naturally contains everything you read —
+including imported columns — so stripping them is the correct interpretation. A patch payload
+contains only what you chose to send, so a read-only column there is a mistake worth an error.</p>
+<p>Imported columns are also excluded from quicksearch and (on SurrealDB) not orderable — the dotted
+name is a projection alias, not a physical field.</p>
+<h3 id="per-backend-lowering"><a class="header" href="#per-backend-lowering">Per-backend lowering</a></h3>
+<p>SQL backends lower dotted names through the generic chain: nested correlated scalar subqueries built
+on the same <code>get_subquery_as</code>/<code>select_expression</code> machinery from the previous chapter. A backend
+that already supports that recipe gets implicit references with nothing backend-specific to
+implement.</p>
+<p>SurrealDB overrides <code>TableSource::traversal_path_expr</code> and emits a native <strong>idiom path</strong> instead —
+<code>client.name</code> — with each segment escaped separately. Escaping the joined path as one identifier
+would produce a literal ⟨client.name⟩ field lookup: a dead column that matches nothing. The idiom
+descends each hop’s <strong>link field</strong>, not the relation’s registry name — a relation declared
+<code>with_one("owner", "client", …)</code> still lowers to <code>client.name</code>. Multi-hop comes for free in the
+idiom.</p>
+<h3 id="why-not-just-use-with_expression"><a class="header" href="#why-not-just-use-with_expression">Why not just use with_expression?</a></h3>
+<p>You still can, and sometimes you should. The key difference: reach for <code>with_expression</code> +
+<code>get_subquery_as</code> when you need an <em>arbitrary expression</em> — arithmetic, aggregates, raw escapes.
+Reach for a dotted column when you just want a related field. The dotted form adds what the manual
+recipe can’t:</p>
+<ul>
+<li><strong>Proper errors</strong> — the manual recipe’s checks are <code>Option</code>/<code>unwrap</code> panics (<code>select_column</code>
+returns <code>None</code> for a misspelled column); the dotted form returns <code>Result</code>, with an error naming
+the bad relation, column, cardinality, or backend.</li>
+<li><strong>A typed imported column</strong> — the definition is cloned from the target’s column, so type metadata
+travels with it.</li>
+<li><strong>Enforced read-only write semantics</strong> — a <code>with_expression</code> column has no write-path story at
+all.</li>
+</ul>
+<h3 id="gotchas"><a class="header" href="#gotchas">Gotchas</a></h3>
+<ul>
+<li><code>Table::derive_from</code> does not inherit implicit references. A derived table starts with no active
+set, and listing an imported dotted column in its column inheritance copies only a bare
+definition. Re-declare the dotted names on the derived table.</li>
+<li>Columns added after <code>with_active_columns</code> are not in the active set and won’t project — declare
+the active set last.</li>
+<li>Expression-only columns (registered via <code>with_expression</code> with no column definition) may be named
+in the active set; they stay projected.</li>
+<li>Same-datasource only, by design — see <a href="#relations-and-dio">Dio</a> for the cross-datasource alternative.</li>
+</ul>
+<h3 id="conclusion-2"><a class="header" href="#conclusion-2">Conclusion</a></h3>
+<p>At this point you should be able to:</p>
+<ol>
+<li><strong>Restrict projection</strong> with plain names in <code>with_active_columns</code> (the id column always
+projects).</li>
+<li><strong>Import related fields</strong> with dotted names — one hop or many, over declared <code>has_one</code> relations.</li>
+<li><strong>Read them back</strong> via flat keys equal to the dotted name.</li>
+<li><strong>Predict every construction-time error</strong> — unknown column, unknown relation, <code>has_many</code> hop,
+backend without traversal support.</li>
+<li><strong>Explain the write-path semantics</strong> — stripped from full-record writes, rejected in a patch.</li>
+<li><strong>Choose the right tool</strong> — dotted column for a related field, <code>with_expression</code> for an arbitrary
+expression.</li>
+</ol>
+<p>The next page, <a href="#vista-yaml-and-rhai">Vista, YAML and Rhai</a>, covers how the same declarations work from
+YAML specs, and how the <code>calculated</code> flag and the <code>can_traverse_in_columns</code> capability surface at
+the erased layer.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="vista-yaml-and-rhai"><a class="header" href="#vista-yaml-and-rhai">Vista, YAML and Rhai</a></h1>
+<p>Everything so far assumed you could write <code>Table&lt;SqliteDB, Order&gt;</code> in your source code. Generic
+consumers can’t. A UI grid, an admin panel, a scripting surface, a config-driven tool — none of
+them know your model types at compile time. What they hold is a <code>Vista</code>: the schema-bearing
+runtime handle introduced in <a href="#vista--the-universal-data-handle">the Vista chapter</a>.</p>
+<p>The question this page answers: what happens to relations when the type is erased? The answer is
+that they survive in three forms:</p>
+<ol>
+<li><strong>Metadata</strong> — the relation names, targets, and cardinalities are introspectable, so a
+consumer can discover them at runtime.</li>
+<li><strong>Traversal</strong> — <code>get_ref</code> still works. Hand it a loaded row, get back a new <code>Vista</code> narrowed
+to the related rows.</li>
+<li><strong>Capabilities</strong> — an honest contract about which traversal forms this backend actually
+serves, so a consumer knows what to offer before trying.</li>
+</ol>
+<h3 id="the-factory"><a class="header" href="#the-factory">The factory</a></h3>
+<p>A <code>Vista</code> is never constructed by hand — construction goes through a <strong>vista factory</strong> (the
+<code>VistaFactory</code> trait, covered in
+<a href="#step-8-vista-integration">Vista integration</a>). The factory’s defining
+ability is working <strong>by name</strong>: where typed code passes <code>User::table(db)</code>, a generic consumer
+asks for <code>"users"</code> and gets a Vista back. How the name resolves is the factory’s business —
+typically it loads table specs from files — and that indirection is what lets config-driven
+tools, scripts, and by-name traversal address models they have no Rust types for.</p>
+<p>Behind a name, a vista is built one of two ways:</p>
+<ol>
+<li>
+<p><strong>From a typed table</strong> — <code>from_table</code> wraps the table your model already builds:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let vistas = vec![
+    db.vista_factory().from_table(Client::surreal_table(db.clone()))?,
+    sqlite.vista_factory().from_table(Product::sqlite_table(sqlite.clone()))?,
+    csv.vista_factory().from_table(Order::csv_table(csv.clone()))?,
+];
+<span class="boring">}</span></code></pre>
+</li>
+<li>
+<p><strong>From a YAML spec</strong> — no Rust model at all: columns, relations, and computed fields declared
+as data (<a href="#config-driven-vistas-yaml--rhai">Config-Driven Vistas</a>). This path is how the
+declarations in the last section of this page become live, traversable relations. A spec’s
+<em>source</em> doesn’t have to be a physical table, either — a <code>rhai:</code> block builds it from a query
+(a query-sourced vista), and a <code>base:</code> block derives it from another spec.</p>
+</li>
+</ol>
+<p>Whichever route constructs it, the factory folds the table’s relations into <code>VistaMetadata</code> —
+name, target, cardinality, foreign key. The erased handle carries enough to introspect the
+relations and to traverse them. Nothing about the relation is lost in the erasure; only the
+compile-time names are.</p>
+<h3 id="metadata-introspecting-relations"><a class="header" href="#metadata-introspecting-relations">Metadata: introspecting relations</a></h3>
+<p><code>Vista</code> exposes the relation metadata directly:</p>
+<ul>
+<li><code>get_references() -&gt; Vec&lt;String&gt;</code> — the relation names.</li>
+<li><code>list_references() -&gt; Vec&lt;(String, ReferenceKind)&gt;</code> — names paired with cardinality
+(<code>ReferenceKind::HasOne</code> / <code>HasMany</code>).</li>
+<li><code>get_reference(name) -&gt; Option&lt;&amp;Reference&gt;</code> — the full reference entry.</li>
+<li><code>list_contained()</code> — contained (embedded) relations with their kind.</li>
+</ul>
+<p>This is what lets a UI render relation tabs or context-menu entries without knowing the model.
+<code>list_references</code> tells it “orders (has_many), country (has_one)” — enough to label a tab and
+decide whether the target is a single row or a set — and it learned that from the handle, not
+from your source code.</p>
+<h3 id="traversal-get_ref-on-a-loaded-row"><a class="header" href="#traversal-get_ref-on-a-loaded-row">Traversal: get_ref on a loaded row</a></h3>
+<p>The erased twin of the typed <code>get_ref_from_row</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub fn get_ref(&amp;self, relation: &amp;str, row: &amp;Record&lt;CborValue&gt;) -&gt; Result&lt;Vista&gt;
+<span class="boring">}</span></code></pre>
+<p>Hand it a loaded row — <code>Record&lt;CborValue&gt;</code> is the erased record type — and get back a new <code>Vista</code>
+narrowed to the related rows. The relation is named by string because that’s all a generic
+consumer has; the metadata folded in by the factory supplies the target and foreign key.</p>
+<p>There is also <code>get_ref_target(relation) -&gt; Result&lt;Vista&gt;</code> — the bare, unconditioned target. This
+is the insert destination for nested creates: when a UI wants to add a related row, it needs the
+target table without any narrowing applied.</p>
+<p>Both return <code>Vista</code>, so traversal chains and the consumer never leaves the erased world. A grid
+that drills from clients into orders into line items is calling <code>get_ref</code> three times, each time
+holding nothing more specific than a <code>Vista</code> and a row.</p>
+<div id="admonition-record-ids-that-round-tripped-through-json" class="admonition admonish-info" role="note" aria-labelledby="admonition-record-ids-that-round-tripped-through-json-title">
+<div class="admonition-title">
+<div id="admonition-record-ids-that-round-tripped-through-json-title">
+<p>Record ids that round-tripped through JSON</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-record-ids-that-round-tripped-through-json"></a>
+</div>
+
+<div>
+<p>At the erased layer, SurrealDB record ids travel as strings (<code>"table:key"</code>). The backend coerces
+a string-shaped record id back into a typed record id when narrowing, so a row that round-tripped
+through JSON or a script still traverses correctly.</p>
+</div>
+
+</div>
+
+<h3 id="the-scripting-surface"><a class="header" href="#the-scripting-surface">The scripting surface</a></h3>
+<p>The same traversal is exposed to Rhai data scripts (the <code>vantage-vista</code> rhai feature). A script
+holding a row can hop a relation:</p>
+<pre><code class="language-rhai">let t = table("tag");
+let row = t.get_some();
+let course = t.get_ref("golf_course", row);
+</code></pre>
+<p>There’s no separate scripting implementation here — the erased <code>Vista</code> is what the script engine
+wraps, and <code>get_ref</code> there follows the same metadata.</p>
+<h3 id="capabilities-the-honest-contract"><a class="header" href="#capabilities-the-honest-contract">Capabilities: the honest contract</a></h3>
+<p>Not every backend serves every traversal form — the <a href="#traversing-sets-and-records">traversal chapter</a> already
+showed that set-level traversal needs subqueries. At the typed layer, you knew that when you wrote
+the code. At the erased layer, the consumer has to ask. That’s what <code>VistaCapabilities</code> is for.
+The flags relevant to relations:</p>
+<ul>
+<li><code>can_traverse_to_record</code> — “Record-level reference traversal via <code>get_ref(relation, row)</code> —
+read the join value out of a known row and narrow the target with a plain eq-condition. Every
+backend that can filter by equality supports this (SQL, CSV, Mongo, Surreal, REST/GraphQL).”</li>
+<li><code>can_traverse_to_set</code> — “Set-level reference traversal — narrow the target with an
+<code>IN (subquery)</code> derived from the parent’s own conditions (the <code>get_ref_as</code> / reports path).
+Requires the backend to support subqueries; SQL and SurrealDB do, CSV/Mongo/REST do not.”</li>
+<li><code>can_build_ref_via_script</code> — “Per-reference Rhai-scripted traversal — a reference carrying a
+<code>build_script</code> resolves through the script engine … rather than the fixed FK eq-condition
+path.”</li>
+<li><code>can_traverse_in_columns</code> — whether the backend can lower a dotted active column
+(<code>country.name</code>) into its own query; <code>true</code> for SQL and SurrealDB shells, <code>false</code> for
+CSV/Mongo/REST.</li>
+</ul>
+<p>Consumers branch on these before offering the corresponding affordance: a report builder checks
+<code>can_traverse_to_set</code> before offering set-level aggregation; a grid checks
+<code>can_traverse_in_columns</code> before letting the user add a dotted column. The flags are also
+readable by name (<code>capability_flag("can_traverse_to_set")</code>) and appear in the rhai capabilities
+map, so scripts and config-driven tools can branch the same way.</p>
+<h3 id="across-datasources-the-vistacatalog"><a class="header" href="#across-datasources-the-vistacatalog">Across datasources: the VistaCatalog</a></h3>
+<p>Everything above stays inside one datasource — a <code>Vista</code>’s references forward to the wrapped
+table, and a single Vista deliberately knows nothing about <em>other</em> datasources. Cross-persistence
+traversal lives one layer up, in the <code>VistaCatalog</code> (<code>vantage-vista-factory</code>): a name → Vista
+catalog spanning many datasources, plus reference traversal between the models it holds.</p>
+<p>You register models by name — each as a <code>ModelLoader</code> closure that builds a fresh, unconditioned
+Vista, from whichever backend backs it — and then register relations <em>between</em> catalog models:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut cat = VistaCatalog::new();
+cat.register("client", Arc::new(|| /* build the client Vista — one datasource */));
+cat.register("bakery", Arc::new(|| /* build the bakery Vista — possibly another */));
+
+cat.register_relation(
+    "client",
+    Relation::single_key("bakery", "bakery", ReferenceKind::HasOne, "id", "bakery_id"),
+);
+
+// From a loaded client row, traverse into the (possibly foreign) bakery model:
+let bakery = cat.traverse(&amp;cat.relations_for("client")[0], &amp;client_row)?;
+<span class="boring">}</span></code></pre>
+<p>A <code>Relation</code> is a single-key (<code>target.foreign_key == parent_row[narrow_via]</code>) or multi-key join
+description; <code>traverse</code> builds the target by name and pushes one eq-condition per key. How each
+condition is honoured — SQL <code>WHERE</code>, in-memory filter, REST path/query param — is the target
+driver’s concern at fetch time.</p>
+<p><code>traverse_from</code> is the unified entry point: it prefers the parent Vista’s own
+<strong>same-persistence</strong> reference when the shell declares it and advertises
+<code>can_traverse_to_record</code> (that path stays entirely inside one driver), and otherwise falls back
+to a registered <strong>cross-persistence</strong> <code>Relation</code>. The catalog is also what the Dio layer’s
+augmentation uses to resolve its detail sources — the <a href="#relations-and-dio">next page</a> picks that up.</p>
+<h3 id="declaring-relations-in-yaml-and-rhai"><a class="header" href="#declaring-relations-in-yaml-and-rhai">Declaring relations in YAML and Rhai</a></h3>
+<p>Config-driven vistas (full chapter: <a href="#config-driven-vistas-yaml--rhai">Config-driven vistas</a>) declare
+relations in the table spec — either as column-level sugar or a top-level map. The factory reads
+the spec, registers the relations, and the resulting <code>Vista</code> traverses them exactly like one built
+<code>from_table</code>:</p>
+<pre><code class="language-yaml">columns:
+  - name: batch
+    type: string
+    references: batch        # sugar: has_one to table "batch", FK = this column
+  - name: batch.name         # implicit reference through that relation
+    type: string
+    optional: true
+references:
+  tags:
+    table: tag
+    kind: has_many
+    foreign_key: batch
+</code></pre>
+<p>The column-level <code>references: batch</code> sugar names the relation after the <em>target table</em>, which is
+the common case. The full form (<code>references: { table, kind, foreign_key, name }</code>) can name it
+differently — you need that when two relations point at the same table.</p>
+<p>When a relation needs more than a plain foreign-key match — extra conditions, ordering, a search —
+give the reference a <code>rhai:</code> build script:</p>
+<pre><code class="language-yaml">references:
+  recent_orders:
+    table: order
+    kind: has_many
+    foreign_key: client
+    rhai: |
+      table("order").add_condition_eq("client", row.id).add_order("created_at", "desc")
+</code></pre>
+<p>The script runs lazily when the relation is traversed, with the parent record in scope as <code>row</code>,
+and must return a Vista — start it with <code>table("&lt;name&gt;")</code> and chain the conventional verbs
+(<code>add_condition_eq</code>, <code>add_order</code>, <code>add_search</code>, <code>set_page_size</code>, <code>with_id</code>). Without <code>rhai:</code>, the
+relation falls back to the plain <code>foreign_key</code> match. This is the <code>can_build_ref_via_script</code> path
+from the capabilities list — the reference resolves through the script engine instead of the
+fixed eq-condition.</p>
+<p>Imported dotted columns — like <code>batch.name</code> above, the YAML form of
+<a href="#implicit-references">implicit references</a> — go through the same traversal import as the
+Rust API, with the same construction-time validation: a bad dotted column fails the spec load,
+not the first fetch. They arrive in metadata flagged <code>calculated</code>. That flag means read-only for
+consumers: the value comes from a traversal, not from a column you can write. This is how a UI
+knows not to offer editing on them.</p>
+<p>The key difference: at the typed layer <em>you</em> know which traversal forms are safe — you wrote the
+code against a backend you chose. At the erased layer, the <em>capabilities</em> say so. Same relations,
+discovered instead of known.</p>
+<h3 id="conclusion-3"><a class="header" href="#conclusion-3">Conclusion</a></h3>
+<p>At this point you should be able to:</p>
+<ol>
+<li><strong>Enumerate a Vista’s relations</strong> — <code>get_references</code>, <code>list_references</code> with cardinality,
+<code>get_reference</code> for the full entry, <code>list_contained</code> for embedded relations.</li>
+<li><strong>Traverse from a loaded erased row</strong> — <code>get_ref(relation, row)</code> returns a narrowed <code>Vista</code>;
+<code>get_ref_target(relation)</code> returns the bare target for nested creates.</li>
+<li><strong>Branch on the four traversal capabilities</strong> — <code>can_traverse_to_record</code>,
+<code>can_traverse_to_set</code>, <code>can_build_ref_via_script</code>, <code>can_traverse_in_columns</code> — before
+offering an affordance.</li>
+<li><strong>Traverse across datasources</strong> — register models and <code>Relation</code>s on a <code>VistaCatalog</code>;
+<code>traverse_from</code> prefers the same-persistence reference and falls back to the catalog join.</li>
+<li><strong>Declare relations in YAML and Rhai</strong> — column-level <code>references:</code> sugar, the full top-level
+form, implicit dotted columns through a relation, and <code>rhai:</code> build scripts for traversals
+that need more than an FK match — all consumed by the same vista factory that wraps typed
+tables.</li>
+<li><strong>Explain why <code>calculated</code> columns are read-only</strong> in generic UIs — their values come from
+traversal, not from a writable column.</li>
+</ol>
+<p>Next: <a href="#relations-and-dio">what happens above the Vista</a> — combining erased handles across backends.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="relations-and-dio"><a class="header" href="#relations-and-dio">Relations and Dio</a></h1>
+<p>Everything in this guide so far has executed at or below the Vista: typed relations on the Table,
+traversal narrowing, subquery expressions, implicit references. This final chapter climbs one layer
+higher. A <code>Dio</code> keeps a live local copy of a data segment (a cache), reads through a <code>Lens</code>,
+announces changes on an event bus, and serves reactive views (<code>Scenery</code>). You built one in the intro
+paths (<a href="#dio--lens-over-sql">Dio over SQL</a>, <a href="#scenery--reactive-views">Scenery</a>).</p>
+<p>Two questions matter here: what happens to the relation machinery you already know once a Dio sits
+on top — and what relation shape exists <em>only</em> at the Dio layer, because nothing below it can
+express one.</p>
+<h3 id="same-persistence-relations-resolve-beneath-the-dio"><a class="header" href="#same-persistence-relations-resolve-beneath-the-dio">Same-persistence relations resolve beneath the Dio</a></h3>
+<p>Traversal, subquery expressions, and implicit references all happen in the Table or Vista <em>under</em>
+the Dio. The Dio caches the resulting rows like any others. If your table declares
+<code>with_active_columns(&amp;["id", "client.name"])</code>, the <code>client.name</code> column is already part of each row
+when it enters the cache — nothing at the Dio layer knows or cares that it was traversed. From the
+cache’s point of view, a traversed column and a plain column are indistinguishable.</p>
+<p>The practical consequence is the master/detail pattern in a UI: <strong>traverse at the Vista, cache at
+the Dio</strong>. Take a row from the cached master, call <code>Vista::get_ref(relation, row)</code> to build the
+narrowed detail Vista — the same erased traversal from the <a href="#vista-yaml-and-rhai">Vistas chapter</a>, or
+<code>VistaCatalog::traverse_from</code> when the detail may live in another datasource — and put a
+Dio in front of <em>that</em> for the detail pane. Each narrowed detail set gets its own cache entry, so
+switching between master rows switches between already-cached detail sets rather than re-narrowing
+one shared cache.</p>
+<h3 id="the-join-the-layers-below-cannot-express"><a class="header" href="#the-join-the-layers-below-cannot-express">The join the layers below cannot express</a></h3>
+<p>The <a href="#vista-yaml-and-rhai"><code>VistaCatalog</code></a> can already <em>navigate</em> across datasources — hand it a parent row
+and it returns the related set from another backend. What nothing below the Dio can do is <em>merge</em>:
+show master rows whose columns come from two sources at once. That is a join, and joins are
+governed by the capability contract — a SQL Vista can join its own tables, a REST Vista cannot,
+and two different backends can never push a join down to either engine. A Vista also has nowhere
+to put stitched rows: no cache, no viewport, no notion of “only visible rows pay”.</p>
+<p>Where the backend can’t, the layer above fills the gap — that is the whole job of the Dio.
+<strong>Augmentation wires two Vistas into one <code>Dio</code></strong>: a <em>master</em> that is listed, and a <em>detail</em> source
+loaded one row at a time and merged on top. The detail is resolved by name through the
+<code>VistaCatalog</code>, so it is persistence-agnostic — a REST master enriched by a <code>cmd</code> detail, or a SQL
+master enriched from another database.</p>
+<p>It runs in two passes:</p>
+<ol>
+<li><strong>List pass</strong> — the master is listed cheaply; each row enters the cache marked <code>Incomplete</code>.</li>
+<li><strong>Detail pass</strong> — viewport-driven: for each <em>visible</em> incomplete row, the augmentation resolves
+its detail Vista, fetches the matching record, merges the chosen columns, and the row flips to
+<code>Fresh</code>.</li>
+</ol>
+<p>Rows off-screen are never fetched; hydrated rows are never re-fetched. A failed detail fetch marks
+only that row.</p>
+<h3 id="declaring-an-augmentation"><a class="header" href="#declaring-an-augmentation">Declaring an augmentation</a></h3>
+<p>Augmentations are configured on the <code>Lens</code>. The catalog is what makes the detail side resolvable by
+name; supplying at least one augmentation is what engages the two-pass behavior:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let lens = Lens::new()
+    .cache_at(cache_path)
+    .catalog(catalog)                       // resolves `table:` names
+    .augment(vec![augmentation])            // ≥1 engages two-pass
+    .build()?;
+<span class="boring">}</span></code></pre>
+<p>Each augmentation answers four questions — which detail Vista, how a master row selects its detail,
+how it is fetched, and which columns to lift:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>Augmentation {
+    table:  "tfstate_detail".into(),  // catalog name of the detail Vista
+    source: Source::Column { from: "key".into(), to: None },
+    fetch:  Fetch::PerRow,
+    merge:  MergeRule { columns: vec!["resources".into(), "serial".into()] },
+}
+<span class="boring">}</span></code></pre>
+<ul>
+<li><code>source</code> picks how a master row selects its detail: <code>Source::Id</code> matches master.id → detail.id;
+<code>Source::Column { from, to }</code> matches <code>master[from]</code> → <code>detail[to]</code>, or detail.id when <code>to</code> is <code>None</code>;
+<code>Source::Build(closure)</code> performs arbitrary narrowing from the whole row, and is per-row only.</li>
+<li><code>fetch</code> picks how the detail is read: <code>Fetch::PerRow</code> today; <code>Batched</code> is planned.</li>
+<li><code>merge.columns</code> lists the detail columns to lift. Empty means all; on a name clash the detail
+wins.</li>
+</ul>
+<p>The same declaration works from YAML:</p>
+<pre><code class="language-yaml">augment:
+  - table: tfstate_detail
+    source: { kind: column, from: key }
+    fetch:  { kind: per_row }
+    merge:  [resources, serial, outputs]
+</code></pre>
+<div id="admonition-script-sources" class="admonition admonish-info" role="note" aria-labelledby="admonition-script-sources-title">
+<div class="admonition-title">
+<div id="admonition-script-sources-title">
+<p>Script sources</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-script-sources"></a>
+</div>
+
+<div>
+<p>A <code>{ kind: script, code: "self.add_condition_eq(\"key\", row.key)" }</code> source lowers (under the
+<code>rhai</code> feature) to a <code>Build</code> closure — the same machinery as a reference build-script, pointed at a
+possibly different persistence.</p>
+</div>
+
+</div>
+
+<p>To see the two passes run, try the example — two in-memory Vistas, list pass then detail pass:</p>
+<pre><code>cargo run -p vantage-diorama --example augmentation
+</code></pre>
+<p>The full treatment of augmentation — merge rules, capability reasoning, the planned <code>Batched</code> fetch
+and keyed caching — is in the <a href="#augmentation">Augmentation chapter</a>; the tutorial form is
+<a href="#augmentation--enriching-rows">intro step 6</a>.</p>
+<h3 id="why-not-model-the-detail-as-a-foreign-key-relation"><a class="header" href="#why-not-model-the-detail-as-a-foreign-key-relation">Why not model the detail as a foreign-key relation?</a></h3>
+<p>A relation resolves <em>within</em> one persistence and can be pushed down as a join. The detail here may
+be a different backend entirely; there is nothing to join on and no engine that could honour it.
+Augmentation is the cross-Vista form, stitched by the Dio.</p>
+<h3 id="choosing-between-implicit-references-and-augmentation"><a class="header" href="#choosing-between-implicit-references-and-augmentation">Choosing between implicit references and augmentation</a></h3>
+<p>Both produce the same user-visible result: a row enriched with related fields. Which one to use
+depends on where the data lives and who should pay for the fetch.</p>
+<h4 id="path-a-implicit-references-same-datasource-in-query"><a class="header" href="#path-a-implicit-references-same-datasource-in-query">Path A: implicit references (same datasource, in-query)</a></h4>
+<p>One query; the backend does the work. The value is present on every row, including off-screen ones,
+it is validated when the table is constructed, and it carries read-only column semantics. Choose
+this when both
+tables live in one datasource that supports traversal (SQL, SurrealDB) — see
+<a href="#implicit-references">Implicit References</a>.</p>
+<h4 id="path-b-augmentation-any-two-datasources-per-row-client-side-join"><a class="header" href="#path-b-augmentation-any-two-datasources-per-row-client-side-join">Path B: augmentation (any two datasources, per-row client-side join)</a></h4>
+<p>Two passes; expensive work follows the user’s attention — only viewport rows pay, and only once.
+It works across arbitrary backends, and failed details degrade per-row, not per-page. Choose this
+when the sources differ, or when the detail is expensive and you want viewport-driven hydration
+even within one backend.</p>
+<p>The key difference: implicit references push the join <em>down</em> into the engine; augmentation lifts it
+<em>up</em> into the cache. Same user-visible result — a row enriched with related fields — chosen by where
+the data lives and who should pay for the fetch.</p>
+<h3 id="guide-conclusion"><a class="header" href="#guide-conclusion">Guide conclusion</a></h3>
+<p>This closes the Relations &amp; Traversal guide. At this point you should be able to:</p>
+<ol>
+<li><strong>Say where each relation form executes</strong> — traversal and implicit references in the engine,
+erased traversal through the Vista handle, augmentation in the Dio’s cache.</li>
+<li><strong>Build master/detail</strong> — <code>Vista::get_ref(relation, row)</code> for the narrowed detail Vista, with a
+Dio (and its own cache entry) per detail set.</li>
+<li><strong>Declare an augmentation</strong> — catalog + source + fetch + merge — in Rust or YAML.</li>
+<li><strong>Choose deliberately</strong> between implicit references and augmentation based on where the data
+lives and who should pay for the fetch.</li>
+</ol>
+<p>Relations in Vantage are declared once on the model and then travel — into queries, through
+erasure, and up into the cache — each layer serving the form the one below can’t.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="model-driven-architecture"><a class="header" href="#model-driven-architecture">Model-Driven Architecture</a></h1>
 <p>Vantage is opinionated about how you structure business software. The framework prescribes a
@@ -7274,7 +8530,9 @@ payload naming a read-only column is explicit intent, and silently dropping it w
 into a successful no-op.
 This is the declarative counterpart to the manual <code>with_expression</code> + <code>get_subquery_as</code> recipe above —
 reach for <code>with_expression</code> when you need an arbitrary expression, and a dotted column when you just
-want a related field.</p>
+want a related field. The full treatment — traversal forms, validation, write semantics, per-backend
+lowering, and how relations surface on Vistas and Dio — is the
+<a href="#relations--traversal">Relations &amp; Traversal</a> guide.</p>
 <hr>
 <h2 id="connection-management"><a class="header" href="#connection-management">Connection management</a></h2>
 <p>The model crate owns database connections. <code>bakery_model3</code> uses a <code>OnceLock&lt;SurrealDB&gt;</code> pattern for
@@ -7663,7 +8921,7 @@ compiles to native queries.</p>
 <li><a href="#4-scripted-reference-traversal--reference-level-rhai-surrealdb">4. Scripted reference traversal — reference-level <code>rhai:</code> (SurrealDB)</a></li>
 </ul>
 </li>
-<li><a href="#contained-relations">Contained relations</a></li>
+<li><a href="#contained-relations-1">Contained relations</a></li>
 <li><a href="#cross-persistence-the-vistacatalog">Cross-persistence: the VistaCatalog</a></li>
 <li><a href="#sealed-at-runtime-data-scripts">Sealed at runtime: data scripts</a></li>
 <li><a href="#choosing-a-path">Choosing a path</a></li>
@@ -7910,7 +9168,7 @@ transform, or traversal needs an expression. A spec with no Rhai in it works on 
 </div>
 
 <hr>
-<h2 id="contained-relations"><a class="header" href="#contained-relations">Contained relations</a></h2>
+<h2 id="contained-relations-1"><a class="header" href="#contained-relations-1">Contained relations</a></h2>
 <p>Embedded objects and arrays — an order’s <code>lines</code>, a JSON column — declare as a <code>contained:</code>
 section and surface as editable sub-vistas:</p>
 <pre><code class="language-yaml">name: order
@@ -9315,7 +10573,7 @@ without <code>vantage-vista</code> in their tree.</p>
 module for the <code>AnyTable</code> path, and the source reuses it. MongoDB’s <code>bson::Bson</code> needs a richer
 bridge (ObjectId, DateTime, Timestamp, Decimal128 each have lossy paths) so it gets a dedicated
 file. Pick whichever fits — the trait shape doesn’t change either way.</p>
-<h3 id="the-factory"><a class="header" href="#the-factory">The factory</a></h3>
+<h3 id="the-factory-1"><a class="header" href="#the-factory-1">The factory</a></h3>
 <p>Drivers expose a <code>vista_factory()</code> inherent method on the data source struct, so users construct
 factories without naming an extra type:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]

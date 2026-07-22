@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Serving &amp; Watching Live Stock - Vantage Framework</title>
+        <title>Expressions &amp; Subqueries - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,111 +175,155 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="serving--watching-live-stock"><a class="header" href="#serving--watching-live-stock">Serving &amp; Watching Live Stock</a></h1>
-<p>Last chapter left a <code>Dio</code> holding a live copy of the <code>product</code> table. Now we put it behind HTTP —
-using the <strong>same adapter the S3 path uses</strong>. <code>DioRouter</code> neither knows nor cares that its Dio is backed
-by SQL instead of S3; it binds a Dio to a pair of routes, GET and watch, and that is all it needs.</p>
+                        <h1 id="expressions--subqueries"><a class="header" href="#expressions--subqueries">Expressions &amp; Subqueries</a></h1>
+<p>The previous chapter used relations to <em>fetch</em> related rows — traverse from a client to their
+orders, get the orders back as a set. This chapter uses relations <em>inside</em> a query: a client row
+that carries its own order count, computed by the database, delivered as just another column.</p>
+<p>The recipe has three parts:</p>
+<ol>
+<li><strong><code>Table::with_expression(name, |t| …)</code></strong> — adds a computed field to the table. It’s evaluated
+as part of the SELECT, alongside the physical columns.</li>
+<li><strong><code>Table::get_subquery_as::&lt;E2&gt;(relation)</code></strong> — builds the relation’s target table with a
+<strong>correlated condition</strong>. For the clients → orders relation that condition is
+<code>client_order.client_id = client.id</code> — the direction is always <code>target.&lt;id&gt; = source.&lt;fk&gt;</code>,
+supplied by the backend through <code>TableSource::related_correlated_condition</code>. This table is
+explicitly designed for embedding as a scalar subquery.</li>
+<li><strong><code>select_column("field")</code></strong> — projects a single column from that subquery, so it can sit where
+a scalar value is expected.</li>
+</ol>
+<p>Here’s the shape, straight from the <code>select_column</code> rustdoc:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>use vantage_api_adapters::axum_dio::DioRouter;
-
-let api = DioRouter::new(dio.clone())
-    .with_column("name", "name")
-    .with_column("price", "price")
-    .with_column("stock", "stock")
-    .with_page_size(50)
-    .into_router();
-
-let app = axum::Router::new().nest("/api/products", api);
-axum::serve(listener, app).await?;
+</span>.with_expression("category", |t| {
+    t.get_subquery_as::&lt;Category&gt;("category").unwrap()
+        .select_column("name")
+        .expect("Category has a 'name' column")
+})
 <span class="boring">}</span></code></pre>
-<p>A plain <code>GET</code> is the cache, answered instantly — never a query against SQLite:</p>
-<pre><code class="language-text">$ curl 'localhost:3008/api/products?offset=0&amp;limit=10'
-{"total":5,"offset":0,"limit":10,"items":[
-  {"index":0,"name":"Espresso","price":280,"stock":12},
-  {"index":1,"name":"Cappuccino","price":340,"stock":8},
-  {"index":2,"name":"Cold Brew","price":420,"stock":5},
-  {"index":3,"name":"Croissant","price":260,"stock":6},
-  {"index":4,"name":"Cheesecake","price":520,"stock":2}]}
-</code></pre>
-<h2 id="a-till-to-make-it-move"><a class="header" href="#a-till-to-make-it-move">A till to make it move</a></h2>
-<p>A cache over a table nobody writes is just a slow constant. To see the reactive stack work, the
-data has to change — so the app runs a <strong>till</strong>: a background task that sells one unit of a random
-product every 800ms, removes anything that sells out, and every so often takes a delivery. These
-are ordinary SQL writes, on the same connection the master reads from:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// src/sim.rs — the interesting line
-sqlx::query(
-    "UPDATE product SET stock = stock - 1
-     WHERE id = (SELECT id FROM product WHERE stock &gt; 0 ORDER BY RANDOM() LIMIT 1)",
-)
-.execute(db.pool())
-.await?;
-<span class="boring">}</span></code></pre>
-<p>The server itself never calls the till and the till never calls the server. They meet only through
-the database and the once-a-second reconcile — which is precisely the point: <strong>any</strong> writer, in any
-process, moves the shelf. The <code>sqlite3</code> CLI will do just as well, as we’ll see.</p>
-<h2 id="the-watch"><a class="header" href="#the-watch">The watch</a></h2>
-<p><code>curl -N</code> holds the connection open. The page arrives as <code>ADDED</code> lines — the current shelf — and
-then every sale streams back as a <code>MODIFIED</code> line the moment the reconcile picks it up:</p>
-<pre><code class="language-text">$ curl -N 'localhost:3008/api/products?watch=true'
-{"type":"ADDED","object":{"index":0,"name":"Espresso","price":280,"stock":12}}
-{"type":"ADDED","object":{"index":1,"name":"Cappuccino","price":340,"stock":8}}
-{"type":"ADDED","object":{"index":2,"name":"Cold Brew","price":420,"stock":5}}
-{"type":"ADDED","object":{"index":3,"name":"Croissant","price":260,"stock":6}}
-{"type":"ADDED","object":{"index":4,"name":"Cheesecake","price":520,"stock":2}}
-{"type":"MODIFIED","object":{"index":4,"name":"Cheesecake","price":520,"stock":1}}
-{"type":"MODIFIED","object":{"index":2,"name":"Cold Brew","price":420,"stock":4}}
-{"type":"MODIFIED","object":{"index":0,"name":"Espresso","price":280,"stock":9}}
-</code></pre>
-<p>That is the reactive stack running over SQL, end to end: a SQL write, reconciled into the cache, a
-<code>DatasetChanged</code> event, a scenery re-derive, a diff against what this connection last saw, one
-NDJSON line on the wire. Nothing in that chain is specific to SQL — it is the same machinery the
-S3 path serves the NOAA bucket with.</p>
-<div id="admonition-two-events-not-three" class="admonition admonish-note" role="note" aria-labelledby="admonition-two-events-not-three-title">
+<p>The key difference from the previous chapter: <code>get_ref_as</code> narrows with <code>IN (subquery)</code> to <em>fetch</em>
+related rows; <code>get_subquery_as</code> correlates to <em>embed</em> a related value per row. Same relation
+declaration, two different query shapes.</p>
+<p><code>select_column</code> returns <code>Option&lt;Expression&lt;T::Value&gt;&gt;</code> — <code>None</code> when the field isn’t a column on
+the target table. When the column is hardcoded and known to exist, <code>.expect(...)</code> is the honest
+choice: it panics in development, where you can fix the typo, rather than silently at runtime.</p>
+<h3 id="why-not-a-join"><a class="header" href="#why-not-a-join">Why not a JOIN?</a></h3>
+<p>Vantage composes <em>sets</em>. A correlated scalar subquery keeps the row shape of the source table —
+one row per client, one extra column — with no join-key bookkeeping and no row multiplication
+when a client has ten orders. It also nests arbitrarily, which joins don’t do gracefully. And
+you’re not paying for the nesting: the database’s optimizer flattens a correlated subquery where a
+join would be equivalent.</p>
+<div id="admonition-a-driver-may-still-join" class="admonition admonish-note" role="note" aria-labelledby="admonition-a-driver-may-still-join-title">
 <div class="admonition-title">
-<div id="admonition-two-events-not-three-title">
-<p>Two events, not three</p>
+<div id="admonition-a-driver-may-still-join-title">
+<p>A driver may still join</p>
 </div>
 
-<a class="admonition-anchor-link" href="#admonition-two-events-not-three"></a>
+<a class="admonition-anchor-link" href="#admonition-a-driver-may-still-join"></a>
 </div>
 
 <div>
-<p><code>DioRouter</code> emits only <code>ADDED</code> and <code>MODIFIED</code>, never <code>DELETED</code> — it diffs each page <strong>by
-position</strong>. So a delivery that grows the shelf appears as an <code>ADDED</code> at a new index, but a product
-that <em>sells out</em> shows up as the list shrinking and the rows below it shifting up (each shifted
-index reported as <code>MODIFIED</code>), not as an explicit removal. A watch client reconstructs “gone” from
-the shrinking <code>total</code>. Getting a real <code>DELETED</code> line is a one-call opt-in — key the watch by
-identity with <code>.key_by("id")</code> — which the <a href="./step8-sql-notify.html">live-push chapter</a> turns on.</p>
+<p>The correlated shape is the contract, not a mandate about execution. Lowering is a per-datasource
+concern, and a driver implementation is free to use a JOIN — or anything else — where that is the
+reliable choice for its engine, as long as the result keeps the source’s row shape: one row per
+source record, the related value as a column.</p>
 </div>
 
 </div>
 
-<h2 id="it-really-is-the-database"><a class="header" href="#it-really-is-the-database">It really is the database</a></h2>
-<p>The strongest proof that this isn’t an in-process illusion: change the table from <strong>outside</strong> the
-app entirely. With a watch open, in another terminal:</p>
-<pre><code class="language-text">$ sqlite3 learn-8/products.db "UPDATE product SET price=999 WHERE id='p1'"
+<h3 id="aggregates-over-a-relation"><a class="header" href="#aggregates-over-a-relation">Aggregates over a relation</a></h3>
+<p><code>get_subquery_as</code> returns a full <code>Table</code>, so the aggregate query-builders work on it:
+<code>get_count_query()</code> and <code>get_sum_query(&amp;col)</code>. Both wrap their output in parentheses, so they nest
+safely inside the outer SELECT.</p>
+<p>Here’s the real thing — verbatim from <code>bakery_model3/src/client.rs</code>, a client table whose
+<code>order_count</code> is computed by the database:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub fn surreal_table(db: SurrealDB) -&gt; Table&lt;SurrealDB, Client&gt; {
+    Table::new("client", db)
+        .with_id_column("id")
+        .with_column_of::&lt;String&gt;("name")
+        .with_column_of::&lt;String&gt;("email")
+        .with_column_of::&lt;String&gt;("contact_details")
+        .with_column_of::&lt;bool&gt;("is_paying_client")
+        .with_one("bakery", "bakery", Bakery::surreal_table)
+        .with_many("orders", "client", Order::surreal_table)
+        .with_expression("order_count", |t| {
+            let orders = t.get_subquery_as::&lt;Order&gt;("orders").unwrap();
+            orders.get_count_query()
+        })
+}
+<span class="boring">}</span></code></pre>
+<p>The generated query has this shape (illustrative):</p>
+<pre><code class="language-sql">SELECT *, (SELECT COUNT(*) FROM order WHERE order.client = client.id) AS order_count
+FROM client
 </code></pre>
-<p>and the open watch stream reflects it within the second:</p>
-<pre><code class="language-text">{"type":"MODIFIED","object":{"index":0,"name":"Espresso","price":999,"stock":11}}
-</code></pre>
-<p>No API call, no shared memory — a separate process wrote a row, the reconcile read it, and the
-change fanned out to every watcher. The Dio is a mirror of the database, not a copy that happens to
-agree with it.</p>
-<p>Next: the same app, the same shelf, the same watch — served from PostgreSQL instead of a file,
-changed by flipping one compile flag.</p>
+<p>The expression field shows up in <code>ReadableValueSet</code> results alongside the physical columns. To get
+it onto your entity struct, add a matching <code>Option</code> field — it deserializes like any other column.</p>
+<h3 id="composing-expressions"><a class="header" href="#composing-expressions">Composing expressions</a></h3>
+<p>Expressions can reference other expressions. <code>get_column_expr(name)</code> resolves a name to either a
+real column or a computed expression, so one expression can build on another — a <code>title</code> composed
+of <code>name</code> and a count subquery via <code>concat_!</code>, for instance. All of it renders into a single
+query. The nesting looks redundant on paper, but SQL engines optimize it away; there is no extra
+round trip.</p>
+<p>The Table chapter walks through a concrete title-composition example step by step — see
+<a href="../intro/step2-tables.html">Working with Tables</a> rather than repeating it here.</p>
+<h3 id="nesting-arbitrary-expressions--select_expression"><a class="header" href="#nesting-arbitrary-expressions--select_expression">Nesting arbitrary expressions — select_expression</a></h3>
+<p><code>select_column</code> is sugar over a more general form. <code>Table::select_expression(expr)</code> wraps <em>any</em>
+expression as a single-column subquery over the table’s source and conditions —
+<code>SELECT &lt;expr&gt; FROM table WHERE …</code> — clearing fields and ordering, since a scalar subquery has
+exactly one output and no meaningful sort.</p>
+<p>This is what lets one correlated subquery nest inside another: a two-hop lookup is
+<code>outer.select_expression( (inner_subquery) )</code>. It is also the machinery under the next chapter’s
+implicit references, which automate exactly this recipe.</p>
+<div id="admonition-cross-backend-enrichment-lives-at-the-dio-layer" class="admonition admonish-info" role="note" aria-labelledby="admonition-cross-backend-enrichment-lives-at-the-dio-layer-title">
+<div class="admonition-title">
+<div id="admonition-cross-backend-enrichment-lives-at-the-dio-layer-title">
+<p>Cross-backend enrichment lives at the Dio layer</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-cross-backend-enrichment-lives-at-the-dio-layer"></a>
+</div>
+
+<div>
+<p>This whole chapter is a SQL/SurrealDB technique — the backend-support contract is on
+<a href="./traversal.html">Form 2 of the previous chapter</a>. If you need per-row related values across
+backends that can’t correlate, there’s a different tool for that: augmentation, covered in
+<a href="./dio.html">Relations and Dio</a>.</p>
+</div>
+
+</div>
+
+<h3 id="surrealdb-notes"><a class="header" href="#surrealdb-notes">SurrealDB notes</a></h3>
+<p>SurrealDB’s record links give it a second way to express a related field: a native idiom path.
+<code>client.name</code> on an order traverses the link in place — no subquery at all, and often cheaper.
+The <a href="./implicit-references.html">implicit references</a> chapter uses exactly that lowering
+automatically.</p>
+<p>Correlated subqueries still work too. The <code>order_count</code> example above runs on SurrealDB as
+written — <code>order.client = client.id</code> correlates through the record link.</p>
+<h3 id="conclusion"><a class="header" href="#conclusion">Conclusion</a></h3>
+<p>At this point you should be able to:</p>
+<ol>
+<li><strong>Embed a related field</strong> as a computed column — <code>with_expression</code> +
+<code>get_subquery_as::&lt;E2&gt;(relation)</code> + <code>select_column("field")</code>.</li>
+<li><strong>Add relation aggregates</strong> — <code>get_count_query()</code> and <code>get_sum_query(&amp;col)</code> on the subquery
+table.</li>
+<li><strong>Compose expressions</strong> — <code>get_column_expr(name)</code> resolves columns and expressions alike, so
+expressions can build on each other inside one query.</li>
+<li><strong>Nest subqueries</strong> — <code>select_expression(expr)</code> wraps any expression as a scalar subquery, one
+inside another.</li>
+</ol>
+<p>Next: <a href="./implicit-references.html">Implicit References</a> — the declarative form of everything in this
+chapter’s first half.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../intro/step5-sql-dio.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../relations/traversal.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../intro/step7-sql-postgres.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../relations/implicit-references.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -289,11 +333,11 @@ changed by flipping one compile flag.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../intro/step5-sql-dio.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../relations/traversal.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../intro/step7-sql-postgres.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../relations/implicit-references.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
