@@ -372,3 +372,59 @@ async fn rejected_flash_reverts_and_reports_failed() -> Result<()> {
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn foreign_delete_failure_leaves_servo_tracking() -> Result<()> {
+    // A servo on a record is a bystander to a failed toolbar delete of
+    // that record: the revert restores the row, but the failure belongs
+    // to the delete's issuer (the confirm dialog) — not the edit form.
+    let shell = product_shell();
+    let lens = Arc::new(
+        Lens::new()
+            .cache_in_memory()
+            .on_flash(|_dio, flash| async move {
+                if flash.kind() == &FlashKind::Delete {
+                    Err(vantage_core::error!("FOREIGN KEY constraint failed"))
+                } else {
+                    Ok(())
+                }
+            })
+            .build()
+            .expect("build lens"),
+    );
+    let dio = lens.make_dio(product_vista(&shell)).await?;
+    for (id, r) in dio.master().list_values().await? {
+        dio.cache().insert_value(&id, &r).await?;
+    }
+    let servo = dio.servo("p1").await?;
+    let mut events = dio.subscribe_events();
+
+    let result = dio.flash_delete("p1").await;
+    assert!(
+        result.is_err(),
+        "the rejection surfaces to the delete caller"
+    );
+
+    // Wait until the revert has been broadcast, then let the servo's
+    // absorb task run.
+    loop {
+        match events.recv().await {
+            Ok(vantage_diorama::DioEvent::WriteReverted { id, .. }) if id == "p1" => break,
+            Ok(_) => {}
+            Err(e) => panic!("event bus closed early: {e}"),
+        }
+    }
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    assert!(
+        matches!(servo.status(), ServoStatus::Tracking),
+        "a failed delete must not read as the form's save failure, got {:?}",
+        servo.status()
+    );
+    assert_eq!(
+        dio.cache().get_value("p1").await?.unwrap().get("name"),
+        Some(&text("Coffee")),
+        "cache pre-image restored"
+    );
+    Ok(())
+}

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.3 — 2026-07-23
+
+- `DioEvent::WritePending` and `DioEvent::WriteReverted` carry the
+  staged flash's `kind: FlashKind`, so listeners can tell whose failure
+  a revert is. A `Servo` only enters `Pending`/`Failed` for editing
+  kinds (Patch/Replace/Insert) — a failed toolbar Delete of the same
+  record no longer reads as the edit form's "Save failed". Row statuses
+  (`PendingWrite`/`WriteFailed`) still apply to all kinds. Exhaustive
+  matches on these variants need the new field (`..` suffices).
+- `FlashKind` is `Copy`.
+
 ## 0.7.2 — 2026-07-23
 
 - **`Dio::get_ref_target(relation)`** — open a relation's bare,

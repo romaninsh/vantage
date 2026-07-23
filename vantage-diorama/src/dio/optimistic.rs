@@ -54,10 +54,10 @@ impl Dio {
 
         // 2. Stage the optimistic value and announce it — views update now.
         stage_in_cache(&self.inner, &flash, pre.as_ref()).await?;
-        let _ = self
-            .inner
-            .event_bus
-            .send(DioEvent::WritePending { id: id.clone() });
+        let _ = self.inner.event_bus.send(DioEvent::WritePending {
+            id: id.clone(),
+            kind: *flash.kind(),
+        });
 
         // 3. Run the real write-through.
         match crate::dio::worker::run_write_through(self, flash.clone()).await {
@@ -79,6 +79,7 @@ impl Dio {
                 let _ = self.inner.event_bus.send(DioEvent::WriteReverted {
                     id,
                     error: err.to_string(),
+                    kind: *flash.kind(),
                 });
                 Err(err)
             }

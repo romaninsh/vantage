@@ -30,6 +30,10 @@ pub enum DioEvent {
     /// flip the row for `id` to [`PendingWrite`](crate::RowStatus::PendingWrite).
     WritePending {
         id: String,
+        /// What the staged flash is doing — see
+        /// [`WriteReverted`](Self::WriteReverted) for why listeners filter
+        /// on this.
+        kind: crate::FlashKind,
     },
 
     /// An optimistic write failed and its cache pre-image was restored. The
@@ -40,6 +44,12 @@ pub enum DioEvent {
     WriteReverted {
         id: String,
         error: String,
+        /// What the failed flash was doing. Lets a listener decide whether
+        /// the failure is its own business: an edit form's servo reports
+        /// Patch/Replace/Insert reverts, but a failed Delete belongs to
+        /// its issuer (the confirm dialog), not to a form that happens to
+        /// display the same record.
+        kind: crate::FlashKind,
     },
 
     /// Emitted by `TableScenery` once a `set_viewport` / `request_load_more`
