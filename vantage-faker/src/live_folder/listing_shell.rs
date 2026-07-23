@@ -210,6 +210,24 @@ impl TableShell for FolderListingShell {
         ))
     }
 
+    fn get_ref_target(&self, relation: &str) -> Result<Vista> {
+        if relation != "subdir" {
+            return Err(error!(
+                "unknown relation",
+                relation = relation,
+                source_type = "FolderListingShell"
+            )
+            .mark_unimplemented()
+            .traced());
+        }
+        // The bare target of `subdir` (no parent row) is the listing rooted
+        // at this shell's own path — every subdirectory that could be picked.
+        Ok(Vista::new(
+            "live-folder-listing",
+            Box::new(FolderListingShell::new(self.inner.clone(), self.path.clone())),
+        ))
+    }
+
     fn capabilities(&self) -> &VistaCapabilities {
         &self.capabilities
     }

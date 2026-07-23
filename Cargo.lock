@@ -5470,7 +5470,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-client"
-version = "0.6.7"
+version = "0.6.8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5523,7 +5523,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5566,7 +5566,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cmd"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5600,7 +5600,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-csv"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5799,7 +5799,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.6.9"
+version = "0.6.10"
 dependencies = [
  "async-stream",
  "async-trait",

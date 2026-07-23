@@ -256,6 +256,28 @@ impl TableShell for RestApiTableShell {
         factory.from_table(target)
     }
 
+    fn get_ref_target(&self, relation: &str) -> Result<Vista> {
+        // YAML-declared reference: the bare target is the resolver-built
+        // child with no join condition applied — the same child `get_ref`
+        // starts from before it pins the parent's key.
+        if let Some(yref) = self.yaml_refs.get(relation) {
+            let resolver = self.resolver.as_ref().ok_or_else(|| {
+                error!(
+                    "YAML reference requires a model resolver — call \
+                     `with_model_resolver` on the factory or register \
+                     the target spec via `register_yaml`",
+                    relation = relation
+                )
+            })?;
+            return resolver(&yref.target);
+        }
+
+        // Hand-coded `with_many` / `with_one` registrations on the typed table.
+        let target = self.table.get_ref_target::<EmptyEntity>(relation)?;
+        let factory = RestApiVistaFactory::new(self.table.data_source().clone());
+        factory.from_table(target)
+    }
+
     fn capabilities(&self) -> &VistaCapabilities {
         &self.capabilities
     }

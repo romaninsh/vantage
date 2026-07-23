@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 — 2026-07-23
+
+- `KubeTableShell` implements `get_ref_target` (the bare relation target via the
+  factory), matching `get_ref`. Fills the eligible-rows dropdown path that
+  previously returned `Unimplemented`.
+
 ## 0.1.0 — 2026-06-28
 
 Initial release — a native Kubernetes `TableSource` backend for Vantage,

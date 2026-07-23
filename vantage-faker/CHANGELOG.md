@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.7 — 2026-07-23
+
+- `FolderListingShell` implements `get_ref_target` for the `subdir` relation —
+  the bare listing rooted at the shell's own path — so the eligible-rows
+  dropdown path no longer returns `Unimplemented`.
+
 ## 0.6.6 — 2026-07-22
 
 - Track vantage-diorama 0.7 (Servo + ChangeFlash). No faker API changes —

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.8 — 2026-07-23
+
+- REST and GraphQL `TableShell`s implement `get_ref_target` — the bare,
+  unconditioned relation target the edit-form reference dropdown lists. REST
+  handles both YAML-declared references (the resolver-built child with no join
+  condition) and hand-coded `with_one`/`with_many` registrations; GraphQL
+  forwards through the factory like `get_ref`. Previously this path returned
+  `Unimplemented`.
+
 ## 0.6.7 — 2026-07-20
 
 - `lazy:` computed columns on REST tables, behind the new `rhai` feature — a
