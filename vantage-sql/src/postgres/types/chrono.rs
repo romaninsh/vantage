@@ -168,7 +168,7 @@ fn parse_naive_datetime(s: &str) -> Option<NaiveDateTime> {
         .or_else(|| parse_datetime_utc(s).map(|dt| dt.naive_utc()))
 }
 
-/// Parse DateTime<Utc> from Postgres-native format first (`+00` without colon),
+/// Parse `DateTime<Utc>` from Postgres-native format first (`+00` without colon),
 /// then RFC 3339, then naive (assumed UTC).
 fn parse_datetime_utc(s: &str) -> Option<DateTime<Utc>> {
     // Postgres: "2025-01-10 12:00:00+00" — %#z accepts +00, +00:00, +0000

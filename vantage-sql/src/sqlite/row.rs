@@ -212,7 +212,7 @@ pub(crate) fn describe_param_types(params: &[AnySqliteType]) -> String {
         .join(" ")
 }
 
-/// Convert a SqliteRow to Record<AnySqliteType>.
+/// Convert a `SqliteRow` to `Record<AnySqliteType>`.
 ///
 /// Each value is stored as CBOR with the type variant inferred from the
 /// SQLite column type, preserving full type fidelity.

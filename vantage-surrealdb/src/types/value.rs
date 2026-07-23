@@ -174,7 +174,7 @@ fn compact_duration_to_json(inner: CborValue) -> JsonValue {
     JsonValue::String(out)
 }
 
-/// Macro for explicit Expressive<AnySurrealType> impls on scalar types.
+/// Macro for explicit `Expressive<AnySurrealType>` impls on scalar types.
 /// Lets you pass `25i64`, `true`, `"hello"` directly to RefOperation methods.
 macro_rules! impl_expressive_for_scalar {
     ($($ty:ty),*) => {

@@ -107,7 +107,7 @@ async fn resolve_deferred(
     Ok(Expression::new(expr.template.clone(), resolved_params))
 }
 
-/// Flatten an Expression<AnySqliteType> and convert `{}` placeholders to `?N`.
+/// Flatten an `Expression<AnySqliteType>` and convert `{}` placeholders to `?N`.
 fn prepare_typed_query(
     expr: &Expression<AnySqliteType>,
 ) -> vantage_core::Result<(String, Vec<AnySqliteType>)> {

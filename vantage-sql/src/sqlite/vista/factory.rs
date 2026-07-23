@@ -87,7 +87,7 @@ impl SqliteVistaFactory {
     }
 
     /// Build a `Table<SqliteDB, EmptyEntity>` from a spec, resolving any
-    /// `references:` against the attached resolver. See [`build_sqlite_table`].
+    /// `references:` against the attached resolver. See `build_sqlite_table`.
     pub fn table_from_spec(&self, spec: &SqliteVistaSpec) -> Result<Table<SqliteDB, EmptyEntity>> {
         build_sqlite_table(spec, self.db.clone(), self.resolver.clone())
     }

@@ -275,7 +275,7 @@ fn extract_first_row(val: &AnySqliteType) -> Option<CborValue> {
     }
 }
 
-/// Convert a CBOR Map into a Record<AnySqliteType>.
+/// Convert a CBOR Map into a `Record<AnySqliteType>`.
 fn cbor_map_to_record(map: Vec<(CborValue, CborValue)>) -> vantage_types::Record<AnySqliteType> {
     map.into_iter()
         .map(|(k, v)| {
