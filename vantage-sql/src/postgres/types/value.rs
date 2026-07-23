@@ -275,7 +275,7 @@ fn extract_first_row(val: &AnyPostgresType) -> Option<CborValue> {
     }
 }
 
-/// Convert a CBOR Map into a Record<AnyPostgresType>.
+/// Convert a CBOR Map into a `Record<AnyPostgresType>`.
 fn cbor_map_to_record(map: Vec<(CborValue, CborValue)>) -> vantage_types::Record<AnyPostgresType> {
     map.into_iter()
         .map(|(k, v)| {

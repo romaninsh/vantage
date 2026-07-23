@@ -82,7 +82,7 @@ impl PostgresVistaFactory {
     }
 
     /// Build a `Table<PostgresDB, EmptyEntity>` from a spec, resolving any
-    /// `references:` against the attached resolver. See [`build_postgres_table`].
+    /// `references:` against the attached resolver. See `build_postgres_table`.
     pub fn table_from_spec(
         &self,
         spec: &PostgresVistaSpec,

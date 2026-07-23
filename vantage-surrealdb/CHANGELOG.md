@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.9 — 2026-07-23
+
+- Doc-comment fix: escape a generic in module docs so `rustdoc -D
+  warnings` passes. No code change.
+
 ## 0.6.8 — 2026-07-22
 
 - Reference narrowing coerces string-form record ids: `coerce_reference_value`

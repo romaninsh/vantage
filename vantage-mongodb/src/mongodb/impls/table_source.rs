@@ -25,7 +25,7 @@ use crate::mongodb::MongoDB;
 use crate::select::MongoSelect;
 use crate::types::{AnyMongoType, MongoType};
 
-/// Convert a bson::Document into a Record<AnyMongoType>, optionally extracting the _id.
+/// Convert a `bson::Document` into a `Record<AnyMongoType>`, optionally extracting the `_id`.
 fn doc_to_record(doc: bson::Document) -> (Option<MongoId>, Record<AnyMongoType>) {
     let mut fields = IndexMap::new();
     let mut id: Option<MongoId> = None;

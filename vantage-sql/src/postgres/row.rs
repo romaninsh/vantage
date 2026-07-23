@@ -218,7 +218,7 @@ fn bind_by_cbor<'q>(
     }
 }
 
-/// Convert a PgRow to Record<AnyPostgresType>.
+/// Convert a `PgRow` to `Record<AnyPostgresType>`.
 ///
 /// Each value is stored as CBOR with the type variant inferred from the
 /// PostgreSQL column type, preserving full type fidelity.

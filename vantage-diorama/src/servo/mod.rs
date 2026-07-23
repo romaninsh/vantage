@@ -339,11 +339,27 @@ async fn track_loop(
             Ok(DioEvent::DatasetChanged) => {
                 absorb_from_cache(&state, &dio_weak).await;
             }
-            Ok(DioEvent::WritePending { id }) if bound(&id) => {
-                state.set_status(ServoStatus::Pending);
+            Ok(DioEvent::WritePending { id, kind }) if bound(&id) => {
+                // Same filter as the revert arm: someone else's staged
+                // delete is not this servo's write in flight.
+                if matches!(
+                    kind,
+                    crate::FlashKind::Patch | crate::FlashKind::Replace | crate::FlashKind::Insert
+                ) {
+                    state.set_status(ServoStatus::Pending);
+                }
             }
-            Ok(DioEvent::WriteReverted { id, error }) if bound(&id) => {
-                state.set_status(ServoStatus::Failed(error));
+            Ok(DioEvent::WriteReverted { id, error, kind }) if bound(&id) => {
+                // Only editing kinds are this servo's failure — a reverted
+                // Delete/Clear belongs to its issuer (the confirm dialog),
+                // and a form displaying the record must not adopt it as a
+                // save failure. The restored pre-image is absorbed either way.
+                if matches!(
+                    kind,
+                    crate::FlashKind::Patch | crate::FlashKind::Replace | crate::FlashKind::Insert
+                ) {
+                    state.set_status(ServoStatus::Failed(error));
+                }
                 absorb_from_cache(&state, &dio_weak).await;
             }
             Ok(_) => {}

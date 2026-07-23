@@ -34,7 +34,10 @@ mod sqlite_tests {
         let sql = result.inner.preview();
         let expected = std::fs::read_to_string("tests/rhai-tests/sqlite/q1.sql")
             .expect("Failed to read sqlite/q1.sql");
-        assert_eq!(sql.trim(), expected.trim());
+        // The pinned fixtures are pretty-printed; `preview()` renders one
+        // line. SQL is whitespace-insensitive — compare tokens.
+        let normalize = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert_eq!(normalize(&sql), normalize(&expected));
     }
 }
 
@@ -71,7 +74,10 @@ mod postgres_tests {
         let sql = result.inner.preview();
         let expected = std::fs::read_to_string("tests/rhai-tests/postgres/q1.sql")
             .expect("Failed to read postgres/q1.sql");
-        assert_eq!(sql.trim(), expected.trim());
+        // The pinned fixtures are pretty-printed; `preview()` renders one
+        // line. SQL is whitespace-insensitive — compare tokens.
+        let normalize = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert_eq!(normalize(&sql), normalize(&expected));
     }
 }
 
@@ -107,6 +113,9 @@ mod mysql_tests {
         let sql = result.inner.preview();
         let expected = std::fs::read_to_string("tests/rhai-tests/mysql/q1.sql")
             .expect("Failed to read mysql/q1.sql");
-        assert_eq!(sql.trim(), expected.trim());
+        // The pinned fixtures are pretty-printed; `preview()` renders one
+        // line. SQL is whitespace-insensitive — compare tokens.
+        let normalize = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert_eq!(normalize(&sql), normalize(&expected));
     }
 }

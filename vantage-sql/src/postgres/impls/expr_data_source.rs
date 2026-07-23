@@ -94,7 +94,7 @@ async fn resolve_deferred(
     Ok(Expression::new(expr.template.clone(), resolved_params))
 }
 
-/// Flatten an Expression<AnyPostgresType> and convert `{}` placeholders to `$N`.
+/// Flatten an `Expression<AnyPostgresType>` and convert `{}` placeholders to `$N`.
 /// PostgreSQL uses $1, $2, ... for positional parameters (not ?N like SQLite).
 fn prepare_typed_query(
     expr: &Expression<AnyPostgresType>,

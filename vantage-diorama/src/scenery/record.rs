@@ -154,10 +154,10 @@ async fn reload_loop(state: Arc<RecordSceneryState>, mut bus: broadcast::Receive
                     tracing::error!(error = %e, "RecordScenery reload failed");
                 }
             }
-            Ok(DioEvent::WritePending { id }) if id == state.id => {
+            Ok(DioEvent::WritePending { id, .. }) if id == state.id => {
                 state.set_pending_write().await;
             }
-            Ok(DioEvent::WriteReverted { id, error }) if id == state.id => {
+            Ok(DioEvent::WriteReverted { id, error, .. }) if id == state.id => {
                 state.set_write_failed(error).await;
             }
             Ok(_) => {}

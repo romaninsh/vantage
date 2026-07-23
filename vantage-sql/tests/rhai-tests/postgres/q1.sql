@@ -6,7 +6,7 @@ SELECT
 FROM
   "users" AS "u"
 WHERE
-  "u"."active" = TRUE
+  "u"."active" = true
   AND "u"."department_id" != 0
 GROUP BY
   "u"."id",

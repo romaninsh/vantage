@@ -22,7 +22,7 @@ use vantage_types::Record;
 /// `Replace` exists because a patch-merge cannot express field removal;
 /// `Clear` (id-less, "delete every row") keeps its historical
 /// no-optimism special-casing in the pipeline.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlashKind {
     Insert,
     Replace,
