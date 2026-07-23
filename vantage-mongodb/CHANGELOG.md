@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.4 — 2026-07-23
+
+- Doc-comment fix: escape generics so `rustdoc -D warnings` passes. No
+  code change.
+
 ## 0.6.3 — 2026-07-21
 
 - Docs: fixed rustdoc doc-comment links (`Vec<AnyMongoType>`, `MongoId::from_str`)

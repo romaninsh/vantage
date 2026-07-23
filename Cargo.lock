@@ -5725,7 +5725,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-mongodb"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "async-trait",
  "bson",
@@ -5799,7 +5799,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "async-stream",
  "async-trait",
