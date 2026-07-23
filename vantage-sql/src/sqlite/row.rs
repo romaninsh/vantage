@@ -14,16 +14,20 @@ use vantage_types::Record;
 
 use super::types::{AnySqliteType, SqliteTypeVariants};
 
+type SqliteQuery<'q> = sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>>;
+
 /// Bind an AnySqliteType to a sqlx query. Uses the variant tag to pick
 /// the right sqlx bind type — no guessing from the CBOR value format.
+/// Values the binder cannot express as a SQLite parameter come straight
+/// from user data, so they surface as errors — never a panic.
 pub(crate) fn bind_sqlite_value<'q>(
-    query: sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>>,
+    query: SqliteQuery<'q>,
     value: &'q AnySqliteType,
-) -> sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>> {
+) -> vantage_core::Result<SqliteQuery<'q>> {
     let cbor = value.value();
-    match value.type_variant() {
+    Ok(match value.type_variant() {
         Some(SqliteTypeVariants::Null) => query.bind(None::<String>),
-        None => bind_by_cbor(query, cbor),
+        None => return bind_by_cbor(query, cbor),
         Some(SqliteTypeVariants::Bool) => match cbor {
             CborValue::Null => query.bind(None::<bool>),
             CborValue::Integer(i) => match i64::try_from(*i) {
@@ -74,15 +78,15 @@ pub(crate) fn bind_sqlite_value<'q>(
             CborValue::Text(s) => query.bind(s.as_bytes()),
             _ => query.bind(None::<Vec<u8>>),
         },
-    }
+    })
 }
 
 /// Bind a CBOR value without type variant — infers from the value itself.
 fn bind_by_cbor<'q>(
-    query: sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>>,
+    query: SqliteQuery<'q>,
     cbor: &'q CborValue,
-) -> sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>> {
-    match cbor {
+) -> vantage_core::Result<SqliteQuery<'q>> {
+    Ok(match cbor {
         CborValue::Null => query.bind(None::<String>),
         CborValue::Bool(b) => query.bind(*b),
         CborValue::Integer(i) => {
@@ -109,11 +113,103 @@ fn bind_by_cbor<'q>(
                 query.bind(None::<String>)
             }
         }
-        other => panic!(
-            "bind_by_cbor: unexpected CBOR value type {:?} — this is a bug upstream",
-            other
-        ),
+        // Record reference — Tag(8, ["table", id]) or Tag(8, "table:id").
+        // SQLite has no reference type, so the reference lowers to its id.
+        CborValue::Tag(8, inner) => return bind_reference_id(query, inner),
+        other => {
+            return Err(vantage_core::error!(
+                "cannot bind CBOR value to a SQLite parameter",
+                value = describe_cbor(other)
+            ));
+        }
+    })
+}
+
+/// Lower a `Tag(8)` record reference to its id and bind that. A numeric
+/// id binds as INTEGER so it satisfies INTEGER (and rowid) columns; a
+/// non-numeric id binds as TEXT.
+fn bind_reference_id<'q>(
+    query: SqliteQuery<'q>,
+    inner: &'q CborValue,
+) -> vantage_core::Result<SqliteQuery<'q>> {
+    let bind_id_text = |query: SqliteQuery<'q>, s: &'q str| match s.parse::<i64>() {
+        Ok(n) => query.bind(n),
+        Err(_) => query.bind(s),
+    };
+    Ok(match inner {
+        // SurrealDB string form "table:id" — everything after the first
+        // colon is the id (the whole text if there is no colon).
+        CborValue::Text(s) => {
+            let id = s.split_once(':').map(|(_, id)| id).unwrap_or(s.as_str());
+            bind_id_text(query, id)
+        }
+        CborValue::Array(parts) if parts.len() == 2 => match &parts[1] {
+            CborValue::Integer(i) => query.bind(i64::try_from(*i).ok()),
+            CborValue::Text(s) => bind_id_text(query, s.as_str()),
+            CborValue::Null => query.bind(None::<String>),
+            other => {
+                return Err(vantage_core::error!(
+                    "record reference id is not a scalar",
+                    id = describe_cbor(other)
+                ));
+            }
+        },
+        other => {
+            return Err(vantage_core::error!(
+                "record reference has an unexpected shape",
+                value = describe_cbor(other)
+            ));
+        }
+    })
+}
+
+/// Compact one-line description of a CBOR value for error context —
+/// shapes and types with values truncated, so errors stay readable and
+/// don't leak whole records.
+fn describe_cbor(v: &CborValue) -> String {
+    const MAX_TEXT: usize = 32;
+    match v {
+        CborValue::Null => "Null".into(),
+        CborValue::Bool(b) => format!("Bool({b})"),
+        CborValue::Integer(i) => format!("Integer({})", i128::from(*i)),
+        CborValue::Float(f) => format!("Float({f})"),
+        CborValue::Text(s) if s.len() <= MAX_TEXT => format!("Text({s:?})"),
+        CborValue::Text(s) => {
+            let cut: String = s.chars().take(MAX_TEXT).collect();
+            format!("Text({cut:?}…)")
+        }
+        CborValue::Bytes(b) => format!("Bytes(len {})", b.len()),
+        CborValue::Array(a) => format!("Array(len {})", a.len()),
+        CborValue::Map(m) => format!("Map(len {})", m.len()),
+        CborValue::Tag(t, inner) => format!("Tag({t}, {})", describe_cbor(inner)),
+        _ => "unknown CBOR value".into(),
     }
+}
+
+/// `?1=Text ?2=Integer …` — parameter type summary for error context.
+/// Types only, never values.
+pub(crate) fn describe_param_types(params: &[AnySqliteType]) -> String {
+    params
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let ty = match p.type_variant() {
+                Some(v) => format!("{v:?}"),
+                None => match p.value() {
+                    CborValue::Null => "Null".into(),
+                    CborValue::Bool(_) => "Bool".into(),
+                    CborValue::Integer(_) => "Integer".into(),
+                    CborValue::Float(_) => "Real".into(),
+                    CborValue::Text(_) => "Text".into(),
+                    CborValue::Bytes(_) => "Blob".into(),
+                    CborValue::Tag(t, _) => format!("Tag({t})"),
+                    _ => "?".into(),
+                },
+            };
+            format!("?{}={}", i + 1, ty)
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Convert a SqliteRow to Record<AnySqliteType>.
@@ -319,7 +415,7 @@ mod tests {
 
         let text_val = AnySqliteType::new("hello".to_string());
         let mut q = sqlx::query("INSERT INTO bind_test VALUES (?)");
-        q = bind_sqlite_value(q, &text_val);
+        q = bind_sqlite_value(q, &text_val).unwrap();
         q.execute(db.pool()).await.unwrap();
 
         let rows: Vec<SqliteRow> = sqlx::query("SELECT val FROM bind_test")
@@ -343,8 +439,8 @@ mod tests {
         let bool_val = AnySqliteType::new(true);
 
         let mut q = sqlx::query("INSERT INTO ib VALUES (?, ?)");
-        q = bind_sqlite_value(q, &int_val);
-        q = bind_sqlite_value(q, &bool_val);
+        q = bind_sqlite_value(q, &int_val).unwrap();
+        q = bind_sqlite_value(q, &bool_val).unwrap();
         q.execute(db.pool()).await.unwrap();
 
         let rows: Vec<SqliteRow> = sqlx::query("SELECT * FROM ib")

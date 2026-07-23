@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.14 — 2026-07-23
+
+- SQLite binds lower `Tag(8)` record references (`["table", id]` or
+  `"table:id"`) to their id — a numeric id binds as INTEGER, so
+  reference values from dropdowns insert cleanly into integer FK
+  columns instead of panicking `bind_by_cbor: unexpected CBOR value`.
+- Binding a value SQLite can't express is now a typed error naming the
+  parameter position and value shape — never a panic (these values come
+  straight from user forms).
+- Failed SQLite queries carry context: the SQL (truncated at 500 chars)
+  and a parameter-type summary (`?1=Text ?2=Integer …`, types only) —
+  enough to see which table/column a `datatype mismatch` points at.
+
 ## 0.6.13 — 2026-07-22
 
 - Vista factories (SQLite/Postgres/MySQL) lower **dotted spec columns**

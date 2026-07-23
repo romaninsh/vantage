@@ -3,7 +3,7 @@ use vantage_expressions::traits::expressive::DeferredFn;
 use vantage_expressions::{Expression, ExpressionFlattener, ExpressiveEnum, Flatten};
 
 use crate::sqlite::SqliteDB;
-use crate::sqlite::row::{bind_sqlite_value, row_to_record};
+use crate::sqlite::row::{bind_sqlite_value, describe_param_types, row_to_record};
 use crate::sqlite::types::AnySqliteType;
 
 impl vantage_expressions::ExprDataSource<AnySqliteType> for SqliteDB {
@@ -17,16 +17,26 @@ impl vantage_expressions::ExprDataSource<AnySqliteType> for SqliteDB {
         // 2. Flatten nested expressions + convert {} to ?N
         let (sql, params) = prepare_typed_query(&resolved)?;
 
-        // 3. Bind and execute
+        // 3. Bind and execute. Errors carry the SQL and a parameter-type
+        // summary (types only, never values) — the SQL names the table
+        // and columns, which is what failure reports need most.
         let mut query = sqlx::query(&sql);
-        for value in &params {
-            query = bind_sqlite_value(query, value);
+        for (i, value) in params.iter().enumerate() {
+            query = bind_sqlite_value(query, value).map_err(|mut e| {
+                e.context.insert("parameter".into(), (i + 1).to_string());
+                e.context.insert("sql".into(), truncate_sql(&sql));
+                e
+            })?;
         }
 
-        let rows = query
-            .fetch_all(self.pool())
-            .await
-            .map_err(|e| vantage_core::error!("SQLite query failed", details = e.to_string()))?;
+        let rows = query.fetch_all(self.pool()).await.map_err(|e| {
+            vantage_core::error!(
+                "SQLite query failed",
+                details = e.to_string(),
+                sql = truncate_sql(&sql),
+                params = describe_param_types(&params)
+            )
+        })?;
 
         // 4. Convert rows to AnySqliteType — each row becomes a CBOR Map
         let arr: Vec<CborValue> = rows
@@ -56,6 +66,18 @@ impl vantage_expressions::ExprDataSource<AnySqliteType> for SqliteDB {
                 Ok(result.unwrap_scalar())
             })
         })
+    }
+}
+
+/// SQL for error context — whole statement up to a cap, so a giant
+/// generated query can't balloon an error message.
+fn truncate_sql(sql: &str) -> String {
+    const MAX: usize = 500;
+    if sql.len() <= MAX {
+        sql.to_string()
+    } else {
+        let cut: String = sql.chars().take(MAX).collect();
+        format!("{cut}…")
     }
 }
 

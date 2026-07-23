@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.2 — 2026-07-23
+
+- `VantageError::message()` and `location()` accessors: the bare message
+  and capture site, without the context map or source chain — for UI
+  surfaces that render those parts separately (the context map is
+  already public). `Display` remains the combined one-line form.
+
 ## 0.6.1 — 2026-07-04
 
 - `VantageError::traced_debug()`: emit the same structured event as

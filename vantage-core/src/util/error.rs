@@ -231,6 +231,20 @@ impl VantageError {
         self.kind
     }
 
+    /// The bare error message, without context or source. UI surfaces
+    /// render those separately (context via the public `context` map,
+    /// source via [`std::error::Error::source`]); [`Display`](fmt::Display)
+    /// remains the combined one-line form.
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    /// `file:line:column` where the error was created, when captured
+    /// (the [`crate::error!`] macro always captures it).
+    pub fn location(&self) -> Option<&str> {
+        self.location.as_deref()
+    }
+
     /// Classify this error as [`ErrorKind::Unsupported`] (builder).
     ///
     /// Marking no longer emits a trace on its own — chain [`traced`](Self::traced)
@@ -507,6 +521,15 @@ mod tests {
             err.to_string(),
             "Capability insert is not implemented in generic ReadOnlyDataSet"
         );
+    }
+
+    #[test]
+    fn test_message_and_location_accessors() {
+        let err = crate::error!("write failed", table = "books");
+        assert_eq!(err.message(), "write failed");
+        assert!(err.location().is_some_and(|l| l.contains("error.rs")));
+        // Display stays the combined form; the accessors expose the parts.
+        assert!(err.to_string().contains("write failed (table:"));
     }
 
     #[test]

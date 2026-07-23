@@ -4,6 +4,8 @@ mod sqlite {
     #[path = "2_associated.rs"]
     mod associated;
     mod bakery;
+    #[path = "2_bind_refs.rs"]
+    mod bind_refs;
     #[path = "1_chrono.rs"]
     mod chrono;
     #[path = "3_complex_queries.rs"]
