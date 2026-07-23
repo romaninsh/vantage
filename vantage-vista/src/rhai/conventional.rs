@@ -97,6 +97,24 @@ pub fn register_conventional_onto(engine: &mut Engine, resolver: TargetResolver)
         },
     );
 
+    // `add_condition("col", "ne", value)` — the operator form. `op` is a
+    // symbolic name (`ne`/`gt`/`in`/…); `in`/`not_in` take a list value. A
+    // driver that can't push the operator returns Unimplemented, which surfaces
+    // as a Rhai error the caller can handle (or gate on `can_filter_operators`).
+    engine.register_fn(
+        "add_condition",
+        |v: &mut RhaiVista,
+         field: &str,
+         op: &str,
+         value: Dynamic|
+         -> std::result::Result<RhaiVista, Box<EvalAltResult>> {
+            let op = parse_op(op)?;
+            let cbor = dynamic_to_cbor(value)?;
+            let field = field.to_string();
+            with_inner(v, move |vista| vista.add_condition(field, op, cbor))
+        },
+    );
+
     engine.register_fn(
         "add_order",
         |v: &mut RhaiVista,
@@ -341,6 +359,26 @@ fn parse_dir(dir: &str) -> std::result::Result<SortDirection, Box<EvalAltResult>
     }
 }
 
+fn parse_op(op: &str) -> std::result::Result<crate::FilterOp, Box<EvalAltResult>> {
+    use crate::FilterOp;
+    Ok(match op.to_ascii_lowercase().as_str() {
+        "eq" | "=" | "==" => FilterOp::Eq,
+        "ne" | "!=" | "<>" => FilterOp::Ne,
+        "gt" | ">" => FilterOp::Gt,
+        "gte" | ">=" => FilterOp::Gte,
+        "lt" | "<" => FilterOp::Lt,
+        "lte" | "<=" => FilterOp::Lte,
+        "in" | "in_set" => FilterOp::InSet,
+        "not_in" | "not_in_set" | "nin" | "!in" => FilterOp::NotInSet,
+        other => {
+            return Err(format!(
+                "invalid filter operator '{other}' (expected eq/ne/gt/gte/lt/lte/in/not_in)"
+            )
+            .into());
+        }
+    })
+}
+
 fn to_rhai_err(e: vantage_core::VantageError) -> Box<EvalAltResult> {
     Box::<EvalAltResult>::from(e.to_string())
 }
@@ -424,6 +462,37 @@ mod tests {
         let rows = vista.list_values().await.unwrap();
         assert_eq!(rows.len(), 2, "only the two VIP rows should survive");
         assert!(rows.contains_key("1") && rows.contains_key("3"));
+    }
+
+    #[tokio::test]
+    async fn add_condition_verb_dispatches_via_operator_name() {
+        // `add_condition(.., "eq", ..)` routes through the same eq path as the
+        // dedicated verb (MockShell only pushes equality) — proving the verb,
+        // `parse_op`, and dispatch are wired.
+        let row = record(&[("id", cbor_text("1"))]);
+        let vista = eval_ref_script(
+            &engine(),
+            r#"table("users").add_condition("vip_flag", "eq", true)"#,
+            &row,
+        )
+        .unwrap();
+        let rows = vista.list_values().await.unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.contains_key("1") && rows.contains_key("3"));
+    }
+
+    #[test]
+    fn add_condition_rejects_unknown_operator() {
+        let row = record(&[("id", cbor_text("1"))]);
+        let result = eval_ref_script(
+            &engine(),
+            r#"table("users").add_condition("vip_flag", "wat", true)"#,
+            &row,
+        );
+        match result {
+            Ok(_) => panic!("expected an error for an unknown operator"),
+            Err(e) => assert!(e.to_string().contains("invalid filter operator")),
+        }
     }
 
     #[tokio::test]

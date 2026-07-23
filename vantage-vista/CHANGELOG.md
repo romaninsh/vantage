@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.16 — 2026-07-23
+
+- Conventional Rhai vocabulary gains `add_condition("col", "op", value)` — the
+  operator form alongside `add_condition_eq`. `op` is a symbolic name
+  (`eq`/`ne`/`gt`/`gte`/`lt`/`lte`/`in`/`not_in`); it lowers to
+  `Vista::add_condition`, so a scripted narrowing (relation traversal, a
+  drill-down, a filter toggle) can push a non-equality condition into the query
+  on backends that support it.
+
 ## 0.6.15 — 2026-07-23
 
 - `FilterOp` (`eq`/`ne`/`gt`/`gte`/`lt`/`lte`/`in_set`/`not_in_set`) plus
