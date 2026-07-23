@@ -156,6 +156,20 @@ impl MockView {
         Self { scenery }
     }
 
+    /// Open a view, customizing the scenery builder first — e.g. to add a
+    /// `where_op` operator filter or a `sort`.
+    pub async fn open_with(
+        dio: &Dio,
+        page_size: usize,
+        customize: impl FnOnce(
+            vantage_diorama::TableSceneryBuilder,
+        ) -> vantage_diorama::TableSceneryBuilder,
+    ) -> Self {
+        let builder = dio.table_scenery().page_size(page_size);
+        let scenery = customize(builder).open().await.expect("scenery opens");
+        Self { scenery }
+    }
+
     pub fn scenery(&self) -> &Arc<dyn TableScenery> {
         &self.scenery
     }

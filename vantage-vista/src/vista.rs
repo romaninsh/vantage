@@ -117,6 +117,21 @@ impl Vista {
         self.source.add_eq_condition(&field.into(), &value)
     }
 
+    /// Narrow the vista to records matching `field <op> value`. Equality is
+    /// always supported; richer operators (`!=`, `<`, `>=`, …) require the
+    /// driver to advertise
+    /// [`can_filter_operators`](crate::VistaCapabilities::can_filter_operators)
+    /// — otherwise this returns an `Unimplemented` error and the caller should
+    /// filter locally.
+    pub fn add_condition(
+        &mut self,
+        field: impl Into<String>,
+        op: crate::FilterOp,
+        value: CborValue,
+    ) -> Result<()> {
+        self.source.add_op_condition(&field.into(), op, &value)
+    }
+
     /// Narrow to a single row by id.
     ///
     /// Convenience for the "I only know an id" workflow: pair with

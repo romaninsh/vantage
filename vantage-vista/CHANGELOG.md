@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.15 — 2026-07-23
+
+- `FilterOp` (`eq`/`ne`/`gt`/`gte`/`lt`/`lte`/`in_set`/`not_in_set`) plus
+  `Vista::add_condition(field, op, value)` and the `TableShell::add_op_condition`
+  hook — non-equality filters. The default impl routes `Eq` to `add_eq_condition`
+  and returns `Unimplemented` for the richer operators, so drivers opt in per
+  operator and callers fall back to local filtering otherwise. `in_set` /
+  `not_in_set` carry a `ciborium::Value::Array` operand.
+- `VistaCapabilities::can_filter_operators` — advertises whether a backend
+  pushes operator filters into its query (vs. equality-only, handled locally).
+
 ## 0.6.14 — 2026-07-21
 
 - `can_traverse_in_columns` — and the previously missing `can_fetch_window` —

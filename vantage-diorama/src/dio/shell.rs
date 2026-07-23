@@ -48,6 +48,11 @@ impl DioShell {
             // will swap in cache-aware truth for these.
             can_order: master_caps.can_order,
             can_search: master_caps.can_search,
+            // Whether operator filters (`!=`, `<`, `in`, …) can be pushed into
+            // the master's query. When false the Dio still filters locally over
+            // the cache — the caller just can't bake the condition into a
+            // distinct cached query variant.
+            can_filter_operators: master_caps.can_filter_operators,
             can_set_page_size: master_caps.can_set_page_size,
             can_fetch_page: master_caps.can_fetch_page,
             can_fetch_next: master_caps.can_fetch_next,

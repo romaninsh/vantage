@@ -27,6 +27,15 @@ pub struct VistaCapabilities {
     /// Server-side quicksearch via `add_search(text)`, OR'd across
     /// columns flagged `SEARCHABLE`.
     pub can_search: bool,
+    /// Server-side filtering by a comparison *operator* other than equality
+    /// via `add_op_condition(field, op, value)` (`!=`, `<`, `>=`, …).
+    /// Equality push-down (`add_eq_condition`) is assumed universal and is
+    /// NOT gated by this flag; only the richer operators are. Backends whose
+    /// query language expresses these operators (SQL, SurrealDB) advertise
+    /// `true`; those that can only match equality server-side (CSV, REST
+    /// `?key=value`, cmd) leave it `false`, and the consumer applies the
+    /// operator locally over the loaded rows.
+    pub can_filter_operators: bool,
     /// Consumer may pick the page size via `set_page_size(n)`. Some
     /// REST APIs return fixed-size pages and set this to `false`.
     pub can_set_page_size: bool,

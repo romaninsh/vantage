@@ -239,6 +239,54 @@ where
         Ok(())
     }
 
+    fn add_op_condition(
+        &mut self,
+        field: &str,
+        op: vantage_vista::FilterOp,
+        value: &CborValue,
+    ) -> Result<()> {
+        use vantage_vista::FilterOp;
+        let column = self
+            .table
+            .columns()
+            .get(field)
+            .ok_or_else(|| error!("Unknown column for condition", field = field))?
+            .clone();
+        // Same id-column coercion as `add_eq_condition`: a `table:key` /
+        // bare-key string compared against the id column becomes a Thing.
+        let id_field = self.metadata.id_column.as_deref().unwrap_or("id");
+        let surreal_value = match value {
+            CborValue::Text(s) if field == id_field => {
+                AnySurrealType::from(self.parse_id(s).to_cbor())
+            }
+            _ => AnySurrealType::from(value.clone()),
+        };
+        let condition = match op {
+            FilterOp::Eq => column.eq(surreal_value),
+            FilterOp::Ne => column.ne(surreal_value),
+            FilterOp::Gt => column.gt(surreal_value),
+            FilterOp::Gte => column.gte(surreal_value),
+            FilterOp::Lt => column.lt(surreal_value),
+            FilterOp::Lte => column.lte(surreal_value),
+            // `value` is a CBOR array → a SurrealDB array literal; `field IN [ … ]`.
+            FilterOp::InSet => column.in_(surreal_value),
+            // The SurrealDB expression builder has no `NOT IN` combinator yet.
+            // Report Unimplemented so the consumer filters locally (correct,
+            // just not pushed) rather than silently dropping the filter.
+            FilterOp::NotInSet => {
+                return Err(error!(
+                    "SurrealDB add_op_condition: NotInSet has no push-down; filter locally",
+                    method = "add_op_condition",
+                    source_type = std::any::type_name::<Self>()
+                )
+                .mark_unimplemented()
+                .traced());
+            }
+        };
+        self.table.add_condition(condition);
+        Ok(())
+    }
+
     /// Route a boxed driver-native condition onto the wrapped table. The boxed
     /// value must be a SurrealDB [`crate::Expr`] (`Expression<AnySurrealType>`,
     /// the table's `Condition` type) — the type a Rhai `with_condition(...)`

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.11 — 2026-07-23
+
+- `add_op_condition` pushes non-equality filters into the SurrealDB query: `!=`,
+  `<`, `<=`, `>`, `>=`, and `in` (`column.in_` over a `Value::Array` operand).
+  The factory advertises `can_filter_operators`. `not_in_set` has no builder form
+  yet and reports `Unimplemented`, so the caller filters it locally.
+
 ## 0.6.10 — 2026-07-23
 
 - `SurrealTableShell` implements `get_ref_target` — the bare, unconditioned

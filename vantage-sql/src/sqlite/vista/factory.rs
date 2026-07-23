@@ -72,6 +72,7 @@ impl SqliteVistaFactory {
                 can_delete: !read_only,
                 can_order: true,
                 can_search: true,
+                can_filter_operators: true,
                 can_set_page_size: true,
                 can_fetch_page: true,
                 can_fetch_window: true,

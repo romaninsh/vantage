@@ -8,6 +8,7 @@ use vantage_core::Result;
 
 use crate::dio::{Dio, DioInner, Generation};
 
+use super::helpers::op_conditions_key;
 use super::loader::{enqueue_viewport, viewport_loop};
 use super::reactor::reload_loop;
 use super::state::TableSceneryState;
@@ -17,6 +18,10 @@ use super::{SceneryGuard, SortDir, TableScenery, TableSceneryImpl, ViewportReque
 pub struct TableSceneryBuilder {
     pub(crate) dio: Arc<DioInner>,
     pub(crate) conditions: Vec<(String, CborValue)>,
+    /// Non-equality filters applied locally over the cache (the fallback for
+    /// operators the master vista can't push down). Kept separate from the
+    /// equality `conditions` so the plain eq path is untouched.
+    pub(crate) op_conditions: Vec<super::OpCondition>,
     pub(crate) sort: Option<(String, SortDir)>,
     pub(crate) search: Option<String>,
     pub(crate) page_size: usize,
@@ -31,6 +36,7 @@ impl TableSceneryBuilder {
         Self {
             dio,
             conditions: Vec::new(),
+            op_conditions: Vec::new(),
             sort: None,
             search: None,
             page_size: 100,
@@ -43,6 +49,20 @@ impl TableSceneryBuilder {
 
     pub fn where_eq(mut self, col: impl Into<String>, value: impl Into<CborValue>) -> Self {
         self.conditions.push((col.into(), value.into()));
+        self
+    }
+
+    /// Add a non-equality filter (`!=`, `<`, `in`, …) applied locally over the
+    /// cache. Use for operators the master vista can't push down; a plain
+    /// equality is cheaper through [`where_eq`](Self::where_eq).
+    pub fn where_op(
+        mut self,
+        col: impl Into<String>,
+        op: vantage_vista::FilterOp,
+        value: impl Into<CborValue>,
+    ) -> Self {
+        self.op_conditions
+            .push(super::OpCondition::new(col, op, value));
         self
     }
 
@@ -122,6 +142,7 @@ impl TableSceneryBuilder {
         let TableSceneryBuilder {
             dio,
             conditions,
+            op_conditions,
             sort,
             search,
             page_size,
@@ -171,11 +192,12 @@ impl TableSceneryBuilder {
                 }
             };
             let mut key = format!(
-                "table\u{1}{}\u{1}{}\u{1}{}\u{1}{}",
+                "table\u{1}{}\u{1}{}\u{1}{}\u{1}{}\u{1}{}",
                 dio.master
                     .read()
                     .unwrap()
                     .index_key(&conditions, vista_sort),
+                op_conditions_key(&op_conditions),
                 search.as_deref().unwrap_or(""),
                 titles_only as u8,
                 demand_key,
@@ -212,7 +234,10 @@ impl TableSceneryBuilder {
         // predicates anyway.
         let local_refine = two_pass
             && !titles_only
-            && (!conditions.is_empty() || sort.is_some() || search.is_some());
+            && (!conditions.is_empty()
+                || !op_conditions.is_empty()
+                || sort.is_some()
+                || search.is_some());
         let index = if two_pass {
             let vista_sort = sort.as_ref().map(|(col, dir)| {
                 let dir = match dir {
@@ -221,11 +246,16 @@ impl TableSceneryBuilder {
                 };
                 (col.as_str(), dir)
             });
-            let key = dio
+            let mut key = dio
                 .master
                 .read()
                 .unwrap()
                 .index_key(&conditions, vista_sort);
+            // Operator filters live outside the vista's eq-only index_key, so
+            // fold them into the shared-index key here — two op-filter variants
+            // must not collide onto one ordered index.
+            key.push('\u{1}');
+            key.push_str(&op_conditions_key(&op_conditions));
             Some(dio.query_index(&key))
         } else {
             None
@@ -244,6 +274,7 @@ impl TableSceneryBuilder {
             _tally: crate::stats::Tally::table_scenery(),
             dio_weak: Arc::downgrade(&dio),
             conditions: RwLock::new(conditions),
+            op_conditions: RwLock::new(op_conditions),
             sort: RwLock::new(sort),
             search: RwLock::new(search),
             rows: RwLock::new(Default::default()),

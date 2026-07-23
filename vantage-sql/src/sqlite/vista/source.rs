@@ -202,6 +202,54 @@ where
         Ok(())
     }
 
+    fn add_op_condition(
+        &mut self,
+        field: &str,
+        op: vantage_vista::FilterOp,
+        value: &CborValue,
+    ) -> Result<()> {
+        use vantage_vista::FilterOp;
+        let column = self
+            .table
+            .columns()
+            .get(field)
+            .ok_or_else(|| error!("Unknown column for condition", field = field))?
+            .clone();
+        match op {
+            FilterOp::InSet | FilterOp::NotInSet => {
+                let CborValue::Array(items) = value else {
+                    return Err(error!(
+                        "in_set/not_in_set requires an array value",
+                        field = field
+                    ));
+                };
+                let values: Vec<AnySqliteType> = items
+                    .iter()
+                    .map(|v| AnySqliteType::untyped(v.clone()))
+                    .collect();
+                let condition = match op {
+                    FilterOp::InSet => column.in_list(&values),
+                    _ => column.not_in_list(&values),
+                };
+                self.table.add_condition(condition);
+            }
+            _ => {
+                let sql_value = AnySqliteType::untyped(value.clone());
+                let condition = match op {
+                    FilterOp::Eq => column.eq(sql_value),
+                    FilterOp::Ne => column.ne(sql_value),
+                    FilterOp::Gt => column.gt(sql_value),
+                    FilterOp::Gte => column.gte(sql_value),
+                    FilterOp::Lt => column.lt(sql_value),
+                    FilterOp::Lte => column.lte(sql_value),
+                    FilterOp::InSet | FilterOp::NotInSet => unreachable!("handled above"),
+                };
+                self.table.add_condition(condition);
+            }
+        }
+        Ok(())
+    }
+
     fn add_order(&mut self, field: &str, dir: SortDirection) -> Result<()> {
         if !self.table.columns().contains_key(field) {
             return Err(error!("Unknown column for add_order", field = field));

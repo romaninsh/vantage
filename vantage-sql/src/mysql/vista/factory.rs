@@ -63,6 +63,7 @@ impl MysqlVistaFactory {
             table,
             VistaCapabilities {
                 can_count: true,
+                can_filter_operators: true,
                 can_insert: !read_only,
                 can_update: !read_only,
                 can_delete: !read_only,

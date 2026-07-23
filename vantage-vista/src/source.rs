@@ -227,6 +227,36 @@ pub trait TableShell: Send + Sync + 'static {
         .traced())
     }
 
+    /// Translate `field <op> value` into the driver's native condition and
+    /// apply it. The default routes `Eq` to [`add_eq_condition`](Self::add_eq_condition)
+    /// (so every driver gets equality for free) and returns `Unimplemented`
+    /// for every richer operator. Drivers whose query language expresses the
+    /// operators (SQL, SurrealDB) override this and advertise
+    /// [`can_filter_operators`](crate::VistaCapabilities::can_filter_operators);
+    /// consumers that see `false` skip the call and filter locally instead.
+    fn add_op_condition(
+        &mut self,
+        field: &str,
+        op: crate::FilterOp,
+        value: &CborValue,
+    ) -> Result<()> {
+        match op {
+            crate::FilterOp::Eq => self.add_eq_condition(field, value),
+            _ => Err(error!(
+                format!(
+                    "add_op_condition operator {:?} not implemented for '{}'",
+                    op,
+                    std::any::type_name::<Self>()
+                ),
+                method = "add_op_condition",
+                operator = format!("{:?}", op),
+                source_type = std::any::type_name::<Self>()
+            )
+            .mark_unimplemented()
+            .traced()),
+        }
+    }
+
     /// Push a driver-native condition into the wrapped table. The
     /// caller boxes the condition as `dyn Any` and the driver
     /// downcasts to its own `T::Condition`. Used by YAML-driven

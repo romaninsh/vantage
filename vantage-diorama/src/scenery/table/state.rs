@@ -12,7 +12,9 @@ use crate::dio::{DioInner, Generation};
 use crate::lens::SceneryChunkTarget;
 use crate::scenery::enriched_record::{EnrichedRecord, RowStatus};
 
-use super::helpers::{cbor_cmp, matches_conditions, matches_search, record_get_path};
+use super::helpers::{
+    cmp_sort, matches_conditions, matches_op_conditions, matches_search, record_get_path,
+};
 use super::{SortDir, ViewportRequest};
 
 /// Internal state shared by the public scenery handle, the reactor
@@ -25,6 +27,10 @@ pub(crate) struct TableSceneryState {
     pub(crate) dio_weak: std::sync::Weak<DioInner>,
 
     pub(crate) conditions: RwLock<Vec<(String, CborValue)>>,
+    /// Non-equality filters applied locally over the cache (see
+    /// [`OpCondition`](super::OpCondition)). Separate from `conditions` so the
+    /// eq path is unchanged; both are ANDed in the reseed filter chain.
+    pub(crate) op_conditions: RwLock<Vec<super::OpCondition>>,
     pub(crate) sort: RwLock<Option<(String, SortDir)>>,
     pub(crate) search: RwLock<Option<String>>,
 
@@ -186,12 +192,14 @@ impl TableSceneryState {
         let all = dio_inner.cache.list_values().await?;
 
         let conditions = self.conditions.read().unwrap().clone();
+        let op_conditions = self.op_conditions.read().unwrap().clone();
         let search = self.search.read().unwrap().clone();
         let sort = self.sort.read().unwrap().clone();
 
         let mut filtered: Vec<(String, Record<CborValue>)> = all
             .into_iter()
             .filter(|(_, rec)| matches_conditions(rec, &conditions))
+            .filter(|(_, rec)| matches_op_conditions(rec, &op_conditions))
             .filter(|(_, rec)| matches_search(rec, search.as_deref()))
             .collect();
 
@@ -201,11 +209,7 @@ impl TableSceneryState {
                 .filter(|(_, r)| record_get_path(r, &col).is_none())
                 .count();
             filtered.sort_by(|(_, a), (_, b)| {
-                let ord = cbor_cmp(record_get_path(a, &col), record_get_path(b, &col));
-                match dir {
-                    SortDir::Asc => ord,
-                    SortDir::Desc => ord.reverse(),
-                }
+                cmp_sort(record_get_path(a, &col), record_get_path(b, &col), dir)
             });
             tracing::debug!(
                 target: "vantage_diorama::sort",

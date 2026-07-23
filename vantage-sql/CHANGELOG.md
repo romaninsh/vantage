@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.15 — 2026-07-23
+
+- `add_op_condition` pushes non-equality filters into the SQL query for all three
+  flavours (SQLite/Postgres/MySQL): `!=`, `<`, `<=`, `>`, `>=`, and `in` /
+  `not in` (via `in_list` / `not_in_list` over a `Value::Array` operand). The
+  factories advertise `can_filter_operators`.
+
 ## 0.6.14 — 2026-07-23
 
 - SQLite binds lower `Tag(8)` record references (`["table", id]` or

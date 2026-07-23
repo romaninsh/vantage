@@ -95,7 +95,9 @@ fn references_augmented_column(
 /// column is absent → no match), so matches surface as rows hydrate. The row's
 /// `Fresh`/`Incomplete` status is preserved.
 pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
-    use super::helpers::{cbor_cmp, matches_conditions, matches_search, record_get_path};
+    use super::helpers::{
+        cmp_sort, matches_conditions, matches_op_conditions, matches_search, record_get_path,
+    };
 
     let Some(dio_inner) = state.dio_weak.upgrade() else {
         return;
@@ -105,6 +107,7 @@ pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
     };
     let ids = index.ids();
     let conditions = state.conditions.read().unwrap().clone();
+    let op_conditions = state.op_conditions.read().unwrap().clone();
     let search = state.search.read().unwrap().clone();
     let sort = state.sort.read().unwrap().clone();
 
@@ -118,6 +121,7 @@ pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
             .ok()
             .flatten()
             && matches_conditions(&rec, &conditions)
+            && matches_op_conditions(&rec, &op_conditions)
             && matches_search(&rec, search.as_deref())
         {
             gathered.push((id.clone(), rec, status));
@@ -126,11 +130,7 @@ pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
 
     if let Some((col, dir)) = &sort {
         gathered.sort_by(|(_, a, _), (_, b, _)| {
-            let ord = cbor_cmp(record_get_path(a, col), record_get_path(b, col));
-            match dir {
-                SortDir::Asc => ord,
-                SortDir::Desc => ord.reverse(),
-            }
+            cmp_sort(record_get_path(a, col), record_get_path(b, col), *dir)
         });
     }
 
@@ -315,6 +315,7 @@ pub(crate) async fn resort(state: Arc<TableSceneryState>) {
     // 1. Re-point at the index for the new (conditions, sort) variant. Reusing
     //    a variant opened earlier finds its index already built.
     let conditions = state.conditions.read().unwrap().clone();
+    let op_conditions = state.op_conditions.read().unwrap().clone();
     let sort = state.sort.read().unwrap().clone();
     let vista_sort = sort.as_ref().map(|(col, dir)| {
         let dir = match dir {
@@ -323,11 +324,13 @@ pub(crate) async fn resort(state: Arc<TableSceneryState>) {
         };
         (col.as_str(), dir)
     });
-    let key = dio_inner
+    let mut key = dio_inner
         .master
         .read()
         .unwrap()
         .index_key(&conditions, vista_sort);
+    key.push('\u{1}');
+    key.push_str(&super::helpers::op_conditions_key(&op_conditions));
     let new_index = dio_inner.query_index(&key);
     state.set_index(Some(new_index.clone()));
 
@@ -429,6 +432,7 @@ pub(crate) async fn refresh_index(state: &Arc<TableSceneryState>) {
     };
 
     let conditions = state.conditions.read().unwrap().clone();
+    let op_conditions = state.op_conditions.read().unwrap().clone();
     let sort = state.sort.read().unwrap().clone();
     let vista_sort = sort.as_ref().map(|(col, dir)| {
         let dir = match dir {
@@ -437,11 +441,13 @@ pub(crate) async fn refresh_index(state: &Arc<TableSceneryState>) {
         };
         (col.as_str(), dir)
     });
-    let key = dio_inner
+    let mut key = dio_inner
         .master
         .read()
         .unwrap()
         .index_key(&conditions, vista_sort);
+    key.push('\u{1}');
+    key.push_str(&super::helpers::op_conditions_key(&op_conditions));
     if !dio_inner.has_dio_augment() && dio_inner.lens.callbacks.on_list_page.is_none() {
         return;
     }
