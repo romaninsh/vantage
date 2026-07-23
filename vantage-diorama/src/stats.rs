@@ -1,6 +1,6 @@
 //! Live-instance counters for leak diagnosis.
 //!
-//! Each counted type owns a [`Tally`] field: constructing the type
+//! Each counted type owns a `Tally` field: constructing the type
 //! increments its counter, dropping it decrements. [`live_counts`] snapshots
 //! all of them — an embedder can log it periodically to verify that closing
 //! a page really releases its Dios and sceneries instead of accumulating
