@@ -37,7 +37,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-afe28e67.js";
+            window.path_to_searchindex_js = "searchindex-3a53d5c2.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-249b33b5.js"></script>
@@ -3741,7 +3741,7 @@ the trigger differs.</p>
 <div>
 <p>S3’s listing Vista advertises <code>can_insert: false</code>, and the facade won’t pretend otherwise — by
 default. Register an <strong><code>on_write</code></strong> callback on the Lens and the write queue becomes yours:
-each queued <a href="intro/vantage_diorama::WriteOp"><code>WriteOp</code></a> is handed to your closure, which can append to
+each queued <code>WriteOp</code> is handed to your closure, which can append to
 a journal, call a different API, or write a queue — this is exactly the introduction’s
 “a read-only CSV file accepts writes by routing them into a queue”. Without <code>on_write</code>, queued
 ops are applied to the master directly, and a master that can’t take them surfaces
@@ -10843,6 +10843,24 @@ nothing rewires it into the Vista surface unless you write the glue (SQLite’s 
     factory.from_table(target)
 }
 <span class="boring">}</span></code></pre>
+<p><strong><code>get_ref</code> has a twin: <code>get_ref_target</code>.</strong> Where <code>get_ref</code> resolves a relation <em>for a known
+parent row</em> (join condition applied), <code>get_ref_target</code> builds the <strong>bare</strong> target — the same table
+with <strong>no</strong> condition. It has the same three-line shape, but calls the typed table’s
+<code>get_ref_target::&lt;EmptyEntity&gt;(relation)</code> instead of <code>get_ref_from_row</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn get_ref_target(&amp;self, relation: &amp;str) -&gt; Result&lt;Vista&gt; {
+    let target = self.table.get_ref_target::&lt;EmptyEntity&gt;(relation)?;
+    let factory = SqliteVistaFactory::new(self.table.data_source().clone());
+    factory.from_table(target)
+}
+<span class="boring">}</span></code></pre>
+<p>If your <code>get_ref</code> threads a resolver or converts the row into a native type, mirror that here
+(minus the row) — the wrap is identical. <strong>Override both or neither:</strong> a shell that forwards
+<code>get_ref</code> but leaves <code>get_ref_target</code> on the default lets read-side traversal work while every
+edit-form reference dropdown — which calls <code>Dio::get_ref_target(relation)</code> to list the eligible
+rows to pick from — silently fails with <code>Unimplemented</code>. That split is exactly the bug the SQL and
+Mongo drivers avoid by shipping both from day one.</p>
 <p>Two notes worth dwelling on:</p>
 <ul>
 <li>The result is <em>another</em> <code>Vista</code>, not the inner table. Consumers stay on the universal surface;
@@ -10992,12 +11010,13 @@ non-hex inputs is the kind of asymmetry that hides until production.</p>
 ignores them, which is why MongoDB’s vista layer routes single-level renames through
 <code>column_paths</code> instead. Audit your read path before relying on aliases for column renames; if the
 table layer doesn’t honour them, do the renaming in the vista source.</p>
-<p><strong><code>get_ref</code> is the easiest method to forget.</strong> The default returns <code>Unimplemented</code> even though
-the typed <code>Table&lt;T, E&gt;</code> you wrapped has full <code>with_one</code>/<code>with_many</code> support sitting right there.
-Forwarding is three lines (see “References delegate too” above), but a test file that never
-traverses won’t catch the missing override — and <code>Vista::get_ref</code> is exactly the entry point
-YAML-driven UIs and CLIs reach for first. Add a reference-traversal smoke test to every driver’s
-<code>tests/N_vista.rs</code>.</p>
+<p><strong><code>get_ref</code> and <code>get_ref_target</code> are the easiest methods to forget — and forgetting just one is
+worse than forgetting both.</strong> The defaults return <code>Unimplemented</code> even though the typed
+<code>Table&lt;T, E&gt;</code> you wrapped has full <code>with_one</code>/<code>with_many</code> support sitting right there. Forwarding
+each is three lines (see “References delegate too” above), but a test file that never traverses
+won’t catch a missing override — and these are exactly the entry points YAML-driven UIs and CLIs
+reach for first (<code>get_ref</code> for drill-down, <code>get_ref_target</code> for the edit-form pick-a-related-record
+dropdown). Add a smoke test that exercises <strong>both</strong> to every driver’s <code>tests/N_vista.rs</code>.</p>
 <p><strong>Cursor-only backends should not advertise offset.</strong> <code>PaginateKind</code> is a UI hint as much as a
 declaration; getting it wrong means the UI offers an offset slider that never works. If the
 backend is genuinely cursor-only (DynamoDB, many REST APIs), say so, and let consumers reject the
@@ -11033,9 +11052,11 @@ flagged it <code>true</code> in week one and has been shipping <code>Unimplement
 <li>Read methods translate native ids → <code>String</code> and native values → <code>CborValue</code> at the boundary.</li>
 <li>Write methods (where supported) translate the other way.</li>
 <li><code>add_eq_condition</code> pushes a native condition onto the wrapped <code>Table</code>.</li>
-<li><code>get_ref</code> forwards reference traversal through the wrapped <code>Table</code> and re-wraps the result as
-a fresh <code>Vista</code>. <code>add_raw_condition</code> is also overridden if the driver participates in
-cross-backend YAML references.</li>
+<li><code>get_ref</code> <strong>and</strong> <code>get_ref_target</code> forward reference traversal through the wrapped <code>Table</code> and
+re-wrap the result as a fresh <code>Vista</code> — <code>get_ref</code> with the parent-row join condition,
+<code>get_ref_target</code> as the bare eligible-rows target the edit-form dropdown lists. Ship both or
+neither. <code>add_raw_condition</code> is also overridden if the driver participates in cross-backend
+YAML references.</li>
 <li><code>driver_name</code> returns a stable short label; <code>get_vista_count</code> and <code>stream_vista_values</code> are
 overridden where the backend has a native fast path.</li>
 <li><code>capabilities()</code> returns a <code>VistaCapabilities</code> whose <code>true</code> flags exactly match the methods
