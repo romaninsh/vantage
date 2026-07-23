@@ -54,6 +54,8 @@ pub trait RecordScenery: Send + Sync {
 }
 
 pub(crate) struct RecordSceneryState {
+    /// Live-instance census (see [`crate::stats`]).
+    pub(crate) _tally: crate::stats::Tally,
     pub(crate) dio_weak: Weak<DioInner>,
     pub(crate) id: String,
 
@@ -228,6 +230,7 @@ pub(crate) fn spawn_record_scenery(
 ) -> Arc<dyn RecordScenery> {
     let (gen_tx, _gen_rx) = watch::channel(Generation::default());
     let state = Arc::new(RecordSceneryState {
+        _tally: crate::stats::Tally::record_scenery(),
         dio_weak: Arc::downgrade(dio),
         id,
         record: RwLock::new(initial_record.map(|r| Arc::new(EnrichedRecord::fresh(r)))),

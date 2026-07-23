@@ -241,6 +241,7 @@ impl TableSceneryBuilder {
         };
 
         let state = Arc::new(TableSceneryState {
+            _tally: crate::stats::Tally::table_scenery(),
             dio_weak: Arc::downgrade(&dio),
             conditions: RwLock::new(conditions),
             sort: RwLock::new(sort),

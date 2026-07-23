@@ -1,7 +1,24 @@
 # Changelog
 
-## 0.7.2 — 2026-07-22
+## 0.7.2 — 2026-07-23
 
+- **`Dio::get_ref_target(relation)`** — open a relation's bare,
+  unconditioned target as a new Dio sharing this Dio's Lens (cache table
+  named after the target). The scenery behind a reference dropdown: every
+  eligible row of the target, searchable through the normal quicksearch
+  pipeline.
+- **`WeakDio`** — a non-owning Dio handle (`Dio::downgrade()` /
+  `WeakDio::upgrade()`) for registries and inspection routes that must
+  observe a Dio without keeping its pipeline alive. A failed upgrade
+  means every strong holder released it.
+- **`stats::live_counts()`** — live-instance census of Dios, table/record
+  sceneries, and servos, maintained by RAII tallies on the internal
+  state structs. Embedders log it periodically to verify that closing a
+  view really releases its pipeline instead of accumulating leaks.
+- `RedbCache::open` instrumentation: each open logs its duration and file
+  size, and redb's repair callback is wired so a repair pass (the
+  full-file scan after an unclean shutdown) is visible in the log — slow
+  opens are attributable instead of mysterious UI stalls.
 - Docs: drop the intra-doc link to the private `QueuedFlash` in the
   `worker` module docs (rustdoc `-D warnings`).
 

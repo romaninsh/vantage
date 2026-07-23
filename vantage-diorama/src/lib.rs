@@ -10,6 +10,7 @@ pub mod lens;
 pub mod ops;
 pub mod scenery;
 pub mod servo;
+pub mod stats;
 
 pub use augment::{
     AugmentSpec, Augmentation, BuildFn, Detail, Fetch, FetchFn, FetchSpec, MergeRule, SetOp,
@@ -17,7 +18,7 @@ pub use augment::{
 };
 pub use composition::Diorama;
 pub use dio::diagnostics::{DioDiagnostics, SceneryDiagnostic};
-pub use dio::{Dio, DioEvent, DioShell, Generation, WriteCapabilities};
+pub use dio::{Dio, DioEvent, DioShell, Generation, WeakDio, WriteCapabilities};
 pub use error::{DioError, LensBuildError};
 pub use lens::{
     Activity, ActivitySignal, CacheBackend, CacheStatus, CacheTable, ChunkRow, ChunkSink,

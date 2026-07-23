@@ -40,6 +40,7 @@ impl Lens {
         let (event_bus, _event_rx) = broadcast::channel(64);
 
         let inner = Arc::new(DioInner {
+            _tally: crate::stats::Tally::dio(),
             lens: self.clone(),
             master: std::sync::RwLock::new(Arc::new(master)),
             cache,
