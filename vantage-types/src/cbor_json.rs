@@ -202,6 +202,105 @@ pub fn json_to_cbor(value: JsonValue) -> CborValue {
     }
 }
 
+/// Convert a JSON value to CBOR, using an existing CBOR value as a *shape
+/// hint* so that lossy [`PresentationDialect`] renderings round-trip.
+///
+/// [`json_to_cbor`] is total but forward-only: it has no way to know that a
+/// `"golf_course:pebble_beach"` string was once a SurrealDB record id, or
+/// that a `"12"` string belongs in an integer column. That matters wherever
+/// a value made a `CBOR → JSON → edit → JSON → CBOR` trip (a form field, an
+/// MCP write): the naive back-conversion yields `Text("golf_course:…")`,
+/// which never compares equal to the tracked `Tag(8, [table, id])`, so the
+/// field reads as permanently changed.
+///
+/// The `hint` is the value the result is compared against (e.g. the record's
+/// current CBOR). When it pins down a shape JSON erased, this restores it:
+///
+/// - **Record id** — a string under a `Tag(8, …)` hint becomes `Tag(8, …)`
+///   again, mirroring the hint's inner shape (using the hint's own table to
+///   locate the `:` split, so an id containing `:` survives).
+/// - **Text-carrying tag** — a string under a `Tag(t, Text(_))` hint
+///   (datetime `0`, uuid `9`, decimal `10`, duration `13`) re-wraps as
+///   `Tag(t, Text(s))`.
+/// - **Scalar** — a string under an `Integer` / `Float` / `Bool` hint parses
+///   to that scalar (form fields carry every value as text); a JSON number
+///   under a `Float` hint stays a float instead of narrowing to an integer.
+///
+/// Anything the hint doesn't cover falls back to [`json_to_cbor`], so this is
+/// a strict superset — safe to call with `hint: None`.
+pub fn json_to_cbor_with_hint(value: &JsonValue, hint: Option<&CborValue>) -> CborValue {
+    match (value, hint) {
+        // Record id: restore Tag(8) from its "table:id" presentation form.
+        (JsonValue::String(s), Some(CborValue::Tag(8, inner))) => retag_record_id(s, inner),
+        // Datetime / uuid / decimal / duration — the form edits the inner
+        // text; re-wrap it in the same tag so it round-trips.
+        (JsonValue::String(s), Some(CborValue::Tag(tag, inner)))
+            if matches!(inner.as_ref(), CborValue::Text(_)) =>
+        {
+            CborValue::Tag(*tag, Box::new(CborValue::Text(s.clone())))
+        }
+        // Scalar coercions: a text field yields a string; land it as the
+        // hinted scalar so an int / float / bool column round-trips.
+        (JsonValue::String(s), Some(CborValue::Integer(_))) => s
+            .parse::<i64>()
+            .map(|i| CborValue::Integer(i.into()))
+            .unwrap_or_else(|_| CborValue::Text(s.clone())),
+        (JsonValue::String(s), Some(CborValue::Float(_))) => s
+            .parse::<f64>()
+            .map(CborValue::Float)
+            .unwrap_or_else(|_| CborValue::Text(s.clone())),
+        (JsonValue::String(s), Some(CborValue::Bool(_)))
+            if matches!(s.as_str(), "true" | "false") =>
+        {
+            CborValue::Bool(s == "true")
+        }
+        // A JSON number under a float hint stays a float — an integer-valued
+        // number would otherwise narrow to Integer and drift from the hint.
+        (JsonValue::Number(n), Some(CborValue::Float(_))) => {
+            CborValue::Float(n.as_f64().unwrap_or(0.0))
+        }
+        // No hint, or a shape JSON already represents exactly: lossless path.
+        _ => json_to_cbor(value.clone()),
+    }
+}
+
+/// Rebuild a SurrealDB record id (`Tag(8)`) from its presentation string,
+/// mirroring the `inner` shape carried by the hint.
+fn retag_record_id(s: &str, inner: &CborValue) -> CborValue {
+    let tag8 = |v: CborValue| CborValue::Tag(8, Box::new(v));
+    match inner {
+        // Tag(8, [Text(table), id]) — the canonical `table:id` shape. Split
+        // on the hint's own table where possible so a `:` in the id part
+        // survives; otherwise fall back to the first `:`.
+        CborValue::Array(parts) if parts.len() == 2 => {
+            let (table, id) = match &parts[0] {
+                CborValue::Text(t)
+                    if s.strip_prefix(t.as_str())
+                        .and_then(|r| r.strip_prefix(':'))
+                        .is_some() =>
+                {
+                    (t.clone(), s[t.len() + 1..].to_string())
+                }
+                _ => match s.split_once(':') {
+                    Some((t, i)) => (t.to_string(), i.to_string()),
+                    None => (String::new(), s.to_string()),
+                },
+            };
+            // Preserve a non-text id part's scalar type where it round-trips.
+            let id_val = match &parts[1] {
+                CborValue::Integer(_) => id
+                    .parse::<i64>()
+                    .map(|i| CborValue::Integer(i.into()))
+                    .unwrap_or(CborValue::Text(id)),
+                _ => CborValue::Text(id),
+            };
+            tag8(CborValue::Array(vec![CborValue::Text(table), id_val]))
+        }
+        // Tag(8, Text("table:id")) — a single-text id form.
+        _ => tag8(CborValue::Text(s.to_string())),
+    }
+}
+
 /// Lowercase hex, dependency-free.
 pub fn hex_encode(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
@@ -430,6 +529,101 @@ mod tests {
                 &CborValue::Array(vec![CborValue::Integer(1.into())])
             ),
             "[1]"
+        );
+    }
+
+    /// The presentation string of a `Tag(8)` record id, back-converted under
+    /// that id as the hint, reconstructs the identical `Tag(8)` — so a form
+    /// field over a record id compares equal to the tracked value.
+    #[test]
+    fn record_id_round_trips_under_hint() {
+        let thing = CborValue::Tag(
+            8,
+            Box::new(CborValue::Array(vec![
+                CborValue::Text("golf_course".into()),
+                CborValue::Text("pebble_beach".into()),
+            ])),
+        );
+        let rendered = cbor_to_json(&PresentationDialect, thing.clone());
+        assert_eq!(rendered, json!("golf_course:pebble_beach"));
+        assert_eq!(json_to_cbor_with_hint(&rendered, Some(&thing)), thing);
+    }
+
+    /// An id whose id-part itself contains `:` still splits on the hint's
+    /// table boundary, not the first colon.
+    #[test]
+    fn record_id_with_colon_in_id_uses_table_boundary() {
+        let thing = CborValue::Tag(
+            8,
+            Box::new(CborValue::Array(vec![
+                CborValue::Text("event".into()),
+                CborValue::Text("2026-07-23:slot".into()),
+            ])),
+        );
+        let rendered = json!("event:2026-07-23:slot");
+        assert_eq!(json_to_cbor_with_hint(&rendered, Some(&thing)), thing);
+    }
+
+    /// A numeric id part is restored as an integer, not stringified.
+    #[test]
+    fn record_id_preserves_numeric_id_part() {
+        let thing = CborValue::Tag(
+            8,
+            Box::new(CborValue::Array(vec![
+                CborValue::Text("user".into()),
+                CborValue::Integer(42.into()),
+            ])),
+        );
+        assert_eq!(
+            json_to_cbor_with_hint(&json!("user:42"), Some(&thing)),
+            thing
+        );
+    }
+
+    /// A text-carrying tag (decimal here) re-wraps, and scalar string values
+    /// coerce to the hinted int / float / bool.
+    #[test]
+    fn text_tag_and_scalars_coerce_under_hint() {
+        let dec = CborValue::Tag(10, Box::new(CborValue::Text("12.34".into())));
+        assert_eq!(json_to_cbor_with_hint(&json!("12.34"), Some(&dec)), dec);
+
+        assert_eq!(
+            json_to_cbor_with_hint(&json!("12"), Some(&CborValue::Integer(0.into()))),
+            CborValue::Integer(12.into())
+        );
+        assert_eq!(
+            json_to_cbor_with_hint(&json!("1.5"), Some(&CborValue::Float(0.0))),
+            CborValue::Float(1.5)
+        );
+        assert_eq!(
+            json_to_cbor_with_hint(&json!("true"), Some(&CborValue::Bool(false))),
+            CborValue::Bool(true)
+        );
+        // A JSON integer-valued number under a float hint stays a float.
+        assert_eq!(
+            json_to_cbor_with_hint(&json!(3), Some(&CborValue::Float(0.0))),
+            CborValue::Float(3.0)
+        );
+    }
+
+    /// With no hint (or an unrelated one) it matches the lossless
+    /// [`json_to_cbor`] exactly — a strict superset.
+    #[test]
+    fn no_hint_matches_lossless() {
+        for v in [
+            json!("s"),
+            json!(7),
+            json!(1.5),
+            json!(true),
+            json!(null),
+            json!([1, 2]),
+        ] {
+            assert_eq!(json_to_cbor_with_hint(&v, None), json_to_cbor(v.clone()));
+        }
+        // An unparseable string under an integer hint falls back to text.
+        assert_eq!(
+            json_to_cbor_with_hint(&json!("abc"), Some(&CborValue::Integer(0.into()))),
+            CborValue::Text("abc".into())
         );
     }
 }

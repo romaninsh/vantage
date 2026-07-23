@@ -5858,7 +5858,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "ciborium",
  "csv",

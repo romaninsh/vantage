@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.4 — 2026-07-23
+
+- `json_to_cbor_with_hint(value, hint)` — a hint-aware inverse of the
+  `PresentationDialect` renderings that `json_to_cbor` (forward-only) can't
+  undo. Given the tracked CBOR as a shape hint, a `"table:id"` string restores
+  to `Tag(8, [table, id])`, a text-carrying tag (datetime/uuid/decimal/duration)
+  re-wraps, and a scalar string coerces to the hinted int/float/bool. Falls
+  back to `json_to_cbor` with no hint, so it's a strict superset. Fixes the
+  `CBOR → JSON → edit → CBOR` round-trip that otherwise left record-id and
+  typed fields comparing as permanently changed (phantom "unsaved change").
+
 ## 0.6.3 — 2026-07-16
 
 - `cbor_json` module (behind the `serde` feature): one shared CBOR↔JSON walker with
