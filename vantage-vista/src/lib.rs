@@ -5,6 +5,7 @@ pub mod capabilities;
 pub mod column;
 pub mod contained;
 pub mod factory;
+pub mod filter;
 pub mod flags;
 pub mod impls;
 pub mod insert;
@@ -25,6 +26,7 @@ pub use contained::{
     ContainedRefResolver, ContainedShell, ContainedWriteback, build_contained_vista,
 };
 pub use factory::VistaFactory;
+pub use filter::FilterOp;
 pub use metadata::VistaMetadata;
 pub use reference::{ContainedKind, ContainedSpec, Reference, ReferenceKind};
 #[cfg(feature = "rhai")]

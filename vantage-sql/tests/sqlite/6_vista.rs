@@ -107,6 +107,58 @@ async fn vista_count_with_eq_condition() -> TestResult {
 }
 
 #[tokio::test]
+async fn vista_pushes_operator_conditions_server_side() -> TestResult {
+    use vantage_vista::FilterOp;
+
+    // products: a=Alpha/10/0, b=Beta/20/1, c=Gamma/30/0.
+    let db = setup().await;
+
+    // capability advertised
+    assert!(
+        db.vista_factory()
+            .from_table(product_table(db.clone()))?
+            .capabilities()
+            .can_filter_operators,
+        "sqlite advertises operator push-down"
+    );
+
+    // `!=` — price != 20 excludes Beta → a, c.
+    let mut vista = db.vista_factory().from_table(product_table(db.clone()))?;
+    vista.add_condition("price", FilterOp::Ne, CborValue::Integer(20i64.into()))?;
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 2);
+    assert!(rows.contains_key("a") && rows.contains_key("c") && !rows.contains_key("b"));
+
+    // `>` — price > 15 → Beta, Gamma.
+    let mut vista = db.vista_factory().from_table(product_table(db.clone()))?;
+    vista.add_condition("price", FilterOp::Gt, CborValue::Integer(15i64.into()))?;
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 2);
+    assert!(rows.contains_key("b") && rows.contains_key("c") && !rows.contains_key("a"));
+
+    // `in` — id in {a, c}.
+    let mut vista = db.vista_factory().from_table(product_table(db.clone()))?;
+    let set = CborValue::Array(vec![
+        CborValue::Text("a".into()),
+        CborValue::Text("c".into()),
+    ]);
+    vista.add_condition("id", FilterOp::InSet, set)?;
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 2);
+    assert!(rows.contains_key("a") && rows.contains_key("c") && !rows.contains_key("b"));
+
+    // `not in` — id not in {b}.
+    let mut vista = db.vista_factory().from_table(product_table(db.clone()))?;
+    let set = CborValue::Array(vec![CborValue::Text("b".into())]);
+    vista.add_condition("id", FilterOp::NotInSet, set)?;
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 2);
+    assert!(rows.contains_key("a") && rows.contains_key("c") && !rows.contains_key("b"));
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn vista_yaml_loads_table_and_columns() -> TestResult {
     let db = setup().await;
 

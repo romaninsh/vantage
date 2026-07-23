@@ -47,6 +47,41 @@ pub enum SortDir {
     Desc,
 }
 
+/// A non-equality filter condition applied **locally** over the cached rows —
+/// the fallback path when the master vista can't push the operator into its
+/// query (advertised via
+/// [`can_filter_operators`](vantage_vista::VistaCapabilities::can_filter_operators)).
+/// `value` carries a scalar for the scalar operators and a
+/// [`CborValue::Array`](ciborium::Value::Array) for `InSet` / `NotInSet`.
+/// Plain equality keeps using the lighter `where_eq` / `conditions` path.
+#[derive(Debug, Clone)]
+pub struct OpCondition {
+    pub column: String,
+    pub op: vantage_vista::FilterOp,
+    pub value: ciborium::Value,
+}
+
+impl OpCondition {
+    pub fn new(
+        column: impl Into<String>,
+        op: vantage_vista::FilterOp,
+        value: impl Into<ciborium::Value>,
+    ) -> Self {
+        Self {
+            column: column.into(),
+            op,
+            value: value.into(),
+        }
+    }
+
+    /// Stable `field<sym>value` fragment for the query-variant cache key, so a
+    /// scenery narrowed by this operator gets its own ordered index (never
+    /// colliding with the unfiltered set or a different-operator filter).
+    pub(crate) fn key_fragment(&self) -> String {
+        format!("{}{}{:?}", self.column, self.op.key_symbol(), self.value)
+    }
+}
+
 /// Internal viewport request carried over the debounce channel.
 #[derive(Debug, Clone)]
 pub(crate) struct ViewportRequest {

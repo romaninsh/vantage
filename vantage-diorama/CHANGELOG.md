@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.4 — 2026-07-23
+
+- `TableSceneryBuilder::where_op(col, op, value)` and the `OpCondition` type —
+  non-equality filters (`!=`, `<`, `in`, …) applied locally over the cache, the
+  fallback for operators the master vista can't push. Kept in a channel separate
+  from the equality `where_eq` path and folded into the query-variant cache key
+  so a filtered scenery gets its own ordered index. The Dio facade passes the
+  master's `can_filter_operators` through.
+- Sort now keeps empty (`None`) values **last regardless of direction**.
+  Previously blanks sorted to the top in ascending order (the direction reversal
+  flipped null placement along with everything else).
+
 ## 0.7.3 — 2026-07-23
 
 - `DioEvent::WritePending` and `DioEvent::WriteReverted` carry the
