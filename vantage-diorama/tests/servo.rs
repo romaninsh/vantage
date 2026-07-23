@@ -397,7 +397,8 @@ async fn foreign_delete_failure_leaves_servo_tracking() -> Result<()> {
         dio.cache().insert_value(&id, &r).await?;
     }
     let servo = dio.servo("p1").await?;
-    let mut events = dio.subscribe_events();
+    let mut gen_rx = servo.subscribe();
+    let g = u64::from(*gen_rx.borrow_and_update());
 
     let result = dio.flash_delete("p1").await;
     assert!(
@@ -405,16 +406,10 @@ async fn foreign_delete_failure_leaves_servo_tracking() -> Result<()> {
         "the rejection surfaces to the delete caller"
     );
 
-    // Wait until the revert has been broadcast, then let the servo's
-    // absorb task run.
-    loop {
-        match events.recv().await {
-            Ok(vantage_diorama::DioEvent::WriteReverted { id, .. }) if id == "p1" => break,
-            Ok(_) => {}
-            Err(e) => panic!("event bus closed early: {e}"),
-        }
-    }
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    // The delete-kind WritePending no longer touches the servo, so the
+    // only generation bump after the delete is the revert's absorb —
+    // waiting for it proves the servo has seen the restored cache.
+    wait_for_gen(&mut gen_rx, g).await;
 
     assert!(
         matches!(servo.status(), ServoStatus::Tracking),
