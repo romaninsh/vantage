@@ -525,7 +525,7 @@ the trigger differs.
 ```admonish info title="Writes, on a read-only master"
 S3's listing Vista advertises `can_insert: false`, and the facade won't pretend otherwise — by
 default. Register an **`on_write`** callback on the Lens and the write queue becomes yours:
-each queued [`WriteOp`](vantage_diorama::WriteOp) is handed to your closure, which can append to
+each queued `WriteOp` is handed to your closure, which can append to
 a journal, call a different API, or write a queue — this is exactly the introduction's
 "a read-only CSV file accepts writes by routing them into a queue". Without `on_write`, queued
 ops are applied to the master directly, and a master that can't take them surfaces
