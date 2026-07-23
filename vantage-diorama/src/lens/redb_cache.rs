@@ -30,14 +30,57 @@ pub struct RedbCache {
 
 impl RedbCache {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
         let path = path.as_ref().to_path_buf();
-        let db = Database::create(&path).map_err(|e| {
-            error!(
-                "Failed to open redb cache",
-                path = path.display(),
-                detail = e.to_string()
-            )
-        })?;
+        // Evidence instrumentation: opens have been observed taking whole
+        // seconds on the caller's thread. Record what this one cost, how big
+        // the file was, and whether redb ran a repair pass (a full-file scan
+        // triggered by an unclean shutdown) so slow opens are attributable
+        // from the log alone.
+        let preexisting_bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        let started = std::time::Instant::now();
+        let repaired = Arc::new(AtomicBool::new(false));
+        let repaired_flag = repaired.clone();
+        let repair_path = path.clone();
+        let db = Database::builder()
+            .set_repair_callback(move |session| {
+                repaired_flag.store(true, Ordering::Relaxed);
+                tracing::warn!(
+                    target: "vantage_diorama::cache",
+                    path = ?repair_path,
+                    progress = session.progress(),
+                    "redb repair running (unclean shutdown; full-file scan)",
+                );
+            })
+            .create(&path)
+            .map_err(|e| {
+                error!(
+                    "Failed to open redb cache",
+                    path = path.display(),
+                    detail = e.to_string()
+                )
+            })?;
+        let ms = started.elapsed().as_millis() as u64;
+        let repaired = repaired.load(Ordering::Relaxed);
+        if ms >= 50 || repaired {
+            tracing::warn!(
+                target: "vantage_diorama::cache",
+                path = ?path,
+                ms,
+                preexisting_bytes,
+                repaired,
+                "slow redb cache open",
+            );
+        } else {
+            tracing::debug!(
+                target: "vantage_diorama::cache",
+                path = ?path,
+                ms,
+                preexisting_bytes,
+                "redb cache open",
+            );
+        }
         Ok(Self {
             db: Arc::new(db),
             path,

@@ -1,4 +1,4 @@
-//! Write-queue worker — consumes [`QueuedFlash`]es from `DioInner::write_queue`.
+//! Write-queue worker — consumes `QueuedFlash`es from `DioInner::write_queue`.
 //!
 //! For each flash the worker either invokes the lens's `on_flash` route
 //! (when registered) or applies the flash directly to `dio.master()`.

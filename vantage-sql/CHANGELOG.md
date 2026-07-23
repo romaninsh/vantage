@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.13 — 2026-07-22
+
+- Vista factories (SQLite/Postgres/MySQL) lower **dotted spec columns**
+  (`author.name`) as implicit-reference imports through
+  `with_active_columns`, after the spec's references are registered. A
+  dotted column previously went through the plain `add_column` path,
+  selecting a nonexistent identifier and reading empty. Declared-column
+  YAML now matches the typed API: dotted names traverse the has-one
+  chain and project as read-only correlated imports.
+
 ## 0.6.12 — 2026-07-21
 
 - Implicit-references review fixes: vista factories flag computed columns

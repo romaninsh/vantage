@@ -74,6 +74,31 @@ pub struct Dio {
     pub(crate) inner: Arc<DioInner>,
 }
 
+/// A non-owning handle to a [`Dio`] — the currency for registries
+/// (memoization maps, inspection routes) that must *observe* a Dio
+/// without keeping its pipeline alive. Upgrade to use; a failed upgrade
+/// means every strong holder (open pages, sceneries) has released it.
+#[derive(Clone)]
+pub struct WeakDio {
+    inner: std::sync::Weak<DioInner>,
+}
+
+impl Dio {
+    /// Downgrade to a non-owning [`WeakDio`].
+    pub fn downgrade(&self) -> WeakDio {
+        WeakDio {
+            inner: Arc::downgrade(&self.inner),
+        }
+    }
+}
+
+impl WeakDio {
+    /// Reclaim a usable [`Dio`] if any strong handle is still alive.
+    pub fn upgrade(&self) -> Option<Dio> {
+        self.inner.upgrade().map(|inner| Dio { inner })
+    }
+}
+
 /// The Dio's *effective* write capabilities — the one gate UI chrome
 /// asks before offering add/edit/delete.
 ///
@@ -89,6 +114,8 @@ pub struct WriteCapabilities {
 }
 
 pub(crate) struct DioInner {
+    /// Live-instance census (see [`crate::stats`]).
+    pub(crate) _tally: crate::stats::Tally,
     pub(crate) lens: Arc<Lens>,
     /// The master Vista, swappable so a [`reload`](Dio::reload) can re-point the
     /// Dio at a freshly-built Vista (e.g. after its VistaFactory reloaded)
@@ -322,6 +349,19 @@ impl Dio {
             .unwrap_or_default();
         let cache_table_name = format!("{}-via-{}-{}", target.name(), relation, parent_id);
 
+        self.inner.lens.make_dio_as(target, cache_table_name).await
+    }
+
+    /// Traverse a reference to its **bare** target — the relation's table
+    /// with no row condition — as a new [`Dio`] sharing this Dio's
+    /// [`Lens`]. Where [`get_ref`](Self::get_ref) narrows the target to
+    /// one parent's related rows, this hands back *every eligible row* —
+    /// what a reference picker lists, or where a new related row would be
+    /// inserted. The cache table is the target's own name, so a page
+    /// already showing the target keeps this Dio warm.
+    pub async fn get_ref_target(&self, relation: &str) -> Result<Dio> {
+        let target = self.master().get_ref_target(relation)?;
+        let cache_table_name = target.name().to_string();
         self.inner.lens.make_dio_as(target, cache_table_name).await
     }
 

@@ -18,6 +18,8 @@ use super::{SortDir, ViewportRequest};
 /// Internal state shared by the public scenery handle, the reactor
 /// task, and the viewport-debounce task.
 pub(crate) struct TableSceneryState {
+    /// Live-instance census (see [`crate::stats`]).
+    pub(crate) _tally: crate::stats::Tally,
     /// Weak so the Scenery doesn't pin the Dio alive — the spawned
     /// tasks exit when the last user-held Dio drops.
     pub(crate) dio_weak: std::sync::Weak<DioInner>,

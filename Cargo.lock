@@ -5641,7 +5641,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5771,7 +5771,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.6.12"
+version = "0.6.13"
 dependencies = [
  "async-stream",
  "async-trait",

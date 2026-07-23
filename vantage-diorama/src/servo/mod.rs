@@ -44,6 +44,8 @@ pub enum ServoStatus {
 }
 
 pub(crate) struct ServoState {
+    /// Live-instance census (see [`crate::stats`]).
+    _tally: crate::stats::Tally,
     id: RwLock<Option<String>>,
     baseline: RwLock<Option<Record<CborValue>>>,
     data: RwLock<Record<CborValue>>,
@@ -373,6 +375,7 @@ async fn absorb_from_cache(state: &Arc<ServoState>, dio_weak: &Weak<DioInner>) {
 pub(crate) fn spawn_servo(dio: &Dio, id: Option<String>) -> Servo {
     let (generation_tx, _rx) = watch::channel(Generation::default());
     let state = Arc::new(ServoState {
+        _tally: crate::stats::Tally::servo(),
         id: RwLock::new(id),
         baseline: RwLock::new(None),
         data: RwLock::new(Record::new()),
