@@ -21,7 +21,7 @@ pub use types::{RhaiCase, RhaiExpr, RhaiIdent, RhaiSelect};
 /// Register the full SurrealDB query-building vocabulary onto `engine`.
 ///
 /// Shared by two entry points:
-/// - the [`register_surreal_engine!`] macro, whose `__create_engine` wraps this
+/// - the [`register_surreal_engine!`](crate::register_surreal_engine) macro, whose `__create_engine` wraps this
 ///   in a fresh `Engine` (back-compat for the standalone Rhai tests/examples and
 ///   the `rhai:` vista source);
 /// - `SurrealTableShell::register_rhai_extensions`, which layers it on top of

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.2 — 2026-07-23
+
+- `CmdTableShell` implements `get_ref_target` (the bare relation target via the
+  factory), matching `get_ref`. Previously the eligible-rows dropdown path
+  returned `Unimplemented`.
+
 ## 0.6.1 — unreleased
 
 - CBOR↔JSON helpers use the shared `vantage-types` walker: tagged values render their

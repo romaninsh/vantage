@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.4 — 2026-07-23
+
+- `AwsTableShell` implements `get_ref_target`, forwarding the bare relation
+  target through the factory like `get_ref`. Fills the reference-dropdown
+  (eligible-rows) path that previously fell back to `Unimplemented`.
+
 ## 0.6.3 — 2026-07-16
 
 - CBOR↔JSON at the wire boundary uses the shared `vantage-types` walker: tagged values

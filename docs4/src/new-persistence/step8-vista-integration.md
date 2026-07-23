@@ -389,6 +389,26 @@ fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
 }
 ```
 
+**`get_ref` has a twin: `get_ref_target`.** Where `get_ref` resolves a relation *for a known
+parent row* (join condition applied), `get_ref_target` builds the **bare** target — the same table
+with **no** condition. It has the same three-line shape, but calls the typed table's
+`get_ref_target::<EmptyEntity>(relation)` instead of `get_ref_from_row`:
+
+```rust
+fn get_ref_target(&self, relation: &str) -> Result<Vista> {
+    let target = self.table.get_ref_target::<EmptyEntity>(relation)?;
+    let factory = SqliteVistaFactory::new(self.table.data_source().clone());
+    factory.from_table(target)
+}
+```
+
+If your `get_ref` threads a resolver or converts the row into a native type, mirror that here
+(minus the row) — the wrap is identical. **Override both or neither:** a shell that forwards
+`get_ref` but leaves `get_ref_target` on the default lets read-side traversal work while every
+edit-form reference dropdown — which calls `Dio::get_ref_target(relation)` to list the eligible
+rows to pick from — silently fails with `Unimplemented`. That split is exactly the bug the SQL and
+Mongo drivers avoid by shipping both from day one.
+
 Two notes worth dwelling on:
 
 - The result is *another* `Vista`, not the inner table. Consumers stay on the universal surface;
@@ -560,12 +580,13 @@ ignores them, which is why MongoDB's vista layer routes single-level renames thr
 `column_paths` instead. Audit your read path before relying on aliases for column renames; if the
 table layer doesn't honour them, do the renaming in the vista source.
 
-**`get_ref` is the easiest method to forget.** The default returns `Unimplemented` even though
-the typed `Table<T, E>` you wrapped has full `with_one`/`with_many` support sitting right there.
-Forwarding is three lines (see "References delegate too" above), but a test file that never
-traverses won't catch the missing override — and `Vista::get_ref` is exactly the entry point
-YAML-driven UIs and CLIs reach for first. Add a reference-traversal smoke test to every driver's
-`tests/N_vista.rs`.
+**`get_ref` and `get_ref_target` are the easiest methods to forget — and forgetting just one is
+worse than forgetting both.** The defaults return `Unimplemented` even though the typed
+`Table<T, E>` you wrapped has full `with_one`/`with_many` support sitting right there. Forwarding
+each is three lines (see "References delegate too" above), but a test file that never traverses
+won't catch a missing override — and these are exactly the entry points YAML-driven UIs and CLIs
+reach for first (`get_ref` for drill-down, `get_ref_target` for the edit-form pick-a-related-record
+dropdown). Add a smoke test that exercises **both** to every driver's `tests/N_vista.rs`.
 
 **Cursor-only backends should not advertise offset.** `PaginateKind` is a UI hint as much as a
 declaration; getting it wrong means the UI offers an offset slider that never works. If the
@@ -599,9 +620,11 @@ At this point your backend should have:
    - Read methods translate native ids → `String` and native values → `CborValue` at the boundary.
    - Write methods (where supported) translate the other way.
    - `add_eq_condition` pushes a native condition onto the wrapped `Table`.
-   - `get_ref` forwards reference traversal through the wrapped `Table` and re-wraps the result as
-     a fresh `Vista`. `add_raw_condition` is also overridden if the driver participates in
-     cross-backend YAML references.
+   - `get_ref` **and** `get_ref_target` forward reference traversal through the wrapped `Table` and
+     re-wrap the result as a fresh `Vista` — `get_ref` with the parent-row join condition,
+     `get_ref_target` as the bare eligible-rows target the edit-form dropdown lists. Ship both or
+     neither. `add_raw_condition` is also overridden if the driver participates in cross-backend
+     YAML references.
    - `driver_name` returns a stable short label; `get_vista_count` and `stream_vista_values` are
      overridden where the backend has a native fast path.
    - `capabilities()` returns a `VistaCapabilities` whose `true` flags exactly match the methods

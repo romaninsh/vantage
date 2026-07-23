@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.10 — 2026-07-23
+
+- `SurrealTableShell` implements `get_ref_target` — the bare, unconditioned
+  target of a relation — mirroring `get_ref`'s factory wrap (resolver threaded).
+  Without it the edit-form reference dropdown, which lists a relation's eligible
+  rows via `Dio::get_ref_target`, failed with `Unimplemented`; row-conditioned
+  drill-down (`get_ref`) already worked.
+- Doc-comment fix: give the `register_surreal_engine!` intra-doc link an
+  explicit `crate::` path so `cargo doc --all-features` passes `-D warnings`.
+
 ## 0.6.9 — 2026-07-23
 
 - Doc-comment fix: escape a generic in module docs so `rustdoc -D

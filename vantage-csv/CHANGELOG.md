@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.2 — 2026-07-23
+
+- `CsvTableShell` implements `get_ref_target`, wrapping the bare relation target
+  through the factory like `get_ref`. Fixes the reference-dropdown
+  (eligible-rows) path that returned `Unimplemented`.
+
 ## 0.6.1 — unreleased
 
 - The CBOR bridge uses the shared `vantage-types` walker: tagged values render their
