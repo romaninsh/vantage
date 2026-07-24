@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.8.1 — 2026-07-24
+
+Review fixes for the 0.8.0 draft-servo release.
+
+- **Identity leaves the draft.** A `Uuid` servo binds its minted id
+  without seeding it into `data` — an untouched form is clean,
+  `flash()` on it fires nothing (no more blank `{id}` inserts), and the
+  insert record picks the id column up at flash time instead.
+- **Overlapping flashes on one servo no longer leak the optimistic
+  stage.** The post-resolution measurement (and the `Tracking`
+  transition) now runs only for the LAST in-flight resolver — an
+  earlier one would have absorbed a sibling flash's still-staged cache
+  value as upstream truth and released locks early.
+- **`Auto` binds the returned id before seeding the cache.** If the
+  cache patch fails after the returning insert succeeded, the servo
+  keeps the created row's identity — a retry targets that row instead
+  of running a second returning insert (a duplicate).
+- **`Auto`'s write-route bypass is a documented contract**: the
+  returning insert has no id to stage or route, so `on_flash`
+  validation/capability does not apply to it — use `Uuid` where the
+  route must own the write.
+
 ## 0.8.0 — 2026-07-24
 
 Breaking: the servo becomes a **change draft**, structured save
