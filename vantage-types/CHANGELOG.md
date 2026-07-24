@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.5 — 2026-07-24
+
+- SurrealDB epoch-pair datetimes (`Tag(12, [seconds, nanos])`) join the
+  CBOR↔JSON bridge: `PresentationDialect` renders them as a lossless
+  nanosecond RFC-3339 string, and `json_to_cbor_with_hint` re-encodes an
+  (edited) string back to the same tag — an untouched field reproduces
+  identical bytes, killing the phantom "unsaved change" for datetime
+  columns. The conversions are exported (`tag12_to_rfc3339` /
+  `rfc3339_to_tag12`) so UI crates stop carrying their own copies.
+  Adds a no-default-features `chrono` dependency behind the `serde`
+  feature.
+
 ## 0.6.4 — 2026-07-23
 
 - `json_to_cbor_with_hint(value, hint)` — a hint-aware inverse of the

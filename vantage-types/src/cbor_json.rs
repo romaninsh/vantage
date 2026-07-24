@@ -103,6 +103,13 @@ impl CborDialect for PresentationDialect {
             // RFC 3339 datetime (0), UUID (9), Decimal (10), Duration (13)
             // — all carry their displayable form as the inner text.
             (0 | 9 | 10 | 13, CborValue::Text(s)) => JsonValue::String(s),
+            // SurrealDB datetime — `Tag(12, [seconds, nanos])`. Render as a
+            // lossless nanosecond RFC-3339 string; `json_to_cbor_with_hint`
+            // re-encodes it back to the same tag. Off-shape inners fall back
+            // to the plain rendering.
+            (12, inner) => tag12_to_rfc3339(&inner)
+                .map(JsonValue::String)
+                .unwrap_or_else(|| cbor_to_json(self, inner)),
             // UUID carried as raw bytes.
             (37, CborValue::Bytes(b)) => JsonValue::String(hex_encode(&b)),
             // Anything else: drop the tag, render the payload.
@@ -232,6 +239,12 @@ pub fn json_to_cbor_with_hint(value: &JsonValue, hint: Option<&CborValue>) -> Cb
     match (value, hint) {
         // Record id: restore Tag(8) from its "table:id" presentation form.
         (JsonValue::String(s), Some(CborValue::Tag(8, inner))) => retag_record_id(s, inner),
+        // Epoch-pair datetime: re-encode the (edited) RFC-3339 string back
+        // into `Tag(12, [seconds, nanos])`. An unparseable edit stays text —
+        // the write path surfaces the type error rather than guessing.
+        (JsonValue::String(s), Some(CborValue::Tag(12, _))) => {
+            rfc3339_to_tag12(s).unwrap_or_else(|| CborValue::Text(s.clone()))
+        }
         // Datetime / uuid / decimal / duration — the form edits the inner
         // text; re-wrap it in the same tag so it round-trips.
         (JsonValue::String(s), Some(CborValue::Tag(tag, inner)))
@@ -298,6 +311,47 @@ fn retag_record_id(s: &str, inner: &CborValue) -> CborValue {
         }
         // Tag(8, Text("table:id")) — a single-text id form.
         _ => tag8(CborValue::Text(s.to_string())),
+    }
+}
+
+/// Render SurrealDB's epoch-pair datetime — `Tag(12, [seconds, nanos])`
+/// carries its payload as integers, not text — as a lossless RFC-3339
+/// string (nanosecond fraction preserved, UTC). `None` when the inner
+/// shape isn't the epoch pair.
+pub fn tag12_to_rfc3339(inner: &CborValue) -> Option<String> {
+    use chrono::{SecondsFormat, TimeZone as _};
+    let CborValue::Array(arr) = inner else {
+        return None;
+    };
+    let secs = cbor_i64(arr.first()?)?;
+    let nanos = arr.get(1).and_then(cbor_i64).unwrap_or(0);
+    let dt = chrono::Utc
+        .timestamp_opt(secs, nanos.try_into().ok()?)
+        .single()?;
+    Some(dt.to_rfc3339_opts(SecondsFormat::Nanos, true))
+}
+
+/// Inverse of [`tag12_to_rfc3339`]: parse an (edited) RFC-3339 string back
+/// into `Tag(12, [seconds, nanos])`, preserving the nanosecond fraction.
+/// `None` when the string isn't RFC-3339 (the caller keeps it as `Text`).
+pub fn rfc3339_to_tag12(s: &str) -> Option<CborValue> {
+    let dt = chrono::DateTime::parse_from_rfc3339(s)
+        .ok()?
+        .with_timezone(&chrono::Utc);
+    Some(CborValue::Tag(
+        12,
+        Box::new(CborValue::Array(vec![
+            CborValue::Integer(dt.timestamp().into()),
+            CborValue::Integer(i64::from(dt.timestamp_subsec_nanos()).into()),
+        ])),
+    ))
+}
+
+fn cbor_i64(v: &CborValue) -> Option<i64> {
+    match v {
+        CborValue::Integer(i) => i64::try_from(i128::from(*i)).ok(),
+        CborValue::Float(f) => Some(*f as i64),
+        _ => None,
     }
 }
 
@@ -384,6 +438,42 @@ mod tests {
     fn tag_unwraps_by_default() {
         let v = CborValue::Tag(999, Box::new(CborValue::Text("hi".into())));
         assert_eq!(cbor_to_json(&PlainDialect, v), json!("hi"));
+    }
+
+    #[test]
+    fn tag12_renders_lossless_rfc3339_and_round_trips() {
+        // 2027-07-22T09:30:00.123456789Z
+        let tagged = CborValue::Tag(
+            12,
+            Box::new(CborValue::Array(vec![
+                CborValue::Integer(1816421400.into()),
+                CborValue::Integer(123_456_789.into()),
+            ])),
+        );
+        let json = cbor_to_json(&PresentationDialect, tagged.clone());
+        let JsonValue::String(s) = &json else {
+            panic!("expected string, got {json:?}");
+        };
+        assert!(s.ends_with('Z'), "UTC preserved: {s}");
+        assert!(s.contains(".123456789"), "nanos preserved: {s}");
+        // The untouched round trip reproduces identical bytes — no
+        // phantom dirty.
+        assert_eq!(json_to_cbor_with_hint(&json, Some(&tagged)), tagged);
+    }
+
+    #[test]
+    fn unparseable_edit_under_tag12_hint_stays_text() {
+        let tagged = CborValue::Tag(
+            12,
+            Box::new(CborValue::Array(vec![
+                CborValue::Integer(0.into()),
+                CborValue::Integer(0.into()),
+            ])),
+        );
+        assert_eq!(
+            json_to_cbor_with_hint(&json!("not a date"), Some(&tagged)),
+            CborValue::Text("not a date".into())
+        );
     }
 
     #[test]

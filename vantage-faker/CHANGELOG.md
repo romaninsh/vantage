@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.8 — 2026-07-24
+
+- Track vantage-diorama 0.8 (draft-servo release). No behavior changes.
+
 ## 0.6.7 — 2026-07-23
 
 - `FolderListingShell` implements `get_ref_target` for the `subdir` relation —

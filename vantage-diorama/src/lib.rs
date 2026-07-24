@@ -26,13 +26,13 @@ pub use lens::{
     DioTotalProviderCallback, Lens, LensBuilder, LensCallbacks, LensDefaults, MemoryCache,
     MemoryCacheTable, RedbCache, RedbCacheTable,
 };
-pub use ops::{ChangeEvent, ChangeFlash, FlashKind, QueryDescriptor};
+pub use ops::{ChangeEvent, ChangeFlash, FlashKind, FlashRejection, QueryDescriptor};
 pub use scenery::{
     Aggregate, CappedScenery, CustomAggregate, EnrichedRecord, OpCondition, RecordScenery,
     RecordStatus, RowStatus, RowStatusSummary, SortDir, TableScenery, TableSceneryBuilder,
     ValueScenery, ValueSceneryBuilder, ValueStatus, boxed_custom_aggregate,
 };
-pub use servo::{Servo, ServoStatus};
+pub use servo::{IdStrategy, Servo, ServoStatus};
 pub use vantage_vista::VistaCapabilities;
 
 /// Common imports for working with vantage-diorama.
@@ -48,6 +48,6 @@ pub mod prelude {
     pub use crate::scenery::{
         EnrichedRecord, RecordScenery, RecordStatus, RowStatus, SortDir, TableScenery, ValueScenery,
     };
-    pub use crate::servo::{Servo, ServoStatus};
+    pub use crate::servo::{IdStrategy, Servo, ServoStatus};
     pub use vantage_vista_factory::VistaCatalog;
 }

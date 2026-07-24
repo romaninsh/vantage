@@ -1,6 +1,6 @@
 [package]
 name = "vantage-diorama"
-version = "0.7.4"
+version = "0.8.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Cached, composable, reactive surface for Vantage Vistas"
@@ -26,6 +26,7 @@ serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 tokio = { version = "1", features = ["sync", "rt", "time"] }
 tracing = "0.1"
+uuid = { version = "1", features = ["v7"] }
 
 [features]
 # Rhai-scripted augmentation sources/fetches. Flips on `vantage-vista`'s rhai
