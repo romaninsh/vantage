@@ -224,7 +224,10 @@ impl TableShell for FolderListingShell {
         // at this shell's own path — every subdirectory that could be picked.
         Ok(Vista::new(
             "live-folder-listing",
-            Box::new(FolderListingShell::new(self.inner.clone(), self.path.clone())),
+            Box::new(FolderListingShell::new(
+                self.inner.clone(),
+                self.path.clone(),
+            )),
         ))
     }
 

@@ -13,7 +13,7 @@ doctest = false
 [dependencies]
 vantage-core = { version = "0.6", path = "../vantage-core" }
 vantage-types = { version = "0.6", path = "../vantage-types" }
-vantage-diorama = { version = "0.7", path = "../vantage-diorama" }
+vantage-diorama = { version = "0.8", path = "../vantage-diorama" }
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
 
 ciborium = { version = "0.2", features = ["std"] }

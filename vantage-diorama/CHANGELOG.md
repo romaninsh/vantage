@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.8.0 — 2026-07-24
+
+Breaking: the servo becomes a **change draft**, structured save
+rejections, and servo-owned identity.
+
+- **Draft semantics** — `Servo::flash()` no longer settles the baseline
+  optimistically at fire time. Setpoints stay locked through the write
+  (status `Pending`); the bus task holds absorbs off while the servo's
+  own flash is in flight, so the optimistically staged cache value can't
+  masquerade as an upstream measurement and release the locks early. On
+  resolution the servo takes one deliberate measurement: a confirmed
+  write converges the draft clean (fields re-edited mid-save stay
+  locked); a rejected write restores the baseline while **keeping the
+  user's setpoints** — the draft survives a failed save, still dirty.
+- **`FlashRejection`** — a structured refusal (`message` + per-field
+  errors) that rides the `VantageError` source chain: an `on_flash`
+  route returns `FlashRejection::new(..).with_field(..).into_error()`,
+  and `ServoStatus::Failed` now carries the recovered rejection instead
+  of a bare `String` (breaking for matchers; unstructured failures
+  arrive message-only, so consumers handle exactly one shape).
+- **`IdStrategy` + `Dio::servo_new(strategy)`** (breaking signature) —
+  identity is the servo's, not the form's. `Uuid` (default) mints a
+  time-ordered UUID at creation and commands it into the id column, so
+  a retried create reuses the same id (a lost confirmation resolves as
+  a noop patch, never a duplicate). `Auto` runs the master's returning
+  insert inside `flash()` and binds the servo to the created row.
+  `FromRecord` keeps the previous behavior (id from the record's id
+  column at flash time).
+
 ## 0.7.4 — 2026-07-23
 
 - `TableSceneryBuilder::where_op(col, op, value)` and the `OpCondition` type —

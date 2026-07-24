@@ -5641,7 +5641,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.7.4"
+version = "0.8.0"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5657,6 +5657,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "uuid",
  "vantage-cmd",
  "vantage-core",
  "vantage-csv",
@@ -5858,8 +5859,9 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
+ "chrono",
  "ciborium",
  "csv",
  "indexmap",

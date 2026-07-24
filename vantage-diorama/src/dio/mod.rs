@@ -24,7 +24,7 @@ use crate::scenery::record::spawn_record_scenery;
 use crate::scenery::{
     RecordScenery, RecordStatus, TableScenery, TableSceneryBuilder, ValueSceneryBuilder,
 };
-use crate::servo::{Servo, spawn_servo};
+use crate::servo::{IdStrategy, Servo, spawn_servo};
 
 use ciborium::Value as CborValue;
 use vantage_types::Record;
@@ -532,19 +532,19 @@ impl Dio {
     /// this Dio, keeping the write pipeline alive while a form is open.
     pub async fn servo(&self, id: impl Into<String>) -> Result<Servo> {
         let id = id.into();
-        let servo = spawn_servo(self, Some(id.clone()));
+        let servo = spawn_servo(self, Some(id.clone()), IdStrategy::FromRecord);
         if let Some(initial) = self.inner.cache.get_value(&id).await? {
             servo.absorb(Some(initial));
         }
         Ok(servo)
     }
 
-    /// Open a [`Servo`] for a record that does not exist yet. Command
-    /// its fields with [`set`](crate::servo::Servo::set) (including the
-    /// id column) and the first [`flash`](crate::servo::Servo::flash)
-    /// emits an insert.
-    pub fn servo_new(&self) -> Servo {
-        spawn_servo(self, None)
+    /// Open a [`Servo`] for a record that does not exist yet; the first
+    /// [`flash`](crate::servo::Servo::flash) emits an insert. Identity
+    /// follows `strategy`: minted UUID (v7) at creation, backend-assigned
+    /// on first save, or commanded through the record's id column.
+    pub fn servo_new(&self, strategy: IdStrategy) -> Servo {
+        spawn_servo(self, None, strategy)
     }
 
     /// Open a reactive view onto a single record with the row already

@@ -13,7 +13,7 @@ use std::time::Duration;
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_diorama::{Dio, FlashKind, Generation, Lens, ServoStatus};
+use vantage_diorama::{Dio, FlashKind, FlashRejection, Generation, IdStrategy, Lens, ServoStatus};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
 
@@ -299,7 +299,7 @@ async fn a_fired_flash_is_frozen_against_later_edits() -> Result<()> {
 async fn servo_new_flashes_an_insert() -> Result<()> {
     let shell = product_shell();
     let dio = dio_over(&shell).await?;
-    let servo = dio.servo_new();
+    let servo = dio.servo_new(IdStrategy::FromRecord);
 
     servo.set("id", text("p2"));
     servo.set("name", text("Croissant"));
@@ -354,21 +354,263 @@ async fn rejected_flash_reverts_and_reports_failed() -> Result<()> {
         dio.cache().insert_value(&id, &r).await?;
     }
     let servo = dio.servo("p1").await?;
-    let mut gen_rx = servo.subscribe();
 
     servo.set("name", text("Tea"));
-    let g = u64::from(*gen_rx.borrow_and_update());
     let result = servo.flash().await;
     assert!(result.is_err(), "the rejection surfaces to the caller");
 
-    // The optimistic stage was rolled back; the servo re-absorbs the
-    // restored pre-image and reports the failure.
-    wait_for_gen(&mut gen_rx, g).await;
+    // The optimistic stage was rolled back and the pre-image absorbed —
+    // but the servo is a draft: the setpoint survives the failure.
     assert!(matches!(servo.status(), ServoStatus::Failed(_)));
     assert_eq!(
         dio.cache().get_value("p1").await?.unwrap().get("name"),
         Some(&text("Coffee")),
         "cache pre-image restored"
+    );
+    assert_eq!(
+        servo.get("name"),
+        Some(text("Tea")),
+        "the user's value survives the rejection"
+    );
+    assert!(servo.dirty("name"), "and still reads dirty");
+    assert_eq!(
+        servo.baseline().unwrap().get("name"),
+        Some(&text("Coffee")),
+        "baseline is the restored measurement"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn draft_holds_through_pending() -> Result<()> {
+    // While the write-through is in flight the servo must stay a draft:
+    // setpoints locked, baseline unmoved, status Pending — the staged
+    // optimistic cache value must not read as an upstream measurement.
+    let shell = product_shell();
+    let gate = Arc::new(tokio::sync::Notify::new());
+    let release = gate.clone();
+    let lens = Arc::new(
+        Lens::new()
+            .cache_in_memory()
+            .on_flash(move |_dio, _flash| {
+                let gate = gate.clone();
+                async move {
+                    gate.notified().await;
+                    Ok(())
+                }
+            })
+            .build()
+            .expect("build lens"),
+    );
+    let dio = lens.make_dio(product_vista(&shell)).await?;
+    for (id, r) in dio.master().list_values().await? {
+        dio.cache().insert_value(&id, &r).await?;
+    }
+    let servo = Arc::new(dio.servo("p1").await?);
+
+    servo.set("name", text("Tea"));
+    let in_flight = {
+        let servo = servo.clone();
+        tokio::spawn(async move { servo.flash().await })
+    };
+    // Give the flash time to stage and block on the gate.
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    assert!(matches!(servo.status(), ServoStatus::Pending));
+    assert_eq!(servo.get("name"), Some(text("Tea")), "setpoint locked");
+    assert!(servo.dirty("name"), "still dirty while pending");
+    assert_eq!(
+        servo.baseline().unwrap().get("name"),
+        Some(&text("Coffee")),
+        "baseline hasn't moved on hope"
+    );
+
+    release.notify_one();
+    in_flight.await.expect("join")?;
+
+    assert!(!servo.is_dirty(), "confirmation converged the draft clean");
+    assert!(matches!(servo.status(), ServoStatus::Tracking));
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_save_retries_successfully() -> Result<()> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let shell = product_shell();
+    let reject = Arc::new(AtomicBool::new(true));
+    let reject_flag = reject.clone();
+    let lens = Arc::new(
+        Lens::new()
+            .cache_in_memory()
+            .on_flash(move |dio, flash| {
+                let reject = reject_flag.clone();
+                let master = dio.master();
+                async move {
+                    if reject.load(Ordering::SeqCst) {
+                        return Err(vantage_core::error!("route rejected the flash"));
+                    }
+                    flash
+                        .active_record(master.as_ref())?
+                        .save()
+                        .await
+                        .map(|_| ())
+                }
+            })
+            .build()
+            .expect("build lens"),
+    );
+    let dio = lens.make_dio(product_vista(&shell)).await?;
+    for (id, r) in dio.master().list_values().await? {
+        dio.cache().insert_value(&id, &r).await?;
+    }
+    let servo = dio.servo("p1").await?;
+
+    servo.set("name", text("Tea"));
+    assert!(servo.flash().await.is_err());
+    assert!(servo.dirty("name"), "draft survives the first failure");
+
+    reject.store(false, Ordering::SeqCst);
+    let flash = servo.flash().await?.expect("retry fires the held draft");
+    assert_eq!(flash.patch().get("name"), Some(&text("Tea")));
+    assert!(!servo.is_dirty(), "retry landed and converged clean");
+    assert!(matches!(servo.status(), ServoStatus::Tracking));
+    Ok(())
+}
+
+#[tokio::test]
+async fn uuid_strategy_mints_identity_up_front() -> Result<()> {
+    let shell = product_shell();
+    let dio = dio_over(&shell).await?;
+    let servo = dio.servo_new(IdStrategy::Uuid);
+
+    let id = servo.id().expect("identity exists before the first save");
+    assert_eq!(
+        servo.get("id"),
+        Some(text(&id)),
+        "the minted id is commanded into the id column"
+    );
+
+    servo.set("name", text("Croissant"));
+    let first = servo.flash().await?.expect("insert fires");
+    assert_eq!(first.kind(), &FlashKind::Insert);
+    assert_eq!(first.id(), Some(id.as_str()));
+
+    // Continue editing the created record: same id, now a patch.
+    servo.set("price", int(4));
+    let second = servo.flash().await?.expect("follow-up fires");
+    assert_eq!(second.kind(), &FlashKind::Patch, "no duplicate insert");
+    assert_eq!(second.id(), Some(id.as_str()));
+    assert_eq!(
+        dio.master().get_value(&id).await?.unwrap().get("price"),
+        Some(&int(4)),
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn uuid_create_retry_reuses_the_id() -> Result<()> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let shell = product_shell();
+    let reject = Arc::new(AtomicBool::new(true));
+    let reject_flag = reject.clone();
+    let lens = Arc::new(
+        Lens::new()
+            .cache_in_memory()
+            .on_flash(move |dio, flash| {
+                let reject = reject_flag.clone();
+                let master = dio.master();
+                async move {
+                    if reject.load(Ordering::SeqCst) {
+                        return Err(vantage_core::error!("route rejected the flash"));
+                    }
+                    flash
+                        .active_record(master.as_ref())?
+                        .save()
+                        .await
+                        .map(|_| ())
+                }
+            })
+            .build()
+            .expect("build lens"),
+    );
+    let dio = lens.make_dio(product_vista(&shell)).await?;
+    let servo = dio.servo_new(IdStrategy::Uuid);
+    let id = servo.id().expect("minted at creation");
+
+    servo.set("name", text("Croissant"));
+    assert!(servo.flash().await.is_err(), "first create rejected");
+    assert_eq!(servo.id().as_deref(), Some(id.as_str()), "id unchanged");
+    assert!(servo.baseline().is_none(), "still a draft of a new record");
+
+    reject.store(false, Ordering::SeqCst);
+    let flash = servo.flash().await?.expect("retry fires");
+    assert_eq!(flash.kind(), &FlashKind::Insert);
+    assert_eq!(flash.id(), Some(id.as_str()), "same identity — idempotent");
+    Ok(())
+}
+
+#[tokio::test]
+async fn auto_strategy_binds_the_backend_id() -> Result<()> {
+    let shell = product_shell();
+    let dio = dio_over(&shell).await?;
+    let servo = dio.servo_new(IdStrategy::Auto);
+
+    assert!(
+        servo.id().is_none(),
+        "no identity until the backend assigns"
+    );
+    servo.set("name", text("Croissant"));
+    let flash = servo.flash().await?.expect("returning insert fires");
+
+    let id = servo.id().expect("bound to the created row");
+    assert_eq!(flash.id(), Some(id.as_str()));
+    assert!(
+        dio.cache().get_value(&id).await?.is_some(),
+        "cache seeded with the created row"
+    );
+    assert!(!servo.is_dirty(), "converged clean on the created row");
+
+    // Further edits patch the same id.
+    servo.set("price", int(2));
+    let second = servo.flash().await?.expect("follow-up fires");
+    assert_eq!(second.kind(), &FlashKind::Patch);
+    assert_eq!(second.id(), Some(id.as_str()));
+    Ok(())
+}
+
+#[tokio::test]
+async fn rejection_field_errors_reach_the_status() -> Result<()> {
+    let shell = product_shell();
+    let lens = Arc::new(
+        Lens::new()
+            .cache_in_memory()
+            .on_flash(|_dio, _flash| async move {
+                Err(FlashRejection::new("validation failed")
+                    .with_field("price", "must be positive")
+                    .into_error())
+            })
+            .build()
+            .expect("build lens"),
+    );
+    let dio = lens.make_dio(product_vista(&shell)).await?;
+    for (id, r) in dio.master().list_values().await? {
+        dio.cache().insert_value(&id, &r).await?;
+    }
+    let servo = dio.servo("p1").await?;
+
+    servo.set("price", int(-5));
+    assert!(servo.flash().await.is_err());
+
+    let ServoStatus::Failed(rejection) = servo.status() else {
+        panic!("expected Failed, got {:?}", servo.status());
+    };
+    assert_eq!(rejection.message(), "validation failed");
+    assert_eq!(rejection.error_for("price"), Some("must be positive"));
+    assert!(
+        servo.dirty("price"),
+        "the named field still holds its draft"
     );
     Ok(())
 }

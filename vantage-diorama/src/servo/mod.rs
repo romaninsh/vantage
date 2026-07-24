@@ -9,11 +9,22 @@
 //! clean. Touched fields lock and hold; upstream converging to the
 //! setpoint zeroes the error and releases the lock on its own.
 //!
-//! [`flash`](Servo::flash) is the actuation: it freezes the error signal
-//! at fire time into an immutable [`ChangeFlash`] carrying only the
-//! changed fields, emits it through the Dio's optimistic write path, and
-//! settles the servo clean. Later upstream changes or slow persistence
-//! never mutate an emitted flash.
+//! The servo is a **change draft**: the baseline moves only on measured
+//! upstream state, never on hope. [`flash`](Servo::flash) freezes the
+//! error signal at fire time into an immutable [`ChangeFlash`] carrying
+//! only the changed fields and emits it through the Dio's optimistic
+//! write path — but the setpoints stay locked until the write resolves.
+//! Confirmation absorbs the confirmed record and convergence releases
+//! every lock; rejection absorbs the restored pre-image and the
+//! setpoints still stand — the user's draft survives a failed save,
+//! reported through [`ServoStatus::Failed`] as a [`FlashRejection`]
+//! (with per-field errors when the write path named them).
+//!
+//! Identity is the servo's, not the form's: [`Dio::servo_new`] mints a
+//! time-ordered UUID up front (or defers to the backend with
+//! [`IdStrategy::Auto`]), so a retried create reuses the same id — if
+//! the first insert actually landed, the retry patches over it as a
+//! noop instead of duplicating the record.
 //!
 //! A servo holds a **strong** Dio handle — deliberately, unlike
 //! sceneries: while a form is open, the write pipeline it will flash
@@ -30,7 +41,7 @@ use vantage_core::Result;
 use vantage_types::Record;
 
 use crate::dio::{Dio, DioEvent, DioInner, Generation, cbor_scalar_string};
-use crate::ops::{ChangeFlash, FlashKind};
+use crate::ops::{ChangeFlash, FlashKind, FlashRejection};
 
 /// Where the servo loop currently stands.
 #[derive(Debug, Clone)]
@@ -39,17 +50,41 @@ pub enum ServoStatus {
     Tracking,
     /// A flash was emitted and its write-through hasn't confirmed yet.
     Pending,
-    /// The last flash was rejected and rolled back.
-    Failed(String),
+    /// The last flash was rejected and rolled back. The setpoints are
+    /// still held — the draft survives; the rejection carries per-field
+    /// errors when the write path named them.
+    Failed(FlashRejection),
+}
+
+/// How an unsaved servo ([`Dio::servo_new`]) gets its identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum IdStrategy {
+    /// Mint a time-ordered UUID (v7) the moment the servo opens and
+    /// command it into the id column — every save reuses it, so a
+    /// retried create can't duplicate the record.
+    #[default]
+    Uuid,
+    /// The backend assigns the id on the first save (returning insert);
+    /// the servo binds to the created row.
+    Auto,
+    /// The id comes from the record's id column at flash time — the
+    /// caller commands it like any other field.
+    FromRecord,
 }
 
 pub(crate) struct ServoState {
     /// Live-instance census (see [`crate::stats`]).
     _tally: crate::stats::Tally,
     id: RwLock<Option<String>>,
+    strategy: IdStrategy,
     baseline: RwLock<Option<Record<CborValue>>>,
     data: RwLock<Record<CborValue>>,
     status: RwLock<ServoStatus>,
+    /// Non-zero while this servo's own flash is in flight. The bus task
+    /// holds absorbs off for the window so the optimistic stage of our
+    /// own write can't masquerade as an upstream measurement and release
+    /// the locks before the write actually resolves.
+    in_flight: AtomicU64,
     generation: AtomicU64,
     generation_tx: watch::Sender<Generation>,
 }
@@ -96,8 +131,9 @@ impl Drop for ServoGuard {
 }
 
 impl Servo {
-    /// The record id this servo is bound to. `None` until an unsaved
-    /// [`Dio::servo_new`](crate::Dio::servo_new) fires its first flash.
+    /// The record id this servo is bound to. Bound at creation for
+    /// [`Dio::servo`](crate::Dio::servo) and [`IdStrategy::Uuid`];
+    /// `None` until the first confirmed save for [`IdStrategy::Auto`].
     pub fn id(&self) -> Option<String> {
         self.state.id.read().unwrap().clone()
     }
@@ -196,20 +232,23 @@ impl Servo {
     /// the error is zero — nothing dirty, nothing fired.
     ///
     /// The diff is taken synchronously at the moment of the call; the
-    /// emitted flash never changes afterwards, no matter how long
-    /// persistence takes or what arrives upstream meanwhile. The servo
-    /// itself settles clean immediately (the staged value becomes the
-    /// new baseline) and reports [`Pending`](ServoStatus::Pending) until
-    /// the write-through confirms.
+    /// emitted flash never changes afterwards. The servo stays a
+    /// **draft** for the whole write: setpoints hold locked and the
+    /// status reports [`Pending`](ServoStatus::Pending). Confirmation
+    /// absorbs the confirmed record — convergence zeroes the error and
+    /// releases every lock. Rejection absorbs the restored pre-image
+    /// and the setpoints still stand: the user's values survive, dirty,
+    /// with the failure in [`Failed`](ServoStatus::Failed).
     ///
-    /// On a servo without a baseline (opened via
-    /// [`Dio::servo_new`](crate::Dio::servo_new), or on a row that
-    /// vanished) the flash is an insert of the full record; the id comes
-    /// from the servo's binding or the record's id column.
+    /// On a servo without a baseline the flash is an insert of the full
+    /// record; the id comes from the servo's binding (minted at
+    /// creation for [`IdStrategy::Uuid`]), from the record's id column
+    /// ([`IdStrategy::FromRecord`]), or from the backend via a
+    /// returning insert ([`IdStrategy::Auto`]).
     pub async fn flash(&self) -> Result<Option<ChangeFlash>> {
         // Freeze synchronously: everything the flash carries is decided
         // before the first await point.
-        let flash = {
+        let frozen = {
             let baseline = self.state.baseline.read().unwrap();
             let data = self.state.data.read().unwrap();
             match baseline.as_ref() {
@@ -225,41 +264,100 @@ impl Servo {
                         .unwrap()
                         .clone()
                         .expect("a servo with a baseline is bound to an id");
-                    ChangeFlash::new(FlashKind::Patch, Some(id), error).with_before(base.clone())
+                    Some(
+                        ChangeFlash::new(FlashKind::Patch, Some(id), error)
+                            .with_before(base.clone()),
+                    )
                 }
                 None => {
                     if data.is_empty() {
                         return Ok(None);
                     }
-                    let id = match self.state.id.read().unwrap().clone() {
-                        Some(id) => id,
-                        None => self.id_from_record(&data)?,
-                    };
-                    ChangeFlash::insert(id, data.clone())
+                    match self.state.id.read().unwrap().clone() {
+                        Some(id) => Some(ChangeFlash::insert(id, data.clone())),
+                        None => match self.state.strategy {
+                            // No id exists until the backend assigns one.
+                            IdStrategy::Auto => None,
+                            _ => Some(ChangeFlash::insert(
+                                self.id_from_record(&data)?,
+                                data.clone(),
+                            )),
+                        },
+                    }
                 }
             }
         };
 
-        // Settle clean-and-pending locally: the emitted state is the new
-        // baseline. The optimistic stage makes the cache agree in a moment.
-        let after = flash.after().expect("insert/patch always has an after");
+        let Some(flash) = frozen else {
+            return self.flash_auto_insert().await.map(Some);
+        };
+
+        // Draft semantics: bind identity and report Pending, but neither
+        // the baseline nor the setpoints move until the write resolves.
         {
             *self.state.id.write().unwrap() = flash.id().map(str::to_string);
-            *self.state.baseline.write().unwrap() = Some(after.clone());
-            *self.state.data.write().unwrap() = after;
             *self.state.status.write().unwrap() = ServoStatus::Pending;
         }
+        self.state.in_flight.fetch_add(1, Ordering::SeqCst);
         self.state.bump_generation();
 
-        match self.dio.flash(flash.clone()).await {
+        let outcome = self.dio.flash(flash.clone()).await;
+        self.state.in_flight.fetch_sub(1, Ordering::SeqCst);
+        // One deliberate measurement now that the write resolved: the
+        // confirmed value on success (convergence releases every lock),
+        // the restored pre-image on failure (setpoints still held — the
+        // draft survives).
+        self.absorb_now().await;
+        match outcome {
             Ok(()) => {
                 self.state.set_status(ServoStatus::Tracking);
                 Ok(Some(flash))
             }
             Err(e) => {
-                // The rollback restored the cache pre-image; the bus task
-                // absorbs it. Report the failure — never silently.
-                self.state.set_status(ServoStatus::Failed(e.to_string()));
+                self.state
+                    .set_status(ServoStatus::Failed(FlashRejection::from_error_or_message(
+                        &e,
+                    )));
+                Err(e)
+            }
+        }
+    }
+
+    /// The [`IdStrategy::Auto`] insert: no id exists until the master
+    /// returns one, so this runs the master's returning insert directly
+    /// (there is no row id to stage optimistically under), seeds the
+    /// cache with the created row, and binds the servo to it.
+    async fn flash_auto_insert(&self) -> Result<ChangeFlash> {
+        use vantage_dataset::traits::InsertableValueSet as _;
+
+        let record = self.state.data.read().unwrap().clone();
+        *self.state.status.write().unwrap() = ServoStatus::Pending;
+        self.state.in_flight.fetch_add(1, Ordering::SeqCst);
+        self.state.bump_generation();
+
+        let master = self.dio.master();
+        let outcome = async {
+            let id = master.insert_return_id_value(&record).await?;
+            let id_column = master.get_id_column().unwrap_or("id").to_string();
+            let mut with_id = record.clone();
+            with_id.insert(id_column, CborValue::Text(id.clone()));
+            self.dio.patched(id.clone(), with_id.clone()).await?;
+            Ok::<_, vantage_core::VantageError>((id, with_id))
+        }
+        .await;
+        self.state.in_flight.fetch_sub(1, Ordering::SeqCst);
+        match outcome {
+            Ok((id, with_id)) => {
+                *self.state.id.write().unwrap() = Some(id.clone());
+                self.absorb_now().await;
+                self.state.set_status(ServoStatus::Tracking);
+                Ok(ChangeFlash::insert(id, with_id))
+            }
+            Err(e) => {
+                self.state
+                    .set_status(ServoStatus::Failed(FlashRejection::from_error_or_message(
+                        &e,
+                    )));
                 Err(e)
             }
         }
@@ -295,6 +393,19 @@ impl Servo {
         self.state.absorb(incoming);
     }
 
+    /// Take a measurement from the cache right now — the deliberate
+    /// post-resolution read `flash` performs (the bus task holds
+    /// absorbs off while our own write is in flight).
+    async fn absorb_now(&self) {
+        let Some(id) = self.state.id.read().unwrap().clone() else {
+            return;
+        };
+        match self.dio.inner.cache.get_value(&id).await {
+            Ok(value) => self.state.absorb(value),
+            Err(e) => tracing::error!(error = %e, "servo measurement read failed"),
+        }
+    }
+
     /// Resolve an insert id from the record's id column.
     fn id_from_record(&self, data: &Record<CborValue>) -> Result<String> {
         let id_column = self
@@ -317,7 +428,10 @@ impl Servo {
 }
 
 /// The bus-tracking loop: every event about the bound record feeds the
-/// measurement side of the loop from the cache.
+/// measurement side of the loop from the cache. While this servo's own
+/// flash is in flight, everything is held off — `flash` takes its own
+/// measurement on resolution, so the optimistic stage of our own write
+/// never reads as upstream truth.
 async fn track_loop(
     state: Arc<ServoState>,
     dio_weak: Weak<DioInner>,
@@ -327,19 +441,33 @@ async fn track_loop(
         if dio_weak.upgrade().is_none() {
             return;
         }
+        let event = match bus.recv().await {
+            Ok(event) => event,
+            Err(broadcast::error::RecvError::Lagged(_)) => {
+                // Missed events: re-measure from the cache.
+                if state.in_flight.load(Ordering::SeqCst) == 0 {
+                    absorb_from_cache(&state, &dio_weak).await;
+                }
+                continue;
+            }
+            Err(broadcast::error::RecvError::Closed) => return,
+        };
+        if state.in_flight.load(Ordering::SeqCst) > 0 {
+            continue;
+        }
         let bound = |id: &str| state.id.read().unwrap().as_deref() == Some(id);
-        match bus.recv().await {
-            Ok(DioEvent::RecordChanged { id })
-            | Ok(DioEvent::RecordInserted { id })
-            | Ok(DioEvent::RecordRemoved { id })
+        match event {
+            DioEvent::RecordChanged { id }
+            | DioEvent::RecordInserted { id }
+            | DioEvent::RecordRemoved { id }
                 if bound(&id) =>
             {
                 absorb_from_cache(&state, &dio_weak).await;
             }
-            Ok(DioEvent::DatasetChanged) => {
+            DioEvent::DatasetChanged => {
                 absorb_from_cache(&state, &dio_weak).await;
             }
-            Ok(DioEvent::WritePending { id, kind }) if bound(&id) => {
+            DioEvent::WritePending { id, kind } if bound(&id) => {
                 // Same filter as the revert arm: someone else's staged
                 // delete is not this servo's write in flight.
                 if matches!(
@@ -349,7 +477,7 @@ async fn track_loop(
                     state.set_status(ServoStatus::Pending);
                 }
             }
-            Ok(DioEvent::WriteReverted { id, error, kind }) if bound(&id) => {
+            DioEvent::WriteReverted { id, error, kind } if bound(&id) => {
                 // Only editing kinds are this servo's failure — a reverted
                 // Delete/Clear belongs to its issuer (the confirm dialog),
                 // and a form displaying the record must not adopt it as a
@@ -358,16 +486,11 @@ async fn track_loop(
                     kind,
                     crate::FlashKind::Patch | crate::FlashKind::Replace | crate::FlashKind::Insert
                 ) {
-                    state.set_status(ServoStatus::Failed(error));
+                    state.set_status(ServoStatus::Failed(FlashRejection::new(error)));
                 }
                 absorb_from_cache(&state, &dio_weak).await;
             }
-            Ok(_) => {}
-            Err(broadcast::error::RecvError::Lagged(_)) => {
-                // Missed events: re-measure from the cache.
-                absorb_from_cache(&state, &dio_weak).await;
-            }
-            Err(broadcast::error::RecvError::Closed) => return,
+            _ => {}
         }
     }
 }
@@ -387,15 +510,28 @@ async fn absorb_from_cache(state: &Arc<ServoState>, dio_weak: &Weak<DioInner>) {
 
 /// Internal constructor — wires the bus task and returns the servo.
 /// Used by [`Dio::servo`](crate::Dio::servo) and
-/// [`Dio::servo_new`](crate::Dio::servo_new).
-pub(crate) fn spawn_servo(dio: &Dio, id: Option<String>) -> Servo {
+/// [`Dio::servo_new`](crate::Dio::servo_new). With [`IdStrategy::Uuid`]
+/// and no id, identity is minted here — before the first save — and
+/// commanded into the id column so the insert record carries it.
+pub(crate) fn spawn_servo(dio: &Dio, id: Option<String>, strategy: IdStrategy) -> Servo {
+    let mut id = id;
+    let mut data = Record::new();
+    if id.is_none() && strategy == IdStrategy::Uuid {
+        let minted = uuid::Uuid::now_v7().to_string();
+        let id_column = dio.master().get_id_column().unwrap_or("id").to_string();
+        data.insert(id_column, CborValue::Text(minted.clone()));
+        id = Some(minted);
+    }
+
     let (generation_tx, _rx) = watch::channel(Generation::default());
     let state = Arc::new(ServoState {
         _tally: crate::stats::Tally::servo(),
         id: RwLock::new(id),
+        strategy,
         baseline: RwLock::new(None),
-        data: RwLock::new(Record::new()),
+        data: RwLock::new(data),
         status: RwLock::new(ServoStatus::Tracking),
+        in_flight: AtomicU64::new(0),
         generation: AtomicU64::new(0),
         generation_tx,
     });
