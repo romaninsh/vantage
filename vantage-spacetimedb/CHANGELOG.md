@@ -25,6 +25,13 @@ family's version — `vantage-core` and `vantage-vista` are both 0.6.x, and the
 - `RowIdentity` — primary key, else a single-column unique constraint, else a content
   hash of the row. The hash is sound here because SpacetimeDB deletes carry the whole
   row, so a delete hashes to the same id as its insert.
+- `VistaFactory` implementation, so a relation can be named in YAML and reached from
+  a `VistaCatalog`, the CLI or a UI inventory. `load()` performs the schema fetch and
+  the ownership probe up front, leaving `build_from_spec` synchronous — which the
+  trait and `ModelLoader` both require. A spec contributes the name, optionally the
+  relation behind it, and optionally a narrowed column list; anything it declares
+  that this driver cannot lower (references, contained relations, computed columns,
+  a contradicting `id_column`) is refused rather than ignored.
 - `VistaMetadata` generation, flagging the id column and nominating the first non-id
   string column as the display title. No column is flagged orderable, because the
   dialect has no `ORDER BY` and this driver refuses to sort rather than sorting a

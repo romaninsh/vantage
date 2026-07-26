@@ -4,23 +4,27 @@
 //! query through [`Literal`]. That single-entrance rule is the whole point of
 //! the module.
 //!
-//! # Why the values are rendered rather than bound
+//! # Why this and not `vantage_expressions`
 //!
 //! The sibling SQL drivers compose `vantage_expressions::Expression`, which
 //! keeps a template and a parameter list apart until the driver binds them —
-//! `$_arg1` for SurrealDB, `?` for SQLite. A value never enters the query text,
-//! so quoting cannot go wrong.
+//! `$_arg1` for SurrealDB, `?` for SQLite.
 //!
-//! SpacetimeDB offers nowhere to bind. Its HTTP API documents the request body
-//! as *"SQL queries, separated by `;`"*: one string, no parameter array, no
-//! prepared statements, and subscriptions likewise take a query string. Values
-//! therefore have to be rendered into the text.
+//! It would be neat to say SpacetimeDB cannot use that because it has nowhere to
+//! bind: its HTTP API takes *"SQL queries, separated by `;`"*, one string, no
+//! parameter array. True, but not a reason — `vantage-api-client` composes
+//! `Expression` for a REST backend whose "binding" is URL query parameters, and
+//! walks the parameter list at serialization time. Rendering at the end is
+//! compatible with carrying the parts separately.
 //!
-//! What follows from that is not "so concatenate carefully at each call site" —
-//! it is the opposite. Because rendering is unavoidable, it must happen in
-//! exactly one place, and that place must refuse whatever it cannot prove safe.
-//! A `Literal` cannot be constructed from an unvalidated string at all, so a
-//! caller has no way to smuggle one in.
+//! The actual reason is narrower, and it is about what the type system refuses.
+//! An `ExpressiveEnum::Scalar` will hold any value you put in it; nothing stops
+//! a caller assembling a fragment by hand and passing it off as one. A
+//! [`Literal`] has no constructor that takes pre-rendered SQL — every route in
+//! goes through a check, and the ones that emit *unquoted* text (numerics, hex)
+//! parse the input before trusting it. Since this backend has no bind step to
+//! catch a mistake later, that guarantee has to live in the type, and it has to
+//! be the only door.
 //!
 //! # What "cannot prove safe" rules out
 //!

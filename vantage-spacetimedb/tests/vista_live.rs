@@ -177,3 +177,53 @@ async fn ids_are_stable_across_reads() {
         "no row survived between reads, so nothing was actually compared"
     );
 }
+
+#[tokio::test]
+#[ignore = "needs a running SpacetimeDB host with the `cardroom` module published"]
+async fn a_vista_can_be_built_from_yaml() {
+    use vantage_vista::VistaFactory;
+
+    // The path that makes this driver reachable from a catalog, the CLI or a UI
+    // inventory. It is also the premise the crate argues from when it declines
+    // `spacetimedb-sdk` — "a datasource is named in YAML at runtime" — so it had
+    // better be a path that exists.
+    //
+    // `build_from_spec` is synchronous, so the schema has to be in hand first;
+    // `load()` is what does the fetching.
+    let factory = db().vista_factory().load().await.expect("read the schema");
+
+    let vista = factory
+        .from_yaml(
+            r#"
+name: players
+relation: account
+columns:
+  handle: {}
+  bankroll: {}
+"#,
+        )
+        .expect("a spec naming a real relation should build");
+
+    // Named by the spec, backed by the relation the extras point at.
+    assert_eq!(vista.name(), "players");
+    let columns: Vec<&String> = vista.source.columns().keys().collect();
+    assert_eq!(
+        columns,
+        ["handle", "bankroll"],
+        "the spec narrows the view to the columns it lists, in that order"
+    );
+
+    // A column the module does not declare is refused rather than dropped: an
+    // empty grid sends the author to the database, not to their typo.
+    // `Vista` has no `Debug`, so `expect_err` is unavailable — match by hand.
+    let err = match factory
+        .from_yaml("name: oops\nrelation: account\ncolumns:\n  no_such_column: {}\n")
+    {
+        Ok(_) => panic!("an undeclared column must not build"),
+        Err(e) => e,
+    };
+    assert!(
+        err.to_string().contains("does not declare"),
+        "the error should name the problem: {err}"
+    );
+}
