@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-48945cb6.js";
+            window.path_to_searchindex_js = "../searchindex-cc16db2d.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-249b33b5.js"></script>
+        <script src="../toc-cc60226a.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -287,14 +287,19 @@ normalises either shape to a stable key, which is why the same UI serves both ba
 <p>Poll, coarse push, fine push — the same <code>dio.watch()</code> call, chosen transparently from what the Vista
 advertises. You pick the database your problem has; the freshness you get is the best that database
 can offer, and the code that consumes it is the code you already wrote.</p>
+<p>Note the asymmetry in what each one costs you: SurrealDB is watchable the moment you build the
+Vista, while the PostgreSQL row above assumes the trigger from the previous chapter <em>and</em> the
+<code>with_notify(true)</code> that declares it. Every other backend Vantage speaks polls today — see
+<a href="../live-data.html">Live Data</a> for the full picture.</p>
 </div>
 
 </div>
 
 <p>From here the reference half of the book takes over — <a href="../surrealdb.html">SurrealDB</a> for the driver
 details, <a href="../sql.html">SQL</a> for the dialects, <a href="../config-driven-vistas.html">Config-Driven Vistas</a> for
-declaring all of this from YAML, and <a href="../new-persistence.html">Adding a New Persistence</a> when your
-backend isn’t one Vantage already speaks.</p>
+declaring all of this from YAML, <a href="../live-data.html">Live Data</a> for what every backend does about
+freshness, and <a href="../new-persistence.html">Adding a New Persistence</a> when your backend isn’t one Vantage
+already speaks.</p>
 
                     </main>
 

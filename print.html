@@ -37,10 +37,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-48945cb6.js";
+            window.path_to_searchindex_js = "searchindex-cc16db2d.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-249b33b5.js"></script>
+        <script src="toc-cc60226a.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -5494,14 +5494,19 @@ normalises either shape to a stable key, which is why the same UI serves both ba
 <p>Poll, coarse push, fine push — the same <code>dio.watch()</code> call, chosen transparently from what the Vista
 advertises. You pick the database your problem has; the freshness you get is the best that database
 can offer, and the code that consumes it is the code you already wrote.</p>
+<p>Note the asymmetry in what each one costs you: SurrealDB is watchable the moment you build the
+Vista, while the PostgreSQL row above assumes the trigger from the previous chapter <em>and</em> the
+<code>with_notify(true)</code> that declares it. Every other backend Vantage speaks polls today — see
+<a href="#live-data-push-poll--freshness">Live Data</a> for the full picture.</p>
 </div>
 
 </div>
 
 <p>From here the reference half of the book takes over — <a href="#surrealdb">SurrealDB</a> for the driver
 details, <a href="#sql-postgresql-mysql--sqlite">SQL</a> for the dialects, <a href="#config-driven-vistas-yaml--rhai">Config-Driven Vistas</a> for
-declaring all of this from YAML, and <a href="#adding-a-new-persistence">Adding a New Persistence</a> when your
-backend isn’t one Vantage already speaks.</p>
+declaring all of this from YAML, <a href="#live-data-push-poll--freshness">Live Data</a> for what every backend does about
+freshness, and <a href="#adding-a-new-persistence">Adding a New Persistence</a> when your backend isn’t one Vantage
+already speaks.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="the-vantage-journey"><a class="header" href="#the-vantage-journey">The Vantage Journey</a></h1>
 <p>Vantage didn’t start as a multi-backend entity framework. It started as a weekend experiment to see
@@ -9259,6 +9264,153 @@ way.</li>
 <p>They mix freely — a catalog can hold typed-table loaders next to YAML loaders, and a YAML spec’s
 reference can resolve to either. If you’re implementing this machinery for a new backend, the
 driver-side walkthrough is <a href="#step-8-vista-integration">Adding a New Persistence, Step 8</a>.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="live-data-push-poll--freshness"><a class="header" href="#live-data-push-poll--freshness">Live Data: Push, Poll &amp; Freshness</a></h1>
+<p>A cache only stays correct if it finds out when the underlying data changes. There are two ways it
+can: it asks (<strong>poll</strong>), or the database tells it (<strong>push</strong>). <code>dio.watch()</code> is the same call either
+way — it asks the master Vista whether it can push, subscribes if so, and quietly does nothing if
+not.</p>
+<p>That last part is the bit worth knowing before you pick a backend. <code>watch()</code> returning <code>Ok(())</code> does
+not mean you have a live feed; it means nothing went wrong. This page says exactly what each shipped
+driver delivers today, and what — if anything — you have to do to get it.</p>
+<ul>
+<li><a href="#three-freshness-models">Three freshness models</a></li>
+<li><a href="#what-each-backend-delivers-today">What each backend delivers today</a></li>
+<li><a href="#surrealdb--fine-push-no-setup">SurrealDB — fine push, no setup</a></li>
+<li><a href="#postgresql--coarse-push-and-why-you-must-ask-for-it">PostgreSQL — coarse push, and why you must ask for it</a></li>
+<li><a href="#what-a-consumer-must-assume">What a consumer must assume</a></li>
+<li><a href="#adding-push-to-a-driver">Adding push to a driver</a></li>
+</ul>
+<hr>
+<h2 id="three-freshness-models"><a class="header" href="#three-freshness-models">Three freshness models</a></h2>
+<p>Every backend answers two questions, and the pair decides what you get:</p>
+<ol>
+<li><strong>Can it tell you something changed at all?</strong> A file on disk cannot. A database server can.</li>
+<li><strong>When it does, does it hand you the row, or only a signal?</strong></li>
+</ol>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Model</th><th>What arrives</th><th>What the Dio does</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>poll</strong></td><td>nothing — you re-read on a timer</td><td>re-lists the whole set</td></tr>
+<tr><td><strong>coarse push</strong></td><td>“something changed”, no payload</td><td>re-reads the set to find out what</td></tr>
+<tr><td><strong>fine push</strong></td><td>the action <em>and</em> the affected record</td><td>applies that one row to the cache</td></tr>
+</tbody>
+</table>
+</div>
+<p>Fine push is the only model where a change costs you no query. Coarse push still beats polling: you
+re-read <em>because something happened</em>, not on the off-chance.</p>
+<h2 id="what-each-backend-delivers-today"><a class="header" href="#what-each-backend-delivers-today">What each backend delivers today</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Backend</th><th>Mechanism</th><th>Model</th><th>Setup required</th></tr>
+</thead>
+<tbody>
+<tr><td>SurrealDB</td><td><code>LIVE SELECT</code> over WebSocket</td><td>fine push</td><td>none — but the URL must be <code>ws://</code>/<code>wss://</code></td></tr>
+<tr><td>PostgreSQL</td><td><code>LISTEN/NOTIFY</code> on <code>{table}_changed</code></td><td>coarse push</td><td>a trigger <strong>and</strong> an explicit opt-in</td></tr>
+<tr><td>SQLite</td><td>—</td><td>poll</td><td>—</td></tr>
+<tr><td>MySQL</td><td>—</td><td>poll</td><td>—</td></tr>
+<tr><td>MongoDB</td><td>—</td><td>poll</td><td>—</td></tr>
+<tr><td>CSV files</td><td>—</td><td>poll</td><td>—</td></tr>
+<tr><td>REST / GraphQL</td><td>—</td><td>poll</td><td>—</td></tr>
+<tr><td>AWS</td><td>—</td><td>poll</td><td>—</td></tr>
+<tr><td>Kubernetes</td><td>—</td><td>poll</td><td>—</td></tr>
+<tr><td>CLI tools</td><td>—</td><td>poll</td><td>—</td></tr>
+<tr><td>Append logs</td><td>— (write-only sink)</td><td>n/a</td><td>—</td></tr>
+</tbody>
+</table>
+</div>
+<p>Only two drivers implement <code>watch_vista</code> at all. Everything in the poll rows inherits the trait
+default, which reports the capability as unsupported and leaves
+<a href="vantage_vista::VistaCapabilities"><code>can_subscribe</code></a> <code>false</code> — so <code>dio.watch()</code> on those is a no-op
+and a <code>refresh_every</code> timer carries the load.</p>
+<div id="admonition-poll-is-a-supported-answer-not-a-failure" class="admonition admonish-note" role="note" aria-labelledby="admonition-poll-is-a-supported-answer-not-a-failure-title">
+<div class="admonition-title">
+<div id="admonition-poll-is-a-supported-answer-not-a-failure-title">
+<p>Poll is a supported answer, not a failure</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-poll-is-a-supported-answer-not-a-failure"></a>
+</div>
+
+<div>
+<p>A polled backend is not broken, and you do not need different application code for it. The Lens keeps
+its <code>refresh_every</code>, the scenery is content-aware, and an unchanged re-read bumps no generation and
+repaints nothing. The cost is latency and a query you didn’t strictly need — not correctness.</p>
+</div>
+
+</div>
+
+<h2 id="surrealdb--fine-push-no-setup"><a class="header" href="#surrealdb--fine-push-no-setup">SurrealDB — fine push, no setup</a></h2>
+<p><code>LIVE SELECT</code> delivers a typed per-row notification: the action (<code>CREATE</code> / <code>UPDATE</code> / <code>DELETE</code>) and
+the affected record. The driver re-reads each notified id <em>through the vista’s own conditions</em>, so a
+row that no longer belongs to a filtered set arrives as a delete rather than silently lingering. A
+real table is watchable the moment you build it; only query-sourced vistas (<code>rhai:</code> / <code>base:</code>) are
+not.</p>
+<div id="admonition-live-queries-need-a-websocket-connection" class="admonition admonish-warning" role="note" aria-labelledby="admonition-live-queries-need-a-websocket-connection-title">
+<div class="admonition-title">
+<div id="admonition-live-queries-need-a-websocket-connection-title">
+<p>Live queries need a WebSocket connection</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-live-queries-need-a-websocket-connection"></a>
+</div>
+
+<div>
+<p>This is the one case where the capability can overstate what you’ll get. <code>LIVE SELECT</code> is only
+implemented by the WebSocket engine — point a SurrealDB datasource at an <code>http://</code> URL and the Vista
+will still advertise that it can subscribe, then fail when <code>watch()</code> actually tries. Use <code>ws://</code> or
+<code>wss://</code> for anything that watches.</p>
+</div>
+
+</div>
+
+<h2 id="postgresql--coarse-push-and-why-you-must-ask-for-it"><a class="header" href="#postgresql--coarse-push-and-why-you-must-ask-for-it">PostgreSQL — coarse push, and why you must ask for it</a></h2>
+<p>Postgres has no built-in change feed. It has <code>LISTEN/NOTIFY</code>, a general-purpose pub/sub channel, and
+a trigger you install yourself decides what gets announced. The driver listens on <code>{table}_changed</code>
+and yields a payload-less invalidation for every notification.</p>
+<p>Because you install that trigger, only you know whether it exists — and <code>LISTEN</code> on a channel nobody
+ever feeds <em>succeeds</em>, then blocks forever. A Vista that assumed it could push merely because the
+table is writable would advertise a feed that may never arrive, which a consumer cannot tell apart
+from a table where nothing happens. So it is opt-in:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let master = db
+    .vista_factory()
+    .with_notify(true)   // yes, I installed the trigger
+    .from_table(Product::table(db.clone()))?;
+<span class="boring">}</span></code></pre>
+<p>The trigger itself, and the full walkthrough, are in
+<a href="#real-time-push-with-listennotify">Real-Time Push with LISTEN/NOTIFY</a>. The declaration applies to every
+table a factory builds, so if only some of your tables carry triggers, use separate factories. It
+also carries across reference traversal — a relation target inherits the parent’s opt-in rather than
+silently reverting to unwatchable.</p>
+<h2 id="what-a-consumer-must-assume"><a class="header" href="#what-a-consumer-must-assume">What a consumer must assume</a></h2>
+<p>Push is best-effort, and the contract is deliberately loose so that a driver can tighten its scope
+later without breaking anyone. Callers always hand over the full Vista; the driver delivers what it
+can. Four things hold everywhere:</p>
+<ul>
+<li><strong>The stream may be coarser than your Vista.</strong> Watching the whole table and letting the consumer
+discard the rest is a legitimate implementation.</li>
+<li><strong>A pushed row may fall outside your conditions</strong>, precisely because of the above. Either the
+driver reconciles or you must.</li>
+<li><strong>An invalidation means “re-read everything.”</strong> It carries no id and implies nothing about how much
+changed.</li>
+<li><strong>The stream ending is normal.</strong> Connections drop; consumers resubscribe with backoff and reconcile
+the gap. <code>Dio::watch()</code> already does this for you.</li>
+</ul>
+<p>The consequence worth internalising: <a href="vantage_vista::VistaCapabilities"><code>can_subscribe</code></a> advertises
+an <em>attempt</em> to push, not a guarantee of delivery. No shipped backend is lossless, so anything that
+must not miss a change keeps a reconcile path — a slow timer, a refresh on reconnect — rather than
+trusting push alone.</p>
+<h2 id="adding-push-to-a-driver"><a class="header" href="#adding-push-to-a-driver">Adding push to a driver</a></h2>
+<p>If you are implementing a backend, the driver-side contract — what you must promise when you
+override <code>watch_vista</code>, and when you may honestly advertise the capability — is step 8 of
+<a href="#step-8-vista-integration">Adding a New Persistence</a>. Start with the capability
+<code>false</code>; turning it on the day the feed works is a healthier state than shipping a flag that lies.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="adding-a-new-persistence"><a class="header" href="#adding-a-new-persistence">Adding a New Persistence</a></h1>
 <p>So you want to connect Vantage to a new database? This guide walks through the process in nine
