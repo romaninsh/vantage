@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.6 — 2026-07-24
+
+- `Tag(12)` epoch pairs keep their exact shape through an untouched
+  round trip: a one-element `[seconds]` no longer normalizes into
+  `[seconds, 0]` (the hint's own bytes reproduce verbatim when the
+  string matches its rendering). Malformed payloads — extra elements,
+  non-integer members — fall back to the plain rendering instead of
+  being silently coerced.
+
 ## 0.6.5 — 2026-07-24
 
 - SurrealDB epoch-pair datetimes (`Tag(12, [seconds, nanos])`) join the

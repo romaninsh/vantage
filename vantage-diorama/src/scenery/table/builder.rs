@@ -284,6 +284,7 @@ impl TableSceneryBuilder {
             load_push_count: AtomicUsize::new(0),
             master_capabilities,
             two_pass,
+            ui_filters: RwLock::new(Vec::new()),
             titles_only,
             demand,
             index: RwLock::new(index),

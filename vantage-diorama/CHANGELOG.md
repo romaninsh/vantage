@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.5 — 2026-07-26
+## 0.8.6 — 2026-07-26
 
 **`set_sort` and `set_search` work on a two-pass scenery**
 
@@ -28,6 +28,48 @@
 - No behaviour change for single-pass sceneries, for two-pass views opened with
   a query, or for `titles_only` pickers (which keep raw list order).
 
+## 0.8.5 — 2026-07-26
+
+Review fixes for the 0.8.0 draft-servo release (never shipped as 0.8.1),
+plus augment-pass corrections.
+
+- **Identity leaves the draft.** A `Uuid` servo binds its minted id
+  without seeding it into `data` — an untouched form is clean,
+  `flash()` on it fires nothing (no more blank `{id}` inserts), and the
+  insert record picks the id column up at flash time instead.
+- **Overlapping flashes on one servo no longer leak the optimistic
+  stage.** The post-resolution measurement (and the `Tracking`
+  transition) now runs only for the LAST in-flight resolver — an
+  earlier one would have absorbed a sibling flash's still-staged cache
+  value as upstream truth and released locks early.
+- **`Auto` binds the returned id before seeding the cache.** If the
+  cache patch fails after the returning insert succeeded, the servo
+  keeps the created row's identity — a retry targets that row instead
+  of running a second returning insert (a duplicate).
+- **`Auto`'s write-route bypass is a documented contract**: the
+  returning insert has no id to stage or route, so `on_flash`
+  validation/capability does not apply to it — use `Uuid` where the
+  route must own the write.
+
+**Augment passes**
+
+- **A tagged null counts as an unfilled augment column.** `has_augment_gap`
+  compared against a bare `Null`, so a driver that wraps its absent value in a
+  CBOR tag (SurrealDB's `NONE` arrives as `Tag(6, Null)`) read as *filled* — the
+  row never re-entered the detail pass and its augmented columns stayed empty
+  for the session.
+- **Rows with no detail behind them stop being re-fetched.** A row whose detail
+  source legitimately returns nothing kept its gap forever, so every sweep
+  re-enqueued it — a permanently-gapped row spun the scheduler at fetch rates
+  that showed up as constant background load. Settled-empty ids are remembered
+  until a refresh clears them.
+- **`TableScenery::set_filters` — runtime equality filters over the cache.**
+  Grid filter chips set `column == value` terms that AND with the query's own
+  conditions and are evaluated locally, which is what lets them reference
+  **augmented** columns (those exist only after hydration, so the master can
+  never answer them). Kept separate from `conditions` so chips can't clobber
+  query narrowing, and out of the shared index key so they refine per handle.
+  An empty vec clears.
 ## 0.8.4 — 2026-07-26
 
 **The facade Vista honours condition, order and search**

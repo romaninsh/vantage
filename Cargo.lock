@@ -5641,7 +5641,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.8.5"
+version = "0.8.6"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5875,7 +5875,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.6.5"
+version = "0.6.6"
 dependencies = [
  "chrono",
  "ciborium",

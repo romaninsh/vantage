@@ -60,12 +60,16 @@ pub enum ServoStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum IdStrategy {
     /// Mint a time-ordered UUID (v7) the moment the servo opens and
-    /// command it into the id column — every save reuses it, so a
-    /// retried create can't duplicate the record.
+    /// bind the servo to it — every save reuses it, so a retried create
+    /// can't duplicate the record. Identity is the binding's, not the
+    /// draft's: the id column joins the insert record at flash time, an
+    /// untouched form stays clean, and saving it fires nothing.
     #[default]
     Uuid,
     /// The backend assigns the id on the first save (returning insert);
-    /// the servo binds to the created row.
+    /// the servo binds to the created row. **Bypasses any `on_flash`
+    /// route** for that first insert — see
+    /// [`flash`](Servo::flash)'s Auto contract.
     Auto,
     /// The id comes from the record's id column at flash time — the
     /// caller commands it like any other field.
@@ -274,7 +278,22 @@ impl Servo {
                         return Ok(None);
                     }
                     match self.state.id.read().unwrap().clone() {
-                        Some(id) => Some(ChangeFlash::insert(id, data.clone())),
+                        // Identity lives in the binding, not the draft:
+                        // the insert record carries the id column even
+                        // though the user never typed it.
+                        Some(id) => {
+                            let mut record = data.clone();
+                            let id_column = self
+                                .dio
+                                .master()
+                                .get_id_column()
+                                .unwrap_or("id")
+                                .to_string();
+                            if record.get(&id_column).is_none() {
+                                record.insert(id_column, CborValue::Text(id.clone()));
+                            }
+                            Some(ChangeFlash::insert(id, record))
+                        }
                         None => match self.state.strategy {
                             // No id exists until the backend assigns one.
                             IdStrategy::Auto => None,
@@ -302,18 +321,28 @@ impl Servo {
         self.state.bump_generation();
 
         let outcome = self.dio.flash(flash.clone()).await;
-        self.state.in_flight.fetch_sub(1, Ordering::SeqCst);
-        // One deliberate measurement now that the write resolved: the
-        // confirmed value on success (convergence releases every lock),
-        // the restored pre-image on failure (setpoints still held — the
-        // draft survives).
-        self.absorb_now().await;
+        // One deliberate measurement now that the write resolved — but
+        // only for the LAST in-flight resolver: an earlier one would
+        // read a sibling flash's still-staged optimistic value as an
+        // upstream measurement, exactly what the in-flight gate exists
+        // to prevent. On success: the confirmed value (convergence
+        // releases every lock). On failure: the restored pre-image
+        // (setpoints still held — the draft survives).
+        let last = self.state.in_flight.fetch_sub(1, Ordering::SeqCst) == 1;
+        if last {
+            self.absorb_now().await;
+        }
         match outcome {
             Ok(()) => {
-                self.state.set_status(ServoStatus::Tracking);
+                if last {
+                    self.state.set_status(ServoStatus::Tracking);
+                }
                 Ok(Some(flash))
             }
             Err(e) => {
+                // The failure is reported regardless — a sibling's later
+                // success overwrites the status, which is the honest
+                // last-write-wins reading of overlapping saves.
                 self.state
                     .set_status(ServoStatus::Failed(FlashRejection::from_error_or_message(
                         &e,
@@ -324,9 +353,14 @@ impl Servo {
     }
 
     /// The [`IdStrategy::Auto`] insert: no id exists until the master
-    /// returns one, so this runs the master's returning insert directly
-    /// (there is no row id to stage optimistically under), seeds the
-    /// cache with the created row, and binds the servo to it.
+    /// returns one, so this runs the master's returning insert directly,
+    /// seeds the cache with the created row, and binds the servo to it.
+    ///
+    /// **Contract:** this path writes to the master and **bypasses any
+    /// `on_flash` route** — a returning insert has no id to stage
+    /// optimistically or to route. Route-side validation and
+    /// route-granted write capability do not apply to `Auto` creates;
+    /// use [`IdStrategy::Uuid`] where the route must own the write.
     async fn flash_auto_insert(&self) -> Result<ChangeFlash> {
         use vantage_dataset::traits::InsertableValueSet as _;
 
@@ -336,21 +370,39 @@ impl Servo {
         self.state.bump_generation();
 
         let master = self.dio.master();
-        let outcome = async {
-            let id = master.insert_return_id_value(&record).await?;
-            let id_column = master.get_id_column().unwrap_or("id").to_string();
-            let mut with_id = record.clone();
-            with_id.insert(id_column, CborValue::Text(id.clone()));
-            self.dio.patched(id.clone(), with_id.clone()).await?;
-            Ok::<_, vantage_core::VantageError>((id, with_id))
-        }
-        .await;
-        self.state.in_flight.fetch_sub(1, Ordering::SeqCst);
-        match outcome {
-            Ok((id, with_id)) => {
+        let inserted = master.insert_return_id_value(&record).await;
+        let id = match inserted {
+            Ok(id) => {
+                // The row exists upstream from THIS moment — bind the
+                // identity immediately, before anything else can fail,
+                // so a retry targets the same row instead of running a
+                // second returning insert (a duplicate).
                 *self.state.id.write().unwrap() = Some(id.clone());
-                self.absorb_now().await;
-                self.state.set_status(ServoStatus::Tracking);
+                id
+            }
+            Err(e) => {
+                self.state.in_flight.fetch_sub(1, Ordering::SeqCst);
+                self.state
+                    .set_status(ServoStatus::Failed(FlashRejection::from_error_or_message(
+                        &e,
+                    )));
+                return Err(e);
+            }
+        };
+
+        let id_column = master.get_id_column().unwrap_or("id").to_string();
+        let mut with_id = record.clone();
+        with_id.insert(id_column, CborValue::Text(id.clone()));
+        let seeded = self.dio.patched(id.clone(), with_id.clone()).await;
+        let last = self.state.in_flight.fetch_sub(1, Ordering::SeqCst) == 1;
+        if last {
+            self.absorb_now().await;
+        }
+        match seeded {
+            Ok(()) => {
+                if last {
+                    self.state.set_status(ServoStatus::Tracking);
+                }
                 Ok(ChangeFlash::insert(id, with_id))
             }
             Err(e) => {
@@ -512,15 +564,14 @@ async fn absorb_from_cache(state: &Arc<ServoState>, dio_weak: &Weak<DioInner>) {
 /// Used by [`Dio::servo`](crate::Dio::servo) and
 /// [`Dio::servo_new`](crate::Dio::servo_new). With [`IdStrategy::Uuid`]
 /// and no id, identity is minted here — before the first save — and
-/// commanded into the id column so the insert record carries it.
+/// bound; the insert record picks the id column up at flash time.
 pub(crate) fn spawn_servo(dio: &Dio, id: Option<String>, strategy: IdStrategy) -> Servo {
     let mut id = id;
-    let mut data = Record::new();
+    // Identity is the binding's, never the draft's: minting must not
+    // dirty the data (an untouched form stays clean and fires nothing).
+    // The insert record picks the id column up at flash time.
     if id.is_none() && strategy == IdStrategy::Uuid {
-        let minted = uuid::Uuid::now_v7().to_string();
-        let id_column = dio.master().get_id_column().unwrap_or("id").to_string();
-        data.insert(id_column, CborValue::Text(minted.clone()));
-        id = Some(minted);
+        id = Some(uuid::Uuid::now_v7().to_string());
     }
 
     let (generation_tx, _rx) = watch::channel(Generation::default());
@@ -529,7 +580,7 @@ pub(crate) fn spawn_servo(dio: &Dio, id: Option<String>, strategy: IdStrategy) -
         id: RwLock::new(id),
         strategy,
         baseline: RwLock::new(None),
-        data: RwLock::new(data),
+        data: RwLock::new(Record::new()),
         status: RwLock::new(ServoStatus::Tracking),
         in_flight: AtomicU64::new(0),
         generation: AtomicU64::new(0),

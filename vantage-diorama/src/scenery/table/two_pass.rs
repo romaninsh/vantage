@@ -85,7 +85,13 @@ fn references_augmented_column(
         .unwrap()
         .as_ref()
         .is_some_and(|(col, _)| dio_inner.is_augmented_column(col));
-    cond_aug || sort_aug
+    let filter_aug = state
+        .ui_filters
+        .read()
+        .unwrap()
+        .iter()
+        .any(|(col, _)| dio_inner.is_augmented_column(col));
+    cond_aug || filter_aug || sort_aug
 }
 
 /// Rebuild the visible map for a **locally-refined** two-pass scenery: take the
@@ -107,6 +113,7 @@ pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
     };
     let ids = index.ids();
     let conditions = state.conditions.read().unwrap().clone();
+    let ui_filters = state.ui_filters.read().unwrap().clone();
     let op_conditions = state.op_conditions.read().unwrap().clone();
     let search = state.search.read().unwrap().clone();
     let sort = state.sort.read().unwrap().clone();
@@ -121,6 +128,7 @@ pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
             .ok()
             .flatten()
             && matches_conditions(&rec, &conditions)
+            && matches_conditions(&rec, &ui_filters)
             && matches_op_conditions(&rec, &op_conditions)
             && matches_search(&rec, search.as_deref())
         {
@@ -345,11 +353,11 @@ pub(crate) async fn resort(state: Arc<TableSceneryState>) {
     //    the old in a single write — the grid never blanks mid-reorder. Each row
     //    shows `Fresh`/`Incomplete` per its cached status.
     //
-    //    A refined view is rebuilt by `reseed_filtered`, which is the only code
-    //    that applies the condition/sort/search over the cache. Rebuilding from
-    //    the index directly — as this used to do unconditionally — presented the
-    //    index's own order and silently dropped the sort the caller had just
-    //    asked for.
+    //    A refined view — one carrying a condition, a filter chip, a sort or a
+    //    search — is rebuilt by `reseed_filtered`, the only code that applies
+    //    those over the cache. Rebuilding from the index directly, as this used
+    //    to do unconditionally, presented the index's own order and silently
+    //    dropped the sort the caller had just asked for.
     if state.local_refine() {
         reseed_filtered(&state).await;
     } else {
@@ -618,6 +626,16 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
             let no_gap =
                 !gap_aware || !crate::dio::augment_passes::has_augment_gap(row, &augmented);
             if no_gap {
+                continue;
+            }
+            // Hydrated but legitimately empty (no detail record exists) —
+            // don't re-fetch until a refresh clears the settled set.
+            if dio_inner
+                .augment_settled_empty
+                .lock()
+                .unwrap()
+                .contains(&id)
+            {
                 continue;
             }
         }

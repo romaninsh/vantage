@@ -122,6 +122,11 @@ pub trait TableScenery: Send + Sync {
     fn request_refresh(&self);
     fn set_search(&self, query: Option<String>);
     fn set_sort(&self, column: Option<String>, dir: SortDir);
+    /// Replace the UI-level equality filter set (grid filter chips) —
+    /// `column == value` terms ANDed together and with the query's own
+    /// conditions, evaluated locally over the cache (which is what lets
+    /// them reference augmented columns). Empty vec clears.
+    fn set_filters(&self, filters: Vec<(String, ciborium::Value)>);
 
     fn subscribe(&self) -> watch::Receiver<Generation>;
 
@@ -315,6 +320,14 @@ impl TableScenery for TableSceneryImpl {
         );
         self.inner.deregister();
         *self.inner.sort.write().unwrap() = column.map(|c| (c, dir));
+        self.inner.reload_notify.notify_one();
+    }
+
+    fn set_filters(&self, filters: Vec<(String, ciborium::Value)>) {
+        self.inner.deregister();
+        *self.inner.ui_filters.write().unwrap() = filters;
+        // The cached total belongs to the unfiltered set.
+        self.inner.set_total(None);
         self.inner.reload_notify.notify_one();
     }
 

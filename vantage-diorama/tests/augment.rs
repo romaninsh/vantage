@@ -809,3 +809,41 @@ async fn augment_fetches_only_while_a_view_demands_augment_columns() {
         "refetched value replaces the stale one in place"
     );
 }
+
+/// A UI filter chip over an AUGMENTED column. The master never sees the
+/// column (it exists only after hydration), so the term can't be pushed
+/// down — `set_filters` refines the visible set over the cache instead,
+/// and clearing restores the full set. This is what lets a grid filter
+/// on a value that arrives from a second data source.
+#[tokio::test]
+async fn ui_filter_narrows_on_an_augmented_column() {
+    let tmp = TempDir::new().unwrap();
+    let dio = open(&tmp, vec![aug("runs-detail", Source::Id, &["detail"])]).await;
+    let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
+
+    scenery.set_viewport(0..2);
+    eventually("rows hydrated", || {
+        matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
+            && matches!(status_of(&scenery, 1), Some(RowStatus::Fresh))
+    })
+    .await;
+    assert_eq!(scenery.row_count(), 2);
+
+    scenery.set_filters(vec![("detail".to_string(), text("full-r0"))]);
+    eventually("filter narrowed the visible set", || {
+        scenery.row_count() == 1
+    })
+    .await;
+    assert_eq!(col_of(&scenery, 0, "detail").as_deref(), Some("full-r0"));
+    assert_eq!(
+        col_of(&scenery, 0, "branch").as_deref(),
+        Some("main"),
+        "cheap columns survive the refine"
+    );
+
+    scenery.set_filters(Vec::new());
+    eventually("clearing restores the full set", || {
+        scenery.row_count() == 2
+    })
+    .await;
+}
