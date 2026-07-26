@@ -226,18 +226,10 @@ impl TableSceneryBuilder {
         // keyed by the master Vista's index_key over the scenery's conditions +
         // sort, so reopening the same variant reuses the already-built index.
         let two_pass = dio.is_two_pass();
-        // Two-pass can't push conditions/sort to its list pass, so any
-        // condition/sort means the visible set must be refined locally over the
-        // cache (this is also the only way an augmented-column filter can work —
-        // the column exists only after hydration). A picker (`titles_only`) keeps
-        // raw list order — it never hydrates, so it can't evaluate augmented
-        // predicates anyway.
-        let local_refine = two_pass
-            && !titles_only
-            && (!conditions.is_empty()
-                || !op_conditions.is_empty()
-                || sort.is_some()
-                || search.is_some());
+        // Whether the visible set is refined locally is derived from the query
+        // as it stands — see `TableSceneryState::local_refine`. It is not
+        // captured here: `set_sort` / `set_search` change the answer, and a
+        // value frozen at open made a later sort a silent no-op.
         let index = if two_pass {
             let vista_sort = sort.as_ref().map(|(col, dir)| {
                 let dir = match dir {
@@ -292,7 +284,6 @@ impl TableSceneryBuilder {
             load_push_count: AtomicUsize::new(0),
             master_capabilities,
             two_pass,
-            local_refine,
             titles_only,
             demand,
             index: RwLock::new(index),
@@ -325,7 +316,7 @@ impl TableSceneryBuilder {
             // Locally-refined views filter/sort the just-seeded rows over the
             // cache. With an augmented-column condition this yields an empty set
             // until hydration confirms matches.
-            if state.local_refine {
+            if state.local_refine() {
                 super::two_pass::reseed_filtered(&state).await;
                 state.bump_generation();
             }

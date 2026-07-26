@@ -88,14 +88,6 @@ pub(crate) struct TableSceneryState {
     // the legacy single-pass path.
     /// Whether this scenery drives two-pass (list + detail) loading.
     pub(crate) two_pass: bool,
-    /// Two-pass only: whether the visible set is *locally refined* — its rows are
-    /// filtered/sorted over the cache rather than served in raw index order.
-    /// Engaged when the query carries conditions/sort the list pass can't push to
-    /// the master (today, any condition/sort in two-pass — augmented columns in
-    /// particular, which only exist after hydration). When set, the visible
-    /// `rows` map is authoritative for `row_count` (the index may hold more ids
-    /// than match the filter).
-    pub(crate) local_refine: bool,
     /// Dropdown / autocomplete projection: serve the cheap list columns and
     /// **skip the detail pass** even on a two-pass table. The list pass still
     /// runs (rows carry id + title columns); per-row hydration never fires.
@@ -160,6 +152,28 @@ impl TableSceneryState {
         let changed = *guard != total;
         *guard = total;
         changed
+    }
+
+    /// Whether the visible set is *locally refined* — filtered and ordered over
+    /// the cache rather than served in the index's own order.
+    ///
+    /// Engaged when a two-pass view carries any condition, sort or search: the
+    /// list pass can't push those down (and an augmented column doesn't exist
+    /// until a row hydrates), so the visible map — not the index — is
+    /// authoritative for `row_count`.
+    ///
+    /// **Derived, never stored.** It used to be a `bool` computed once in the
+    /// builder, which made `set_sort` on a view opened without one a permanent
+    /// no-op: the flag stayed `false`, so every path that would have applied
+    /// the new order skipped it.
+    pub(crate) fn local_refine(&self) -> bool {
+        if !self.two_pass || self.titles_only {
+            return false;
+        }
+        !self.conditions.read().unwrap().is_empty()
+            || !self.op_conditions.read().unwrap().is_empty()
+            || self.sort.read().unwrap().is_some()
+            || self.search.read().unwrap().is_some()
     }
 
     /// Current two-pass index (cloned `Arc`), or `None` in single-pass mode.

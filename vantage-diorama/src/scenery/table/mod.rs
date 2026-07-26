@@ -172,7 +172,7 @@ impl TableScenery for TableSceneryImpl {
     fn row_count(&self) -> usize {
         // A locally-refined view's visible map is authoritative — the index may
         // hold more ids than match the filter.
-        if self.inner.local_refine {
+        if self.inner.local_refine() {
             return self.inner.rows.read().unwrap().len();
         }
         if let Some(index) = self.inner.index() {
@@ -203,7 +203,7 @@ impl TableScenery for TableSceneryImpl {
     fn has_more(&self) -> bool {
         // A locally-refined view materializes its whole visible set from the
         // (already-listed) index, so there is no further page to ask for.
-        if self.inner.local_refine {
+        if self.inner.local_refine() {
             return false;
         }
         // Two-pass / sequential no-total: more pages exist until the list pass
@@ -220,7 +220,7 @@ impl TableScenery for TableSceneryImpl {
     }
 
     fn estimated_total(&self) -> Option<usize> {
-        if self.inner.local_refine {
+        if self.inner.local_refine() {
             return Some(self.inner.rows.read().unwrap().len());
         }
         // Two-pass: the running index length is the best estimate; it grows as

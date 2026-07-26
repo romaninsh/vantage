@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.8.5 — 2026-07-26
+
+**`set_sort` and `set_search` work on a two-pass scenery**
+
+- On an augmented (two-pass) table, changing the sort on a live scenery did
+  nothing. A grid opened without a sort could never be sorted at all; one opened
+  *with* a sort picked up a change only if some unrelated `RecordChanged`
+  happened to fire afterwards. `set_search` had the same defect. Header clicks
+  and a page's `default_sort` both go through this path, so on an augmented
+  table neither had any effect.
+
+  Two causes, both fixed:
+
+  - `resort` — the handler for a live `set_sort` — rebuilt the visible map from
+    the query index in the index's own order, and never called
+    `reseed_filtered`, which is the only code that applies a condition, sort or
+    search over the cache. It now does, for a refined view.
+
+  - `local_refine` was a `bool` computed once when the scenery opened and never
+    revisited, so a view opened with no query stayed "unrefined" for life — and
+    the two other call sites that would have applied the new order are gated on
+    it. It is now derived from the query as it stands, and the stored field is
+    gone. A value that is a function of mutable state should not have been
+    cached beside it.
+
+- No behaviour change for single-pass sceneries, for two-pass views opened with
+  a query, or for `titles_only` pickers (which keep raw list order).
+
 ## 0.8.4 — 2026-07-26
 
 **The facade Vista honours condition, order and search**
