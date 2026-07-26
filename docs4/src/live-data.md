@@ -40,7 +40,7 @@ of the set arrives as a delete. Membership stops being something anyone has to r
 | Backend        | Mechanism                              | Model       | Setup required                          |
 | -------------- | -------------------------------------- | ----------- | --------------------------------------- |
 | SpacetimeDB    | subscription over WebSocket (BSATN)    | filtered fine push | none                             |
-| SurrealDB      | `LIVE SELECT` over WebSocket           | fine push   | none — but the URL must be `ws://`/`wss://` |
+| SurrealDB      | `LIVE SELECT` over WebSocket           | fine push   | none                                    |
 | PostgreSQL     | `LISTEN/NOTIFY` on `{table}_changed`   | coarse push | a trigger **and** an explicit opt-in    |
 | SQLite         | —                                      | poll        | —                                       |
 | MySQL          | —                                      | poll        | —                                       |
@@ -95,11 +95,11 @@ row that no longer belongs to a filtered set arrives as a delete rather than sil
 real table is watchable the moment you build it; only query-sourced vistas (`rhai:` / `base:`) are
 not.
 
-```admonish warning title="Live queries need a WebSocket connection"
-This is the one case where the capability can overstate what you'll get. `LIVE SELECT` is only
-implemented by the WebSocket engine — point a SurrealDB datasource at an `http://` URL and the Vista
-will still advertise that it can subscribe, then fail when `watch()` actually tries. Use `ws://` or
-`wss://` for anything that watches.
+```admonish note title="Live queries ride the WebSocket connection"
+`LIVE SELECT` needs a transport the server can push frames down, which means WebSocket. That is not a
+trap you can fall into: `SurrealConnection::connect` accepts only `ws://`, `wss://` and `cbor://` and
+rejects anything else outright, so every SurrealDB connection you can actually open is one that can
+carry live queries.
 ```
 
 ## PostgreSQL — coarse push, and why you must ask for it

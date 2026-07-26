@@ -1,0 +1,195 @@
+//! `AggregateLens` — the aggregate datasource.
+//!
+//! A derived Dio's needs are the inverse of a source Dio's: there is no master
+//! to fetch from, nothing to write back, and its contents are reproducible from
+//! the source at any time. This Lens encodes exactly that, and owns **one cache
+//! file for every aggregation** — each aggregate claiming a named table within
+//! it, the same shape a datasource uses for its tables.
+
+use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
+
+use ciborium::Value as CborValue;
+use tokio::sync::Notify;
+use vantage_core::Result;
+use vantage_dataset::traits::ReadableValueSet;
+use vantage_diorama::{CacheBackend, Dio, Lens, MemoryCache, RedbCache, ValueScenery};
+use vantage_vista::Vista;
+
+use crate::aggregation::{Aggregation, DerivedRows};
+use crate::derived::{AggregateShell, DerivedDio, DerivedState, shared};
+use crate::engine::{self, Publish, Source};
+use crate::value::{AggregateValue, TaskGuard, ValueState};
+
+/// How long to hold off after reacting, before flushing whatever else arrived.
+const DEFAULT_DEBOUNCE: Duration = Duration::from_millis(250);
+
+pub struct AggregateLensBuilder {
+    backend: Arc<dyn CacheBackend>,
+    debounce: Duration,
+}
+
+impl AggregateLensBuilder {
+    /// Cooldown after each recomputation.
+    ///
+    /// The first change in a burst is always acted on immediately; this bounds
+    /// how often the ones behind it are. Whatever arrives during the cooldown
+    /// is flushed once at the end, never dropped.
+    pub fn debounce(mut self, window: Duration) -> Self {
+        self.debounce = window;
+        self
+    }
+
+    pub fn build(self) -> Result<Arc<AggregateLens>> {
+        let lens = Lens::new()
+            .cache_source(self.backend.clone())
+            // Nothing upstream to re-fetch: this Lens's Dios are fed by the
+            // aggregation engine, not by a master.
+            .refresh_on_open(false)
+            .build()
+            .map_err(|e| vantage_core::error!("aggregate lens", detail = e.to_string()))?;
+        Ok(Arc::new(AggregateLens {
+            lens: Arc::new(lens),
+            backend: self.backend,
+            debounce: self.debounce,
+        }))
+    }
+}
+
+pub struct AggregateLens {
+    lens: Arc<Lens>,
+    backend: Arc<dyn CacheBackend>,
+    debounce: Duration,
+}
+
+impl AggregateLens {
+    /// Persist derived results at `path` — one file, one table per aggregate.
+    pub fn at(path: impl AsRef<Path>) -> Result<AggregateLensBuilder> {
+        Ok(AggregateLensBuilder {
+            backend: Arc::new(RedbCache::open(path)?),
+            debounce: DEFAULT_DEBOUNCE,
+        })
+    }
+
+    /// Keep derived results in memory only. Aggregates are reproducible from
+    /// their source, so this loses nothing but the warm start.
+    pub fn in_memory() -> AggregateLensBuilder {
+        AggregateLensBuilder {
+            backend: Arc::new(MemoryCache::new()),
+            debounce: DEFAULT_DEBOUNCE,
+        }
+    }
+
+    /// Reuse a backend already opened elsewhere — e.g. to put aggregates in the
+    /// same file as the datasource they derive from.
+    pub fn with_backend(backend: Arc<dyn CacheBackend>) -> AggregateLensBuilder {
+        AggregateLensBuilder {
+            backend,
+            debounce: DEFAULT_DEBOUNCE,
+        }
+    }
+
+    /// Drop cached aggregates whose names are no longer in use.
+    ///
+    /// Names encode what an aggregate *is*; when a definition changes, the old
+    /// table would otherwise sit there forever. Backends that cannot enumerate
+    /// their tables report none, so this is a no-op on them.
+    pub async fn retain(&self, keep: &[&str]) -> Result<()> {
+        for name in self.backend.list_tables().await? {
+            if keep.contains(&name.as_str()) {
+                continue;
+            }
+            tracing::debug!(
+                target: "vantage_diorama_aggregate",
+                table = %name,
+                "dropping unused aggregate cache",
+            );
+            self.backend.drop_table(&name).await?;
+        }
+        Ok(())
+    }
+
+    /// Mount a scalar aggregation as a [`ValueScenery`] — the shape a UI binds
+    /// to a counter or a total.
+    ///
+    /// `name` identifies the aggregate's cache table, so it must be stable
+    /// across runs and distinct per aggregate.
+    pub async fn value<A>(
+        self: &Arc<Self>,
+        source: &Dio,
+        name: &str,
+        aggregation: A,
+    ) -> Result<Arc<dyn ValueScenery>>
+    where
+        A: Aggregation<Output = CborValue>,
+    {
+        let cache = self.backend.open_table(name).await?;
+        let nudge = Arc::new(Notify::new());
+        let state = ValueState::new(source.clone(), cache, nudge.clone());
+        state.seed_from_cache().await;
+
+        let handle = engine::spawn(
+            Source {
+                reader: source.vista(),
+                dio: source.clone(),
+            },
+            Arc::new(aggregation),
+            &state,
+            self.debounce,
+            nudge,
+            None,
+        );
+
+        Ok(Arc::new(AggregateValue {
+            state,
+            _guard: TaskGuard(handle),
+        }))
+    }
+
+    /// Mount a row-producing aggregation as its own `Dio`.
+    ///
+    /// The result is an ordinary Dio: open sceneries on it, sort and search it,
+    /// drive a grid from it. Its Vista advertises `can_order` / `can_search` /
+    /// `can_count` and honours them, because unlike its source it holds its
+    /// entire row set.
+    pub async fn derive<A>(
+        self: &Arc<Self>,
+        source: &Dio,
+        name: &str,
+        aggregation: A,
+    ) -> Result<DerivedDio>
+    where
+        A: Aggregation<Output = DerivedRows>,
+    {
+        // Compute once up front: the schema of the derived table is whatever
+        // the aggregation declares, and the Vista needs it before it exists.
+        let aggregation = Arc::new(aggregation);
+        let rows = source.vista().list_values().await?;
+        let initial = aggregation.compute(&rows);
+
+        let shared_rows = shared(initial.clone());
+        let shell = AggregateShell::new(shared_rows.clone(), &initial.columns);
+        let vista = Vista::new(name, Box::new(shell));
+        let dio = self.lens.make_dio_as(vista, name.to_string()).await?;
+
+        let state = DerivedState::new(shared_rows, dio.clone());
+        // Fill the cache before handing the Dio back, so a scenery opened on it
+        // paints immediately instead of waiting for the first recomputation.
+        state.publish(initial.clone()).await;
+
+        let handle = engine::spawn(
+            Source {
+                reader: source.vista(),
+                dio: source.clone(),
+            },
+            aggregation,
+            &state,
+            self.debounce,
+            Arc::new(Notify::new()),
+            Some(initial),
+        );
+
+        Ok(DerivedDio::new(dio, state, TaskGuard(handle)))
+    }
+}
