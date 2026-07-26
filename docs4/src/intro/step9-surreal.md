@@ -113,9 +113,15 @@ The `product` shelf has now run behind three backends, and the app above `make_d
 Poll, coarse push, fine push — the same `dio.watch()` call, chosen transparently from what the Vista
 advertises. You pick the database your problem has; the freshness you get is the best that database
 can offer, and the code that consumes it is the code you already wrote.
+
+Note the asymmetry in what each one costs you: SurrealDB is watchable the moment you build the
+Vista, while the PostgreSQL row above assumes the trigger from the previous chapter *and* the
+`with_notify(true)` that declares it. Every other backend Vantage speaks polls today — see
+[Live Data](../live-data.md) for the full picture.
 ```
 
 From here the reference half of the book takes over — [SurrealDB](../surrealdb.md) for the driver
 details, [SQL](../sql.md) for the dialects, [Config-Driven Vistas](../config-driven-vistas.md) for
-declaring all of this from YAML, and [Adding a New Persistence](../new-persistence.md) when your
-backend isn't one Vantage already speaks.
+declaring all of this from YAML, [Live Data](../live-data.md) for what every backend does about
+freshness, and [Adding a New Persistence](../new-persistence.md) when your backend isn't one Vantage
+already speaks.
