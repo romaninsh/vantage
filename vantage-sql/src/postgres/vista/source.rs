@@ -338,7 +338,13 @@ where
     /// the fine-grained variants instead) — the consumer re-reads the set on each
     /// signal. The channel is `{table}_changed` by convention; the application
     /// installs a trigger that `pg_notify`s it on every write (see learn-10's
-    /// `db::setup`). Advertised via [`VistaCapabilities::can_subscribe`].
+    /// `db::setup`).
+    ///
+    /// `LISTEN` succeeds whether or not that trigger exists, and an un-triggered
+    /// channel simply never fires — so the capability behind this is opt-in via
+    /// [`PostgresVistaFactory::with_notify`](crate::postgres::vista::PostgresVistaFactory::with_notify),
+    /// not inferred from the table being writable. Advertised via
+    /// [`VistaCapabilities::can_subscribe`].
     async fn watch_vista(&self, _vista: &Vista) -> Result<VistaChangeStream> {
         let channel = format!("{}_changed", self.table.table_name());
         let pool = self.table.data_source().pool().clone();

@@ -181,8 +181,29 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
     assert!(caps.can_insert);
     assert!(caps.can_update);
     assert!(caps.can_delete);
-    // A read-write Postgres Vista is watchable via LISTEN/NOTIFY.
-    assert!(caps.can_subscribe);
+    // Being writable says nothing about whether anyone installed the
+    // `{table}_changed` trigger, so watchability is NOT inferred from it.
+    assert!(!caps.can_subscribe);
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_is_watchable_only_when_notify_is_declared() -> TestResult {
+    let (db, name) = setup("caps_notify").await;
+
+    // Opting in is what makes the LISTEN/NOTIFY feed advertisable — the
+    // application is the only party that knows the trigger exists.
+    let vista = db
+        .vista_factory()
+        .with_notify(true)
+        .from_table(product_table(db.clone(), &name))?;
+    assert!(vista.capabilities().can_subscribe);
+
+    let vista = db
+        .vista_factory()
+        .with_notify(false)
+        .from_table(product_table(db.clone(), &name))?;
+    assert!(!vista.capabilities().can_subscribe);
     Ok(())
 }
 

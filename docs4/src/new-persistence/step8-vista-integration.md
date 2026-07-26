@@ -630,12 +630,33 @@ At this point your backend should have:
    - `capabilities()` returns a `VistaCapabilities` whose `true` flags exactly match the methods
      you actually overrode.
 
-5. **YAML extras** under `spec.rs`:
+5. **Live subscription** (optional) — `watch_vista` plus `can_subscribe`, if the backend can push
+   changes at all. Four promises bind every implementation:
+   - The stream **may be coarser than the vista**. Subscribing table-wide and letting the consumer
+     discard the rest is a legitimate v1; callers always pass the full vista and never depend on
+     how narrowly you filter, so you can tighten scope later without breaking them.
+   - **Rows you push may fall outside the vista's conditions**, precisely because of the above.
+     Either reconcile in the driver — SurrealDB re-reads each notified id *through* the conditions,
+     so a row that no longer matches surfaces as `Deleted` — or leave it to the consumer, but say
+     which in your docs.
+   - `VistaChange::Invalidated` means **"re-read everything"**. Emit it when you have a signal but
+     no payload; Postgres `LISTEN/NOTIFY` has nothing else to offer.
+   - **Ending the stream is normal.** Consumers resubscribe with backoff and reconcile the gap, so
+     you need no internal reconnect loop.
+
+   Advertise `can_subscribe` only when the feed works with **no further setup**, or when the
+   application has explicitly declared that setup exists. Postgres is the cautionary case: `LISTEN`
+   succeeds on a channel no trigger ever feeds, so its capability is opt-in
+   (`PostgresVistaFactory::with_notify`) rather than inferred from the table being writable. A flag
+   left `true` over a permanently silent stream is worse than one left `false` — consumers cannot
+   tell it apart from an idle table.
+
+6. **YAML extras** under `spec.rs`:
    - `<Driver>TableExtras` and `<Driver>ColumnExtras` — both `deny_unknown_fields`.
    - `<Driver>VistaSpec` type alias resolving the three associated types.
    - Up-front validation of paths, mutual-exclusion rules, etc., as part of spec lowering.
 
-6. **Tests** in `tests/<n>_vista.rs` — gated on `feature = "vista"`, run against a real backend,
+7. **Tests** in `tests/<n>_vista.rs` — gated on `feature = "vista"`, run against a real backend,
    covering typed/YAML construction, read, write (where supported), `add_condition_eq` push-down,
    capability advertisement, and the `Unsupported` vs `Unimplemented` error-kind boundary.
 
