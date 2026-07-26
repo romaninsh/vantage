@@ -11,6 +11,10 @@
   installed the `{table}_changed` trigger. Postgres cannot be asked whether that
   trigger exists, so the application is the only party that can answer honestly.
   Callers relying on the implicit flag add one builder call; nothing else changes.
+- Reference traversal carries that declaration across. `get_ref`,
+  `get_ref_target` and contained-reference traversal each build a fresh factory
+  internally, so without this a relation target came back unwatchable even on a
+  database whose tables all have triggers.
 
 ## 0.6.15 — 2026-07-23
 

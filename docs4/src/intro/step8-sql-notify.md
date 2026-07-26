@@ -52,7 +52,9 @@ let mut master = db
 ```
 
 That one call is what makes `can_watch()` answer `true` in the next section. Leave it off and
-everything still works — the Dio simply falls back to whatever refresh you configure.
+`dio.watch()` becomes a no-op — which matters here, because this chapter is about to *delete* the
+refresh timer. Push and a `refresh_every` poll are the two ways the cache learns about a write; an
+app that declines both never updates.
 
 ## One line replaces the poll
 

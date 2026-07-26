@@ -512,10 +512,11 @@ pub trait TableShell: Send + Sync + 'static {
     ///
     /// Drivers whose backend can push changes (SurrealDB LIVE, Postgres
     /// `LISTEN/NOTIFY`) override this and advertise
-    /// [`can_subscribe`](VistaCapabilities::can_subscribe). Each emitted change
-    /// carries the record in the same projected shape as
+    /// [`can_subscribe`](VistaCapabilities::can_subscribe). The row-bearing
+    /// variants carry the record in the same projected shape as
     /// [`list_vista_values`](Self::list_vista_values), so a consumer can apply
-    /// it to a cache directly. The default produces `Unimplemented` (when
+    /// them to a cache directly; [`VistaChange::Invalidated`] carries nothing at
+    /// all and means "re-read the set". The default produces `Unimplemented` (when
     /// `can_subscribe: true`) or `Unsupported` (when `false`); callers branch on
     /// `vista.capabilities().can_subscribe` first.
     ///

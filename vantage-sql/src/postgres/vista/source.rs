@@ -47,6 +47,20 @@ where
             metadata,
         }
     }
+
+    /// Whether the application declared `{table}_changed` triggers for this
+    /// database (see `PostgresVistaFactory::with_notify`).
+    ///
+    /// Traversals build a fresh factory, which would otherwise reset the opt-in
+    /// and leave every relation target silently unwatchable on a database that
+    /// does have triggers. We recover it from our own advertised capability
+    /// rather than storing it twice. A query-sourced parent reads back `false`
+    /// (it is read-only, so it never advertised), which under-advertises a real
+    /// child table — the safe direction: a missed feed degrades to the
+    /// consumer's reconcile path, a phantom one degrades to silence.
+    fn notify_opt_in(&self) -> bool {
+        self.capabilities.can_subscribe
+    }
 }
 
 fn to_cbor_record(record: Record<AnyPostgresType>) -> Record<CborValue> {
@@ -282,7 +296,8 @@ where
             .get_ref_from_row::<EmptyEntity>(relation, &native_row)?;
         let factory = crate::postgres::vista::factory::PostgresVistaFactory::new(
             self.table.data_source().clone(),
-        );
+        )
+        .with_notify(self.notify_opt_in());
         factory.from_table(target)
     }
 
@@ -290,7 +305,8 @@ where
         let target = self.table.get_ref_target::<EmptyEntity>(relation)?;
         let factory = crate::postgres::vista::factory::PostgresVistaFactory::new(
             self.table.data_source().clone(),
-        );
+        )
+        .with_notify(self.notify_opt_in());
         factory.from_table(target)
     }
 
@@ -318,12 +334,15 @@ where
             }
         };
         let db = self.table.data_source().clone();
+        let notify = self.notify_opt_in();
         self.table.get_contained_ref(
             relation,
             row,
             parent_id,
             move |t| {
-                crate::postgres::vista::factory::PostgresVistaFactory::new(db.clone()).from_table(t)
+                crate::postgres::vista::factory::PostgresVistaFactory::new(db.clone())
+                    .with_notify(notify)
+                    .from_table(t)
             },
             parse_json_host,
             |c| CborValue::Text(cbor_to_json(c).to_string()),

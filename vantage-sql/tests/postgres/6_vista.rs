@@ -193,17 +193,13 @@ async fn vista_is_watchable_only_when_notify_is_declared() -> TestResult {
 
     // Opting in is what makes the LISTEN/NOTIFY feed advertisable — the
     // application is the only party that knows the trigger exists.
-    let vista = db
-        .vista_factory()
-        .with_notify(true)
-        .from_table(product_table(db.clone(), &name))?;
-    assert!(vista.capabilities().can_subscribe);
-
-    let vista = db
-        .vista_factory()
-        .with_notify(false)
-        .from_table(product_table(db.clone(), &name))?;
-    assert!(!vista.capabilities().can_subscribe);
+    for notify in [true, false] {
+        let vista = db
+            .vista_factory()
+            .with_notify(notify)
+            .from_table(product_table(db.clone(), &name))?;
+        assert_eq!(vista.capabilities().can_subscribe, notify);
+    }
     Ok(())
 }
 
@@ -366,17 +362,24 @@ async fn setup_clients_orders(suffix: &str) -> (PostgresDB, String, String) {
     (db, client_t, orders_t)
 }
 
-/// YAML-declared `references:` lower to `with_one`/`with_many`, with the target
-/// table resolved by name through a spec resolver attached to the factory.
-#[tokio::test]
-async fn vista_yaml_references_resolve_via_resolver() -> TestResult {
+/// The `client` spec (with a `has_many` to `orders`) plus a resolver that can
+/// find the `orders` target by name. Shared by the traversal tests below.
+#[allow(clippy::type_complexity)]
+fn clients_orders_specs(
+    client_t: &str,
+    orders_t: &str,
+) -> std::result::Result<
+    (
+        vantage_sql::postgres::vista::PostgresVistaSpec,
+        vantage_sql::postgres::vista::PostgresSpecResolver,
+    ),
+    Box<dyn Error>,
+> {
     use indexmap::IndexMap;
     use std::sync::Arc;
     use vantage_sql::postgres::vista::{PostgresSpecResolver, PostgresVistaSpec};
 
-    let (db, client_t, orders_t) = setup_clients_orders("refs").await;
-
-    let client_yaml = format!(
+    let client_spec: PostgresVistaSpec = serde_yaml_ng::from_str(&format!(
         r#"
 name: client
 columns:
@@ -390,8 +393,8 @@ references:
     kind: has_many
     foreign_key: client_id
 "#
-    );
-    let orders_yaml = format!(
+    ))?;
+    let orders_spec: PostgresVistaSpec = serde_yaml_ng::from_str(&format!(
         r#"
 name: orders
 columns:
@@ -401,15 +404,33 @@ columns:
 postgres:
   table: {orders_t}
 "#
-    );
-
-    let client_spec: PostgresVistaSpec = serde_yaml_ng::from_str(&client_yaml)?;
-    let orders_spec: PostgresVistaSpec = serde_yaml_ng::from_str(&orders_yaml)?;
+    ))?;
 
     let map: IndexMap<String, PostgresVistaSpec> =
         [("orders".to_string(), orders_spec)].into_iter().collect();
     let map = Arc::new(map);
     let resolver: PostgresSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
+    Ok((client_spec, resolver))
+}
+
+/// Read `alice` out of a built `client` vista, for traversing her orders.
+async fn alice_row(
+    clients: &mut vantage_vista::Vista,
+) -> std::result::Result<Record<CborValue>, Box<dyn Error>> {
+    let (_id, alice) = clients
+        .with_id(CborValue::Text("alice".into()))?
+        .get_some_value()
+        .await?
+        .expect("alice exists");
+    Ok(alice)
+}
+
+/// YAML-declared `references:` lower to `with_one`/`with_many`, with the target
+/// table resolved by name through a spec resolver attached to the factory.
+#[tokio::test]
+async fn vista_yaml_references_resolve_via_resolver() -> TestResult {
+    let (db, client_t, orders_t) = setup_clients_orders("refs").await;
+    let (client_spec, resolver) = clients_orders_specs(&client_t, &orders_t)?;
 
     let factory = db.vista_factory().with_resolver(resolver);
     let mut clients = factory.build_from_spec(client_spec)?;
@@ -419,17 +440,47 @@ postgres:
     assert_eq!(refs[0].0, "orders");
     assert_eq!(refs[0].1, vantage_vista::ReferenceKind::HasMany);
 
-    let (_id, alice) = clients
-        .with_id(CborValue::Text("alice".into()))?
-        .get_some_value()
-        .await?
-        .expect("alice exists");
+    let alice = alice_row(&mut clients).await?;
     let alice_orders = clients.get_ref("orders", &alice)?;
     let rows = alice_orders.list_values().await?;
     assert_eq!(rows.len(), 2, "alice has 2 orders");
     assert!(rows.contains_key("o1"));
     assert!(rows.contains_key("o2"));
     assert!(!rows.contains_key("o3"));
+    Ok(())
+}
+
+/// Traversing a reference builds a fresh factory internally, which must carry
+/// the parent's `with_notify` declaration across — otherwise every relation
+/// target on a triggered database comes back silently unwatchable.
+#[tokio::test]
+async fn notify_opt_in_survives_reference_traversal() -> TestResult {
+    let (db, client_t, orders_t) = setup_clients_orders("refs_notify").await;
+    let (client_spec, resolver) = clients_orders_specs(&client_t, &orders_t)?;
+
+    for notify in [true, false] {
+        let mut clients = db
+            .vista_factory()
+            .with_resolver(resolver.clone())
+            .with_notify(notify)
+            .build_from_spec(client_spec.clone())?;
+        assert_eq!(clients.capabilities().can_subscribe, notify);
+
+        let alice = alice_row(&mut clients).await?;
+        let orders = clients.get_ref("orders", &alice)?;
+        assert_eq!(
+            orders.capabilities().can_subscribe,
+            notify,
+            "get_ref target should inherit the parent's notify opt-in"
+        );
+
+        let target = clients.get_ref_target("orders")?;
+        assert_eq!(
+            target.capabilities().can_subscribe,
+            notify,
+            "get_ref_target should inherit the parent's notify opt-in"
+        );
+    }
     Ok(())
 }
 
