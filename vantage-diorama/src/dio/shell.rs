@@ -1,9 +1,28 @@
 use std::sync::Arc;
 
+use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_vista::{Column, Reference, VistaCapabilities};
+use vantage_vista::{Column, Reference, SortDirection, Vista, VistaCapabilities, flags};
 
 use super::DioInner;
+
+/// Narrowing applied to a facade handle.
+///
+/// Held whole rather than pre-split, because whether a clause can be pushed
+/// into the master is decided at read time by *trying* it — capability flags
+/// describe a driver in general, not whether it accepts one particular column.
+#[derive(Default, Clone)]
+pub(crate) struct FacadeQuery {
+    pub(crate) conditions: Vec<(String, CborValue)>,
+    pub(crate) order: Option<(String, SortDirection)>,
+    pub(crate) search: Option<String>,
+}
+
+impl FacadeQuery {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.conditions.is_empty() && self.order.is_none() && self.search.is_none()
+    }
+}
 
 /// `TableShell` impl that backs the Vista returned by `Dio::vista()`.
 ///
@@ -19,13 +38,35 @@ pub struct DioShell {
     pub(crate) columns: IndexMap<String, Column>,
     pub(crate) references: IndexMap<String, Reference>,
     pub(crate) id_column: Option<String>,
+    /// This handle's narrowing. Per-handle, and cloned rather than shared, so
+    /// narrowing one facade never reorders another's view of the same Dio.
+    pub(crate) query: FacadeQuery,
 }
 
 impl DioShell {
     pub(crate) fn new(dio: Arc<DioInner>) -> Self {
         let master = dio.master.read().unwrap();
         let master_caps = master.capabilities().clone();
-        let columns = master.source.columns().clone();
+        // Every column becomes orderable and searchable, whatever the master
+        // says. `Vista::add_order` refuses a column without the `ORDERABLE`
+        // flag, and most drivers only set it for columns their *engine* can
+        // sort — CSV sets it for none. But the facade can always fall back to
+        // ordering the cache, so refusing here would deny a sort the Dio is
+        // perfectly able to perform.
+        let columns = master
+            .source
+            .columns()
+            .iter()
+            .map(|(name, column)| {
+                let mut column = column.clone();
+                for flag in [flags::ORDERABLE, flags::SEARCHABLE] {
+                    if !column.has_flag(flag) {
+                        column = column.with_flag(flag);
+                    }
+                }
+                (name.clone(), column)
+            })
+            .collect();
         let references = master.source.references().clone();
         let id_column = master.source.id_column().map(str::to_string);
         drop(master);
@@ -44,10 +85,13 @@ impl DioShell {
             can_delete: write_caps.can_delete,
             can_subscribe: true,
             can_invalidate: master_caps.can_invalidate || has_on_event,
-            // Read-side query controls reflect the cache today. Stage 5b
-            // will swap in cache-aware truth for these.
-            can_order: master_caps.can_order,
-            can_search: master_caps.can_search,
+            // Ordering and search are always available: the facade pushes
+            // them into the master when it can answer them, and orders or
+            // searches the cache itself when it cannot. Advertising the
+            // master's flags here used to promise what `DioShell` then
+            // refused — the flag was true and the method `Unimplemented`.
+            can_order: true,
+            can_search: true,
             // Whether operator filters (`!=`, `<`, `in`, …) can be pushed into
             // the master's query. When false the Dio still filters locally over
             // the cache — the caller just can't bake the condition into a
@@ -74,6 +118,71 @@ impl DioShell {
             columns,
             references,
             id_column,
+            query: FacadeQuery::default(),
         }
+    }
+
+    /// Split this handle's narrowing into "the master will do it" and "we do it
+    /// over the cache", and build the narrowed master if anything pushed down.
+    ///
+    /// The rule, in order:
+    ///
+    /// 1. **An augmented Dio always reads its cache.** Augment columns exist
+    ///    only there — the master has never heard of them — so both a filter on
+    ///    one and the *values* of one would be lost by reading the master. Every
+    ///    clause stays local.
+    /// 2. Otherwise each clause is offered to a private clone of the master.
+    ///    Whatever it accepts is answered at the source, authoritatively over
+    ///    the whole set rather than over whatever the cache happens to hold.
+    /// 3. Whatever it refuses is applied here.
+    ///
+    /// Clauses are *tried* rather than predicted from capability flags: a flag
+    /// describes a driver, not whether it accepts one particular column.
+    pub(crate) fn plan(&self) -> (Option<Vista>, FacadeQuery) {
+        if self.query.is_empty() {
+            return (None, FacadeQuery::default());
+        }
+        if self.dio.is_two_pass() {
+            return (None, self.query.clone());
+        }
+
+        let master = self.dio.master.read().unwrap();
+        let Some(shell) = master.source.clone_shell() else {
+            // A master that cannot be cloned cannot be narrowed privately, and
+            // narrowing the shared one would leak into every other reader.
+            return (None, self.query.clone());
+        };
+        let mut narrowed = Vista::new(master.name(), shell);
+        drop(master);
+
+        let mut local = FacadeQuery::default();
+        let mut pushed = false;
+
+        for (field, value) in &self.query.conditions {
+            if narrowed
+                .add_condition_eq(field.clone(), value.clone())
+                .is_ok()
+            {
+                pushed = true;
+            } else {
+                local.conditions.push((field.clone(), value.clone()));
+            }
+        }
+        if let Some((column, direction)) = &self.query.order {
+            if narrowed.add_order(column, *direction).is_ok() {
+                pushed = true;
+            } else {
+                local.order = Some((column.clone(), *direction));
+            }
+        }
+        if let Some(text) = &self.query.search {
+            if narrowed.add_search(text.clone()).is_ok() {
+                pushed = true;
+            } else {
+                local.search = Some(text.clone());
+            }
+        }
+
+        (pushed.then_some(narrowed), local)
     }
 }

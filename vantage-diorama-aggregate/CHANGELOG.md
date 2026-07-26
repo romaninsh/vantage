@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.1 — 2026-07-26
+
+- Pins diorama 0.8.4, whose facade Vista now honours condition / order / search.
+- Adds coverage for many independent aggregations over one source Dio: several
+  values plus a derived Dio, across two lenses, all reacting to one change, with
+  one dropped mid-run to show the survivors keep tracking. Each engine holds its
+  own bus receiver and its own cache table, so aggregates compose over a Dio the
+  same way views do.
+
 ## 0.6.0 — 2026-07-26
 
 First release. Reactive client-side aggregation over a Diorama: derive a count,
