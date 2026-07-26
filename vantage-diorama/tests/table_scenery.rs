@@ -59,7 +59,8 @@ async fn wait_for_gen(
     rx: &mut tokio::sync::watch::Receiver<vantage_diorama::Generation>,
     current: u64,
 ) -> u64 {
-    tokio::time::timeout(Duration::from_millis(500), async {
+    // Bounds a hang, not a speed — see `support/chunk.rs::wait_for_gen`.
+    tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             if u64::from(*rx.borrow_and_update()) > current {
                 return u64::from(*rx.borrow());

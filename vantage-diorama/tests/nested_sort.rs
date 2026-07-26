@@ -77,8 +77,9 @@ async fn sort_by_dotted_nested_column() -> Result<()> {
     let g = u64::from(*gen_rx.borrow_and_update());
 
     scenery.set_sort(Some("provider.name".to_string()), SortDir::Asc);
-    // Wait for the reseed bump.
-    tokio::time::timeout(std::time::Duration::from_millis(500), async {
+    // Wait for the reseed bump. Bounds a hang, not a speed — see
+    // `support/chunk.rs::wait_for_gen`.
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
         loop {
             if u64::from(*gen_rx.borrow_and_update()) > g {
                 break;

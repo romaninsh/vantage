@@ -120,8 +120,15 @@ pub fn paged_lens_native_desc(
 
 /// Wait until the generation watch advances past `current`, returning the new
 /// generation. Panics on timeout / closed channel.
+///
+/// The timeout bounds a *hang*; it is not an assertion about speed. It used to
+/// be 500ms, which is a speed assertion whether or not it was meant as one —
+/// and one that fails on a busy CI runner compiling and testing the rest of the
+/// workspace alongside it. A generation bump that takes a second is not a bug
+/// this suite is trying to catch, so waiting longer costs nothing except on a
+/// genuine failure, where the test still fails rather than hanging forever.
 pub async fn wait_for_gen(rx: &mut tokio::sync::watch::Receiver<Generation>, current: u64) -> u64 {
-    tokio::time::timeout(Duration::from_millis(500), async {
+    tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             if u64::from(*rx.borrow_and_update()) > current {
                 return u64::from(*rx.borrow());
@@ -134,8 +141,14 @@ pub async fn wait_for_gen(rx: &mut tokio::sync::watch::Receiver<Generation>, cur
 }
 
 /// Let the viewport debounce + chunk load settle.
+///
+/// The default viewport debounce is 50ms (`lens::defaults`), so the old 80ms
+/// left 30ms for the load that follows it — thin enough that a scheduling hiccup
+/// reads as a missing row. There are 14 call sites, so the extra wait costs a
+/// couple of seconds across the suite and buys the same class of headroom as
+/// [`wait_for_gen`]'s timeout.
 pub async fn settle() {
-    tokio::time::sleep(Duration::from_millis(80)).await;
+    tokio::time::sleep(Duration::from_millis(250)).await;
 }
 
 /// Read a text column at a row index (None if absent / not a string).
