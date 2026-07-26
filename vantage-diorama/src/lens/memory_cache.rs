@@ -42,6 +42,20 @@ impl CacheBackend for MemoryCache {
         Ok(table as Arc<dyn CacheTable>)
     }
 
+    async fn list_tables(&self) -> Result<Vec<String>> {
+        let opened = self.opened.lock().expect("MemoryCache mutex poisoned");
+        Ok(opened.keys().cloned().collect())
+    }
+
+    /// Forgets the name. A handle another holder still owns keeps working on
+    /// its now-detached rows — matching redb, where an open table handle
+    /// survives the definition being deleted.
+    async fn drop_table(&self, name: &str) -> Result<()> {
+        let mut opened = self.opened.lock().expect("MemoryCache mutex poisoned");
+        opened.shift_remove(name);
+        Ok(())
+    }
+
     fn name(&self) -> &'static str {
         "memory"
     }
