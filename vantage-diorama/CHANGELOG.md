@@ -28,6 +28,13 @@
 - No behaviour change for single-pass sceneries, for two-pass views opened with
   a query, or for `titles_only` pickers (which keep raw list order).
 
+- The existing `sort_change_restarts_augmentation_without_scrolling` test had
+  encoded the defect: after sorting by `branch` ascending it asserted the row
+  order the fixture lists in, which is only what you see when the sort is
+  discarded. It now expects the sorted order, and waits on that order rather
+  than on the row merely being `Fresh` — the pre-resort map already satisfies
+  the latter, which is how the stale expectation went unnoticed.
+
 ## 0.8.5 — 2026-07-26
 
 Review fixes for the 0.8.0 draft-servo release (never shipped as 0.8.1),
