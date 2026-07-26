@@ -265,9 +265,15 @@ async fn sort_change_restarts_augmentation_without_scrolling() {
     // viewport, so `list` stayed flat and augmentation was dead.
     scenery.set_sort(Some("branch".to_string()), SortDir::Asc);
 
-    eventually("new sort variant is listed", || {
+    // The fixture's branches are r0=main, r1=dev, so ascending by `branch` puts
+    // r1 first. Wait on the resulting *order*, not merely on "row 0 is Fresh":
+    // the pre-resort map already satisfies the latter, so a status-only wait can
+    // be satisfied before the reorder has landed. (That race is why this test
+    // asserted the unsorted `full-r0` and still passed on some machines, back
+    // when `resort` dropped the sort entirely.)
+    eventually("new sort variant is listed and applied", || {
         count_with_prefix(&log, "list") > list_before
-            && matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
+            && detail_of(&scenery, 0).as_deref() == Some("full-r1")
     })
     .await;
 
@@ -281,7 +287,11 @@ async fn sort_change_restarts_augmentation_without_scrolling() {
         scenery.row(0).is_some(),
         "row 0 stays present across the resort"
     );
-    assert_eq!(detail_of(&scenery, 0).as_deref(), Some("full-r0"));
+    assert_eq!(
+        detail_of(&scenery, 0).as_deref(),
+        Some("full-r1"),
+        "ascending by branch puts dev (r1) above main (r0)"
+    );
 
     // Reverting to a variant already listed reorders straight from cache — its
     // index exists and its rows are `Complete`, so neither a list nor a detail
@@ -289,8 +299,11 @@ async fn sort_change_restarts_augmentation_without_scrolling() {
     let list_after_sort = count_with_prefix(&log, "list");
     let detail_after_sort = count_with_prefix(&log, "detail");
     scenery.set_sort(None, SortDir::Asc);
+    // Back to the index's own order, so r0 leads again — waiting on the order
+    // rather than the status, for the same reason as above.
     eventually("revert reseeds from cache", || {
         matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
+            && detail_of(&scenery, 0).as_deref() == Some("full-r0")
     })
     .await;
     tokio::time::sleep(Duration::from_millis(20)).await;

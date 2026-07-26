@@ -88,14 +88,6 @@ pub(crate) struct TableSceneryState {
     // the legacy single-pass path.
     /// Whether this scenery drives two-pass (list + detail) loading.
     pub(crate) two_pass: bool,
-    /// Two-pass only: whether the visible set is *locally refined* — its rows are
-    /// filtered/sorted over the cache rather than served in raw index order.
-    /// Engaged when the query carries conditions/sort the list pass can't push to
-    /// the master (today, any condition/sort in two-pass — augmented columns in
-    /// particular, which only exist after hydration). When set, the visible
-    /// `rows` map is authoritative for `row_count` (the index may hold more ids
-    /// than match the filter).
-    pub(crate) local_refine: bool,
     /// UI-level equality filters (grid filter chips) — runtime-toggled,
     /// ANDed with `conditions` in the local refine chain, kept separate
     /// so chips can never clobber query narrowing.
@@ -130,12 +122,29 @@ pub(crate) struct TableSceneryState {
 }
 
 impl TableSceneryState {
-    /// Whether the visible set must be derived locally over the cache:
-    /// either the open-time query demanded it (`local_refine`) or runtime
-    /// filter chips are active. Chips arrive after open, so every
-    /// `local_refine` consumer branches on this instead of the field.
-    pub(crate) fn locally_refined(&self) -> bool {
-        self.local_refine || !self.ui_filters.read().unwrap().is_empty()
+    /// Whether the visible set is *locally refined* — filtered and ordered over
+    /// the cache rather than served in the index's own order.
+    ///
+    /// Engaged when a two-pass view carries any condition, filter chip, sort or
+    /// search: the list pass can't push those down (and an augmented column
+    /// doesn't exist until a row hydrates), so the visible map — not the index —
+    /// is authoritative for `row_count`.
+    ///
+    /// **Derived, never stored.** It used to be a `bool` computed once in the
+    /// builder, which made `set_sort` on a view opened without one a permanent
+    /// no-op: the flag stayed `false`, so every path that would have applied the
+    /// new order skipped it. Filter chips, which also arrive after open, had
+    /// needed their own wrapper around the same stale flag; deriving the whole
+    /// answer subsumes that.
+    pub(crate) fn local_refine(&self) -> bool {
+        if !self.two_pass || self.titles_only {
+            return false;
+        }
+        !self.conditions.read().unwrap().is_empty()
+            || !self.op_conditions.read().unwrap().is_empty()
+            || !self.ui_filters.read().unwrap().is_empty()
+            || self.sort.read().unwrap().is_some()
+            || self.search.read().unwrap().is_some()
     }
 
     pub(crate) fn bump_generation(&self) {
