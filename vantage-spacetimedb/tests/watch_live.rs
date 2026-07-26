@@ -87,11 +87,12 @@ async fn changes_arrive_without_polling() {
 
 #[tokio::test]
 #[ignore = "needs a running SpacetimeDB host with `cardroom` published and playing"]
-async fn a_row_leaving_a_filtered_set_arrives_as_a_delete() {
-    // This is the property that makes membership correct without any client-side
-    // reconciliation: the vista's conditions go into the subscription itself, and
-    // SpacetimeDB maintains it incrementally — so a row that changes *out of* the
-    // filter is delivered as a delete, not silently left behind.
+async fn a_filtered_subscription_delivers_only_matching_rows() {
+    // Half of what makes membership correct without client-side reconciliation:
+    // the vista's conditions go into the subscription itself, so nothing outside
+    // the set is ever delivered. The other half — that a row changing *out of*
+    // the set arrives as a delete — needs a write to force it, and so lives in
+    // `write_live::a_row_leaving_a_filtered_set_arrives_as_a_delete`.
     let mut factory = db().vista_factory();
     let mut vista = factory.from_relation("game").await.expect("build vista");
     vista
@@ -100,10 +101,16 @@ async fn a_row_leaving_a_filtered_set_arrives_as_a_delete() {
 
     let mut stream = vista.watch().await.expect("subscribe");
 
-    // Every row we are told about must satisfy the condition — the server, not
-    // this driver, is what guarantees that.
+    // Counted, because the loop below ends on timeout, stream end and stream
+    // error alike: without this a subscription that failed on the first frame
+    // would sail through having asserted nothing at all.
+    let mut seen = 0;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while let Ok(Some(Ok(change))) = tokio::time::timeout_at(deadline, stream.next()).await {
+    while let Ok(Some(next)) = tokio::time::timeout_at(deadline, stream.next()).await {
+        // Surfaced rather than swallowed — a stream error is the thing most
+        // worth failing on here.
+        let change = next.expect("the change stream must not error");
+        seen += 1;
         if let VistaChange::Inserted { value, .. } | VistaChange::Updated { value, .. } = &change {
             assert_eq!(
                 value["status"],
@@ -112,4 +119,8 @@ async fn a_row_leaving_a_filtered_set_arrives_as_a_delete() {
             );
         }
     }
+    assert!(
+        seen > 0,
+        "no change arrived in 15s — the subscription delivered nothing to check"
+    );
 }

@@ -1,10 +1,14 @@
 //! The connection handle.
 //!
-//! One [`SpacetimeDb`] represents one database on one host. Clones share the
-//! inner state, which matters more here than for most drivers: SpacetimeDB
-//! subscriptions are **per connection**, keyed by a query-set id, so every table
-//! of a database must reach the same handle or each would open its own
-//! WebSocket. A page showing eight tables should cost one socket, not eight.
+//! One [`SpacetimeDb`] represents one database on one host, and clones share the
+//! inner state: the host, the database name, the token and the HTTP client.
+//!
+//! They do **not** share a subscription socket. SpacetimeDB subscriptions are
+//! per connection, keyed by a query-set id, so one socket could carry every
+//! table of a database behind a demultiplexer — a page showing eight tables
+//! costing one socket instead of eight. Sharing the state is what makes that
+//! possible later; it is not what delivers it. `subscribe` currently opens a
+//! connection per subscription.
 
 pub mod http;
 pub mod ws;

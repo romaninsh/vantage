@@ -15,11 +15,13 @@
 use vantage_spacetimedb::SpacetimeDb;
 use vantage_spacetimedb::schema::SchemaVersion;
 
+fn url() -> String {
+    std::env::var("SPACETIMEDB_URL").unwrap_or_else(|_| "http://127.0.0.1:3000".to_string())
+}
+
 fn db() -> SpacetimeDb {
-    let url =
-        std::env::var("SPACETIMEDB_URL").unwrap_or_else(|_| "http://127.0.0.1:3000".to_string());
     let name = std::env::var("SPACETIMEDB_DB").unwrap_or_else(|_| "smoke".to_string());
-    SpacetimeDb::new(url, name)
+    SpacetimeDb::new(url(), name)
 }
 
 #[tokio::test]
@@ -85,7 +87,7 @@ async fn sql_reads_public_rows_and_names_its_errors() {
 #[tokio::test]
 #[ignore = "needs a running SpacetimeDB host with the `smoke` module published"]
 async fn a_missing_database_says_so_usefully() {
-    let db = SpacetimeDb::new("http://127.0.0.1:3000", "definitely-not-a-database");
+    let db = SpacetimeDb::new(url(), "definitely-not-a-database");
     let err = db.module_schema().await.expect_err("should not resolve");
     let text = err.to_string();
     assert!(

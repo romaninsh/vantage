@@ -83,24 +83,24 @@ async fn a_row_can_be_updated_and_read_back() {
         "turn_timeout_secs".into(),
         ciborium::Value::Integer(21.into()),
     );
-    let after = vista
-        .patch_value(id.clone(), &patch)
-        .await
-        .expect("patch should apply");
+    let applied = vista.patch_value(id.clone(), &patch).await;
 
-    assert_eq!(
-        after["turn_timeout_secs"],
-        ciborium::Value::Integer(21.into()),
-        "the updated value should be read back, not the old one"
-    );
-
-    // Restore, so a re-run starts from the same state.
+    // Restore *before* asserting. `config` is a shared singleton: an assertion
+    // that fires here would otherwise skip the restore and leave the row nudged
+    // for every later run and for the other test that writes it.
     let mut restore = vantage_types::Record::new();
     restore.insert("turn_timeout_secs".into(), original.clone());
     vista
         .patch_value(id.clone(), &restore)
         .await
         .expect("restore");
+
+    let after = applied.expect("patch should apply");
+    assert_eq!(
+        after["turn_timeout_secs"],
+        ciborium::Value::Integer(21.into()),
+        "the updated value should be read back, not the old one"
+    );
 }
 
 #[tokio::test]
@@ -147,15 +147,84 @@ async fn a_write_is_visible_on_the_change_feed() {
             panic!("a delete+insert pair must not surface as a delete: {change:?}");
         }
     }
-    assert!(
-        saw_our_update,
-        "the write should have arrived on the change feed as an Updated"
-    );
-
     let mut restore = vantage_types::Record::new();
     restore.insert("starting_capital".into(), original.clone());
     vista
         .patch_value(id.clone(), &restore)
         .await
         .expect("restore");
+
+    assert!(
+        saw_our_update,
+        "the write should have arrived on the change feed as an Updated"
+    );
+}
+
+#[tokio::test]
+#[ignore = "needs a running SpacetimeDB host with `cardroom` published"]
+async fn a_row_leaving_a_filtered_set_arrives_as_a_delete() {
+    use futures::StreamExt;
+    use std::time::Duration;
+    use vantage_dataset::traits::WritableValueSet;
+    use vantage_vista::VistaChange;
+
+    // The property behind "filtered fine push", and the reason membership needs
+    // no client-side reconciliation: the conditions live in the subscription, so
+    // SpacetimeDB maintains the set incrementally and a row that changes *out of*
+    // it is delivered as a delete rather than quietly left in the cache.
+    //
+    // Forced with a write rather than waited for. The natural version of this —
+    // watch `game WHERE status = 'playing'` until a hand ends — passes or fails
+    // on whether the dealer happened to finish one inside the window.
+    let mut factory = authed().vista_factory();
+
+    let plain = factory.from_relation("config").await.expect("build vista");
+    let rows = plain.list_values().await.expect("list");
+    let (id, before) = rows.iter().next().expect("config row");
+    let original = before["join_window_secs"].clone();
+    // A column of its own, so this cannot race the other tests writing `config`.
+    let inside = ciborium::Value::Integer(10.into());
+    let outside = ciborium::Value::Integer(11.into());
+
+    // A second vista over the same relation, narrowed. `Vista` is not `Clone`,
+    // so this is built rather than copied.
+    let mut set = factory.from_relation("config").await.expect("build vista");
+    set.add_condition_eq("join_window_secs", inside.clone())
+        .expect("join_window_secs is a real column");
+
+    // Start from inside the set, so the row is there to be removed.
+    let mut enter = vantage_types::Record::new();
+    enter.insert("join_window_secs".into(), inside.clone());
+    plain.patch_value(id.clone(), &enter).await.expect("enter");
+
+    let mut stream = set.watch().await.expect("subscribe");
+    let _ = tokio::time::timeout(Duration::from_secs(5), stream.next()).await;
+
+    // Move it out of the set.
+    let mut leave = vantage_types::Record::new();
+    leave.insert("join_window_secs".into(), outside);
+    let moved = plain.patch_value(id.clone(), &leave).await;
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    let mut saw_delete = false;
+    while let Ok(Some(next)) = tokio::time::timeout_at(deadline, stream.next()).await {
+        let change = next.expect("the change stream must not error");
+        if matches!(change, VistaChange::Deleted { .. }) {
+            saw_delete = true;
+            break;
+        }
+    }
+
+    let mut restore = vantage_types::Record::new();
+    restore.insert("join_window_secs".into(), original.clone());
+    plain
+        .patch_value(id.clone(), &restore)
+        .await
+        .expect("restore");
+
+    moved.expect("the row should have been moved out of the set");
+    assert!(
+        saw_delete,
+        "a row leaving the filtered set must arrive as a Deleted, or a cache keeps it forever"
+    );
 }

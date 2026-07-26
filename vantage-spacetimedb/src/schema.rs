@@ -372,11 +372,12 @@ impl ModuleSchema {
         let mut metadata = VistaMetadata::new();
 
         for (name, ty) in &schema.columns {
-            // Every column is orderable: this driver sorts client-side over the
-            // materialised set, because SpacetimeDB SQL has no `ORDER BY`, so
-            // there is no per-column server constraint to respect.
-            let mut column =
-                VistaColumn::new(name.clone(), vista_type_name(ty)).with_flag(flags::ORDERABLE);
+            // Deliberately *not* flagged orderable. The dialect has no `ORDER BY`
+            // and this driver refuses to sort rather than materialising the set
+            // and sorting it here, so `can_order` is false — and a column that
+            // advertised ORDERABLE would put a sort control in front of someone
+            // that then refuses. The flag has to agree with the capability.
+            let mut column = VistaColumn::new(name.clone(), vista_type_name(ty));
             if identity.column() == Some(name.as_str()) {
                 column = column.with_flag(flags::ID);
             }

@@ -146,6 +146,24 @@ fn metadata_flags_id_and_nominates_a_title() {
 }
 
 #[test]
+fn no_column_claims_to_be_orderable() {
+    // The flag has to agree with `can_order`, which is false: the dialect has no
+    // `ORDER BY`, and this driver refuses to sort rather than materialising the
+    // set and sorting it here. A column flagged ORDERABLE would offer a sort
+    // control that then refuses — the exact "capability that lies" this crate is
+    // built to avoid, and something that had drifted before anything checked.
+    let schema = ModuleSchema::from_v10_json(V10).unwrap();
+    let metadata = schema.metadata_for("person").expect("person is public");
+
+    for (name, column) in &metadata.columns {
+        assert!(
+            !column.has_flag(vantage_vista::flags::ORDERABLE),
+            "{name} claims to be orderable, but ordering is refused"
+        );
+    }
+}
+
+#[test]
 fn wide_integers_map_to_string_rather_than_silently_truncating() {
     let schema = ModuleSchema::from_v10_json(V10).unwrap();
     let metadata = schema.metadata_for("person").unwrap();

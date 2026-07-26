@@ -115,8 +115,13 @@ Offline tests decode fixtures captured verbatim from a real host, so they need
 nothing installed:
 
 ```sh
-cargo test
+cargo test --manifest-path vantage-spacetimedb/Cargo.toml
 ```
+
+The manifest path is not decoration. This crate is in the workspace's `exclude`
+list while it incubates, so a bare `cargo test` at the repository root builds
+the workspace and never reaches it — reporting a pass that says nothing about
+this code.
 
 Live tests need a host. The CLI on crates.io is far behind the server, so install it
 from the matching release tag:
@@ -132,7 +137,7 @@ cargo install --git https://github.com/clockworklabs/SpacetimeDB \
 TOKEN=$(curl -s -X POST http://127.0.0.1:3000/v1/identity | jq -r .token)
 spacetimedb-cli login --token "$TOKEN"
 
-cargo test --test live -- --ignored
+cargo test --manifest-path vantage-spacetimedb/Cargo.toml --test live -- --ignored
 ```
 
 If you mount a data volume, `chown` it first — the image runs as uid 1000

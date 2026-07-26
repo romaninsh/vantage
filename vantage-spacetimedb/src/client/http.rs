@@ -191,7 +191,22 @@ async fn read_body(
     statement: Option<&str>,
 ) -> Result<String> {
     let status = response.status();
-    let body = response.text().await.unwrap_or_default();
+    // Propagated rather than flattened to an empty string. On a successful
+    // status that empty string became the *result*: a write whose outcome nobody
+    // knows, reported as one that returned nothing. A caller can retry or
+    // reconcile a failure; it cannot do either with a plausible blank.
+    let body = match response.text().await {
+        Ok(body) => body,
+        Err(e) => {
+            return Err(error!(
+                "could not read the SpacetimeDB response body",
+                what = what.to_string(),
+                url = url.to_string(),
+                status = status.as_u16() as i64,
+                error = e.to_string()
+            ));
+        }
+    };
     if status.is_success() {
         return Ok(body);
     }

@@ -84,13 +84,24 @@ async fn unsupported_operations_refuse_instead_of_being_emulated() {
     assert!(vista.add_search("ali").is_err(), "search must refuse");
     assert!(vista.set_page_size(10).is_err(), "paging must refuse");
 
-    // ... and the refusal is a typed `Unsupported`, not a generic failure.
+    // ... and the refusal is a typed `Unsupported`, not a generic failure —
+    // which is what lets a caller distinguish "this backend cannot" from "this
+    // request failed" and fall back deliberately.
+    //
+    // The refusal arrives from the column flag rather than from `can_order`,
+    // because no column of this driver is flagged ORDERABLE and `Vista` checks
+    // that before reaching the shell. Two honest refusals of the same fact; the
+    // test asserts the fact, not which guard got there first.
     let err = vista
         .add_order("handle", vantage_vista::SortDirection::Ascending)
         .unwrap_err();
     assert!(
-        err.to_string().contains("can_order"),
-        "the refusal should name the capability: {err}"
+        err.is_unsupported(),
+        "the refusal must be a typed Unsupported: {err}"
+    );
+    assert!(
+        err.to_string().contains("orderable"),
+        "the refusal should say it is about ordering: {err}"
     );
 }
 

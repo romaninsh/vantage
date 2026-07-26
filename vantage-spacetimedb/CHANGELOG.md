@@ -10,8 +10,10 @@ workspace, alongside `vantage-aws` and `vantage-kubernetes`.
 ### Added
 
 - `SpacetimeDb` connection handle addressing one database on one host. Clones share
-  the inner state, because SpacetimeDB subscriptions are per-connection — every
-  table of a database must reach the same handle or each would open its own socket.
+  the connection state — host, database, token and HTTP client — but not a
+  subscription socket: `subscribe` opens a connection per subscription. Sharing the
+  state is the groundwork for a demultiplexer, since SpacetimeDB subscriptions are
+  per-connection and keyed by query-set id, but that is not written yet.
 - `ModuleSchema` introspection over `GET /v1/database/:db/schema`, normalising the
   two module-definition ABIs into one shape: tables, views, columns resolved out of
   the typespace, primary keys and unique constraints resolved from column indices,
@@ -19,9 +21,10 @@ workspace, alongside `vantage-aws` and `vantage-kubernetes`.
 - `RowIdentity` — primary key, else a single-column unique constraint, else a content
   hash of the row. The hash is sound here because SpacetimeDB deletes carry the whole
   row, so a delete hashes to the same id as its insert.
-- `VistaMetadata` generation, flagging the id column, nominating the first non-id
-  string column as the display title, and marking every column orderable (this
-  driver sorts client-side, so there is no per-column server constraint).
+- `VistaMetadata` generation, flagging the id column and nominating the first non-id
+  string column as the display title. No column is flagged orderable, because the
+  dialect has no `ORDER BY` and this driver refuses to sort rather than sorting a
+  materialised set — the flag agrees with `can_order` instead of contradicting it.
 - `SpacetimeDb::sql` and `SpacetimeDb::call_reducer` returning the host's raw JSON.
 - Row decoding, seeded by the schema. SQL rows arrive as **positional arrays**
   with sums encoded as `[variant_index, value]`, so `Some(1)` is `[0, 1]` and
