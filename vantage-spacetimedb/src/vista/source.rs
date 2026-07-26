@@ -137,6 +137,64 @@ impl SpacetimeTableShell {
         Ok(out)
     }
 
+    /// Refuse a write the connection or the relation cannot perform, before any
+    /// request is sent.
+    ///
+    /// Worth catching here rather than letting the host answer: an anonymous
+    /// caller gets a permission error that says nothing about *why*, and a write
+    /// to a view fails in a way that reads like a server fault rather than a
+    /// category error.
+    fn require_writable(&self, what: &str) -> Result<()> {
+        if self.capabilities.can_insert
+            || self.capabilities.can_update
+            || self.capabilities.can_delete
+        {
+            return Ok(());
+        }
+        let reason = if !self.db.has_token() {
+            "no token is configured on the datasource, and SpacetimeDB refuses SQL DML \
+             from anonymous callers"
+        } else {
+            "SQL DML is restricted to the database owner, and this connection's identity \
+             is not it — use a reducer for writes by other callers"
+        };
+        Err(error!(
+            format!("cannot {what} through this relation: {reason}"),
+            table = self.relation.clone(),
+            operation = what.to_string()
+        )
+        .mark_unsupported())
+    }
+
+    /// `INSERT INTO t (cols…) VALUES (…)` for one row.
+    async fn insert_row(&self, row: &Record<CborValue>) -> Result<()> {
+        let mut columns = Vec::with_capacity(row.len());
+        let mut values = Vec::with_capacity(row.len());
+        for (name, value) in row.iter() {
+            // A column the module does not declare would be rejected by the host
+            // with a parse error; dropping it here keeps a Vista's extra
+            // bookkeeping fields from breaking an otherwise valid insert.
+            if !self.metadata.columns.contains_key(name) {
+                continue;
+            }
+            columns.push(quote_ident(name));
+            values.push(sql_literal(value)?);
+        }
+        if columns.is_empty() {
+            return Err(error!(
+                "nothing to insert — no field matched a column of this table",
+                table = self.relation.clone()
+            ));
+        }
+        let sql = format!(
+            "INSERT INTO {} ({}) VALUES ({})",
+            quote_ident(&self.relation),
+            columns.join(", "),
+            values.join(", ")
+        );
+        self.db.sql(&sql).await.map(|_| ())
+    }
+
     /// Derive the Vista id for a row.
     fn row_id(
         &self,
@@ -242,6 +300,136 @@ impl TableShell for SpacetimeTableShell {
                 got = format!("{other:?}")
             )),
         }
+    }
+
+    // ---- Writes ------------------------------------------------------------
+    //
+    // SQL DML, keyed on the row identity. Reducers are the write path a module
+    // actually sanctions — they enforce its own rules, which DML bypasses — and
+    // are reached through `SpacetimeDb::call_reducer` and surfaced as actions
+    // rather than through the value-set surface.
+
+    async fn insert_vista_value(
+        &self,
+        _vista: &Vista,
+        id: &String,
+        record: &Record<CborValue>,
+    ) -> Result<Record<CborValue>> {
+        self.require_writable("insert")?;
+        let id_column = self.identity.column().ok_or_else(|| {
+            error!(
+                "cannot insert by id into a table with no key — its id is a hash of \
+                 the row, which does not exist until the row does",
+                table = self.relation.clone()
+            )
+            .mark_unsupported()
+        })?;
+
+        // The caller's id wins over any value in the record, so the row lands
+        // where the caller said it would.
+        let mut row = record.clone();
+        row.insert(id_column.to_string(), CborValue::Text(id.clone()));
+
+        self.insert_row(&row).await?;
+        self.get_vista_value(_vista, id).await?.ok_or_else(|| {
+            error!(
+                "inserted row could not be read back",
+                table = self.relation.clone(),
+                id = id.clone()
+            )
+        })
+    }
+
+    async fn replace_vista_value(
+        &self,
+        vista: &Vista,
+        id: &String,
+        record: &Record<CborValue>,
+    ) -> Result<Record<CborValue>> {
+        // A replace is a patch of every column: SpacetimeDB has no `UPSERT`, and
+        // delete-then-insert would briefly remove the row from every live
+        // subscription watching it.
+        self.patch_vista_value(vista, id, record).await
+    }
+
+    async fn patch_vista_value(
+        &self,
+        vista: &Vista,
+        id: &String,
+        partial: &Record<CborValue>,
+    ) -> Result<Record<CborValue>> {
+        self.require_writable("update")?;
+        let id_column = self.identity.column().ok_or_else(|| {
+            error!(
+                "cannot update a row in a table with no key: there is no `WHERE` that \
+                 identifies it",
+                table = self.relation.clone()
+            )
+            .mark_unsupported()
+        })?;
+
+        let assignments = partial
+            .iter()
+            // Never write the key column: an `UPDATE` that moves a row's identity
+            // would make the id the caller passed refer to nothing.
+            .filter(|(name, _)| name.as_str() != id_column)
+            .map(|(name, value)| Ok(format!("{} = {}", quote_ident(name), sql_literal(value)?)))
+            .collect::<Result<Vec<_>>>()?;
+
+        if assignments.is_empty() {
+            return self.get_vista_value(vista, id).await?.ok_or_else(|| {
+                error!("no such row", table = self.relation.clone(), id = id.clone())
+            });
+        }
+
+        let sql = format!(
+            "UPDATE {} SET {} WHERE {} = {}",
+            quote_ident(&self.relation),
+            assignments.join(", "),
+            quote_ident(id_column),
+            id_literal(id)
+        );
+        self.db.sql(&sql).await?;
+
+        self.get_vista_value(vista, id).await?.ok_or_else(|| {
+            error!(
+                "updated row could not be read back — did the update move it out of \
+                 this set?",
+                table = self.relation.clone(),
+                id = id.clone()
+            )
+        })
+    }
+
+    async fn delete_vista_value(&self, _vista: &Vista, id: &String) -> Result<()> {
+        self.require_writable("delete")?;
+        let id_column = self.identity.column().ok_or_else(|| {
+            error!(
+                "cannot delete a row in a table with no key: there is no `WHERE` that \
+                 identifies it",
+                table = self.relation.clone()
+            )
+            .mark_unsupported()
+        })?;
+        let sql = format!(
+            "DELETE FROM {} WHERE {} = {}",
+            quote_ident(&self.relation),
+            quote_ident(id_column),
+            id_literal(id)
+        );
+        self.db.sql(&sql).await.map(|_| ())
+    }
+
+    async fn delete_vista_all_values(&self, _vista: &Vista) -> Result<()> {
+        self.require_writable("delete")?;
+        // Honours the vista's conditions: deleting "all" of a narrowed set must
+        // not empty the whole table.
+        let sql = format!(
+            "DELETE FROM {}{}",
+            quote_ident(&self.relation),
+            self.where_clause()?
+        );
+        self.db.sql(&sql).await.map(|_| ())
     }
 
     fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {

@@ -32,6 +32,7 @@ workspace, alongside `vantage-aws` and `vantage-kubernetes`.
   `COUNT(*)`, and conditions lowered into a real `WHERE`.
 - `watch_vista` over the v2 BSATN WebSocket, with the vista's conditions pushed
   into the subscription query.
+- Writes over SQL DML, keyed on the row identity, plus `SpacetimeDb::can_write`.
 - Offline tests against schema fixtures captured verbatim from a live host, plus
   `#[ignore]`d live tests covering reads, the Vista facade and the change feed.
 
@@ -54,6 +55,11 @@ workspace, alongside `vantage-aws` and `vantage-kubernetes`.
   flag means the operation genuinely does not happen. Only the methods the server
   can answer are overridden; the rest keep the trait defaults, which report
   `Unsupported`.
+- **Write capabilities follow database ownership, not token presence.**
+  SpacetimeDB restricts SQL DML to the database owner, so a valid token belonging
+  to any other identity is refused. The driver compares the `spacetime-identity`
+  response header against `owner_identity`, and assumes read-only if it cannot
+  tell — over-claiming a write is worse than under-claiming it.
 - **Set membership on the change feed is the server's job.** Conditions go into
   the subscription query, and SpacetimeDB maintains it incrementally, so a row
   leaving the filtered set arrives as a delete. No per-notification re-read and no

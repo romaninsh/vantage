@@ -23,6 +23,86 @@ pub(crate) async fn schema_json(inner: &Inner, version: SchemaVersion) -> Result
     get_text(inner, &url, "schema").await
 }
 
+/// Who owns the database, and who we are talking to it as.
+#[derive(Debug, Clone)]
+pub(crate) struct DatabaseInfo {
+    pub(crate) owner_identity: String,
+    /// The identity the host attributes to this connection, from the
+    /// `spacetime-identity` response header. Present even for anonymous callers,
+    /// which is why it cannot be inferred from whether a token was configured.
+    pub(crate) caller_identity: Option<String>,
+}
+
+impl DatabaseInfo {
+    /// Whether this connection may run SQL DML.
+    ///
+    /// SpacetimeDB restricts `INSERT`/`UPDATE`/`DELETE` over the SQL endpoint to
+    /// the database **owner** — not to any authenticated caller. Holding a token
+    /// is therefore not enough, which is exactly the kind of thing a capability
+    /// flag must not guess at.
+    pub(crate) fn caller_is_owner(&self) -> bool {
+        match &self.caller_identity {
+            Some(caller) => normalise_identity(caller) == normalise_identity(&self.owner_identity),
+            None => false,
+        }
+    }
+}
+
+/// Identities appear both as bare hex and `0x`-prefixed depending on whether they
+/// came from a header or a JSON body, so compare them in one form.
+fn normalise_identity(identity: &str) -> String {
+    identity
+        .trim()
+        .trim_start_matches("0x")
+        .to_ascii_lowercase()
+}
+
+/// `GET /v1/database/:db` — ownership and, via the response header, our own
+/// identity.
+pub(crate) async fn database_info(inner: &Inner) -> Result<DatabaseInfo> {
+    #[derive(serde::Deserialize)]
+    struct Identity {
+        #[serde(rename = "__identity__")]
+        identity: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct Body {
+        owner_identity: Identity,
+    }
+
+    let url = format!("{}/v1/database/{}", inner.base_url, inner.database);
+    let mut request = inner.http.get(&url);
+    if let Some(token) = &inner.token {
+        request = request.bearer_auth(token);
+    }
+    let response = request.send().await.map_err(|e| {
+        error!(
+            "could not read SpacetimeDB database info",
+            url = url.clone(),
+            error = e.to_string()
+        )
+    })?;
+
+    let caller_identity = response
+        .headers()
+        .get("spacetime-identity")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+
+    let body = read_body(response, "database", &url, None).await?;
+    let parsed: Body = serde_json::from_str(&body).map_err(|e| {
+        error!(
+            "could not parse SpacetimeDB database info",
+            error = e.to_string()
+        )
+    })?;
+
+    Ok(DatabaseInfo {
+        owner_identity: parsed.owner_identity.identity,
+        caller_identity,
+    })
+}
+
 /// `POST /v1/database/:db/sql`, returned as raw JSON.
 ///
 /// Accepts several statements separated by semicolons and answers with one

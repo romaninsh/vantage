@@ -19,7 +19,8 @@ contract — row-level deltas **and** server-side filtering.
 | Row identity (primary key → unique → content hash) | ✅ |
 | Read path — SQL → records, server-side `WHERE`, `COUNT(*)` | ✅ |
 | `watch_vista` change feed (v2 BSATN WebSocket) | ✅ |
-| Writes (SQL DML + reducer calls) | planned |
+| Writes — SQL DML, keyed on row identity | ✅ |
+| Reducer calls (`call_reducer`) | ✅ |
 | Shared socket across a database's tables | planned |
 
 ## Why not `spacetimedb-sdk`?
@@ -59,6 +60,21 @@ the truth about this backend.
 
 Aggregates a screen wants must be materialised by the module into a rollup table
 or computed in a view; there is no `GROUP BY` to lean on.
+
+## Writes need the database owner, not just a token
+
+SpacetimeDB restricts SQL `INSERT`/`UPDATE`/`DELETE` to the database **owner**. A
+perfectly valid token belonging to any other identity is refused with *"not
+authorized to run SQL DML statements"*.
+
+So the write capabilities key off ownership, established once per factory by
+comparing the `spacetime-identity` response header against the `owner_identity`
+from `GET /v1/database/:db`. Deciding from "is a token configured" would advertise
+writes that always fail. If the check itself cannot be completed the driver
+assumes read-only, because over-claiming is the worse error.
+
+For writes by anyone else, call a **reducer** — which is the path a module
+sanctions anyway, since reducers enforce its own rules and raw DML bypasses them.
 
 ## The change feed
 

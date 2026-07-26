@@ -11,16 +11,24 @@ pub struct SpacetimeVistaFactory {
     db: SpacetimeDb,
     /// Cached module schema, so building several tables costs one fetch.
     schema: Option<ModuleSchema>,
+    /// Cached ownership answer. Writes need the database owner, not merely a
+    /// token, and finding out costs a request — so ask once.
+    can_write: Option<bool>,
 }
 
 impl SpacetimeVistaFactory {
     pub fn new(db: SpacetimeDb) -> Self {
-        Self { db, schema: None }
+        Self {
+            db,
+            schema: None,
+            can_write: None,
+        }
     }
 
-    /// Read the module schema once and hold it for subsequent builds.
+    /// Read the module schema and the ownership answer once, and hold both.
     pub async fn load(mut self) -> Result<Self> {
         self.schema = Some(self.db.module_schema().await?);
+        self.can_write = Some(self.db.can_write().await?);
         Ok(self)
     }
 
@@ -37,6 +45,12 @@ impl SpacetimeVistaFactory {
         if self.schema.is_none() {
             self.schema = Some(self.db.module_schema().await?);
         }
+        if self.can_write.is_none() {
+            // A failure here means we could not establish ownership, so assume
+            // read-only: advertising writes we cannot perform is the worse error.
+            self.can_write = Some(self.db.can_write().await.unwrap_or(false));
+        }
+        let writable = self.can_write.unwrap_or(false);
         let schema = self.schema.as_ref().expect("just loaded");
 
         let metadata = schema.metadata_for(name)?;
@@ -53,7 +67,7 @@ impl SpacetimeVistaFactory {
                 metadata,
                 table.row_identity(),
                 table.row_product_type(),
-                capabilities_for(table.kind, self.db.has_token()),
+                capabilities_for(table.kind, writable),
             )),
         ))
     }
@@ -75,9 +89,13 @@ impl SpacetimeVistaFactory {
 /// `can_filter_operators` is `true` because `WHERE` supports the six comparison
 /// operators; `InSet`/`NotInSet` are refused individually, since the flag covers
 /// operators as a class rather than each one.
-fn capabilities_for(kind: TableKind, has_token: bool) -> VistaCapabilities {
+///
+/// The write flags key off **database ownership**, not merely holding a token:
+/// SpacetimeDB refuses SQL DML from any caller who is not the owner, so deciding
+/// from `has_token()` would advertise writes that always fail.
+fn capabilities_for(kind: TableKind, caller_is_owner: bool) -> VistaCapabilities {
     // A view has nothing to write to, regardless of credentials.
-    let writable = has_token && matches!(kind, TableKind::Table);
+    let writable = caller_is_owner && matches!(kind, TableKind::Table);
     VistaCapabilities {
         can_count: true,
         can_filter_operators: true,
@@ -105,7 +123,9 @@ mod tests {
     }
 
     #[test]
-    fn tables_are_writable_only_with_a_token() {
+    fn tables_are_writable_only_for_the_database_owner() {
+        // Not "has a token": SpacetimeDB refuses SQL DML from any caller who is
+        // not the owner, so a token alone must not turn these on.
         assert!(capabilities_for(TableKind::Table, true).can_insert);
         assert!(!capabilities_for(TableKind::Table, false).can_insert);
     }

@@ -76,11 +76,25 @@ impl SpacetimeDb {
         &self.inner.database
     }
 
-    /// Whether a token was supplied. Drives the write capabilities: SpacetimeDB
-    /// refuses anonymous DML, so advertising `can_insert` without one would be a
-    /// flag that lies.
+    /// Whether a token was supplied. Necessary for writes, but **not
+    /// sufficient** — see [`can_write`](Self::can_write).
     pub fn has_token(&self) -> bool {
         self.inner.token.is_some()
+    }
+
+    /// Whether this connection may run SQL `INSERT`/`UPDATE`/`DELETE`.
+    ///
+    /// SpacetimeDB restricts DML over the SQL endpoint to the database
+    /// **owner**, so an ordinary authenticated caller is refused with
+    /// *"not authorized to run SQL DML statements"*. Deciding the write
+    /// capabilities from `has_token()` alone would therefore advertise writes
+    /// that always fail — precisely the kind of lying flag the subscription
+    /// contract warns against.
+    ///
+    /// Costs one request, so callers that build several tables should ask once
+    /// and reuse the answer.
+    pub async fn can_write(&self) -> Result<bool> {
+        Ok(http::database_info(&self.inner).await?.caller_is_owner())
     }
 
     /// Fetch and normalise the module schema, preferring the newer ABI.
