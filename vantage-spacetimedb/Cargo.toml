@@ -45,5 +45,8 @@ tracing = "0.1"
 ciborium = "0.2"
 
 [dev-dependencies]
+# The value-set traits (`list_values`, `get_value`) live here; the Vista
+# facade implements them.
+vantage-dataset = "0.6"
 pretty_assertions = "1"
 tokio = { version = "1", features = ["full"] }

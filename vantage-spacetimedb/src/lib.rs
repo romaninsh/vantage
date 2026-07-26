@@ -38,6 +38,8 @@
 pub mod client;
 pub mod schema;
 pub mod value;
+pub mod vista;
 
 pub use client::SpacetimeDb;
 pub use schema::{ModuleSchema, SchemaVersion};
+pub use vista::{SpacetimeTableShell, SpacetimeVistaFactory};

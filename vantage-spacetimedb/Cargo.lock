@@ -1817,6 +1817,7 @@ dependencies = [
  "tokio",
  "tracing",
  "vantage-core",
+ "vantage-dataset",
  "vantage-types",
  "vantage-vista",
 ]
