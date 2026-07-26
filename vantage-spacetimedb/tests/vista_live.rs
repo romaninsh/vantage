@@ -131,19 +131,38 @@ async fn a_private_table_is_refused_with_its_reason() {
 
 #[tokio::test]
 #[ignore = "needs a running SpacetimeDB host with the `cardroom` module published"]
-async fn keyless_rows_get_a_stable_content_hash_id() {
-    // `game_event` has a primary key, so use it to prove keyed ids are stable
-    // across two independent reads — the property the change feed will rely on.
+async fn ids_are_stable_across_reads() {
+    // The property the change feed rests on: a row read twice answers to the
+    // same id both times, so a pushed delete can be matched against a cached
+    // insert. `game_event` is the natural subject — it is append-only, so a row
+    // that appears in both reads must be byte-identical in both.
+    //
+    // What this deliberately does *not* do is compare the two id *sets*.
+    // `cardroom` is a live database: hands are being dealt while the test runs,
+    // so the second read legitimately holds events the first could not have
+    // seen. Asserting set equality tests the dealer's idleness, not the driver.
     let mut factory = db().vista_factory();
     let vista = factory
         .from_relation("game_event")
         .await
         .expect("build vista");
 
-    let first: Vec<String> = vista.list_values().await.unwrap().keys().cloned().collect();
-    let second: Vec<String> = vista.list_values().await.unwrap().keys().cloned().collect();
-    assert_eq!(
-        first, second,
-        "ids must be stable between reads or a cache cannot match rows"
+    let first = vista.list_values().await.unwrap();
+    let second = vista.list_values().await.unwrap();
+
+    let mut compared = 0;
+    for (id, row) in first.iter() {
+        let Some(again) = second.get(id) else {
+            continue; // legitimately gone only if the log were trimmed
+        };
+        assert_eq!(
+            row, again,
+            "id {id} named different rows in two reads — a cache would mismatch them"
+        );
+        compared += 1;
+    }
+    assert!(
+        compared > 0,
+        "no row survived between reads, so nothing was actually compared"
     );
 }

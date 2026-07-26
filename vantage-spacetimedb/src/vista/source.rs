@@ -29,7 +29,7 @@ use std::collections::HashSet;
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use spacetimedb_sats::ProductType;
+use spacetimedb_sats::{AlgebraicType, ProductType};
 use vantage_core::{Result, error};
 use vantage_types::Record;
 use vantage_vista::{
@@ -39,6 +39,7 @@ use vantage_vista::{
 
 use crate::client::SpacetimeDb;
 use crate::schema::RowIdentity;
+use crate::sql::{Cond, Delete, Ident, Insert, Literal, Select, Update};
 use crate::value::{decode_sql_response, row_to_record};
 
 /// A condition pushed down into the query's `WHERE` clause.
@@ -100,29 +101,86 @@ impl SpacetimeTableShell {
             .collect()
     }
 
-    /// `WHERE …` for the current conditions, or an empty string.
-    fn where_clause(&self) -> Result<String> {
-        if self.conditions.is_empty() {
-            return Ok(String::new());
-        }
-        let mut parts = Vec::with_capacity(self.conditions.len());
-        for condition in &self.conditions {
-            parts.push(format!(
-                "{} {} {}",
-                quote_ident(&condition.field),
-                sql_operator(condition.op)?,
-                sql_literal(&condition.value)?
-            ));
-        }
-        Ok(format!(" WHERE {}", parts.join(" AND ")))
+    /// This relation, as a validated identifier.
+    fn relation_ident(&self) -> Result<Ident> {
+        Ident::new(&self.relation)
     }
 
-    fn select_sql(&self) -> Result<String> {
-        Ok(format!(
-            "SELECT * FROM {}{}",
-            quote_ident(&self.relation),
-            self.where_clause()?
+    /// The declared type of a column, from the module schema.
+    ///
+    /// What lets a literal be rendered for the column it addresses rather than
+    /// for whatever the string happens to look like.
+    fn column_type(&self, column: &str) -> Option<&AlgebraicType> {
+        self.row_type
+            .elements
+            .iter()
+            .find(|e| e.name().is_some_and(|name| &**name == column))
+            .map(|e| &e.algebraic_type)
+    }
+
+    /// The vista's conditions, as builder conditions.
+    ///
+    /// Every statement — read *and* write — is composed from this, so narrowing
+    /// applies uniformly. It used to be appended by hand at each call site, and
+    /// the two that forgot were the two that could write.
+    fn narrowing(&self) -> Result<Vec<Cond>> {
+        self.conditions
+            .iter()
+            .map(|c| {
+                Cond::new(
+                    Ident::new(&c.field)?,
+                    c.op,
+                    Literal::from_cbor(&c.value)?,
+                )
+            })
+            .collect()
+    }
+
+    fn select(&self) -> Result<Select> {
+        Ok(Select::new(self.relation_ident()?).where_all(self.narrowing()?))
+    }
+
+    /// `<key> = <id>`, with the id rendered for the key column's declared type.
+    fn id_is(&self, column: &str, id: &str) -> Result<Cond> {
+        Ok(Cond::eq(
+            Ident::new(column)?,
+            Literal::for_id(self.column_type(column), id)?,
         ))
+    }
+
+    /// The caller's id as a value for its column, for the insert path.
+    ///
+    /// `insert` receives an id as a string like every other Vista id, but it
+    /// travels as part of the record rather than as a `WHERE` literal — so the
+    /// conversion has to happen here, for the same reason and by the same rule
+    /// as [`Self::id_is`].
+    fn id_as_value(&self, column: &str, id: &str) -> Result<CborValue> {
+        Ok(match self.column_type(column) {
+            Some(ty) if ty.is_integer() => {
+                let n = id.parse::<i128>().map_err(|_| {
+                    error!(
+                        "id is not a whole number, but its column is",
+                        column = column.to_string(),
+                        id = id.to_string()
+                    )
+                })?;
+                CborValue::Integer(ciborium::value::Integer::try_from(n).map_err(|_| {
+                    error!(
+                        "id does not fit the range CBOR can carry",
+                        column = column.to_string(),
+                        id = id.to_string()
+                    )
+                })?)
+            }
+            Some(ty) if ty.is_float() => id.parse::<f64>().map(CborValue::Float).map_err(|_| {
+                error!(
+                    "id is not a number, but its column is",
+                    column = column.to_string(),
+                    id = id.to_string()
+                )
+            })?,
+            _ => CborValue::Text(id.to_string()),
+        })
     }
 
     /// Run a query and pair every row with its Vista id.
@@ -168,8 +226,7 @@ impl SpacetimeTableShell {
 
     /// `INSERT INTO t (cols…) VALUES (…)` for one row.
     async fn insert_row(&self, row: &Record<CborValue>) -> Result<()> {
-        let mut columns = Vec::with_capacity(row.len());
-        let mut values = Vec::with_capacity(row.len());
+        let mut insert = Insert::new(self.relation_ident()?);
         for (name, value) in row.iter() {
             // A column the module does not declare would be rejected by the host
             // with a parse error; dropping it here keeps a Vista's extra
@@ -177,22 +234,15 @@ impl SpacetimeTableShell {
             if !self.metadata.columns.contains_key(name) {
                 continue;
             }
-            columns.push(quote_ident(name));
-            values.push(sql_literal(value)?);
+            insert = insert.set(Ident::new(name)?, Literal::from_cbor(value)?);
         }
-        if columns.is_empty() {
+        if insert.is_empty() {
             return Err(error!(
                 "nothing to insert — no field matched a column of this table",
                 table = self.relation.clone()
             ));
         }
-        let sql = format!(
-            "INSERT INTO {} ({}) VALUES ({})",
-            quote_ident(&self.relation),
-            columns.join(", "),
-            values.join(", ")
-        );
-        self.db.sql(&sql).await.map(|_| ())
+        self.db.sql(&insert.render()).await.map(|_| ())
     }
 
     /// Derive the Vista id for a row.
@@ -238,7 +288,11 @@ impl TableShell for SpacetimeTableShell {
         &self,
         _vista: &Vista,
     ) -> Result<IndexMap<String, Record<CborValue>>> {
-        Ok(self.fetch(&self.select_sql()?).await?.into_iter().collect())
+        Ok(self
+            .fetch(&self.select()?.render())
+            .await?
+            .into_iter()
+            .collect())
     }
 
     async fn get_vista_value(
@@ -247,24 +301,18 @@ impl TableShell for SpacetimeTableShell {
         id: &String,
     ) -> Result<Option<Record<CborValue>>> {
         match self.identity.column() {
-            // Keyed: narrow with the server's own `WHERE`.
+            // Keyed: narrow with the server's own `WHERE`. The vista's own
+            // conditions ride along, so a row outside the set is not reachable
+            // just because its id is known.
             Some(column) => {
-                let sql = format!(
-                    "SELECT * FROM {} WHERE {} = {}{}",
-                    quote_ident(&self.relation),
-                    quote_ident(column),
-                    id_literal(id),
-                    // Existing conditions still apply: a row outside the vista's
-                    // set must not be reachable just because its id is known.
-                    self.where_clause()?.replacen(" WHERE ", " AND ", 1)
-                );
+                let sql = self.select()?.and_where(self.id_is(column, id)?).render();
                 Ok(self.fetch(&sql).await?.into_iter().next().map(|(_, r)| r))
             }
             // Keyless: the id *is* a hash of the row, so there is no `WHERE` to
             // write. This reads the set and matches — not an emulated feature,
             // but the only way to address a row in a table with no key.
             None => Ok(self
-                .fetch(&self.select_sql()?)
+                .fetch(&self.select()?.render())
                 .await?
                 .into_iter()
                 .find(|(row_id, _)| row_id == id)
@@ -277,16 +325,12 @@ impl TableShell for SpacetimeTableShell {
         _vista: &Vista,
     ) -> Result<Option<(String, Record<CborValue>)>> {
         // `LIMIT` is one of the few things the dialect does have.
-        let sql = format!("{} LIMIT 1", self.select_sql()?);
+        let sql = self.select()?.limit(1).render();
         Ok(self.fetch(&sql).await?.into_iter().next())
     }
 
     async fn get_vista_count(&self, _vista: &Vista) -> Result<i64> {
-        let sql = format!(
-            "SELECT COUNT(*) AS n FROM {}{}",
-            quote_ident(&self.relation),
-            self.where_clause()?
-        );
+        let sql = self.select()?.count_as("n").render();
         let body = self.db.sql(&sql).await?;
         let decoded = decode_sql_response(&body)?;
         let Some(row) = decoded.rows.first() else {
@@ -326,9 +370,11 @@ impl TableShell for SpacetimeTableShell {
         })?;
 
         // The caller's id wins over any value in the record, so the row lands
-        // where the caller said it would.
+        // where the caller said it would. It is typed for its column on the way
+        // in: a `u64` key handed `'42'` is not that key, and the host would
+        // reject the insert rather than store it.
         let mut row = record.clone();
-        row.insert(id_column.to_string(), CborValue::Text(id.clone()));
+        row.insert(id_column.to_string(), self.id_as_value(id_column, id)?);
 
         self.insert_row(&row).await?;
         self.get_vista_value(_vista, id).await?.ok_or_else(|| {
@@ -368,15 +414,17 @@ impl TableShell for SpacetimeTableShell {
             .mark_unsupported()
         })?;
 
-        let assignments = partial
-            .iter()
+        let mut update = Update::new(self.relation_ident()?);
+        for (name, value) in partial.iter() {
             // Never write the key column: an `UPDATE` that moves a row's identity
             // would make the id the caller passed refer to nothing.
-            .filter(|(name, _)| name.as_str() != id_column)
-            .map(|(name, value)| Ok(format!("{} = {}", quote_ident(name), sql_literal(value)?)))
-            .collect::<Result<Vec<_>>>()?;
+            if name.as_str() == id_column {
+                continue;
+            }
+            update = update.set(Ident::new(name)?, Literal::from_cbor(value)?);
+        }
 
-        if assignments.is_empty() {
+        if update.is_empty() {
             return self.get_vista_value(vista, id).await?.ok_or_else(|| {
                 error!(
                     "no such row",
@@ -386,13 +434,12 @@ impl TableShell for SpacetimeTableShell {
             });
         }
 
-        let sql = format!(
-            "UPDATE {} SET {} WHERE {} = {}",
-            quote_ident(&self.relation),
-            assignments.join(", "),
-            quote_ident(id_column),
-            id_literal(id)
-        );
+        // The vista's conditions bind writes as tightly as reads: a row this set
+        // cannot see is a row it must not change.
+        let sql = update
+            .and_where(self.id_is(id_column, id)?)
+            .where_all(self.narrowing()?)
+            .render();
         self.db.sql(&sql).await?;
 
         self.get_vista_value(vista, id).await?.ok_or_else(|| {
@@ -415,12 +462,12 @@ impl TableShell for SpacetimeTableShell {
             )
             .mark_unsupported()
         })?;
-        let sql = format!(
-            "DELETE FROM {} WHERE {} = {}",
-            quote_ident(&self.relation),
-            quote_ident(id_column),
-            id_literal(id)
-        );
+        // As with `update`: a narrowed vista must not be able to delete a row it
+        // could not have read.
+        let sql = Delete::new(self.relation_ident()?)
+            .and_where(self.id_is(id_column, id)?)
+            .where_all(self.narrowing()?)
+            .render();
         self.db.sql(&sql).await.map(|_| ())
     }
 
@@ -428,11 +475,9 @@ impl TableShell for SpacetimeTableShell {
         self.require_writable("delete")?;
         // Honours the vista's conditions: deleting "all" of a narrowed set must
         // not empty the whole table.
-        let sql = format!(
-            "DELETE FROM {}{}",
-            quote_ident(&self.relation),
-            self.where_clause()?
-        );
+        let sql = Delete::new(self.relation_ident()?)
+            .where_all(self.narrowing()?)
+            .render();
         self.db.sql(&sql).await.map(|_| ())
     }
 
@@ -505,7 +550,10 @@ impl TableShell for SpacetimeTableShell {
     /// consumer sees `Updated` and a grid repaints a row rather than removing
     /// and re-adding it.
     async fn watch_vista(&self, _vista: &Vista) -> Result<VistaChangeStream> {
-        let query = self.select_sql()?;
+        // The same builder as every read: the subscription's conditions are the
+        // vista's conditions, which is what makes the push *filtered* — the
+        // database maintains the set, rather than the driver sieving it.
+        let query = self.select()?.render();
         let row_type = self.row_type.clone();
         let columns = self.columns_in_order();
         let identity = self.identity.clone();
@@ -610,72 +658,9 @@ fn decode_all(
     Ok(out)
 }
 
-/// Quote an identifier for the query.
-///
-/// Module identifiers are already constrained to `[A-Za-z0-9_]`, so this is
-/// belt-and-braces rather than the primary defence — but a name is never
-/// interpolated raw.
-fn quote_ident(name: &str) -> String {
-    if name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-        name.to_string()
-    } else {
-        format!("\"{}\"", name.replace('"', "\"\""))
-    }
-}
-
-fn sql_operator(op: FilterOp) -> Result<&'static str> {
-    Ok(match op {
-        FilterOp::Eq => "=",
-        FilterOp::Ne => "!=",
-        FilterOp::Gt => ">",
-        FilterOp::Gte => ">=",
-        FilterOp::Lt => "<",
-        FilterOp::Lte => "<=",
-        FilterOp::InSet | FilterOp::NotInSet => {
-            return Err(error!("no `IN` operator in SpacetimeDB SQL").mark_unimplemented());
-        }
-    })
-}
-
-/// Render a CBOR value as a SpacetimeDB SQL literal.
-///
-/// Strings are single-quoted with embedded quotes doubled — the only escaping
-/// the dialect defines, and the reason a value never reaches the query
-/// unprocessed.
-fn sql_literal(value: &CborValue) -> Result<String> {
-    Ok(match value {
-        CborValue::Bool(b) => b.to_string(),
-        CborValue::Integer(i) => i128::from(*i).to_string(),
-        CborValue::Float(f) => f.to_string(),
-        CborValue::Text(s) => format!("'{}'", s.replace('\'', "''")),
-        CborValue::Null => {
-            return Err(
-                error!("SpacetimeDB SQL has no null literal to compare against")
-                    .mark_unimplemented(),
-            );
-        }
-        other => {
-            return Err(error!(
-                "value cannot be expressed as a SpacetimeDB SQL literal",
-                value = format!("{other:?}")
-            )
-            .mark_unimplemented());
-        }
-    })
-}
-
-/// Render a Vista id as a literal.
-///
-/// Ids arrive as strings even when the underlying column is numeric, so a purely
-/// numeric id is emitted unquoted; anything else is quoted. Hex identities keep
-/// their `0x` form, which is what the dialect expects.
-fn id_literal(id: &str) -> String {
-    if id.parse::<i128>().is_ok() || id.starts_with("0x") {
-        id.to_string()
-    } else {
-        format!("'{}'", id.replace('\'', "''"))
-    }
-}
+// Identifier quoting, operators and literal rendering all live in `crate::sql`
+// now. Keeping them here — one copy per call site's convenience — is what let
+// the write paths drift away from the read paths.
 
 /// Stringify a CBOR value for use as a Vista id.
 fn cbor_to_id(value: &CborValue) -> String {
@@ -704,46 +689,7 @@ fn content_hash(row: &spacetimedb_sats::ProductValue) -> String {
     format!("{hash:016x}")
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn string_literals_escape_embedded_quotes() {
-        assert_eq!(
-            sql_literal(&CborValue::Text("O'Brien".into())).unwrap(),
-            "'O''Brien'"
-        );
-    }
-
-    #[test]
-    fn numeric_and_boolean_literals_are_unquoted() {
-        assert_eq!(sql_literal(&CborValue::Integer(42.into())).unwrap(), "42");
-        assert_eq!(sql_literal(&CborValue::Bool(true)).unwrap(), "true");
-    }
-
-    #[test]
-    fn null_is_refused_rather_than_rendered() {
-        // There is no null literal in the dialect, so a comparison against one
-        // cannot be expressed. Refusing beats emitting something that parses but
-        // means the wrong thing.
-        let err = sql_literal(&CborValue::Null).unwrap_err();
-        assert!(err.to_string().contains("null"));
-    }
-
-    #[test]
-    fn ids_are_quoted_unless_numeric_or_hex() {
-        assert_eq!(id_literal("42"), "42");
-        assert_eq!(id_literal("0xdeadbeef"), "0xdeadbeef");
-        assert_eq!(id_literal("alice"), "'alice'");
-        assert_eq!(id_literal("O'Brien"), "'O''Brien'");
-    }
-
-    #[test]
-    fn operators_cover_the_dialect_and_refuse_in() {
-        assert_eq!(sql_operator(FilterOp::Eq).unwrap(), "=");
-        assert_eq!(sql_operator(FilterOp::Ne).unwrap(), "!=");
-        assert_eq!(sql_operator(FilterOp::Gte).unwrap(), ">=");
-        assert!(sql_operator(FilterOp::InSet).is_err());
-    }
-}
+// Literal, identifier and operator rendering are tested in `crate::sql`, where
+// they now live. The id cases in particular grew teeth there: the old test for
+// this file asserted that `0xdeadbeef` was emitted unquoted *whatever followed
+// the prefix*, which is precisely the injection the builder closes.

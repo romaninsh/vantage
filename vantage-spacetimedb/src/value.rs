@@ -193,12 +193,21 @@ fn special_product_to_cbor(product: &spacetimedb_sats::ProductValue) -> Option<C
     }
 }
 
+/// Shorten a response body for an error message.
+///
+/// Cut on a character boundary rather than a byte offset. This only ever runs on
+/// a body that already failed to parse, and slicing mid-character would turn
+/// that error into a panic — losing the very text that explains what went wrong.
 fn truncate(s: &str) -> String {
-    if s.len() <= 300 {
-        s.to_string()
-    } else {
-        format!("{}…", &s[..300])
+    const LIMIT: usize = 300;
+    if s.len() <= LIMIT {
+        return s.to_string();
     }
+    let end = (0..=LIMIT)
+        .rev()
+        .find(|i| s.is_char_boundary(*i))
+        .unwrap_or(0);
+    format!("{}…", &s[..end])
 }
 
 #[cfg(test)]
@@ -284,5 +293,14 @@ mod tests {
             err.to_string().contains("envelope"),
             "error should say what failed to parse: {err}"
         );
+    }
+
+    #[test]
+    fn a_long_non_ascii_body_truncates_instead_of_panicking() {
+        // A multi-byte character straddling the 300-byte cut. Slicing by byte
+        // offset would panic here, replacing a parse error with a crash.
+        let body = "é".repeat(400);
+        let err = decode_sql_response(&body).expect_err("should fail to parse");
+        assert!(err.to_string().contains('…'), "should be truncated: {err}");
     }
 }

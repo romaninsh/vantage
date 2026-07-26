@@ -155,7 +155,7 @@ pub(crate) async fn subscribe(
             match decode_server_message(&bytes) {
                 Ok(Some(message)) => {
                     for delta in deltas_for_table(message, &table, &row_type) {
-                        if tx.send(Ok(delta)).is_err() {
+                        if tx.send(delta).is_err() {
                             return; // receiver dropped — the subscription is over
                         }
                     }
@@ -208,11 +208,16 @@ fn decode_server_message(bytes: &[u8]) -> Result<Option<ServerMessage>> {
 }
 
 /// Extract the deltas that concern one table.
+///
+/// Yields `Result`s rather than bare deltas so a `SubscriptionError` can travel
+/// the same path as the rows it would have carried. Dropping it instead leaves
+/// the consumer holding a stream that is open, silent, and no longer subscribed
+/// to anything — with nothing to trigger the reconnect that would repair it.
 fn deltas_for_table(
     message: ServerMessage,
     table: &str,
     _row_type: &ProductType,
-) -> Vec<TableDelta> {
+) -> Vec<Result<TableDelta>> {
     let mut out = Vec::new();
     match message {
         // The initial state of the subscription: every matching row, as inserts.
@@ -221,11 +226,11 @@ fn deltas_for_table(
                 if single.table.as_ref() != table {
                     continue;
                 }
-                out.push(TableDelta {
+                out.push(Ok(TableDelta {
                     inserts: (&single.rows).into_iter().map(|b| b.to_vec()).collect(),
                     deletes: Vec::new(),
                     ephemeral: false,
-                });
+                }));
             }
         }
         ServerMessage::TransactionUpdate(update) => {
@@ -235,7 +240,7 @@ fn deltas_for_table(
                         continue;
                     }
                     for rows in table_update.rows.iter() {
-                        out.push(match rows {
+                        out.push(Ok(match rows {
                             TableUpdateRows::PersistentTable(p) => TableDelta {
                                 inserts: (&p.inserts).into_iter().map(|b| b.to_vec()).collect(),
                                 deletes: (&p.deletes).into_iter().map(|b| b.to_vec()).collect(),
@@ -246,17 +251,20 @@ fn deltas_for_table(
                                 deletes: Vec::new(),
                                 ephemeral: true,
                             },
-                        });
+                        }));
                     }
                 }
             }
         }
-        // A subscription that fails after being applied is a real error: the
-        // client must discard what it has, which is what surfacing this does.
+        // A subscription that failed after being applied. The rows we have are
+        // now unmaintained, so this has to reach the consumer: `Dio::watch()`
+        // treats a stream error as its cue to back off, resubscribe and
+        // reconcile, and that is the only thing that gets the set correct again.
         ServerMessage::SubscriptionError(err) => {
-            // Represented as an empty delta carrying the error via the channel
-            // in the caller; see `subscribe`.
-            let _ = err;
+            out.push(Err(error!(
+                "SpacetimeDB ended the subscription",
+                error = err.error.to_string()
+            )));
         }
         _ => {}
     }

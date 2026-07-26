@@ -37,6 +37,7 @@
 
 pub mod client;
 pub mod schema;
+pub(crate) mod sql;
 pub mod value;
 pub mod vista;
 
