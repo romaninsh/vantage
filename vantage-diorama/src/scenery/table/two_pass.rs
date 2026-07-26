@@ -611,6 +611,16 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
             if no_gap {
                 continue;
             }
+            // Hydrated but legitimately empty (no detail record exists) —
+            // don't re-fetch until a refresh clears the settled set.
+            if dio_inner
+                .augment_settled_empty
+                .lock()
+                .unwrap()
+                .contains(&id)
+            {
+                continue;
+            }
         }
         pending.push(id);
     }
