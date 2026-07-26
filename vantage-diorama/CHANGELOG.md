@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.8.4 — 2026-07-26
+
+**The facade Vista honours condition, order and search**
+
+- `dio.vista()` now implements `add_eq_condition`, `add_order` / `clear_orders`
+  and `add_search` / `clear_search`. It previously advertised `can_order` and
+  `can_search` — inherited verbatim from the master — while implementing
+  neither, so a caller that trusted the flags got `Unimplemented`. The flags are
+  now unconditionally true, and honest: the facade pushes a clause into the
+  master when the master can answer it, and answers it over the cache when it
+  cannot.
+
+- **Clauses are tried, not predicted.** A capability flag describes a driver,
+  not whether it accepts one particular column, so each clause is offered to a
+  private clone of the master and whatever it refuses is applied locally. A
+  pushed-down clause is answered over the master's whole set — authoritative,
+  rather than covering only what the cache happens to hold.
+
+- **An augmented Dio always answers from its cache.** Augment columns exist only
+  there, so reading a narrowed master would both drop their values from the rows
+  and make a filter on one match nothing.
+
+- **Every facade column is flagged `ORDERABLE` and `SEARCHABLE`.**
+  `Vista::add_order` refuses a column without the flag, and drivers set it only
+  for columns their own engine can sort — CSV sets it for none. Refusing on that
+  basis would deny a sort the Dio can perfectly well perform over its cache.
+
+- Narrowing is **per handle**: two facades over one Dio sort independently, and
+  `clone_shell` carries the narrowing without sharing it. An unnarrowed facade
+  is unchanged — still a plain cache read.
+
+- Local ordering keeps absent values last in both directions, compares numbers
+  numerically across the integer/float boundary, and breaks ties on id so the
+  same rows always come back in the same order. Conditions resolve dotted paths
+  into nested values.
+
 ## 0.8.3 — 2026-07-26
 
 - **`CacheBackend::list_tables` / `drop_table`** — enumerate the tables inside a

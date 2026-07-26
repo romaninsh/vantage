@@ -2,8 +2,9 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
+use vantage_dataset::traits::ReadableValueSet;
 use vantage_types::Record;
-use vantage_vista::{Column, Reference, TableShell, Vista, VistaCapabilities};
+use vantage_vista::{Column, Reference, SortDirection, TableShell, Vista, VistaCapabilities};
 
 use crate::dio::shell::DioShell;
 use crate::ops::ChangeFlash;
@@ -38,7 +39,7 @@ impl TableShell for DioShell {
         &self,
         _vista: &Vista,
     ) -> Result<IndexMap<String, Record<CborValue>>> {
-        self.dio.cache.list_values().await
+        self.read().await
     }
 
     async fn get_vista_value(
@@ -46,7 +47,13 @@ impl TableShell for DioShell {
         _vista: &Vista,
         id: &String,
     ) -> Result<Option<Record<CborValue>>> {
-        let Some(row) = self.dio.cache.get_value(id).await? else {
+        // A narrowed handle is a smaller set: an id outside it is not found,
+        // rather than found and silently outside the filter.
+        let Some(row) = (if self.query.is_empty() {
+            self.dio.cache.get_value(id).await?
+        } else {
+            self.read().await?.shift_remove(id)
+        }) else {
             return Ok(None);
         };
         let mut rows = IndexMap::from([(id.clone(), row)]);
@@ -58,7 +65,7 @@ impl TableShell for DioShell {
         &self,
         _vista: &Vista,
     ) -> Result<Option<(String, Record<CborValue>)>> {
-        let rows = self.dio.cache.list_values().await?;
+        let rows = self.read().await?;
         let Some((id, row)) = rows.into_iter().next() else {
             return Ok(None);
         };
@@ -68,7 +75,10 @@ impl TableShell for DioShell {
     }
 
     async fn get_vista_count(&self, _vista: &Vista) -> Result<i64> {
-        self.dio.cache.count().await
+        if self.query.is_empty() {
+            return self.dio.cache.count().await;
+        }
+        Ok(self.read().await?.len() as i64)
     }
 
     async fn fetch_window(
@@ -77,11 +87,58 @@ impl TableShell for DioShell {
         offset: usize,
         limit: usize,
     ) -> Result<Vec<(String, Record<CborValue>)>> {
-        let all = self.dio.cache.list_values().await?;
+        let all = self.read().await?;
         let mut rows: IndexMap<String, Record<CborValue>> =
             all.into_iter().skip(offset).take(limit).collect();
         self.hydrate(&mut rows).await?;
         Ok(rows.into_iter().collect())
+    }
+
+    // ---- Narrowing -----------------------------------------------------------
+    //
+    // Recorded here and routed at read time (see `DioShell::plan`): pushed into
+    // the master when it can answer them, applied over the cache when it
+    // cannot. Accrete/replace semantics match `Vista`'s: conditions accumulate,
+    // order and search replace.
+
+    fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
+        self.query
+            .conditions
+            .push((field.to_string(), value.clone()));
+        Ok(())
+    }
+
+    fn add_order(&mut self, field: &str, dir: SortDirection) -> Result<()> {
+        self.query.order = Some((field.to_string(), dir));
+        Ok(())
+    }
+
+    fn clear_orders(&mut self) -> Result<()> {
+        self.query.order = None;
+        Ok(())
+    }
+
+    fn add_search(&mut self, text: &str) -> Result<()> {
+        self.query.search = Some(text.to_string());
+        Ok(())
+    }
+
+    fn clear_search(&mut self) -> Result<()> {
+        self.query.search = None;
+        Ok(())
+    }
+
+    /// Clones carry the narrowing but stay independent, so narrowing a derived
+    /// handle never disturbs the one it came from.
+    fn clone_shell(&self) -> Option<Box<dyn TableShell>> {
+        Some(Box::new(DioShell {
+            dio: self.dio.clone(),
+            capabilities: self.capabilities.clone(),
+            columns: self.columns.clone(),
+            references: self.references.clone(),
+            id_column: self.id_column.clone(),
+            query: self.query.clone(),
+        }))
     }
 
     // ---- Writes — enqueue + return synthesized record ------------------------
@@ -150,6 +207,60 @@ impl TableShell for DioShell {
 }
 
 impl DioShell {
+    /// The rows this handle sees, narrowing included.
+    ///
+    /// An unnarrowed handle reads the cache, exactly as before. A narrowed one
+    /// asks the master for whatever the master can answer — that result is
+    /// authoritative over the whole set, not over whatever the cache happens to
+    /// hold — and applies the rest here. See [`DioShell::plan`] for the routing.
+    async fn read(&self) -> Result<IndexMap<String, Record<CborValue>>> {
+        let (narrowed, local) = self.plan();
+        let mut rows = match narrowed {
+            Some(master) => master.list_values().await?,
+            None => self.dio.cache.list_values().await?,
+        };
+
+        rows.retain(|_, row| {
+            local
+                .conditions
+                .iter()
+                .all(|(field, expected)| record_get(row, field) == Some(expected))
+        });
+        if let Some(text) = &local.search {
+            let needle = text.to_lowercase();
+            rows.retain(|_, row| {
+                row.values().any(|value| match value {
+                    CborValue::Text(text) => text.to_lowercase().contains(&needle),
+                    _ => false,
+                })
+            });
+        }
+        if let Some((column, direction)) = &local.order {
+            let descending = matches!(direction, SortDirection::Descending);
+            let mut ordered: Vec<(String, Record<CborValue>)> = rows.into_iter().collect();
+            ordered.sort_by(|(a_id, a), (b_id, b)| {
+                // Absent values last in both directions, and ties broken on id
+                // so the same rows always come back in the same order.
+                let ordering = match (record_get(a, column), record_get(b, column)) {
+                    (None, None) => std::cmp::Ordering::Equal,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (Some(left), Some(right)) => {
+                        let ordering = cbor_cmp(left, right);
+                        if descending {
+                            ordering.reverse()
+                        } else {
+                            ordering
+                        }
+                    }
+                };
+                ordering.then_with(|| a_id.cmp(b_id))
+            });
+            rows = ordered.into_iter().collect();
+        }
+        Ok(rows)
+    }
+
     /// Facade reads hydrate what they return: any row still missing its
     /// augment columns runs the Dio's detail pass before the read
     /// resolves. No augmentations configured → no-op.
@@ -175,6 +286,47 @@ impl DioShell {
             })
             .await
             .map_err(|e| error!("Dio write queue closed", detail = e.to_string()))
+    }
+}
+
+/// Resolve a column, descending dotted paths into nested CBOR maps so a
+/// belongs-to leaf (`client.name`) narrows like any other column.
+fn record_get<'a>(record: &'a Record<CborValue>, path: &str) -> Option<&'a CborValue> {
+    if let Some(value) = record.get(path) {
+        return Some(value);
+    }
+    let mut segments = path.split('.');
+    let mut current = record.get(segments.next()?)?;
+    for segment in segments {
+        let CborValue::Map(entries) = current else {
+            return None;
+        };
+        current = entries.iter().find_map(|(key, value)| match key {
+            CborValue::Text(name) if name == segment => Some(value),
+            _ => None,
+        })?;
+    }
+    Some(current)
+}
+
+/// Numbers compare numerically across the integer/float boundary — never by
+/// their debug rendering, which ranks `657.96` above `1826.19`. `NaN` compares
+/// equal rather than panicking the sort.
+fn cbor_cmp(a: &CborValue, b: &CborValue) -> std::cmp::Ordering {
+    fn number(value: &CborValue) -> Option<f64> {
+        match value {
+            CborValue::Integer(i) => Some(i128::from(*i) as f64),
+            CborValue::Float(f) => Some(*f),
+            _ => None,
+        }
+    }
+    match (a, b) {
+        (CborValue::Text(l), CborValue::Text(r)) => l.cmp(r),
+        (CborValue::Bool(l), CborValue::Bool(r)) => l.cmp(r),
+        _ => match (number(a), number(b)) {
+            (Some(l), Some(r)) => l.partial_cmp(&r).unwrap_or(std::cmp::Ordering::Equal),
+            _ => std::cmp::Ordering::Equal,
+        },
     }
 }
 
