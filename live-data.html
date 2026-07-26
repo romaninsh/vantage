@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-a7e4623c.js";
+            window.path_to_searchindex_js = "searchindex-4aa2d368.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-cc60226a.js"></script>
@@ -186,6 +186,7 @@ driver delivers today, and what — if anything — you have to do to get it.</p
 <ul>
 <li><a href="#three-freshness-models">Three freshness models</a></li>
 <li><a href="#what-each-backend-delivers-today">What each backend delivers today</a></li>
+<li><a href="#spacetimedb--filtered-fine-push-no-setup">SpacetimeDB — filtered fine push, no setup</a></li>
 <li><a href="#surrealdb--fine-push-no-setup">SurrealDB — fine push, no setup</a></li>
 <li><a href="#postgresql--coarse-push-and-why-you-must-ask-for-it">PostgreSQL — coarse push, and why you must ask for it</a></li>
 <li><a href="#what-a-consumer-must-assume">What a consumer must assume</a></li>
@@ -212,6 +213,11 @@ driver delivers today, and what — if anything — you have to do to get it.</p
 </div>
 <p>Fine push is the only model where a change costs you no query. Coarse push still beats polling: you
 re-read <em>because something happened</em>, not on the off-chance.</p>
+<p>There is a fourth position, currently held by one backend. Fine push still leaves a question open —
+<em>does this row belong in my filtered set?</em> — because a driver that watches the whole table will hand
+you rows your conditions exclude. <strong>Filtered fine push</strong> closes it: the conditions go into the
+subscription itself and the database maintains the result incrementally, so a row that changes <em>out</em>
+of the set arrives as a delete. Membership stops being something anyone has to reconcile.</p>
 <h2 id="what-each-backend-delivers-today"><a class="header" href="#what-each-backend-delivers-today">What each backend delivers today</a></h2>
 <div class="table-wrapper">
 <table>
@@ -219,6 +225,7 @@ re-read <em>because something happened</em>, not on the off-chance.</p>
 <tr><th>Backend</th><th>Mechanism</th><th>Model</th><th>Setup required</th></tr>
 </thead>
 <tbody>
+<tr><td>SpacetimeDB</td><td>subscription over WebSocket (BSATN)</td><td>filtered fine push</td><td>none</td></tr>
 <tr><td>SurrealDB</td><td><code>LIVE SELECT</code> over WebSocket</td><td>fine push</td><td>none</td></tr>
 <tr><td>PostgreSQL</td><td><code>LISTEN/NOTIFY</code> on <code>{table}_changed</code></td><td>coarse push</td><td>a trigger <strong>and</strong> an explicit opt-in</td></tr>
 <tr><td>SQLite</td><td>—</td><td>poll</td><td>—</td></tr>
@@ -233,7 +240,7 @@ re-read <em>because something happened</em>, not on the off-chance.</p>
 </tbody>
 </table>
 </div>
-<p>Only two drivers implement <code>watch_vista</code> at all. Everything in the poll rows inherits the trait
+<p>Only three drivers implement <code>watch_vista</code> at all. Everything in the poll rows inherits the trait
 default, which reports the capability as unsupported and leaves
 <a href="vantage_vista::VistaCapabilities"><code>can_subscribe</code></a> <code>false</code> — so <code>dio.watch()</code> on those is a no-op
 and a <code>refresh_every</code> timer carries the load.</p>
@@ -250,6 +257,37 @@ and a <code>refresh_every</code> timer carries the load.</p>
 <p>A polled backend is not broken, and you do not need different application code for it. The Lens keeps
 its <code>refresh_every</code>, the scenery is content-aware, and an unchanged re-read bumps no generation and
 repaints nothing. The cost is latency and a query you didn’t strictly need — not correctness.</p>
+</div>
+
+</div>
+
+<h2 id="spacetimedb--filtered-fine-push-no-setup"><a class="header" href="#spacetimedb--filtered-fine-push-no-setup">SpacetimeDB — filtered fine push, no setup</a></h2>
+<p>SpacetimeDB is a database that is also the application server: a WASM module holding the schema and
+the reducers runs inside it, and the client’s normal way to read anything is to subscribe. Push is
+not a feature bolted on beside queries; it is the product.</p>
+<p>The driver sends the Vista’s own conditions as the subscription query, so the server evaluates them
+and only matching rows are ever transmitted. Because it maintains that result incrementally, a row
+that changes so it <em>no longer</em> matches arrives as a delete — you are told the row left, not merely
+that something happened. That is why this is the only row in the table where set membership needs no
+reconciliation from anyone: not a re-read per notification as SurrealDB does, and not a whole-set
+reload as Postgres does.</p>
+<p>Nothing needs installing or enabling. There is no trigger, no extension, no opt-in flag — which is
+why <code>can_subscribe</code> is simply <code>true</code> rather than something you have to declare.</p>
+<div id="admonition-this-backend-gives-you-less-everywhere-else" class="admonition admonish-note" role="note" aria-labelledby="admonition-this-backend-gives-you-less-everywhere-else-title">
+<div class="admonition-title">
+<div id="admonition-this-backend-gives-you-less-everywhere-else-title">
+<p>This backend gives you less everywhere else</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-this-backend-gives-you-less-everywhere-else"></a>
+</div>
+
+<div>
+<p>The trade is real and worth stating. SpacetimeDB’s SQL has no <code>ORDER BY</code>, <code>OFFSET</code>, <code>GROUP BY</code>, <code>IN</code>
+or <code>LIKE</code>, and the driver does not emulate them — a grid over a SpacetimeDB table shows rows in the
+server’s natural order and its sort headers are inert. Aggregates for a chart have to be materialised
+by the module into a rollup table or computed in a view. You are choosing a backend that pushes
+beautifully and queries narrowly.</p>
 </div>
 
 </div>
