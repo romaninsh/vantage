@@ -1,0 +1,50 @@
+name: SpacetimeDB Backend Tests
+
+# `vantage-spacetimedb` is in the workspace's `exclude` list while it incubates,
+# so the root `test` job never reaches it. Without this workflow the crate would
+# ride on a green tick that was never about it — the same reason `vantage-aws`
+# and `vantage-kubernetes` carry their own.
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "vantage-spacetimedb/**"
+      - ".github/workflows/spacetimedb.yaml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          cache-workspace-crates: false
+          cache-all-crates: true
+          shared-key: "vantage-spacetimedb"
+          workspaces: |
+            vantage-spacetimedb -> target
+
+      - name: Build vantage-spacetimedb
+        working-directory: vantage-spacetimedb
+        run: cargo build --all-targets
+
+      # Offline only. The live tests are `#[ignore]`d because they need a host
+      # with the `cardroom` module published; they are run locally against the
+      # real server, and the fixtures under tests/fixtures/ are captured verbatim
+      # from one so the decoding is still covered here.
+      - name: Run tests
+        working-directory: vantage-spacetimedb
+        run: cargo test
+
+      - name: Check formatting
+        working-directory: vantage-spacetimedb
+        run: cargo fmt -- --check
+
+      - name: Run clippy
+        working-directory: vantage-spacetimedb
+        run: cargo clippy --all-targets -- -D warnings

@@ -2,10 +2,14 @@
 
 All notable changes to `vantage-spacetimedb` are documented here.
 
-## 0.1.0 — unreleased
+## 0.6.0 — unreleased
 
 Initial incubating crate: SpacetimeDB as a Vantage datasource. Excluded from the
 workspace, alongside `vantage-aws` and `vantage-kubernetes`.
+
+Starts at 0.6.0 rather than 0.1.0 because a new crate joins the family at the
+family's version — `vantage-core` and `vantage-vista` are both 0.6.x, and the
+`vantage-*` crates are versioned together rather than each from scratch.
 
 ### Added
 
