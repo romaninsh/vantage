@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-cc16db2d.js";
+            window.path_to_searchindex_js = "searchindex-a7e4623c.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-cc60226a.js"></script>
@@ -219,7 +219,7 @@ re-read <em>because something happened</em>, not on the off-chance.</p>
 <tr><th>Backend</th><th>Mechanism</th><th>Model</th><th>Setup required</th></tr>
 </thead>
 <tbody>
-<tr><td>SurrealDB</td><td><code>LIVE SELECT</code> over WebSocket</td><td>fine push</td><td>none — but the URL must be <code>ws://</code>/<code>wss://</code></td></tr>
+<tr><td>SurrealDB</td><td><code>LIVE SELECT</code> over WebSocket</td><td>fine push</td><td>none</td></tr>
 <tr><td>PostgreSQL</td><td><code>LISTEN/NOTIFY</code> on <code>{table}_changed</code></td><td>coarse push</td><td>a trigger <strong>and</strong> an explicit opt-in</td></tr>
 <tr><td>SQLite</td><td>—</td><td>poll</td><td>—</td></tr>
 <tr><td>MySQL</td><td>—</td><td>poll</td><td>—</td></tr>
@@ -260,20 +260,20 @@ the affected record. The driver re-reads each notified id <em>through the vista�
 row that no longer belongs to a filtered set arrives as a delete rather than silently lingering. A
 real table is watchable the moment you build it; only query-sourced vistas (<code>rhai:</code> / <code>base:</code>) are
 not.</p>
-<div id="admonition-live-queries-need-a-websocket-connection" class="admonition admonish-warning" role="note" aria-labelledby="admonition-live-queries-need-a-websocket-connection-title">
+<div id="admonition-live-queries-ride-the-websocket-connection" class="admonition admonish-note" role="note" aria-labelledby="admonition-live-queries-ride-the-websocket-connection-title">
 <div class="admonition-title">
-<div id="admonition-live-queries-need-a-websocket-connection-title">
-<p>Live queries need a WebSocket connection</p>
+<div id="admonition-live-queries-ride-the-websocket-connection-title">
+<p>Live queries ride the WebSocket connection</p>
 </div>
 
-<a class="admonition-anchor-link" href="#admonition-live-queries-need-a-websocket-connection"></a>
+<a class="admonition-anchor-link" href="#admonition-live-queries-ride-the-websocket-connection"></a>
 </div>
 
 <div>
-<p>This is the one case where the capability can overstate what you’ll get. <code>LIVE SELECT</code> is only
-implemented by the WebSocket engine — point a SurrealDB datasource at an <code>http://</code> URL and the Vista
-will still advertise that it can subscribe, then fail when <code>watch()</code> actually tries. Use <code>ws://</code> or
-<code>wss://</code> for anything that watches.</p>
+<p><code>LIVE SELECT</code> needs a transport the server can push frames down, which means WebSocket. That is not a
+trap you can fall into: <code>SurrealConnection::connect</code> accepts only <code>ws://</code>, <code>wss://</code> and <code>cbor://</code> and
+rejects anything else outright, so every SurrealDB connection you can actually open is one that can
+carry live queries.</p>
 </div>
 
 </div>
