@@ -17,9 +17,10 @@ contract — row-level deltas **and** server-side filtering.
 | --- | --- |
 | Schema introspection (tables, views, reducers) | ✅ |
 | Row identity (primary key → unique → content hash) | ✅ |
-| Read path (SQL → records, conditions, client-side sort/search/slice) | in progress |
-| `watch_vista` change feed (v2 BSATN WebSocket) | planned |
+| Read path — SQL → records, server-side `WHERE`, `COUNT(*)` | ✅ |
+| `watch_vista` change feed (v2 BSATN WebSocket) | ✅ |
 | Writes (SQL DML + reducer calls) | planned |
+| Shared socket across a database's tables | planned |
 
 ## Why not `spacetimedb-sdk`?
 
@@ -44,10 +45,37 @@ SpacetimeDB's SQL has no `ORDER BY`, `OFFSET`, `GROUP BY`, `IN` or `LIKE`. It do
 have `LIMIT` and `COUNT(*)`. Subscriptions are narrower still: whole rows from a
 single table or view, `WHERE` only, at most a two-table indexed `JOIN`.
 
-So this driver filters and counts server-side, and sorts, searches and paginates
-client-side — reporting that through `VistaCapabilities` rather than pretending
-otherwise. Aggregates a screen wants must be materialised by the module into a
-rollup table; there is no `GROUP BY` to lean on.
+So this driver filters and counts server-side, and **refuses** to sort, search or
+paginate — it does not emulate them over a materialised set. `add_order` returns
+`Unsupported` rather than quietly downloading the table and sorting in memory.
+
+That is a deliberate choice. Emulation makes a capability flag misleading in the
+awkward direction: `can_order: false` while ordering appears to work, so a
+consumer cannot tell a cheap server-side sort from a full-table download. A
+caller that checks the flags first — as the contract asks — never sees the
+refusal at all. The practical consequence is that a grid over a SpacetimeDB table
+shows rows in the server's natural order and its sort headers are inert. That is
+the truth about this backend.
+
+Aggregates a screen wants must be materialised by the module into a rollup table
+or computed in a view; there is no `GROUP BY` to lean on.
+
+## The change feed
+
+`watch_vista` subscribes over the v2 BSATN WebSocket, and the vista's conditions
+go **into the subscription query itself**. SpacetimeDB maintains that
+subscription incrementally, so a row that changes *out of* the filtered set
+arrives as a delete. Set membership is therefore correct by construction: no
+re-read per notification (as the SurrealDB driver needs), and no whole-set reload
+(as Postgres needs).
+
+The wire format has no update event — a changed row is a delete plus an insert of
+the same key in one transaction — so this driver pairs them by id and emits
+`VistaChange::Updated`. Getting that wrong shows up as rows flickering out of and
+back into a grid.
+
+The socket asks for `?compression=None`; the host defaults to Brotli, and reading
+a compressed feed would mean carrying a decompressor for no benefit at this size.
 
 ## Two traps this driver handles for you
 

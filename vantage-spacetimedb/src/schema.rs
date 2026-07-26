@@ -124,6 +124,21 @@ pub struct TableSchema {
 }
 
 impl TableSchema {
+    /// The row's SATS type, rebuilt from the resolved columns.
+    ///
+    /// The change feed needs this: pushed rows are bare BSATN with no
+    /// self-description, so the schema is the only thing that can decode them.
+    pub fn row_product_type(&self) -> ProductType {
+        ProductType::new(
+            self.columns
+                .iter()
+                .map(|(name, ty)| {
+                    spacetimedb_sats::ProductTypeElement::new(ty.clone(), Some(name.clone().into()))
+                })
+                .collect(),
+        )
+    }
+
     /// Resolve the column whose value identifies a row, following the rule
     /// documented on [`RowIdentity`].
     pub fn row_identity(&self) -> RowIdentity {

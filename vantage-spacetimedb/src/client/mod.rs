@@ -7,6 +7,7 @@
 //! WebSocket. A page showing eight tables should cost one socket, not eight.
 
 pub mod http;
+pub mod ws;
 
 use std::sync::Arc;
 
@@ -125,6 +126,19 @@ impl SpacetimeDb {
     /// `ORDER BY`, `OFFSET`, `GROUP BY`, `IN` or `LIKE`.
     pub async fn sql(&self, statement: &str) -> Result<String> {
         http::sql_json(&self.inner, statement).await
+    }
+
+    /// Open a subscription for one query and stream its changes.
+    ///
+    /// `row_type` comes from the module schema: pushed rows are bare BSATN and
+    /// carry no schema of their own, unlike a SQL response.
+    pub(crate) async fn subscribe(
+        &self,
+        query: String,
+        row_type: spacetimedb_sats::ProductType,
+        table: String,
+    ) -> Result<ws::Subscription> {
+        ws::subscribe(&self.inner, query, row_type, table).await
     }
 
     /// Invoke a reducer with a positional JSON argument array.

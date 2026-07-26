@@ -52,6 +52,7 @@ impl SpacetimeVistaFactory {
                 name.to_string(),
                 metadata,
                 table.row_identity(),
+                table.row_product_type(),
                 capabilities_for(table.kind, self.db.has_token()),
             )),
         ))

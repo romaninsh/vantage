@@ -25,6 +25,9 @@ vantage-vista = { version = "0.6" }
 # SpacetimeType (SATS), not serde, so JSON decoding goes through the
 # `spacetimedb_sats::serde::SerdeWrapper` bridge.
 spacetimedb-lib = "2.7"
+# The v2 WebSocket message schema — the authoritative definition of the
+# subscription protocol, rather than a hand-written mirror of it.
+spacetimedb-client-api-messages = "2.7"
 spacetimedb-sats = { version = "2.7", features = ["serde"] }
 
 reqwest = { version = "0.12", default-features = false, features = [
@@ -38,6 +41,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 indexmap = { version = "2", features = ["serde"] }
 async-trait = "0.1"
+futures = "0.3"
+async-stream = "0.3"
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 tokio = { version = "1", features = ["rt", "macros", "sync"] }
 tracing = "0.1"
 

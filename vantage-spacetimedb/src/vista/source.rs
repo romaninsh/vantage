@@ -24,14 +24,17 @@
 //! server's natural order, and its sort headers are inert. That is the truth
 //! about this backend.
 
+use std::collections::HashSet;
+
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
+use spacetimedb_sats::ProductType;
 use vantage_core::{Result, error};
 use vantage_types::Record;
 use vantage_vista::{
     Column as VistaColumn, FilterOp, Reference as VistaReference, TableShell, Vista,
-    VistaCapabilities, VistaMetadata,
+    VistaCapabilities, VistaChange, VistaChangeStream, VistaMetadata,
 };
 
 use crate::client::SpacetimeDb;
@@ -52,6 +55,12 @@ pub struct SpacetimeTableShell {
     relation: String,
     metadata: VistaMetadata,
     identity: RowIdentity,
+    /// The row's SATS type, from the module schema.
+    ///
+    /// Needed only by the change feed: pushed rows arrive as raw BSATN with no
+    /// self-description, so they can only be decoded against the type the schema
+    /// declares. (The read path gets its schema back with each SQL response.)
+    row_type: ProductType,
     conditions: Vec<Condition>,
     capabilities: VistaCapabilities,
 }
@@ -62,6 +71,7 @@ impl SpacetimeTableShell {
         relation: String,
         metadata: VistaMetadata,
         identity: RowIdentity,
+        row_type: ProductType,
         capabilities: VistaCapabilities,
     ) -> Self {
         Self {
@@ -69,9 +79,25 @@ impl SpacetimeTableShell {
             relation,
             metadata,
             identity,
+            row_type,
             conditions: Vec::new(),
             capabilities,
         }
+    }
+
+    /// Column names in the row type's own order — the order a pushed BSATN row
+    /// decodes into.
+    fn columns_in_order(&self) -> Vec<String> {
+        self.row_type
+            .elements
+            .iter()
+            .enumerate()
+            .map(|(i, e)| {
+                e.name()
+                    .map(|n| n.to_string())
+                    .unwrap_or_else(|| format!("column_{i}"))
+            })
+            .collect()
     }
 
     /// `WHERE …` for the current conditions, or an empty string.
@@ -258,9 +284,92 @@ impl TableShell for SpacetimeTableShell {
             relation: self.relation.clone(),
             metadata: self.metadata.clone(),
             identity: self.identity.clone(),
+            row_type: self.row_type.clone(),
             conditions: self.conditions.clone(),
             capabilities: self.capabilities.clone(),
         }))
+    }
+
+    /// Subscribe to this set and stream every change.
+    ///
+    /// # The vista's conditions go into the subscription itself
+    ///
+    /// The query sent to the server is the same `SELECT * FROM t WHERE …` the
+    /// read path builds, so the server filters and only matching rows are ever
+    /// sent. That is stronger than it sounds: SpacetimeDB maintains the
+    /// subscription incrementally, so a row that *changes out of* the filtered
+    /// set arrives as a **delete**. Set membership is therefore correct by
+    /// construction — this driver needs no re-read per notification (as the
+    /// SurrealDB driver does) and no whole-set reload (as Postgres does).
+    ///
+    /// The exception is a condition the dialect cannot express — `InSet` has no
+    /// `IN` — which `add_op_condition` refuses outright, so it can never end up
+    /// silently missing from the subscription.
+    ///
+    /// # Deletes and inserts become one `Updated`
+    ///
+    /// The wire format has no update: a changed row is a delete plus an insert
+    /// of the same key in one transaction. They are paired here by id, so a
+    /// consumer sees `Updated` and a grid repaints a row rather than removing
+    /// and re-adding it.
+    async fn watch_vista(&self, _vista: &Vista) -> Result<VistaChangeStream> {
+        let query = self.select_sql()?;
+        let row_type = self.row_type.clone();
+        let columns = self.columns_in_order();
+        let identity = self.identity.clone();
+        let relation = self.relation.clone();
+
+        let mut subscription = self
+            .db
+            .subscribe(query, row_type.clone(), relation.clone())
+            .await?;
+
+        let stream = async_stream::try_stream! {
+            while let Some(delta) = subscription.recv().await {
+                let delta = delta?;
+
+                if delta.ephemeral {
+                    // Event-table rows exist only for the transaction that
+                    // emitted them, so pairing them as inserts would put rows in
+                    // a cache that the table itself will never list. Refuse
+                    // loudly rather than populate a grid that disagrees with its
+                    // own source.
+                    Err(error!(
+                        "SpacetimeDB sent event-table rows for this relation; their rows are \
+                         deleted in the transaction that inserts them, so they cannot back a \
+                         Vista",
+                        table = relation.clone()
+                    ).mark_unsupported())?;
+                    continue;
+                }
+
+                let inserted = decode_all(&delta.inserts, &row_type, &columns, &identity)?;
+                let deleted = decode_all(&delta.deletes, &row_type, &columns, &identity)?;
+
+                // Pair by id within the transaction: an id on both sides means
+                // the row changed rather than being replaced.
+                let deleted_ids: HashSet<&String> = deleted.iter().map(|(id, _)| id).collect();
+                let inserted_ids: HashSet<&String> = inserted.iter().map(|(id, _)| id).collect();
+
+                for (id, record) in &inserted {
+                    if deleted_ids.contains(id) {
+                        yield VistaChange::Updated { id: id.clone(), value: record.clone() };
+                    } else {
+                        yield VistaChange::Inserted { id: id.clone(), value: record.clone() };
+                    }
+                }
+                for (id, _) in &deleted {
+                    // Unmatched deletes genuinely left the set — either removed
+                    // outright, or changed so they no longer satisfy the
+                    // subscription's WHERE. Both mean "drop this row".
+                    if !inserted_ids.contains(id) {
+                        yield VistaChange::Deleted { id: id.clone() };
+                    }
+                }
+            }
+        };
+
+        Ok(Box::pin(stream))
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
@@ -282,6 +391,31 @@ impl TableShell for SpacetimeTableShell {
     //
     // Implementing any of these over the materialised set would make the
     // capability flags describe a fiction. See the module docs.
+}
+
+/// Decode a batch of pushed BSATN rows and pair each with its Vista id.
+fn decode_all(
+    rows: &[Vec<u8>],
+    row_type: &ProductType,
+    columns: &[String],
+    identity: &RowIdentity,
+) -> Result<Vec<(String, Record<CborValue>)>> {
+    let mut out = Vec::with_capacity(rows.len());
+    for bytes in rows {
+        let value = crate::client::ws::decode_row(bytes, row_type)?;
+        let record = row_to_record(columns, &value);
+        let id = match identity.column() {
+            Some(column) => record.get(column).map(cbor_to_id).ok_or_else(|| {
+                error!(
+                    "a pushed row is missing its identity column",
+                    column = column.to_string()
+                )
+            })?,
+            None => content_hash(&value),
+        };
+        out.push((id, record));
+    }
+    Ok(out)
 }
 
 /// Quote an identifier for the query.

@@ -23,8 +23,17 @@ workspace, alongside `vantage-aws` and `vantage-kubernetes`.
   string column as the display title, and marking every column orderable (this
   driver sorts client-side, so there is no per-column server constraint).
 - `SpacetimeDb::sql` and `SpacetimeDb::call_reducer` returning the host's raw JSON.
+- Row decoding, seeded by the schema. SQL rows arrive as **positional arrays**
+  with sums encoded as `[variant_index, value]`, so `Some(1)` is `[0, 1]` and
+  `None` is `[1, []]` — indistinguishable from a genuine two-element array
+  without the schema. Decoding therefore goes through SATS's own seeded
+  deserializer rather than walking `serde_json::Value`.
+- `SpacetimeTableShell`: listing, keyed lookup, `get_some` via `LIMIT 1`,
+  `COUNT(*)`, and conditions lowered into a real `WHERE`.
+- `watch_vista` over the v2 BSATN WebSocket, with the vista's conditions pushed
+  into the subscription query.
 - Offline tests against schema fixtures captured verbatim from a live host, plus
-  `#[ignore]`d live tests.
+  `#[ignore]`d live tests covering reads, the Vista facade and the change feed.
 
 ### Notes on behaviour
 
@@ -37,4 +46,15 @@ workspace, alongside `vantage-aws` and `vantage-kubernetes`.
 - **Private tables and parameterised views are refused** with messages naming the
   cause, since both would otherwise present as an empty table.
 - **Integers wider than 64 bits map to `string`**, because a silently truncated
-  identifier is worse than a textual one.
+  identifier is worse than a textual one. Relatedly, the change feed speaks BSATN
+  rather than the older JSON protocol, which encodes every SATS integer as a JSON
+  number and so loses precision above 2^53 — fatal for a `u64` primary key.
+- **Nothing is emulated client-side.** Sorting, searching and pagination are
+  refused rather than performed over a materialised set, so a `false` capability
+  flag means the operation genuinely does not happen. Only the methods the server
+  can answer are overridden; the rest keep the trait defaults, which report
+  `Unsupported`.
+- **Set membership on the change feed is the server's job.** Conditions go into
+  the subscription query, and SpacetimeDB maintains it incrementally, so a row
+  leaving the filtered set arrives as a delete. No per-notification re-read and no
+  whole-set reload.
