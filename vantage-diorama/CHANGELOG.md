@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.4 — 2026-07-26
+
+- **Stop the test suite asserting on speed.** `wait_for_gen` allowed 500ms for a
+  generation bump — in seven near-identical copies across the test files — and
+  `settle()` slept 80ms against a 50ms viewport debounce. Both read as
+  correctness checks and were really deadlines: on a CI runner building and
+  testing the rest of the workspace alongside them,
+  `refresh_after_reorder_does_not_duplicate_rows` timed out with no bug behind
+  it.
+
+  The waits now bound a *hang* (10s) rather than a duration, and `settle()`
+  leaves real headroom over the debounce. Nothing about the code under test
+  changed, and the suite still finishes in about the same time — a longer limit
+  costs nothing except on a genuine failure, which now fails rather than hangs.
+
 ## 0.8.3 — 2026-07-26
 
 - **`CacheBackend::list_tables` / `drop_table`** — enumerate the tables inside a
