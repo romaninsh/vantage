@@ -291,7 +291,15 @@ fn sum_to_cbor(
 ///
 /// `Identity` and `ConnectionId` are 256-bit integers wrapped in a one-field
 /// product; a hex string is what every SpacetimeDB tool prints and what a user
-/// can actually match against. `Timestamp` and `TimeDuration` wrap microseconds.
+/// can actually match against. `Timestamp` and `TimeDuration` wrap microseconds,
+/// and `UUID` wraps a `u128`.
+///
+/// All five of SATS's special types are handled here, and `Literal::for_id`
+/// renders each one back the same way. That pairing is load-bearing rather than
+/// tidy: a Vista id is a string this function produced, so any type it leaves to
+/// the generic product arm — as `UUID` used to be, arriving as a one-element
+/// array and then as a `Debug` string — becomes a row that can be listed and
+/// never addressed.
 ///
 /// Recognised from the declared type rather than the value's shape. By shape,
 /// every one-field product holding a `U256` looks like an `Identity`, so a user
@@ -314,6 +322,13 @@ fn special_product_to_cbor(
         && let AlgebraicValue::I64(micros) = only
     {
         return Some(CborValue::Integer((*micros).into()));
+    }
+    // A u128 exceeds what CBOR's integer can carry, so it takes the same textual
+    // form as every other wide integer here rather than being truncated.
+    if ty.is_uuid()
+        && let AlgebraicValue::U128(v) = only
+    {
+        return Some(CborValue::Text({ v.0 }.to_string()));
     }
     None
 }

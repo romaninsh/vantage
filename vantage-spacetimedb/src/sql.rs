@@ -130,6 +130,12 @@ impl Literal {
     /// Render a decoded value for a `WHERE` comparison or an assignment.
     pub(crate) fn from_cbor(value: &CborValue) -> Result<Self> {
         Ok(match value {
+            // A tag is a CBOR annotation, not part of the value: Vista's rhai
+            // bridge tags datetimes and record references on their way through.
+            // Every other driver drops it and keeps the payload; rejecting it
+            // here turned a scripted datetime condition into "value cannot be
+            // expressed as a SpacetimeDB SQL literal".
+            CborValue::Tag(_, inner) => Self::from_cbor(inner)?,
             CborValue::Bool(b) => Self::boolean(*b),
             CborValue::Integer(i) => Self::integer(i128::from(*i)),
             CborValue::Float(f) => Self::float(*f),
@@ -172,8 +178,26 @@ impl Literal {
                 .parse::<f64>()
                 .map(Self::float)
                 .map_err(|_| error!("id is not a number, but its column is", id = id.to_string())),
-            // Identity, ConnectionId and the other special products are hex.
-            Some(ty) if ty.is_special() => Self::hex(id),
+            // The special products, each rendered the way `value.rs` renders it
+            // on the way *out*. That correspondence is the whole requirement: an
+            // id is a string this driver itself produced from a row, so a write
+            // path that disagrees with the read path cannot address the row it
+            // was just handed.
+            //
+            // Treating every special type as hex — which `is_special()` invites,
+            // since it covers all five — broke exactly that. A `Timestamp` key
+            // lists as microseconds, comes back as `"1700000000000000"`, and
+            // then fails `hex` with "not a hex literal": a table that reads
+            // perfectly and cannot be updated, deleted or fetched by id.
+            Some(ty) if ty.is_identity() || ty.is_connection_id() => Self::hex(id),
+            Some(ty) if ty.is_timestamp() || ty.is_time_duration() => {
+                id.parse::<i128>().map(Self::integer).map_err(|_| {
+                    error!(
+                        "id is not a microsecond count, but its column is a time",
+                        id = id.to_string()
+                    )
+                })
+            }
             _ => Self::text(id),
         }
     }
@@ -514,6 +538,59 @@ mod tests {
         assert_eq!(Literal::for_id(None, "42").unwrap().as_str(), "'42'");
         // Numeric column, non-numeric id: refused rather than rendered.
         assert!(Literal::for_id(Some(&AlgebraicType::U64), "not a number").is_err());
+    }
+
+    #[test]
+    fn every_special_type_renders_an_id_the_way_it_was_read() {
+        // These five are what `AlgebraicType::is_special()` covers, and each has
+        // to come back the way `value::special_product_to_cbor` sent it out. The
+        // pairing is the test: an id is a string this driver produced from a row,
+        // so a mismatch here is a row that lists and can never be addressed.
+        //
+        // Sending all five to `hex` — which `is_special()` reads as if it invites
+        // — is what broke it: a `Timestamp` reads out as microseconds and then
+        // failed to render back with "not a hex literal".
+        let hex = "0xdeadbeef";
+        assert_eq!(
+            Literal::for_id(Some(&AlgebraicType::identity()), hex)
+                .unwrap()
+                .as_str(),
+            hex,
+            "identity reads as hex, so it must render as hex"
+        );
+        assert_eq!(
+            Literal::for_id(Some(&AlgebraicType::connection_id()), hex)
+                .unwrap()
+                .as_str(),
+            hex
+        );
+        assert_eq!(
+            Literal::for_id(Some(&AlgebraicType::timestamp()), "1700000000000000")
+                .unwrap()
+                .as_str(),
+            "1700000000000000",
+            "a timestamp reads as microseconds, so it must render as a number"
+        );
+        assert_eq!(
+            Literal::for_id(Some(&AlgebraicType::time_duration()), "-500")
+                .unwrap()
+                .as_str(),
+            "-500"
+        );
+        // A u128 is too wide for CBOR's integer, so it reads as text and renders
+        // back quoted.
+        assert_eq!(
+            Literal::for_id(
+                Some(&AlgebraicType::uuid()),
+                "340282366920938463463374607431768211455"
+            )
+            .unwrap()
+            .as_str(),
+            "'340282366920938463463374607431768211455'"
+        );
+        // And a time column still refuses an id that is not a number, rather than
+        // emitting it bare into the statement.
+        assert!(Literal::for_id(Some(&AlgebraicType::timestamp()), "0x1; DROP").is_err());
     }
 
     #[test]

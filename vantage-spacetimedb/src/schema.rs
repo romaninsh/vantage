@@ -404,7 +404,12 @@ impl ModuleSchema {
             && let Some(column) = metadata.columns.get_mut(&title)
         {
             column.flags.push(flags::TITLE.to_string());
-            column.flags.push(flags::SEARCHABLE.to_string());
+            // Not SEARCHABLE, for the reason given above about ORDERABLE: the
+            // dialect has no `LIKE`, `can_search` is false, and `add_search`
+            // refuses. The flag is what a consumer reads to decide whether to
+            // offer a search box — the CLI ORs its `?keyword` across exactly
+            // these columns — so setting it here would build the box and then
+            // refuse the query.
         }
 
         Ok(metadata)

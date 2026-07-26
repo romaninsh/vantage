@@ -382,6 +382,34 @@ impl TableShell for SpacetimeTableShell {
         })
     }
 
+    /// Refused, deliberately — and overridden rather than left to the trait
+    /// default, which would report it as a missing implementation.
+    ///
+    /// This is the "insert a row and tell me the id the database chose" path.
+    /// SpacetimeDB has no `RETURNING`, and an `#[auto_inc]` key is assigned by
+    /// the host, so after the `INSERT` there is nothing to read the new id from.
+    /// It could only be guessed at by re-querying and hoping no other writer
+    /// intervened, which at this backend's whole reason for existing —
+    /// concurrent writers — is exactly the wrong bet.
+    ///
+    /// `can_insert` stays `true` because [`Self::insert_vista_value`], where the
+    /// caller supplies the id, does work. A caller that needs a server-assigned
+    /// id should call a reducer, which is this module's sanctioned write path.
+    async fn insert_vista_return_id_value(
+        &self,
+        _vista: &Vista,
+        _record: &Record<CborValue>,
+    ) -> Result<String> {
+        Err(error!(
+            "SpacetimeDB cannot report the id it assigned: its SQL has no `RETURNING`, \
+             and an auto-inc key is chosen by the host — supply the id with `insert`, \
+             or call a reducer",
+            table = self.relation.clone()
+        )
+        .mark_unsupported()
+        .traced())
+    }
+
     async fn replace_vista_value(
         &self,
         vista: &Vista,
@@ -570,13 +598,26 @@ impl TableShell for SpacetimeTableShell {
                     // a cache that the table itself will never list. Refuse
                     // loudly rather than populate a grid that disagrees with its
                     // own source.
+                    // `?` inside `try_stream!` yields the error and ends the
+                    // generator, so there is nothing after it — this is the last
+                    // thing the stream does.
+                    //
+                    // Ending is the honest outcome but not a comfortable one:
+                    // `Dio::watch` reads a stream error as its cue to back off
+                    // and resubscribe, and resubscribing to an event table
+                    // produces the same refusal again. The factory rejects event
+                    // tables up front, so this is only reachable against a v9
+                    // host, where the schema cannot report the flag — and there
+                    // a slow retry loop beats silently filling a grid with rows
+                    // the table will never list.
                     Err(error!(
                         "SpacetimeDB sent event-table rows for this relation; their rows are \
                          deleted in the transaction that inserts them, so they cannot back a \
                          Vista",
                         table = relation.clone()
-                    ).mark_unsupported())?;
-                    continue;
+                    )
+                    .mark_unsupported()
+                    .traced())?;
                 }
 
                 let inserted = decode_all(&delta.inserts, &row_type, &columns, &identity)?;
@@ -663,6 +704,10 @@ fn decode_all(
 /// Stringify a CBOR value for use as a Vista id.
 fn cbor_to_id(value: &CborValue) -> String {
     match value {
+        // As in `Literal::from_cbor`: the tag annotates, the payload is the id.
+        // Left in, it would fall to the `Debug` arm below and produce an id no
+        // `WHERE` could ever match.
+        CborValue::Tag(_, inner) => cbor_to_id(inner),
         CborValue::Text(s) => s.clone(),
         CborValue::Integer(i) => i128::from(*i).to_string(),
         CborValue::Bool(b) => b.to_string(),

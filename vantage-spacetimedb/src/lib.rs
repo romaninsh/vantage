@@ -31,9 +31,10 @@
 //! SpacetimeDB's SQL has no `ORDER BY`, `OFFSET`, `GROUP BY`, `IN` or `LIKE`;
 //! it does have `LIMIT` and `COUNT(*)`. Subscriptions are narrower still: whole
 //! rows from a single table or view, `WHERE` only, at most a two-table indexed
-//! `JOIN`. Consequently this driver filters and counts server-side but sorts,
-//! searches and paginates **client-side**, and says so through
-//! `VistaCapabilities` rather than pretending otherwise.
+//! `JOIN`. So this driver filters and counts server-side, and **refuses** to
+//! sort, search or paginate rather than materialising the set and doing it
+//! here. A `false` capability flag therefore means the operation genuinely does
+//! not happen — not that it happens somewhere more expensive.
 
 pub mod client;
 pub mod schema;

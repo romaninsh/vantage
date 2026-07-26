@@ -85,6 +85,12 @@ impl SpacetimeVistaFactory {
 ///   three `false`, consumers fall through to `list_values`, which is the
 ///   documented meaning of "no native pagination".
 /// - `can_traverse_to_set` / `can_traverse_in_columns` — both need subqueries.
+/// - `can_traverse_to_record` — the *dialect* could do it, since it is only an
+///   eq-condition on a known value, but a SpacetimeDB module declares no foreign
+///   keys: the ABI has primary keys, unique constraints and indexes, and nothing
+///   that says one column points at another table. So [`ModuleSchema`] builds no
+///   references, `VistaMetadata::references` is always empty, and there is
+///   nothing to traverse. Advertising it would promise a road with no map.
 ///
 /// `can_filter_operators` is `true` because `WHERE` supports the six comparison
 /// operators; `InSet`/`NotInSet` are refused individually, since the flag covers
@@ -99,7 +105,6 @@ fn capabilities_for(kind: TableKind, caller_is_owner: bool) -> VistaCapabilities
     VistaCapabilities {
         can_count: true,
         can_filter_operators: true,
-        can_traverse_to_record: true,
         // Subscriptions need no setup on this backend — no trigger to install, no
         // extension to enable — so advertising push is honest without an opt-in.
         // Contrast `PostgresVistaFactory::with_notify`.
@@ -139,5 +144,43 @@ mod tests {
         assert!(!caps.can_search, "no LIKE in the dialect");
         assert!(!caps.can_fetch_page && !caps.can_fetch_next && !caps.can_fetch_window);
         assert!(!caps.can_traverse_to_set && !caps.can_traverse_in_columns);
+        // A SpacetimeDB module declares no foreign keys, so `VistaMetadata`
+        // carries no references and there is nothing to traverse to. This was
+        // `true` while `get_ref` was never implemented — the framework treats
+        // that combination as a driver bug and traces it at error level, which
+        // is precisely the "capability that lies" this crate argues against.
+        assert!(
+            !caps.can_traverse_to_record,
+            "no foreign keys in the module definition, so no references to follow"
+        );
+    }
+
+    /// Every `true` flag must have an implementation behind it.
+    ///
+    /// Kept as a list rather than a prose comment because the failure mode is
+    /// silent: a flag is one word, the method it promises is somewhere else
+    /// entirely, and nothing but a reader connects them. Both flags that had
+    /// drifted apart from their methods were `true` ones.
+    #[test]
+    fn every_advertised_capability_has_a_method_behind_it() {
+        let caps = capabilities_for(TableKind::Table, true);
+
+        // can_count            -> get_vista_count           (source.rs)
+        // can_filter_operators -> add_op_condition          (source.rs)
+        // can_subscribe        -> watch_vista               (source.rs)
+        // can_insert           -> insert_vista_value        (source.rs)
+        // can_update           -> patch/replace_vista_value (source.rs)
+        // can_delete           -> delete_vista_value        (source.rs)
+        assert!(caps.can_count);
+        assert!(caps.can_filter_operators);
+        assert!(caps.can_subscribe);
+        assert!(caps.can_insert && caps.can_update && caps.can_delete);
+
+        // The one deliberate gap: `can_insert` covers `insert_vista_value`,
+        // where the caller supplies the id. `insert_vista_return_id_value` — the
+        // server-assigns-it path — is overridden to refuse, because SpacetimeDB
+        // has no `RETURNING` to read the assigned id back from. Overridden
+        // rather than left to the default, so it reports Unsupported instead of
+        // "the driver forgot".
     }
 }
