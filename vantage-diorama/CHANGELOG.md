@@ -22,6 +22,26 @@ plus augment-pass corrections.
   returning insert has no id to stage or route, so `on_flash`
   validation/capability does not apply to it — use `Uuid` where the
   route must own the write.
+
+**Augment passes**
+
+- **A tagged null counts as an unfilled augment column.** `has_augment_gap`
+  compared against a bare `Null`, so a driver that wraps its absent value in a
+  CBOR tag (SurrealDB's `NONE` arrives as `Tag(6, Null)`) read as *filled* — the
+  row never re-entered the detail pass and its augmented columns stayed empty
+  for the session.
+- **Rows with no detail behind them stop being re-fetched.** A row whose detail
+  source legitimately returns nothing kept its gap forever, so every sweep
+  re-enqueued it — a permanently-gapped row spun the scheduler at fetch rates
+  that showed up as constant background load. Settled-empty ids are remembered
+  until a refresh clears them.
+- **`TableScenery::set_filters` — runtime equality filters over the cache.**
+  Grid filter chips set `column == value` terms that AND with the query's own
+  conditions and are evaluated locally, which is what lets them reference
+  **augmented** columns (those exist only after hydration, so the master can
+  never answer them). Kept separate from `conditions` so chips can't clobber
+  query narrowing, and out of the shared index key so they refine per handle.
+  An empty vec clears.
 ## 0.8.4 — 2026-07-26
 
 **The facade Vista honours condition, order and search**

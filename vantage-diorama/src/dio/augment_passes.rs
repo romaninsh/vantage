@@ -260,7 +260,9 @@ pub(crate) fn has_augment_gap(
     if augmented.is_empty() {
         return true;
     }
-    augmented.iter().any(|column| is_unfilled(list_row.get(column)))
+    augmented
+        .iter()
+        .any(|column| is_unfilled(list_row.get(column)))
 }
 
 /// Absent or null-like: drivers wrap nulls (SurrealDB's NONE arrives as

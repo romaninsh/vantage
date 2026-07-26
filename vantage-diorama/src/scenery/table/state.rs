@@ -96,6 +96,10 @@ pub(crate) struct TableSceneryState {
     /// `rows` map is authoritative for `row_count` (the index may hold more ids
     /// than match the filter).
     pub(crate) local_refine: bool,
+    /// UI-level equality filters (grid filter chips) — runtime-toggled,
+    /// ANDed with `conditions` in the local refine chain, kept separate
+    /// so chips can never clobber query narrowing.
+    pub(crate) ui_filters: RwLock<Vec<(String, CborValue)>>,
     /// Dropdown / autocomplete projection: serve the cheap list columns and
     /// **skip the detail pass** even on a two-pass table. The list pass still
     /// runs (rows carry id + title columns); per-row hydration never fires.
@@ -126,6 +130,14 @@ pub(crate) struct TableSceneryState {
 }
 
 impl TableSceneryState {
+    /// Whether the visible set must be derived locally over the cache:
+    /// either the open-time query demanded it (`local_refine`) or runtime
+    /// filter chips are active. Chips arrive after open, so every
+    /// `local_refine` consumer branches on this instead of the field.
+    pub(crate) fn locally_refined(&self) -> bool {
+        self.local_refine || !self.ui_filters.read().unwrap().is_empty()
+    }
+
     pub(crate) fn bump_generation(&self) {
         let next = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let _ = self.generation_tx.send_replace(Generation(next));
