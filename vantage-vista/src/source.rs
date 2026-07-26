@@ -512,12 +512,40 @@ pub trait TableShell: Send + Sync + 'static {
     ///
     /// Drivers whose backend can push changes (SurrealDB LIVE, Postgres
     /// `LISTEN/NOTIFY`) override this and advertise
-    /// [`can_subscribe`](VistaCapabilities::can_subscribe). Each emitted change
-    /// carries the record in the same projected shape as
+    /// [`can_subscribe`](VistaCapabilities::can_subscribe). The row-bearing
+    /// variants carry the record in the same projected shape as
     /// [`list_vista_values`](Self::list_vista_values), so a consumer can apply
-    /// it to a cache directly. The default produces `Unimplemented` (when
+    /// them to a cache directly; [`VistaChange::Invalidated`] carries nothing at
+    /// all and means "re-read the set". The default produces `Unimplemented` (when
     /// `can_subscribe: true`) or `Unsupported` (when `false`); callers branch on
     /// `vista.capabilities().can_subscribe` first.
+    ///
+    /// # The subscription contract
+    ///
+    /// Callers always pass the full `vista`, and drivers deliver on a best-effort
+    /// basis. A consumer must not need to know whether a given backend filters
+    /// row-, select- or table-wide — that is what keeps consumer code identical
+    /// across drivers, and lets a driver tighten its scope later without
+    /// breaking anyone. Four promises hold for every implementation:
+    ///
+    /// 1. **The stream may be coarser than the vista.** Subscribing table-wide
+    ///    and letting the consumer discard what it doesn't want is a valid
+    ///    implementation; `vista` is a hint about what's interesting, not a
+    ///    filter the driver is obliged to apply.
+    /// 2. **Payload rows may fall outside the vista's conditions**, precisely
+    ///    because of (1). Either the driver reconciles (SurrealDB re-reads each
+    ///    notified id *through* the vista's conditions, so a row that no longer
+    ///    matches surfaces as [`VistaChange::Deleted`]) or the consumer must.
+    ///    Never assume an `Inserted`/`Updated` row belongs in the set.
+    /// 3. **[`VistaChange::Invalidated`] means "re-read everything".** It carries
+    ///    no id and implies nothing about how much changed — a driver with no row
+    ///    payload to offer may emit it for every single write.
+    /// 4. **Stream end is normal, not an error.** Connections drop and sessions
+    ///    expire; consumers resubscribe (with backoff) and reconcile the gap. A
+    ///    driver need not reconnect internally.
+    ///
+    /// Delivery is not guaranteed even while subscribed — see
+    /// [`can_subscribe`](VistaCapabilities::can_subscribe).
     async fn watch_vista(&self, _vista: &Vista) -> Result<VistaChangeStream> {
         Err(self.default_error("watch_vista", "can_subscribe"))
     }

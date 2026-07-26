@@ -28,11 +28,16 @@ pub type PostgresSpecResolver = Arc<dyn Fn(&str) -> Option<PostgresVistaSpec> + 
 pub struct PostgresVistaFactory {
     db: PostgresDB,
     resolver: Option<PostgresSpecResolver>,
+    notify: bool,
 }
 
 impl PostgresVistaFactory {
     pub fn new(db: PostgresDB) -> Self {
-        Self { db, resolver: None }
+        Self {
+            db,
+            resolver: None,
+            notify: false,
+        }
     }
 
     /// Attach a spec resolver. Required for YAML-declared references to resolve
@@ -40,6 +45,26 @@ impl PostgresVistaFactory {
     /// `Table` and the next query fails loudly.
     pub fn with_resolver(mut self, resolver: PostgresSpecResolver) -> Self {
         self.resolver = Some(resolver);
+        self
+    }
+
+    /// Declare that this database has `{table}_changed` NOTIFY triggers
+    /// installed, letting the vistas this factory builds advertise
+    /// [`can_subscribe`](VistaCapabilities::can_subscribe).
+    ///
+    /// Off by default, and deliberately explicit: Postgres cannot tell us
+    /// whether a trigger exists. `LISTEN` on a channel nobody ever notifies
+    /// succeeds and then blocks forever, so a vista that advertised
+    /// `can_subscribe` on the strength of being writable would promise a feed
+    /// that is silent — indistinguishable, to a consumer, from a table where
+    /// nothing happens. The trigger is application-installed (see `learn-10`'s
+    /// `db::setup`, and the "Real-Time Push with LISTEN/NOTIFY" chapter), so
+    /// the application is the only party that can honestly answer this.
+    ///
+    /// Applies to every table the factory builds; if only some of them carry
+    /// triggers, use separate factories.
+    pub fn with_notify(mut self, notify: bool) -> Self {
+        self.notify = notify;
         self
     }
 
@@ -69,8 +94,10 @@ impl PostgresVistaFactory {
                 can_update: !read_only,
                 can_delete: !read_only,
                 // Push via LISTEN/NOTIFY on the `{table}_changed` channel, which
-                // the application feeds from a trigger (see learn-10's setup).
-                can_subscribe: !read_only,
+                // the application feeds from a trigger. Opt-in (`with_notify`):
+                // we cannot detect the trigger, and claiming a feed we may never
+                // receive is worse than claiming none.
+                can_subscribe: self.notify && !read_only,
                 can_fetch_window: true,
                 can_traverse_to_record: true,
                 can_traverse_to_set: true,

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.17 — 2026-07-26
+
+- The live-subscription contract is now written down on `TableShell::watch_vista`:
+  callers always pass the full vista and drivers deliver best-effort, so a
+  consumer never branches on whether a backend filters row-, select- or
+  table-wide. Four promises hold everywhere — the stream may be coarser than the
+  vista; pushed rows may fall outside its conditions (the driver reconciles, or
+  the consumer must); `Invalidated` means re-read everything; ending the stream
+  is normal and consumers resubscribe.
+- `can_subscribe` and `can_invalidate` are documented — the only two
+  `VistaCapabilities` fields that carried no docs. `can_subscribe` states that it
+  is an *attempt* to push, not a delivery guarantee, and that a driver must not
+  advertise it over a feed needing setup nobody has confirmed.
+
 ## 0.6.16 — 2026-07-23
 
 - Conventional Rhai vocabulary gains `add_condition("col", "op", value)` — the

@@ -1,8 +1,9 @@
 # Changelog
 
-## 0.8.1 — 2026-07-24
+## 0.8.5 — 2026-07-26
 
-Review fixes for the 0.8.0 draft-servo release.
+Review fixes for the 0.8.0 draft-servo release (never shipped as 0.8.1),
+plus augment-pass corrections.
 
 - **Identity leaves the draft.** A `Uuid` servo binds its minted id
   without seeding it into `data` — an untouched form is clean,
@@ -21,6 +22,67 @@ Review fixes for the 0.8.0 draft-servo release.
   returning insert has no id to stage or route, so `on_flash`
   validation/capability does not apply to it — use `Uuid` where the
   route must own the write.
+## 0.8.4 — 2026-07-26
+
+**The facade Vista honours condition, order and search**
+
+- `dio.vista()` now implements `add_eq_condition`, `add_order` / `clear_orders`
+  and `add_search` / `clear_search`. It previously advertised `can_order` and
+  `can_search` — inherited verbatim from the master — while implementing
+  neither, so a caller that trusted the flags got `Unimplemented`. The flags are
+  now unconditionally true, and honest: the facade pushes a clause into the
+  master when the master can answer it, and answers it over the cache when it
+  cannot.
+
+- **Clauses are tried, not predicted.** A capability flag describes a driver,
+  not whether it accepts one particular column, so each clause is offered to a
+  private clone of the master and whatever it refuses is applied locally. A
+  pushed-down clause is answered over the master's whole set — authoritative,
+  rather than covering only what the cache happens to hold.
+
+- **An augmented Dio always answers from its cache.** Augment columns exist only
+  there, so reading a narrowed master would both drop their values from the rows
+  and make a filter on one match nothing.
+
+- **Every facade column is flagged `ORDERABLE` and `SEARCHABLE`.**
+  `Vista::add_order` refuses a column without the flag, and drivers set it only
+  for columns their own engine can sort — CSV sets it for none. Refusing on that
+  basis would deny a sort the Dio can perfectly well perform over its cache.
+
+- Narrowing is **per handle**: two facades over one Dio sort independently, and
+  `clone_shell` carries the narrowing without sharing it. An unnarrowed facade
+  is unchanged — still a plain cache read.
+
+- Local ordering keeps absent values last in both directions, compares numbers
+  numerically across the integer/float boundary, and breaks ties on id so the
+  same rows always come back in the same order. Conditions resolve dotted paths
+  into nested values.
+
+## 0.8.3 — 2026-07-26
+
+- **`CacheBackend::list_tables` / `drop_table`** — enumerate the tables inside a
+  backend, and reclaim one by name. Both carry defaults (empty list, no-op), so
+  existing backends compile and behave unchanged; `RedbCache` and `MemoryCache`
+  implement them for real.
+
+  These exist for consumers that keep every query variant of a datasource in one
+  file, one table per variant, rather than encoding the variant in a filename.
+  That shape needs a way to find and drop variants that fall out of use —
+  otherwise a name nothing asks for again is simply orphaned. `drop_table` also
+  forgets the memoized handle, so reopening the name yields a fresh table
+  instead of one pointing at deleted rows. A table opened but never written to
+  does not exist yet and is not listed.
+
+## 0.8.2 — 2026-07-25
+
+- **Viewport skip logging** — `fire_chunk_load`'s "no `on_load_chunk`
+  callback" skip drops from WARN to DEBUG, matching the "visible fully
+  cached" skip beside it. An eager lens holds every row and registers no
+  chunk callback, so a viewport it can't page for is a steady state, not
+  a fault; any consumer that re-drives the viewport on a timer (a
+  relation list's periodic re-pull, `refresh_loaded_viewport`) emitted
+  one warning per tick indefinitely. No behaviour change — the skip
+  itself is untouched.
 
 ## 0.8.0 — 2026-07-24
 

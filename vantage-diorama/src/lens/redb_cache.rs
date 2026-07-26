@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
+use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition, TableHandle};
 use vantage_core::{Result, error};
 use vantage_types::Record;
 
@@ -106,6 +106,50 @@ impl CacheBackend for RedbCache {
         });
         opened.insert(name.to_string(), table.clone());
         Ok(table as Arc<dyn CacheTable>)
+    }
+
+    async fn list_tables(&self) -> Result<Vec<String>> {
+        let db = self.db.clone();
+        tokio::task::spawn_blocking(move || -> Result<Vec<String>> {
+            let txn = db
+                .begin_read()
+                .map_err(|e| error!("redb begin_read failed", detail = e.to_string()))?;
+            let names = txn
+                .list_tables()
+                .map_err(|e| error!("redb list_tables failed", detail = e.to_string()))?
+                .map(|handle| handle.name().to_string())
+                .collect();
+            Ok(names)
+        })
+        .await
+        .map_err(|e| error!("blocking task panicked", detail = e.to_string()))?
+    }
+
+    async fn drop_table(&self, name: &str) -> Result<()> {
+        // Forget the memoized handle first: a later `open_table` under the same
+        // name must build a fresh one rather than hand back a handle onto the
+        // table we just deleted.
+        self.opened
+            .lock()
+            .expect("RedbCache mutex poisoned")
+            .shift_remove(name);
+
+        let db = self.db.clone();
+        let name = name.to_string();
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            let txn = db
+                .begin_write()
+                .map_err(|e| error!("redb begin_write failed", detail = e.to_string()))?;
+            // `delete_table` reports whether anything was there; dropping an
+            // absent table is a no-op, not a failure.
+            txn.delete_table(TableDefinition::<&'static str, &'static [u8]>::new(&name))
+                .map_err(|e| error!("redb delete_table failed", detail = e.to_string()))?;
+            txn.commit()
+                .map_err(|e| error!("redb commit failed", detail = e.to_string()))?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| error!("blocking task panicked", detail = e.to_string()))?
     }
 
     fn name(&self) -> &'static str {

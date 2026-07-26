@@ -5641,7 +5641,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.8.1"
+version = "0.8.5"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5667,6 +5667,22 @@ dependencies = [
  "vantage-types",
  "vantage-vista",
  "vantage-vista-factory",
+]
+
+[[package]]
+name = "vantage-diorama-aggregate"
+version = "0.6.1"
+dependencies = [
+ "async-trait",
+ "ciborium",
+ "indexmap",
+ "tokio",
+ "tracing",
+ "vantage-core",
+ "vantage-dataset",
+ "vantage-diorama",
+ "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]
@@ -5772,7 +5788,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.6.15"
+version = "0.6.16"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -5886,7 +5902,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.16"
+version = "0.6.17"
 dependencies = [
  "async-stream",
  "async-trait",
