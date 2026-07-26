@@ -65,6 +65,11 @@ pub(crate) async fn load_detail_with(
 pub(crate) async fn hydrate_one(inner: &std::sync::Arc<super::DioInner>, id: &str) -> Result<()> {
     let augmented = inner.augmented_columns.read().unwrap().clone();
     let gap_aware = inner.has_dio_augment() && !augmented.is_empty();
+    if inner.augment_settled_empty.lock().unwrap().contains(id) {
+        // Hydrated before and found no detail record — a legitimate,
+        // permanent gap until the next refresh clears the set.
+        return Ok(());
+    }
     if let Some((row, CacheStatus::Complete)) =
         inner.cache.get_value_with_status(id).await.ok().flatten()
         && (!gap_aware || !has_augment_gap(&row, &augmented))
@@ -106,6 +111,17 @@ pub(crate) async fn hydrate_one(inner: &std::sync::Arc<super::DioInner>, id: &st
         .cache
         .insert_value_with_status(id, &merged, CacheStatus::Complete)
         .await?;
+    // A row still gapped AFTER hydration has no detail record to fill it
+    // (legitimate absence). Remember it so the sweep stops re-fetching —
+    // otherwise gap → hydrate → still gapped → generation bump → sweep is
+    // a busy loop. The refresh pass clears this set.
+    if gap_aware && has_augment_gap(&merged, &augmented) {
+        inner
+            .augment_settled_empty
+            .lock()
+            .unwrap()
+            .insert(id.to_string());
+    }
     let _ = inner
         .event_bus
         .send(crate::DioEvent::RecordChanged { id: id.to_string() });
@@ -174,6 +190,9 @@ pub(crate) async fn refresh(dio: &Dio) -> Result<()> {
     let cache = dio.cache();
     let existing = cache.list_values_with_status().await?;
     let augmented = dio.inner.augmented_columns.read().unwrap().clone();
+    // A refreshed detail source may have gained records for rows that
+    // previously settled empty — let them fetch again.
+    dio.inner.augment_settled_empty.lock().unwrap().clear();
 
     for (id, list_row) in &fresh {
         // A row with a flash in flight keeps its staged value — this
@@ -243,7 +262,18 @@ pub(crate) fn has_augment_gap(
     }
     augmented
         .iter()
-        .any(|column| matches!(list_row.get(column), None | Some(CborValue::Null)))
+        .any(|column| is_unfilled(list_row.get(column)))
+}
+
+/// Absent or null-like: drivers wrap nulls (SurrealDB's NONE arrives as
+/// `Tag(6, Null)`), so unwrap tags before the null test — a tagged null is
+/// still an unfilled cell.
+fn is_unfilled(value: Option<&CborValue>) -> bool {
+    match value {
+        None | Some(CborValue::Null) => true,
+        Some(CborValue::Tag(_, inner)) => matches!(inner.as_ref(), CborValue::Null),
+        Some(_) => false,
+    }
 }
 
 /// True when any field the list pass paints differs from the cached record.
@@ -265,7 +295,7 @@ pub(crate) fn list_fields_changed(
 mod tests {
     use std::collections::HashSet;
 
-    use super::list_fields_changed;
+    use super::{has_augment_gap, list_fields_changed};
     use ciborium::Value;
     use vantage_types::Record;
 
@@ -274,6 +304,20 @@ mod tests {
             .iter()
             .map(|(k, v)| (k.to_string(), v.clone()))
             .collect()
+    }
+
+    #[test]
+    fn tagged_null_counts_as_an_augment_gap() {
+        // SurrealDB's NONE arrives as a CBOR tagged null — still unfilled.
+        let augmented: HashSet<String> = ["found".to_string()].into_iter().collect();
+        let tagged = rec(&[("found", Value::Tag(6, Box::new(Value::Null)))]);
+        assert!(has_augment_gap(&tagged, &augmented));
+        let bare = rec(&[("found", Value::Null)]);
+        assert!(has_augment_gap(&bare, &augmented));
+        let filled = rec(&[("found", Value::Bool(true))]);
+        assert!(!has_augment_gap(&filled, &augmented));
+        let absent = rec(&[]);
+        assert!(has_augment_gap(&absent, &augmented));
     }
 
     fn none() -> HashSet<String> {

@@ -169,6 +169,13 @@ pub(crate) struct DioInner {
     /// Dio drops — a parked worker holds only a `Weak` and would otherwise
     /// idle forever.
     pub(crate) augment_worker_handles: std::sync::Mutex<Vec<JoinHandle<()>>>,
+    /// Rows that hydrated and legitimately found NO detail record — their
+    /// augment columns stay unfilled forever (an evidence row with no
+    /// uploaded files). Without this, the gap rule re-enqueues them on
+    /// every viewport pass: hydrate → still gapped → generation bump →
+    /// sweep → hydrate, a busy loop. Cleared by the refresh pass so a
+    /// detail source that GAINS a record is picked up on the next refresh.
+    pub(crate) augment_settled_empty: std::sync::Mutex<std::collections::HashSet<String>>,
 }
 
 impl Drop for DioInner {

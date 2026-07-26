@@ -293,6 +293,7 @@ impl TableSceneryBuilder {
             master_capabilities,
             two_pass,
             local_refine,
+            ui_filters: RwLock::new(Vec::new()),
             titles_only,
             demand,
             index: RwLock::new(index),
@@ -325,7 +326,7 @@ impl TableSceneryBuilder {
             // Locally-refined views filter/sort the just-seeded rows over the
             // cache. With an augmented-column condition this yields an empty set
             // until hydration confirms matches.
-            if state.local_refine {
+            if state.locally_refined() {
                 super::two_pass::reseed_filtered(&state).await;
                 state.bump_generation();
             }

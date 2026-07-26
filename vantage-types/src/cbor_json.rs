@@ -239,11 +239,18 @@ pub fn json_to_cbor_with_hint(value: &JsonValue, hint: Option<&CborValue>) -> Cb
     match (value, hint) {
         // Record id: restore Tag(8) from its "table:id" presentation form.
         (JsonValue::String(s), Some(CborValue::Tag(8, inner))) => retag_record_id(s, inner),
-        // Epoch-pair datetime: re-encode the (edited) RFC-3339 string back
-        // into `Tag(12, [seconds, nanos])`. An unparseable edit stays text —
+        // Epoch-pair datetime. An untouched round trip — the string is
+        // exactly the hint's own rendering — reproduces the hint's
+        // bytes, shape included (a one-element `[seconds]` stays one
+        // element). An edit re-encodes canonically as
+        // `Tag(12, [seconds, nanos])`; an unparseable edit stays text —
         // the write path surfaces the type error rather than guessing.
-        (JsonValue::String(s), Some(CborValue::Tag(12, _))) => {
-            rfc3339_to_tag12(s).unwrap_or_else(|| CborValue::Text(s.clone()))
+        (JsonValue::String(s), Some(CborValue::Tag(12, inner))) => {
+            if tag12_to_rfc3339(inner).as_deref() == Some(s.as_str()) {
+                CborValue::Tag(12, inner.clone())
+            } else {
+                rfc3339_to_tag12(s).unwrap_or_else(|| CborValue::Text(s.clone()))
+            }
         }
         // Datetime / uuid / decimal / duration — the form edits the inner
         // text; re-wrap it in the same tag so it round-trips.
@@ -317,14 +324,22 @@ fn retag_record_id(s: &str, inner: &CborValue) -> CborValue {
 /// Render SurrealDB's epoch-pair datetime — `Tag(12, [seconds, nanos])`
 /// carries its payload as integers, not text — as a lossless RFC-3339
 /// string (nanosecond fraction preserved, UTC). `None` when the inner
-/// shape isn't the epoch pair.
+/// shape isn't the epoch pair: strictly one or two **integer** elements
+/// (a one-element form means zero nanos). Anything looser falls back to
+/// the plain rendering instead of being silently normalized.
 pub fn tag12_to_rfc3339(inner: &CborValue) -> Option<String> {
     use chrono::{SecondsFormat, TimeZone as _};
     let CborValue::Array(arr) = inner else {
         return None;
     };
-    let secs = cbor_i64(arr.first()?)?;
-    let nanos = arr.get(1).and_then(cbor_i64).unwrap_or(0);
+    if arr.is_empty() || arr.len() > 2 {
+        return None;
+    }
+    let secs = cbor_i64(&arr[0])?;
+    let nanos = match arr.get(1) {
+        Some(v) => cbor_i64(v)?,
+        None => 0,
+    };
     let dt = chrono::Utc
         .timestamp_opt(secs, nanos.try_into().ok()?)
         .single()?;
@@ -347,10 +362,11 @@ pub fn rfc3339_to_tag12(s: &str) -> Option<CborValue> {
     ))
 }
 
+// Integer-only on purpose: a float in an epoch pair is malformed and
+// must fall back to the plain rendering, not get truncated.
 fn cbor_i64(v: &CborValue) -> Option<i64> {
     match v {
         CborValue::Integer(i) => i64::try_from(i128::from(*i)).ok(),
-        CborValue::Float(f) => Some(*f as i64),
         _ => None,
     }
 }
@@ -459,6 +475,34 @@ mod tests {
         // The untouched round trip reproduces identical bytes — no
         // phantom dirty.
         assert_eq!(json_to_cbor_with_hint(&json, Some(&tagged)), tagged);
+    }
+
+    #[test]
+    fn tag12_one_element_shape_survives_an_untouched_round_trip() {
+        // `[seconds]` (no nanos element) must reproduce byte-exactly —
+        // not get normalized into `[seconds, 0]`.
+        let tagged = CborValue::Tag(
+            12,
+            Box::new(CborValue::Array(vec![CborValue::Integer(
+                1_816_421_400.into(),
+            )])),
+        );
+        let json = cbor_to_json(&PresentationDialect, tagged.clone());
+        assert_eq!(json_to_cbor_with_hint(&json, Some(&tagged)), tagged);
+    }
+
+    #[test]
+    fn malformed_tag12_payloads_fall_back_to_plain_rendering() {
+        // Extra elements and non-integer members are not an epoch pair.
+        let three = CborValue::Array(vec![
+            CborValue::Integer(1.into()),
+            CborValue::Integer(2.into()),
+            CborValue::Integer(3.into()),
+        ]);
+        assert_eq!(tag12_to_rfc3339(&three), None);
+        let float_nanos =
+            CborValue::Array(vec![CborValue::Integer(1.into()), CborValue::Float(0.5)]);
+        assert_eq!(tag12_to_rfc3339(&float_nanos), None);
     }
 
     #[test]
