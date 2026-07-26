@@ -5772,7 +5772,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.6.15"
+version = "0.6.16"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -5886,7 +5886,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.16"
+version = "0.6.17"
 dependencies = [
  "async-stream",
  "async-trait",

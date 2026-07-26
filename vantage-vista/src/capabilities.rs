@@ -18,7 +18,24 @@ pub struct VistaCapabilities {
     pub can_insert: bool,
     pub can_update: bool,
     pub can_delete: bool,
+    /// The driver will *attempt* to push changes via
+    /// [`watch_vista`](crate::TableShell::watch_vista) — see that method for the
+    /// four promises a subscription makes. It is an attempt, not a guarantee of
+    /// delivery: no backend we ship is lossless, so a consumer that must not miss
+    /// a change keeps a reconcile path (a slow poll, a refresh on reconnect)
+    /// rather than relying on push alone.
+    ///
+    /// Advertise `true` only when the driver will push with **no further setup**,
+    /// or when the application has explicitly declared that setup is done (see
+    /// `PostgresVistaFactory::with_notify`, whose `LISTEN/NOTIFY` feed is silent
+    /// until the user installs a trigger). A flag that is `true` while the stream
+    /// stays permanently silent is indistinguishable from "nothing is happening",
+    /// and consumers cannot detect the difference at runtime.
     pub can_subscribe: bool,
+    /// The set can be told to drop any cached state and re-read
+    /// ([`VistaChange::Invalidated`](crate::VistaChange::Invalidated) on the push
+    /// side). Currently set only by `vantage-diorama`'s own Dio shell, which fans
+    /// events out to its sceneries; no persistence driver advertises it.
     pub can_invalidate: bool,
     /// Server-side ordering via `add_order(column, direction)`. When
     /// `true`, individual columns may still refuse — check the per-

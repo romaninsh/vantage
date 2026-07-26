@@ -21,7 +21,16 @@ async fn run() -> VantageResult<()> {
 
     // Order the shelf by creation time, so a drink keeps its place as it sells
     // and new deliveries append at the end.
-    let mut master = db.vista_factory().from_table(Product::table(db.clone()))?;
+    //
+    // `with_notify(true)` is us telling the factory that `db::setup` installed
+    // the `product_changed` trigger. Postgres can't be asked whether a trigger
+    // exists, and listening on a channel nobody feeds blocks forever — so the
+    // application declares it, and that declaration is what lets the Vista
+    // advertise `can_watch` below.
+    let mut master = db
+        .vista_factory()
+        .with_notify(true)
+        .from_table(Product::table(db.clone()))?;
     master.add_order("created", SortDirection::Ascending)?;
 
     // Eager cache, and no refresh timer at all: the NOTIFY listener refreshes

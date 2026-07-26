@@ -36,6 +36,26 @@ sqlx::query(
 changed" ping is all the Dio needs to reconcile. The payload is empty on purpose (more on that
 below).
 
+## Tell the Vista the trigger exists
+
+Postgres offers no way to ask "is anything going to notify me on this channel?" — `LISTEN` on a
+channel nobody feeds succeeds and then waits forever. A Vista that assumed it could push just
+because the table is writable would advertise a feed that may never arrive, and no consumer could
+tell the difference between that and a quiet table. So the application, which is the only party
+that knows, says so:
+
+```rust
+let mut master = db
+    .vista_factory()
+    .with_notify(true)   // we installed product_notify_trg above
+    .from_table(Product::table(db.clone()))?;
+```
+
+That one call is what makes `can_watch()` answer `true` in the next section. Leave it off and
+`dio.watch()` becomes a no-op — which matters here, because this chapter is about to *delete* the
+refresh timer. Push and a `refresh_every` poll are the two ways the cache learns about a write; an
+app that declines both never updates.
+
 ## One line replaces the poll
 
 The server builds the Dio exactly as before — an eager in-memory cache, an `on_start` that loads it
@@ -51,10 +71,11 @@ dio.watch().await?;
 ```
 
 That is the whole change. [`Dio::watch()`](https://docs.rs/vantage-diorama) asks the master Vista
-whether it can push (`Vista::can_watch()`); the Postgres Vista answers yes and opens a `PgListener`
-on the `product_changed` channel. Each notification drives one reconcile. If the backend *couldn't*
-push, `watch()` would be a no-op and a `refresh_every` timer would carry the load instead — the same
-call is correct either way, which is the point of the capability.
+whether it can push (`Vista::can_watch()`); because we opted in above, the Postgres Vista answers
+yes and opens a `PgListener` on the `product_changed` channel. Each notification drives one
+reconcile. If the backend *couldn't* push, `watch()` would be a no-op and a `refresh_every` timer
+would carry the load instead — the same call is correct either way, which is the point of the
+capability.
 
 ```admonish note title="The server still never writes"
 `dio.watch()` only *reads and reconciles*. Nothing in the server process writes to `product`. That

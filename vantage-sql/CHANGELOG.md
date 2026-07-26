@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.6.16 — 2026-07-26
+
+- **Behaviour change:** a Postgres vista no longer advertises `can_subscribe`
+  just because it is writable. `LISTEN` on a channel no trigger ever feeds
+  succeeds and then blocks forever, so the old flag promised a feed that may
+  never arrive — indistinguishable, to a consumer, from a table where nothing
+  happens. Watchability is now opt-in via
+  `PostgresVistaFactory::with_notify(true)`, by which the application declares it
+  installed the `{table}_changed` trigger. Postgres cannot be asked whether that
+  trigger exists, so the application is the only party that can answer honestly.
+  Callers relying on the implicit flag add one builder call; nothing else changes.
+- Reference traversal carries that declaration across. `get_ref`,
+  `get_ref_target` and contained-reference traversal each build a fresh factory
+  internally, so without this a relation target came back unwatchable even on a
+  database whose tables all have triggers.
+
 ## 0.6.15 — 2026-07-23
 
 - `add_op_condition` pushes non-equality filters into the SQL query for all three
