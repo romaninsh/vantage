@@ -81,6 +81,10 @@ impl TableScenery for CappedScenery {
         self.inner.set_sort(column, dir);
     }
 
+    fn set_filters(&self, filters: Vec<(String, ciborium::Value)>) {
+        self.inner.set_filters(filters);
+    }
+
     fn subscribe(&self) -> watch::Receiver<Generation> {
         self.inner.subscribe()
     }

@@ -486,16 +486,24 @@ async fn uuid_strategy_mints_identity_up_front() -> Result<()> {
     let servo = dio.servo_new(IdStrategy::Uuid);
 
     let id = servo.id().expect("identity exists before the first save");
-    assert_eq!(
-        servo.get("id"),
-        Some(text(&id)),
-        "the minted id is commanded into the id column"
+    // Identity is the binding's, not the draft's: an untouched form is
+    // clean and saving it fires nothing.
+    assert_eq!(servo.get("id"), None, "the draft carries no id field");
+    assert!(!servo.is_dirty(), "a fresh Uuid servo is clean");
+    assert!(
+        servo.flash().await?.is_none(),
+        "an untouched form must not insert a blank record"
     );
 
     servo.set("name", text("Croissant"));
     let first = servo.flash().await?.expect("insert fires");
     assert_eq!(first.kind(), &FlashKind::Insert);
     assert_eq!(first.id(), Some(id.as_str()));
+    assert_eq!(
+        first.patch().get("id"),
+        Some(&text(&id)),
+        "the insert record picks the id column up at flash time"
+    );
 
     // Continue editing the created record: same id, now a patch.
     servo.set("price", int(4));

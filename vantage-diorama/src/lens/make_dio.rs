@@ -60,6 +60,7 @@ impl Lens {
             augmented_columns: std::sync::RwLock::new(std::collections::HashSet::new()),
             augment_scheduler: Arc::new(crate::dio::augment_scheduler::AugmentScheduler::new()),
             augment_worker_handles: std::sync::Mutex::new(Vec::new()),
+            augment_settled_empty: std::sync::Mutex::new(std::collections::HashSet::new()),
         });
         let dio = Dio { inner };
 

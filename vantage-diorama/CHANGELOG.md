@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.4 — 2026-07-26
+## 0.8.7 — 2026-07-26
 
 - **Stop the test suite asserting on speed.** `wait_for_gen` allowed 500ms for a
   generation bump — in seven near-identical copies across the test files — and
@@ -14,6 +14,119 @@
   leaves real headroom over the debounce. Nothing about the code under test
   changed, and the suite still finishes in about the same time — a longer limit
   costs nothing except on a genuine failure, which now fails rather than hangs.
+
+## 0.8.6 — 2026-07-26
+
+**`set_sort` and `set_search` work on a two-pass scenery**
+
+- On an augmented (two-pass) table, changing the sort on a live scenery did
+  nothing. A grid opened without a sort could never be sorted at all; one opened
+  *with* a sort picked up a change only if some unrelated `RecordChanged`
+  happened to fire afterwards. `set_search` had the same defect. Header clicks
+  and a page's `default_sort` both go through this path, so on an augmented
+  table neither had any effect.
+
+  Two causes, both fixed:
+
+  - `resort` — the handler for a live `set_sort` — rebuilt the visible map from
+    the query index in the index's own order, and never called
+    `reseed_filtered`, which is the only code that applies a condition, sort or
+    search over the cache. It now does, for a refined view.
+
+  - `local_refine` was a `bool` computed once when the scenery opened and never
+    revisited, so a view opened with no query stayed "unrefined" for life — and
+    the two other call sites that would have applied the new order are gated on
+    it. It is now derived from the query as it stands, and the stored field is
+    gone. A value that is a function of mutable state should not have been
+    cached beside it.
+
+- No behaviour change for single-pass sceneries, for two-pass views opened with
+  a query, or for `titles_only` pickers (which keep raw list order).
+
+- The existing `sort_change_restarts_augmentation_without_scrolling` test had
+  encoded the defect: after sorting by `branch` ascending it asserted the row
+  order the fixture lists in, which is only what you see when the sort is
+  discarded. It now expects the sorted order, and waits on that order rather
+  than on the row merely being `Fresh` — the pre-resort map already satisfies
+  the latter, which is how the stale expectation went unnoticed.
+
+## 0.8.5 — 2026-07-26
+
+Review fixes for the 0.8.0 draft-servo release (never shipped as 0.8.1),
+plus augment-pass corrections.
+
+- **Identity leaves the draft.** A `Uuid` servo binds its minted id
+  without seeding it into `data` — an untouched form is clean,
+  `flash()` on it fires nothing (no more blank `{id}` inserts), and the
+  insert record picks the id column up at flash time instead.
+- **Overlapping flashes on one servo no longer leak the optimistic
+  stage.** The post-resolution measurement (and the `Tracking`
+  transition) now runs only for the LAST in-flight resolver — an
+  earlier one would have absorbed a sibling flash's still-staged cache
+  value as upstream truth and released locks early.
+- **`Auto` binds the returned id before seeding the cache.** If the
+  cache patch fails after the returning insert succeeded, the servo
+  keeps the created row's identity — a retry targets that row instead
+  of running a second returning insert (a duplicate).
+- **`Auto`'s write-route bypass is a documented contract**: the
+  returning insert has no id to stage or route, so `on_flash`
+  validation/capability does not apply to it — use `Uuid` where the
+  route must own the write.
+
+**Augment passes**
+
+- **A tagged null counts as an unfilled augment column.** `has_augment_gap`
+  compared against a bare `Null`, so a driver that wraps its absent value in a
+  CBOR tag (SurrealDB's `NONE` arrives as `Tag(6, Null)`) read as *filled* — the
+  row never re-entered the detail pass and its augmented columns stayed empty
+  for the session.
+- **Rows with no detail behind them stop being re-fetched.** A row whose detail
+  source legitimately returns nothing kept its gap forever, so every sweep
+  re-enqueued it — a permanently-gapped row spun the scheduler at fetch rates
+  that showed up as constant background load. Settled-empty ids are remembered
+  until a refresh clears them.
+- **`TableScenery::set_filters` — runtime equality filters over the cache.**
+  Grid filter chips set `column == value` terms that AND with the query's own
+  conditions and are evaluated locally, which is what lets them reference
+  **augmented** columns (those exist only after hydration, so the master can
+  never answer them). Kept separate from `conditions` so chips can't clobber
+  query narrowing, and out of the shared index key so they refine per handle.
+  An empty vec clears.
+## 0.8.4 — 2026-07-26
+
+**The facade Vista honours condition, order and search**
+
+- `dio.vista()` now implements `add_eq_condition`, `add_order` / `clear_orders`
+  and `add_search` / `clear_search`. It previously advertised `can_order` and
+  `can_search` — inherited verbatim from the master — while implementing
+  neither, so a caller that trusted the flags got `Unimplemented`. The flags are
+  now unconditionally true, and honest: the facade pushes a clause into the
+  master when the master can answer it, and answers it over the cache when it
+  cannot.
+
+- **Clauses are tried, not predicted.** A capability flag describes a driver,
+  not whether it accepts one particular column, so each clause is offered to a
+  private clone of the master and whatever it refuses is applied locally. A
+  pushed-down clause is answered over the master's whole set — authoritative,
+  rather than covering only what the cache happens to hold.
+
+- **An augmented Dio always answers from its cache.** Augment columns exist only
+  there, so reading a narrowed master would both drop their values from the rows
+  and make a filter on one match nothing.
+
+- **Every facade column is flagged `ORDERABLE` and `SEARCHABLE`.**
+  `Vista::add_order` refuses a column without the flag, and drivers set it only
+  for columns their own engine can sort — CSV sets it for none. Refusing on that
+  basis would deny a sort the Dio can perfectly well perform over its cache.
+
+- Narrowing is **per handle**: two facades over one Dio sort independently, and
+  `clone_shell` carries the narrowing without sharing it. An unnarrowed facade
+  is unchanged — still a plain cache read.
+
+- Local ordering keeps absent values last in both directions, compares numbers
+  numerically across the integer/float boundary, and breaks ties on id so the
+  same rows always come back in the same order. Conditions resolve dotted paths
+  into nested values.
 
 ## 0.8.3 — 2026-07-26
 

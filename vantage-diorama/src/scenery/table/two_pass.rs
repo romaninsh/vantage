@@ -85,7 +85,13 @@ fn references_augmented_column(
         .unwrap()
         .as_ref()
         .is_some_and(|(col, _)| dio_inner.is_augmented_column(col));
-    cond_aug || sort_aug
+    let filter_aug = state
+        .ui_filters
+        .read()
+        .unwrap()
+        .iter()
+        .any(|(col, _)| dio_inner.is_augmented_column(col));
+    cond_aug || filter_aug || sort_aug
 }
 
 /// Rebuild the visible map for a **locally-refined** two-pass scenery: take the
@@ -107,6 +113,7 @@ pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
     };
     let ids = index.ids();
     let conditions = state.conditions.read().unwrap().clone();
+    let ui_filters = state.ui_filters.read().unwrap().clone();
     let op_conditions = state.op_conditions.read().unwrap().clone();
     let search = state.search.read().unwrap().clone();
     let sort = state.sort.read().unwrap().clone();
@@ -121,6 +128,7 @@ pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
             .ok()
             .flatten()
             && matches_conditions(&rec, &conditions)
+            && matches_conditions(&rec, &ui_filters)
             && matches_op_conditions(&rec, &op_conditions)
             && matches_search(&rec, search.as_deref())
         {
@@ -341,32 +349,41 @@ pub(crate) async fn resort(state: Arc<TableSceneryState>) {
         run_list_page(state.clone()).await;
     }
 
-    // 3. Rebuild the sparse map from the index in one atomic swap, so the new
-    //    order replaces the old in a single write — the grid never blanks to an
-    //    empty map mid-reorder. Each row shows `Fresh`/`Incomplete` per its
-    //    cached status.
-    let ids = new_index.ids();
-    let mut rows = std::collections::BTreeMap::new();
-    let mut id_to_idx = std::collections::HashMap::new();
-    for (i, id) in ids.iter().enumerate() {
-        let Some((rec, status)) = dio_inner
-            .cache
-            .get_value_with_status(id)
-            .await
-            .ok()
-            .flatten()
-        else {
-            continue;
-        };
-        let enriched = match status {
-            CacheStatus::Complete => EnrichedRecord::fresh(rec),
-            CacheStatus::Incomplete => EnrichedRecord::incomplete(rec),
-        };
-        rows.insert(i, Arc::new(enriched));
-        id_to_idx.insert(id.clone(), i);
+    // 3. Rebuild the sparse map in one atomic swap, so the new order replaces
+    //    the old in a single write — the grid never blanks mid-reorder. Each row
+    //    shows `Fresh`/`Incomplete` per its cached status.
+    //
+    //    A refined view — one carrying a condition, a filter chip, a sort or a
+    //    search — is rebuilt by `reseed_filtered`, the only code that applies
+    //    those over the cache. Rebuilding from the index directly, as this used
+    //    to do unconditionally, presented the index's own order and silently
+    //    dropped the sort the caller had just asked for.
+    if state.local_refine() {
+        reseed_filtered(&state).await;
+    } else {
+        let ids = new_index.ids();
+        let mut rows = std::collections::BTreeMap::new();
+        let mut id_to_idx = std::collections::HashMap::new();
+        for (i, id) in ids.iter().enumerate() {
+            let Some((rec, status)) = dio_inner
+                .cache
+                .get_value_with_status(id)
+                .await
+                .ok()
+                .flatten()
+            else {
+                continue;
+            };
+            let enriched = match status {
+                CacheStatus::Complete => EnrichedRecord::fresh(rec),
+                CacheStatus::Incomplete => EnrichedRecord::incomplete(rec),
+            };
+            rows.insert(i, Arc::new(enriched));
+            id_to_idx.insert(id.clone(), i);
+        }
+        *state.rows.write().unwrap() = rows;
+        *state.id_to_idx.write().unwrap() = id_to_idx;
     }
-    *state.rows.write().unwrap() = rows;
-    *state.id_to_idx.write().unwrap() = id_to_idx;
     // Ids enqueued for the previous order stay queued — the scheduler's
     // settled recheck makes any that no longer need hydration free no-ops.
     state.bump_generation();
@@ -391,7 +408,7 @@ pub(crate) async fn update_row_from_cache(state: &Arc<TableSceneryState>, id: &s
     // visible-map lookup below can't gate it: a matching row that wasn't
     // visible yet has no slot. Re-derive the whole visible set whenever the
     // id belongs to this view's candidate index at all.
-    if state.local_refine {
+    if state.local_refine() {
         if !state.index().map(|ix| ix.contains(id)).unwrap_or(false) {
             return;
         }
@@ -516,7 +533,7 @@ pub(crate) async fn refresh_index(state: &Arc<TableSceneryState>) {
     state.set_index(Some(fresh));
     *state.rows.write().unwrap() = rows;
     *state.id_to_idx.write().unwrap() = id_to_idx;
-    if state.local_refine {
+    if state.local_refine() {
         reseed_filtered(state).await;
     }
     state.bump_generation();
@@ -561,7 +578,7 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
     // column). A condition/sort on a *native* (list-pass) column needs no extra
     // hydration — `reseed_filtered` already orders/filters the cheap cache rows —
     // so it keeps normal viewport-driven hydration.
-    let range = if state.local_refine && references_augmented_column(&state, &dio_inner) {
+    let range = if state.local_refine() && references_augmented_column(&state, &dio_inner) {
         0..index.len()
     } else {
         range
@@ -593,7 +610,7 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
         // SIBLING scenery — whose run_list_page seeded only its own map.
         // The viewport pass reads the cache row anyway; putting it on screen
         // is free. (Locally-refined views own their map wholesale — skip.)
-        if !state.local_refine
+        if !state.local_refine()
             && let Some((row, status)) = &cached
             && !state.rows.read().unwrap().contains_key(&idx)
         {
@@ -609,6 +626,16 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
             let no_gap =
                 !gap_aware || !crate::dio::augment_passes::has_augment_gap(row, &augmented);
             if no_gap {
+                continue;
+            }
+            // Hydrated but legitimately empty (no detail record exists) —
+            // don't re-fetch until a refresh clears the settled set.
+            if dio_inner
+                .augment_settled_empty
+                .lock()
+                .unwrap()
+                .contains(&id)
+            {
                 continue;
             }
         }
@@ -631,7 +658,7 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
 /// stamp — their visible set is re-derived wholesale, same as the old inline
 /// pass.
 pub(crate) fn mark_detail_failed(state: &Arc<TableSceneryState>, id: &str, error: &str) {
-    if state.local_refine {
+    if state.local_refine() {
         return;
     }
     let Some(i) = state.id_to_idx.read().unwrap().get(id).copied() else {
