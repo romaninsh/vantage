@@ -126,13 +126,7 @@ impl SpacetimeTableShell {
     fn narrowing(&self) -> Result<Vec<Cond>> {
         self.conditions
             .iter()
-            .map(|c| {
-                Cond::new(
-                    Ident::new(&c.field)?,
-                    c.op,
-                    Literal::from_cbor(&c.value)?,
-                )
-            })
+            .map(|c| Cond::new(Ident::new(&c.field)?, c.op, Literal::from_cbor(&c.value)?))
             .collect()
     }
 
@@ -189,7 +183,9 @@ impl SpacetimeTableShell {
         let decoded = decode_sql_response(&body)?;
         let mut out = Vec::with_capacity(decoded.rows.len());
         for row in &decoded.rows {
-            let record = row_to_record(&decoded.columns, row);
+            // The response's own schema, not the table's: a projection returns
+            // fewer columns than the row type declares.
+            let record = row_to_record(&decoded.columns, &decoded.schema, row);
             out.push((self.row_id(&record, row)?, record));
         }
         Ok(out)
@@ -643,7 +639,9 @@ fn decode_all(
     let mut out = Vec::with_capacity(rows.len());
     for bytes in rows {
         let value = crate::client::ws::decode_row(bytes, row_type)?;
-        let record = row_to_record(columns, &value);
+        // A pushed row is always the whole row, so the table's own type is the
+        // right one to render it against.
+        let record = row_to_record(columns, row_type, &value);
         let id = match identity.column() {
             Some(column) => record.get(column).map(cbor_to_id).ok_or_else(|| {
                 error!(

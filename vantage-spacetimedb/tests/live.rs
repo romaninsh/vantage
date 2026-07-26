@@ -124,7 +124,7 @@ async fn decodes_real_rows_from_the_cardroom_module() {
         "cardroom should have a game by now"
     );
 
-    let record = row_to_record(&decoded.columns, &decoded.rows[0]);
+    let record = row_to_record(&decoded.columns, &decoded.schema, &decoded.rows[0]);
     assert!(matches!(record["status"], ciborium::Value::Text(_)));
     // Either a seat number or null — never a raw tagged array.
     assert!(
@@ -153,7 +153,7 @@ async fn identities_render_as_hex_not_nested_arrays() {
     let decoded = decode_sql_response(&body).unwrap();
     assert!(!decoded.rows.is_empty(), "cardroom should have accounts");
 
-    let record = row_to_record(&decoded.columns, &decoded.rows[0]);
+    let record = row_to_record(&decoded.columns, &decoded.schema, &decoded.rows[0]);
     // `Identity` is a one-field product wrapping a u256; a grid needs the hex
     // string every other SpacetimeDB tool prints, not a nested structure.
     match &record["identity"] {

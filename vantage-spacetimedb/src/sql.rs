@@ -61,11 +61,13 @@ impl Ident {
                 name = name.to_string()
             ));
         }
-        Ok(Self(if name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-            name.to_string()
-        } else {
-            format!("\"{name}\"")
-        }))
+        Ok(Self(
+            if name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                name.to_string()
+            } else {
+                format!("\"{name}\"")
+            },
+        ))
     }
 
     fn as_str(&self) -> &str {
@@ -166,12 +168,10 @@ impl Literal {
                     id = id.to_string()
                 )
             }),
-            Some(ty) if ty.is_float() => id.parse::<f64>().map(Self::float).map_err(|_| {
-                error!(
-                    "id is not a number, but its column is",
-                    id = id.to_string()
-                )
-            }),
+            Some(ty) if ty.is_float() => id
+                .parse::<f64>()
+                .map(Self::float)
+                .map_err(|_| error!("id is not a number, but its column is", id = id.to_string())),
             // Identity, ConnectionId and the other special products are hex.
             Some(ty) if ty.is_special() => Self::hex(id),
             _ => Self::text(id),
@@ -489,13 +489,17 @@ mod tests {
     fn an_id_is_rendered_for_its_declared_column_type() {
         // Numeric column, numeric id: bare, so it matches a u64 key.
         assert_eq!(
-            Literal::for_id(Some(&AlgebraicType::U64), "42").unwrap().as_str(),
+            Literal::for_id(Some(&AlgebraicType::U64), "42")
+                .unwrap()
+                .as_str(),
             "42"
         );
         // Text column, numeric-looking id: still quoted. Guessing from the shape
         // emitted this bare, and it matched nothing.
         assert_eq!(
-            Literal::for_id(Some(&AlgebraicType::String), "42").unwrap().as_str(),
+            Literal::for_id(Some(&AlgebraicType::String), "42")
+                .unwrap()
+                .as_str(),
             "'42'"
         );
         // Text column, hex-looking id: likewise quoted rather than injected.
