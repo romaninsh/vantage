@@ -49,7 +49,10 @@ async fn changes_arrive_without_polling() {
     // `game_event` grows every time a hand progresses, so a live game produces
     // inserts on its own.
     let mut factory = db().vista_factory();
-    let vista = factory.from_relation("game_event").await.expect("build vista");
+    let vista = factory
+        .from_relation("game_event")
+        .await
+        .expect("build vista");
     let mut stream = vista.watch().await.expect("subscribe");
 
     // Drain the initial state, then wait for something genuinely new.
@@ -58,9 +61,7 @@ async fn changes_arrive_without_polling() {
     let mut live_change = None;
 
     while tokio::time::Instant::now() < deadline {
-        let Ok(Some(change)) =
-            tokio::time::timeout_at(deadline, stream.next()).await
-        else {
+        let Ok(Some(change)) = tokio::time::timeout_at(deadline, stream.next()).await else {
             break;
         };
         let change = change.expect("no stream errors");

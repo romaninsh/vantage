@@ -179,6 +179,10 @@ fn no_table_in_the_smoke_module_is_an_event_table() {
     // later fixture gains one, the difference is visible.
     let schema = ModuleSchema::from_v10_json(V10).unwrap();
     for (name, table) in &schema.tables {
-        assert_ne!(table.kind, TableKind::Event, "{name} should not be an event table");
+        assert_ne!(
+            table.kind,
+            TableKind::Event,
+            "{name} should not be an event table"
+        );
     }
 }

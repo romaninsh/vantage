@@ -107,13 +107,16 @@ impl SpacetimeDb {
         match self.schema_at(SchemaVersion::V10).await {
             Ok(schema) => Ok(schema),
             Err(v10_error) => {
-                let schema = self.schema_at(SchemaVersion::V9).await.map_err(|v9_error| {
-                    error!(
-                        "could not read the SpacetimeDB module schema at either ABI version",
-                        v10_error = v10_error.to_string(),
-                        v9_error = v9_error.to_string()
-                    )
-                })?;
+                let schema = self
+                    .schema_at(SchemaVersion::V9)
+                    .await
+                    .map_err(|v9_error| {
+                        error!(
+                            "could not read the SpacetimeDB module schema at either ABI version",
+                            v10_error = v10_error.to_string(),
+                            v9_error = v9_error.to_string()
+                        )
+                    })?;
                 tracing_warn_v9_fallback(&v10_error);
                 Ok(schema)
             }

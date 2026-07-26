@@ -29,10 +29,17 @@ Every backend answers two questions, and the pair decides what you get:
 Fine push is the only model where a change costs you no query. Coarse push still beats polling: you
 re-read *because something happened*, not on the off-chance.
 
+There is a fourth position, currently held by one backend. Fine push still leaves a question open —
+*does this row belong in my filtered set?* — because a driver that watches the whole table will hand
+you rows your conditions exclude. **Filtered fine push** closes it: the conditions go into the
+subscription itself and the database maintains the result incrementally, so a row that changes *out*
+of the set arrives as a delete. Membership stops being something anyone has to reconcile.
+
 ## What each backend delivers today
 
 | Backend        | Mechanism                              | Model       | Setup required                          |
 | -------------- | -------------------------------------- | ----------- | --------------------------------------- |
+| SpacetimeDB    | subscription over WebSocket (BSATN)    | filtered fine push | none                             |
 | SurrealDB      | `LIVE SELECT` over WebSocket           | fine push   | none — but the URL must be `ws://`/`wss://` |
 | PostgreSQL     | `LISTEN/NOTIFY` on `{table}_changed`   | coarse push | a trigger **and** an explicit opt-in    |
 | SQLite         | —                                      | poll        | —                                       |
@@ -45,7 +52,7 @@ re-read *because something happened*, not on the off-chance.
 | CLI tools      | —                                      | poll        | —                                       |
 | Append logs    | — (write-only sink)                    | n/a         | —                                       |
 
-Only two drivers implement `watch_vista` at all. Everything in the poll rows inherits the trait
+Only three drivers implement `watch_vista` at all. Everything in the poll rows inherits the trait
 default, which reports the capability as unsupported and leaves
 [`can_subscribe`](vantage_vista::VistaCapabilities) `false` — so `dio.watch()` on those is a no-op
 and a `refresh_every` timer carries the load.
@@ -54,6 +61,30 @@ and a `refresh_every` timer carries the load.
 A polled backend is not broken, and you do not need different application code for it. The Lens keeps
 its `refresh_every`, the scenery is content-aware, and an unchanged re-read bumps no generation and
 repaints nothing. The cost is latency and a query you didn't strictly need — not correctness.
+```
+
+## SpacetimeDB — filtered fine push, no setup
+
+SpacetimeDB is a database that is also the application server: a WASM module holding the schema and
+the reducers runs inside it, and the client's normal way to read anything is to subscribe. Push is
+not a feature bolted on beside queries; it is the product.
+
+The driver sends the Vista's own conditions as the subscription query, so the server evaluates them
+and only matching rows are ever transmitted. Because it maintains that result incrementally, a row
+that changes so it *no longer* matches arrives as a delete — you are told the row left, not merely
+that something happened. That is why this is the only row in the table where set membership needs no
+reconciliation from anyone: not a re-read per notification as SurrealDB does, and not a whole-set
+reload as Postgres does.
+
+Nothing needs installing or enabling. There is no trigger, no extension, no opt-in flag — which is
+why `can_subscribe` is simply `true` rather than something you have to declare.
+
+```admonish note title="This backend gives you less everywhere else"
+The trade is real and worth stating. SpacetimeDB's SQL has no `ORDER BY`, `OFFSET`, `GROUP BY`, `IN`
+or `LIKE`, and the driver does not emulate them — a grid over a SpacetimeDB table shows rows in the
+server's natural order and its sort headers are inert. Aggregates for a chart have to be materialised
+by the module into a rollup table or computed in a view. You are choosing a backend that pushes
+beautifully and queries narrowly.
 ```
 
 ## SurrealDB — fine push, no setup

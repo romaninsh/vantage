@@ -79,7 +79,10 @@ async fn a_row_can_be_updated_and_read_back() {
     let original = before["turn_timeout_secs"].clone();
 
     let mut patch = vantage_types::Record::new();
-    patch.insert("turn_timeout_secs".into(), ciborium::Value::Integer(21.into()));
+    patch.insert(
+        "turn_timeout_secs".into(),
+        ciborium::Value::Integer(21.into()),
+    );
     let after = vista
         .patch_value(id.clone(), &patch)
         .await
@@ -151,5 +154,8 @@ async fn a_write_is_visible_on_the_change_feed() {
 
     let mut restore = vantage_types::Record::new();
     restore.insert("starting_capital".into(), original.clone());
-    vista.patch_value(id.clone(), &restore).await.expect("restore");
+    vista
+        .patch_value(id.clone(), &restore)
+        .await
+        .expect("restore");
 }

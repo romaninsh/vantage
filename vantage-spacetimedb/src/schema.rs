@@ -231,8 +231,8 @@ impl ModuleSchema {
             }
         }
 
-        let typespace = typespace
-            .ok_or_else(|| error!("SpacetimeDB v10 schema has no Typespace section"))?;
+        let typespace =
+            typespace.ok_or_else(|| error!("SpacetimeDB v10 schema has no Typespace section"))?;
 
         for table in raw_tables {
             let name = table.source_name.to_string();
@@ -419,8 +419,14 @@ fn from_sats_json<T>(json: &str, label: &str) -> Result<T>
 where
     for<'de> spacetimedb_sats::serde::SerdeWrapper<T>: serde::Deserialize<'de>,
 {
-    let wrapper: spacetimedb_sats::serde::SerdeWrapper<T> = serde_json::from_str(json)
-        .map_err(|e| error!("could not decode SpacetimeDB module schema", version = label, error = e.to_string()))?;
+    let wrapper: spacetimedb_sats::serde::SerdeWrapper<T> =
+        serde_json::from_str(json).map_err(|e| {
+            error!(
+                "could not decode SpacetimeDB module schema",
+                version = label,
+                error = e.to_string()
+            )
+        })?;
     Ok(wrapper.0)
 }
 
@@ -485,7 +491,9 @@ fn unique_col_names_v9(
         .constraints
         .iter()
         .filter_map(|c| match &c.data {
-            RawConstraintDataV9::Unique(u) => single_col_name(columns, u.columns.iter().map(|c| c.idx())),
+            RawConstraintDataV9::Unique(u) => {
+                single_col_name(columns, u.columns.iter().map(|c| c.idx()))
+            }
             _ => None,
         })
         .collect()

@@ -18,7 +18,10 @@ fn db() -> SpacetimeDb {
 #[ignore = "needs a running SpacetimeDB host with the `cardroom` module published"]
 async fn a_table_reads_and_counts_through_the_vista_facade() {
     let mut factory = db().vista_factory();
-    let vista = factory.from_relation("account").await.expect("build account vista");
+    let vista = factory
+        .from_relation("account")
+        .await
+        .expect("build account vista");
 
     let rows = vista.list_values().await.expect("list");
     assert!(!rows.is_empty(), "cardroom should have accounts");
@@ -40,7 +43,10 @@ async fn a_table_reads_and_counts_through_the_vista_facade() {
 #[ignore = "needs a running SpacetimeDB host with the `cardroom` module published"]
 async fn conditions_are_pushed_into_the_server_s_where_clause() {
     let mut factory = db().vista_factory();
-    let mut vista = factory.from_relation("game").await.expect("build game vista");
+    let mut vista = factory
+        .from_relation("game")
+        .await
+        .expect("build game vista");
 
     let all = vista.get_count().await.expect("count all");
     vista
@@ -101,7 +107,10 @@ async fn a_view_reads_but_is_never_writable() {
     assert!(caps.can_subscribe, "views are subscribable");
     assert!(!caps.can_insert && !caps.can_update && !caps.can_delete);
 
-    let rows = vista.list_values().await.expect("a view lists like a table");
+    let rows = vista
+        .list_values()
+        .await
+        .expect("a view lists like a table");
     assert!(!rows.is_empty(), "top_players should rank the accounts");
 }
 
@@ -126,7 +135,10 @@ async fn keyless_rows_get_a_stable_content_hash_id() {
     // `game_event` has a primary key, so use it to prove keyed ids are stable
     // across two independent reads — the property the change feed will rely on.
     let mut factory = db().vista_factory();
-    let vista = factory.from_relation("game_event").await.expect("build vista");
+    let vista = factory
+        .from_relation("game_event")
+        .await
+        .expect("build vista");
 
     let first: Vec<String> = vista.list_values().await.unwrap().keys().cloned().collect();
     let second: Vec<String> = vista.list_values().await.unwrap().keys().cloned().collect();

@@ -25,7 +25,10 @@ fn db() -> SpacetimeDb {
 #[tokio::test]
 #[ignore = "needs a running SpacetimeDB host with the `smoke` module published"]
 async fn reads_the_module_schema_from_a_live_host() {
-    let schema = db().module_schema().await.expect("schema should be readable");
+    let schema = db()
+        .module_schema()
+        .await
+        .expect("schema should be readable");
 
     // The negotiation should land on v10 against a current host — which is the
     // only version that can report event tables.
@@ -114,13 +117,13 @@ async fn decodes_real_rows_from_the_cardroom_module() {
         ["game_id", "status", "pot", "to_act_seat"],
         "column names come from the schema, in declaration order"
     );
-    assert!(!decoded.rows.is_empty(), "cardroom should have a game by now");
+    assert!(
+        !decoded.rows.is_empty(),
+        "cardroom should have a game by now"
+    );
 
     let record = row_to_record(&decoded.columns, &decoded.rows[0]);
-    assert!(matches!(
-        record["status"],
-        ciborium::Value::Text(_)
-    ));
+    assert!(matches!(record["status"], ciborium::Value::Text(_)));
     // Either a seat number or null — never a raw tagged array.
     assert!(
         matches!(

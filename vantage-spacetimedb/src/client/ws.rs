@@ -87,10 +87,13 @@ pub(crate) async fn subscribe(
     table: String,
 ) -> Result<Subscription> {
     let ws_url = websocket_url(&inner.base_url, &inner.database);
-    let mut request = ws_url
-        .as_str()
-        .into_client_request()
-        .map_err(|e| error!("invalid SpacetimeDB WebSocket URL", url = ws_url.clone(), error = e.to_string()))?;
+    let mut request = ws_url.as_str().into_client_request().map_err(|e| {
+        error!(
+            "invalid SpacetimeDB WebSocket URL",
+            url = ws_url.clone(),
+            error = e.to_string()
+        )
+    })?;
 
     request.headers_mut().insert(
         SEC_WEBSOCKET_PROTOCOL,
@@ -126,7 +129,7 @@ pub(crate) async fn subscribe(
     let payload = spacetimedb_sats::bsatn::to_vec(&subscribe)
         .map_err(|e| error!("could not encode Subscribe", error = e.to_string()))?;
     socket
-        .send(Message::Binary(payload.into()))
+        .send(Message::Binary(payload))
         .await
         .map_err(|e| error!("could not send Subscribe", error = e.to_string()))?;
 

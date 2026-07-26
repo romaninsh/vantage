@@ -378,7 +378,11 @@ impl TableShell for SpacetimeTableShell {
 
         if assignments.is_empty() {
             return self.get_vista_value(vista, id).await?.ok_or_else(|| {
-                error!("no such row", table = self.relation.clone(), id = id.clone())
+                error!(
+                    "no such row",
+                    table = self.relation.clone(),
+                    id = id.clone()
+                )
             });
         }
 
@@ -645,10 +649,10 @@ fn sql_literal(value: &CborValue) -> Result<String> {
         CborValue::Float(f) => f.to_string(),
         CborValue::Text(s) => format!("'{}'", s.replace('\'', "''")),
         CborValue::Null => {
-            return Err(error!(
-                "SpacetimeDB SQL has no null literal to compare against"
-            )
-            .mark_unimplemented());
+            return Err(
+                error!("SpacetimeDB SQL has no null literal to compare against")
+                    .mark_unimplemented(),
+            );
         }
         other => {
             return Err(error!(
