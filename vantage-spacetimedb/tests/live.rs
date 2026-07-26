@@ -90,3 +90,69 @@ async fn a_missing_database_says_so_usefully() {
         "error should hint at the cause: {text}"
     );
 }
+
+#[tokio::test]
+#[ignore = "needs a running SpacetimeDB host with the `cardroom` module published"]
+async fn decodes_real_rows_from_the_cardroom_module() {
+    use vantage_spacetimedb::value::{decode_sql_response, row_to_record};
+
+    let db = SpacetimeDb::new(
+        std::env::var("SPACETIMEDB_URL").unwrap_or_else(|_| "http://127.0.0.1:3000".into()),
+        "cardroom",
+    );
+
+    // `to_act_seat` is an `Option<u64>`, which is exactly the case that cannot be
+    // decoded without the schema: `[0, 1]` is `Some(1)`, not a two-element array.
+    let body = db
+        .sql("SELECT game_id, status, pot, to_act_seat FROM game")
+        .await
+        .expect("query should succeed");
+    let decoded = decode_sql_response(&body).expect("rows should decode");
+
+    assert_eq!(
+        decoded.columns,
+        ["game_id", "status", "pot", "to_act_seat"],
+        "column names come from the schema, in declaration order"
+    );
+    assert!(!decoded.rows.is_empty(), "cardroom should have a game by now");
+
+    let record = row_to_record(&decoded.columns, &decoded.rows[0]);
+    assert!(matches!(
+        record["status"],
+        ciborium::Value::Text(_)
+    ));
+    // Either a seat number or null — never a raw tagged array.
+    assert!(
+        matches!(
+            record["to_act_seat"],
+            ciborium::Value::Integer(_) | ciborium::Value::Null
+        ),
+        "Option must unwrap, got {:?}",
+        record["to_act_seat"]
+    );
+}
+
+#[tokio::test]
+#[ignore = "needs a running SpacetimeDB host with the `cardroom` module published"]
+async fn identities_render_as_hex_not_nested_arrays() {
+    use vantage_spacetimedb::value::{decode_sql_response, row_to_record};
+
+    let db = SpacetimeDb::new(
+        std::env::var("SPACETIMEDB_URL").unwrap_or_else(|_| "http://127.0.0.1:3000".into()),
+        "cardroom",
+    );
+    let body = db
+        .sql("SELECT identity, handle, bankroll FROM account")
+        .await
+        .expect("query should succeed");
+    let decoded = decode_sql_response(&body).unwrap();
+    assert!(!decoded.rows.is_empty(), "cardroom should have accounts");
+
+    let record = row_to_record(&decoded.columns, &decoded.rows[0]);
+    // `Identity` is a one-field product wrapping a u256; a grid needs the hex
+    // string every other SpacetimeDB tool prints, not a nested structure.
+    match &record["identity"] {
+        ciborium::Value::Text(s) => assert!(s.starts_with("0x"), "expected hex, got {s}"),
+        other => panic!("identity should render as hex text, got {other:?}"),
+    }
+}

@@ -37,6 +37,7 @@
 
 pub mod client;
 pub mod schema;
+pub mod value;
 
 pub use client::SpacetimeDb;
 pub use schema::{ModuleSchema, SchemaVersion};

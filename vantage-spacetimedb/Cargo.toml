@@ -32,7 +32,10 @@ reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
 ] }
 serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["preserve_order"] }
+# `raw_value` lets a row be kept as un-decoded JSON text and handed to the
+# schema-seeded deserializer, which is the only way to read a positional row
+# correctly (see `value.rs`).
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 indexmap = { version = "2", features = ["serde"] }
 async-trait = "0.1"
 tokio = { version = "1", features = ["rt", "macros", "sync"] }
