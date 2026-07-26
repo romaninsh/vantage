@@ -36,7 +36,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-3a53d5c2.js";
+            window.path_to_searchindex_js = "../searchindex-48945cb6.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-249b33b5.js"></script>
@@ -737,6 +737,29 @@ overridden where the backend has a native fast path.</li>
 <li><code>capabilities()</code> returns a <code>VistaCapabilities</code> whose <code>true</code> flags exactly match the methods
 you actually overrode.</li>
 </ul>
+</li>
+<li>
+<p><strong>Live subscription</strong> (optional) — <code>watch_vista</code> plus <code>can_subscribe</code>, if the backend can push
+changes at all. Four promises bind every implementation:</p>
+<ul>
+<li>The stream <strong>may be coarser than the vista</strong>. Subscribing table-wide and letting the consumer
+discard the rest is a legitimate v1; callers always pass the full vista and never depend on
+how narrowly you filter, so you can tighten scope later without breaking them.</li>
+<li><strong>Rows you push may fall outside the vista’s conditions</strong>, precisely because of the above.
+Either reconcile in the driver — SurrealDB re-reads each notified id <em>through</em> the conditions,
+so a row that no longer matches surfaces as <code>Deleted</code> — or leave it to the consumer, but say
+which in your docs.</li>
+<li><code>VistaChange::Invalidated</code> means <strong>“re-read everything”</strong>. Emit it when you have a signal but
+no payload; Postgres <code>LISTEN/NOTIFY</code> has nothing else to offer.</li>
+<li><strong>Ending the stream is normal.</strong> Consumers resubscribe with backoff and reconcile the gap, so
+you need no internal reconnect loop.</li>
+</ul>
+<p>Advertise <code>can_subscribe</code> only when the feed works with <strong>no further setup</strong>, or when the
+application has explicitly declared that setup exists. Postgres is the cautionary case: <code>LISTEN</code>
+succeeds on a channel no trigger ever feeds, so its capability is opt-in
+(<code>PostgresVistaFactory::with_notify</code>) rather than inferred from the table being writable. A flag
+left <code>true</code> over a permanently silent stream is worse than one left <code>false</code> — consumers cannot
+tell it apart from an idle table.</p>
 </li>
 <li>
 <p><strong>YAML extras</strong> under <code>spec.rs</code>:</p>

@@ -36,7 +36,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-3a53d5c2.js";
+            window.path_to_searchindex_js = "../searchindex-48945cb6.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-249b33b5.js"></script>
@@ -207,6 +207,23 @@ sqlx::query(
 <p><code>FOR EACH STATEMENT</code> fires the notify once per statement, not per row — a single “something
 changed” ping is all the Dio needs to reconcile. The payload is empty on purpose (more on that
 below).</p>
+<h2 id="tell-the-vista-the-trigger-exists"><a class="header" href="#tell-the-vista-the-trigger-exists">Tell the Vista the trigger exists</a></h2>
+<p>Postgres offers no way to ask “is anything going to notify me on this channel?” — <code>LISTEN</code> on a
+channel nobody feeds succeeds and then waits forever. A Vista that assumed it could push just
+because the table is writable would advertise a feed that may never arrive, and no consumer could
+tell the difference between that and a quiet table. So the application, which is the only party
+that knows, says so:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut master = db
+    .vista_factory()
+    .with_notify(true)   // we installed product_notify_trg above
+    .from_table(Product::table(db.clone()))?;
+<span class="boring">}</span></code></pre>
+<p>That one call is what makes <code>can_watch()</code> answer <code>true</code> in the next section. Leave it off and
+<code>dio.watch()</code> becomes a no-op — which matters here, because this chapter is about to <em>delete</em> the
+refresh timer. Push and a <code>refresh_every</code> poll are the two ways the cache learns about a write; an
+app that declines both never updates.</p>
 <h2 id="one-line-replaces-the-poll"><a class="header" href="#one-line-replaces-the-poll">One line replaces the poll</a></h2>
 <p>The server builds the Dio exactly as before — an eager in-memory cache, an <code>on_start</code> that loads it
 and an <code>on_refresh</code> that reloads it — but with <strong>no</strong> <code>refresh_every</code>. Instead:</p>
@@ -220,10 +237,11 @@ and an <code>on_refresh</code> that reloads it — but with <strong>no</strong> 
 dio.watch().await?;
 <span class="boring">}</span></code></pre>
 <p>That is the whole change. <a href="https://docs.rs/vantage-diorama"><code>Dio::watch()</code></a> asks the master Vista
-whether it can push (<code>Vista::can_watch()</code>); the Postgres Vista answers yes and opens a <code>PgListener</code>
-on the <code>product_changed</code> channel. Each notification drives one reconcile. If the backend <em>couldn’t</em>
-push, <code>watch()</code> would be a no-op and a <code>refresh_every</code> timer would carry the load instead — the same
-call is correct either way, which is the point of the capability.</p>
+whether it can push (<code>Vista::can_watch()</code>); because we opted in above, the Postgres Vista answers
+yes and opens a <code>PgListener</code> on the <code>product_changed</code> channel. Each notification drives one
+reconcile. If the backend <em>couldn’t</em> push, <code>watch()</code> would be a no-op and a <code>refresh_every</code> timer
+would carry the load instead — the same call is correct either way, which is the point of the
+capability.</p>
 <div id="admonition-the-server-still-never-writes" class="admonition admonish-note" role="note" aria-labelledby="admonition-the-server-still-never-writes-title">
 <div class="admonition-title">
 <div id="admonition-the-server-still-never-writes-title">
