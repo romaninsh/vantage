@@ -207,10 +207,16 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
         }
     };
 
+    // An eager lens holds every row already, so it registers no
+    // `on_load_chunk` — a viewport it can't page for is its steady state,
+    // not a fault. Logged at DEBUG like the fully-cached skip above:
+    // anything that re-drives the viewport on a timer (a relation list's
+    // periodic re-pull, `refresh_loaded_viewport`) would otherwise emit a
+    // warning per tick, forever.
     let cb = match dio_inner.lens.callbacks.on_load_chunk.as_ref() {
         Some(cb) => cb,
         None => {
-            tracing::warn!(
+            tracing::debug!(
                 target: "vantage_diorama::viewport",
                 visible = ?visible,
                 "fire_chunk_load: SKIP (no on_load_chunk callback)",

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.2 — 2026-07-25
+
+- **Viewport skip logging** — `fire_chunk_load`'s "no `on_load_chunk`
+  callback" skip drops from WARN to DEBUG, matching the "visible fully
+  cached" skip beside it. An eager lens holds every row and registers no
+  chunk callback, so a viewport it can't page for is a steady state, not
+  a fault; any consumer that re-drives the viewport on a timer (a
+  relation list's periodic re-pull, `refresh_loaded_viewport`) emitted
+  one warning per tick indefinitely. No behaviour change — the skip
+  itself is untouched.
+
 ## 0.8.0 — 2026-07-24
 
 Breaking: the servo becomes a **change draft**, structured save
