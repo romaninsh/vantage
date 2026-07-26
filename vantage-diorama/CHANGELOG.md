@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.3 — 2026-07-26
+
+- **`CacheBackend::list_tables` / `drop_table`** — enumerate the tables inside a
+  backend, and reclaim one by name. Both carry defaults (empty list, no-op), so
+  existing backends compile and behave unchanged; `RedbCache` and `MemoryCache`
+  implement them for real.
+
+  These exist for consumers that keep every query variant of a datasource in one
+  file, one table per variant, rather than encoding the variant in a filename.
+  That shape needs a way to find and drop variants that fall out of use —
+  otherwise a name nothing asks for again is simply orphaned. `drop_table` also
+  forgets the memoized handle, so reopening the name yields a fresh table
+  instead of one pointing at deleted rows. A table opened but never written to
+  does not exist yet and is not listed.
+
 ## 0.8.2 — 2026-07-25
 
 - **Viewport skip logging** — `fire_chunk_load`'s "no `on_load_chunk`

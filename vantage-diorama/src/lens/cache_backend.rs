@@ -17,6 +17,27 @@ pub trait CacheBackend: Send + Sync + 'static {
     /// memoize so repeat calls for the same name return the same Arc.
     async fn open_table(&self, name: &str) -> Result<Arc<dyn CacheTable>>;
 
+    /// Every table currently present in the backend.
+    ///
+    /// The counterpart to [`drop_table`](Self::drop_table): a consumer that
+    /// encodes query variants (or a config epoch) into the *table* name needs
+    /// to enumerate what is there to know what is stale. Backends that cannot
+    /// enumerate return an empty list, which reads as "nothing to reclaim" —
+    /// safe, because the only caller is a sweep.
+    async fn list_tables(&self) -> Result<Vec<String>> {
+        Ok(Vec::new())
+    }
+
+    /// Remove a table and its rows entirely.
+    ///
+    /// Distinct from [`CacheTable::clear`], which empties a table that stays
+    /// open: this reclaims the name. Dropping a table that does not exist is
+    /// not an error. Backends that cannot drop leave the default no-op — the
+    /// rows simply stay, which costs space but is never incorrect.
+    async fn drop_table(&self, _name: &str) -> Result<()> {
+        Ok(())
+    }
+
     /// Short human label for diagnostics (`"redb"`, `"memory"`).
     fn name(&self) -> &'static str {
         "unknown"
