@@ -328,11 +328,28 @@ impl TableSceneryBuilder {
             // A hybrid lens that DOES warm via `on_start` (cache seeded in the
             // master's list order) still reseeds below, so its cache-aware
             // "skip already-loaded ranges" optimisation is preserved.
+            //
+            // This is the single most expensive decision an open makes, and it
+            // is invisible without saying so: a warm cache sitting unused looks
+            // exactly like a cold one from the outside.
+            tracing::info!(
+                target: "vantage_diorama::cache",
+                table = %dio.master.read().unwrap().name(),
+                cached_rows = dio.cache.count().await.unwrap_or(0),
+                "cache NOT seeded — paged lens; rows come from the master in its \
+                 own order, so the on-open fetch is authoritative",
+            );
             state.bump_generation();
         } else {
             // Eager single-pass (or `on_start`-warmed hybrid): the cache IS the
             // row set; seed (and order) from it directly.
             state.reseed_from_cache().await?;
+            tracing::info!(
+                target: "vantage_diorama::cache",
+                table = %dio.master.read().unwrap().name(),
+                seeded_rows = state.rows.read().unwrap().len(),
+                "cache seeded the visible map",
+            );
             state.bump_generation();
         }
 
@@ -370,6 +387,17 @@ impl TableSceneryBuilder {
             && dio.lens.callbacks.on_load_chunk.is_some()
         {
             let range = initial_range.unwrap_or(0..page_size);
+            // `force_load` means this fetch runs even when the cache already
+            // covers the range — i.e. opening ALWAYS goes to the master. That
+            // is the other half of why a warm cache saves nothing here.
+            tracing::info!(
+                target: "vantage_diorama::cache",
+                table = %dio.master.read().unwrap().name(),
+                ?range,
+                cached_rows = dio.cache.count().await.unwrap_or(0),
+                "on-open fetch scheduled (force_load) — the master is consulted \
+                 regardless of what the cache holds",
+            );
             enqueue_viewport(
                 &state,
                 ViewportRequest {

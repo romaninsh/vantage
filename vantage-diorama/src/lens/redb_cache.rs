@@ -95,6 +95,40 @@ impl RedbCache {
 
 #[async_trait]
 impl CacheBackend for RedbCache {
+    /// Mark the file cleanly closed so the next open skips the repair scan.
+    ///
+    /// redb records this when the `Database` drops — which, in a GUI process
+    /// that exits through the platform's quit path, may never happen: the
+    /// handle is reachable from long-lived state whose destructors don't run.
+    /// The symptom is a full-file scan on **every** launch, growing with the
+    /// cache, and it is invisible except as a slow start.
+    ///
+    /// An empty write transaction is enough: committing it durably records a
+    /// clean state without touching any table, so this is safe to call while
+    /// readers still hold tables.
+    async fn close(&self) {
+        let closed = self
+            .db
+            .begin_write()
+            .map_err(|e| e.to_string())
+            .and_then(|txn| txn.commit().map_err(|e| e.to_string()));
+        match closed {
+            Ok(()) => tracing::debug!(
+                target: "vantage_diorama::cache",
+                path = ?self.path,
+                "cache closed cleanly",
+            ),
+            // Losing the marker costs a repair scan next time, not data —
+            // never worth failing a shutdown over.
+            Err(e) => tracing::warn!(
+                target: "vantage_diorama::cache",
+                path = ?self.path,
+                error = %e,
+                "could not mark the cache cleanly closed — next open will repair",
+            ),
+        }
+    }
+
     async fn open_table(&self, name: &str) -> Result<Arc<dyn CacheTable>> {
         let mut opened = self.opened.lock().expect("RedbCache mutex poisoned");
         if let Some(existing) = opened.get(name) {

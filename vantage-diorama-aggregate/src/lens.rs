@@ -90,6 +90,15 @@ impl AggregateLens {
         }
     }
 
+    /// Close the aggregate cache cleanly, before the process exits.
+    ///
+    /// Derived results are reproducible, so losing this file costs only a warm
+    /// start — but an unclean close costs a full-file repair scan on every
+    /// launch afterwards, which is worse than the thing the cache buys.
+    pub async fn close(&self) {
+        self.backend.close().await;
+    }
+
     /// Drop cached aggregates whose names are no longer in use.
     ///
     /// Names encode what an aggregate *is*; when a definition changes, the old
