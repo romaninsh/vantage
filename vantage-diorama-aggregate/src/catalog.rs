@@ -17,8 +17,11 @@ use std::sync::Arc;
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
 
+use vantage_types::Record;
+use vantage_vista::Column;
+
 use crate::aggregation::{Aggregation, Rows};
-use crate::builtin::{Avg, Conditions, Count, Distinct, Max, Min, Sum, Where};
+use crate::builtin::{Avg, Conditions, Count, Distinct, GroupBy, Max, Min, Reduce, Sum, Where};
 
 /// A scalar aggregation whose concrete type isn't known until runtime.
 ///
@@ -139,6 +142,44 @@ impl AggregationCatalog {
     }
 }
 
+impl AggregationCatalog {
+    /// Build a `group_by`: one row per distinct value of `key_column`, each
+    /// carrying the key plus the named reduction over that group's rows.
+    ///
+    /// The per-group reduction is built through this same catalog, so a
+    /// grouped `sum` and a top-level `sum` cannot disagree — same reduction,
+    /// different row set — and an application-registered aggregation is
+    /// groupable the moment it is registered.
+    pub fn group_by(
+        &self,
+        key_column: impl Into<String>,
+        op: &str,
+        alias: impl Into<String>,
+        spec: AggregationSpec,
+    ) -> Result<GroupBy<Reduce<impl Fn(&CborValue, &[&Record<CborValue>]) -> Record<CborValue> + Send + Sync + 'static>>>
+    {
+        let alias = alias.into();
+        // Built once, up front: a bad declaration must surface now, not once
+        // per group on every recomputation.
+        let reduction = self.build(op, spec)?;
+        let out_name = alias.clone();
+        let columns = vec![Column::new(alias, "f64")];
+        Ok(GroupBy::column(
+            key_column,
+            Reduce::new(columns, move |_key, members| {
+                let rows: Rows = members
+                    .iter()
+                    .enumerate()
+                    .map(|(i, record)| (i.to_string(), (*record).clone()))
+                    .collect();
+                let mut out = Record::new();
+                out.insert(out_name.clone(), reduction.compute(&rows));
+                out
+            }),
+        ))
+    }
+}
+
 impl Default for AggregationCatalog {
     fn default() -> Self {
         Self::with_builtins()
@@ -226,6 +267,53 @@ mod tests {
             .build("always_seven", spec(None, Conditions::new()))
             .unwrap();
         assert_eq!(agg.compute(&rows()), CborValue::Integer(7.into()));
+    }
+
+    /// Grouping routes through the same catalog as a top-level reduction, so
+    /// the groups must add up to the whole. If these ever diverge, two copies
+    /// of "sum" have appeared.
+    #[test]
+    fn the_groups_agree_with_the_ungrouped_reduction() {
+        let catalog = AggregationCatalog::with_builtins();
+        let grouped = catalog
+            .group_by(
+                "Event",
+                "sum",
+                "bytes",
+                spec(Some("Size"), Conditions::new()),
+            )
+            .unwrap()
+            .compute(&rows());
+        let total = catalog
+            .build("sum", spec(Some("Size"), Conditions::new()))
+            .unwrap()
+            .compute(&rows());
+
+        assert_eq!(grouped.len(), 2, "one row per distinct Event");
+        let summed: i64 = grouped
+            .rows
+            .iter()
+            .filter_map(|(_, row)| match row.get("bytes") {
+                Some(CborValue::Integer(i)) => Some(i128::from(*i) as i64),
+                _ => None,
+            })
+            .sum();
+        assert_eq!(CborValue::Integer(summed.into()), total);
+    }
+
+    /// The key column comes back on every row — a breakdown you can't label
+    /// isn't one.
+    #[test]
+    fn every_group_carries_its_key() {
+        let catalog = AggregationCatalog::with_builtins();
+        let grouped = catalog
+            .group_by("Event", "count", "n", spec(None, Conditions::new()))
+            .unwrap()
+            .compute(&rows());
+        for (_, row) in &grouped.rows {
+            assert!(row.get("Event").is_some(), "row without its key: {row:?}");
+            assert!(row.get("n").is_some());
+        }
     }
 
     struct Sevens;
