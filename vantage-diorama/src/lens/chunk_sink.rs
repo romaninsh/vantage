@@ -13,6 +13,10 @@ use crate::lens::cache_backend::CacheTable;
 /// state type.
 pub trait SceneryChunkTarget: Send + Sync {
     fn write_chunk_row(&self, idx: usize, id: String, record: Record<CborValue>);
+
+    /// Record the grand total a chunk fetch reported. Returns whether the
+    /// value moved, so the loader can decide to repaint.
+    fn set_chunk_total(&self, total: usize) -> bool;
 }
 
 /// Handle passed to `on_load_chunk` callbacks. Each [`push`](Self::push)
@@ -38,6 +42,21 @@ impl std::fmt::Debug for ChunkSink {
 }
 
 impl ChunkSink {
+    /// Report the grand total of matching rows, when the fetch that produced
+    /// this chunk also learned it.
+    ///
+    /// Paged sources carry the total in the same response as the window (see
+    /// [`Vista::fetch_window_counted`](vantage_vista::Vista::fetch_window_counted)),
+    /// so a lens that reads it here needs no separate `total_provider` — and
+    /// therefore no second round trip on open. Calling this is optional; a
+    /// lens that says nothing leaves the total exactly as it was.
+    pub fn set_total(&self, total: usize) {
+        let Some(target) = self.target.upgrade() else {
+            return;
+        };
+        target.set_chunk_total(total);
+    }
+
     /// Insert one row into the cache and bind it to `idx` in the
     /// scenery's sparse map. The row is visible to `row(idx)` as soon
     /// as `push` resolves, but the scenery's generation only bumps

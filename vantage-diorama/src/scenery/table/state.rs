@@ -404,6 +404,13 @@ impl TableSceneryState {
 }
 
 impl SceneryChunkTarget for TableSceneryState {
+    /// A total learned from the chunk fetch itself. This is how a paged lens
+    /// sizes the scrollbar without a `total_provider` — i.e. without a second
+    /// request on open, which is the one network call `open()` used to await.
+    fn set_chunk_total(&self, total: usize) -> bool {
+        self.set_total(Some(total))
+    }
+
     fn write_chunk_row(&self, idx: usize, id: String, record: Record<CborValue>) {
         // Count every received row (before the skips below), so the loader can
         // tell a short page (end of set) from a full one.

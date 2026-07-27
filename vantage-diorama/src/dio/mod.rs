@@ -626,6 +626,22 @@ impl Dio {
         limit: usize,
         sort: Option<(String, crate::SortDir)>,
     ) -> Result<Vec<(String, Record<CborValue>)>> {
+        Ok(self.fetch_window_ordered_counted(offset, limit, sort).await?.0)
+    }
+
+    /// [`fetch_window_ordered`](Self::fetch_window_ordered), plus the grand
+    /// total when the master reported one from the same response.
+    ///
+    /// Hand the total to [`ChunkSink::set_total`](crate::ChunkSink::set_total)
+    /// from an `on_load_chunk` callback and the lens needs no `total_provider`
+    /// — which is what takes a paged open from two round trips to one, and
+    /// leaves nothing for `open()` to await.
+    pub async fn fetch_window_ordered_counted(
+        &self,
+        offset: usize,
+        limit: usize,
+        sort: Option<(String, crate::SortDir)>,
+    ) -> Result<(Vec<(String, Record<CborValue>)>, Option<i64>)> {
         let master = self.master();
         if let Some((col, dir)) = sort
             && master.capabilities().can_order
@@ -637,9 +653,9 @@ impl Dio {
                 crate::SortDir::Desc => vantage_vista::SortDirection::Descending,
             };
             ordered.add_order(&col, vdir)?;
-            return ordered.fetch_window(offset, limit).await;
+            return ordered.fetch_window_counted(offset, limit).await;
         }
-        master.fetch_window(offset, limit).await
+        master.fetch_window_counted(offset, limit).await
     }
 
     // ---- Event bus — user-callable surface ----------------------------------

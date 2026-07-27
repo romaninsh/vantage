@@ -3,7 +3,7 @@
 use ciborium::Value as CborValue;
 
 use crate::aggregation::{Aggregation, Rows};
-use crate::cmp;
+use crate::builtin::filter::{Conditions, Where};
 
 /// Number of rows.
 ///
@@ -54,15 +54,14 @@ impl Default for CountWhere {
 impl Aggregation for CountWhere {
     type Output = CborValue;
 
+    /// Delegates to [`Where`]`<`[`Count`]`>` — the narrowing lives with the
+    /// other combinators so a filtered count and a filtered sum can never
+    /// disagree about what a term means.
     fn compute(&self, rows: &Rows) -> CborValue {
-        let count = rows
-            .values()
-            .filter(|record| {
-                self.conditions.iter().all(|(column, expected)| {
-                    cmp::column(record, column).is_some_and(|actual| actual == expected)
-                })
-            })
-            .count();
-        CborValue::Integer((count as i64).into())
+        let mut conditions = Conditions::new();
+        for (column, expected) in &self.conditions {
+            conditions = conditions.eq(column.clone(), expected.clone());
+        }
+        Where::new(conditions, Count::rows()).compute(rows)
     }
 }

@@ -295,27 +295,14 @@ impl RestApi {
     /// Fetch a single half-open row window `[offset, offset+limit)` — the
     /// primitive a paged, lazily-loaded grid drives on scroll (offset is
     /// an absolute row index, not a page number).
-    pub(crate) async fn fetch_window_records<'a>(
-        &self,
-        table_name: &str,
-        id_field: Option<&str>,
-        offset: i64,
-        limit: i64,
-        conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
-    ) -> Result<IndexMap<String, Record<CborValue>>> {
-        self.fetch_windowed(table_name, id_field, Some((offset, limit)), conditions)
-            .await
-            .map(|(records, _total)| records)
-    }
-
-    /// [`Self::fetch_window_records`], plus the envelope's `total_key` when
+    /// Fetch one half-open row window, plus the envelope's `total_key` when
     /// the response carries one.
     ///
     /// The total comes out of the **same response as the rows**. Every paged
-    /// endpoint reports it on every reply, so a caller that wants both a
-    /// window and a grand total should use this rather than pairing
-    /// `fetch_window_records` with [`Self::fetch_total`] — that pairing costs
-    /// a second round trip for a number already in hand.
+    /// endpoint reports it on every reply, so a caller wanting both a window
+    /// and a grand total takes them together here rather than pairing a
+    /// window fetch with [`Self::fetch_total`] — that pairing costs a second
+    /// round trip for a number already in hand.
     pub(crate) async fn fetch_window_records_counted<'a>(
         &self,
         table_name: &str,
@@ -784,10 +771,17 @@ mod tests {
             .expect("fetch_total");
         assert!(total.is_some_and(|n| n > 0), "expected a positive count");
 
-        let rows = api
-            .fetch_window_records("launches/?mode=detailed", Some("id"), 0, 3, [])
+        let (rows, window_total) = api
+            .fetch_window_records_counted("launches/?mode=detailed", Some("id"), 0, 3, [])
             .await
-            .expect("fetch_window_records");
+            .expect("fetch_window_records_counted");
         assert_eq!(rows.len(), 3, "expected the requested 3-row window");
+        // The whole point of the counted window: the same response that
+        // carried the rows also carried the count, so `fetch_total`'s extra
+        // round trip buys nothing a caller couldn't already have.
+        assert_eq!(
+            window_total, total,
+            "the window's envelope total should match the dedicated count",
+        );
     }
 }

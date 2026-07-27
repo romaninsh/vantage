@@ -53,6 +53,7 @@
 
 mod aggregation;
 mod builtin;
+mod catalog;
 mod cmp;
 mod derived;
 mod engine;
@@ -60,7 +61,13 @@ mod lens;
 mod value;
 
 pub use aggregation::{AggregateOutput, Aggregation, DerivedRows, Rows};
-pub use builtin::{Avg, Count, CountWhere, Distinct, GroupBy, GroupReducer, Max, Min, Reduce, Sum};
+pub use builtin::{
+    Avg, Conditions, Count, CountWhere, Distinct, GroupBy, GroupReducer, Max, Min, Reduce, Sum,
+    Where,
+};
+pub use catalog::{
+    AggregationBuilder, AggregationCatalog, AggregationSpec, ScalarAggregation,
+};
 pub use derived::DerivedDio;
 pub use lens::{AggregateLens, AggregateLensBuilder};
 pub use value::AggregateValue;

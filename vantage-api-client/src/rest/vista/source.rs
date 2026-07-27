@@ -139,15 +139,27 @@ impl TableShell for RestApiTableShell {
 
     async fn fetch_window(
         &self,
-        _vista: &Vista,
+        vista: &Vista,
         offset: usize,
         limit: usize,
     ) -> Result<Vec<(String, Record<CborValue>)>> {
+        Ok(self.fetch_window_counted(vista, offset, limit).await?.0)
+    }
+
+    /// A REST envelope reports `total_key` on every reply, so the window
+    /// fetch already knows the grand total — handing it back here is what
+    /// lets a grid size its scrollbar without a second `limit=1` request.
+    async fn fetch_window_counted(
+        &self,
+        _vista: &Vista,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<(String, Record<CborValue>)>, Option<i64>)> {
         let id_field = self.table.id_field().map(|c| c.name().to_string());
-        let records = self
+        let (records, total) = self
             .table
             .data_source()
-            .fetch_window_records(
+            .fetch_window_records_counted(
                 self.table.table_name(),
                 id_field.as_deref(),
                 offset as i64,
@@ -162,7 +174,7 @@ impl TableShell for RestApiTableShell {
         for (_, rec) in records.iter_mut() {
             self.table.apply_lazy_expressions(rec).await?;
         }
-        Ok(records)
+        Ok((records, total))
     }
 
     fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
