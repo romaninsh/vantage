@@ -28,11 +28,6 @@ tokio = { version = "1", features = ["sync", "rt", "time"] }
 tracing = "0.1"
 uuid = { version = "1", features = ["v7"] }
 
-[features]
-# Rhai-scripted augmentation sources/fetches. Flips on `vantage-vista`'s rhai
-# vocabulary; all engine assembly stays in vantage-vista (see `augment::lower`).
-rhai = ["vantage-vista/rhai"]
-
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "test-util", "sync", "time"] }

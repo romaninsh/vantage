@@ -7,13 +7,14 @@
 //! be the same Vista as the master (today's cmd two-pass) or an entirely
 //! different backend (REST master enriched by a cmd script, or vice versa).
 //!
-//! This is the runtime, closure-based form. [`AugmentSpec`] is the serde/YAML
-//! form; [`lower_augment`] turns one into the other (the only place Rhai is
-//! touched). A consumer can also build [`Augmentation`] by hand — `Source::Build`
-//! and `Fetch::Custom` take plain Rust closures.
-
-mod lower;
-mod spec;
+//! Runtime, closure-based form: consumers build an [`Augmentation`] directly —
+//! `Source::Build` and `Fetch::Custom` take plain Rust closures.
+//!
+//! There is deliberately no serde/YAML mirror of these types. One existed and
+//! nothing ever deserialized it: every consumer describes its augmentation in
+//! its own config shape and constructs [`Augmentation`] in Rust, so the spec
+//! layer was a second vocabulary for the same thing with one test as its only
+//! caller.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -26,11 +27,9 @@ use vantage_types::Record;
 use vantage_vista::{ReferenceKind, Vista};
 use vantage_vista_factory::{Relation, VistaCatalog};
 
-pub use lower::lower_augment;
-pub use spec::{AugmentSpec, FetchSpec, SetOp, SourceSpec};
-
-/// Narrow a freshly resolved `base` detail Vista for one master `row`. Produced
-/// by hand or by Rhai (via `vantage_vista::augment_source_closure`, rhai feature).
+/// Narrow a freshly resolved `base` detail Vista for one master `row`. Written
+/// by hand; a consumer wanting a scripted narrowing builds the closure itself
+/// (`vantage_vista::augment_source_closure` with vista's `rhai` feature).
 pub type BuildFn = Arc<dyn Fn(&Record<CborValue>, Vista) -> Result<Vista> + Send + Sync>;
 
 /// Pull records from a narrowed detail Vista.
@@ -55,8 +54,6 @@ pub enum Source {
 pub enum Fetch {
     /// One detail record per master row.
     PerRow,
-    /// One set query across the window's distinct keys (phase 2).
-    Batched { op: SetOp },
     /// Caller-supplied fetch.
     Custom(FetchFn),
 }
@@ -228,9 +225,6 @@ impl Augmentation {
                 let detail = self.resolve_detail(master_id_column, row, catalog)?;
                 Ok(f(detail).await?.into_iter().next())
             }
-            Fetch::Batched { .. } => Err(error!(
-                "augment: batched fetch is not yet implemented (phase 2)"
-            )),
         }
     }
 
@@ -320,74 +314,6 @@ fn scalar_text(v: &CborValue) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn empty_catalog() -> Arc<VistaCatalog> {
-        Arc::new(VistaCatalog::new())
-    }
-
-    fn spec(source: SourceSpec, fetch: FetchSpec) -> AugmentSpec {
-        AugmentSpec {
-            table: "detail".into(),
-            source,
-            fetch,
-            merge: vec![],
-        }
-    }
-
-    #[test]
-    fn lowers_id_source_with_default_per_row_fetch() {
-        let aug =
-            lower_augment(spec(SourceSpec::Id, FetchSpec::default()), &empty_catalog()).unwrap();
-        assert!(matches!(aug.source, Source::Id));
-        assert!(matches!(aug.fetch, Fetch::PerRow));
-    }
-
-    #[test]
-    fn lowers_column_source() {
-        let s = SourceSpec::Column {
-            from: "key".into(),
-            to: None,
-        };
-        let aug = lower_augment(spec(s, FetchSpec::default()), &empty_catalog()).unwrap();
-        match aug.source {
-            Source::Column { from, to } => {
-                assert_eq!(from, "key");
-                assert!(to.is_none());
-            }
-            _ => panic!("expected Column source"),
-        }
-    }
-
-    #[test]
-    fn scripted_fetch_is_rejected_for_now() {
-        let s = spec(SourceSpec::Id, FetchSpec::Script { code: "x".into() });
-        assert!(lower_augment(s, &empty_catalog()).is_err());
-    }
-
-    #[cfg(not(feature = "rhai"))]
-    #[test]
-    fn scripted_source_errors_without_rhai() {
-        let s = spec(
-            SourceSpec::Script {
-                code: "self".into(),
-            },
-            FetchSpec::default(),
-        );
-        assert!(lower_augment(s, &empty_catalog()).is_err());
-    }
-
-    #[cfg(feature = "rhai")]
-    #[test]
-    fn scripted_source_lowers_to_build_with_rhai() {
-        let s = spec(
-            SourceSpec::Script {
-                code: "self".into(),
-            },
-            FetchSpec::default(),
-        );
-        let aug = lower_augment(s, &empty_catalog()).unwrap();
-        assert!(matches!(aug.source, Source::Build(_)));
-    }
 
     #[test]
     fn merge_overwrites_master_columns_on_clash() {
