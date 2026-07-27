@@ -1,5 +1,6 @@
 #![doc = include_str!("../README.md")]
 
+pub mod aggregate;
 pub mod any_expression;
 pub mod capabilities;
 pub mod column;
@@ -19,6 +20,7 @@ pub mod source;
 pub mod spec;
 pub mod vista;
 
+pub use aggregate::AggregateSpec;
 pub use any_expression::{AnyExpression, ExpressionLike};
 pub use capabilities::VistaCapabilities;
 pub use column::Column;

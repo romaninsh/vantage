@@ -8,6 +8,7 @@ use vantage_core::{Result, VantageError, error};
 use vantage_types::Record;
 
 use crate::{
+    aggregate::AggregateSpec,
     capabilities::VistaCapabilities,
     column::Column,
     reference::{ContainedSpec, Reference},
@@ -204,6 +205,29 @@ pub trait TableShell: Send + Sync + 'static {
     /// count (`SELECT COUNT(*)`, etc.) override.
     async fn get_vista_count(&self, vista: &Vista) -> Result<i64> {
         Ok(self.list_vista_values(vista).await?.len() as i64)
+    }
+
+    /// Derive a **new vista** that reduces this one — the driver's equivalent
+    /// of selecting from a subquery.
+    ///
+    /// An aggregation is not a value, it is a different set: `count(*)` yields
+    /// one row, `GROUP BY` yields one per group, and either can then be
+    /// conditioned, ordered or counted like any other set. Returning a
+    /// [`Vista`] is what lets every consumer keep the single shape it already
+    /// handles instead of growing a scalar special case.
+    ///
+    /// `Ok(None)` means *this driver cannot answer this request* — not that
+    /// the result is empty. The whole [`AggregateSpec`] is offered at once so
+    /// the refusal can be whole: a driver that can sum but cannot express one
+    /// of the conditions must answer `None` rather than sum the unfiltered
+    /// set. The caller then reduces locally, which is a different question
+    /// (the rows it holds, not every row that matches) with a different
+    /// answer, so "can't" must never collapse into a number.
+    ///
+    /// This is construction, not a query — nothing is fetched until someone
+    /// lists the returned vista.
+    fn aggregate_vista(&self, _vista: &Vista, _spec: &AggregateSpec) -> Result<Option<Vista>> {
+        Ok(None)
     }
 
     // ---- Conditions --------------------------------------------------------

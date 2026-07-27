@@ -612,6 +612,29 @@ impl Dio {
         Vista::new(name, Box::new(shell))
     }
 
+    /// Ask the **master** to derive an aggregated vista, per
+    /// [`Vista::aggregate`].
+    ///
+    /// `Ok(None)` is the "I can't" answer — unknown reduction, or conditions
+    /// the driver can't express — and it is not an error: a source that cannot
+    /// aggregate is not broken. The caller then derives the same set locally
+    /// from this Dio, which keeps the result reactive because the local
+    /// engine is fed by this Dio's change bus.
+    ///
+    /// ```ignore
+    /// let spec = AggregateSpec::new("count", "failed")
+    ///     .condition("Event", CborValue::Text("failed".into()));
+    /// let derived: Vista = match dio.master_aggregate(&spec)? {
+    ///     // The backend reduces: every matching row, loaded or not.
+    ///     Some(vista) => vista,
+    ///     // We reduce: the rows this Dio actually holds.
+    ///     None => aggregate_lens.derive_vista(dio, &spec)?,
+    /// };
+    /// ```
+    pub fn master_aggregate(&self, spec: &vantage_vista::AggregateSpec) -> Result<Option<Vista>> {
+        self.master().aggregate(spec)
+    }
+
     /// Fetch a `[offset, limit)` window, preferring the master's own ordering.
     ///
     /// When `sort` is set and the master `can_order` and yields an independent
