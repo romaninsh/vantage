@@ -257,6 +257,18 @@ impl Vista {
         self.source.fetch_window(self, offset, limit).await
     }
 
+    /// [`fetch_window`](Self::fetch_window), plus the grand total when the
+    /// driver learned it from the same response. `None` means this fetch
+    /// carried no total — ask [`get_count`](Self::get_count) when one is
+    /// required.
+    pub async fn fetch_window_counted(
+        &self,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<(String, Record<CborValue>)>, Option<i64>)> {
+        self.source.fetch_window_counted(self, offset, limit).await
+    }
+
     // ---- quicksearch -------------------------------------------------------
 
     /// Apply a quicksearch filter. The driver decides which columns participate;

@@ -289,6 +289,7 @@ impl RestApi {
         let window = pagination.map(|p| (p.skip(), p.limit()));
         self.fetch_windowed(table_name, id_field, window, conditions)
             .await
+            .map(|(records, _total)| records)
     }
 
     /// Fetch a single half-open row window `[offset, offset+limit)` — the
@@ -302,6 +303,27 @@ impl RestApi {
         limit: i64,
         conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
     ) -> Result<IndexMap<String, Record<CborValue>>> {
+        self.fetch_windowed(table_name, id_field, Some((offset, limit)), conditions)
+            .await
+            .map(|(records, _total)| records)
+    }
+
+    /// [`Self::fetch_window_records`], plus the envelope's `total_key` when
+    /// the response carries one.
+    ///
+    /// The total comes out of the **same response as the rows**. Every paged
+    /// endpoint reports it on every reply, so a caller that wants both a
+    /// window and a grand total should use this rather than pairing
+    /// `fetch_window_records` with [`Self::fetch_total`] — that pairing costs
+    /// a second round trip for a number already in hand.
+    pub(crate) async fn fetch_window_records_counted<'a>(
+        &self,
+        table_name: &str,
+        id_field: Option<&str>,
+        offset: i64,
+        limit: i64,
+        conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
+    ) -> Result<(IndexMap<String, Record<CborValue>>, Option<i64>)> {
         self.fetch_windowed(table_name, id_field, Some((offset, limit)), conditions)
             .await
     }
@@ -415,23 +437,32 @@ impl RestApi {
         Ok((body, client_filters))
     }
 
+    /// Also reports the envelope total when `total_key` is configured and the
+    /// body carries it. Unlike [`Self::fetch_total`] this never errors on a
+    /// missing total: the rows are the point here, and a caller that needs a
+    /// definitive count can still ask for one.
     async fn fetch_windowed<'a>(
         &self,
         table_name: &str,
         id_field: Option<&str>,
         window: Option<(i64, i64)>,
         conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
-    ) -> Result<IndexMap<String, Record<CborValue>>> {
+    ) -> Result<(IndexMap<String, Record<CborValue>>, Option<i64>)> {
         // Non-paginating endpoints return the whole list on the first
         // window; a later window would just re-deliver the same rows and the
         // perpetual grid would never mark itself exhausted. Short-circuit any
         // window past the start to empty so the grid sees the chunk shrink
         // and stops asking for more.
         if self.no_pagination && window.is_some_and(|(offset, _)| offset > 0) {
-            return Ok(IndexMap::new());
+            return Ok((IndexMap::new(), None));
         }
 
         let (body, client_filters) = self.fetch_raw_body(table_name, window, conditions).await?;
+        let total = self
+            .total_key
+            .as_deref()
+            .and_then(|key| body.get(key))
+            .and_then(|v| v.as_i64());
         let data = self.extract_array(&body, table_name)?;
 
         let mut records = IndexMap::new();
@@ -476,9 +507,13 @@ impl RestApi {
                         None => true,
                     })
             });
+            // The envelope counted what the SERVER matched, before these rows
+            // were dropped here — reporting it now would size a grid to rows
+            // it will never be given. No total is better than a wrong one.
+            return Ok((records, None));
         }
 
-        Ok(records)
+        Ok((records, total))
     }
 }
 

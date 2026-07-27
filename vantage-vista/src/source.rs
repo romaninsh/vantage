@@ -342,6 +342,27 @@ pub trait TableShell: Send + Sync + 'static {
         Err(self.default_error("fetch_window", "can_fetch_window"))
     }
 
+    /// [`fetch_window`](Self::fetch_window), plus the grand total of matching
+    /// rows when this fetch already learned it.
+    ///
+    /// Paged sources typically report the total in every response envelope,
+    /// alongside the window's rows. A caller needing both — a lazily-loaded
+    /// grid sizing its scrollbar — would otherwise pay a second round trip for
+    /// a number the first reply already carried.
+    ///
+    /// Drivers that can answer override this. The default delegates and
+    /// reports `None`, so no existing driver changes and no caller is told a
+    /// total exists when it doesn't. `None` means "this fetch didn't say",
+    /// never "zero".
+    async fn fetch_window_counted(
+        &self,
+        vista: &Vista,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<(String, Record<CborValue>)>, Option<i64>)> {
+        Ok((self.fetch_window(vista, offset, limit).await?, None))
+    }
+
     // ---- Quicksearch -------------------------------------------------------
 
     /// Apply a quicksearch filter — a single string the driver fans out across
