@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.9.0 — 2026-07-27
+
+**Client-side search is gone, and so is the augmentation spec layer**
+
+Two removals, both of machinery that promised more than it delivered.
+
+- **`TableScenery::set_search` and every local search path are removed.** The
+  matcher existed twice — once in the scenery's reseed chain, once hand-inlined
+  in the Dio facade's `read()` — and both scanned every text field of every
+  cached row. A search that cannot be pushed down is a filter over whatever the
+  cache happens to hold, which on a partially-loaded set is a different answer
+  from the one the user asked for. `QueryDescriptor::search` / `with_search` go
+  with it.
+
+- **The Dio facade no longer advertises `can_search`.** It was `true` on the
+  strength of that local fallback alone. With the fallback gone the facade has
+  no search of its own and nowhere to forward a term to, so it reports `false`
+  and `add_search` refuses. Accepting a search, silently not running it, and
+  returning the unfiltered set is the failure this prevents. Narrow the master
+  vista directly for a server-side search.
+
+- **`AugmentSpec`, `SourceSpec`, `FetchSpec`, `SetOp` and `lower_augment` are
+  removed**, along with the `rhai` feature that gated the lowering. Nothing ever
+  deserialized them: every consumer describes its augmentation in its own config
+  vocabulary and builds `Augmentation` in Rust, so the spec layer was a second
+  spelling of the same idea with a single test as its only caller. Scripted
+  narrowing is still available — build the closure with
+  `vantage_vista::augment_source_closure` (vista's `rhai` feature) and hand it
+  to `Source::Build`.
+
+- **`Fetch::Batched` is removed.** Its only arm returned "not yet implemented",
+  and its only constructor was `FetchSpec::Batched`.
+
 ## 0.8.8 — 2026-07-27
 
 **An augmented grid stops flickering, and its detail sweep converges**

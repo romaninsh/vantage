@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.2 — 2026-07-27
+
+- Track vantage-diorama 0.9. The facade Vista no longer lifts `can_search`, so a
+  search over a source Dio must be one the master can answer; ordering and
+  conditions are unaffected. A derived aggregate holds its whole output in
+  memory and keeps advertising all three.
+
 ## 0.6.1 — 2026-07-26
 
 - Pins diorama 0.8.4, whose facade Vista now honours condition / order / search.
