@@ -118,13 +118,24 @@ async fn hydrate_both(dio: &Dio, hits: &AtomicUsize) -> (Arc<dyn TableScenery>, 
     .await;
     // r1 has no detail record — it reaches Complete-in-cache carrying only its
     // list columns, so wait on the absence settling rather than on a status.
-    eventually("detail pass quiesced", || {
-        let before = hits.load(Ordering::SeqCst);
-        std::thread::sleep(Duration::from_millis(30));
-        hits.load(Ordering::SeqCst) == before
-    })
-    .await;
-    let settled = hits.load(Ordering::SeqCst);
+    // Quiescence has to be observed with the runtime FREE TO RUN. These are
+    // `#[tokio::test]`s, so the runtime is `CurrentThread`: a blocking
+    // `std::thread::sleep` here parks the one thread that would advance the
+    // hydration tasks, so the counter cannot move and the gate passes on its
+    // first look — a premature "settled" while fetches are still in flight.
+    // Awaiting the gap is what makes "unchanged over 30ms" mean anything.
+    let mut before = hits.load(Ordering::SeqCst);
+    let mut settled = None;
+    for _ in 0..100 {
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        let now = hits.load(Ordering::SeqCst);
+        if now == before {
+            settled = Some(now);
+            break;
+        }
+        before = now;
+    }
+    let settled = settled.expect("the detail pass never stopped fetching");
     (scenery, settled)
 }
 
