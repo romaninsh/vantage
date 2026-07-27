@@ -217,12 +217,23 @@ pub trait TableShell: Send + Sync + 'static {
     /// handles instead of growing a scalar special case.
     ///
     /// `Ok(None)` means *this driver cannot answer this request* — not that
-    /// the result is empty. The whole [`AggregateSpec`] is offered at once so
-    /// the refusal can be whole: a driver that can sum but cannot express one
-    /// of the conditions must answer `None` rather than sum the unfiltered
-    /// set. The caller then reduces locally, which is a different question
-    /// (the rows it holds, not every row that matches) with a different
-    /// answer, so "can't" must never collapse into a number.
+    /// the result is empty. The caller then reduces locally, which is a
+    /// different question (the rows it holds, not every row that matches) with
+    /// a different answer, so "can't" must never collapse into a number.
+    ///
+    /// **Narrow before aggregating.** Conditions belong to the source, applied
+    /// with `add_eq_condition` before this call — the order SQL uses, where the
+    /// filter is the inner query and the aggregate selects from its result.
+    /// Narrowing reports its own failure, so a driver is never handed a filter
+    /// it would silently ignore.
+    ///
+    /// **The returned vista's capabilities describe the DERIVED set, not the
+    /// source.** In particular it must not advertise condition support unless
+    /// the driver really implements it: adding a condition to an aggregate is
+    /// `HAVING`, a different operation over different values, and inheriting
+    /// the source's flag would promise a filter that silently does nothing.
+    /// An aggregator holding its entire output in memory is the exception —
+    /// it can filter what it produced, and may say so.
     ///
     /// This is construction, not a query — nothing is fetched until someone
     /// lists the returned vista.

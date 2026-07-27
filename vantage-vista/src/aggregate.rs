@@ -7,15 +7,14 @@
 //! returns a [`Vista`](crate::Vista), not a number, and every consumer keeps
 //! the one shape it already knows.
 
-use ciborium::Value as CborValue;
-
 /// What to reduce, how, and what to call the result.
 ///
-/// Conditions live here rather than being applied to the source vista
-/// beforehand so a driver can accept or refuse the request **as a unit**. A
-/// driver that can sum but cannot express one of the terms must not quietly
-/// sum the unfiltered set; given the whole question it can answer `None` and
-/// let the caller reduce locally instead.
+/// **Conditions are not here.** Narrow the source vista first, then aggregate
+/// it — the order SQL uses, where the filter belongs to the inner query and
+/// the aggregate selects from the result. Narrowing already reports its own
+/// failure (`add_condition_eq` returns `Err` on a driver that can't express a
+/// term), so a caller knows to fall back *before* it asks for a reduction, and
+/// no driver is ever handed a filter it will silently ignore.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AggregateSpec {
     /// The reduction: `count`, `sum`, `avg`, `min`, `max`, `distinct`, or
@@ -27,8 +26,6 @@ pub struct AggregateSpec {
     /// Column name the result is published under — the single column of a
     /// scalar aggregate's single row.
     pub alias: String,
-    /// Equality terms, ANDed, restricting the rows reduced.
-    pub conditions: Vec<(String, CborValue)>,
     /// Group keys. Empty means one row out; otherwise one row per distinct
     /// combination, carrying the key columns alongside `alias`.
     pub group_by: Vec<String>,
@@ -41,7 +38,6 @@ impl AggregateSpec {
             op: op.into(),
             column: None,
             alias: alias.into(),
-            conditions: Vec::new(),
             group_by: Vec::new(),
         }
     }
@@ -52,53 +48,41 @@ impl AggregateSpec {
         self
     }
 
-    /// Restrict to rows where `field == value`.
-    pub fn condition(mut self, field: impl Into<String>, value: CborValue) -> Self {
-        self.conditions.push((field.into(), value));
-        self
-    }
-
     /// Emit one row per distinct value of `column`.
     pub fn group_by(mut self, column: impl Into<String>) -> Self {
         self.group_by.push(column.into());
         self
     }
 
-    /// A stable, unique name for the set this spec derives from `table`.
+    /// A stable, unique name for the set this spec derives from a source.
     ///
-    /// Two things depend on it. A derived Dio caches under this name, so it
-    /// must not collide with the source table or with a differently-shaped
-    /// aggregate over the same source. And two identical aggregates must
-    /// produce the *same* key, so a page showing one number twice shares one
+    /// `source_key` identifies the source **as narrowed** — pass
+    /// [`Vista::index_key`](crate::Vista::index_key), which already renders a
+    /// vista's conditions and sort in a canonical, order-independent form.
+    /// That is what keeps two differently-filtered aggregates apart without
+    /// this type knowing anything about conditions.
+    ///
+    /// Two things depend on the result. A derived Dio caches under it, so it
+    /// must not collide with the source or with a differently-shaped aggregate
+    /// over the same source. And the same question asked twice must produce
+    /// the *same* key, so a page showing one number in two places shares one
     /// engine instead of computing it twice.
     ///
-    /// `#` separates the source from its derivation: it has no other meaning
-    /// in this vocabulary (dots are column paths, `/` already separates
-    /// datasource from table), and it sorts each derived table next to the
-    /// one it came from in a cache directory.
+    /// `#` separates a source from its derivation: it has no other meaning
+    /// here (dots are column paths, `/` already separates datasource from
+    /// table), and it sorts each derived table next to its origin in a cache
+    /// directory.
     ///
     /// ```
     /// # use vantage_vista::AggregateSpec;
-    /// # use ciborium::Value as CborValue;
-    /// let spec = AggregateSpec::new("count", "opened")
-    ///     .condition("Event", CborValue::Text("opened".into()));
-    /// assert_eq!(spec.cache_key("email_events"), "email_events#count[Event=opened]");
+    /// let spec = AggregateSpec::new("sum", "bytes").column("Size");
+    /// assert_eq!(spec.cache_key("events|c:Event=opened|s:"),
+    ///            "events|c:Event=opened|s:#sum(Size)");
     /// ```
-    pub fn cache_key(&self, table: &str) -> String {
-        let mut key = format!("{table}#{}", self.op);
+    pub fn cache_key(&self, source_key: &str) -> String {
+        let mut key = format!("{source_key}#{}", self.op);
         if let Some(column) = &self.column {
             key.push_str(&format!("({column})"));
-        }
-        if !self.conditions.is_empty() {
-            // Sorted, so two specs that differ only in the order the terms
-            // were added still share a cache table and an engine.
-            let mut terms: Vec<String> = self
-                .conditions
-                .iter()
-                .map(|(field, value)| format!("{field}={}", scalar(value)))
-                .collect();
-            terms.sort();
-            key.push_str(&format!("[{}]", terms.join(",")));
         }
         if !self.group_by.is_empty() {
             // NOT sorted: grouping by (a, b) is a different table from
@@ -109,93 +93,95 @@ impl AggregateSpec {
     }
 }
 
-/// Render a condition value for the cache key. Non-scalars get a shape-stable
-/// debug form — they're rare in an equality term, and a key only has to be
-/// stable and unique, not readable.
-fn scalar(value: &CborValue) -> String {
-    match value {
-        CborValue::Text(s) => s.clone(),
-        CborValue::Integer(i) => i128::from(*i).to_string(),
-        CborValue::Float(f) => f.to_string(),
-        CborValue::Bool(b) => b.to_string(),
-        CborValue::Null => "null".to_string(),
-        other => format!("{other:?}"),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mocks::MockShell;
+    use crate::vista::Vista;
+    use ciborium::Value as CborValue;
 
     fn text(s: &str) -> CborValue {
         CborValue::Text(s.to_string())
     }
 
+    /// A narrowed source, keyed the way a caller is expected to key it.
+    fn source_key(conditions: &[(String, CborValue)]) -> String {
+        let vista = Vista::new("email_events", Box::new(MockShell::new()));
+        vista.index_key(conditions, None)
+    }
+
     #[test]
     fn a_bare_reduction_keys_on_its_op() {
-        assert_eq!(
-            AggregateSpec::new("count", "total").cache_key("email_events"),
-            "email_events#count"
-        );
+        let key = AggregateSpec::new("count", "total").cache_key(&source_key(&[]));
+        assert!(key.ends_with("#count"), "got {key}");
     }
 
     #[test]
     fn the_reduced_column_is_part_of_the_key() {
-        assert_eq!(
-            AggregateSpec::new("sum", "bytes")
-                .column("Size")
-                .cache_key("email_events"),
-            "email_events#sum(Size)"
-        );
+        let key = AggregateSpec::new("sum", "bytes")
+            .column("Size")
+            .cache_key(&source_key(&[]));
+        assert!(key.ends_with("#sum(Size)"), "got {key}");
     }
 
-    /// The point of the key: two differently-conditioned aggregates over one
-    /// source must not share a cache table, or one would serve the other's
-    /// number.
+    /// The point of keying off the narrowed source: two aggregates that differ
+    /// ONLY in their source's conditions must not share a cache table, or one
+    /// would serve the other's number.
     #[test]
-    fn conditions_separate_two_aggregates_over_one_source() {
-        let opened = AggregateSpec::new("count", "opened").condition("Event", text("opened"));
-        let failed = AggregateSpec::new("count", "failed").condition("Event", text("failed"));
-        assert_ne!(
-            opened.cache_key("email_events"),
-            failed.cache_key("email_events")
-        );
+    fn conditions_on_the_source_separate_two_aggregates() {
+        let spec = AggregateSpec::new("count", "n");
+        let opened = spec.cache_key(&source_key(&[("Event".into(), text("opened"))]));
+        let failed = spec.cache_key(&source_key(&[("Event".into(), text("failed"))]));
+        assert_ne!(opened, failed);
     }
 
-    /// And the converse: the same question asked twice must land on ONE
-    /// engine, however the terms were ordered.
+    /// And the converse: the same question asked twice lands on ONE engine,
+    /// however the source's terms were ordered — `index_key` sorts them.
     #[test]
-    fn term_order_does_not_change_the_key() {
-        let a = AggregateSpec::new("count", "x")
-            .condition("Event", text("opened"))
-            .condition("Ip", text("1.2.3.4"));
-        let b = AggregateSpec::new("count", "x")
-            .condition("Ip", text("1.2.3.4"))
-            .condition("Event", text("opened"));
-        assert_eq!(a.cache_key("t"), b.cache_key("t"));
+    fn source_term_order_does_not_change_the_key() {
+        let spec = AggregateSpec::new("count", "n");
+        let a = spec.cache_key(&source_key(&[
+            ("Event".into(), text("opened")),
+            ("Ip".into(), text("1.2.3.4")),
+        ]));
+        let b = spec.cache_key(&source_key(&[
+            ("Ip".into(), text("1.2.3.4")),
+            ("Event".into(), text("opened")),
+        ]));
+        assert_eq!(a, b);
     }
 
     /// Grouping order IS significant — it decides the output column order.
     #[test]
     fn group_order_does_change_the_key() {
-        let a = AggregateSpec::new("count", "n").group_by("a").group_by("b");
-        let b = AggregateSpec::new("count", "n").group_by("b").group_by("a");
-        assert_ne!(a.cache_key("t"), b.cache_key("t"));
+        let key = source_key(&[]);
+        let a = AggregateSpec::new("count", "n")
+            .group_by("a")
+            .group_by("b")
+            .cache_key(&key);
+        let b = AggregateSpec::new("count", "n")
+            .group_by("b")
+            .group_by("a")
+            .cache_key(&key);
+        assert_ne!(a, b);
     }
 
     /// The alias names the output column, not the question — two aliases for
     /// the same reduction are the same computation and should share it.
     #[test]
     fn the_alias_does_not_affect_the_key() {
-        let a = AggregateSpec::new("count", "total");
-        let b = AggregateSpec::new("count", "observed");
-        assert_eq!(a.cache_key("t"), b.cache_key("t"));
+        let key = source_key(&[]);
+        assert_eq!(
+            AggregateSpec::new("count", "total").cache_key(&key),
+            AggregateSpec::new("count", "observed").cache_key(&key),
+        );
     }
 
     #[test]
-    fn a_derived_key_cannot_collide_with_a_plain_table() {
-        let key = AggregateSpec::new("count", "total").cache_key("email_events");
-        assert!(key.starts_with("email_events#"));
-        assert_ne!(key, "email_events");
+    fn a_derived_key_cannot_collide_with_its_source() {
+        let key = source_key(&[]);
+        let derived = AggregateSpec::new("count", "total").cache_key(&key);
+        assert!(derived.starts_with(&key));
+        assert_ne!(derived, key);
     }
 }
