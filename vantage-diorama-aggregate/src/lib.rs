@@ -62,8 +62,8 @@ mod value;
 
 pub use aggregation::{AggregateOutput, Aggregation, DerivedRows, Rows};
 pub use builtin::{
-    Avg, Conditions, Count, CountWhere, Distinct, GroupBy, GroupReducer, Max, Min, Reduce, Sum,
-    Where,
+    AsRows, Avg, Conditions, Count, CountWhere, Distinct, GroupBy, GroupReducer, Max, Min, Reduce,
+    Sum, Where,
 };
 pub use catalog::{
     AggregationBuilder, AggregationCatalog, AggregationSpec, ScalarAggregation,
