@@ -107,30 +107,6 @@ async fn set_sort_reorders_and_bumps_generation() -> Result<()> {
 }
 
 #[tokio::test]
-async fn set_search_filters() -> Result<()> {
-    let tmp = TempDir::new().unwrap();
-    let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
-
-    let scenery = dio.table_scenery().open().await?;
-    let mut gen_rx = scenery.subscribe();
-    let initial = u64::from(*gen_rx.borrow_and_update());
-
-    scenery.set_search(Some("alph".to_string()));
-    wait_for_gen(&mut gen_rx, initial).await;
-    assert_eq!(scenery.row_count(), 1);
-    let only = scenery.row(0).unwrap();
-    assert_eq!(only.record.get("name"), Some(&cbor_text("alpha")));
-
-    // Clearing search restores all rows.
-    let after = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_search(None);
-    wait_for_gen(&mut gen_rx, after).await;
-    assert_eq!(scenery.row_count(), 3);
-    Ok(())
-}
-
-#[tokio::test]
 async fn where_eq_at_builder_time_filters_rows() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let lens = build_lens(tmp.path().join("cache.redb")).await?;

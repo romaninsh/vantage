@@ -73,10 +73,6 @@ impl TableScenery for CappedScenery {
         self.inner.request_refresh();
     }
 
-    fn set_search(&self, query: Option<String>) {
-        self.inner.set_search(query);
-    }
-
     fn set_sort(&self, column: Option<String>, dir: SortDir) {
         self.inner.set_sort(column, dir);
     }

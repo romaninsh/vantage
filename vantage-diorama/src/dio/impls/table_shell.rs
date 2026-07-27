@@ -99,7 +99,7 @@ impl TableShell for DioShell {
     // Recorded here and routed at read time (see `DioShell::plan`): pushed into
     // the master when it can answer them, applied over the cache when it
     // cannot. Accrete/replace semantics match `Vista`'s: conditions accumulate,
-    // order and search replace.
+    // order replaces.
 
     fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
         self.query
@@ -115,16 +115,6 @@ impl TableShell for DioShell {
 
     fn clear_orders(&mut self) -> Result<()> {
         self.query.order = None;
-        Ok(())
-    }
-
-    fn add_search(&mut self, text: &str) -> Result<()> {
-        self.query.search = Some(text.to_string());
-        Ok(())
-    }
-
-    fn clear_search(&mut self) -> Result<()> {
-        self.query.search = None;
         Ok(())
     }
 
@@ -226,15 +216,6 @@ impl DioShell {
                 .iter()
                 .all(|(field, expected)| record_get(row, field) == Some(expected))
         });
-        if let Some(text) = &local.search {
-            let needle = text.to_lowercase();
-            rows.retain(|_, row| {
-                row.values().any(|value| match value {
-                    CborValue::Text(text) => text.to_lowercase().contains(&needle),
-                    _ => false,
-                })
-            });
-        }
         if let Some((column, direction)) = &local.order {
             let descending = matches!(direction, SortDirection::Descending);
             let mut ordered: Vec<(String, Record<CborValue>)> = rows.into_iter().collect();

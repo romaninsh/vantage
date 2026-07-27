@@ -152,7 +152,7 @@ pub(crate) struct DioInner {
     pub(crate) augment_catalog: std::sync::RwLock<Option<Arc<vantage_vista_factory::VistaCatalog>>>,
     pub(crate) augmented_columns: std::sync::RwLock<std::collections::HashSet<String>>,
     /// Deduplicating registry of live table sceneries, keyed by
-    /// `(shape, conditions, sort, search)`. Holds `Weak` handles so it
+    /// `(shape, conditions, sort)`. Holds `Weak` handles so it
     /// never keeps a scenery alive: opening the same query twice returns
     /// the one shared `Arc` (one reactor, one cache window, one in-flight
     /// `JoinSet`), and the entry self-heals once the last widget releases
@@ -524,7 +524,7 @@ impl Dio {
     ///
     /// Prunes dead registry entries as a side effect, so the count reflects
     /// only sceneries with at least one live handle. Two widgets sharing one
-    /// deduplicated `(conditions, sort, search)` count as **one**; once every
+    /// deduplicated `(conditions, sort)` count as **one**; once every
     /// handle is released the count drops back, proving no leak. A read-only
     /// window onto the dedup registry — the seed for the diagnostics surface.
     pub fn live_table_scenery_count(&self) -> usize {

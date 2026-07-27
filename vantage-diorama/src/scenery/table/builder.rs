@@ -23,7 +23,6 @@ pub struct TableSceneryBuilder {
     /// equality `conditions` so the plain eq path is untouched.
     pub(crate) op_conditions: Vec<super::OpCondition>,
     pub(crate) sort: Option<(String, SortDir)>,
-    pub(crate) search: Option<String>,
     pub(crate) page_size: usize,
     pub(crate) initial_range: Option<std::ops::Range<usize>>,
     pub(crate) titles_only: bool,
@@ -38,7 +37,6 @@ impl TableSceneryBuilder {
             conditions: Vec::new(),
             op_conditions: Vec::new(),
             sort: None,
-            search: None,
             page_size: 100,
             initial_range: None,
             titles_only: false,
@@ -71,11 +69,6 @@ impl TableSceneryBuilder {
         self
     }
 
-    pub fn search(mut self, q: impl Into<String>) -> Self {
-        self.search = Some(q.into());
-        self
-    }
-
     /// Hint range used by `request_load_more` and by the
     /// refresh-on-open initial fetch. Default 100.
     pub fn page_size(mut self, n: usize) -> Self {
@@ -95,7 +88,7 @@ impl TableSceneryBuilder {
     /// pass entirely: the scenery serves the list-pass rows (id + title columns)
     /// and never pays for per-row hydration, so a 10,000-row lookup opens a
     /// picker as cheaply as it lists. Same mechanic as a grid otherwise —
-    /// `set_search` for typeahead, `set_viewport` for the visible band. A
+    /// `set_viewport` for the visible band. A
     /// `titles_only` picker and a full grid over the same query are distinct
     /// sceneries (the grid hydrates, the picker doesn't).
     pub fn titles_only(mut self) -> Self {
@@ -144,7 +137,6 @@ impl TableSceneryBuilder {
             conditions,
             op_conditions,
             sort,
-            search,
             page_size,
             initial_range,
             titles_only,
@@ -167,7 +159,7 @@ impl TableSceneryBuilder {
         };
         let sort = sort.or_else(|| dio.base_sort.read().unwrap().clone());
 
-        // Dedup key over (shape, conditions, sort, search, titles_only). A live
+        // Dedup key over (shape, conditions, sort, titles_only). A live
         // scenery for the same query is shared — one reactor, one cache window,
         // one in-flight JoinSet — instead of standing up a parallel copy. A
         // `titles_only` picker keys distinctly from a full grid so the picker
@@ -192,13 +184,12 @@ impl TableSceneryBuilder {
                 }
             };
             let mut key = format!(
-                "table\u{1}{}\u{1}{}\u{1}{}\u{1}{}\u{1}{}",
+                "table\u{1}{}\u{1}{}\u{1}{}\u{1}{}",
                 dio.master
                     .read()
                     .unwrap()
                     .index_key(&conditions, vista_sort),
                 op_conditions_key(&op_conditions),
-                search.as_deref().unwrap_or(""),
                 titles_only as u8,
                 demand_key,
             );
@@ -228,7 +219,7 @@ impl TableSceneryBuilder {
         let two_pass = dio.is_two_pass();
         // Whether the visible set is refined locally is derived from the query
         // as it stands — see `TableSceneryState::local_refine`. It is not
-        // captured here: `set_sort` / `set_search` change the answer, and a
+        // captured here: `set_sort` changes the answer, and a
         // value frozen at open made a later sort a silent no-op.
         let index = if two_pass {
             let vista_sort = sort.as_ref().map(|(col, dir)| {
@@ -268,7 +259,6 @@ impl TableSceneryBuilder {
             conditions: RwLock::new(conditions),
             op_conditions: RwLock::new(op_conditions),
             sort: RwLock::new(sort),
-            search: RwLock::new(search),
             rows: RwLock::new(Default::default()),
             id_to_idx: RwLock::new(HashMap::new()),
             total: RwLock::new(None),

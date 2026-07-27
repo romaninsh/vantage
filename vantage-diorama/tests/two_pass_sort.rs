@@ -1,4 +1,4 @@
-//! Live `set_sort` / `set_search` on a two-pass (augmented) scenery.
+//! Live `set_sort` on a two-pass (augmented) scenery.
 //!
 //! The builder's `.sort(..)` path is covered elsewhere; what these cover is
 //! changing the order on an already-open handle, which is what a grid header
@@ -81,23 +81,5 @@ async fn clearing_the_sort_restores_list_order() {
 
     view.scenery().set_sort(None, SortDir::Asc);
     view.settle_until("back to list order", |v| order(v) == vec!["o1", "o2", "o3"])
-        .await;
-}
-
-/// `set_search` on a handle opened without one narrows the visible set.
-#[tokio::test]
-async fn set_search_narrows_a_scenery_opened_without_one() {
-    let dio = bucket_dio().await;
-    let view = MockView::open(&dio, 10).await;
-    view.viewport(0..10);
-    view.settle_until("hydrated", |v| v.loaded_rows() == 3)
-        .await;
-
-    view.scenery().set_search(Some("blue".to_string()));
-    view.settle_until("narrowed to the blue row", |v| order(v) == vec!["o2"])
-        .await;
-
-    view.scenery().set_search(None);
-    view.settle_until("widened again", |v| v.row_count() == 3)
         .await;
 }

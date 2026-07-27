@@ -83,17 +83,6 @@ pub(crate) fn op_conditions_key(conds: &[super::OpCondition]) -> String {
     frags.join(";")
 }
 
-pub(crate) fn matches_search(rec: &Record<CborValue>, needle: Option<&str>) -> bool {
-    let Some(needle) = needle else {
-        return true;
-    };
-    let needle_lc = needle.to_lowercase();
-    rec.values().any(|v| match v {
-        CborValue::Text(s) => s.to_lowercase().contains(&needle_lc),
-        _ => false,
-    })
-}
-
 pub(crate) fn cbor_eq(a: &CborValue, b: &CborValue) -> bool {
     match (a, b) {
         (CborValue::Text(x), CborValue::Text(y)) => x == y,
