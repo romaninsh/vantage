@@ -37,7 +37,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-4aa2d368.js";
+            window.path_to_searchindex_js = "searchindex-92dca68e.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-cc60226a.js"></script>
@@ -11597,30 +11597,24 @@ rest of the page hydrates normally.</p>
 <tbody>
 <tr><td><code>PerRow</code></td><td>one record per master row (<code>get_value</code>, or narrow-and-take-first)</td></tr>
 <tr><td><code>Custom(closure)</code></td><td>a caller-supplied async fetch</td></tr>
-<tr><td><code>Batched</code></td><td>one set query across the window’s keys — <em>planned</em></td></tr>
 </tbody>
 </table>
 </div>
 <p><code>Id</code> and id-keyed <code>Column</code> sources read by key through <code>get_value</code> — the uniform
 “one record by key” primitive (a <code>cmd</code> detail script, a SQL <code>WHERE id =</code>, a REST
-<code>GET /{id}</code>). They can name a target column, so they are the batchable shapes.
-<code>Build</code> returns an arbitrary narrowed Vista that can’t be coalesced into a set, so
-it is per-row only — the type enforces what can and can’t batch, rather than a
-runtime check.</p>
-<h3 id="from-yaml-1"><a class="header" href="#from-yaml-1">From YAML</a></h3>
-<p>The same declaration is data, lowered with <code>lower_augment</code>:</p>
-<pre><code class="language-yaml">augment:
-  - table: tfstate_detail
-    source: { kind: column, from: key }
-    fetch:  { kind: per_row }
-    merge:  [resources, serial, outputs]
-</code></pre>
+<code>GET /{id}</code>). <code>Build</code> returns an arbitrary narrowed Vista, so it is per-row only.</p>
+<h3 id="declaring-one"><a class="header" href="#declaring-one">Declaring one</a></h3>
+<p>An <code>Augmentation</code> is built in Rust. There is no serde mirror of these types: a
+consumer already has its own config vocabulary — vantage-ui reads an <code>augment:</code>
+block naming a source table, a key and a column list — and maps that onto
+<code>Augmentation</code> directly. A second, parallel YAML shape in diorama would be one
+more spelling of the same idea for each consumer to ignore.</p>
 <h3 id="rhai-as-a-closure-factory"><a class="header" href="#rhai-as-a-closure-factory">Rhai as a closure factory</a></h3>
 <p>The runtime types carry <strong>closures</strong>, not script strings — <code>Source::Build</code> is a
 <code>Fn(&amp;row, base) -&gt; Vista</code>. Rhai is one factory that produces such a closure;
-hand-written Rust is another. A <code>{ kind: script, code: "..." }</code> source lowers (under
-the <code>rhai</code> feature) to a <code>Build</code> closure that narrows the base detail Vista using
-the master <code>row</code>:</p>
+hand-written Rust is another. A consumer that wants a scripted narrowing builds
+the closure with <code>vantage_vista::augment_source_closure</code> (vista’s <code>rhai</code>
+feature) and hands the result to <code>Source::Build</code>:</p>
 <pre><code class="language-rhai">self.add_condition_eq("key", row.key)
 </code></pre>
 <p>This is the same machinery a reference build-script uses, pointed at a possibly
