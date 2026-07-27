@@ -1,6 +1,6 @@
 [package]
 name = "vantage-diorama"
-version = "0.8.8"
+version = "0.9.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Cached, composable, reactive surface for Vantage Vistas"
@@ -27,11 +27,6 @@ thiserror = "2"
 tokio = { version = "1", features = ["sync", "rt", "time"] }
 tracing = "0.1"
 uuid = { version = "1", features = ["v7"] }
-
-[features]
-# Rhai-scripted augmentation sources/fetches. Flips on `vantage-vista`'s rhai
-# vocabulary; all engine assembly stays in vantage-vista (see `augment::lower`).
-rhai = ["vantage-vista/rhai"]
 
 [dev-dependencies]
 tempfile = "3"

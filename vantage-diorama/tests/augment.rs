@@ -272,36 +272,6 @@ async fn custom_fetch_closure_reads_narrowed_detail() {
     assert_eq!(col_of(&scenery, 0, "detail").as_deref(), Some("full-r0"));
 }
 
-/// End-to-end through the Rhai-scripted source path: a `script` spec lowers to a
-/// `Build` closure that narrows the detail vista using the master `row`.
-#[cfg(feature = "rhai")]
-#[tokio::test]
-async fn scripted_source_augments_via_rhai() {
-    use vantage_diorama::{AugmentSpec, FetchSpec, SourceSpec, lower_augment};
-
-    let tmp = TempDir::new().unwrap();
-    let spec = AugmentSpec {
-        table: "runs-detail".into(),
-        source: SourceSpec::Script {
-            code: r#"self.add_condition_eq("id", row.id)"#.into(),
-        },
-        fetch: FetchSpec::PerRow,
-        merge: vec!["detail".into()],
-    };
-    let augmentation = lower_augment(spec, &catalog()).expect("lowers with rhai");
-    let dio = open(&tmp, vec![augmentation]).await;
-    let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
-    scenery.set_viewport(0..2);
-
-    eventually("both rows hydrated", || {
-        matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
-            && matches!(status_of(&scenery, 1), Some(RowStatus::Fresh))
-    })
-    .await;
-    assert_eq!(col_of(&scenery, 0, "detail").as_deref(), Some("full-r0"));
-    assert_eq!(col_of(&scenery, 1, "detail").as_deref(), Some("full-r1"));
-}
-
 /// The finder/live_folder shape: the detail is a FIXED get-only Vista handle,
 /// registered in no catalog, keyed by a master column (`path`). Rows hydrate
 /// the merged columns through the same lazy detail pass.

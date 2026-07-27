@@ -15,12 +15,11 @@ use super::DioInner;
 pub(crate) struct FacadeQuery {
     pub(crate) conditions: Vec<(String, CborValue)>,
     pub(crate) order: Option<(String, SortDirection)>,
-    pub(crate) search: Option<String>,
 }
 
 impl FacadeQuery {
     pub(crate) fn is_empty(&self) -> bool {
-        self.conditions.is_empty() && self.order.is_none() && self.search.is_none()
+        self.conditions.is_empty() && self.order.is_none()
     }
 }
 
@@ -47,22 +46,21 @@ impl DioShell {
     pub(crate) fn new(dio: Arc<DioInner>) -> Self {
         let master = dio.master.read().unwrap();
         let master_caps = master.capabilities().clone();
-        // Every column becomes orderable and searchable, whatever the master
-        // says. `Vista::add_order` refuses a column without the `ORDERABLE`
-        // flag, and most drivers only set it for columns their *engine* can
-        // sort — CSV sets it for none. But the facade can always fall back to
-        // ordering the cache, so refusing here would deny a sort the Dio is
-        // perfectly able to perform.
+        // Every column becomes orderable, whatever the master says.
+        // `Vista::add_order` refuses a column without the `ORDERABLE` flag, and
+        // most drivers only set it for columns their *engine* can sort — CSV
+        // sets it for none. But the facade can always fall back to ordering the
+        // cache, so refusing here would deny a sort the Dio is perfectly able
+        // to perform. `SEARCHABLE` gets no such treatment: the facade has no
+        // search of its own to fall back on.
         let columns = master
             .source
             .columns()
             .iter()
             .map(|(name, column)| {
                 let mut column = column.clone();
-                for flag in [flags::ORDERABLE, flags::SEARCHABLE] {
-                    if !column.has_flag(flag) {
-                        column = column.with_flag(flag);
-                    }
+                if !column.has_flag(flags::ORDERABLE) {
+                    column = column.with_flag(flags::ORDERABLE);
                 }
                 (name.clone(), column)
             })
@@ -85,13 +83,19 @@ impl DioShell {
             can_delete: write_caps.can_delete,
             can_subscribe: true,
             can_invalidate: master_caps.can_invalidate || has_on_event,
-            // Ordering and search are always available: the facade pushes
-            // them into the master when it can answer them, and orders or
-            // searches the cache itself when it cannot. Advertising the
-            // master's flags here used to promise what `DioShell` then
-            // refused — the flag was true and the method `Unimplemented`.
+            // Ordering is always available: the facade pushes it into the
+            // master when it can answer it, and orders the cache itself when it
+            // cannot. Advertising the master's flag here used to promise what
+            // `DioShell` then refused — the flag was true and the method
+            // `Unimplemented`.
             can_order: true,
-            can_search: true,
+            // Search is NOT lifted. The facade has no search of its own, so it
+            // can only honour one the master answers — and it has nowhere to
+            // forward the term to, since narrowing is replayed at read time.
+            // Advertising `true` here would promise a filter that never ran and
+            // hand back the unfiltered set. Narrow the master vista directly
+            // for a server-side search.
+            can_search: false,
             // Whether operator filters (`!=`, `<`, `in`, …) can be pushed into
             // the master's query. When false the Dio still filters locally over
             // the cache — the caller just can't bake the condition into a
@@ -175,14 +179,6 @@ impl DioShell {
                 local.order = Some((column.clone(), *direction));
             }
         }
-        if let Some(text) = &self.query.search {
-            if narrowed.add_search(text.clone()).is_ok() {
-                pushed = true;
-            } else {
-                local.search = Some(text.clone());
-            }
-        }
-
         (pushed.then_some(narrowed), local)
     }
 }

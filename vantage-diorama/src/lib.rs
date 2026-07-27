@@ -12,10 +12,7 @@ pub mod scenery;
 pub mod servo;
 pub mod stats;
 
-pub use augment::{
-    AugmentSpec, Augmentation, BuildFn, Detail, Fetch, FetchFn, FetchSpec, MergeRule, SetOp,
-    Source, SourceSpec, lower_augment,
-};
+pub use augment::{Augmentation, BuildFn, Detail, Fetch, FetchFn, MergeRule, Source};
 pub use composition::Diorama;
 pub use dio::diagnostics::{DioDiagnostics, SceneryDiagnostic};
 pub use dio::{Dio, DioEvent, DioShell, Generation, WeakDio, WriteCapabilities};

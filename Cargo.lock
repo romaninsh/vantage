@@ -5445,7 +5445,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vantage-api-adapters"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -5641,7 +5641,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.8.8"
+version = "0.9.0"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5671,7 +5671,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama-aggregate"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5875,7 +5875,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "chrono",
  "ciborium",

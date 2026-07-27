@@ -12,8 +12,9 @@ pub mod type_system;
 
 #[cfg(feature = "serde")]
 pub use cbor_json::{
-    CborDialect, PlainDialect, PresentationDialect, cbor_to_json, cbor_to_string, json_to_cbor,
-    json_to_cbor_with_hint, rfc3339_to_tag12, tag12_to_rfc3339,
+    CborDialect, PlainDialect, PresentationDialect, cbor_id_to_string, cbor_to_json,
+    cbor_to_string, hex_encode, json_to_cbor, json_to_cbor_with_hint, record_to_json,
+    rfc3339_to_tag12, tag12_to_rfc3339,
 };
 pub use null::InvariantValue;
 pub use record::{IntoRecord, Record, TryFromRecord, TryIntoRecord};

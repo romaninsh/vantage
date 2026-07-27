@@ -8,7 +8,7 @@ use crate::scenery::table::RowStatusSummary;
 /// A snapshot of one open table scenery.
 #[derive(Debug, Clone)]
 pub struct SceneryDiagnostic {
-    /// The registry key: `(shape, conditions, sort, search, titles_only)`.
+    /// The registry key: `(shape, conditions, sort, titles_only)`.
     pub key: String,
     /// How many widgets currently hold this shared scenery.
     pub refcount: usize,

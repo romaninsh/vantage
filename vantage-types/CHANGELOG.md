@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.7 — 2026-07-27
+
+- `cbor_id_to_string` renders a CBOR value as a **record id** — a cache key, a
+  traversal target, a selection identity. Deliberately separate from
+  `cbor_to_string` and not a substitute for it: the `Option` is load-bearing.
+  `None` means "not a plausible id" (`Null`, `Float`, `Bytes`, `Array`, `Map`)
+  so a caller can skip the row, where `cbor_to_string` would answer `""` and
+  key a cache entry under the empty string. `Tag(8, [table, id])` renders
+  `table:id`; any other tag is transparent.
+- `record_to_json` and `hex_encode` are re-exported at the crate root. Both were
+  already public in `cbor_json`, so callers had to reach through the module path.
+
 ## 0.6.6 — 2026-07-24
 
 - `Tag(12)` epoch pairs keep their exact shape through an untouched

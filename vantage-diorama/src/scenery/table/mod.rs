@@ -120,7 +120,6 @@ pub trait TableScenery: Send + Sync {
     fn set_viewport(&self, range: Range<usize>);
     fn request_load_more(&self);
     fn request_refresh(&self);
-    fn set_search(&self, query: Option<String>);
     fn set_sort(&self, column: Option<String>, dir: SortDir);
     /// Replace the UI-level equality filter set (grid filter chips) —
     /// `column == value` terms ANDed together and with the query's own
@@ -298,16 +297,6 @@ impl TableScenery for TableSceneryImpl {
                 tracing::error!(error = %e, "Scenery request_refresh failed");
             }
         });
-    }
-
-    fn set_search(&self, query: Option<String>) {
-        self.inner.deregister();
-        *self.inner.search.write().unwrap() = query;
-        // The cached total belongs to the previous query; a new search matches a
-        // different set. Drop it so `row_count` falls back to the loaded rows
-        // until the re-fetch's short page (or a re-count) sets it for this query.
-        self.inner.set_total(None);
-        self.inner.reload_notify.notify_one();
     }
 
     fn set_sort(&self, column: Option<String>, dir: SortDir) {

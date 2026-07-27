@@ -87,34 +87,26 @@ Augmentation {
 |---|---|
 | `PerRow` | one record per master row (`get_value`, or narrow-and-take-first) |
 | `Custom(closure)` | a caller-supplied async fetch |
-| `Batched` | one set query across the window's keys — *planned* |
 
 `Id` and id-keyed `Column` sources read by key through `get_value` — the uniform
 "one record by key" primitive (a `cmd` detail script, a SQL `WHERE id =`, a REST
-`GET /{id}`). They can name a target column, so they are the batchable shapes.
-`Build` returns an arbitrary narrowed Vista that can't be coalesced into a set, so
-it is per-row only — the type enforces what can and can't batch, rather than a
-runtime check.
+`GET /{id}`). `Build` returns an arbitrary narrowed Vista, so it is per-row only.
 
-### From YAML
+### Declaring one
 
-The same declaration is data, lowered with `lower_augment`:
-
-```yaml
-augment:
-  - table: tfstate_detail
-    source: { kind: column, from: key }
-    fetch:  { kind: per_row }
-    merge:  [resources, serial, outputs]
-```
+An `Augmentation` is built in Rust. There is no serde mirror of these types: a
+consumer already has its own config vocabulary — vantage-ui reads an `augment:`
+block naming a source table, a key and a column list — and maps that onto
+`Augmentation` directly. A second, parallel YAML shape in diorama would be one
+more spelling of the same idea for each consumer to ignore.
 
 ### Rhai as a closure factory
 
 The runtime types carry **closures**, not script strings — `Source::Build` is a
 `Fn(&row, base) -> Vista`. Rhai is one factory that produces such a closure;
-hand-written Rust is another. A `{ kind: script, code: "..." }` source lowers (under
-the `rhai` feature) to a `Build` closure that narrows the base detail Vista using
-the master `row`:
+hand-written Rust is another. A consumer that wants a scripted narrowing builds
+the closure with `vantage_vista::augment_source_closure` (vista's `rhai`
+feature) and hands the result to `Source::Build`:
 
 ```rhai
 self.add_condition_eq("key", row.key)

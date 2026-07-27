@@ -20,7 +20,7 @@ use super::SortDir;
 use super::state::TableSceneryState;
 
 /// Build a [`QueryDescriptor`] for the page `offset..offset+limit` from the
-/// scenery's current conditions/sort/search.
+/// scenery's current conditions/sort.
 fn descriptor(state: &TableSceneryState, offset: usize, limit: usize) -> QueryDescriptor {
     let conditions = state.conditions.read().unwrap().clone();
     let sort = state.sort.read().unwrap().clone().map(|(col, dir)| {
@@ -30,11 +30,9 @@ fn descriptor(state: &TableSceneryState, offset: usize, limit: usize) -> QueryDe
         };
         (col, dir)
     });
-    let search = state.search.read().unwrap().clone();
     QueryDescriptor::new()
         .with_conditions(conditions)
         .with_sort(sort)
-        .with_search(search)
         .with_window(offset, limit)
 }
 
@@ -134,14 +132,12 @@ fn references_augmented_column(
 
 /// Rebuild the visible map for a **locally-refined** two-pass scenery: take the
 /// index's ids, read each row's current cache record + status, keep those that
-/// match the conditions/search, sort locally if requested, and renumber. An
+/// match the conditions, sort locally if requested, and renumber. An
 /// augmented-column condition naturally excludes rows not yet hydrated (the
 /// column is absent → no match), so matches surface as rows hydrate. The row's
 /// `Fresh`/`Incomplete` status is preserved.
 pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
-    use super::helpers::{
-        cmp_sort, matches_conditions, matches_op_conditions, matches_search, record_get_path,
-    };
+    use super::helpers::{cmp_sort, matches_conditions, matches_op_conditions, record_get_path};
 
     let Some(dio_inner) = state.dio_weak.upgrade() else {
         return;
@@ -153,7 +149,6 @@ pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
     let conditions = state.conditions.read().unwrap().clone();
     let ui_filters = state.ui_filters.read().unwrap().clone();
     let op_conditions = state.op_conditions.read().unwrap().clone();
-    let search = state.search.read().unwrap().clone();
     let sort = state.sort.read().unwrap().clone();
 
     let mut gathered: Vec<(String, vantage_types::Record<ciborium::Value>, CacheStatus)> =
@@ -168,7 +163,6 @@ pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
             && matches_conditions(&rec, &conditions)
             && matches_conditions(&rec, &ui_filters)
             && matches_op_conditions(&rec, &op_conditions)
-            && matches_search(&rec, search.as_deref())
         {
             gathered.push((id.clone(), rec, status));
         }

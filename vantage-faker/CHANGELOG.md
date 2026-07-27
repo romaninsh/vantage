@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.9 — 2026-07-27
+
+- Track vantage-diorama 0.9 (client-side search and the augmentation spec layer
+  removed). No behavior changes here.
+
 ## 0.6.8 — 2026-07-24
 
 - Track vantage-diorama 0.8 (draft-servo release). No behavior changes.

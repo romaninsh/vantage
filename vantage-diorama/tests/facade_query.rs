@@ -1,12 +1,13 @@
-//! Facade narrowing: `dio.vista()` honours condition / order / search,
-//! pushing each into the master where it can answer it and applying it over
-//! the cache where it cannot.
+//! Facade narrowing: `dio.vista()` honours condition and order, pushing each
+//! into the master where it can answer it and applying it over the cache where
+//! it cannot. Search is not lifted — see
+//! `the_facade_refuses_a_search_it_cannot_answer`.
 //!
 //! The CSV cases are the ones that matter most. CSV is the canonical
-//! capability-poor master — it advertises neither `can_order` nor `can_search`,
-//! and its factory flags no column `ORDERABLE` — so every one of these
-//! narrowings is served entirely by the Dio. A mock master with the flags set
-//! by hand would pass while the real thing failed.
+//! capability-poor master — it advertises no `can_order`, and its factory flags
+//! no column `ORDERABLE` — so every one of these narrowings is served entirely
+//! by the Dio. A mock master with the flags set by hand would pass while the
+//! real thing failed.
 
 use std::sync::Arc;
 
@@ -139,7 +140,7 @@ async fn csv_sorts_numbers_numerically() -> Result<()> {
 }
 
 #[tokio::test]
-async fn csv_filters_and_searches_over_the_cache() -> Result<()> {
+async fn csv_filters_over_the_cache() -> Result<()> {
     let dio = eager_dio(csv_master()?).await?;
 
     let mut fivers = dio.vista();
@@ -148,10 +149,6 @@ async fn csv_filters_and_searches_over_the_cache() -> Result<()> {
     got.sort();
     assert_eq!(got, vec!["Cappuccino", "Flat White"]);
     assert_eq!(fivers.get_count().await?, 2, "count reflects the narrowing");
-
-    let mut searched = dio.vista();
-    searched.add_search("latte")?;
-    assert_eq!(names(&searched.list_values().await?), vec!["Latte"]);
     Ok(())
 }
 
@@ -186,19 +183,41 @@ async fn csv_narrowing_hides_rows_from_get() -> Result<()> {
 
 // ---- the capability contract -----------------------------------------------
 
-/// The regression this change exists for: the facade advertised `can_order` /
-/// `can_search` and then refused them with `Unimplemented`.
+/// The regression this change exists for: the facade advertised `can_order`
+/// and then refused it with `Unimplemented`.
 #[tokio::test]
 async fn the_facade_honours_the_capabilities_it_advertises() -> Result<()> {
     let dio = eager_dio(csv_master()?).await?;
     let facade = dio.vista();
     assert!(facade.capabilities().can_order);
-    assert!(facade.capabilities().can_search);
 
     let mut facade = facade;
     facade.add_order("name", SortDirection::Ascending)?;
-    facade.add_search("esp")?;
-    assert_eq!(names(&facade.list_values().await?), vec!["Espresso"]);
+    assert_eq!(
+        names(&facade.list_values().await?)
+            .first()
+            .map(String::as_str),
+        Some("Cappuccino"),
+    );
+    Ok(())
+}
+
+/// The facade does NOT lift search the way it lifts ordering. It has no
+/// search of its own and nowhere to forward the term to, so it advertises
+/// `can_search: false` and refuses the call — rather than accepting it and
+/// handing back the unfiltered set, which is what a silent local filter
+/// amounted to once the term could not be pushed down.
+#[tokio::test]
+async fn the_facade_refuses_a_search_it_cannot_answer() -> Result<()> {
+    let dio = eager_dio(csv_master()?).await?;
+    let facade = dio.vista();
+    assert!(!facade.capabilities().can_search);
+
+    let mut facade = facade;
+    assert!(
+        facade.add_search("esp").is_err(),
+        "an accepted search that never runs is worse than a refused one",
+    );
     Ok(())
 }
 

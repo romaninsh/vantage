@@ -371,6 +371,37 @@ fn cbor_i64(v: &CborValue) -> Option<i64> {
     }
 }
 
+/// Stringify a CBOR value for use as a **record id** — a cache key, a
+/// traversal target, a selection identity.
+///
+/// Deliberately not [`cbor_to_string`], and not interchangeable with it.
+/// This returns `Option`, and `None` is load-bearing: a shape that is not a
+/// plausible id (`Null`, `Float`, `Bytes`, `Array`, `Map`) yields nothing so
+/// the caller can *skip* the row. `cbor_to_string` would hand back `""` for
+/// `Null`, turning "this row has no id" into "this row's id is the empty
+/// string" — which then keys a cache entry.
+///
+/// A `Tag(8, [table, id])` renders `table:id`. Any other tag is transparent:
+/// the id is whatever the payload stringifies to, including `Tag(6)` (NONE),
+/// where the payload rather than `null` is what an id would have to be.
+pub fn cbor_id_to_string(value: &CborValue) -> Option<String> {
+    match value {
+        CborValue::Text(s) => Some(s.clone()),
+        CborValue::Integer(i) => Some(i128::from(*i).to_string()),
+        CborValue::Bool(b) => Some(b.to_string()),
+        CborValue::Tag(8, inner) => match inner.as_ref() {
+            CborValue::Array(arr) if arr.len() == 2 => {
+                let table = cbor_id_to_string(&arr[0])?;
+                let id = cbor_id_to_string(&arr[1])?;
+                Some(format!("{table}:{id}"))
+            }
+            other => cbor_id_to_string(other),
+        },
+        CborValue::Tag(_, inner) => cbor_id_to_string(inner),
+        _ => None,
+    }
+}
+
 /// Lowercase hex, dependency-free.
 pub fn hex_encode(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
@@ -759,5 +790,52 @@ mod tests {
             json_to_cbor_with_hint(&json!("abc"), Some(&CborValue::Integer(0.into()))),
             CborValue::Text("abc".into())
         );
+    }
+
+    #[test]
+    fn record_ids_stringify_by_shape() {
+        let thing = CborValue::Tag(
+            8,
+            Box::new(CborValue::Array(vec![
+                CborValue::Text("bakery".into()),
+                CborValue::Text("1".into()),
+            ])),
+        );
+        assert_eq!(cbor_id_to_string(&thing).as_deref(), Some("bakery:1"));
+        assert_eq!(
+            cbor_id_to_string(&CborValue::Text("abc".into())).as_deref(),
+            Some("abc"),
+        );
+        assert_eq!(
+            cbor_id_to_string(&CborValue::Integer(42.into())).as_deref(),
+            Some("42"),
+        );
+        // A non-8 tag is transparent — the payload is the id.
+        assert_eq!(
+            cbor_id_to_string(&CborValue::Tag(6, Box::new(CborValue::Text("x".into())))).as_deref(),
+            Some("x"),
+        );
+    }
+
+    /// The `None` arm is the point of this function existing separately from
+    /// [`cbor_to_string`], which maps these to `""` / a number / JSON text.
+    /// A caller uses `None` to skip a row; an empty string would key a cache
+    /// entry under "no id at all".
+    #[test]
+    fn shapes_that_cannot_be_an_id_yield_none() {
+        for v in [
+            CborValue::Null,
+            CborValue::Float(1.5),
+            CborValue::Bytes(vec![1, 2]),
+            CborValue::Array(vec![CborValue::Text("a".into())]),
+            CborValue::Map(vec![]),
+        ] {
+            assert_eq!(cbor_id_to_string(&v), None, "{v:?} is not an id");
+            assert_ne!(
+                cbor_to_string(&PlainDialect, &v),
+                String::from("\u{0}"),
+                "cbor_to_string always answers — that is why it is not a substitute",
+            );
+        }
     }
 }

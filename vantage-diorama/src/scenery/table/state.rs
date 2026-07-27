@@ -12,9 +12,7 @@ use crate::dio::{DioInner, Generation};
 use crate::lens::SceneryChunkTarget;
 use crate::scenery::enriched_record::{EnrichedRecord, RowStatus};
 
-use super::helpers::{
-    cmp_sort, matches_conditions, matches_op_conditions, matches_search, record_get_path,
-};
+use super::helpers::{cmp_sort, matches_conditions, matches_op_conditions, record_get_path};
 use super::{SortDir, ViewportRequest};
 
 /// Internal state shared by the public scenery handle, the reactor
@@ -32,7 +30,6 @@ pub(crate) struct TableSceneryState {
     /// eq path is unchanged; both are ANDed in the reseed filter chain.
     pub(crate) op_conditions: RwLock<Vec<super::OpCondition>>,
     pub(crate) sort: RwLock<Option<(String, SortDir)>>,
-    pub(crate) search: RwLock<Option<String>>,
 
     pub(crate) rows: RwLock<BTreeMap<usize, Arc<EnrichedRecord>>>,
     pub(crate) id_to_idx: RwLock<HashMap<String, usize>>,
@@ -103,7 +100,7 @@ pub(crate) struct TableSceneryState {
     pub(crate) demand: Option<Vec<String>>,
     /// The shared per-query ordered index for this scenery's conditions/sort,
     /// keyed by [`Vista::index_key`](vantage_vista::Vista::index_key). `None` in single-pass mode.
-    /// Swappable: a `set_sort` / `set_search` re-points it at the index for the
+    /// Swappable: a `set_sort` re-points it at the index for the
     /// new variant (see [`resort`](super::two_pass::resort)).
     pub(crate) index: RwLock<Option<Arc<crate::dio::query_index::QueryIndex>>>,
     /// This scenery's key in the Dio's dedup registry, captured at open. Cleared
@@ -125,10 +122,10 @@ impl TableSceneryState {
     /// Whether the visible set is *locally refined* — filtered and ordered over
     /// the cache rather than served in the index's own order.
     ///
-    /// Engaged when a two-pass view carries any condition, filter chip, sort or
-    /// search: the list pass can't push those down (and an augmented column
-    /// doesn't exist until a row hydrates), so the visible map — not the index —
-    /// is authoritative for `row_count`.
+    /// Engaged when a two-pass view carries any condition, filter chip or sort:
+    /// the list pass can't push those down (and an augmented column doesn't
+    /// exist until a row hydrates), so the visible map — not the index — is
+    /// authoritative for `row_count`.
     ///
     /// **Derived, never stored.** It used to be a `bool` computed once in the
     /// builder, which made `set_sort` on a view opened without one a permanent
@@ -144,7 +141,6 @@ impl TableSceneryState {
             || !self.op_conditions.read().unwrap().is_empty()
             || !self.ui_filters.read().unwrap().is_empty()
             || self.sort.read().unwrap().is_some()
-            || self.search.read().unwrap().is_some()
     }
 
     pub(crate) fn bump_generation(&self) {
@@ -194,7 +190,7 @@ impl TableSceneryState {
     }
 
     /// Drop this scenery's dedup-registry entry the first time it mutates its
-    /// own query (sort/search) in place. Idempotent: the key is taken once.
+    /// own query (sort, filter chips) in place. Idempotent: the key is taken once.
     pub(crate) fn deregister(&self) {
         let Some(key) = self.registry_key.lock().unwrap().take() else {
             return;
@@ -205,7 +201,7 @@ impl TableSceneryState {
     }
 
     /// Replace the sparse map from a freshly-listed cache snapshot.
-    /// Applies conditions/search/sort in memory (v1-compat path).
+    /// Applies conditions/sort in memory (v1-compat path).
     pub(crate) async fn reseed_from_cache(&self) -> vantage_core::Result<()> {
         let Some(dio_inner) = self.dio_weak.upgrade() else {
             return Ok(());
@@ -214,14 +210,12 @@ impl TableSceneryState {
 
         let conditions = self.conditions.read().unwrap().clone();
         let op_conditions = self.op_conditions.read().unwrap().clone();
-        let search = self.search.read().unwrap().clone();
         let sort = self.sort.read().unwrap().clone();
 
         let mut filtered: Vec<(String, Record<CborValue>)> = all
             .into_iter()
             .filter(|(_, rec)| matches_conditions(rec, &conditions))
             .filter(|(_, rec)| matches_op_conditions(rec, &op_conditions))
-            .filter(|(_, rec)| matches_search(rec, search.as_deref()))
             .collect();
 
         if let Some((col, dir)) = sort {
