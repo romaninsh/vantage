@@ -1,5 +1,61 @@
 # Changelog
 
+## 0.8.8 — 2026-07-27
+
+**An augmented grid stops flickering, and its detail sweep converges**
+
+Three defects on the two-pass path, all visible on one screen: a grid over ~870
+rows whose default filter chip narrows on an augmented column, so the whole
+index has to hydrate before the predicate can be evaluated.
+
+- **`refresh_index` published the unfiltered row set before the filtered one.**
+  It wrote the raw index-order map into the visible map and only then awaited
+  `reseed_filtered` to replace it. `row_count` and `row` read that map
+  directly, and the reseed's per-id cache reads take ~80ms over an 870-row
+  index — so for that window a refined grid served its entire *unfiltered*
+  candidate set in source order (872 rows where the filter kept 37), headed by
+  a row the filter exists to hide. A consumer repainting on a timer while rows
+  hydrate lands inside the window about half the time, which reads as rows
+  briefly reordering and the first row's values blanking, then snapping back.
+
+  It now publishes exactly one map: a refined view's is the filtered, sorted
+  set; an unrefined view's is the index's own order. Same off-to-the-side
+  discipline the function already applied to the index spine.
+
+- **Rows with no detail record were re-fetched forever.** A row that hydrates
+  and finds nothing keeps its augment gap, so the gap rule re-enqueued it on
+  the next sweep: hydrate → still gapped → generation bump → sweep → hydrate.
+  Where absences are common that is a permanent background sweep — measured at
+  ~33 detail fetches/sec that never finish, each rewriting its row and
+  broadcasting `RecordChanged`, i.e. a continuously repainting consumer.
+
+  `DioInner::augment_settled_empty` remembers them. The periodic ticker no
+  longer clears it — `Dio::refresh` (explicit) re-probes, the ticker does not,
+  because a scheduled re-pull of the master is no evidence the detail source
+  changed. Clearing on a timer defeated the set entirely: every settled-empty
+  row was un-settled, re-fetched, found empty again, re-settled, and wiped
+  again on the next tick.
+
+- **The sweep re-derived what it already knew, once per row per pass.** Its
+  skip rule is "`Complete` and no augment gap", and the gap half can only be
+  answered from the record — one cache read per row, on every pass, including
+  for rows long since settled. Hydrating 835 rows cost ~120k reads, and it made
+  false the "dedups against already-`Complete` rows" assumption that a
+  consumer's viewport re-issue on each generation bump relies on.
+
+  `DioInner::augment_settled` memoizes the rule, so a settled row costs a
+  lookup rather than a read. It memoizes the whole rule rather than standing in
+  for it, which is what keeps it sound — `CacheStatus` alone would not be, since
+  a cache warmed by plain inserts stores rows `Complete` without ever running
+  the detail pass. Cleared on every refresh, unlike `augment_settled_empty`:
+  the refresh pass demotes changed rows to `Incomplete` to drive their refetch,
+  and a memo saying "settled" would mask that.
+
+- The event bus logs when it drops events. A lagged reactor re-derives the
+  whole set, which was previously indistinguishable from a legitimate
+  whole-set refresh; a steady trickle means some producer is outrunning the
+  reactor.
+
 ## 0.8.7 — 2026-07-26
 
 - **Stop the test suite asserting on speed.** `wait_for_gen` allowed 500ms for a

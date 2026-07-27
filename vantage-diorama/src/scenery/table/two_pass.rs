@@ -501,40 +501,53 @@ pub(crate) async fn refresh_index(state: &Arc<TableSceneryState>) {
     }
     *state.list_in_flight.lock().unwrap() = false;
 
-    // Read the rows for the new spine before touching anything visible; each
-    // shows `Fresh`/`Incomplete` per its cached status.
-    let ids = fresh.ids();
-    let mut rows = std::collections::BTreeMap::new();
-    let mut id_to_idx = std::collections::HashMap::new();
-    for (i, id) in ids.iter().enumerate() {
-        let Some((rec, status)) = dio_inner
-            .cache
-            .get_value_with_status(id)
-            .await
-            .ok()
-            .flatten()
-        else {
-            continue;
-        };
-        let enriched = match status {
-            CacheStatus::Complete => EnrichedRecord::fresh(rec),
-            CacheStatus::Incomplete => EnrichedRecord::incomplete(rec),
-        };
-        rows.insert(i, Arc::new(enriched));
-        id_to_idx.insert(id.clone(), i);
-    }
-
-    // Swap in one motion: shared registry, scenery index, sparse map.
+    // Register the new spine first: `reseed_filtered` derives the visible set
+    // from the scenery's index, so it has to be the fresh one.
     dio_inner
         .query_indexes
         .lock()
         .unwrap()
         .insert(key, fresh.clone());
-    state.set_index(Some(fresh));
-    *state.rows.write().unwrap() = rows;
-    *state.id_to_idx.write().unwrap() = id_to_idx;
+    state.set_index(Some(fresh.clone()));
+
+    // Publish EXACTLY ONE visible map. A refined view's is the filtered,
+    // sorted set; an unrefined view presents the index's own order.
+    //
+    // This used to write the raw index-order map and let `reseed_filtered`
+    // replace it a moment later. `state.rows` is what `row_count` and `row`
+    // read, and the reseed's per-id cache reads take ~80ms over an 872-row
+    // index — so for that window a refined grid served its whole UNFILTERED
+    // candidate set in source order (872 rows where the filter keeps 37),
+    // headed by a row the filter exists to hide. The fast repaint tick that
+    // runs while rows are still hydrating lands inside that window about half
+    // the time, which is the reorder flicker: the head changes, then snaps
+    // back. Building off to the side is the same discipline this function
+    // already applies to the index spine above.
     if state.local_refine() {
         reseed_filtered(state).await;
+    } else {
+        let ids = fresh.ids();
+        let mut rows = std::collections::BTreeMap::new();
+        let mut id_to_idx = std::collections::HashMap::new();
+        for (i, id) in ids.iter().enumerate() {
+            let Some((rec, status)) = dio_inner
+                .cache
+                .get_value_with_status(id)
+                .await
+                .ok()
+                .flatten()
+            else {
+                continue;
+            };
+            let enriched = match status {
+                CacheStatus::Complete => EnrichedRecord::fresh(rec),
+                CacheStatus::Incomplete => EnrichedRecord::incomplete(rec),
+            };
+            rows.insert(i, Arc::new(enriched));
+            id_to_idx.insert(id.clone(), i);
+        }
+        *state.rows.write().unwrap() = rows;
+        *state.id_to_idx.write().unwrap() = id_to_idx;
     }
     state.bump_generation();
 
@@ -595,10 +608,43 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
 
     let mut pending = Vec::new();
     let mut seeded = false;
+    // Sweep census, for the log line below. A detail pass that keeps enqueueing
+    // the same rows every time it runs is the signature of a hydration loop,
+    // and without these counts it is indistinguishable from ordinary scrolling.
+    let mut settled_empty_skips = 0usize;
+    let mut already_complete = 0usize;
+    let mut memo_skips = 0usize;
+    let requested = range.len();
+    // Hoisted: `local_refine` reads five locks to answer, and the query cannot
+    // change under a sweep that never yields to a mutator.
+    let local_refine = state.local_refine();
     for idx in range {
         let Some(id) = index.id_at(idx) else {
             continue;
         };
+        // Memo fast path. Establishing "settled" from the record costs a cache
+        // read, and this loop runs over the WHOLE index on a view whose
+        // predicate touches an augmented column — re-derived on every
+        // generation bump, so every batch of hydrations pays for the entire
+        // table again. Both settled sets are decided answers; consult them
+        // before reading.
+        //
+        // Gated on the slot already existing for an unrefined view: that view
+        // still has to materialize slots a SIBLING scenery's list pass seeded
+        // into its own map only, and that genuinely needs the record. A
+        // refined view owns its map wholesale and never seeds here.
+        if local_refine || state.rows.read().unwrap().contains_key(&idx) {
+            let settled = dio_inner.augment_settled.lock().unwrap().contains(&id)
+                || dio_inner
+                    .augment_settled_empty
+                    .lock()
+                    .unwrap()
+                    .contains(&id);
+            if settled {
+                memo_skips += 1;
+                continue;
+            }
+        }
         let cached = dio_inner
             .cache
             .get_value_with_status(&id)
@@ -610,7 +656,7 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
         // SIBLING scenery — whose run_list_page seeded only its own map.
         // The viewport pass reads the cache row anyway; putting it on screen
         // is free. (Locally-refined views own their map wholesale — skip.)
-        if !state.local_refine()
+        if !local_refine
             && let Some((row, status)) = &cached
             && !state.rows.read().unwrap().contains_key(&idx)
         {
@@ -626,16 +672,26 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
             let no_gap =
                 !gap_aware || !crate::dio::augment_passes::has_augment_gap(row, &augmented);
             if no_gap {
+                already_complete += 1;
+                // Remember the answer we just paid a read for. This is the
+                // path that populates the memo for a cache warmed before this
+                // process started — `hydrate_one` only ever runs for rows the
+                // sweep enqueues, so it alone would leave a fully-hydrated
+                // persisted cache re-reading every row on every sweep.
+                dio_inner.augment_settled.lock().unwrap().insert(id.clone());
                 continue;
             }
-            // Hydrated but legitimately empty (no detail record exists) —
-            // don't re-fetch until a refresh clears the settled set.
+            // Hydrated but legitimately empty (no detail record exists) — don't
+            // re-fetch until an EXPLICIT refresh clears the settled set (the
+            // scheduled ticker deliberately leaves it alone; see
+            // `augment_passes::RefreshKind`).
             if dio_inner
                 .augment_settled_empty
                 .lock()
                 .unwrap()
                 .contains(&id)
             {
+                settled_empty_skips += 1;
                 continue;
             }
         }
@@ -644,6 +700,15 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
     if seeded {
         state.bump_generation();
     }
+    tracing::debug!(
+        target: "vantage_diorama::augment",
+        requested,
+        pending = pending.len(),
+        already_complete,
+        settled_empty_skips,
+        memo_skips,
+        "detail pass census",
+    );
     if pending.is_empty() {
         return;
     }

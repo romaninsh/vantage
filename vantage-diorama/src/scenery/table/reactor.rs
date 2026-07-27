@@ -90,7 +90,17 @@ pub(crate) async fn reload_loop(
                     | Ok(DioEvent::RangeLoaded { .. })
                     | Ok(DioEvent::LoadFailed { .. })
                     | Ok(DioEvent::Hydrating { .. }) => {}
-                    Err(broadcast::error::RecvError::Lagged(_)) => {
+                    // Dropped events: the reactor fell behind the bus, so it
+                    // cannot know what it missed and re-derives the whole set.
+                    // Worth a line — an overflow is otherwise indistinguishable
+                    // from a legitimate whole-set refresh, and a steady trickle
+                    // of them means some producer is outrunning this loop.
+                    Err(broadcast::error::RecvError::Lagged(missed)) => {
+                        tracing::debug!(
+                            target: "vantage_diorama::augment",
+                            missed,
+                            "event bus lagged — re-deriving the whole set",
+                        );
                         refresh(&state).await;
                     }
                     Err(broadcast::error::RecvError::Closed) => return,

@@ -61,6 +61,7 @@ impl Lens {
             augment_scheduler: Arc::new(crate::dio::augment_scheduler::AugmentScheduler::new()),
             augment_worker_handles: std::sync::Mutex::new(Vec::new()),
             augment_settled_empty: std::sync::Mutex::new(std::collections::HashSet::new()),
+            augment_settled: std::sync::Mutex::new(std::collections::HashSet::new()),
         });
         let dio = Dio { inner };
 
@@ -148,13 +149,16 @@ async fn refresh_loop(
             continue;
         }
         let dio = Dio { inner: strong };
-        // Delegate to `dio.refresh()` so the auto ticker and the manual path
-        // share one definition: it announces `Refreshing`, runs `on_refresh`,
-        // and publishes `DatasetChanged` *only* when the refresh succeeds. A failed
-        // tick (e.g. the source 503s) must not invalidate — that would reseed
-        // sceneries from stale cache and drop rows added since the last good
-        // refresh.
-        if let Err(e) = dio.refresh().await {
+        // Delegate to the same body as the manual path: it announces
+        // `Refreshing`, runs `on_refresh`, and publishes `DatasetChanged`
+        // *only* when the refresh succeeds. A failed tick (e.g. the source
+        // 503s) must not invalidate — that would reseed sceneries from stale
+        // cache and drop rows added since the last good refresh.
+        //
+        // `refresh_scheduled`, not `refresh`: the one thing the ticker must NOT
+        // do is re-probe augment rows already known to have no detail record.
+        // Doing so every tick prevents the detail sweep from ever converging.
+        if let Err(e) = dio.refresh_scheduled().await {
             tracing::error!(error = %e, "on_refresh callback failed");
         }
     }
