@@ -15,43 +15,21 @@
 //! is a continuous re-fetch of every missing row, each one rewriting its row
 //! and broadcasting `RecordChanged`, i.e. a permanently repainting UI.
 
+mod support;
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use ciborium::Value as CborValue;
+use support::chunk::col_at;
+use support::{meta, record};
 use tempfile::TempDir;
 use vantage_diorama::{
     Augmentation, Detail, Dio, Fetch, Lens, MergeRule, RowStatus, Source, TableScenery,
 };
-use vantage_types::Record;
+use vantage_vista::Vista;
 use vantage_vista::mocks::MockShell;
-use vantage_vista::{Column, Vista, VistaMetadata};
 use vantage_vista_factory::VistaCatalog;
-
-fn text(s: &str) -> CborValue {
-    CborValue::Text(s.into())
-}
-
-fn record(pairs: &[(&str, &str)]) -> Record<CborValue> {
-    pairs
-        .iter()
-        .map(|(k, v)| ((*k).to_string(), text(v)))
-        .collect()
-}
-
-fn meta(columns: &[&str]) -> VistaMetadata {
-    let mut m = VistaMetadata::new();
-    for c in columns {
-        let col = if *c == "id" {
-            Column::new("id", "String").with_flag("id")
-        } else {
-            Column::new(*c, "String")
-        };
-        m = m.with_column(col);
-    }
-    m.with_id_column("id")
-}
 
 /// Master: two rows, cheap columns only.
 fn master_vista() -> Vista {
@@ -120,13 +98,6 @@ fn status_of(s: &Arc<dyn TableScenery>, i: usize) -> Option<RowStatus> {
     s.row(i).map(|r| r.status.clone())
 }
 
-fn col_of(s: &Arc<dyn TableScenery>, i: usize, c: &str) -> Option<String> {
-    s.row(i).and_then(|r| match r.record.get(c) {
-        Some(CborValue::Text(t)) => Some(t.clone()),
-        _ => None,
-    })
-}
-
 async fn eventually(label: &str, f: impl Fn() -> bool) {
     for _ in 0..200 {
         if f() {
@@ -166,14 +137,14 @@ async fn a_row_with_no_detail_record_keeps_its_list_columns() {
     let dio = open_with_ticker(&tmp, hits.clone(), None).await;
     let (scenery, _) = hydrate_both(&dio, &hits).await;
 
-    assert_eq!(col_of(&scenery, 0, "detail").as_deref(), Some("full-r0"));
+    assert_eq!(col_at(&scenery, 0, "detail").as_deref(), Some("full-r0"));
     assert_eq!(
-        col_of(&scenery, 1, "detail"),
+        col_at(&scenery, 1, "detail"),
         None,
         "r1's detail source has no record — the column stays absent",
     );
     assert_eq!(
-        col_of(&scenery, 1, "branch").as_deref(),
+        col_at(&scenery, 1, "branch").as_deref(),
         Some("dev"),
         "the cheap list columns survive a detail miss",
     );

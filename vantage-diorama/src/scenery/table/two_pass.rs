@@ -65,6 +65,44 @@ async fn seed_rows(
     }
 }
 
+/// Publish the visible map for an **unrefined** view: the index's ids in the
+/// index's own order, each row read from the cache and stamped
+/// `Fresh`/`Incomplete` per its status. Built detached and swapped in one
+/// write, so the map never passes through a partial state a concurrent
+/// `row`/`row_count` could observe.
+///
+/// The refined counterpart is [`reseed_filtered`], which applies the
+/// conditions/filters/sort over the cache instead. Every path that replaces the
+/// spine — [`resort`] and [`refresh_index`] — picks one of the two and calls
+/// exactly one of them.
+async fn publish_index_order(
+    state: &Arc<TableSceneryState>,
+    dio_inner: &Arc<crate::dio::DioInner>,
+    ids: &[String],
+) {
+    let mut rows = std::collections::BTreeMap::new();
+    let mut id_to_idx = std::collections::HashMap::new();
+    for (i, id) in ids.iter().enumerate() {
+        let Some((rec, status)) = dio_inner
+            .cache
+            .get_value_with_status(id)
+            .await
+            .ok()
+            .flatten()
+        else {
+            continue;
+        };
+        let enriched = match status {
+            CacheStatus::Complete => EnrichedRecord::fresh(rec),
+            CacheStatus::Incomplete => EnrichedRecord::incomplete(rec),
+        };
+        rows.insert(i, Arc::new(enriched));
+        id_to_idx.insert(id.clone(), i);
+    }
+    *state.rows.write().unwrap() = rows;
+    *state.id_to_idx.write().unwrap() = id_to_idx;
+}
+
 /// Whether this scenery's conditions or sort touch a column produced by
 /// augmentation — the case that needs full-index hydration before the predicate
 /// can be evaluated. A native (list-pass) column is already present on the cheap
@@ -361,28 +399,7 @@ pub(crate) async fn resort(state: Arc<TableSceneryState>) {
     if state.local_refine() {
         reseed_filtered(&state).await;
     } else {
-        let ids = new_index.ids();
-        let mut rows = std::collections::BTreeMap::new();
-        let mut id_to_idx = std::collections::HashMap::new();
-        for (i, id) in ids.iter().enumerate() {
-            let Some((rec, status)) = dio_inner
-                .cache
-                .get_value_with_status(id)
-                .await
-                .ok()
-                .flatten()
-            else {
-                continue;
-            };
-            let enriched = match status {
-                CacheStatus::Complete => EnrichedRecord::fresh(rec),
-                CacheStatus::Incomplete => EnrichedRecord::incomplete(rec),
-            };
-            rows.insert(i, Arc::new(enriched));
-            id_to_idx.insert(id.clone(), i);
-        }
-        *state.rows.write().unwrap() = rows;
-        *state.id_to_idx.write().unwrap() = id_to_idx;
+        publish_index_order(&state, &dio_inner, &new_index.ids()).await;
     }
     // Ids enqueued for the previous order stay queued — the scheduler's
     // settled recheck makes any that no longer need hydration free no-ops.
@@ -526,28 +543,7 @@ pub(crate) async fn refresh_index(state: &Arc<TableSceneryState>) {
     if state.local_refine() {
         reseed_filtered(state).await;
     } else {
-        let ids = fresh.ids();
-        let mut rows = std::collections::BTreeMap::new();
-        let mut id_to_idx = std::collections::HashMap::new();
-        for (i, id) in ids.iter().enumerate() {
-            let Some((rec, status)) = dio_inner
-                .cache
-                .get_value_with_status(id)
-                .await
-                .ok()
-                .flatten()
-            else {
-                continue;
-            };
-            let enriched = match status {
-                CacheStatus::Complete => EnrichedRecord::fresh(rec),
-                CacheStatus::Incomplete => EnrichedRecord::incomplete(rec),
-            };
-            rows.insert(i, Arc::new(enriched));
-            id_to_idx.insert(id.clone(), i);
-        }
-        *state.rows.write().unwrap() = rows;
-        *state.id_to_idx.write().unwrap() = id_to_idx;
+        publish_index_order(state, &dio_inner, &fresh.ids()).await;
     }
     state.bump_generation();
 
