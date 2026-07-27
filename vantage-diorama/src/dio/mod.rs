@@ -176,6 +176,32 @@ pub(crate) struct DioInner {
     /// sweep → hydrate, a busy loop. Cleared by the refresh pass so a
     /// detail source that GAINS a record is picked up on the next refresh.
     pub(crate) augment_settled_empty: std::sync::Mutex<std::collections::HashSet<String>>,
+    /// Rows the detail pass hydrated and FILLED — the other half of the
+    /// settled set, and a pure memo of the sweep's own skip rule (`Complete`
+    /// AND no augment gap).
+    ///
+    /// The sweep can only answer the gap half from the record, which costs a
+    /// cache read per row. On a view whose predicate forces whole-index
+    /// hydration that is O(n) reads to advance a handful of rows, re-run on
+    /// every generation bump — and it makes false the "dedups against
+    /// already-`Complete` rows" assumption a consumer's viewport re-issue
+    /// relies on. Recording the answer here costs one lookup instead.
+    ///
+    /// Because it memoizes the whole rule rather than standing in for it, it
+    /// is exactly as trustworthy as the check — which is why both the sweep
+    /// (when it pays for a read) and `hydrate_one` (when it fills a row) may
+    /// write it. Memoizing `CacheStatus` alone would NOT be sound: a cache
+    /// warmed by plain inserts (an `on_start` sync pump) stores rows
+    /// `Complete` without ever running the detail pass, and the gap half of
+    /// the rule is what catches that.
+    ///
+    /// Cleared on EVERY refresh, unlike
+    /// [`augment_settled_empty`](Self::augment_settled_empty), which survives
+    /// a scheduled tick: the refresh pass demotes changed rows to `Incomplete`
+    /// precisely to drive their refetch, and a memo saying "settled" would
+    /// mask that. The two sets answer different questions and are invalidated
+    /// by different events.
+    pub(crate) augment_settled: std::sync::Mutex<std::collections::HashSet<String>>,
 }
 
 impl Drop for DioInner {
@@ -728,11 +754,29 @@ impl Dio {
     /// to the caller (the scheduled refresh task only logs them).
     ///
     /// Returns `Ok(())` immediately when no `on_refresh` is registered.
+    ///
+    /// This is the *requested* path: an augmenting Dio re-probes rows that
+    /// previously found no detail record. The periodic ticker takes an
+    /// internal scheduled path instead, which deliberately does not — a
+    /// timed re-pull of the master is no evidence the detail source changed.
     pub async fn refresh(&self) -> Result<()> {
+        self.refresh_with(augment_passes::RefreshKind::Requested)
+            .await
+    }
+
+    /// The periodic ticker's refresh. Identical to [`Self::refresh`] except it
+    /// leaves settled-empty augment rows alone, so a detail source that
+    /// legitimately has no record for a row isn't re-queried every tick.
+    pub(crate) async fn refresh_scheduled(&self) -> Result<()> {
+        self.refresh_with(augment_passes::RefreshKind::Scheduled)
+            .await
+    }
+
+    async fn refresh_with(&self, kind: augment_passes::RefreshKind) -> Result<()> {
         let _ = self.inner.event_bus.send(DioEvent::Refreshing);
         let result = if self.inner.has_dio_augment() {
             // Dio owns augmentation → run its reconciling refresh pass.
-            augment_passes::refresh(self).await
+            augment_passes::refresh(self, kind).await
         } else if let Some(cb) = self.inner.lens.callbacks.on_refresh.as_ref() {
             cb(self).await
         } else {

@@ -17,6 +17,22 @@ use crate::dio::Dio;
 use crate::lens::CacheStatus;
 use crate::ops::QueryDescriptor;
 
+/// What prompted a refresh — the two differ in how much they are entitled to
+/// assume about the DETAIL source.
+///
+/// A scheduled tick re-pulls the master on a timer; it learns nothing about
+/// whether a detail source gained records, so it must not invalidate
+/// conclusions already reached about it. An explicit request is the user
+/// saying "re-check everything", and pays for a full re-probe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RefreshKind {
+    /// The periodic ticker (`refresh_interval`).
+    Scheduled,
+    /// Someone asked — a Refresh button, `Dio::refresh`, a scenery's
+    /// `request_refresh`.
+    Requested,
+}
+
 /// Capability-aware **list pass**: push the `[offset, offset+limit)` window down
 /// to the master when it advertises `can_fetch_window`, otherwise list the whole
 /// set and window it locally so sequential paging still terminates.
@@ -111,16 +127,21 @@ pub(crate) async fn hydrate_one(inner: &std::sync::Arc<super::DioInner>, id: &st
         .cache
         .insert_value_with_status(id, &merged, CacheStatus::Complete)
         .await?;
-    // A row still gapped AFTER hydration has no detail record to fill it
-    // (legitimate absence). Remember it so the sweep stops re-fetching —
-    // otherwise gap → hydrate → still gapped → generation bump → sweep is
-    // a busy loop. The refresh pass clears this set.
+    // Record which way this row settled. Gapped AFTER hydration means the
+    // detail source has no record to fill it (legitimate absence); filled
+    // means it is done. Either way the sweep must be able to skip it without
+    // reading it back — otherwise gap → hydrate → still gapped → generation
+    // bump → sweep is a busy loop, and even a filled row costs a cache read
+    // on every sweep to re-establish what we already know here. Both sets are
+    // cleared by the refresh pass.
     if gap_aware && has_augment_gap(&merged, &augmented) {
         inner
             .augment_settled_empty
             .lock()
             .unwrap()
             .insert(id.to_string());
+    } else {
+        inner.augment_settled.lock().unwrap().insert(id.to_string());
     }
     let _ = inner
         .event_bus
@@ -185,14 +206,51 @@ pub(crate) async fn hydrate_gaps(
 /// staleness lives out-of-band in [`CacheStatus`]: `Incomplete` is what drives
 /// the detail pass, so the cell never has to blank to signal the gap. Blank is
 /// reserved for rows that were never filled.
-pub(crate) async fn refresh(dio: &Dio) -> Result<()> {
+pub(crate) async fn refresh(dio: &Dio, kind: RefreshKind) -> Result<()> {
     let fresh = dio.master().list_values().await?;
     let cache = dio.cache();
     let existing = cache.list_values_with_status().await?;
     let augmented = dio.inner.augmented_columns.read().unwrap().clone();
     // A refreshed detail source may have gained records for rows that
-    // previously settled empty — let them fetch again.
-    dio.inner.augment_settled_empty.lock().unwrap().clear();
+    // previously settled empty — let them fetch again. Only on an explicit
+    // request, though.
+    //
+    // Doing it on the scheduled tick makes the sweep unable to converge
+    // whenever absences are common: every settled-empty row is un-settled,
+    // re-fetched, found empty again, and re-settled — then the next tick wipes
+    // the answer and asks again. With a 2s cadence and a detail source that
+    // legitimately has no record for most rows, that is a permanent background
+    // sweep (measured: ~33 detail fetches/sec that never finish), and every
+    // hydration writes the row back and broadcasts `RecordChanged`, so the UI
+    // repaints continuously. The set exists precisely to stop that, and
+    // clearing it on a timer defeated it.
+    //
+    // Cost of the narrower rule: a detail record that appears *after* a row
+    // settled empty is not picked up by the ticker alone. That is the right
+    // trade — a scheduled re-pull of the MASTER is no evidence the DETAIL
+    // source changed, and an explicit refresh (which is what a user reaches
+    // for when data looks stale) still re-probes everything.
+    // The FILLED memo goes on every refresh, scheduled or not: the reconcile
+    // below demotes changed rows to `Incomplete` precisely to make the detail
+    // pass refetch them, and a memo saying "settled" would have the sweep skip
+    // them forever. Costs one re-read per row on the next sweep, no fetches.
+    dio.inner.augment_settled.lock().unwrap().clear();
+
+    if matches!(kind, RefreshKind::Requested) {
+        let cleared = {
+            let mut settled = dio.inner.augment_settled_empty.lock().unwrap();
+            let n = settled.len();
+            settled.clear();
+            n
+        };
+        if cleared > 0 {
+            tracing::debug!(
+                target: "vantage_diorama::augment",
+                cleared,
+                "explicit refresh — re-probing rows that previously had no detail record",
+            );
+        }
+    }
 
     for (id, list_row) in &fresh {
         // A row with a flash in flight keeps its staged value — this
