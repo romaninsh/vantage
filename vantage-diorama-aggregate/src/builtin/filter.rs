@@ -3,7 +3,7 @@
 //! Every reduction in this crate answers over "the rows it was given", so
 //! restricting *which* rows is a separate, orthogonal concern — not something
 //! each reduction should re-implement. [`Where`] wraps any
-//! [`Aggregation`](crate::Aggregation) and hands it a narrowed set, so `sum of
+//! [`crate::Aggregation`] and hands it a narrowed set, so `sum of
 //! Size where Event = opened` composes out of the two pieces already here
 //! instead of needing a `SumWhere`.
 

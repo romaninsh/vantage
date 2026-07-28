@@ -151,7 +151,8 @@ enum Wake {
 /// missed by ignoring them.
 ///
 /// `RangeLoaded` is NOT among them, though it reads like one. A single-pass
-/// chunk load writes its rows through [`ChunkSink::push`], straight into the
+/// chunk load writes its rows through [`vantage_diorama::ChunkSink::push`],
+/// straight into the
 /// cache — it emits no per-row event, and `RangeLoaded` is the only thing it
 /// announces. Ignoring it meant a paged source could load its whole first page
 /// and every aggregate over it would still be reporting the empty set it was

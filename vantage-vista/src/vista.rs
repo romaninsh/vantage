@@ -190,8 +190,8 @@ impl Vista {
     /// can't answer the request.
     ///
     /// `None` is the signal to reduce locally instead — see
-    /// [`TableShell::aggregate_vista`](crate::TableShell::aggregate_vista) for
-    /// why a partial answer is never returned.
+    /// [`crate::TableShell::aggregate_vista`] for why a partial answer is
+    /// never returned.
     pub fn aggregate(&self, spec: &AggregateSpec) -> Result<Option<Vista>> {
         self.source.aggregate_vista(self, spec)
     }

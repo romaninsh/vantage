@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.19 — 2026-07-28
+
+- Doc fix: an intra-doc link on `Vista::aggregate` spelled out a target the
+  label already resolved to, which `-D warnings` rejects. No code change.
+
 ## 0.6.18 — 2026-07-28
 
 - **`AggregateSpec` and `Vista::aggregate`** — an aggregation derives a *new

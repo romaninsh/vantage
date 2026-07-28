@@ -5671,7 +5671,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama-aggregate"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5902,7 +5902,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.18"
+version = "0.6.19"
 dependencies = [
  "async-stream",
  "async-trait",
