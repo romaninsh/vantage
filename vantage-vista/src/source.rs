@@ -8,6 +8,7 @@ use vantage_core::{Result, VantageError, error};
 use vantage_types::Record;
 
 use crate::{
+    aggregate::AggregateSpec,
     capabilities::VistaCapabilities,
     column::Column,
     reference::{ContainedSpec, Reference},
@@ -206,6 +207,40 @@ pub trait TableShell: Send + Sync + 'static {
         Ok(self.list_vista_values(vista).await?.len() as i64)
     }
 
+    /// Derive a **new vista** that reduces this one — the driver's equivalent
+    /// of selecting from a subquery.
+    ///
+    /// An aggregation is not a value, it is a different set: `count(*)` yields
+    /// one row, `GROUP BY` yields one per group, and either can then be
+    /// conditioned, ordered or counted like any other set. Returning a
+    /// [`Vista`] is what lets every consumer keep the single shape it already
+    /// handles instead of growing a scalar special case.
+    ///
+    /// `Ok(None)` means *this driver cannot answer this request* — not that
+    /// the result is empty. The caller then reduces locally, which is a
+    /// different question (the rows it holds, not every row that matches) with
+    /// a different answer, so "can't" must never collapse into a number.
+    ///
+    /// **Narrow before aggregating.** Conditions belong to the source, applied
+    /// with `add_eq_condition` before this call — the order SQL uses, where the
+    /// filter is the inner query and the aggregate selects from its result.
+    /// Narrowing reports its own failure, so a driver is never handed a filter
+    /// it would silently ignore.
+    ///
+    /// **The returned vista's capabilities describe the DERIVED set, not the
+    /// source.** In particular it must not advertise condition support unless
+    /// the driver really implements it: adding a condition to an aggregate is
+    /// `HAVING`, a different operation over different values, and inheriting
+    /// the source's flag would promise a filter that silently does nothing.
+    /// An aggregator holding its entire output in memory is the exception —
+    /// it can filter what it produced, and may say so.
+    ///
+    /// This is construction, not a query — nothing is fetched until someone
+    /// lists the returned vista.
+    fn aggregate_vista(&self, _vista: &Vista, _spec: &AggregateSpec) -> Result<Option<Vista>> {
+        Ok(None)
+    }
+
     // ---- Conditions --------------------------------------------------------
 
     /// Translate `field == value` into the driver's native condition type and
@@ -340,6 +375,27 @@ pub trait TableShell: Send + Sync + 'static {
         _limit: usize,
     ) -> Result<Vec<(String, Record<CborValue>)>> {
         Err(self.default_error("fetch_window", "can_fetch_window"))
+    }
+
+    /// [`fetch_window`](Self::fetch_window), plus the grand total of matching
+    /// rows when this fetch already learned it.
+    ///
+    /// Paged sources typically report the total in every response envelope,
+    /// alongside the window's rows. A caller needing both — a lazily-loaded
+    /// grid sizing its scrollbar — would otherwise pay a second round trip for
+    /// a number the first reply already carried.
+    ///
+    /// Drivers that can answer override this. The default delegates and
+    /// reports `None`, so no existing driver changes and no caller is told a
+    /// total exists when it doesn't. `None` means "this fetch didn't say",
+    /// never "zero".
+    async fn fetch_window_counted(
+        &self,
+        vista: &Vista,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<(String, Record<CborValue>)>, Option<i64>)> {
+        Ok((self.fetch_window(vista, offset, limit).await?, None))
     }
 
     // ---- Quicksearch -------------------------------------------------------

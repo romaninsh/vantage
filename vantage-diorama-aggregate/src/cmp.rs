@@ -27,6 +27,24 @@ pub fn column<'a>(record: &'a Record<CborValue>, path: &str) -> Option<&'a CborV
     Some(current)
 }
 
+/// Render a CBOR scalar as text, or `None` for shapes that aren't scalars
+/// (maps, arrays, bytes, null). Tags are transparent — a tagged datetime or
+/// record id renders as whatever it wraps.
+///
+/// Used to compare a configured value against a column whose CBOR type is
+/// unknown to the configuration; deliberately `Option` so a non-scalar never
+/// silently compares equal to an empty string.
+pub fn scalar_text(value: &CborValue) -> Option<String> {
+    match value {
+        CborValue::Text(s) => Some(s.clone()),
+        CborValue::Integer(i) => Some(i128::from(*i).to_string()),
+        CborValue::Float(f) => Some(f.to_string()),
+        CborValue::Bool(b) => Some(b.to_string()),
+        CborValue::Tag(_, inner) => scalar_text(inner),
+        _ => None,
+    }
+}
+
 /// Total order over CBOR scalars.
 ///
 /// Numbers compare numerically across the integer/float boundary — never by

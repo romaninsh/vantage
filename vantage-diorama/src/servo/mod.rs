@@ -516,7 +516,9 @@ async fn track_loop(
             {
                 absorb_from_cache(&state, &dio_weak).await;
             }
-            DioEvent::DatasetChanged => {
+            // `Seeded` alongside `DatasetChanged`: a servo bound before the
+            // eager load finished has nothing to absorb until it lands.
+            DioEvent::DatasetChanged | DioEvent::Seeded => {
                 absorb_from_cache(&state, &dio_weak).await;
             }
             DioEvent::WritePending { id, kind } if bound(&id) => {

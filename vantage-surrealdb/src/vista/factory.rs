@@ -86,6 +86,15 @@ impl SurrealVistaFactory {
                 can_filter_operators: true,
                 can_set_page_size: true,
                 can_fetch_page: true,
+                // NOT advertised yet, though `fetch_window` below implements it
+                // (`LIMIT n START m`). Turning it on flips every SurrealDB
+                // table to lazy paging, and a paged grid currently cannot
+                // bootstrap from a cold cache: with no rows the table renders
+                // its empty/loading view instead of the row list, so nothing
+                // reports a visible range, so no window is ever requested. The
+                // capability goes on once the first window is driven by the
+                // open rather than by the viewport.
+                // can_fetch_window: true,
                 can_fetch_next: true,
                 can_traverse_to_record: true,
                 can_traverse_to_set: true,

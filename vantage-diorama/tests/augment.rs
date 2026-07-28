@@ -8,6 +8,8 @@
 //! same path serves a REST master + cmd detail, since the catalog is
 //! persistence-agnostic).
 
+mod support;
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -132,7 +134,7 @@ async fn eventually(label: &str, f: impl Fn() -> bool) {
 async fn id_source_augments_from_a_separate_vista() {
     let tmp = TempDir::new().unwrap();
     let dio = open(&tmp, vec![aug("runs-detail", Source::Id, &["detail"])]).await;
-    let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
+    let scenery = support::open_listed(&dio, 2).await;
 
     // List pass ran: cheap columns present, Incomplete, no augmented column yet.
     assert!(matches!(
@@ -167,7 +169,7 @@ async fn column_source_keyed_by_field() {
         to: None,
     };
     let dio = open(&tmp, vec![aug("runs-detail", source, &["detail"])]).await;
-    let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
+    let scenery = support::open_listed(&dio, 2).await;
     scenery.set_viewport(0..2);
 
     eventually("hydrated", || {
@@ -189,7 +191,7 @@ async fn multiple_augmentations_merge_independently() {
         ],
     )
     .await;
-    let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
+    let scenery = support::open_listed(&dio, 2).await;
     scenery.set_viewport(0..2);
 
     eventually("hydrated", || {
@@ -212,7 +214,7 @@ async fn missing_key_field_marks_row_failed() {
         to: None,
     };
     let dio = open(&tmp, vec![aug("runs-detail", source, &["detail"])]).await;
-    let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
+    let scenery = support::open_listed(&dio, 2).await;
     scenery.set_viewport(0..2);
 
     eventually("row failed", || {
@@ -229,7 +231,7 @@ async fn missing_key_field_marks_row_failed() {
 async fn refresh_keeps_hydrated_detail_when_master_unchanged() {
     let tmp = TempDir::new().unwrap();
     let dio = open(&tmp, vec![aug("runs-detail", Source::Id, &["detail"])]).await;
-    let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
+    let scenery = support::open_listed(&dio, 2).await;
     scenery.set_viewport(0..2);
     eventually("hydrated", || {
         matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
@@ -262,7 +264,7 @@ async fn custom_fetch_closure_reads_narrowed_detail() {
         },
     };
     let dio = open(&tmp, vec![augmentation]).await;
-    let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
+    let scenery = support::open_listed(&dio, 2).await;
     scenery.set_viewport(0..2);
 
     eventually("hydrated", || {
@@ -326,7 +328,7 @@ async fn fixed_detail_vista_hydrates_without_a_catalog() {
                 },
             }],
         );
-    let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
+    let scenery = support::open_listed(&dio, 2).await;
     scenery.set_viewport(0..2);
 
     eventually("rows hydrated", || {
@@ -383,7 +385,7 @@ async fn changed_master_row_refetches_its_augment() {
                 },
             }],
         );
-    let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
+    let scenery = support::open_listed(&dio, 2).await;
     scenery.set_viewport(0..1);
     eventually("hydrated with the first size", || {
         col_of(&scenery, 0, "size").as_deref() == Some("100")
@@ -789,7 +791,7 @@ async fn augment_fetches_only_while_a_view_demands_augment_columns() {
 async fn ui_filter_narrows_on_an_augmented_column() {
     let tmp = TempDir::new().unwrap();
     let dio = open(&tmp, vec![aug("runs-detail", Source::Id, &["detail"])]).await;
-    let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
+    let scenery = support::open_listed(&dio, 2).await;
 
     scenery.set_viewport(0..2);
     eventually("rows hydrated", || {

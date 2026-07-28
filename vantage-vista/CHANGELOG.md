@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.18 — 2026-07-28
+
+- **`AggregateSpec` and `Vista::aggregate`** — an aggregation derives a *new
+  vista*, not a value. `count(*)` yields one row and `GROUP BY` yields one per
+  group, and either can then be conditioned, ordered or counted like any other
+  set, so every consumer keeps the one shape it already handles instead of
+  growing a scalar special case. `TableShell::aggregate_vista` returns
+  `Ok(None)` for "this driver cannot answer that" — distinct from an empty
+  result, because the caller's fallback is to reduce over the rows it holds,
+  which is a different question with a different answer. "Can't" must never
+  collapse into a number.
+
+- **`fetch_window_counted`** returns a window together with the grand total,
+  when the driver learned it from the same response. Paginated APIs generally
+  state their total in the envelope; asking for it separately is a second round
+  trip for something already in hand. `None` means this response carried no
+  total, and `get_count` is still there when one is required.
+
 ## 0.6.17 — 2026-07-26
 
 - The live-subscription contract is now written down on `TableShell::watch_vista`:

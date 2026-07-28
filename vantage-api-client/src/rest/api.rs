@@ -289,19 +289,28 @@ impl RestApi {
         let window = pagination.map(|p| (p.skip(), p.limit()));
         self.fetch_windowed(table_name, id_field, window, conditions)
             .await
+            .map(|(records, _total)| records)
     }
 
     /// Fetch a single half-open row window `[offset, offset+limit)` — the
     /// primitive a paged, lazily-loaded grid drives on scroll (offset is
     /// an absolute row index, not a page number).
-    pub(crate) async fn fetch_window_records<'a>(
+    /// Fetch one half-open row window, plus the envelope's `total_key` when
+    /// the response carries one.
+    ///
+    /// The total comes out of the **same response as the rows**. Every paged
+    /// endpoint reports it on every reply, so a caller wanting both a window
+    /// and a grand total takes them together here rather than pairing a
+    /// window fetch with [`Self::fetch_total`] — that pairing costs a second
+    /// round trip for a number already in hand.
+    pub(crate) async fn fetch_window_records_counted<'a>(
         &self,
         table_name: &str,
         id_field: Option<&str>,
         offset: i64,
         limit: i64,
         conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
-    ) -> Result<IndexMap<String, Record<CborValue>>> {
+    ) -> Result<(IndexMap<String, Record<CborValue>>, Option<i64>)> {
         self.fetch_windowed(table_name, id_field, Some((offset, limit)), conditions)
             .await
     }
@@ -394,10 +403,22 @@ impl RestApi {
             request = request.header("Authorization", auth);
         }
 
-        let response = request
-            .send()
-            .await
-            .map_err(|e| error!("API request failed", url = url, detail = e))?;
+        // Time every round trip, unconditionally — a remote API is the one part
+        // of a read the process cannot bound, and a slow page is far more often
+        // one slow GET than anything local. Reported regardless of `debug` so
+        // the cost is attributable from a default log; a request over a second
+        // is worth an operator's attention, hence `info` at that point.
+        let started = std::time::Instant::now();
+        let response = request.send().await.map_err(|e| {
+            tracing::warn!(
+                target: "vantage_api_client::rest",
+                table = table_name,
+                url = %url,
+                ms = started.elapsed().as_millis() as u64,
+                "REST GET failed",
+            );
+            error!("API request failed", url = url, detail = e)
+        })?;
 
         if !response.status().is_success() {
             return Err(error!(
@@ -412,26 +433,57 @@ impl RestApi {
             .await
             .map_err(|e| error!("Failed to parse API response as JSON", detail = e))?;
 
+        let ms = started.elapsed().as_millis() as u64;
+        let probe = window == Some((0, 1));
+        if ms >= 1000 {
+            tracing::info!(
+                target: "vantage_api_client::rest",
+                table = table_name,
+                url = %url,
+                ms,
+                count_probe = probe,
+                "slow REST GET",
+            );
+        } else {
+            tracing::debug!(
+                target: "vantage_api_client::rest",
+                table = table_name,
+                url = %url,
+                ms,
+                count_probe = probe,
+                "REST GET done",
+            );
+        }
+
         Ok((body, client_filters))
     }
 
+    /// Also reports the envelope total when `total_key` is configured and the
+    /// body carries it. Unlike [`Self::fetch_total`] this never errors on a
+    /// missing total: the rows are the point here, and a caller that needs a
+    /// definitive count can still ask for one.
     async fn fetch_windowed<'a>(
         &self,
         table_name: &str,
         id_field: Option<&str>,
         window: Option<(i64, i64)>,
         conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
-    ) -> Result<IndexMap<String, Record<CborValue>>> {
+    ) -> Result<(IndexMap<String, Record<CborValue>>, Option<i64>)> {
         // Non-paginating endpoints return the whole list on the first
         // window; a later window would just re-deliver the same rows and the
         // perpetual grid would never mark itself exhausted. Short-circuit any
         // window past the start to empty so the grid sees the chunk shrink
         // and stops asking for more.
         if self.no_pagination && window.is_some_and(|(offset, _)| offset > 0) {
-            return Ok(IndexMap::new());
+            return Ok((IndexMap::new(), None));
         }
 
         let (body, client_filters) = self.fetch_raw_body(table_name, window, conditions).await?;
+        let total = self
+            .total_key
+            .as_deref()
+            .and_then(|key| body.get(key))
+            .and_then(|v| v.as_i64());
         let data = self.extract_array(&body, table_name)?;
 
         let mut records = IndexMap::new();
@@ -476,9 +528,13 @@ impl RestApi {
                         None => true,
                     })
             });
+            // The envelope counted what the SERVER matched, before these rows
+            // were dropped here — reporting it now would size a grid to rows
+            // it will never be given. No total is better than a wrong one.
+            return Ok((records, None));
         }
 
-        Ok(records)
+        Ok((records, total))
     }
 }
 
@@ -749,10 +805,17 @@ mod tests {
             .expect("fetch_total");
         assert!(total.is_some_and(|n| n > 0), "expected a positive count");
 
-        let rows = api
-            .fetch_window_records("launches/?mode=detailed", Some("id"), 0, 3, [])
+        let (rows, window_total) = api
+            .fetch_window_records_counted("launches/?mode=detailed", Some("id"), 0, 3, [])
             .await
-            .expect("fetch_window_records");
+            .expect("fetch_window_records_counted");
         assert_eq!(rows.len(), 3, "expected the requested 3-row window");
+        // The whole point of the counted window: the same response that
+        // carried the rows also carried the count, so `fetch_total`'s extra
+        // round trip buys nothing a caller couldn't already have.
+        assert_eq!(
+            window_total, total,
+            "the window's envelope total should match the dedicated count",
+        );
     }
 }

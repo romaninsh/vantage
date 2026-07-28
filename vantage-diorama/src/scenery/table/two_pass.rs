@@ -242,6 +242,11 @@ pub(crate) async fn run_list_page(state: Arc<TableSceneryState>) {
     match result {
         Ok((base, new_ids)) => {
             seed_rows(&state, &dio_inner, base, &new_ids).await;
+            // The list pass is what puts rows on screen for a two-pass view;
+            // the detail pass only enriches them, so waiting for hydration
+            // before dropping the loading state would hold it for the whole
+            // table.
+            state.mark_settled("two-pass list page");
             state.bump_generation();
             let _ = dio_inner.event_bus.send(DioEvent::RangeLoaded {
                 range: base..index.len(),
@@ -581,6 +586,9 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
     // column). A condition/sort on a *native* (list-pass) column needs no extra
     // hydration — `reseed_filtered` already orders/filters the cheap cache rows —
     // so it keeps normal viewport-driven hydration.
+    // What the user is actually looking at. Kept even when the sweep widens
+    // below, because it decides the ORDER work is queued in.
+    let visible = range.clone();
     let range = if state.local_refine() && references_augmented_column(&state, &dio_inner) {
         0..index.len()
     } else {
@@ -596,7 +604,9 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
     let augmented = dio_inner.augmented_columns.read().unwrap().clone();
     let gap_aware = dio_inner.has_dio_augment() && !augmented.is_empty();
 
-    let mut pending = Vec::new();
+    // `(idx, id)` rather than bare ids, so the queue can be ordered by where a
+    // row sits relative to the viewport.
+    let mut pending: Vec<(usize, String)> = Vec::new();
     let mut seeded = false;
     // Sweep census, for the log line below. A detail pass that keeps enqueueing
     // the same rows every time it runs is the signature of a hydration loop,
@@ -685,11 +695,38 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
                 continue;
             }
         }
-        pending.push(id);
+        pending.push((idx, id));
     }
     if seeded {
         state.bump_generation();
     }
+    // On-screen rows first.
+    //
+    // A view whose filter or sort touches an augmented column has to hydrate
+    // the whole table before it can decide what belongs on screen at all — but
+    // that is an argument about *how many* rows, not about which order to fetch
+    // them in. Queued as swept, a table of 872 rows hydrates whatever sits
+    // first in the list-pass order and reaches the visible window whenever it
+    // gets there, so the rows under the cursor fill in last. The cost is
+    // identical either way; only the wait the user sees changes.
+    //
+    // "On screen" is a position in the DISPLAYED map, not in the shared index.
+    // The two are the same order only for an unrefined view: a locally sorted
+    // or filtered one rebuilds `rows` in its own order (`reseed_filtered`),
+    // while the sweep above walks the index. Ranking by the index position
+    // would prioritise whichever rows happen to occupy those slots in the
+    // unsorted order — a different set, near enough at random.
+    //
+    // Stable within each group, so the visible window hydrates top-down and the
+    // remainder keeps the sweep's order.
+    {
+        let displayed = state.id_to_idx.read().unwrap();
+        pending.sort_by_key(|(idx, id)| {
+            let position = displayed.get(id).copied().unwrap_or(*idx);
+            !visible.contains(&position)
+        });
+    }
+    let pending: Vec<String> = pending.into_iter().map(|(_, id)| id).collect();
     tracing::debug!(
         target: "vantage_diorama::augment",
         requested,

@@ -7,7 +7,13 @@ use std::ops::Range;
 /// *upstream* shape (what a SurrealDB LIVE stream or a webhook delivers
 /// about the master backend), while `DioEvent` is the *internal* fanout
 /// shape Sceneries react to.
+/// Marked `#[non_exhaustive]`: the bus gains a variant whenever the layer
+/// learns to say something new about a load, and a consumer that cares about
+/// three of them should not break when a fourth appears. Every match on this
+/// enum needs a fallback arm, which is the right default anyway — an event you
+/// have not heard of is one you have no handling for.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum DioEvent {
     RecordChanged {
         id: String,
@@ -19,6 +25,24 @@ pub enum DioEvent {
         id: String,
     },
     DatasetChanged,
+
+    /// The lens's own eager loader (`on_start`) has finished writing the whole
+    /// set to the cache.
+    ///
+    /// Distinct from [`DatasetChanged`](Self::DatasetChanged), which says only
+    /// "membership moved — re-derive however your shape demands". This says
+    /// what landed and where it is: the full set, in the cache, now. Every
+    /// single-pass scenery answers it the same way — reseed the visible map
+    /// from the cache — whatever its load shape.
+    ///
+    /// That uniformity is the point. Announced as `DatasetChanged`, the seed's
+    /// arrival became a question about shape, and a scenery under a lens that
+    /// also offers `on_load_chunk` answered it wrongly: re-fetch the viewport
+    /// through a pager it never pages through. The rows sat in the cache and
+    /// the grid stayed empty. A scenery cannot get this one wrong by
+    /// misjudging its own shape, because it does not consult it.
+    Seeded,
+
     Refreshing,
     WriteFailed {
         id: Option<String>,

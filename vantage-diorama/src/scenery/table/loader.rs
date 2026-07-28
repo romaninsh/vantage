@@ -38,12 +38,22 @@ pub(crate) async fn viewport_loop(
         let mut absorbed = 0usize;
 
         // Keep absorbing requests until the channel is quiet for `debounce`.
+        //
+        // Absorbing takes the newest RANGE — an older viewport is not worth
+        // fetching — but `force_load` is not a property of the range, it is an
+        // instruction to consult the master rather than the cache. Dropping it
+        // with the request that carried it lost the on-open refresh on every
+        // mount, because the grid always pushes its first real viewport inside
+        // the debounce window: the table then sat on cached rows and never
+        // contacted the source at all.
         loop {
             match tokio::time::timeout(debounce, rx.recv()).await {
                 Ok(Some(next)) => {
                     state.viewport_queue_depth.fetch_sub(1, Ordering::SeqCst);
                     absorbed += 1;
+                    let force = latest.force_load || next.force_load;
                     latest = next;
+                    latest.force_load = force;
                 }
                 Ok(None) => {
                     tracing::warn!(target: "vantage_diorama::viewport", "viewport_loop: channel closed mid-debounce, exiting");
@@ -196,11 +206,11 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
             Some(r) => r,
             None => {
                 tracing::debug!(
-                    target: "vantage_diorama::viewport",
-                    visible = ?visible,
-                    visible_len,
-                    visible_cached,
-                    "fire_chunk_load: SKIP (visible fully cached)",
+                    target: "vantage_diorama::source",
+                    table = %dio_inner.master.read().unwrap().name(),
+                    range = ?visible,
+                    rows = visible_cached,
+                    "CACHE — served locally, no master fetch",
                 );
                 return;
             }
@@ -213,13 +223,24 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
     // anything that re-drives the viewport on a timer (a relation list's
     // periodic re-pull, `refresh_loaded_viewport`) would otherwise emit a
     // warning per tick, forever.
-    let cb = match dio_inner.lens.callbacks.on_load_chunk.as_ref() {
+    // Only a paged view fetches windows. An eager one holds every row already
+    // — its viewport moving is its steady state, not a reason to fetch — and
+    // its master may not be able to serve a window at all, which is an error
+    // raised to the user rather than a quiet no-op.
+    let cb = match dio_inner
+        .lens
+        .callbacks
+        .on_load_chunk
+        .as_ref()
+        .filter(|_| state.paged)
+    {
         Some(cb) => cb,
         None => {
             tracing::debug!(
                 target: "vantage_diorama::viewport",
                 visible = ?visible,
-                "fire_chunk_load: SKIP (no on_load_chunk callback)",
+                paged = state.paged,
+                "fire_chunk_load: SKIP (this view does not page)",
             );
             return;
         }
@@ -253,12 +274,14 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
     // Recompute overlap on the effective range so the log shows the
     // shift working.
     let effective_len = effective_range.end - effective_range.start;
-    let effective_cached = {
+    let (effective_cached, first_hole) = {
         let rows = state.rows.read().unwrap();
-        effective_range
+        let present = effective_range
             .clone()
             .filter(|i| rows.contains_key(i))
-            .count()
+            .count();
+        let first_hole = effective_range.clone().find(|i| !rows.contains_key(i));
+        (present, first_hole)
     };
     let effective_to_fetch = effective_len - effective_cached;
 
@@ -266,7 +289,11 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
         target: Arc::downgrade(&state) as std::sync::Weak<dyn crate::lens::SceneryChunkTarget>,
         cache: dio_inner.cache.clone(),
         pending: dio_inner.pending_flashes.clone(),
+        buffer: Default::default(),
     };
+    // The sink is moved into the callback; keep a clone so the buffered rows
+    // can be committed once it returns.
+    let writer = sink.clone();
 
     let dio = Dio {
         inner: dio_inner.clone(),
@@ -289,24 +316,79 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
         force_load,
         "fire_chunk_load: dispatching on_load_chunk",
     );
+    // The counterpart of the CACHE line above: this is the moment a range
+    // costs a round trip. `already_cached` says how much of what we are about
+    // to fetch the cache ALREADY holds — non-zero means the fetch is
+    // re-reading rows we have, which on a `force_load` is by design and
+    // otherwise is worth explaining.
+    tracing::debug!(
+        target: "vantage_diorama::source",
+        table = %dio_inner.master.read().unwrap().name(),
+        range = ?effective_range,
+        rows = effective_to_fetch,
+        already_cached = effective_cached,
+        force_load,
+        "MASTER — fetching from the datasource",
+    );
     // Clear the dirty flag so it reflects only the rows this load writes;
     // `write_chunk_row` sets it when a row's content actually changes.
     state.reset_load_dirty();
+    let total_before = *state.total.read().unwrap();
     let sort = state.sort.read().unwrap().clone();
-    let result = cb(&dio, effective_range.clone(), sort, sink).await;
+    let mut result = cb(&dio, effective_range.clone(), sort, sink).await;
+    // Commit the page in one write, before anything reads the cache back. A
+    // failed commit fails the load: the rows are bound in the visible map but
+    // absent from the cache, and the next re-sort would rebuild the map without
+    // them — better to report the load failed than to silently lose the page.
+    if result.is_ok() {
+        result = writer.flush().await;
+    }
 
     *state.load_in_flight.lock().unwrap() = None;
 
     let cached_after = state.rows.read().unwrap().len();
     match result {
         Ok(()) => {
-            // A short page — fewer rows than the requested window — is the end
-            // of the set, so the grand total is `start + received`. This keeps
-            // `total` self-correcting from the fetch we already did (no separate
-            // count request), and fixes a list opened before its rows existed:
-            // its `total` was counted once at 0 and would otherwise never grow.
+            // The window came back — whatever it contained, this view now has
+            // an answer rather than a not-yet.
+            state.mark_settled("chunk load succeeded");
             let pushed = state.load_push_count();
-            let total_changed = if pushed < effective_len {
+            let ms = t.elapsed().as_millis() as u64;
+            // One line per fetch is for reading a session; the ledger is for
+            // counting one. `already_cached` rows are the waste signal — rows
+            // paid for that the cache already held.
+            crate::stats::record_fetch(
+                dio_inner.master.read().unwrap().name(),
+                &effective_range,
+                pushed,
+                effective_cached,
+                ms,
+            );
+            tracing::debug!(
+                target: "vantage_diorama::source",
+                table = %dio_inner.master.read().unwrap().name(),
+                range = ?effective_range,
+                received = pushed,
+                ms,
+                "MASTER — fetch returned",
+            );
+            // Where the grand total came from. A total the source stated in the
+            // same response as the rows (`ChunkSink::set_total`) outranks
+            // anything inferred here: a short page can equally mean "the source
+            // capped the window", and reading that as the end of the set would
+            // cut the grid off at its first screen. With nothing stated, a
+            // short page IS the end of the set, which keeps `total`
+            // self-correcting from a fetch already made — including for a list
+            // opened before its rows existed, counted once at 0.
+            let mut total_changed = if state.take_load_total_reported() {
+                tracing::debug!(
+                    target: "vantage_diorama::source",
+                    table = %dio_inner.master.read().unwrap().name(),
+                    total = ?*state.total.read().unwrap(),
+                    "total stated by the fetch itself — no count request needed",
+                );
+                *state.total.read().unwrap() != total_before
+            } else if pushed < effective_len {
                 state.set_total(Some(effective_range.start + pushed))
             } else {
                 false
@@ -333,6 +415,50 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                 } else {
                     false
                 };
+
+            // Rows nobody can deliver.
+            //
+            // A source may claim more rows than it will actually serve — a
+            // stated total counting records its own paging never returns, or an
+            // offset it quietly ignores so every page past a point repeats ids
+            // already held. The grid then advertises slots that no fetch can
+            // fill, and since a hole is exactly what triggers a fetch, it asks
+            // again, and again, for as long as the page is open: one request
+            // per few seconds, forever, against the slowest thing in reach.
+            //
+            // The proof is right here and needs no cooperation from the source:
+            // this load was asked for a range with holes in it and filled NONE
+            // of them. Whatever the total claims, the addressable set ends at
+            // the first of those holes — so say so, and the range stops being
+            // requested. Measured after the resort because a client-side sort
+            // rebuilds the visible map from the cache once the load lands.
+            if let Some(hole) = first_hole {
+                let present_after = {
+                    let rows = state.rows.read().unwrap();
+                    effective_range
+                        .clone()
+                        .filter(|i| rows.contains_key(i))
+                        .count()
+                };
+                if present_after == effective_cached {
+                    let stated = *state.total.read().unwrap();
+                    if stated.map(|t| t > hole).unwrap_or(true) {
+                        tracing::warn!(
+                            target: "vantage_diorama::source",
+                            table = %dio_inner.master.read().unwrap().name(),
+                            range = ?effective_range,
+                            received = pushed,
+                            stated_total = ?stated,
+                            reachable = hole,
+                            "source served none of the requested rows — its total \
+                             promises more than it delivers; capping the set at what \
+                             is reachable so the fetch is not repeated forever",
+                        );
+                        total_changed |= state.set_total(Some(hole));
+                    }
+                }
+            }
+
             // Drain the dirty flag regardless (so it doesn't leak into the next
             // load). Bump when this was a forced refetch (a refresh or load-more —
             // it carries the single repaint for the whole refresh, including a

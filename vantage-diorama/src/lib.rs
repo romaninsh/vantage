@@ -25,9 +25,9 @@ pub use lens::{
 };
 pub use ops::{ChangeEvent, ChangeFlash, FlashKind, FlashRejection, QueryDescriptor};
 pub use scenery::{
-    Aggregate, CappedScenery, CustomAggregate, EnrichedRecord, OpCondition, RecordScenery,
-    RecordStatus, RowStatus, RowStatusSummary, SortDir, TableScenery, TableSceneryBuilder,
-    ValueScenery, ValueSceneryBuilder, ValueStatus, boxed_custom_aggregate,
+    Aggregate, CappedScenery, CustomAggregate, EnrichedRecord, LoadState, OpCondition,
+    RecordScenery, RecordStatus, RowStatus, RowStatusSummary, SortDir, TableScenery,
+    TableSceneryBuilder, ValueScenery, ValueSceneryBuilder, ValueStatus, boxed_custom_aggregate,
 };
 pub use servo::{IdStrategy, Servo, ServoStatus};
 pub use vantage_vista::VistaCapabilities;

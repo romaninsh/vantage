@@ -145,9 +145,19 @@ enum Wake {
 ///
 /// Two kinds of event are excluded, for different reasons.
 ///
-/// **Loading events** (`ViewportChanged`, `RangeLoaded`, `LoadFailed`,
-/// `Hydrating`) describe a viewport moving, not rows changing. Any row they
-/// bring in arrives as its own `RecordChanged`.
+/// **Loading events** (`ViewportChanged`, `LoadFailed`, `Hydrating`) describe a
+/// viewport moving or a pass making progress, not rows changing. Two-pass
+/// hydration emits `RecordChanged` for every row it fills in, so nothing is
+/// missed by ignoring them.
+///
+/// `RangeLoaded` is NOT among them, though it reads like one. A single-pass
+/// chunk load writes its rows through [`ChunkSink::push`], straight into the
+/// cache — it emits no per-row event, and `RangeLoaded` is the only thing it
+/// announces. Ignoring it meant a paged source could load its whole first page
+/// and every aggregate over it would still be reporting the empty set it was
+/// derived over: a dashboard opening on a cold cache showed three zeros and
+/// kept showing them. It is also what makes an aggregate *progressive* — each
+/// page that lands recomputes over everything held so far.
 ///
 /// **`Refreshing`** announces that a refresh has *started*. It is emitted
 /// before the source's `on_refresh` runs, and the common shape of that callback
@@ -163,7 +173,6 @@ async fn wait(bus: &mut broadcast::Receiver<DioEvent>, nudge: &Notify) -> Wake {
             _ = nudge.notified() => return Wake::Changed,
             received = bus.recv() => match received {
                 Ok(DioEvent::ViewportChanged { .. })
-                | Ok(DioEvent::RangeLoaded { .. })
                 | Ok(DioEvent::LoadFailed { .. })
                 | Ok(DioEvent::Hydrating { .. })
                 | Ok(DioEvent::Refreshing) => continue,

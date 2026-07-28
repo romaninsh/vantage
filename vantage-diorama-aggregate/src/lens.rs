@@ -90,6 +90,15 @@ impl AggregateLens {
         }
     }
 
+    /// Close the aggregate cache cleanly, before the process exits.
+    ///
+    /// Derived results are reproducible, so losing this file costs only a warm
+    /// start — but an unclean close costs a full-file repair scan on every
+    /// launch afterwards, which is worse than the thing the cache buys.
+    pub async fn close(&self) {
+        self.backend.close().await;
+    }
+
     /// Drop cached aggregates whose names are no longer in use.
     ///
     /// Names encode what an aggregate *is*; when a definition changes, the old
@@ -145,6 +154,33 @@ impl AggregateLens {
             state,
             _guard: TaskGuard(handle),
         }))
+    }
+
+    /// Mount a **scalar** reduction as a one-row Dio — the shape SQL gives a
+    /// `count(*)`, and the shape every consumer here already handles.
+    ///
+    /// Prefer this to [`value`](Self::value) when the result is going to be
+    /// observed like data. `value` hands back a bare number, which forces a
+    /// parallel scenery/observation path all the way up the stack; this hands
+    /// back a table with one row and one column named `alias`, so a grid, a
+    /// chart and a single-figure tile all bind to it identically.
+    ///
+    /// ```ignore
+    /// let opened = agg.derive_value(&events, "events#count[Event=opened]", "opened",
+    ///                               catalog.build("count", spec)?).await?;
+    /// // → a Dio whose whole content is:  opened
+    /// //                                  ------
+    /// //                                       7
+    /// ```
+    pub async fn derive_value(
+        self: &Arc<Self>,
+        source: &Dio,
+        name: &str,
+        alias: &str,
+        reduction: crate::ScalarAggregation,
+    ) -> Result<DerivedDio> {
+        self.derive(source, name, crate::AsRows::new(alias, reduction))
+            .await
     }
 
     /// Mount a row-producing aggregation as its own `Dio`.

@@ -17,6 +17,18 @@ pub trait CacheBackend: Send + Sync + 'static {
     /// memoize so repeat calls for the same name return the same Arc.
     async fn open_table(&self, name: &str) -> Result<Arc<dyn CacheTable>>;
 
+    /// Close the backend cleanly, before the process exits.
+    ///
+    /// Some stores record whether they were shut down properly and, finding
+    /// they weren't, rebuild from a full-file scan on the next open. That scan
+    /// is paid on every subsequent launch and grows with the file, so a store
+    /// that is only ever closed by dropping — at an exit that may never run
+    /// destructors — degrades startup permanently.
+    ///
+    /// Idempotent and safe to call while readers still hold tables: the
+    /// default does nothing, which is right for stores with no such state.
+    async fn close(&self) {}
+
     /// Every table currently present in the backend.
     ///
     /// The counterpart to [`drop_table`](Self::drop_table): a consumer that

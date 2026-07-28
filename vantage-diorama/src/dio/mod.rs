@@ -202,6 +202,17 @@ pub(crate) struct DioInner {
     /// mask that. The two sets answer different questions and are invalidated
     /// by different events.
     pub(crate) augment_settled: std::sync::Mutex<std::collections::HashSet<String>>,
+
+    /// False only while a detached `on_start` is still copying the set into the
+    /// cache. True once it finishes — success or failure alike, since a failed
+    /// seed means no rows are coming either.
+    ///
+    /// A scenery reads this to tell an empty cache apart from an empty table.
+    /// The two look identical from the cache alone, and calling the first one
+    /// "no rows" is what makes a grid flash its empty state a moment before its
+    /// rows land. Set to true at construction when there is nothing to wait
+    /// for: no `on_start`, or a blocking one that has already run.
+    pub(crate) seed_complete: std::sync::atomic::AtomicBool,
 }
 
 impl Drop for DioInner {
@@ -612,6 +623,29 @@ impl Dio {
         Vista::new(name, Box::new(shell))
     }
 
+    /// Ask the **master** to derive an aggregated vista, per
+    /// [`Vista::aggregate`].
+    ///
+    /// `Ok(None)` is the "I can't" answer — unknown reduction, or conditions
+    /// the driver can't express — and it is not an error: a source that cannot
+    /// aggregate is not broken. The caller then derives the same set locally
+    /// from this Dio, which keeps the result reactive because the local
+    /// engine is fed by this Dio's change bus.
+    ///
+    /// ```ignore
+    /// let spec = AggregateSpec::new("count", "failed")
+    ///     .condition("Event", CborValue::Text("failed".into()));
+    /// let derived: Vista = match dio.master_aggregate(&spec)? {
+    ///     // The backend reduces: every matching row, loaded or not.
+    ///     Some(vista) => vista,
+    ///     // We reduce: the rows this Dio actually holds.
+    ///     None => aggregate_lens.derive_vista(dio, &spec)?,
+    /// };
+    /// ```
+    pub fn master_aggregate(&self, spec: &vantage_vista::AggregateSpec) -> Result<Option<Vista>> {
+        self.master().aggregate(spec)
+    }
+
     /// Fetch a `[offset, limit)` window, preferring the master's own ordering.
     ///
     /// When `sort` is set and the master `can_order` and yields an independent
@@ -626,6 +660,25 @@ impl Dio {
         limit: usize,
         sort: Option<(String, crate::SortDir)>,
     ) -> Result<Vec<(String, Record<CborValue>)>> {
+        Ok(self
+            .fetch_window_ordered_counted(offset, limit, sort)
+            .await?
+            .0)
+    }
+
+    /// [`fetch_window_ordered`](Self::fetch_window_ordered), plus the grand
+    /// total when the master reported one from the same response.
+    ///
+    /// Hand the total to [`ChunkSink::set_total`](crate::ChunkSink::set_total)
+    /// from an `on_load_chunk` callback and the lens needs no `total_provider`
+    /// — which is what takes a paged open from two round trips to one, and
+    /// leaves nothing for `open()` to await.
+    pub async fn fetch_window_ordered_counted(
+        &self,
+        offset: usize,
+        limit: usize,
+        sort: Option<(String, crate::SortDir)>,
+    ) -> Result<(Vec<(String, Record<CborValue>)>, Option<i64>)> {
         let master = self.master();
         if let Some((col, dir)) = sort
             && master.capabilities().can_order
@@ -637,9 +690,9 @@ impl Dio {
                 crate::SortDir::Desc => vantage_vista::SortDirection::Descending,
             };
             ordered.add_order(&col, vdir)?;
-            return ordered.fetch_window(offset, limit).await;
+            return ordered.fetch_window_counted(offset, limit).await;
         }
-        master.fetch_window(offset, limit).await
+        master.fetch_window_counted(offset, limit).await
     }
 
     // ---- Event bus — user-callable surface ----------------------------------
@@ -677,6 +730,15 @@ impl Dio {
     /// re-deriving their index and re-reading their full state.
     pub fn notify_dataset_changed(&self) {
         let _ = self.inner.event_bus.send(DioEvent::DatasetChanged);
+    }
+
+    /// Publish [`DioEvent::Seeded`] — "the whole set is in the cache now."
+    /// Call this after an eager load that wrote through the cache directly, as
+    /// `on_start` does: cache writes raise no events of their own, so a
+    /// scenery that opened over the cold cache has no other way to learn its
+    /// rows arrived.
+    pub fn notify_seeded(&self) {
+        let _ = self.inner.event_bus.send(DioEvent::Seeded);
     }
 
     /// The Dio's effective write capabilities — master caps, lifted to

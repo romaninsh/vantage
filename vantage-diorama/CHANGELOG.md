@@ -1,5 +1,61 @@
 # Changelog
 
+## 0.10.0 — 2026-07-28
+
+**A scenery reads its own shape, not its lens's offers**
+
+One Lens per datasource carries every callback any table under it might need —
+`on_start` to copy a set whole, `on_load_chunk` to window a pageable one. Which
+one applies is a property of the *master*, decided per scenery at open. Several
+places asked the lens instead, and under a shared lens the lens's answer is
+always "both", so they got it wrong.
+
+- **A landed eager seed reaches sceneries again.** `is_chunk_loaded` decided
+  paged-vs-eager from "does this lens register an `on_load_chunk`". Sharing one
+  lens made that always true, so an eager scenery answered a landed dataset by
+  re-fetching a viewport it never fetches through. Its rows sat in the cache and
+  the grid stayed empty for as long as it stayed open — reopening it worked,
+  because the open path seeds from what is by then a warm cache. It now reads
+  the shape recorded at open.
+
+- **`DioEvent::Seeded`** — the eager loader announcing that the whole set is in
+  the cache. Distinct from `DatasetChanged`, which says only "membership moved,
+  re-derive however your shape demands": this says what landed and where, and
+  every scenery whose rows come from the cache answers it the same way. The
+  enum is now `#[non_exhaustive]`, so the next variant will not be a breaking
+  change. **Matches on `DioEvent` need a fallback arm.**
+
+- **A grid no longer paints "no rows" over a load in flight.** Settling is what
+  ends a view's loading state, and two paths did it too early: a paged scenery
+  reseeding from an empty cache (a grid applying its default sort at mount
+  triggers exactly this, milliseconds before the first fetch dispatches), and an
+  eager one reseeding while its background copy was still running. An empty
+  cache and an empty table are indistinguishable from the cache alone;
+  `seed_complete` on the Dio is what tells them apart.
+
+- **`LoadState`** (`Loading` / `Partial` / `Complete`) on `TableScenery`, with
+  `load_state()` and `is_loading()`. Consumers waiting for rows can wait on the
+  state instead of assuming `open()` implies data.
+
+- **A fetch ledger** in `stats`: per table, how many windows were requested, how
+  many were requested more than once, and how many rows came back that the cache
+  already held. Waste is invisible without counting it.
+
+- **`mark_settled` logs its caller.** Which path settled a scenery is the whole
+  question when a grid empties too early, and the flag records only that someone
+  did.
+
+- Chunk loads write once per page rather than once per row — a redb transaction
+  and its durability barrier per row made a hundred-row page cost a hundred of
+  them.
+
+- A source that overstates its total no longer loops: rows it will not serve are
+  asked for a bounded number of times, then the set is capped at what arrived.
+
+- Two-pass hydration prioritises rows by their **displayed** position, so a
+  sorted view hydrates what is on screen rather than what happens to be early in
+  the index.
+
 ## 0.9.0 — 2026-07-27
 
 **Client-side search is gone, and so is the augmentation spec layer**
