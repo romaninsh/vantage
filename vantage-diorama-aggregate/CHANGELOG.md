@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.4 — 2026-07-28
+
+- Doc fixes: three intra-doc links that rustdoc could not resolve under
+  `--document-private-items` — one to a crate that isn't a dependency here, one
+  missing its crate path, one restating a target its label already resolved to.
+  No code change.
+
 ## 0.6.3 — 2026-07-28
 
 - Track vantage-diorama 0.10.

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.10 — 2026-07-28
+
+- Track vantage-diorama 0.10. The requirement stayed at `0.9` when diorama
+  released 0.10, which left this crate unresolvable and — more to the point —
+  put a second diorama into the graph of anything depending on both. `Dio` and
+  `ChangeEvent` from two versions are different types, so that surfaces far from
+  its cause.
+
 ## 0.6.9 — 2026-07-27
 
 - Track vantage-diorama 0.9 (client-side search and the augmentation spec layer

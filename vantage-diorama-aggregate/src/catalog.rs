@@ -7,9 +7,9 @@
 //! grows the same six-arm match, and none of them can be extended with an
 //! aggregation the crate doesn't ship.
 //!
-//! [`AggregationCatalog`] is that lookup — the same shape as
-//! [`VistaCatalog`](vantage_vista_factory::VistaCatalog), which resolves a
-//! vista by name for exactly the same reason.
+//! [`AggregationCatalog`] is that lookup — the same shape as vista-factory's
+//! `VistaCatalog`, which resolves a vista by name for exactly the same reason.
+//! (Named, not linked: that crate is not a dependency here.)
 
 use std::collections::HashMap;
 use std::sync::Arc;
