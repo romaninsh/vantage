@@ -13,7 +13,7 @@ doctest = false
 vantage-core = { version = "0.6", path = "../vantage-core" }
 vantage-types = { version = "0.6", path = "../vantage-types" }
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
-vantage-vista = { version = "0.6.17", path = "../vantage-vista" }
+vantage-vista = { version = "0.6.18", path = "../vantage-vista" }
 vantage-diorama = { version = "0.10", path = "../vantage-diorama" }
 
 async-trait = "0.1"

@@ -12,7 +12,7 @@ doctest = false
 [dependencies]
 vantage-core = { version = "0.6", path = "../vantage-core" }
 vantage-types = { version = "0.6", path = "../vantage-types" }
-vantage-vista = { version = "0.6.2", path = "../vantage-vista" }
+vantage-vista = { version = "0.6.18", path = "../vantage-vista" }
 vantage-vista-factory = { version = "0.6", path = "../vantage-vista-factory" }
 vantage-table = { version = "0.6", path = "../vantage-table" }
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
