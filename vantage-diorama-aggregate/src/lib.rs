@@ -65,9 +65,7 @@ pub use builtin::{
     AsRows, Avg, Conditions, Count, CountWhere, Distinct, GroupBy, GroupReducer, Max, Min, Reduce,
     Sum, Where,
 };
-pub use catalog::{
-    AggregationBuilder, AggregationCatalog, AggregationSpec, ScalarAggregation,
-};
+pub use catalog::{AggregationBuilder, AggregationCatalog, AggregationSpec, ScalarAggregation};
 pub use derived::DerivedDio;
 pub use lens::{AggregateLens, AggregateLensBuilder};
 pub use value::AggregateValue;

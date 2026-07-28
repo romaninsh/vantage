@@ -91,6 +91,24 @@ pub(crate) struct ViewportRequest {
     pub(crate) force_load: bool,
 }
 
+/// How much of a scenery's data has arrived.
+///
+/// Distinguishes the three situations a consumer has to act on differently. A
+/// grid renders a skeleton for [`Loading`](Self::Loading) and its empty-set
+/// placeholder only for a [`Complete`](Self::Complete) view with no rows — the
+/// same picture, opposite meanings. A test or a profiler waits for `Loading` to
+/// end before asserting, and for `Complete` before claiming a total.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoadState {
+    /// No load has finished. The view has no answer yet — not even "empty".
+    Loading,
+    /// Rows are present and more are known to exist: the ordinary state of a
+    /// paged grid that has loaded its first window of a larger set.
+    Partial,
+    /// Every row this query yields is in the view.
+    Complete,
+}
+
 /// Breakdown of the row statuses currently materialized in a scenery's sparse
 /// map. Cheap to compute (iterates only loaded rows, not the full row count) —
 /// the per-scenery slice of the diagnostics surface.
@@ -109,6 +127,21 @@ pub struct RowStatusSummary {
 /// Reactive view onto a Dio that exposes an ordered, paginated row set.
 pub trait TableScenery: Send + Sync {
     fn row_count(&self) -> usize;
+
+    /// How much of this view's data has arrived.
+    ///
+    /// Three states, because two are not enough to act on: a consumer needs to
+    /// tell "no rows" from "no rows *yet*" (they render identically and mean
+    /// opposite things), and a test or a profiler needs to tell "showing
+    /// something" from "showing everything" before it measures.
+    fn load_state(&self) -> LoadState {
+        LoadState::Complete
+    }
+
+    /// Shorthand for [`LoadState::Loading`] — the view has no answer yet.
+    fn is_loading(&self) -> bool {
+        self.load_state() == LoadState::Loading
+    }
 
     /// Status breakdown over the rows currently in the sparse map. Used by the
     /// diagnostics surface to report how much of a scenery is hydrated.
@@ -173,6 +206,21 @@ impl Drop for SceneryGuard {
 }
 
 impl TableScenery for TableSceneryImpl {
+    fn load_state(&self) -> LoadState {
+        if !self.inner.settled.load(std::sync::atomic::Ordering::SeqCst) {
+            return LoadState::Loading;
+        }
+        // A known total the visible map has not reached means rows are still
+        // coming — the ordinary state of a paged grid before it is scrolled.
+        // With no total there is nothing to be short of, so what is loaded is
+        // all there is.
+        let loaded = self.inner.rows.read().unwrap().len();
+        match *self.inner.total.read().unwrap() {
+            Some(total) if loaded < total => LoadState::Partial,
+            _ => LoadState::Complete,
+        }
+    }
+
     fn row_count(&self) -> usize {
         // A locally-refined view's visible map is authoritative — the index may
         // hold more ids than match the filter.

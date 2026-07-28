@@ -202,6 +202,17 @@ pub(crate) struct DioInner {
     /// mask that. The two sets answer different questions and are invalidated
     /// by different events.
     pub(crate) augment_settled: std::sync::Mutex<std::collections::HashSet<String>>,
+
+    /// False only while a detached `on_start` is still copying the set into the
+    /// cache. True once it finishes — success or failure alike, since a failed
+    /// seed means no rows are coming either.
+    ///
+    /// A scenery reads this to tell an empty cache apart from an empty table.
+    /// The two look identical from the cache alone, and calling the first one
+    /// "no rows" is what makes a grid flash its empty state a moment before its
+    /// rows land. Set to true at construction when there is nothing to wait
+    /// for: no `on_start`, or a blocking one that has already run.
+    pub(crate) seed_complete: std::sync::atomic::AtomicBool,
 }
 
 impl Drop for DioInner {
@@ -649,7 +660,10 @@ impl Dio {
         limit: usize,
         sort: Option<(String, crate::SortDir)>,
     ) -> Result<Vec<(String, Record<CborValue>)>> {
-        Ok(self.fetch_window_ordered_counted(offset, limit, sort).await?.0)
+        Ok(self
+            .fetch_window_ordered_counted(offset, limit, sort)
+            .await?
+            .0)
     }
 
     /// [`fetch_window_ordered`](Self::fetch_window_ordered), plus the grand
@@ -716,6 +730,15 @@ impl Dio {
     /// re-deriving their index and re-reading their full state.
     pub fn notify_dataset_changed(&self) {
         let _ = self.inner.event_bus.send(DioEvent::DatasetChanged);
+    }
+
+    /// Publish [`DioEvent::Seeded`] — "the whole set is in the cache now."
+    /// Call this after an eager load that wrote through the cache directly, as
+    /// `on_start` does: cache writes raise no events of their own, so a
+    /// scenery that opened over the cold cache has no other way to learn its
+    /// rows arrived.
+    pub fn notify_seeded(&self) {
+        let _ = self.inner.event_bus.send(DioEvent::Seeded);
     }
 
     /// The Dio's effective write capabilities — master caps, lifted to

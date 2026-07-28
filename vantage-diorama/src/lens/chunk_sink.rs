@@ -19,6 +19,10 @@ pub trait SceneryChunkTarget: Send + Sync {
     fn set_chunk_total(&self, total: usize) -> bool;
 }
 
+/// Rows a [`ChunkSink`] has accepted but not yet written — see
+/// [`ChunkSink::buffer`].
+type BufferedRows = Arc<std::sync::Mutex<Vec<(String, Record<CborValue>)>>>;
+
 /// Handle passed to `on_load_chunk` callbacks. Each [`push`](Self::push)
 /// writes one row to the Dio's cache and binds it to a row index in
 /// the calling `TableScenery`'s sparse map. Cheap to clone; the scenery
@@ -31,6 +35,16 @@ pub struct ChunkSink {
     /// Rows with a flash in flight — a chunk refetch is a reconcile, so
     /// its (possibly pre-write) snapshot must not clobber a staged value.
     pub(crate) pending: Arc<PendingFlashes>,
+    /// Rows pushed so far, awaiting one write.
+    ///
+    /// A row per commit is a transaction — and a durability barrier — per row,
+    /// so a hundred-row page costs a hundred of them. The rows are useless
+    /// individually anyway: nothing observes the cache mid-load, and the
+    /// scenery's visible map is bound by [`push`](Self::push) directly. Holding
+    /// them and writing once turns a page load into a single transaction, which
+    /// is also what lets a whole datasource share one store without each
+    /// table's load queueing behind another's.
+    pub(crate) buffer: BufferedRows,
 }
 
 impl std::fmt::Debug for ChunkSink {
@@ -79,9 +93,29 @@ impl ChunkSink {
             target.write_chunk_row(idx, id, staged);
             return Ok(());
         }
-        self.cache.insert_value(&id, &record).await?;
+        if let Ok(mut buffer) = self.buffer.lock() {
+            buffer.push((id.clone(), record.clone()));
+        }
         target.write_chunk_row(idx, id, record);
         Ok(())
+    }
+
+    /// Commit everything pushed so far, in one write.
+    ///
+    /// Called by the loader once `on_load_chunk` returns — and it must run
+    /// before anything reads the cache back (the post-load re-sort rebuilds the
+    /// visible map from it), or the load appears to have fetched nothing.
+    pub(crate) async fn flush(&self) -> Result<()> {
+        let rows: indexmap::IndexMap<String, Record<CborValue>> = {
+            let Ok(mut buffer) = self.buffer.lock() else {
+                return Ok(());
+            };
+            std::mem::take(&mut *buffer).into_iter().collect()
+        };
+        if rows.is_empty() {
+            return Ok(());
+        }
+        self.cache.insert_values(rows).await
     }
 }
 

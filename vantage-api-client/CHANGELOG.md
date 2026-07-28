@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.9 — 2026-07-28
+
+- Every REST round trip is timed. Over a second it logs `slow REST GET` at info
+  with the URL and elapsed time; otherwise `REST GET done` at debug. Both carry
+  `count_probe`, which distinguishes a request for rows from one made only to
+  learn a total — the distinction that identified an 8.5s startup as a separate
+  count query on the open path.
+
 ## 0.6.8 — 2026-07-23
 
 - REST and GraphQL `TableShell`s implement `get_ref_target` — the bare,

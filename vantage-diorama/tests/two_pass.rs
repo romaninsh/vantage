@@ -11,6 +11,8 @@
 //! `$RUNS_LOG`, so a test reads that file back to assert the exact sequence of
 //! `list`/`detail` calls the machinery issued.
 
+mod support;
+
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -172,7 +174,7 @@ async fn list_pass_creates_incomplete_rows_and_no_detail_calls() {
     let lens = two_pass_lens(tmp.path(), &log);
     let dio = open_dio(&lens, &make_cmd(&log)).await;
 
-    let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
+    let scenery = support::open_listed(&dio, 2).await;
 
     // First list page already ran (open awaits it): r0, r1 as Incomplete.
     assert_eq!(scenery.estimated_total(), Some(2));
@@ -206,7 +208,7 @@ async fn detail_pass_hydrates_visible_rows_once_in_order() {
     let lens = two_pass_lens(tmp.path(), &log);
     let dio = open_dio(&lens, &make_cmd(&log)).await;
 
-    let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
+    let scenery = support::open_listed(&dio, 2).await;
     scenery.set_viewport(0..2);
 
     eventually("rows hydrated", || {
@@ -249,7 +251,7 @@ async fn sort_change_restarts_augmentation_without_scrolling() {
     let lens = two_pass_lens(tmp.path(), &log);
     let dio = open_dio(&lens, &make_cmd(&log)).await;
 
-    let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
+    let scenery = support::open_listed(&dio, 2).await;
     scenery.set_viewport(0..2);
     eventually("initial hydration", || {
         matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
@@ -338,6 +340,7 @@ async fn titles_only_picker_skips_detail_hydration() {
         .open()
         .await
         .unwrap();
+    support::wait_listed(&picker).await;
     picker.set_viewport(0..2);
     // Let the viewport debounce + (suppressed) detail path run.
     tokio::time::sleep(Duration::from_millis(30)).await;
@@ -363,7 +366,7 @@ async fn titles_only_picker_skips_detail_hydration() {
 
     // A full grid over the same query is a DISTINCT scenery (it hydrates), so
     // the Dio now holds two live sceneries.
-    let grid = dio.table_scenery().page_size(2).open().await.unwrap();
+    let grid = support::open_listed(&dio, 2).await;
     assert!(
         !std::sync::Arc::ptr_eq(&picker, &grid),
         "titles_only keys distinctly from a full grid"
@@ -422,7 +425,7 @@ async fn diagnostics_report_sceneries_refcount_and_hydration() {
     assert_eq!(dio.diagnostics().await.sceneries[0].refcount, 2);
 
     // A full grid is a distinct scenery that hydrates → Fresh rows.
-    let grid = dio.table_scenery().page_size(2).open().await.unwrap();
+    let grid = support::open_listed(&dio, 2).await;
     grid.set_viewport(0..2);
     eventually("grid hydrates both rows", || {
         matches!(status_of(&grid, 0), Some(RowStatus::Fresh))
@@ -452,7 +455,7 @@ async fn sequential_paging_stops_on_short_page() {
     let lens = two_pass_lens(tmp.path(), &log);
     let dio = open_dio(&lens, &make_cmd(&log)).await;
 
-    let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
+    let scenery = support::open_listed(&dio, 2).await;
     assert_eq!(scenery.estimated_total(), Some(2));
     assert!(scenery.has_more());
 
@@ -494,7 +497,7 @@ async fn shared_detail_across_filter_variants() {
     let dio = open_dio(&lens, &make_cmd(&log)).await;
 
     // Unfiltered: page through all 5 and hydrate them.
-    let all = dio.table_scenery().page_size(2).open().await.unwrap();
+    let all = support::open_listed(&dio, 2).await;
     all.request_load_more();
     eventually("page2", || all.estimated_total() == Some(4)).await;
     all.request_load_more();
@@ -570,7 +573,7 @@ async fn reopen_resumes_without_refetching_complete_rows() {
         let log = cache_dir.join("run1.log");
         let lens = two_pass_lens(&cache_dir, &log);
         let dio = open_dio(&lens, &make_cmd(&log)).await;
-        let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
+        let scenery = support::open_listed(&dio, 2).await;
         scenery.set_viewport(0..2);
         eventually("run1 hydrated", || {
             matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
@@ -649,7 +652,7 @@ async fn detail_failure_marks_only_that_row() {
     );
 
     let dio = open_dio(&lens, &make_cmd(&log)).await;
-    let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
+    let scenery = support::open_listed(&dio, 2).await;
     scenery.set_viewport(0..2);
 
     eventually("r0 fresh, r1 failed", || {

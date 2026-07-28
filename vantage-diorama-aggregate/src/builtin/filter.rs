@@ -133,9 +133,18 @@ mod tests {
 
     fn events() -> Rows {
         rows(vec![
-            record(&[("Event", text("opened")), ("Size", CborValue::Integer(10.into()))]),
-            record(&[("Event", text("failed")), ("Size", CborValue::Integer(20.into()))]),
-            record(&[("Event", text("opened")), ("Size", CborValue::Integer(30.into()))]),
+            record(&[
+                ("Event", text("opened")),
+                ("Size", CborValue::Integer(10.into())),
+            ]),
+            record(&[
+                ("Event", text("failed")),
+                ("Size", CborValue::Integer(20.into())),
+            ]),
+            record(&[
+                ("Event", text("opened")),
+                ("Size", CborValue::Integer(30.into())),
+            ]),
         ])
     }
 

@@ -62,27 +62,56 @@ impl Lens {
             augment_worker_handles: std::sync::Mutex::new(Vec::new()),
             augment_settled_empty: std::sync::Mutex::new(std::collections::HashSet::new()),
             augment_settled: std::sync::Mutex::new(std::collections::HashSet::new()),
+            // Nothing to wait for unless a detached `on_start` is about to be
+            // spawned below; that branch clears it before spawning.
+            seed_complete: std::sync::atomic::AtomicBool::new(true),
         });
         let dio = Dio { inner };
 
         spawn_write_worker(&dio, write_rx).await;
         spawn_refresh_task(&dio).await;
 
+        // Registered means run. A lens offering both a warm and a pager is a
+        // legitimate hybrid — warm the first rows, page beyond them — and only
+        // the callback knows whether that is what it meant. One that wants to
+        // skip the warm for a windowing master says so from inside `on_start`,
+        // where the Dio (and so the master's capabilities) is in hand.
         if let Some(on_start) = self.callbacks.on_start.as_ref() {
             if self.defaults.on_start_blocking {
                 on_start(&dio).await?;
             } else {
+                // Sceneries opening from here until the copy lands must not
+                // read an empty cache as an empty table.
+                dio.inner
+                    .seed_complete
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
                 let dio_for_task = dio.clone();
                 let lens_for_task = self.clone();
                 self.runtime.spawn(async move {
                     if let Some(cb) = lens_for_task.callbacks.on_start.as_ref() {
-                        match cb(&dio_for_task).await {
+                        let outcome = cb(&dio_for_task).await;
+                        // Set BEFORE the event: `Seeded` is what wakes the
+                        // sceneries, and they consult this flag to decide
+                        // whether an empty cache is an answer. Setting it after
+                        // would leave a genuinely empty table stuck in its
+                        // loading state — the one case with no second event to
+                        // correct it. On the failure path too: a seed that
+                        // errored is still one that is no longer coming.
+                        dio_for_task
+                            .inner
+                            .seed_complete
+                            .store(true, std::sync::atomic::Ordering::SeqCst);
+                        match outcome {
                             // The detached seed writes through the raw cache
                             // (no events), and any scenery that opened over
                             // the still-cold cache rendered zero rows —
-                            // announce the landed dataset or those sceneries
-                            // stay blank until a manual refresh.
-                            Ok(()) => dio_for_task.notify_dataset_changed(),
+                            // announce the landed set or those sceneries stay
+                            // blank until a manual refresh. `Seeded`, not
+                            // `DatasetChanged`: this is the full set arriving
+                            // in the cache, which every scenery shows the same
+                            // way, not an external change each shape answers
+                            // differently.
+                            Ok(()) => dio_for_task.notify_seeded(),
                             Err(e) => {
                                 tracing::error!(error = %e, "on_start callback failed");
                             }

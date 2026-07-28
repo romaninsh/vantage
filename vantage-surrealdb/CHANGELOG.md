@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.12 — 2026-07-28
+
+- `fetch_window` serves a row-indexed window as `LIMIT n START m`. The
+  capability is implemented but **not yet advertised**: `can_fetch_window`
+  switches every SurrealDB table to lazy paging, and a paged grid cannot yet
+  bootstrap from a cold cache — with no rows it renders its loading view rather
+  than a row list, so nothing reports a visible range and no window is ever
+  asked for. It goes on once the first window is driven by the open rather than
+  by the viewport.
+
 ## 0.6.11 — 2026-07-23
 
 - `add_op_condition` pushes non-equality filters into the SurrealDB query: `!=`,

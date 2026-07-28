@@ -403,10 +403,22 @@ impl RestApi {
             request = request.header("Authorization", auth);
         }
 
-        let response = request
-            .send()
-            .await
-            .map_err(|e| error!("API request failed", url = url, detail = e))?;
+        // Time every round trip, unconditionally — a remote API is the one part
+        // of a read the process cannot bound, and a slow page is far more often
+        // one slow GET than anything local. Reported regardless of `debug` so
+        // the cost is attributable from a default log; a request over a second
+        // is worth an operator's attention, hence `info` at that point.
+        let started = std::time::Instant::now();
+        let response = request.send().await.map_err(|e| {
+            tracing::warn!(
+                target: "vantage_api_client::rest",
+                table = table_name,
+                url = %url,
+                ms = started.elapsed().as_millis() as u64,
+                "REST GET failed",
+            );
+            error!("API request failed", url = url, detail = e)
+        })?;
 
         if !response.status().is_success() {
             return Err(error!(
@@ -420,6 +432,28 @@ impl RestApi {
             .json()
             .await
             .map_err(|e| error!("Failed to parse API response as JSON", detail = e))?;
+
+        let ms = started.elapsed().as_millis() as u64;
+        let probe = window == Some((0, 1));
+        if ms >= 1000 {
+            tracing::info!(
+                target: "vantage_api_client::rest",
+                table = table_name,
+                url = %url,
+                ms,
+                count_probe = probe,
+                "slow REST GET",
+            );
+        } else {
+            tracing::debug!(
+                target: "vantage_api_client::rest",
+                table = table_name,
+                url = %url,
+                ms,
+                count_probe = probe,
+                "REST GET done",
+            );
+        }
 
         Ok((body, client_filters))
     }

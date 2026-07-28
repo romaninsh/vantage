@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.3 — 2026-07-28
+
+- Track vantage-diorama 0.10.
+- **A paged source no longer leaves every aggregate at zero.** The engine
+  ignored `RangeLoaded`, and a chunk load emits no per-row event — so on a cold
+  cache the figures derived from a paged table never recomputed and sat at their
+  starting values. They now recompute as each window lands, which is what makes
+  a figure over a paged table climb as its pages arrive rather than appearing
+  finished and wrong.
+
 ## 0.6.2 — 2026-07-27
 
 - Track vantage-diorama 0.9. The facade Vista no longer lifts `can_search`, so a

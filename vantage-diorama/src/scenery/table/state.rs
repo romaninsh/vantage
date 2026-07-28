@@ -71,6 +71,39 @@ pub(crate) struct TableSceneryState {
     /// derives the grand `total` from it (no separate count request).
     pub(crate) load_push_count: AtomicUsize,
 
+    /// Whether the in-flight chunk load reported a grand total of its own (via
+    /// [`ChunkSink::set_total`](crate::ChunkSink::set_total)).
+    ///
+    /// It settles which of two answers wins. A short page is only *evidence* of
+    /// the end of the set; a total the source stated in the same response is
+    /// the fact. They disagree whenever a source caps its page below what we
+    /// asked for — 25 rows back from a request for 100 means "here is a page",
+    /// not "there are 25 rows" — and inferring from the page there would cut
+    /// the grid off at its first screen.
+    pub(crate) load_total_reported: std::sync::atomic::AtomicBool,
+
+    /// Whether this view has finished its first load.
+    ///
+    /// "No rows" and "no rows *yet*" are the same picture and opposite
+    /// meanings: a grid that paints its empty state while the first fetch is
+    /// still in flight tells the user the table is empty, and they believe it.
+    /// Set once, by whichever path first puts rows in front of the user —
+    /// a seed from cache, a chunk load, or the two-pass list — and never
+    /// cleared, because a later refresh returning nothing is a real answer.
+    pub(crate) settled: std::sync::atomic::AtomicBool,
+
+    /// Whether this view loads a window at a time (rather than over a cache the
+    /// lens filled whole). Decided once at open from the lens's offers and the
+    /// master's capabilities — see `builder::pages_lazily`.
+    ///
+    /// Recorded rather than re-derived because the two consumers must not be
+    /// able to disagree. The loader used to infer it from "is an `on_load_chunk`
+    /// registered", which was the same answer only while every table had its own
+    /// lens. Sharing one lens across a datasource made that callback always
+    /// present, and an eager table's viewport then asked a source for a window
+    /// it had never claimed to serve.
+    pub(crate) paged: bool,
+
     /// Snapshot of the master Vista's capability flags taken at open
     /// time. Sceneries hand this back through
     /// `TableScenery::master_capabilities` so UI delegates can route
@@ -143,6 +176,36 @@ impl TableSceneryState {
             || self.sort.read().unwrap().is_some()
     }
 
+    /// Mark the first load complete — the view now shows an answer, even if
+    /// that answer is "no rows".
+    ///
+    /// Logged because settling is the moment a grid stops showing its skeleton
+    /// and commits to what it has. Settling early with nothing paints "no rows"
+    /// over a load still in flight, and from the outside that is indis-
+    /// tinguishable from an empty table — the row count alone never says which.
+    /// `reason` names the call site. Which of them settles a given scenery is
+    /// the whole question when a grid shows "no rows" too early, and it is not
+    /// recoverable from the state afterwards — the flag records that someone
+    /// settled it, never who.
+    pub(crate) fn mark_settled(&self, reason: &'static str) {
+        if !self.settled.swap(true, Ordering::SeqCst) {
+            tracing::debug!(
+                target: "vantage_diorama::cache",
+                reason,
+                table = self
+                    .dio_weak
+                    .upgrade()
+                    .map(|d| d.cache_table_name.clone())
+                    .unwrap_or_default(),
+                rows = self.rows.read().unwrap().len(),
+                total = ?*self.total.read().unwrap(),
+                paged = self.paged,
+                two_pass = self.two_pass,
+                "scenery settled — the grid now shows this as the answer",
+            );
+        }
+    }
+
     pub(crate) fn bump_generation(&self) {
         let next = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let _ = self.generation_tx.send_replace(Generation(next));
@@ -157,6 +220,12 @@ impl TableSceneryState {
     pub(crate) fn reset_load_dirty(&self) {
         self.load_dirty.store(false, Ordering::SeqCst);
         self.load_push_count.store(0, Ordering::SeqCst);
+        self.load_total_reported.store(false, Ordering::SeqCst);
+    }
+
+    /// Whether the just-finished load stated a grand total, clearing the flag.
+    pub(crate) fn take_load_total_reported(&self) -> bool {
+        self.load_total_reported.swap(false, Ordering::SeqCst)
     }
 
     /// Read and clear the chunk-load dirty flag. `true` means the load changed
@@ -333,14 +402,15 @@ impl TableSceneryState {
     /// visible window in place instead of reseeding from cache — reseeding
     /// would only re-show whatever happens to be cached (and shows nothing
     /// if the cache was just cleared).
+    ///
+    /// Reads the decision [`paged`](Self::paged) recorded at open, for the
+    /// reason given there. Asking the lens instead makes every scenery under a
+    /// shared lens claim to be paged, and an eager one then answers a landed
+    /// dataset by re-fetching a viewport it never fetches through — so the rows
+    /// its `on_start` just wrote to the cache never reach the visible map, and
+    /// the grid stays empty until something reopens it over the warm cache.
     pub(crate) fn is_chunk_loaded(&self) -> bool {
-        if self.two_pass {
-            return false;
-        }
-        self.dio_weak
-            .upgrade()
-            .map(|d| d.lens.callbacks.on_load_chunk.is_some())
-            .unwrap_or(false)
+        !self.two_pass && self.paged
     }
 
     /// Re-fetch the loaded rows in place so a refresh updates them without
@@ -408,6 +478,7 @@ impl SceneryChunkTarget for TableSceneryState {
     /// sizes the scrollbar without a `total_provider` — i.e. without a second
     /// request on open, which is the one network call `open()` used to await.
     fn set_chunk_total(&self, total: usize) -> bool {
+        self.load_total_reported.store(true, Ordering::SeqCst);
         self.set_total(Some(total))
     }
 

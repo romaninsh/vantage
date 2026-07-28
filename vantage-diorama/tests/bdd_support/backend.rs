@@ -142,6 +142,12 @@ impl MasterRows {
             can_search: true,
             can_set_page_size: true,
             can_fetch_page: true,
+            // The row-indexed sibling of `can_fetch_page`, and the one chunk
+            // loading actually maps onto: a scenery pages a master that
+            // advertises this. Omitting it left the mock claiming random access
+            // by page but not by row, so a lens offering both a warm and a
+            // pager was read as warm-only.
+            can_fetch_window: true,
             ..Default::default()
         };
         let mut shell = MockShell::new().with_metadata(meta).with_capabilities(caps);

@@ -448,6 +448,28 @@ where
             .collect())
     }
 
+    /// `LIMIT limit START offset` — a row-indexed window.
+    ///
+    /// Unlike [`fetch_page`](Self::fetch_page) the offset is arbitrary, so it
+    /// needs no `set_page_size` beforehand and does not have to align to a page
+    /// boundary. This is the primitive a lazily-paged grid drives on scroll: its
+    /// ranges are edge-anchored to whatever is already cached (`35..42`), which
+    /// no page index expresses.
+    async fn fetch_window(
+        &self,
+        _vista: &Vista,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<(String, Record<CborValue>)>> {
+        let mut window_table = self.table.clone();
+        window_table.set_pagination(Some(Pagination::window(offset as i64, limit as i64)));
+        let raw = window_table.list_values().await?;
+        Ok(raw
+            .into_iter()
+            .map(|(thing, record)| (thing.to_string(), to_cbor_record(record)))
+            .collect())
+    }
+
     async fn fetch_next(
         &self,
         _vista: &Vista,

@@ -149,7 +149,10 @@ async fn reload_loop(state: Arc<RecordSceneryState>, mut bus: broadcast::Receive
                     tracing::error!(error = %e, "RecordScenery reload failed");
                 }
             }
-            Ok(DioEvent::DatasetChanged) => {
+            // `Seeded` alongside `DatasetChanged`: a record scenery opened over
+            // a cold cache found nothing, and the eager seed landing is the one
+            // notice it gets that its record now exists.
+            Ok(DioEvent::DatasetChanged) | Ok(DioEvent::Seeded) => {
                 if let Err(e) = state.reload().await {
                     tracing::error!(error = %e, "RecordScenery reload failed");
                 }

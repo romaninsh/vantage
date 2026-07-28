@@ -62,6 +62,26 @@ pub(crate) async fn reload_loop(
                     | DioEvent::DatasetChanged) => {
                         refresh(&state).await;
                     }
+                    // The eager seed landed in the cache — which matters only
+                    // to a scenery whose rows come *from* the cache. A two-pass
+                    // scenery's spine is its own ordered index, and a paged
+                    // one's is the master's window order, so for them a full
+                    // cache is not an answer and must not be treated as one:
+                    // reseeding a paged scenery here would paint the cache's
+                    // id-keyed order and mark it settled over a set it never
+                    // fetched.
+                    //
+                    // A shared lens makes this reachable for all three shapes.
+                    // The scenery reads its own recorded shape rather than the
+                    // lens's offers, which is the distinction that was wrong
+                    // when the seed went unseen.
+                    Ok(DioEvent::Seeded) => {
+                        if state.two_pass {
+                            super::two_pass::refresh_index(&state).await;
+                        } else if !state.paged {
+                            reseed(&state).await;
+                        }
+                    }
                     // A scheduled detail fetch for one of our rows failed —
                     // stamp the slot so the grid shows the failure (single-pass
                     // rows load through their own chunk pipeline, not the
@@ -137,6 +157,33 @@ async fn reseed(state: &Arc<TableSceneryState>) {
     if let Err(e) = state.reseed_from_cache().await {
         tracing::error!(error = %e, "TableScenery reseed failed");
     } else {
+        // An eager lens loads in the background; this is where its rows reach
+        // the view, so this is where "still loading" ends.
+        //
+        // A reseed that found rows is an answer. One that found none is only an
+        // answer if nothing further is coming, and both shapes have a way to
+        // still be waiting:
+        //
+        // - **paged** — the cache is not the row source at all; rows arrive
+        //   from the master a window at a time. A grid applying its default
+        //   sort at mount pings this loop, and that reseed landed milliseconds
+        //   before the first fetch even dispatched. The loader settles it when
+        //   the window arrives.
+        // - **eager** — the cache IS the row source, but a detached `on_start`
+        //   may still be filling it. An empty cache and an empty table are
+        //   indistinguishable from here; `seed_complete` is what tells them
+        //   apart. Without it a grid flashed "no rows" and then filled in.
+        //
+        // Same rule the open path uses (see `builder`).
+        let has_rows = !state.rows.read().unwrap().is_empty();
+        let seeded = state
+            .dio_weak
+            .upgrade()
+            .map(|d| d.seed_complete.load(std::sync::atomic::Ordering::SeqCst))
+            .unwrap_or(true);
+        if has_rows || (!state.paged && seeded) {
+            state.mark_settled("reactor reseed");
+        }
         state.bump_generation();
     }
 }

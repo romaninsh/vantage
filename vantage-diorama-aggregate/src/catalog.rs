@@ -84,7 +84,9 @@ impl AggregationCatalog {
     /// `sum`, `avg`, `min`, `max`, `distinct`.
     pub fn with_builtins() -> Self {
         let mut catalog = Self::new();
-        catalog.register("count", |_, _| Ok(Box::new(Count::rows()) as ScalarAggregation));
+        catalog.register("count", |_, _| {
+            Ok(Box::new(Count::rows()) as ScalarAggregation)
+        });
         catalog.register("sum", |op, spec| {
             Ok(Box::new(Sum::new(spec.require_column(op)?)) as ScalarAggregation)
         });
@@ -150,14 +152,24 @@ impl AggregationCatalog {
     /// grouped `sum` and a top-level `sum` cannot disagree — same reduction,
     /// different row set — and an application-registered aggregation is
     /// groupable the moment it is registered.
+    // The nesting is the point: the caller gets a concrete `GroupBy<Reduce<_>>`
+    // it can compose further, not a boxed closure. Clippy's advice — factor the
+    // type into an alias — cannot apply, because the reduction is a
+    // return-position `impl Fn` and a `type` alias may not hold one on stable.
+    #[allow(clippy::type_complexity)]
     pub fn group_by(
         &self,
         key_column: impl Into<String>,
         op: &str,
         alias: impl Into<String>,
         spec: AggregationSpec,
-    ) -> Result<GroupBy<Reduce<impl Fn(&CborValue, &[&Record<CborValue>]) -> Record<CborValue> + Send + Sync + 'static>>>
-    {
+    ) -> Result<
+        GroupBy<
+            Reduce<
+                impl Fn(&CborValue, &[&Record<CborValue>]) -> Record<CborValue> + Send + Sync + 'static,
+            >,
+        >,
+    > {
         let alias = alias.into();
         // Built once, up front: a bad declaration must surface now, not once
         // per group on every recomputation.
@@ -254,7 +266,11 @@ mod tests {
     fn a_reduction_without_its_column_fails_loudly() {
         let catalog = AggregationCatalog::with_builtins();
         assert!(catalog.build("sum", spec(None, Conditions::new())).is_err());
-        assert!(catalog.build("count", spec(None, Conditions::new())).is_ok());
+        assert!(
+            catalog
+                .build("count", spec(None, Conditions::new()))
+                .is_ok()
+        );
     }
 
     #[test]
