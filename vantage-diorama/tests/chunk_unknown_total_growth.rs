@@ -67,6 +67,40 @@ async fn wait_for(what: &str, scenery: &Arc<dyn TableScenery>, mut ok: impl FnMu
     panic!("timed out waiting for: {what}");
 }
 
+/// A grid-faithful scroll: overlapping ~21-row viewports stepping down in
+/// small increments, exactly what wheel-scrolling a `RecordGridDio` emits.
+/// The set must keep growing under this motion until the real end pins it —
+/// no wall partway, whatever the interplay of cached runs, phantom pages
+/// and horizon extensions.
+#[tokio::test(flavor = "multi_thread")]
+async fn grid_step_scroll_reaches_the_exact_end() -> Result<()> {
+    const VIEW: usize = 21;
+    let tmp = TempDir::new().unwrap();
+    let lens = total_less_lens(tmp.path().join("c.redb"));
+    let dio = lens.make_dio(master_cols(&[("v", "String")])).await?;
+    let scenery = dio.table_scenery().open().await?;
+
+    wait_for("first rows", &scenery, || scenery.row_count() > 0).await;
+
+    let mut top = 0usize;
+    for _ in 0..400 {
+        let rows = scenery.row_count();
+        if rows == REAL_TOTAL && scenery.row(REAL_TOTAL - 1).is_some() {
+            assert_eq!(scenery.estimated_total(), Some(REAL_TOTAL));
+            return Ok(());
+        }
+        // One wheel notch down, clamped like a real grid to its content.
+        top = (top + 7).min(rows.saturating_sub(VIEW));
+        scenery.set_viewport(top..(top + VIEW).min(rows));
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+    }
+    panic!(
+        "scroll never reached the end: rows={} total={:?}",
+        scenery.row_count(),
+        scenery.estimated_total()
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn full_pages_extend_the_horizon_until_a_short_page_ends_it() -> Result<()> {
     let tmp = TempDir::new().unwrap();

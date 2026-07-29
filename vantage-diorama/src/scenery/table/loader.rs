@@ -196,11 +196,37 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
         visible.clone().filter(|i| rows.contains_key(i)).count()
     };
 
+    // Unknown-total horizon probe. When the source has never stated a total,
+    // the advertised end is only our inference — and a viewport pressed
+    // against it must ASK past it, even when every visible row is cached.
+    // Without this, a warm cache walls the set at its seeded size forever:
+    // the visible range is fully cached, no fetch fires, and the fetch is
+    // the only thing that can extend the horizon.
+    // What the view believes the set's end is: the inferred total, or — on a
+    // cache-seeded reopen, where no total survived — the seeded row count.
+    let advertised_end =
+        total.unwrap_or_else(|| state.rows.read().unwrap().keys().max().map_or(0, |i| i + 1));
+    let horizon_probe = state.paged
+        && !state.two_pass
+        && !force_load
+        && !state.total_ever_stated()
+        && advertised_end > 0
+        && visible.end >= advertised_end;
+
     // Decide what to actually fetch. `force_load` callers
     // (`request_load_more`) have already pre-computed a range; respect
     // it. For viewport-driven loads, shift toward the uncached side.
     let effective_range = if force_load {
         visible.clone()
+    } else if horizon_probe {
+        // Unclamped (`total: None`): the fetch may run past the inferred end.
+        // Fully-cached viewport → probe one page starting AT the end; rows
+        // coming back mean the set grew (or was always bigger), nothing back
+        // means the inference was right and the hole clamp keeps it.
+        match compute_fetch_range(&state, &visible, None) {
+            Some(r) => r,
+            None => advertised_end..advertised_end + state.page_size,
+        }
     } else {
         match compute_fetch_range(&state, &visible, total) {
             Some(r) => r,
