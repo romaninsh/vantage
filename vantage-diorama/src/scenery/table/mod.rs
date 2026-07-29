@@ -398,13 +398,14 @@ impl TableScenery for TableSceneryImpl {
         self.inner.deregister();
         *self.inner.search.write().unwrap() = normalized;
         if self.inner.paged {
-            // Every cached index belongs to the previous query's row space —
-            // rows, ids and total all restart under the new one. The refetch
-            // of the current viewport carries the search via `ChunkQuery`.
-            self.inner.rows.write().unwrap().clear();
-            self.inner.id_to_idx.write().unwrap().clear();
-            self.inner.set_total(None);
-            self.inner.bump_generation();
+            // Stale-while-revalidate: keep the current rows and count on
+            // screen and refetch the viewport in place. The refetch reads the
+            // new search from `state` (via `ChunkQuery`) and overwrites each
+            // slot as ordered rows land; the counted response then updates the
+            // total, at which point any tail beyond the new (smaller) set falls
+            // outside `row_count` and stops being addressed. Clearing here
+            // instead would blank the grid for the whole round trip — a
+            // collapse-to-zero on every keystroke.
             self.inner.refresh_loaded_viewport();
         } else {
             // Eager: the reseed applies the predicate over the cache.
