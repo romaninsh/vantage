@@ -588,7 +588,24 @@ impl TableSceneryState {
             while rows.contains_key(&end) {
                 end += 1;
             }
-            start..end
+            // Reach one page PAST the block we hold, because a refresh must be
+            // able to see a set that GREW. Re-fetching exactly what is loaded
+            // can only ever restate its length: the source returns as many rows
+            // as were asked for, a full page carries no end-of-set signal, and
+            // a row appended beyond the window stays invisible.
+            //
+            // With a client-visible sort this is worse than a missing row. Add
+            // a record that sorts first and the refetch of `0..3` returns the
+            // new first three — the new row takes slot 0, the row that used to
+            // be last is pushed to an index nobody asked for, and the grid
+            // shows a replacement rather than an addition. That is how this was
+            // reported: "I see it, but it replaced a different record."
+            //
+            // Overshooting is cheap and self-correcting. If the set did not
+            // grow, the extra indices come back empty, the short-page rule
+            // restates the same total, and the unreachable-rows clamp caps it
+            // there.
+            start..end + self.page_size
         };
         super::loader::enqueue_viewport(
             self,
