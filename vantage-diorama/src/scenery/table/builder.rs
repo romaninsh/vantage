@@ -280,6 +280,7 @@ impl TableSceneryBuilder {
             master_capabilities,
             two_pass,
             ui_filters: RwLock::new(Vec::new()),
+            search: RwLock::new(None),
             titles_only,
             demand,
             index: RwLock::new(index),

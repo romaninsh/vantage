@@ -27,6 +27,23 @@ pub(crate) fn record_get_path<'a>(rec: &'a Record<CborValue>, path: &str) -> Opt
     Some(current)
 }
 
+/// Local quicksearch predicate: case-insensitive substring over every text
+/// field of the record (the same semantics drivers use server-side, so a
+/// table behaves alike whichever side evaluates). `None`/blank matches all.
+pub(crate) fn matches_search(rec: &Record<CborValue>, query: Option<&str>) -> bool {
+    let Some(query) = query else {
+        return true;
+    };
+    let needle = query.to_lowercase();
+    if needle.is_empty() {
+        return true;
+    }
+    rec.values().any(|v| match v {
+        CborValue::Text(s) => s.to_lowercase().contains(&needle),
+        _ => false,
+    })
+}
+
 pub(crate) fn matches_conditions(rec: &Record<CborValue>, conds: &[(String, CborValue)]) -> bool {
     conds
         .iter()

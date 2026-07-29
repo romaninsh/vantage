@@ -360,8 +360,11 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
     // `write_chunk_row` sets it when a row's content actually changes.
     state.reset_load_dirty();
     let total_before = *state.total.read().unwrap();
-    let sort = state.sort.read().unwrap().clone();
-    let mut result = cb(&dio, effective_range.clone(), sort, sink).await;
+    let query = crate::lens::ChunkQuery {
+        sort: state.sort.read().unwrap().clone(),
+        search: state.search.read().unwrap().clone(),
+    };
+    let mut result = cb(&dio, effective_range.clone(), query, sink).await;
     // Commit the page in one write, before anything reads the cache back. A
     // failed commit fails the load: the rows are bound in the visible map but
     // absent from the cache, and the next re-sort would rebuild the map without

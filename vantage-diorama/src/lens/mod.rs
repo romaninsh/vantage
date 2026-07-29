@@ -24,6 +24,7 @@ use crate::ops::{ChangeEvent, ChangeFlash, QueryDescriptor};
 pub use activity::{Activity, ActivitySignal};
 pub use cache_backend::{CacheBackend, CacheStatus, CacheTable};
 pub use callbacks::{
+    ChunkQuery,
     DioCallback, DioEventCallback, DioFlashCallback, DioListPageCallback, DioLoadChunkCallback,
     DioLoadDetailCallback, DioTotalProviderCallback, LensCallbacks, boxed_dio_callback,
     boxed_dio_event_callback, boxed_dio_flash_callback, boxed_list_page_callback,
@@ -242,7 +243,7 @@ impl LensBuilder {
     /// `ViewportChanged` and never load.
     pub fn on_load_chunk<F, Fut>(mut self, f: F) -> Self
     where
-        F: for<'a> Fn(&'a Dio, Range<usize>, Option<(String, crate::SortDir)>, ChunkSink) -> Fut
+        F: for<'a> Fn(&'a Dio, Range<usize>, callbacks::ChunkQuery, ChunkSink) -> Fut
             + Send
             + Sync
             + 'static,

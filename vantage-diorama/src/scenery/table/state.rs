@@ -12,7 +12,9 @@ use crate::dio::{DioInner, Generation};
 use crate::lens::SceneryChunkTarget;
 use crate::scenery::enriched_record::{EnrichedRecord, RowStatus};
 
-use super::helpers::{cmp_sort, matches_conditions, matches_op_conditions, record_get_path};
+use super::helpers::{
+    cmp_sort, matches_conditions, matches_op_conditions, matches_search, record_get_path,
+};
 use super::{SortDir, ViewportRequest};
 
 /// Internal state shared by the public scenery handle, the reactor
@@ -130,6 +132,12 @@ pub(crate) struct TableSceneryState {
     /// ANDed with `conditions` in the local refine chain, kept separate
     /// so chips can never clobber query narrowing.
     pub(crate) ui_filters: RwLock<Vec<(String, CborValue)>>,
+
+    /// Active quicksearch text (`None` when not searching). Paged sceneries
+    /// carry it into every chunk fetch (`ChunkQuery`); eager ones apply it as
+    /// a local predicate in `reseed_from_cache` — honest there, because the
+    /// cache is (or becomes) the complete set.
+    pub(crate) search: RwLock<Option<String>>,
     /// Dropdown / autocomplete projection: serve the cheap list columns and
     /// **skip the detail pass** even on a two-pass table. The list pass still
     /// runs (rows carry id + title columns); per-row hydration never fires.
@@ -293,11 +301,13 @@ impl TableSceneryState {
         let conditions = self.conditions.read().unwrap().clone();
         let op_conditions = self.op_conditions.read().unwrap().clone();
         let sort = self.sort.read().unwrap().clone();
+        let search = self.search.read().unwrap().clone();
 
         let mut filtered: Vec<(String, Record<CborValue>)> = all
             .into_iter()
             .filter(|(_, rec)| matches_conditions(rec, &conditions))
             .filter(|(_, rec)| matches_op_conditions(rec, &op_conditions))
+            .filter(|(_, rec)| matches_search(rec, search.as_deref()))
             .collect();
 
         if let Some((col, dir)) = sort {

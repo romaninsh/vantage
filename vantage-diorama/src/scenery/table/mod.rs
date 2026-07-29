@@ -160,6 +160,20 @@ pub trait TableScenery: Send + Sync {
     /// them reference augmented columns). Empty vec clears.
     fn set_filters(&self, filters: Vec<(String, ciborium::Value)>);
 
+    /// Replace the quicksearch text (replace semantics; `None` or blank
+    /// clears). Paged sceneries push it into every chunk fetch — callers
+    /// should offer search only when [`Self::search_supported`] says so.
+    /// Eager sceneries filter locally over their (complete) cache. Default
+    /// no-op for wrappers that don't search.
+    fn set_search(&self, _query: Option<String>) {}
+
+    /// Whether [`Self::set_search`] will do something honest here: a paged
+    /// scenery needs the master's `can_search` (a local filter would silently
+    /// search only the loaded slice); an eager one always can.
+    fn search_supported(&self) -> bool {
+        false
+    }
+
     fn subscribe(&self) -> watch::Receiver<Generation>;
 
     /// Snapshot of the master Vista's capability flags taken at open
@@ -366,6 +380,44 @@ impl TableScenery for TableSceneryImpl {
         // The cached total belongs to the unfiltered set.
         self.inner.set_total(None);
         self.inner.reload_notify.notify_one();
+    }
+
+    fn set_search(&self, query: Option<String>) {
+        let normalized = query.filter(|q| !q.trim().is_empty());
+        if *self.inner.search.read().unwrap() == normalized {
+            return;
+        }
+        tracing::debug!(
+            target: "vantage_diorama::search",
+            query = ?normalized,
+            paged = self.inner.paged,
+            "set_search",
+        );
+        // Reshaping a shared view is not this consumer's to do — same rule
+        // as `set_sort`/`set_filters`.
+        self.inner.deregister();
+        *self.inner.search.write().unwrap() = normalized;
+        if self.inner.paged {
+            // Every cached index belongs to the previous query's row space —
+            // rows, ids and total all restart under the new one. The refetch
+            // of the current viewport carries the search via `ChunkQuery`.
+            self.inner.rows.write().unwrap().clear();
+            self.inner.id_to_idx.write().unwrap().clear();
+            self.inner.set_total(None);
+            self.inner.bump_generation();
+            self.inner.refresh_loaded_viewport();
+        } else {
+            // Eager: the reseed applies the predicate over the cache.
+            self.inner.reload_notify.notify_one();
+        }
+    }
+
+    fn search_supported(&self) -> bool {
+        if self.inner.paged {
+            self.inner.master_capabilities.can_search
+        } else {
+            true
+        }
     }
 
     fn subscribe(&self) -> watch::Receiver<Generation> {

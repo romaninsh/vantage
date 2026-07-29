@@ -69,6 +69,14 @@ impl TableScenery for CappedScenery {
         }
     }
 
+    fn set_search(&self, query: Option<String>) {
+        self.inner.set_search(query);
+    }
+
+    fn search_supported(&self) -> bool {
+        self.inner.search_supported()
+    }
+
     fn request_refresh(&self) {
         self.inner.request_refresh();
     }
