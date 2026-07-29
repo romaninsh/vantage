@@ -7,13 +7,15 @@
 //! match statement to edit.
 
 use std::collections::VecDeque;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use fake::Fake;
+use fake::rand::rngs::StdRng;
+use fake::rand::{RngExt as _, SeedableRng as _};
 use tokio::sync::broadcast;
 use tokio::time::{Instant, interval};
 use vantage_diorama::ChangeEvent;
@@ -21,6 +23,7 @@ use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
 
 use crate::FakerColumn;
+use crate::shape::ExtraFields;
 use crate::value_gen::ValueGen;
 
 /// Shared handle an effect uses to mutate the store and broadcast deltas.
@@ -35,6 +38,12 @@ pub struct FakerCtx {
     columns: Vec<FakerColumn>,
     id_column: String,
     values: ValueGen,
+    /// Undeclared per-record payload (the fat-response personality) — see
+    /// [`ExtraFields`].
+    extra: Option<ExtraFields>,
+    /// Effect-side randomness (script `rand_*`/`pick` verbs), separate from
+    /// `values`' stream so a seed replays both independently.
+    rng: Mutex<StdRng>,
     seq: AtomicU64,
 }
 
@@ -51,12 +60,50 @@ impl FakerCtx {
             columns,
             id_column,
             values: ValueGen::new(),
+            extra: None,
+            rng: Mutex::new(crate::value_gen::entropy_rng()),
             seq: AtomicU64::new(0),
         }
     }
 
+    /// Swap in a configured generator (seeded / weird).
+    pub fn with_values(mut self, values: ValueGen) -> Self {
+        self.values = values;
+        self
+    }
+
+    /// Ride `extra.count` fields of `extra.size`-char filler on every
+    /// generated record.
+    pub fn with_extra_fields(mut self, extra: Option<ExtraFields>) -> Self {
+        self.extra = extra;
+        self
+    }
+
+    /// Seed the effect-side rng (decorrelated from the value stream).
+    pub fn with_seed(mut self, seed: Option<u64>) -> Self {
+        if let Some(seed) = seed {
+            self.rng = Mutex::new(StdRng::seed_from_u64(seed ^ 0x0EFF_EC75));
+        }
+        self
+    }
+
     fn generate(&self, id: &str) -> Record<CborValue> {
-        self.values.record_for(&self.columns, &self.id_column, id)
+        let mut rec = self.values.record_for(&self.columns, &self.id_column, id);
+        if let Some(extra) = self.extra {
+            for i in 1..=extra.count {
+                // Deterministic filler, prefixed per row/field so nothing
+                // accidentally dedups — content is irrelevant, weight is not.
+                let head = format!("{id}:{i}:");
+                let mut s = String::with_capacity(extra.size);
+                s.push_str(&head);
+                while s.len() < extra.size {
+                    s.push('x');
+                }
+                s.truncate(extra.size);
+                rec.insert(format!("extra_{i:04}"), CborValue::Text(s));
+            }
+        }
+        rec
     }
 
     /// Reverse-monotonic id: newest rows get the *smallest* key, so the cache's
@@ -98,6 +145,99 @@ impl FakerCtx {
         let _ = self
             .events
             .send(ChangeEvent::Deleted { id: id.to_string() });
+    }
+
+    // ---- Store reads + scripted mutation verbs -----------------------------
+    //
+    // The surface a scripted effect (rhai) drives: read the store, mutate it,
+    // and have every mutation broadcast the matching `ChangeEvent` — the
+    // script *is* "perform change, and it's being sent up".
+
+    /// Ids currently in the store, in store order.
+    pub fn record_ids(&self) -> Vec<String> {
+        self.shell.record_ids()
+    }
+
+    /// Snapshot one record by id.
+    pub fn get_record(&self, id: &str) -> Option<Record<CborValue>> {
+        self.shell.get_record(id)
+    }
+
+    /// Number of records currently held.
+    pub fn record_count(&self) -> usize {
+        self.shell.len()
+    }
+
+    /// Overwrite one field of an existing record and broadcast an `Updated`
+    /// carrying the full new record. No-op (and no event) if the id is gone —
+    /// a script racing an expiry must not resurrect ghosts.
+    pub fn update_field(&self, id: &str, field: &str, value: CborValue) {
+        self.shell.set_field(id, field, value);
+        if let Some(record) = self.shell.get_record(id) {
+            let _ = self.events.send(ChangeEvent::Updated {
+                id: id.to_string(),
+                new: Some(record),
+            });
+        }
+    }
+
+    /// Merge `partial` into an existing record; one `Updated` for the batch.
+    pub fn patch_record(&self, id: &str, partial: &Record<CborValue>) {
+        for (field, value) in partial {
+            self.shell.set_field(id, field, value.clone());
+        }
+        if let Some(record) = self.shell.get_record(id) {
+            let _ = self.events.send(ChangeEvent::Updated {
+                id: id.to_string(),
+                new: Some(record),
+            });
+        }
+    }
+
+    /// Insert a scripted record (id assigned, id column filled) and broadcast
+    /// an `Inserted`. Returns the new id.
+    pub fn insert_record(&self, mut record: Record<CborValue>) -> String {
+        let id = self.next_fifo_id();
+        record.insert(self.id_column.clone(), CborValue::Text(id.clone()));
+        self.shell.set_record(&id, record.clone());
+        let _ = self.events.send(ChangeEvent::Inserted {
+            id: id.clone(),
+            new: Some(record),
+        });
+        id
+    }
+
+    /// One value in the style of [`ValueGen`] — `kind` matched as a column
+    /// name first, then as a type.
+    pub fn fake_value(&self, kind: &str) -> CborValue {
+        self.values.value_for(&FakerColumn {
+            name: kind.to_string(),
+            ty: kind.to_string(),
+            flags: vec![],
+        })
+    }
+
+    /// Inclusive integer draw from the effect-side rng.
+    pub fn rand_int(&self, lo: i64, hi: i64) -> i64 {
+        let hi = hi.max(lo);
+        self.rng.lock().unwrap().random_range(lo..=hi)
+    }
+
+    /// Draw from `[lo, hi)` on the effect-side rng.
+    pub fn rand_float(&self, lo: f64, hi: f64) -> f64 {
+        if hi <= lo {
+            return lo;
+        }
+        self.rng.lock().unwrap().random_range(lo..hi)
+    }
+
+    /// Index draw for a `pick` over `len` items. `None` when empty.
+    pub fn rand_index(&self, len: usize) -> Option<usize> {
+        if len == 0 {
+            None
+        } else {
+            Some(self.rng.lock().unwrap().random_range(0..len))
+        }
     }
 }
 

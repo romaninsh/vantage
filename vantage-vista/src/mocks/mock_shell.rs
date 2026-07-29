@@ -156,6 +156,20 @@ impl MockShell {
         self.len() == 0
     }
 
+    /// Snapshot one record by id, straight off the store — no conditions, no
+    /// `fail_reads` guard. Companion to the live-mutation helpers: an effect
+    /// or test reading what it is about to mutate is inspecting its own
+    /// store, not querying a source.
+    pub fn get_record(&self, id: &str) -> Option<Record<CborValue>> {
+        self.data.lock().unwrap().get(id).cloned()
+    }
+
+    /// Ids currently held, in store order. Same store-side view as
+    /// [`Self::get_record`].
+    pub fn record_ids(&self) -> Vec<String> {
+        self.data.lock().unwrap().keys().cloned().collect()
+    }
+
     /// Return `Err` while `fail_reads` is set — see [`Self::set_fail_reads`].
     fn guard_reads(&self) -> Result<()> {
         if self.fail_reads.load(Ordering::SeqCst) {

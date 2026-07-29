@@ -18,6 +18,9 @@
 pub mod effect;
 pub mod live_folder;
 pub mod pulse;
+#[cfg(feature = "rhai")]
+pub mod rhai_effect;
+pub mod shape;
 pub mod value_gen;
 
 use tokio::sync::broadcast;
@@ -25,12 +28,19 @@ use tokio::task::JoinHandle;
 use vantage_diorama::ChangeEvent;
 use vantage_vista::Vista;
 use vantage_vista::mocks::MockShell;
+// `clone_shell` on the seeded store, in `build_shaped`.
+use vantage_vista::source::TableShell as _;
 
 pub use effect::{FakerCtx, FakerEffect, FifoEffect, StaticEffect};
 pub use live_folder::{
     EVENT_TYPES, Entry, EntryKind, LiveFolderConfig, LiveFolderSim, PushMode, format_ts,
 };
 pub use pulse::{PulseConfig, PulseKey, PulseRole, PulseSim};
+#[cfg(feature = "rhai")]
+pub use rhai_effect::RhaiEffect;
+pub use shape::{
+    BackendShape, ExtraFields, FaultSchedule, Latency, LatencyModel, Offline, ShapedShell,
+};
 pub use value_gen::ValueGen;
 
 /// One column of a faker table: a name, a declared type, and free-form flags
@@ -85,6 +95,54 @@ impl FakerTable {
         effect.seed(&ctx);
 
         let vista = Vista::new(name, Box::new(shell));
+
+        let task = effect.is_live().then(|| {
+            AbortOnDrop(tokio::spawn(async move {
+                effect.run(ctx).await;
+            }))
+        });
+
+        Self {
+            vista,
+            events,
+            _task: task,
+        }
+    }
+
+    /// [`build`](Self::build) with a [`BackendShape`]: the store is the same,
+    /// but the Vista reads it through a [`ShapedShell`] enforcing the shape's
+    /// capabilities, latency and faults. The shape's `seed`/`weirdness`/
+    /// `extra_fields` configure generation, so one struct is the whole
+    /// backend personality.
+    pub fn build_shaped(
+        name: impl Into<String>,
+        columns: Vec<FakerColumn>,
+        id_column: impl Into<String>,
+        effect: Box<dyn FakerEffect>,
+        shape: BackendShape,
+    ) -> Self {
+        let shell = MockShell::new();
+        let (events, _) = broadcast::channel(EVENT_CAPACITY);
+
+        let values = match shape.seed {
+            Some(seed) => ValueGen::seeded(seed),
+            None => ValueGen::new(),
+        }
+        .with_weirdness(shape.weirdness);
+
+        let ctx = std::sync::Arc::new(
+            FakerCtx::new(shell.clone(), events.clone(), columns, id_column.into())
+                .with_values(values)
+                .with_extra_fields(shape.extra_fields)
+                .with_seed(shape.seed),
+        );
+
+        effect.seed(&ctx);
+
+        let inner = shell
+            .clone_shell()
+            .expect("MockShell::clone_shell always succeeds");
+        let vista = Vista::new(name, Box::new(ShapedShell::new(inner, shape)));
 
         let task = effect.is_live().then(|| {
             AbortOnDrop(tokio::spawn(async move {
