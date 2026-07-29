@@ -391,7 +391,32 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
             } else if pushed < effective_len {
                 state.set_total(Some(effective_range.start + pushed))
             } else {
-                false
+                // A FULL page from a source that has never stated a total. If
+                // it reached the advertised end, that end was only ever our
+                // own inference — a horizon, not a wall. Extend it by one
+                // page so the view can keep scrolling and asking (the
+                // grows-as-you-scroll mode); the set's real end arrives as a
+                // short page (exact) or an empty fetch (the hole clamp
+                // below). Without this, a total-less windowed source pinned
+                // its row count at the first page and no scroll could ever
+                // request more.
+                let horizon_reached = total_before.is_none_or(|t| effective_range.end >= t);
+                // Single-pass paged mode only: a two-pass view's list pass
+                // enumerated the whole set — its size is knowledge, not an
+                // inference to extend.
+                if !state.two_pass && effective_len > 0 && horizon_reached && !state.total_ever_stated()
+                {
+                    let extended = effective_range.end + effective_len;
+                    tracing::debug!(
+                        target: "vantage_diorama::source",
+                        table = %dio_inner.master.read().unwrap().name(),
+                        extended,
+                        "full page reached the inferred horizon — extending it",
+                    );
+                    state.set_total(Some(extended))
+                } else {
+                    false
+                }
             };
             // A client-side sort can't push down to a paged, non-orderable
             // master, so this load (a viewport fetch, a scroll, or a refresh's

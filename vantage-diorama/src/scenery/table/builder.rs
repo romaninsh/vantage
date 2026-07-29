@@ -274,6 +274,7 @@ impl TableSceneryBuilder {
             load_dirty: std::sync::atomic::AtomicBool::new(false),
             load_push_count: AtomicUsize::new(0),
             load_total_reported: std::sync::atomic::AtomicBool::new(false),
+            total_ever_stated: std::sync::atomic::AtomicBool::new(false),
             paged: pages_lazily(&dio, &master_capabilities),
             settled: std::sync::atomic::AtomicBool::new(false),
             master_capabilities,
@@ -307,6 +308,11 @@ impl TableSceneryBuilder {
                 "total_provider — grand total fetched, blocking the open",
             );
             *state.total.write().unwrap() = Some(total);
+            // A provider-stated total is a fact, like one stated in a fetch
+            // response — the unknown-total horizon rule must never override it.
+            state
+                .total_ever_stated
+                .store(true, std::sync::atomic::Ordering::SeqCst);
         }
 
         // 2. Seed the sparse map.

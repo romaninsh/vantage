@@ -324,18 +324,50 @@ impl TableShell for MockShell {
     }
 
     /// Windowed read that honours the shell's current `add_order` — the mock's
-    /// analogue of a driver serving an ordered `[offset, limit)` page. Reuses
-    /// `list_vista_values` (filter + search + order) then slices, so a caller
-    /// that set an order via `add_order` gets it applied server-side. Gated by
+    /// analogue of a driver serving an ordered `[offset, limit)` page. Gated by
     /// `can_fetch_window` like every driver.
+    ///
+    /// Clones only the returned window. The obvious implementation — list
+    /// everything, then slice — copies the whole store per window, which on a
+    /// large mock (200k rows) turns every "fast" page into a near-second stall
+    /// and made the shaped-faker latency knobs meaningless. Filtering and
+    /// ordering work over references; records are cloned after the slice.
     async fn fetch_window(
         &self,
-        vista: &Vista,
+        _vista: &Vista,
         offset: usize,
         limit: usize,
     ) -> Result<Vec<(String, Record<CborValue>)>> {
-        let ordered = self.list_vista_values(vista).await?;
-        Ok(ordered.into_iter().skip(offset).take(limit).collect())
+        self.guard_reads()?;
+        let data = self.data.lock().unwrap();
+        let matches =
+            |record: &Record<CborValue>| self.matches_filters(record) && self.matches_search(record);
+        let order = self.order.lock().unwrap().clone();
+        Ok(match order {
+            Some((field, dir)) => {
+                let mut refs: Vec<(&String, &Record<CborValue>)> =
+                    data.iter().filter(|(_, r)| matches(r)).collect();
+                refs.sort_by(|a, b| {
+                    let ord = cbor_cmp(a.1.get(&field), b.1.get(&field));
+                    match dir {
+                        SortDirection::Ascending => ord,
+                        SortDirection::Descending => ord.reverse(),
+                    }
+                });
+                refs.into_iter()
+                    .skip(offset)
+                    .take(limit)
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect()
+            }
+            None => data
+                .iter()
+                .filter(|(_, r)| matches(r))
+                .skip(offset)
+                .take(limit)
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+        })
     }
 
     /// Share the backing store, but give the copy its **own** query state
@@ -452,8 +484,18 @@ impl TableShell for MockShell {
         Ok(id)
     }
 
+    /// Count without materializing: `list_vista_values` clones every matching
+    /// record just to take a length, which turns each counted window fetch on
+    /// a large store into a full-store copy (1.8 s against a 200k-row mock).
+    /// Counting only needs the predicates.
     async fn get_vista_count(&self, vista: &Vista) -> Result<i64> {
-        Ok(self.list_vista_values(vista).await?.len() as i64)
+        let _ = vista;
+        self.guard_reads()?;
+        let data = self.data.lock().unwrap();
+        Ok(data
+            .values()
+            .filter(|record| self.matches_filters(record) && self.matches_search(record))
+            .count() as i64)
     }
 
     fn capabilities(&self) -> &VistaCapabilities {

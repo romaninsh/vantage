@@ -199,6 +199,9 @@ impl ShapedShell {
     /// Pay a request's toll: scheduled outage, then latency, then the error
     /// draw — an offline backend refuses fast, a flaky one fails slowly,
     /// like their real counterparts.
+    ///
+    /// Every tolled request logs at debug under `vantage_faker::shape` —
+    /// the tap the select tester's request accounting reads.
     async fn toll(&self, class: OpClass) -> Result<()> {
         if let Some(off) = self.shape.faults.offline {
             let elapsed = self.epoch.elapsed();
@@ -323,6 +326,7 @@ impl TableShell for ShapedShell {
         &self,
         vista: &Vista,
     ) -> Result<IndexMap<String, Record<CborValue>>> {
+        tracing::debug!(target: "vantage_faker::shape", op = "list", "request");
         self.toll(OpClass::List).await?;
         self.inner.list_vista_values(vista).await
     }
@@ -332,6 +336,7 @@ impl TableShell for ShapedShell {
         vista: &Vista,
         id: &String,
     ) -> Result<Option<Record<CborValue>>> {
+        tracing::debug!(target: "vantage_faker::shape", op = "get", id = %id, "request");
         self.toll(OpClass::Get).await?;
         self.inner.get_vista_value(vista, id).await
     }
@@ -355,6 +360,7 @@ impl TableShell for ShapedShell {
             "fetch_window",
             "can_fetch_window",
         )?;
+        tracing::debug!(target: "vantage_faker::shape", op = "window", offset, limit, "request");
         self.toll(OpClass::Window).await?;
         let offset = self.skewed_offset(offset);
         self.inner.fetch_window(vista, offset, limit).await
@@ -415,6 +421,7 @@ impl TableShell for ShapedShell {
 
     async fn get_vista_count(&self, vista: &Vista) -> Result<i64> {
         self.gate(self.shape.capabilities.can_count, "get_vista_count", "can_count")?;
+        tracing::debug!(target: "vantage_faker::shape", op = "count", "request");
         self.toll(OpClass::Count).await?;
         self.lied_total(vista).await
     }

@@ -82,6 +82,14 @@ pub(crate) struct TableSceneryState {
     /// the grid off at its first screen.
     pub(crate) load_total_reported: std::sync::atomic::AtomicBool,
 
+    /// Whether ANY fetch has ever stated a grand total (as opposed to totals
+    /// this side inferred from short pages). Latched, never cleared: a source
+    /// either reports totals or it doesn't. While it never has, a full page
+    /// reaching the advertised end means "horizon", not "end" — the loader
+    /// extends the addressable set so scrolling can keep asking (the
+    /// grows-as-you-scroll mode for window-paged, total-less sources).
+    pub(crate) total_ever_stated: std::sync::atomic::AtomicBool,
+
     /// Whether this view has finished its first load.
     ///
     /// "No rows" and "no rows *yet*" are the same picture and opposite
@@ -228,6 +236,11 @@ impl TableSceneryState {
         self.load_total_reported.swap(false, Ordering::SeqCst)
     }
 
+    /// Whether any fetch has ever stated a total — see the field docs.
+    pub(crate) fn total_ever_stated(&self) -> bool {
+        self.total_ever_stated.load(Ordering::SeqCst)
+    }
+
     /// Read and clear the chunk-load dirty flag. `true` means the load changed
     /// at least one row's content (so a generation bump is warranted).
     pub(crate) fn take_load_dirty(&self) -> bool {
@@ -339,6 +352,9 @@ impl TableSceneryState {
         };
         match cb(&dio).await {
             Ok(total) => {
+                // Stated, not inferred — latch it so the unknown-total
+                // horizon rule stays out of the way (see `total_ever_stated`).
+                self.total_ever_stated.store(true, Ordering::SeqCst);
                 self.set_total(Some(total));
             }
             Err(e) => tracing::error!(error = %e, "refresh_total failed"),
@@ -479,6 +495,7 @@ impl SceneryChunkTarget for TableSceneryState {
     /// request on open, which is the one network call `open()` used to await.
     fn set_chunk_total(&self, total: usize) -> bool {
         self.load_total_reported.store(true, Ordering::SeqCst);
+        self.total_ever_stated.store(true, Ordering::SeqCst);
         self.set_total(Some(total))
     }
 
