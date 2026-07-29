@@ -410,13 +410,32 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
             // self-correcting from a fetch already made — including for a list
             // opened before its rows existed, counted once at 0.
             let mut total_changed = if state.take_load_total_reported() {
+                let stated = *state.total.read().unwrap();
                 tracing::debug!(
                     target: "vantage_diorama::source",
                     table = %dio_inner.master.read().unwrap().name(),
-                    total = ?*state.total.read().unwrap(),
+                    total = ?stated,
                     "total stated by the fetch itself — no count request needed",
                 );
-                *state.total.read().unwrap() != total_before
+                let changed = stated != total_before;
+                // Remember a stated, un-narrowed total in the cache meta, so
+                // the NEXT open of this view can size its geometry before any
+                // fetch — the difference between a warm reopen appearing
+                // whole and its row count visibly jumping when the first
+                // counted response lands. A total under an active search
+                // describes the narrowed set and must not be remembered.
+                if changed && state.search.read().unwrap().is_none() {
+                    if let Some(total) = stated {
+                        if let Err(e) = dio_inner.cache.set_meta_total(total as u64).await {
+                            tracing::debug!(
+                                target: "vantage_diorama::cache",
+                                error = %e,
+                                "persisting the stated total failed — the next open loses its head start",
+                            );
+                        }
+                    }
+                }
+                changed
             } else if pushed < effective_len {
                 state.set_total(Some(effective_range.start + pushed))
             } else {

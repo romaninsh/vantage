@@ -366,6 +366,17 @@ impl TableSceneryState {
                 // horizon rule stays out of the way (see `total_ever_stated`).
                 self.total_ever_stated.store(true, Ordering::SeqCst);
                 self.set_total(Some(total));
+                // Remember it for the next open's head start (skipped under
+                // an active search — that total describes the narrowed set).
+                if self.search.read().unwrap().is_none() {
+                    if let Err(e) = dio_inner.cache.set_meta_total(total as u64).await {
+                        tracing::debug!(
+                            target: "vantage_diorama::cache",
+                            error = %e,
+                            "persisting the provider total failed",
+                        );
+                    }
+                }
             }
             Err(e) => tracing::error!(error = %e, "refresh_total failed"),
         }

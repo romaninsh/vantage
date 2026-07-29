@@ -405,6 +405,7 @@ impl TableSceneryBuilder {
             let cached_rows = dio.cache.count().await.unwrap_or(0);
             if cached_rows > 0 {
                 state.reseed_from_cache().await?;
+                restore_meta_total(&state, &dio).await;
                 state.mark_settled("open: paged view seeded from warm cache");
                 tracing::debug!(
                     target: "vantage_diorama::cache",
@@ -425,6 +426,14 @@ impl TableSceneryBuilder {
             // Eager single-pass (or `on_start`-warmed hybrid): the cache IS the
             // row set; seed (and order) from it directly.
             state.reseed_from_cache().await?;
+            // A PAGED view under a hybrid lens (the shared backend lens
+            // carries both offers) sizes itself from the remembered total, so
+            // a warm reopen has its final geometry from the first frame — the
+            // alternative is a visible jump when the first counted response
+            // lands. Eager views derive their count from the rows themselves.
+            if state.paged {
+                restore_meta_total(&state, &dio).await;
+            }
             tracing::debug!(
                 target: "vantage_diorama::cache",
                 table = %dio.master.read().unwrap().name(),
@@ -516,6 +525,34 @@ impl TableSceneryBuilder {
         // this key, `register_table_scenery` returns the winner and our
         // `scenery` drops here — its guard aborts the redundant tasks.
         Ok(dio.register_table_scenery(key, scenery))
+    }
+}
+
+/// Restore the grand total remembered by the last session's stated fetch
+/// (see `CacheTable::meta_total`), so a warm reopen advertises its final row
+/// count before any fetch runs. Latched as stated — it WAS stated, last time
+/// — so the unknown-total horizon rule stays out of the way; the on-open
+/// refetch re-states (and re-persists) the current truth.
+async fn restore_meta_total(state: &Arc<TableSceneryState>, dio: &Arc<DioInner>) {
+    match dio.cache.meta_total().await {
+        Ok(Some(total)) => {
+            state
+                .total_ever_stated
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            state.set_total(Some(total as usize));
+            tracing::debug!(
+                target: "vantage_diorama::cache",
+                table = %dio.master.read().unwrap().name(),
+                total,
+                "restored the remembered grand total",
+            );
+        }
+        Ok(None) => {}
+        Err(e) => tracing::debug!(
+            target: "vantage_diorama::cache",
+            error = %e,
+            "reading the remembered total failed — geometry arrives with the first fetch",
+        ),
     }
 }
 
