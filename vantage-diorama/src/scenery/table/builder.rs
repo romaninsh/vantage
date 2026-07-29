@@ -378,35 +378,48 @@ impl TableSceneryBuilder {
                 }
             }
         } else if state.paged && dio.lens.callbacks.on_start.is_none() {
-            // Pure paged lens (lazy chunk loading, no eager `on_start` warm): the
-            // row ORDER is the master's, fetched a page at a time — NOT the cache's
-            // id-keyed iteration order. Seeding densely from the cache here would
-            // both show the wrong order and make the viewport loader treat every
-            // row as already-cached and skip the authoritative fetch, so a warm
-            // cache (the redb file surviving a restart) would pin the grid to a
-            // stale, mis-ordered set until a forced refresh. Leave the map empty;
-            // the first viewport load fills it in the master's order.
-            // `total_provider` (above) already sized the scrollbar, so the grid
-            // shows its loading state, not a blank count.
+            // Pure paged lens (lazy chunk loading, no eager `on_start` warm).
             //
-            // A hybrid lens that DOES warm via `on_start` (cache seeded in the
-            // master's list order) still reseeds below, so its cache-aware
-            // "skip already-loaded ranges" optimisation is preserved.
+            // A WARM cache is shown at once rather than thrown away: navigating
+            // back to a grid whose rows are still cached must not flash a
+            // loading skeleton over data we already hold. `reseed_from_cache`
+            // orders the cached rows by the view's active sort, so a sorted
+            // grid opens in the right order; the `refresh_on_open` force-fetch
+            // below then replaces the visible window with the authoritative
+            // server rows *silently* — the view is already settled, so the swap
+            // carries no loading feedback. If the client sort can't reproduce
+            // the server's order exactly, the first screen reshuffles once when
+            // the fetch lands; the alternative is a skeleton over cached rows,
+            // which is worse. A non-contiguous cache compacts here, but the
+            // forced refetch corrects the first screen and scrolling corrects
+            // the rest.
             //
-            // This is the single most expensive decision an open makes, and it
-            // is invisible without saying so: a warm cache sitting unused looks
-            // exactly like a cold one from the outside.
-            // Both read before the macro: the count is awaited, and a lock
-            // taken inside the argument list would be held across that await.
+            // A COLD cache leaves the map empty so the grid shows its loading
+            // state; the on-open fetch is authoritative and fills the master's
+            // order. This is the "cache is not present" case the loading
+            // skeleton exists for.
+            //
+            // Both reads happen before the macro: the count is awaited, and a
+            // lock taken inside the argument list would be held across it.
             let table = dio.master.read().unwrap().name().to_string();
             let cached_rows = dio.cache.count().await.unwrap_or(0);
-            tracing::debug!(
-                target: "vantage_diorama::cache",
-                table = %table,
-                cached_rows,
-                "cache NOT seeded — paged lens; rows come from the master in its \
-                 own order, so the on-open fetch is authoritative",
-            );
+            if cached_rows > 0 {
+                state.reseed_from_cache().await?;
+                state.mark_settled("open: paged view seeded from warm cache");
+                tracing::debug!(
+                    target: "vantage_diorama::cache",
+                    table = %table,
+                    cached_rows,
+                    "warm cache seeded the paged view; refresh-on-open replaces it silently",
+                );
+            } else {
+                tracing::debug!(
+                    target: "vantage_diorama::cache",
+                    table = %table,
+                    cached_rows,
+                    "cache empty — paged view opens loading; the on-open fetch is authoritative",
+                );
+            }
             state.bump_generation();
         } else {
             // Eager single-pass (or `on_start`-warmed hybrid): the cache IS the

@@ -81,3 +81,56 @@ async fn warm_cache_reopen_shows_master_order_not_id_order() -> Result<()> {
     );
     Ok(())
 }
+
+/// A warm reopen shows its cached rows *immediately* — settled, non-empty, no
+/// loading state — so navigating back to a grid never flashes a loading
+/// skeleton over data already held. A cold open (empty cache) still reports
+/// loading. The authoritative order is restored silently by the on-open
+/// refetch (covered by the test above).
+#[tokio::test]
+async fn warm_reopen_is_settled_at_once_cold_open_is_loading() -> Result<()> {
+    use vantage_diorama::LoadState;
+
+    let tmp = TempDir::new().unwrap();
+    let cache = tmp.path().join("c.redb");
+    let backend: Backend = Arc::new(Mutex::new(vec![
+        ("1".into(), rec("one", 10)),
+        ("2".into(), rec("two", 30)),
+        ("3".into(), rec("three", 20)),
+    ]));
+    let lens = paged_lens(cache, backend.clone());
+    let dio = lens.make_dio(master()).await?;
+
+    // Cold open: nothing cached yet, so the view reports loading.
+    {
+        let cold = dio.table_scenery().open().await?;
+        assert_eq!(
+            cold.load_state(),
+            LoadState::Loading,
+            "a cold paged open (empty cache) reports loading",
+        );
+        let mut rx = cold.subscribe();
+        let g = u64::from(*rx.borrow_and_update());
+        cold.set_viewport(0..3);
+        wait_for_gen(&mut rx, g).await;
+        settle().await;
+    }
+
+    // Warm reopen: the cache holds the rows — the view is settled with rows
+    // the instant it opens, before any fetch has run.
+    let warm = dio.table_scenery().open().await?;
+    assert!(
+        !warm.is_loading(),
+        "a warm paged reopen must not report loading",
+    );
+    assert_eq!(
+        warm.row_count(),
+        3,
+        "a warm paged reopen shows its cached rows at once",
+    );
+    assert!(
+        warm.row(0).is_some(),
+        "the first cached row is present immediately, so no skeleton renders",
+    );
+    Ok(())
+}
