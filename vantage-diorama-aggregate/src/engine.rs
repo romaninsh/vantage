@@ -232,6 +232,12 @@ async fn wait(bus: &mut broadcast::Receiver<DioEvent>, nudge: &Notify, tap: &Deb
                         dropped,
                         "source event bus lagged — recomputing from the current rows",
                     );
+                    // "lagged" is intentionally untested: forcing a broadcast
+                    // receiver to fall behind deterministically (fill its
+                    // ring buffer faster than this task drains it) isn't
+                    // worth the test complexity for one trigger label. The
+                    // label exists so a real lag shows up in the stream
+                    // rather than masquerading as some other trigger.
                     return Wake::Changed(tap.enabled().then(|| "lagged".to_string()));
                 }
                 Err(broadcast::error::RecvError::Closed) => return Wake::SourceGone,
@@ -262,9 +268,6 @@ where
         return std::ops::ControlFlow::Break(());
     };
 
-    // Timing is the only thing worth gating here — rows_in/rows_out are
-    // plain lengths off values `recompute` already has to produce, so
-    // computing them costs nothing extra whether or not the tap is on.
     let start = tap.enabled().then(std::time::Instant::now);
 
     let rows = match source.reader.list_values().await {
@@ -274,17 +277,21 @@ where
             return std::ops::ControlFlow::Continue(());
         }
     };
-    let rows_in = rows.len();
 
     let output = aggregation.compute(&rows);
-    let rows_out = output.debug_row_count();
 
     // The comparison is what makes unconditional recomputation affordable:
     // recomputing often is fine as long as it does not repaint often.
     let unchanged = last.as_ref() == Some(&output);
 
+    // rows_in/rows_out are cheap today (a length, a stored count) but the
+    // gate stays structural rather than relying on that: nothing here
+    // should cost anything when the tap is off, including a future
+    // `debug_row_count` that isn't.
     if tap.enabled() {
         let ms = start.map(|s| s.elapsed().as_millis()).unwrap_or(0);
+        let rows_in = rows.len();
+        let rows_out = output.debug_row_count();
         tracing::info!(
             target: "vantage_diorama::debug",
             ds = %tap.ds(),

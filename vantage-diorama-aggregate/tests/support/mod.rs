@@ -59,6 +59,43 @@ pub async fn source_with_debug(shell: MockShell, ds_name: &str) -> Dio {
     build_source(shell, Some(ds_name)).await
 }
 
+/// A debug-tapped source whose `on_refresh` always fails.
+///
+/// `AggregateValue::request_refresh` always calls the source's `refresh()`
+/// *and then* nudges the engine loop directly — the nudge is there for a
+/// source with no refresh route, so the value doesn't just sit inert. A
+/// working `on_refresh` makes those two signals arrive together (the
+/// refresh's own `DatasetChanged` and the nudge, both ready before the
+/// engine loop gets a chance to poll), which makes the wake a genuine race:
+/// `trigger` could land as either. Failing the refresh suppresses
+/// `DatasetChanged` (`Dio::refresh` only emits it on `Ok`) while the nudge
+/// still fires unconditionally, so a test wanting the `"nudge"` trigger on
+/// its own, deterministically, needs a source like this one.
+pub async fn source_with_debug_and_failing_refresh(shell: MockShell, ds_name: &str) -> Dio {
+    let lens = Arc::new(
+        Lens::new()
+            .cache_in_memory()
+            .debug_datasource(ds_name)
+            .on_start(|dio| {
+                let dio = dio.clone();
+                async move {
+                    let rows = dio.master().list_values().await?;
+                    dio.cache().insert_values(rows).await?;
+                    Ok(())
+                }
+            })
+            .on_refresh(|_dio| async move {
+                Err(vantage_core::error!(
+                    "test: refresh always fails to isolate the nudge trigger"
+                ))
+            })
+            .build()
+            .expect("source lens builds"),
+    );
+    let vista = Vista::new("items", Box::new(shell));
+    lens.make_dio(vista).await.expect("source dio")
+}
+
 async fn build_source(shell: MockShell, debug: Option<&str>) -> Dio {
     let mut builder = Lens::new().cache_in_memory();
     if let Some(name) = debug {

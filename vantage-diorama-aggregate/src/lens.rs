@@ -205,7 +205,6 @@ impl AggregateLens {
         let tap = source.debug_tap();
         let start = tap.enabled().then(std::time::Instant::now);
         let rows = source.vista().list_values().await?;
-        let rows_in = rows.len();
         let initial = aggregation.compute(&rows);
 
         // This eager pass never goes through the engine's own `recompute` —
@@ -214,6 +213,9 @@ impl AggregateLens {
         // that follows will report the same output as `unchanged` (it is
         // seeded with `already_published` below), which is the intended
         // "publish skipped" reading for that second line.
+        //
+        // rows_in/rows_out stay inside this gate, not hoisted above it, so
+        // nothing here costs anything when the tap is off.
         if tap.enabled() {
             let ms = start.map(|s| s.elapsed().as_millis()).unwrap_or(0);
             tracing::info!(
@@ -221,7 +223,7 @@ impl AggregateLens {
                 ds = %tap.ds(),
                 aggregate = name,
                 trigger = "initial",
-                rows_in,
+                rows_in = rows.len(),
                 rows_out = initial.debug_row_count(),
                 ms,
                 unchanged = false,
