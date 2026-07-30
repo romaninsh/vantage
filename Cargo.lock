@@ -5662,6 +5662,7 @@ dependencies = [
  "futures",
  "indexmap",
  "insta",
+ "libc",
  "redb",
  "rstest",
  "serde",

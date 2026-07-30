@@ -104,3 +104,29 @@ async fn builder_flag_reaches_the_dio_and_off_means_off() {
     let dio = quiet.make_dio(master()).await.unwrap();
     assert!(!dio.debug_tap().enabled());
 }
+
+#[tokio::test]
+async fn census_lines_fire_on_scenery_open_and_drop() {
+    let (_guard, log) = capture();
+    let lens = Arc::new(
+        Lens::new()
+            .cache_in_memory()
+            .debug_datasource("faker-ds")
+            .runtime(tokio::runtime::Handle::current())
+            .build()
+            .unwrap(),
+    );
+    let dio = lens.make_dio(master()).await.unwrap();
+
+    let scenery = dio.table_scenery().open().await.unwrap();
+    let opens = lines_containing(&log, "census: table scenery opened");
+    assert_eq!(opens.len(), 1);
+    assert!(opens[0].contains("dio=\"books\""), "line: {}", opens[0]);
+    assert!(opens[0].contains("table_sceneries=1"), "line: {}", opens[0]);
+    assert!(opens[0].contains("uptime_ms="), "census carries process stats");
+
+    drop(scenery);
+    // Guard teardown is synchronous; the census drop line is emitted from Drop.
+    let closes = lines_containing(&log, "census: table scenery closed");
+    assert_eq!(closes.len(), 1);
+}

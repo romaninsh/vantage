@@ -186,11 +186,18 @@ pub(crate) struct RecordSceneryImpl {
 
 struct RecordSceneryGuard {
     task: tokio::task::JoinHandle<()>,
+    /// Weak — the guard must not keep the Dio alive; it only reaches back
+    /// in to decrement the census and emit the closing line.
+    dio_weak: Weak<DioInner>,
 }
 
 impl Drop for RecordSceneryGuard {
     fn drop(&mut self) {
         self.task.abort();
+        if let Some(dio) = self.dio_weak.upgrade() {
+            dio.record_census.fetch_sub(1, Ordering::Relaxed);
+            dio.emit_census("record scenery", "closed");
+        }
     }
 }
 
@@ -248,8 +255,14 @@ pub(crate) fn spawn_record_scenery(
         reload_loop(task_state, bus_rx).await;
     });
 
+    dio.record_census.fetch_add(1, Ordering::Relaxed);
+    dio.emit_census("record scenery", "opened");
+
     Arc::new(RecordSceneryImpl {
         inner: state,
-        _guard: RecordSceneryGuard { task },
+        _guard: RecordSceneryGuard {
+            task,
+            dio_weak: Arc::downgrade(dio),
+        },
     }) as Arc<dyn RecordScenery>
 }

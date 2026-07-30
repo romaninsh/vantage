@@ -244,6 +244,42 @@ impl DioInner {
         self.req_seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// Prune dead entries from the table-scenery dedup registry and return
+    /// how many are left. Shared by [`Dio::live_table_scenery_count`] (the
+    /// public diagnostics window) and [`Self::emit_census`] (the debug
+    /// stream), so there is exactly one pruning pass to keep in sync.
+    pub(crate) fn live_table_scenery_count(&self) -> usize {
+        let mut guard = self.table_sceneries.lock().unwrap();
+        guard.retain(|_, weak| weak.strong_count() > 0);
+        guard.len()
+    }
+
+    /// One census line: who is consuming this Dio right now, and what the
+    /// process costs. Emitted on every consumer open/close when the tap is
+    /// enabled. Returns before any work when it isn't — the off-path must
+    /// stay byte-identical to a build without this stream.
+    pub(crate) fn emit_census(&self, kind: &'static str, verb: &'static str) {
+        let tap = self.tap();
+        if !tap.enabled() {
+            return;
+        }
+        let table_sceneries = self.live_table_scenery_count();
+        let record_sceneries = self.record_census.load(std::sync::atomic::Ordering::Relaxed);
+        let servos = self.servo_census.load(std::sync::atomic::Ordering::Relaxed);
+        let p = crate::debug::process_stats();
+        crate::debug::tapline!(
+            tap,
+            dio = self.master.read().unwrap().name(),
+            table_sceneries,
+            record_sceneries,
+            servos,
+            uptime_ms = p.uptime_ms,
+            cpu_ms = p.cpu_ms,
+            peak_rss_mb = p.peak_rss_bytes / (1024 * 1024),
+            "census: {kind} {verb}",
+        );
+    }
+
     /// See [`Dio::write_capabilities`]. Lives on the inner so
     /// [`DioShell`] can share the one definition of capability lifting.
     pub(crate) fn write_capabilities(&self) -> WriteCapabilities {
@@ -565,9 +601,7 @@ impl Dio {
     /// handle is released the count drops back, proving no leak. A read-only
     /// window onto the dedup registry — the seed for the diagnostics surface.
     pub fn live_table_scenery_count(&self) -> usize {
-        let mut guard = self.inner.table_sceneries.lock().unwrap();
-        guard.retain(|_, weak| weak.strong_count() > 0);
-        guard.len()
+        self.inner.live_table_scenery_count()
     }
 
     /// Open a reactive view onto a single record by id. Reads the

@@ -515,16 +515,19 @@ impl TableSceneryBuilder {
         }
 
         let scenery: Arc<dyn TableScenery> = Arc::new(TableSceneryImpl {
-            inner: state,
             _guard: SceneryGuard {
                 tasks: vec![reactor_handle, viewport_handle],
+                dio_weak: state.dio_weak.clone(),
             },
+            inner: state,
         });
 
         // Publish to the dedup registry. If a concurrent open won the race for
         // this key, `register_table_scenery` returns the winner and our
         // `scenery` drops here — its guard aborts the redundant tasks.
-        Ok(dio.register_table_scenery(key, scenery))
+        let scenery = dio.register_table_scenery(key, scenery);
+        dio.emit_census("table scenery", "opened");
+        Ok(scenery)
     }
 }
 

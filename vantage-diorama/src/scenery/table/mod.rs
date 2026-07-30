@@ -31,7 +31,7 @@ use std::sync::Arc;
 use tokio::sync::watch;
 use vantage_vista::VistaCapabilities;
 
-use crate::dio::Generation;
+use crate::dio::{DioInner, Generation};
 
 use super::enriched_record::EnrichedRecord;
 
@@ -209,12 +209,19 @@ pub(crate) struct TableSceneryImpl {
 /// touching the winner's registry entry.
 struct SceneryGuard {
     tasks: Vec<tokio::task::JoinHandle<()>>,
+    /// Weak — the guard must not keep the Dio alive; it only reaches back
+    /// in to emit the closing census line, and only if the Dio is still
+    /// there to receive it.
+    dio_weak: std::sync::Weak<DioInner>,
 }
 
 impl Drop for SceneryGuard {
     fn drop(&mut self) {
         for task in &self.tasks {
             task.abort();
+        }
+        if let Some(dio) = self.dio_weak.upgrade() {
+            dio.emit_census("table scenery", "closed");
         }
     }
 }
