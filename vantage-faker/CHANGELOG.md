@@ -1,8 +1,29 @@
 # Changelog
 
-## 0.6.11 — 2026-07-30
+## 0.6.12 — 2026-07-30
 
 - Track vantage-diorama 0.11. No behavior changes here.
+
+## 0.6.11 — 2026-07-30
+
+- **`BackendShape` / `ShapedShell`** — one struct is a whole backend
+  personality: advertised `capabilities` (anything unadvertised refuses as
+  unsupported), `page_size`, per-operation-class latency (`list`/`get`/
+  `window`/`count`, plus `search_extra` while a filter is active), a
+  `FaultSchedule` (`error_rate`, scheduled `offline` windows, `cursor_expiry`,
+  `total_lie`, `boundary_skew`), undeclared fat `extra_fields`, `weirdness`
+  (a share of string cells drawn from an anomaly pool), and a `seed` for
+  deterministic replay. `FakerTable::build_shaped` reads the same store
+  through the shaped shell.
+- **`RhaiEffect`** (feature `rhai`) — a scripted mutation loop: seeds `count`
+  rows, then evaluates a Rhai script every `interval` with mutation verbs
+  (`ids`, `get`, `set`, `patch`, `insert`, `delete`, `fake`, `rand_int`,
+  `rand_float`, `pick`); every verb writes the store and broadcasts the
+  matching `ChangeEvent`.
+- `ValueGen::seeded` and `with_weirdness` — deterministic, anomaly-capable
+  value generation; the effect rng is decorrelated from the value rng.
+- Every tolled operation on a shaped shell emits a `tracing::debug!` under
+  `vantage_faker::shape` — the tap request accounting reads.
 
 ## 0.6.10 — 2026-07-28
 
