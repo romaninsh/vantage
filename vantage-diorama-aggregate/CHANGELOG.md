@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.5 — 2026-07-30
+
+- Track vantage-diorama 0.11.
+- **`"aggregate recompute"` joins the debug stream.** An aggregate has no
+  datasource of its own to opt in — its debug lines are inherited from
+  whatever the source Dio was built with, and fire under the same
+  `vantage_diorama::debug` target with the same `ds=` the source uses.
+  Reports the trigger (`initial`, `debounce-trailing`, `nudge`, `lagged`, or
+  the `DioEvent` variant that woke the loop), rows in and out, timing, and
+  whether the output changed enough to publish. A `derive()`'s first load
+  reports two `initial` lines — the eager compute that seeds the derived
+  Vista's schema, then the engine's own seed pass reading that output back —
+  which is the intended reading, not a duplicate line.
+
 ## 0.6.4 — 2026-07-28
 
 - Doc fixes: three intra-doc links that rustdoc could not resolve under

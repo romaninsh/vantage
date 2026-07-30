@@ -31,7 +31,7 @@ use std::sync::Arc;
 use tokio::sync::watch;
 use vantage_vista::VistaCapabilities;
 
-use crate::dio::Generation;
+use crate::dio::{DioInner, Generation};
 
 use super::enriched_record::EnrichedRecord;
 
@@ -107,6 +107,20 @@ pub enum LoadState {
     Partial,
     /// Every row this query yields is in the view.
     Complete,
+}
+
+impl LoadState {
+    /// Bare-word rendering for the debug stream's `"state"` line — passed as
+    /// a plain `&str` field (not `?self`) so the capture harness Debug-quotes
+    /// it (`to="Complete"`), matching every other string field this stream
+    /// emits.
+    pub(crate) fn as_str(&self) -> &'static str {
+        match self {
+            LoadState::Loading => "Loading",
+            LoadState::Partial => "Partial",
+            LoadState::Complete => "Complete",
+        }
+    }
 }
 
 /// Breakdown of the row statuses currently materialized in a scenery's sparse
@@ -209,6 +223,10 @@ pub(crate) struct TableSceneryImpl {
 /// touching the winner's registry entry.
 struct SceneryGuard {
     tasks: Vec<tokio::task::JoinHandle<()>>,
+    /// Weak — the guard must not keep the Dio alive; it only reaches back
+    /// in to emit the closing census line, and only if the Dio is still
+    /// there to receive it.
+    dio_weak: std::sync::Weak<DioInner>,
 }
 
 impl Drop for SceneryGuard {
@@ -216,23 +234,34 @@ impl Drop for SceneryGuard {
         for task in &self.tasks {
             task.abort();
         }
+        if let Some(dio) = self.dio_weak.upgrade() {
+            dio.emit_census("table scenery", "closed");
+        }
+    }
+}
+
+/// The [`LoadState`] computation, shared by [`TableScenery::load_state`] and
+/// [`TableSceneryState::note_state`](state::TableSceneryState::note_state) so
+/// the trait method and the debug stream can never disagree about what state
+/// a scenery is in.
+pub(crate) fn compute_load_state(state: &TableSceneryState) -> LoadState {
+    if !state.settled.load(std::sync::atomic::Ordering::SeqCst) {
+        return LoadState::Loading;
+    }
+    // A known total the visible map has not reached means rows are still
+    // coming — the ordinary state of a paged grid before it is scrolled.
+    // With no total there is nothing to be short of, so what is loaded is
+    // all there is.
+    let loaded = state.rows.read().unwrap().len();
+    match *state.total.read().unwrap() {
+        Some(total) if loaded < total => LoadState::Partial,
+        _ => LoadState::Complete,
     }
 }
 
 impl TableScenery for TableSceneryImpl {
     fn load_state(&self) -> LoadState {
-        if !self.inner.settled.load(std::sync::atomic::Ordering::SeqCst) {
-            return LoadState::Loading;
-        }
-        // A known total the visible map has not reached means rows are still
-        // coming — the ordinary state of a paged grid before it is scrolled.
-        // With no total there is nothing to be short of, so what is loaded is
-        // all there is.
-        let loaded = self.inner.rows.read().unwrap().len();
-        match *self.inner.total.read().unwrap() {
-            Some(total) if loaded < total => LoadState::Partial,
-            _ => LoadState::Complete,
-        }
+        compute_load_state(&self.inner)
     }
 
     fn row_count(&self) -> usize {

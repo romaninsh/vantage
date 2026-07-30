@@ -24,11 +24,11 @@ use crate::ops::{ChangeEvent, ChangeFlash, QueryDescriptor};
 pub use activity::{Activity, ActivitySignal};
 pub use cache_backend::{CacheBackend, CacheStatus, CacheTable};
 pub use callbacks::{
-    ChunkQuery,
-    DioCallback, DioEventCallback, DioFlashCallback, DioListPageCallback, DioLoadChunkCallback,
-    DioLoadDetailCallback, DioTotalProviderCallback, LensCallbacks, boxed_dio_callback,
-    boxed_dio_event_callback, boxed_dio_flash_callback, boxed_list_page_callback,
-    boxed_load_chunk_callback, boxed_load_detail_callback, boxed_total_provider_callback,
+    ChunkQuery, DioCallback, DioEventCallback, DioFlashCallback, DioListPageCallback,
+    DioLoadChunkCallback, DioLoadDetailCallback, DioTotalProviderCallback, LensCallbacks,
+    boxed_dio_callback, boxed_dio_event_callback, boxed_dio_flash_callback,
+    boxed_list_page_callback, boxed_load_chunk_callback, boxed_load_detail_callback,
+    boxed_total_provider_callback,
 };
 pub use chunk_sink::{ChunkRow, ChunkSink, SceneryChunkTarget};
 pub use defaults::LensDefaults;
@@ -47,6 +47,9 @@ pub struct Lens {
     /// App-activity signal driving adaptive refresh cadence. Shared with the UI
     /// (cloned), so flipping it re-paces every Dio's refresh loop at once.
     pub(crate) activity: ActivitySignal,
+    /// The official debug stream's tap. Off by default; see
+    /// [`debug_datasource`](LensBuilder::debug_datasource).
+    pub(crate) debug: crate::debug::DebugTap,
 }
 
 impl Lens {
@@ -92,6 +95,7 @@ pub struct LensBuilder {
     pub(crate) defaults: LensDefaults,
     pub(crate) runtime: Option<Handle>,
     pub(crate) activity: ActivitySignal,
+    pub(crate) debug: crate::debug::DebugTap,
 }
 
 impl Default for LensBuilder {
@@ -116,6 +120,7 @@ impl LensBuilder {
             defaults: LensDefaults::default(),
             runtime: None,
             activity: ActivitySignal::new(),
+            debug: crate::debug::DebugTap::off(),
         }
     }
 
@@ -324,6 +329,15 @@ impl LensBuilder {
     /// views demanding rows; raise for parallel hydration.
     pub fn augment_workers(mut self, workers: usize) -> Self {
         self.defaults.augment_workers = workers;
+        self
+    }
+
+    /// Enable the official debug stream for every Dio this Lens produces.
+    /// `name` is the datasource name stamped as `ds=` on every line of the
+    /// `vantage_diorama::debug` target. Off by default; when off, the
+    /// stream emits nothing.
+    pub fn debug_datasource(mut self, name: impl Into<String>) -> Self {
+        self.debug = crate::debug::DebugTap::for_datasource(name);
         self
     }
 

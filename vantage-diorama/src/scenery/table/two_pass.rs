@@ -280,6 +280,21 @@ async fn list_page_into(
     let dio = Dio {
         inner: dio_inner.clone(),
     };
+    // Only allocate a request id when the tap is enabled — the one
+    // correlator that ties this page's "list page dispatch" to its "list
+    // page return" in the debug stream.
+    let req = state.debug_tap.enabled().then(|| dio_inner.next_req());
+    crate::debug::tapline!(
+        state.debug_tap,
+        req = req.unwrap_or_default(),
+        dio = state.dio_name.as_str(),
+        offset,
+        limit,
+        conditions = ?q.conditions,
+        sort = ?q.sort,
+        "list page dispatch",
+    );
+    let t = std::time::Instant::now();
     let rows = if let Some(cb) = dio_inner.lens.callbacks.on_list_page.as_ref() {
         cb(&dio, q).await?
     } else {
@@ -341,7 +356,18 @@ async fn list_page_into(
         }
         new_ids.push(id.clone());
     }
-    Ok(index.append_page(new_ids, limit))
+    let rows_len = rows.len();
+    let appended = index.append_page(new_ids, limit);
+    crate::debug::tapline!(
+        state.debug_tap,
+        req = req.unwrap_or_default(),
+        rows = rows_len,
+        ms = t.elapsed().as_millis() as u64,
+        index_len = index.len(),
+        complete = index.is_complete(),
+        "list page return",
+    );
+    Ok(appended)
 }
 
 /// Soft-refresh a two-pass scenery after its `(conditions, sort)` changed.
@@ -735,6 +761,14 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
         settled_empty_skips,
         memo_skips,
         "detail pass census",
+    );
+    crate::debug::tapline!(
+        state.debug_tap,
+        dio = state.dio_name.as_str(),
+        requested,
+        pending = pending.len(),
+        already_complete,
+        "detail pass",
     );
     if pending.is_empty() {
         return;

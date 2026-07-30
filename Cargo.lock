@@ -5654,7 +5654,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5662,6 +5662,7 @@ dependencies = [
  "futures",
  "indexmap",
  "insta",
+ "libc",
  "redb",
  "rstest",
  "serde",
@@ -5685,13 +5686,14 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama-aggregate"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "async-trait",
  "ciborium",
  "indexmap",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "vantage-core",
  "vantage-dataset",
  "vantage-diorama",

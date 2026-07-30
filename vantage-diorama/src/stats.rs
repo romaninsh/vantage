@@ -185,12 +185,70 @@ pub fn reset_fetch_stats() {
     }
 }
 
+/// Render a session summary block with fetch stats, live counts, and process stats.
+/// Returns one string per line, no trailing newlines, in this order:
+/// - header: "— diorama session summary —"
+/// - per table (busiest first): "{table}: {fetches} fetches ({repeats} repeats), {rows_received} rows ({rows_redundant} redundant), {ms_total}ms total, {ms_max}ms max"
+/// - live: "live: {dios} dios, {table_sceneries} table sceneries, {record_sceneries} record sceneries, {servos} servos"
+/// - process: "process: uptime {uptime_ms}ms, cpu {cpu_ms}ms, peak rss {peak_rss_mb}MB"
+pub fn debug_summary_lines() -> Vec<String> {
+    let mut lines = Vec::new();
+
+    // Header
+    lines.push("— diorama session summary —".to_string());
+
+    // Per-table stats (already sorted busiest first by fetch_stats())
+    for stat in fetch_stats() {
+        let line = format!(
+            "{}: {} fetches ({} repeats), {} rows ({} redundant), {}ms total, {}ms max",
+            stat.table,
+            stat.fetches,
+            stat.repeats,
+            stat.rows_received,
+            stat.rows_redundant,
+            stat.ms_total,
+            stat.ms_max
+        );
+        lines.push(line);
+    }
+
+    // Live counts
+    let live = live_counts();
+    lines.push(format!(
+        "live: {} dios, {} table sceneries, {} record sceneries, {} servos",
+        live.dios, live.table_sceneries, live.record_sceneries, live.servos
+    ));
+
+    // Process stats
+    let proc = crate::debug::process_stats();
+    let peak_rss_mb = proc.peak_rss_bytes / (1024 * 1024);
+    lines.push(format!(
+        "process: uptime {}ms, cpu {}ms, peak rss {}MB",
+        proc.uptime_ms, proc.cpu_ms, peak_rss_mb
+    ));
+
+    lines
+}
+
+/// Log the debug summary lines via tracing at info level.
+/// Unconditional — the embedder decides when to call this.
+pub fn emit_debug_summary() {
+    for line in debug_summary_lines() {
+        tracing::info!(target: "vantage_diorama::debug", "{}", line);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    // These two scenarios share the process-global `LEDGER` and each needs
+    // to `reset_fetch_stats()` before recording its own fixture. Run as
+    // separate `#[test]` fns, cargo's default parallel test threads could
+    // interleave the resets and wipe one scenario's records mid-assert —
+    // so both live in one test, run strictly in sequence.
     #[test]
-    fn repeats_and_waste_are_counted_per_range() {
+    fn repeats_and_waste_are_counted_per_range_then_summary_renders_lines() {
         reset_fetch_stats();
         record_fetch("events", &(0..100), 35, 0, 3000);
         record_fetch("events", &(35..42), 7, 7, 2000);
@@ -215,5 +273,16 @@ mod tests {
             stats[1].worst_range, None,
             "fetched once, nothing to report"
         );
+
+        reset_fetch_stats();
+        record_fetch("book", &(0..20), 20, 0, 12);
+        record_fetch("book", &(0..20), 20, 20, 9);
+        let lines = debug_summary_lines();
+        assert!(lines[0].contains("session summary"));
+        let book = lines.iter().find(|l| l.starts_with("book:")).unwrap();
+        assert!(book.contains("2 fetches (1 repeats)"), "{book}");
+        assert!(book.contains("(20 redundant)"), "{book}");
+        assert!(lines.iter().any(|l| l.starts_with("live:")));
+        assert!(lines.iter().any(|l| l.starts_with("process:")));
     }
 }

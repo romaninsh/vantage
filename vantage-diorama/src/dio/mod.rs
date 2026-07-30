@@ -213,6 +213,14 @@ pub(crate) struct DioInner {
     /// rows land. Set to true at construction when there is nothing to wait
     /// for: no `on_start`, or a blocking one that has already run.
     pub(crate) seed_complete: std::sync::atomic::AtomicBool,
+
+    /// Monotonic per-dio request id for correlating debug-stream
+    /// dispatch/return lines (`req=N`).
+    pub(crate) req_seq: std::sync::atomic::AtomicU64,
+    /// Live servos opened on this Dio — census bookkeeping only.
+    pub(crate) servo_census: std::sync::atomic::AtomicUsize,
+    /// Live record sceneries opened on this Dio — census bookkeeping only.
+    pub(crate) record_census: std::sync::atomic::AtomicUsize,
 }
 
 impl Drop for DioInner {
@@ -224,6 +232,57 @@ impl Drop for DioInner {
 }
 
 impl DioInner {
+    /// The debug tap this Dio's Lens carries — the source of truth every
+    /// `tapline!` call site reaches through.
+    pub(crate) fn tap(&self) -> &crate::debug::DebugTap {
+        &self.lens.debug
+    }
+
+    /// Next value in this Dio's request sequence — stamped as `req=N` to
+    /// correlate a dispatch line with its return line in the debug stream.
+    pub(crate) fn next_req(&self) -> u64 {
+        self.req_seq
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Prune dead entries from the table-scenery dedup registry and return
+    /// how many are left. Shared by [`Dio::live_table_scenery_count`] (the
+    /// public diagnostics window) and [`Self::emit_census`] (the debug
+    /// stream), so there is exactly one pruning pass to keep in sync.
+    pub(crate) fn live_table_scenery_count(&self) -> usize {
+        let mut guard = self.table_sceneries.lock().unwrap();
+        guard.retain(|_, weak| weak.strong_count() > 0);
+        guard.len()
+    }
+
+    /// One census line: who is consuming this Dio right now, and what the
+    /// process costs. Emitted on every consumer open/close when the tap is
+    /// enabled. Returns before any work when it isn't — the off-path must
+    /// stay byte-identical to a build without this stream.
+    pub(crate) fn emit_census(&self, kind: &'static str, verb: &'static str) {
+        let tap = self.tap();
+        if !tap.enabled() {
+            return;
+        }
+        let table_sceneries = self.live_table_scenery_count();
+        let record_sceneries = self
+            .record_census
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let servos = self.servo_census.load(std::sync::atomic::Ordering::Relaxed);
+        let p = crate::debug::process_stats();
+        crate::debug::tapline!(
+            tap,
+            dio = self.master.read().unwrap().name(),
+            table_sceneries,
+            record_sceneries,
+            servos,
+            uptime_ms = p.uptime_ms,
+            cpu_ms = p.cpu_ms,
+            peak_rss_mb = p.peak_rss_bytes / (1024 * 1024),
+            "census: {kind} {verb}",
+        );
+    }
+
     /// See [`Dio::write_capabilities`]. Lives on the inner so
     /// [`DioShell`] can share the one definition of capability lifting.
     pub(crate) fn write_capabilities(&self) -> WriteCapabilities {
@@ -359,6 +418,12 @@ impl Dio {
     /// awaits even while a concurrent [`reload`](Self::reload) swaps it.
     pub fn master(&self) -> Arc<Vista> {
         self.inner.master.read().unwrap().clone()
+    }
+
+    /// The debug tap this Dio inherited from its Lens. Enabled when the
+    /// datasource opted into the `vantage_diorama::debug` stream.
+    pub fn debug_tap(&self) -> crate::debug::DebugTap {
+        self.inner.lens.debug.clone()
     }
 
     /// Traverse a reference and return a NEW [`Dio`] bound to the traversed
@@ -539,9 +604,7 @@ impl Dio {
     /// handle is released the count drops back, proving no leak. A read-only
     /// window onto the dedup registry — the seed for the diagnostics surface.
     pub fn live_table_scenery_count(&self) -> usize {
-        let mut guard = self.inner.table_sceneries.lock().unwrap();
-        guard.retain(|_, weak| weak.strong_count() > 0);
-        guard.len()
+        self.inner.live_table_scenery_count()
     }
 
     /// Open a reactive view onto a single record by id. Reads the

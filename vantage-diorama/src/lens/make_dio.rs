@@ -65,6 +65,9 @@ impl Lens {
             // Nothing to wait for unless a detached `on_start` is about to be
             // spawned below; that branch clears it before spawning.
             seed_complete: std::sync::atomic::AtomicBool::new(true),
+            req_seq: std::sync::atomic::AtomicU64::new(0),
+            servo_census: std::sync::atomic::AtomicUsize::new(0),
+            record_census: std::sync::atomic::AtomicUsize::new(0),
         });
         let dio = Dio { inner };
 

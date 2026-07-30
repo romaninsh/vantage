@@ -126,11 +126,20 @@ pub struct Servo {
 /// stops reacting instead of living for the Dio's whole lifetime.
 struct ServoGuard {
     task: tokio::task::JoinHandle<()>,
+    /// Weak, deliberately — `Servo` itself already holds the strong `Dio`
+    /// that keeps the write pipeline alive while the form is open. The
+    /// guard must not extend that lifetime further; it only reaches back
+    /// in to decrement the census and emit the closing line.
+    dio_weak: Weak<DioInner>,
 }
 
 impl Drop for ServoGuard {
     fn drop(&mut self) {
         self.task.abort();
+        if let Some(dio) = self.dio_weak.upgrade() {
+            dio.servo_census.fetch_sub(1, Ordering::Relaxed);
+            dio.emit_census("servo", "closed");
+        }
     }
 }
 
@@ -596,11 +605,14 @@ pub(crate) fn spawn_servo(dio: &Dio, id: Option<String>, strategy: IdStrategy) -
         .inner
         .lens
         .runtime
-        .spawn(track_loop(task_state, dio_weak, bus_rx));
+        .spawn(track_loop(task_state, dio_weak.clone(), bus_rx));
+
+    dio.inner.servo_census.fetch_add(1, Ordering::Relaxed);
+    dio.inner.emit_census("servo", "opened");
 
     Servo {
         dio: dio.clone(),
         state,
-        _guard: ServoGuard { task },
+        _guard: ServoGuard { task, dio_weak },
     }
 }

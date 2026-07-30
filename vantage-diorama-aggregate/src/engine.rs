@@ -13,9 +13,9 @@ use ciborium::Value as CborValue;
 use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinHandle;
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_diorama::{Dio, DioEvent};
+use vantage_diorama::{DebugTap, Dio, DioEvent};
 
-use crate::aggregation::Aggregation;
+use crate::aggregation::{AggregateOutput, Aggregation};
 
 /// Where a recomputed output goes. Implemented by the two surfaces.
 #[async_trait]
@@ -45,6 +45,7 @@ pub(crate) struct Source<R> {
 /// before it can build its Vista) — so the loop's own first pass recognises
 /// that output as current and stays quiet.
 pub(crate) fn spawn<A, R, P>(
+    name: &str,
     source: Source<R>,
     aggregation: Arc<A>,
     publisher: &Arc<P>,
@@ -60,6 +61,7 @@ where
     let publisher = Arc::downgrade(publisher);
     let runtime = tokio::runtime::Handle::current();
     runtime.spawn(run(
+        name.to_string(),
         source,
         aggregation,
         publisher,
@@ -70,6 +72,7 @@ where
 }
 
 async fn run<A, R, P>(
+    name: String,
     source: Source<R>,
     aggregation: Arc<A>,
     publisher: Weak<P>,
@@ -81,29 +84,49 @@ async fn run<A, R, P>(
     R: ReadableValueSet<Id = String, Value = CborValue> + Send + Sync + 'static,
     P: Publish<A::Output>,
 {
+    // The tap is the source dio's, not this layer's own — an aggregate has
+    // no datasource of its own to opt in, so its debug lines are inherited
+    // from whatever the source was built with.
+    let tap = source.dio.debug_tap();
     let mut bus = source.dio.subscribe_events();
     let mut last: Option<A::Output> = already_published;
 
     // Seed: whatever the source already holds. A warm cache means the layer
     // has a value before any fetch completes.
-    if recompute(&source, &aggregation, &publisher, &mut last)
-        .await
-        .is_break()
+    if recompute(
+        &name,
+        &tap,
+        "initial",
+        &source,
+        &aggregation,
+        &publisher,
+        &mut last,
+    )
+    .await
+    .is_break()
     {
         return;
     }
 
     loop {
         // Idle until something happens.
-        match wait(&mut bus, &nudge).await {
-            Wake::Changed => {}
+        let trigger = match wait(&mut bus, &nudge, &tap).await {
+            Wake::Changed(trigger) => trigger,
             Wake::SourceGone => return,
-        }
+        };
 
         // Leading edge: react at once, so a single change feels immediate.
-        if recompute(&source, &aggregation, &publisher, &mut last)
-            .await
-            .is_break()
+        if recompute(
+            &name,
+            &tap,
+            trigger.as_deref().unwrap_or(""),
+            &source,
+            &aggregation,
+            &publisher,
+            &mut last,
+        )
+        .await
+        .is_break()
         {
             return;
         }
@@ -114,16 +137,24 @@ async fn run<A, R, P>(
         let deadline = tokio::time::Instant::now() + debounce;
         let mut dirty = false;
         loop {
-            match tokio::time::timeout_at(deadline, wait(&mut bus, &nudge)).await {
-                Ok(Wake::Changed) => dirty = true,
+            match tokio::time::timeout_at(deadline, wait(&mut bus, &nudge, &tap)).await {
+                Ok(Wake::Changed(_)) => dirty = true,
                 Ok(Wake::SourceGone) => return,
                 Err(_) => break,
             }
         }
         if dirty
-            && recompute(&source, &aggregation, &publisher, &mut last)
-                .await
-                .is_break()
+            && recompute(
+                &name,
+                &tap,
+                "debounce-trailing",
+                &source,
+                &aggregation,
+                &publisher,
+                &mut last,
+            )
+            .await
+            .is_break()
         {
             return;
         }
@@ -131,8 +162,25 @@ async fn run<A, R, P>(
 }
 
 enum Wake {
-    Changed,
+    /// The trigger label for the recompute this wake causes — `Some` only
+    /// when the tap is enabled, since it exists purely for the debug line.
+    ///
+    /// Two spellings meet in this label: a real `DioEvent` variant comes
+    /// through Debug-formatted and PascalCase (`"RecordChanged"`); a wake
+    /// with no event behind it — the local write-through nudge, or a lagged
+    /// bus counted as "something changed" — is spelled lowercase
+    /// (`"nudge"`, `"lagged"`), the same register as `"initial"` and
+    /// `"debounce-trailing"` at the call sites in `run`.
+    Changed(Option<String>),
     SourceGone,
+}
+
+/// The event's variant name, Debug-formatted and trimmed of its fields —
+/// `RecordChanged { id: "5" }` becomes `"RecordChanged"`. Cheap enough to
+/// build only where it is: on the wake path, gated behind `tap.enabled()`.
+fn event_trigger(event: &DioEvent) -> String {
+    let debug = format!("{event:?}");
+    debug.split([' ', '(']).next().unwrap_or(&debug).to_string()
 }
 
 /// Block until the source's rows may have changed.
@@ -168,23 +216,33 @@ enum Wake {
 /// refresh from flickering every derived value through empty. If the refresh
 /// fails there is no `DatasetChanged` and the layer keeps its last good output,
 /// which is the same stale-over-blank choice made everywhere else here.
-async fn wait(bus: &mut broadcast::Receiver<DioEvent>, nudge: &Notify) -> Wake {
+async fn wait(bus: &mut broadcast::Receiver<DioEvent>, nudge: &Notify, tap: &DebugTap) -> Wake {
     loop {
         tokio::select! {
-            _ = nudge.notified() => return Wake::Changed,
+            _ = nudge.notified() => {
+                return Wake::Changed(tap.enabled().then(|| "nudge".to_string()));
+            }
             received = bus.recv() => match received {
                 Ok(DioEvent::ViewportChanged { .. })
                 | Ok(DioEvent::LoadFailed { .. })
                 | Ok(DioEvent::Hydrating { .. })
                 | Ok(DioEvent::Refreshing) => continue,
-                Ok(_) => return Wake::Changed,
+                Ok(event) => {
+                    return Wake::Changed(tap.enabled().then(|| event_trigger(&event)));
+                }
                 Err(broadcast::error::RecvError::Lagged(dropped)) => {
                     tracing::debug!(
                         target: "vantage_diorama_aggregate",
                         dropped,
                         "source event bus lagged — recomputing from the current rows",
                     );
-                    return Wake::Changed;
+                    // "lagged" is intentionally untested: forcing a broadcast
+                    // receiver to fall behind deterministically (fill its
+                    // ring buffer faster than this task drains it) isn't
+                    // worth the test complexity for one trigger label. The
+                    // label exists so a real lag shows up in the stream
+                    // rather than masquerading as some other trigger.
+                    return Wake::Changed(tap.enabled().then(|| "lagged".to_string()));
                 }
                 Err(broadcast::error::RecvError::Closed) => return Wake::SourceGone,
             },
@@ -197,6 +255,9 @@ async fn wait(bus: &mut broadcast::Receiver<DioEvent>, nudge: &Notify) -> Wake {
 /// Returns `Break` when the publisher has been dropped, which is how the task
 /// learns to stop.
 async fn recompute<A, R, P>(
+    name: &str,
+    tap: &DebugTap,
+    trigger: &str,
     source: &Source<R>,
     aggregation: &Arc<A>,
     publisher: &Weak<P>,
@@ -211,6 +272,8 @@ where
         return std::ops::ControlFlow::Break(());
     };
 
+    let start = tap.enabled().then(std::time::Instant::now);
+
     let rows = match source.reader.list_values().await {
         Ok(rows) => rows,
         Err(e) => {
@@ -223,7 +286,30 @@ where
 
     // The comparison is what makes unconditional recomputation affordable:
     // recomputing often is fine as long as it does not repaint often.
-    if last.as_ref() == Some(&output) {
+    let unchanged = last.as_ref() == Some(&output);
+
+    // rows_in/rows_out are cheap today (a length, a stored count) but the
+    // gate stays structural rather than relying on that: nothing here
+    // should cost anything when the tap is off, including a future
+    // `debug_row_count` that isn't.
+    if tap.enabled() {
+        let ms = start.map(|s| s.elapsed().as_millis()).unwrap_or(0);
+        let rows_in = rows.len();
+        let rows_out = output.debug_row_count();
+        tracing::info!(
+            target: "vantage_diorama::debug",
+            ds = %tap.ds(),
+            aggregate = name,
+            trigger,
+            rows_in,
+            rows_out,
+            ms,
+            unchanged,
+            "aggregate recompute",
+        );
+    }
+
+    if unchanged {
         return std::ops::ControlFlow::Continue(());
     }
 

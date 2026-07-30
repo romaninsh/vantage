@@ -165,6 +165,21 @@ pub(crate) struct TableSceneryState {
     /// True while a list-page fetch is dispatched, so overlapping
     /// `request_load_more` calls don't double-page.
     pub(crate) list_in_flight: Mutex<bool>,
+
+    // ---- debug stream -------------------------------------------------
+    //
+    /// This scenery's Dio's debug tap, cloned at open. `note_state` needs it
+    /// from [`mark_settled`](Self::mark_settled), which has no `DioInner` (it
+    /// runs deep inside the loader after the Dio has already been consulted) —
+    /// carrying the tap here means `note_state` needs no other path to reach it.
+    pub(crate) debug_tap: crate::debug::DebugTap,
+    /// The Dio's master name at open, for the same reason `debug_tap` is
+    /// carried here rather than reached through `dio_weak`.
+    pub(crate) dio_name: String,
+    /// The [`LoadState`](super::LoadState) last emitted by
+    /// [`note_state`](Self::note_state), so a repeat call (settling, then the
+    /// same load's generation bump) doesn't double-log an unchanged state.
+    pub(crate) last_debug_state: Mutex<Option<super::LoadState>>,
 }
 
 impl TableSceneryState {
@@ -219,7 +234,34 @@ impl TableSceneryState {
                 two_pass = self.two_pass,
                 "scenery settled — the grid now shows this as the answer",
             );
+            self.note_state(reason);
         }
+    }
+
+    /// Emit a `"state"` debug line when this scenery's [`LoadState`](super::LoadState)
+    /// has changed since the last call. Checks the tap BEFORE computing the
+    /// state — the computation takes the `rows`/`total` locks, a cost the
+    /// off path must not pay.
+    pub(crate) fn note_state(&self, reason: &'static str) {
+        if !self.debug_tap.enabled() {
+            return;
+        }
+        let to = super::compute_load_state(self);
+        let mut last = self.last_debug_state.lock().unwrap();
+        if *last == Some(to) {
+            return;
+        }
+        let from = *last;
+        *last = Some(to);
+        drop(last);
+        crate::debug::tapline!(
+            self.debug_tap,
+            dio = self.dio_name.as_str(),
+            from = from.map(|s| s.as_str()).unwrap_or("None"),
+            to = to.as_str(),
+            reason,
+            "state",
+        );
     }
 
     pub(crate) fn bump_generation(&self) {
@@ -368,14 +410,14 @@ impl TableSceneryState {
                 self.set_total(Some(total));
                 // Remember it for the next open's head start (skipped under
                 // an active search — that total describes the narrowed set).
-                if self.search.read().unwrap().is_none() {
-                    if let Err(e) = dio_inner.cache.set_meta_total(total as u64).await {
-                        tracing::debug!(
-                            target: "vantage_diorama::cache",
-                            error = %e,
-                            "persisting the provider total failed",
-                        );
-                    }
+                if self.search.read().unwrap().is_none()
+                    && let Err(e) = dio_inner.cache.set_meta_total(total as u64).await
+                {
+                    tracing::debug!(
+                        target: "vantage_diorama::cache",
+                        error = %e,
+                        "persisting the provider total failed",
+                    );
                 }
             }
             Err(e) => tracing::error!(error = %e, "refresh_total failed"),

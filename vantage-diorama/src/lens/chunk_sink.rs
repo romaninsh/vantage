@@ -45,6 +45,14 @@ pub struct ChunkSink {
     /// is also what lets a whole datasource share one store without each
     /// table's load queueing behind another's.
     pub(crate) buffer: BufferedRows,
+    /// The owning Dio's debug tap state, captured at construction.
+    ///
+    /// `flush_counted` reads this to decide whether the extra before/after
+    /// `count()` calls it does purely to report the "cache write" debug line
+    /// are worth paying for. With the tap off, nothing reads that report, so
+    /// the counts would be pure overhead — the one thing the debug stream is
+    /// not allowed to cost a datasource that never opted in.
+    pub(crate) debug: bool,
 }
 
 impl std::fmt::Debug for ChunkSink {
@@ -100,23 +108,103 @@ impl ChunkSink {
         Ok(())
     }
 
-    /// Commit everything pushed so far, in one write.
+    /// Commit everything pushed so far, in one write, and report a
+    /// [`FlushReport`] of how many rows were written and — tap permitting —
+    /// the cache's row count before and after, the numbers behind the
+    /// "cache write" debug line.
     ///
     /// Called by the loader once `on_load_chunk` returns — and it must run
     /// before anything reads the cache back (the post-load re-sort rebuilds the
     /// visible map from it), or the load appears to have fetched nothing.
-    pub(crate) async fn flush(&self) -> Result<()> {
+    ///
+    /// The before/after counts are skipped (and reported as `0`) unless
+    /// `self.debug` is set: they exist only for that debug line, so with the
+    /// tap off they'd be pure overhead nothing observes.
+    pub(crate) async fn flush_counted(&self) -> Result<FlushReport> {
         let rows: indexmap::IndexMap<String, Record<CborValue>> = {
             let Ok(mut buffer) = self.buffer.lock() else {
-                return Ok(());
+                return Ok(FlushReport::default());
             };
             std::mem::take(&mut *buffer).into_iter().collect()
         };
         if rows.is_empty() {
-            return Ok(());
+            return Ok(FlushReport::default());
         }
-        self.cache.insert_values(rows).await
+        let written = rows.len();
+        if !self.debug {
+            self.cache.insert_values(rows).await?;
+            return Ok(FlushReport {
+                written,
+                ..Default::default()
+            });
+        }
+        // The wide-data signal for the "columns" debug line: the union of
+        // field names across this chunk and the total CBOR-encoded size.
+        // Computed here (buffer already collected, one pass) rather than
+        // per-`push`, and only reached because `self.debug` is set — a sink
+        // built with the tap off never pays for the encoding.
+        let (columns_received, payload_bytes) = wide_data_signals(rows.values());
+        let cache_rows_before = self.cache.count().await?;
+        self.cache.insert_values(rows).await?;
+        let cache_rows_after = self.cache.count().await?;
+        Ok(FlushReport {
+            written,
+            cache_rows_before,
+            cache_rows_after,
+            columns_received,
+            payload_bytes,
+        })
     }
+}
+
+/// Field-name union (insertion order, deduped) and total ciborium-encoded
+/// size across a batch of buffered records — the raw material for the
+/// "columns" debug line's `received_count`/`received_sample`/`payload_bytes`.
+/// Dedup goes through an `IndexSet` (O(1) membership, insertion order
+/// preserved on iteration) rather than a `Vec` scanned with `contains`: a
+/// full page of wide rows is exactly rows × columns, and a linear scan per
+/// key would make that quadratic in the columns — the one case this line
+/// exists to make visible.
+fn wide_data_signals<'a>(
+    records: impl Iterator<Item = &'a Record<CborValue>>,
+) -> (Vec<String>, usize) {
+    let mut columns: indexmap::IndexSet<String> = indexmap::IndexSet::new();
+    let mut payload_bytes = 0usize;
+    for record in records {
+        for key in record.keys() {
+            // `insert` is a no-op (and doesn't reorder) when the key is
+            // already present, so no separate `contains` check is needed.
+            columns.insert(key.clone());
+        }
+        let map: Vec<(CborValue, CborValue)> = record
+            .iter()
+            .map(|(k, v)| (CborValue::Text(k.clone()), v.clone()))
+            .collect();
+        let mut buf = Vec::new();
+        if ciborium::into_writer(&CborValue::Map(map), &mut buf).is_ok() {
+            payload_bytes += buf.len();
+        }
+    }
+    (columns.into_iter().collect(), payload_bytes)
+}
+
+/// The result of `ChunkSink::flush_counted` — how many rows a chunk write
+/// committed, and (tap permitting) the cache's row count before and after,
+/// plus the wide-data signal: the field-name union across the batch and its
+/// total encoded size. Source for the "cache write" debug line's
+/// `written`/`new`/`updated`/`cached_rows` fields and the "columns" line's
+/// `received_count`/`received_sample`/`payload_bytes`.
+///
+/// `columns_received` and `payload_bytes` are empty/`0` unless the sink's
+/// tap is on — they exist only for the "columns" line, so with the tap off
+/// they'd be pure overhead nothing observes.
+#[derive(Debug, Clone, Default)]
+pub struct FlushReport {
+    pub written: usize,
+    pub cache_rows_before: i64,
+    pub cache_rows_after: i64,
+    pub columns_received: Vec<String>,
+    pub payload_bytes: usize,
 }
 
 /// One row's worth of payload — exposed publicly for callers that
