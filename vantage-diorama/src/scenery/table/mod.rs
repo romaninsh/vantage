@@ -109,6 +109,20 @@ pub enum LoadState {
     Complete,
 }
 
+impl LoadState {
+    /// Bare-word rendering for the debug stream's `"state"` line — passed as
+    /// a plain `&str` field (not `?self`) so the capture harness Debug-quotes
+    /// it (`to="Complete"`), matching every other string field this stream
+    /// emits.
+    pub(crate) fn as_str(&self) -> &'static str {
+        match self {
+            LoadState::Loading => "Loading",
+            LoadState::Partial => "Partial",
+            LoadState::Complete => "Complete",
+        }
+    }
+}
+
 /// Breakdown of the row statuses currently materialized in a scenery's sparse
 /// map. Cheap to compute (iterates only loaded rows, not the full row count) —
 /// the per-scenery slice of the diagnostics surface.
@@ -226,20 +240,28 @@ impl Drop for SceneryGuard {
     }
 }
 
+/// The [`LoadState`] computation, shared by [`TableScenery::load_state`] and
+/// [`TableSceneryState::note_state`](state::TableSceneryState::note_state) so
+/// the trait method and the debug stream can never disagree about what state
+/// a scenery is in.
+pub(crate) fn compute_load_state(state: &TableSceneryState) -> LoadState {
+    if !state.settled.load(std::sync::atomic::Ordering::SeqCst) {
+        return LoadState::Loading;
+    }
+    // A known total the visible map has not reached means rows are still
+    // coming — the ordinary state of a paged grid before it is scrolled.
+    // With no total there is nothing to be short of, so what is loaded is
+    // all there is.
+    let loaded = state.rows.read().unwrap().len();
+    match *state.total.read().unwrap() {
+        Some(total) if loaded < total => LoadState::Partial,
+        _ => LoadState::Complete,
+    }
+}
+
 impl TableScenery for TableSceneryImpl {
     fn load_state(&self) -> LoadState {
-        if !self.inner.settled.load(std::sync::atomic::Ordering::SeqCst) {
-            return LoadState::Loading;
-        }
-        // A known total the visible map has not reached means rows are still
-        // coming — the ordinary state of a paged grid before it is scrolled.
-        // With no total there is nothing to be short of, so what is loaded is
-        // all there is.
-        let loaded = self.inner.rows.read().unwrap().len();
-        match *self.inner.total.read().unwrap() {
-            Some(total) if loaded < total => LoadState::Partial,
-            _ => LoadState::Complete,
-        }
+        compute_load_state(&self.inner)
     }
 
     fn row_count(&self) -> usize {

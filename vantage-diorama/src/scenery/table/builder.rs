@@ -287,6 +287,9 @@ impl TableSceneryBuilder {
             registry_key: Mutex::new(Some(key.clone())),
             augment_ticket,
             list_in_flight: Mutex::new(false),
+            debug_tap: dio.tap().clone(),
+            dio_name: dio.master.read().unwrap().name().to_string(),
+            last_debug_state: Mutex::new(None),
         });
 
         // 1. total_provider runs once per open, result cached.

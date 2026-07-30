@@ -166,6 +166,7 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
         tracing::warn!(target: "vantage_diorama::viewport", "fire_chunk_load: dio dropped");
         return;
     };
+    let tap = dio_inner.tap();
 
     // Remember the window the grid last asked for so a refresh can re-fetch
     // exactly it in place (see `TableSceneryState::refresh_loaded_viewport`).
@@ -238,6 +239,13 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                     rows = visible_cached,
                     "CACHE — served locally, no master fetch",
                 );
+                crate::debug::tapline!(
+                    tap,
+                    dio = dio_inner.master.read().unwrap().name(),
+                    range = ?visible,
+                    rows = visible_cached,
+                    "cache hit — viewport served locally",
+                );
                 return;
             }
         }
@@ -297,6 +305,12 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
         *guard = Some(effective_range.clone());
     }
 
+    // Only allocate a request id when the tap is enabled — it's the one
+    // correlator that ties this fetch's "load dispatch" to its "load return"
+    // / "load failed" in the debug stream, and paying for it off the tap is
+    // pointless.
+    let req = tap.enabled().then(|| dio_inner.next_req());
+
     // Recompute overlap on the effective range so the log shows the
     // shift working.
     let effective_len = effective_range.end - effective_range.start;
@@ -325,6 +339,13 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
         inner: dio_inner.clone(),
     };
     let t = std::time::Instant::now();
+    // Built here (rather than beside the `cb` call below) so the "load
+    // dispatch" tapline can report the query the fetch is about to run —
+    // sort/search included.
+    let query = crate::lens::ChunkQuery {
+        sort: state.sort.read().unwrap().clone(),
+        search: state.search.read().unwrap().clone(),
+    };
     tracing::debug!(
         target: "vantage_diorama::viewport",
         visible = ?visible,
@@ -356,14 +377,23 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
         force_load,
         "MASTER — fetching from the datasource",
     );
+    crate::debug::tapline!(
+        tap,
+        req = req.unwrap_or_default(),
+        dio = dio_inner.master.read().unwrap().name(),
+        visible = ?visible,
+        effective = ?effective_range,
+        rows_to_fetch = effective_to_fetch,
+        already_cached = effective_cached,
+        sort = ?query.sort,
+        search = ?query.search,
+        force_load,
+        "load dispatch",
+    );
     // Clear the dirty flag so it reflects only the rows this load writes;
     // `write_chunk_row` sets it when a row's content actually changes.
     state.reset_load_dirty();
     let total_before = *state.total.read().unwrap();
-    let query = crate::lens::ChunkQuery {
-        sort: state.sort.read().unwrap().clone(),
-        search: state.search.read().unwrap().clone(),
-    };
     let mut result = cb(&dio, effective_range.clone(), query, sink).await;
     // Commit the page in one write, before anything reads the cache back. A
     // failed commit fails the load: the rows are bound in the visible map but
@@ -401,6 +431,15 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                 ms,
                 "MASTER — fetch returned",
             );
+            crate::debug::tapline!(
+                tap,
+                req = req.unwrap_or_default(),
+                dio = dio_inner.master.read().unwrap().name(),
+                received = pushed,
+                ms,
+                cached_after,
+                "load return",
+            );
             // Where the grand total came from. A total the source stated in the
             // same response as the rows (`ChunkSink::set_total`) outranks
             // anything inferred here: a short page can equally mean "the source
@@ -417,6 +456,13 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                     total = ?stated,
                     "total stated by the fetch itself — no count request needed",
                 );
+                crate::debug::tapline!(
+                    tap,
+                    dio = dio_inner.master.read().unwrap().name(),
+                    total = stated.unwrap_or_default(),
+                    provenance = "stated",
+                    "total",
+                );
                 let changed = stated != total_before;
                 // Remember a stated, un-narrowed total in the cache meta, so
                 // the NEXT open of this view can size its geometry before any
@@ -424,20 +470,28 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                 // whole and its row count visibly jumping when the first
                 // counted response lands. A total under an active search
                 // describes the narrowed set and must not be remembered.
-                if changed && state.search.read().unwrap().is_none() {
-                    if let Some(total) = stated {
-                        if let Err(e) = dio_inner.cache.set_meta_total(total as u64).await {
-                            tracing::debug!(
-                                target: "vantage_diorama::cache",
-                                error = %e,
-                                "persisting the stated total failed — the next open loses its head start",
-                            );
-                        }
-                    }
+                if changed
+                    && state.search.read().unwrap().is_none()
+                    && let Some(total) = stated
+                    && let Err(e) = dio_inner.cache.set_meta_total(total as u64).await
+                {
+                    tracing::debug!(
+                        target: "vantage_diorama::cache",
+                        error = %e,
+                        "persisting the stated total failed — the next open loses its head start",
+                    );
                 }
                 changed
             } else if pushed < effective_len {
-                state.set_total(Some(effective_range.start + pushed))
+                let total = effective_range.start + pushed;
+                crate::debug::tapline!(
+                    tap,
+                    dio = dio_inner.master.read().unwrap().name(),
+                    total,
+                    provenance = "short-page",
+                    "total",
+                );
+                state.set_total(Some(total))
             } else {
                 // A FULL page from a source that has never stated a total. If
                 // it reached the advertised end, that end was only ever our
@@ -460,6 +514,13 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                         table = %dio_inner.master.read().unwrap().name(),
                         extended,
                         "full page reached the inferred horizon — extending it",
+                    );
+                    crate::debug::tapline!(
+                        tap,
+                        dio = dio_inner.master.read().unwrap().name(),
+                        total = extended,
+                        provenance = "horizon-extended",
+                        "total",
                     );
                     state.set_total(Some(extended))
                 } else {
@@ -527,6 +588,13 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                              promises more than it delivers; capping the set at what \
                              is reachable so the fetch is not repeated forever",
                         );
+                        crate::debug::tapline!(
+                            tap,
+                            dio = dio_inner.master.read().unwrap().name(),
+                            total = hole,
+                            provenance = "hole-clamped",
+                            "total",
+                        );
                         total_changed |= state.set_total(Some(hole));
                     }
                 }
@@ -543,6 +611,7 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
             if force_load || resorted || dirty || total_changed {
                 state.bump_generation();
             }
+            state.note_state("chunk load");
             tracing::debug!(
                 target: "vantage_diorama::viewport",
                 effective = ?effective_range,
@@ -562,6 +631,14 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                 ms = t.elapsed().as_secs_f64() * 1000.0,
                 error = %e,
                 "fire_chunk_load: FAILED",
+            );
+            crate::debug::tapline!(
+                tap,
+                req = req.unwrap_or_default(),
+                dio = dio_inner.master.read().unwrap().name(),
+                ms = t.elapsed().as_millis() as u64,
+                error = %e,
+                "load failed",
             );
             let _ = dio_inner.event_bus.send(DioEvent::LoadFailed {
                 range: effective_range,

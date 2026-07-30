@@ -7,8 +7,13 @@ use tracing::field::{Field, Visit};
 use tracing_subscriber::layer::{Context, SubscriberExt};
 use tracing_subscriber::Layer;
 
+use ciborium::Value as CborValue;
 use vantage_diorama::Lens;
+use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
+
+mod support;
+use support::chunk::{Backend, master as chunk_master};
 
 /// Collects every `vantage_diorama::debug` event as one flat string:
 /// `"<message> ds=<..> <field>=<..> ..."` — order of fields as emitted.
@@ -129,4 +134,125 @@ async fn census_lines_fire_on_scenery_open_and_drop() {
     // Guard teardown is synchronous; the census drop line is emitted from Drop.
     let closes = lines_containing(&log, "census: table scenery closed");
     assert_eq!(closes.len(), 1);
+}
+
+/// Poll `pred` until it holds, with a bounded timeout — mirrors the
+/// wait-for-condition pattern `tests/support/chunk.rs` uses around generation
+/// watches, but polling the captured log instead (there is no single
+/// generation bump to wait on: the second viewport pass settles on a "cache
+/// hit" line, not a load).
+async fn wait_until(label: &str, mut pred: impl FnMut() -> bool) {
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while !pred() {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("timed out waiting for: {label}"));
+}
+
+/// A 100-row paged master served by `on_load_chunk`, with the debug tap on.
+/// Exercises the full load lifecycle: dispatch/return correlated by `req`,
+/// the resulting `Loading -> Complete` state transition, the stated total's
+/// provenance, and a second pass over the same viewport hitting cache instead
+/// of re-dispatching.
+#[tokio::test]
+async fn load_lifecycle_is_correlated_and_cache_hits_are_logged() {
+    let (_guard, log) = capture();
+
+    let backend: Backend = Arc::new(Mutex::new(
+        (0..100)
+            .map(|i| {
+                let mut r = Record::new();
+                r.insert("v".to_string(), CborValue::Text(format!("row{i}")));
+                (format!("id{i}"), r)
+            })
+            .collect(),
+    ));
+
+    let lens = {
+        let backend = backend.clone();
+        Arc::new(
+            Lens::new()
+                .cache_in_memory()
+                .debug_datasource("faker-ds")
+                .viewport_debounce(std::time::Duration::from_millis(1))
+                .runtime(tokio::runtime::Handle::current())
+                .on_load_chunk(move |_dio, range, _query, sink| {
+                    let backend = backend.clone();
+                    async move {
+                        let rows = backend.lock().unwrap().clone();
+                        sink.set_total(rows.len());
+                        for idx in range {
+                            if let Some((id, r)) = rows.get(idx) {
+                                sink.push(idx, id.clone(), r.clone()).await?;
+                            }
+                        }
+                        Ok(())
+                    }
+                })
+                .build()
+                .unwrap(),
+        )
+    };
+
+    let dio = lens
+        .make_dio(chunk_master(&[("v", "String")]))
+        .await
+        .unwrap();
+    let scenery = dio.table_scenery().open().await.unwrap();
+
+    // The whole set in one viewport, so this first load covers rows 0..100
+    // and — together with the fetch's own `set_total(100)` — settles the
+    // scenery at `Complete`, not merely `Partial`.
+    scenery.set_viewport(0..100);
+    wait_until("first load return", || {
+        lines_containing(&log, "load return").len() == 1
+    })
+    .await;
+
+    let dispatch = lines_containing(&log, "load dispatch");
+    let ret = lines_containing(&log, "load return");
+    assert_eq!(dispatch.len(), 1);
+    assert_eq!(ret.len(), 1);
+    // The same req id ties them together.
+    let req = dispatch[0]
+        .split("req=")
+        .nth(1)
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_string();
+    assert!(ret[0].contains(&format!("req={req}")));
+    assert!(ret[0].contains("ms="));
+
+    // A state transition to Complete was logged.
+    let states = lines_containing(&log, "state");
+    assert!(
+        states.iter().any(|l| l.contains("to=\"Complete\"")),
+        "{states:?}"
+    );
+
+    // The stated total (from `sink.set_total`) is provenance "stated".
+    let totals = lines_containing(&log, "total");
+    assert!(
+        totals
+            .iter()
+            .any(|l| l.contains("total=100") && l.contains("provenance=\"stated\"")),
+        "{totals:?}"
+    );
+
+    // Second pass over a viewport already fully covered by the cache: cache
+    // hit, no second dispatch.
+    scenery.set_viewport(0..30);
+    wait_until("cache hit on second pass", || {
+        lines_containing(&log, "cache hit").len() == 1
+    })
+    .await;
+    assert_eq!(
+        lines_containing(&log, "load dispatch").len(),
+        1,
+        "no re-fetch"
+    );
 }
