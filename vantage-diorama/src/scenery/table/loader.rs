@@ -452,7 +452,10 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                 // Single-pass paged mode only: a two-pass view's list pass
                 // enumerated the whole set — its size is knowledge, not an
                 // inference to extend.
-                if !state.two_pass && effective_len > 0 && horizon_reached && !state.total_ever_stated()
+                if !state.two_pass
+                    && effective_len > 0
+                    && horizon_reached
+                    && !state.total_ever_stated()
                 {
                     let extended = effective_range.end + effective_len;
                     tracing::debug!(

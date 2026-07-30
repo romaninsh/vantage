@@ -127,7 +127,9 @@ fn register_verbs(engine: &mut Engine, ctx: &Arc<FakerCtx>) {
     });
 
     let c = ctx.clone();
-    engine.register_fn("rand_int", move |lo: i64, hi: i64| -> i64 { c.rand_int(lo, hi) });
+    engine.register_fn("rand_int", move |lo: i64, hi: i64| -> i64 {
+        c.rand_int(lo, hi)
+    });
 
     let c = ctx.clone();
     engine.register_fn("rand_float", move |lo: f64, hi: f64| -> f64 {
@@ -305,7 +307,10 @@ mod tests {
     fn a_broken_script_reports_not_panics() {
         let (ctx, _rx) = ctx();
         let err = run_tick(&ctx, "no_such_verb()", 0).unwrap_err();
-        assert!(err.contains("no_such_verb"), "error names the problem: {err}");
+        assert!(
+            err.contains("no_such_verb"),
+            "error names the problem: {err}"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
