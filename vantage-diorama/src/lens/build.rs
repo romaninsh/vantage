@@ -40,6 +40,7 @@ impl LensBuilder {
             defaults: self.defaults,
             runtime,
             activity: self.activity,
+            debug: self.debug,
         })
     }
 }

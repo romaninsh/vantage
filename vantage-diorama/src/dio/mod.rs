@@ -213,6 +213,14 @@ pub(crate) struct DioInner {
     /// rows land. Set to true at construction when there is nothing to wait
     /// for: no `on_start`, or a blocking one that has already run.
     pub(crate) seed_complete: std::sync::atomic::AtomicBool,
+
+    /// Monotonic per-dio request id for correlating debug-stream
+    /// dispatch/return lines (`req=N`).
+    pub(crate) req_seq: std::sync::atomic::AtomicU64,
+    /// Live servos opened on this Dio — census bookkeeping only.
+    pub(crate) servo_census: std::sync::atomic::AtomicUsize,
+    /// Live record sceneries opened on this Dio — census bookkeeping only.
+    pub(crate) record_census: std::sync::atomic::AtomicUsize,
 }
 
 impl Drop for DioInner {
@@ -224,6 +232,18 @@ impl Drop for DioInner {
 }
 
 impl DioInner {
+    /// The debug tap this Dio's Lens carries — the source of truth every
+    /// `tapline!` call site reaches through.
+    pub(crate) fn tap(&self) -> &crate::debug::DebugTap {
+        &self.lens.debug
+    }
+
+    /// Next value in this Dio's request sequence — stamped as `req=N` to
+    /// correlate a dispatch line with its return line in the debug stream.
+    pub(crate) fn next_req(&self) -> u64 {
+        self.req_seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// See [`Dio::write_capabilities`]. Lives on the inner so
     /// [`DioShell`] can share the one definition of capability lifting.
     pub(crate) fn write_capabilities(&self) -> WriteCapabilities {
@@ -359,6 +379,12 @@ impl Dio {
     /// awaits even while a concurrent [`reload`](Self::reload) swaps it.
     pub fn master(&self) -> Arc<Vista> {
         self.inner.master.read().unwrap().clone()
+    }
+
+    /// The debug tap this Dio inherited from its Lens. Enabled when the
+    /// datasource opted into the `vantage_diorama::debug` stream.
+    pub fn debug_tap(&self) -> crate::debug::DebugTap {
+        self.inner.lens.debug.clone()
     }
 
     /// Traverse a reference and return a NEW [`Dio`] bound to the traversed
