@@ -17,7 +17,7 @@ use vantage_dataset::traits::ReadableValueSet;
 use vantage_diorama::{CacheBackend, Dio, Lens, MemoryCache, RedbCache, ValueScenery};
 use vantage_vista::Vista;
 
-use crate::aggregation::{Aggregation, DerivedRows};
+use crate::aggregation::{AggregateOutput, Aggregation, DerivedRows};
 use crate::derived::{AggregateShell, DerivedDio, DerivedState, shared};
 use crate::engine::{self, Publish, Source};
 use crate::value::{AggregateValue, TaskGuard, ValueState};
@@ -139,6 +139,7 @@ impl AggregateLens {
         state.seed_from_cache().await;
 
         let handle = engine::spawn(
+            name,
             Source {
                 reader: source.vista(),
                 dio: source.clone(),
@@ -201,8 +202,32 @@ impl AggregateLens {
         // Compute once up front: the schema of the derived table is whatever
         // the aggregation declares, and the Vista needs it before it exists.
         let aggregation = Arc::new(aggregation);
+        let tap = source.debug_tap();
+        let start = tap.enabled().then(std::time::Instant::now);
         let rows = source.vista().list_values().await?;
+        let rows_in = rows.len();
         let initial = aggregation.compute(&rows);
+
+        // This eager pass never goes through the engine's own `recompute` —
+        // it runs before `engine::spawn` even exists to seed the Vista's
+        // schema — so it carries its own debug line. The engine's Seed pass
+        // that follows will report the same output as `unchanged` (it is
+        // seeded with `already_published` below), which is the intended
+        // "publish skipped" reading for that second line.
+        if tap.enabled() {
+            let ms = start.map(|s| s.elapsed().as_millis()).unwrap_or(0);
+            tracing::info!(
+                target: "vantage_diorama::debug",
+                ds = %tap.ds(),
+                aggregate = name,
+                trigger = "initial",
+                rows_in,
+                rows_out = initial.debug_row_count(),
+                ms,
+                unchanged = false,
+                "aggregate recompute",
+            );
+        }
 
         let shared_rows = shared(initial.clone());
         let shell = AggregateShell::new(shared_rows.clone(), &initial.columns);
@@ -215,6 +240,7 @@ impl AggregateLens {
         state.publish(initial.clone()).await;
 
         let handle = engine::spawn(
+            name,
             Source {
                 reader: source.vista(),
                 dio: source.clone(),

@@ -53,6 +53,11 @@ pub trait Aggregation: Send + Sync + 'static {
 pub trait AggregateOutput: PartialEq + Clone + Send + Sync + 'static {
     #[doc(hidden)]
     fn seal() -> Sealed;
+
+    /// Row count for the debug stream's `rows_out` field: 1 for a scalar,
+    /// the row count for a derived set.
+    #[doc(hidden)]
+    fn debug_row_count(&self) -> usize;
 }
 
 #[doc(hidden)]
@@ -62,6 +67,10 @@ pub struct Sealed;
 impl AggregateOutput for CborValue {
     fn seal() -> Sealed {
         Sealed
+    }
+
+    fn debug_row_count(&self) -> usize {
+        1
     }
 }
 
@@ -110,5 +119,9 @@ impl PartialEq for DerivedRows {
 impl AggregateOutput for DerivedRows {
     fn seal() -> Sealed {
         Sealed
+    }
+
+    fn debug_row_count(&self) -> usize {
+        self.len()
     }
 }

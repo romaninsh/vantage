@@ -50,9 +50,22 @@ pub fn master(columns: &[(&str, &str)]) -> MockShell {
 /// `on_refresh` replaces it. Mutating the shell then calling
 /// [`Dio::refresh`] is how a test simulates the datasource changing.
 pub async fn source(shell: MockShell) -> Dio {
+    build_source(shell, None).await
+}
+
+/// Same as [`source`], but with the official debug stream turned on for
+/// this datasource — the tap an aggregate spawned over this Dio inherits.
+pub async fn source_with_debug(shell: MockShell, ds_name: &str) -> Dio {
+    build_source(shell, Some(ds_name)).await
+}
+
+async fn build_source(shell: MockShell, debug: Option<&str>) -> Dio {
+    let mut builder = Lens::new().cache_in_memory();
+    if let Some(name) = debug {
+        builder = builder.debug_datasource(name);
+    }
     let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
+        builder
             .on_start(|dio| {
                 let dio = dio.clone();
                 async move {
