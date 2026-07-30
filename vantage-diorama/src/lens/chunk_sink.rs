@@ -142,6 +142,12 @@ impl ChunkSink {
                 ..Default::default()
             });
         }
+        // The wide-data signal for the "columns" debug line: the union of
+        // field names across this chunk and the total CBOR-encoded size.
+        // Computed here (buffer already collected, one pass) rather than
+        // per-`push`, and only reached because `self.debug` is set — a sink
+        // built with the tap off never pays for the encoding.
+        let (columns_received, payload_bytes) = wide_data_signals(rows.values());
         let cache_rows_before = self.cache.count().await?;
         self.cache.insert_values(rows).await?;
         let cache_rows_after = self.cache.count().await?;
@@ -149,19 +155,57 @@ impl ChunkSink {
             written,
             cache_rows_before,
             cache_rows_after,
+            columns_received,
+            payload_bytes,
         })
     }
 }
 
+/// Field-name union (insertion order, deduped) and total ciborium-encoded
+/// size across a batch of buffered records — the raw material for the
+/// "columns" debug line's `received_count`/`received_sample`/`payload_bytes`.
+/// Dedup is by linear scan, which is fine: it's bounded by the record's own
+/// column count, not by row count.
+fn wide_data_signals<'a>(
+    records: impl Iterator<Item = &'a Record<CborValue>>,
+) -> (Vec<String>, usize) {
+    let mut columns: Vec<String> = Vec::new();
+    let mut payload_bytes = 0usize;
+    for record in records {
+        for key in record.keys() {
+            if !columns.iter().any(|c| c == key) {
+                columns.push(key.clone());
+            }
+        }
+        let map: Vec<(CborValue, CborValue)> = record
+            .iter()
+            .map(|(k, v)| (CborValue::Text(k.clone()), v.clone()))
+            .collect();
+        let mut buf = Vec::new();
+        if ciborium::into_writer(&CborValue::Map(map), &mut buf).is_ok() {
+            payload_bytes += buf.len();
+        }
+    }
+    (columns, payload_bytes)
+}
+
 /// The result of [`ChunkSink::flush_counted`] — how many rows a chunk write
-/// committed, and (tap permitting) the cache's row count before and after.
-/// Source for the "cache write" debug line's `written`/`new`/`updated`/
-/// `cached_rows` fields.
-#[derive(Debug, Clone, Copy, Default)]
+/// committed, and (tap permitting) the cache's row count before and after,
+/// plus the wide-data signal: the field-name union across the batch and its
+/// total encoded size. Source for the "cache write" debug line's
+/// `written`/`new`/`updated`/`cached_rows` fields and the "columns" line's
+/// `received_count`/`received_sample`/`payload_bytes`.
+///
+/// `columns_received` and `payload_bytes` are empty/`0` unless the sink's
+/// tap is on — they exist only for the "columns" line, so with the tap off
+/// they'd be pure overhead nothing observes.
+#[derive(Debug, Clone, Default)]
 pub struct FlushReport {
     pub written: usize,
     pub cache_rows_before: i64,
     pub cache_rows_after: i64,
+    pub columns_received: Vec<String>,
+    pub payload_bytes: usize,
 }
 
 /// One row's worth of payload — exposed publicly for callers that

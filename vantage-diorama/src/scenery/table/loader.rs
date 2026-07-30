@@ -429,7 +429,7 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
             // short-circuits before counting, so `cache_rows_after` would read
             // `0` — not the cache's real size, just "not measured" — and a
             // "cache write" line for zero rows written is not a write at all.
-            if let Some(report) = flush_report
+            if let Some(report) = &flush_report
                 && report.written > 0
             {
                 crate::debug::tapline!(
@@ -481,6 +481,51 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                 cached_after,
                 "load return",
             );
+            // The wide-data detector: how many distinct fields this chunk
+            // carried against how many the open sceneries actually asked
+            // for, and the encoded weight of the page. `demanded_columns`
+            // does a live scan of the table sceneries, so it's only worth
+            // paying for when the tap is on — same reasoning as gating the
+            // encoding itself in `ChunkSink::flush_counted`.
+            if tap.enabled() {
+                let demanded = dio_inner.demanded_columns();
+                let received: &[String] = flush_report
+                    .as_ref()
+                    .map(|r| r.columns_received.as_slice())
+                    .unwrap_or(&[]);
+                let payload_bytes = flush_report.as_ref().map(|r| r.payload_bytes).unwrap_or(0);
+                let received_count = received.len();
+                const SAMPLE: usize = 8;
+                let received_sample = if received_count > SAMPLE {
+                    format!(
+                        "{}+{} more",
+                        received[..SAMPLE].join(","),
+                        received_count - SAMPLE
+                    )
+                } else {
+                    received.join(",")
+                };
+                let (demanded_str, undemanded_count) = match &demanded {
+                    None => ("all".to_string(), 0),
+                    Some(set) => {
+                        let mut names: Vec<&str> = set.iter().map(String::as_str).collect();
+                        names.sort_unstable();
+                        let undemanded = received.iter().filter(|c| !set.contains(*c)).count();
+                        (names.join(","), undemanded)
+                    }
+                };
+                crate::debug::tapline!(
+                    tap,
+                    dio = dio_inner.master.read().unwrap().name(),
+                    demanded = demanded_str,
+                    received_count,
+                    received_sample,
+                    undemanded_count,
+                    payload_bytes,
+                    rows = pushed,
+                    "columns",
+                );
+            }
             // Where the grand total came from. A total the source stated in the
             // same response as the rows (`ChunkSink::set_total`) outranks
             // anything inferred here: a short page can equally mean "the source

@@ -257,6 +257,75 @@ async fn load_lifecycle_is_correlated_and_cache_hits_are_logged() {
     );
 }
 
+/// A single row with 50 fat extra fields — the wide-data case the "columns"
+/// line exists to surface. The scenery is opened plainly (no `.columns()`
+/// demand), so the Dio's demand union is `None` and the line reports
+/// `demanded="all"`; `received_count`/`payload_bytes` are the interesting
+/// signal here.
+#[tokio::test]
+async fn column_line_exposes_undemanded_wide_fields() {
+    let (_guard, log) = capture();
+
+    let lens = Arc::new(
+        Lens::new()
+            .cache_in_memory()
+            .debug_datasource("faker-ds")
+            .viewport_debounce(std::time::Duration::from_millis(1))
+            .runtime(tokio::runtime::Handle::current())
+            .on_load_chunk(move |_dio, range, _query, sink| async move {
+                for idx in range {
+                    if idx != 0 {
+                        continue;
+                    }
+                    let mut r = Record::new();
+                    r.insert("id".to_string(), CborValue::Text("row0".to_string()));
+                    r.insert("name".to_string(), CborValue::Text("Row Zero".to_string()));
+                    for n in 1..=50 {
+                        r.insert(
+                            format!("extra_{n:04}"),
+                            CborValue::Text("x".repeat(1024)),
+                        );
+                    }
+                    sink.set_total(1);
+                    sink.push(idx, "row0".to_string(), r).await?;
+                }
+                Ok(())
+            })
+            .build()
+            .unwrap(),
+    );
+
+    let dio = lens
+        .make_dio(chunk_master(&[("name", "String")]))
+        .await
+        .unwrap();
+    let scenery = dio.table_scenery().open().await.unwrap();
+
+    scenery.set_viewport(0..1);
+    wait_until("first load return", || {
+        lines_containing(&log, "load return").len() == 1
+    })
+    .await;
+
+    let cols = lines_containing(&log, "columns");
+    assert_eq!(cols.len(), 1, "{cols:?}");
+    assert!(cols[0].contains("demanded=\"all\""), "{}", cols[0]);
+    assert!(cols[0].contains("received_count=52"), "{}", cols[0]);
+    assert!(cols[0].contains("payload_bytes="), "{}", cols[0]);
+    // payload should be dominated by the extras: > 50KB for 1 row wouldn't
+    // hold for all rows; just assert it's large.
+    let bytes: usize = cols[0]
+        .split("payload_bytes=")
+        .nth(1)
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(bytes > 50_000, "wide payload must be visible: {bytes}");
+}
+
 /// A chunk load's cache write reports how many of the written rows were new
 /// vs. already-cached updates, and the resulting percent-cached against the
 /// known total.
