@@ -396,6 +396,93 @@ async fn column_line_dedups_across_multiple_wide_rows() {
     assert!(bytes > 500_000, "multi-row payload must scale: {bytes}");
 }
 
+/// Two-pass (list/detail) lifecycle: a list pass over a 40-row index (one
+/// page — the default page size of 100 covers it in a single dispatch) then a
+/// detail pass over the first viewport. Asserts the list page's dispatch/
+/// return are correlated by `req`, and that a "detail pass" line reports the
+/// 10-row viewport as `requested=10`.
+#[tokio::test]
+async fn two_pass_list_and_detail_lifecycle_is_logged() {
+    let (_guard, log) = capture();
+
+    let lens = Arc::new(
+        Lens::new()
+            .cache_in_memory()
+            .debug_datasource("faker-ds")
+            .viewport_debounce(std::time::Duration::from_millis(1))
+            .runtime(tokio::runtime::Handle::current())
+            .on_list_page(move |_dio, q| async move {
+                let start = q.offset.min(40);
+                let end = (q.offset + q.limit).min(40);
+                let mut out = Vec::new();
+                for i in start..end {
+                    let mut r = Record::new();
+                    r.insert("name".to_string(), CborValue::Text(format!("Row {i}")));
+                    out.push((format!("id{i}"), r));
+                }
+                Ok(out)
+            })
+            .on_load_detail(move |_dio, id| async move {
+                let mut r = Record::new();
+                r.insert(
+                    "detail".to_string(),
+                    CborValue::Text(format!("Detail for {id}")),
+                );
+                Ok(r)
+            })
+            .build()
+            .unwrap(),
+    );
+
+    let dio = lens.make_dio(master()).await.unwrap();
+    let scenery = dio.table_scenery().open().await.unwrap();
+
+    // The seed list page runs detached from `open()`; wait for it to land.
+    wait_until("list page return", || {
+        lines_containing(&log, "list page return").len() == 1
+    })
+    .await;
+
+    let dispatch = lines_containing(&log, "list page dispatch");
+    let ret = lines_containing(&log, "list page return");
+    assert_eq!(dispatch.len(), 1, "{dispatch:?}");
+    assert_eq!(ret.len(), 1, "{ret:?}");
+    let req = dispatch[0]
+        .split("req=")
+        .nth(1)
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_string();
+    assert!(ret[0].contains(&format!("req={req}")), "{}", ret[0]);
+    assert!(dispatch[0].contains("offset=0"), "{}", dispatch[0]);
+    assert!(dispatch[0].contains("limit="), "{}", dispatch[0]);
+    assert!(ret[0].contains("rows=40"), "{}", ret[0]);
+    assert!(ret[0].contains("index_len=40"), "{}", ret[0]);
+    assert!(ret[0].contains("complete=true"), "{}", ret[0]);
+
+    // Detail pass over the first 10 rows.
+    scenery.set_viewport(0..10);
+    wait_until("detail pass requested=10", || {
+        lines_containing(&log, "detail pass")
+            .iter()
+            .any(|l| l.contains("requested=10"))
+    })
+    .await;
+
+    let detail_lines = lines_containing(&log, "detail pass");
+    assert!(
+        detail_lines.iter().any(|l| l.contains("requested=10")),
+        "{detail_lines:?}"
+    );
+    assert!(
+        detail_lines[0].contains("dio=\"books\""),
+        "{}",
+        detail_lines[0]
+    );
+}
+
 /// A chunk load's cache write reports how many of the written rows were new
 /// vs. already-cached updates, and the resulting percent-cached against the
 /// known total.
