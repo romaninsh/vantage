@@ -24,11 +24,11 @@ use crate::ops::{ChangeEvent, ChangeFlash, QueryDescriptor};
 pub use activity::{Activity, ActivitySignal};
 pub use cache_backend::{CacheBackend, CacheStatus, CacheTable};
 pub use callbacks::{
-    ChunkQuery,
-    DioCallback, DioEventCallback, DioFlashCallback, DioListPageCallback, DioLoadChunkCallback,
-    DioLoadDetailCallback, DioTotalProviderCallback, LensCallbacks, boxed_dio_callback,
-    boxed_dio_event_callback, boxed_dio_flash_callback, boxed_list_page_callback,
-    boxed_load_chunk_callback, boxed_load_detail_callback, boxed_total_provider_callback,
+    ChunkQuery, DioCallback, DioEventCallback, DioFlashCallback, DioListPageCallback,
+    DioLoadChunkCallback, DioLoadDetailCallback, DioTotalProviderCallback, LensCallbacks,
+    boxed_dio_callback, boxed_dio_event_callback, boxed_dio_flash_callback,
+    boxed_list_page_callback, boxed_load_chunk_callback, boxed_load_detail_callback,
+    boxed_total_provider_callback,
 };
 pub use chunk_sink::{ChunkRow, ChunkSink, SceneryChunkTarget};
 pub use defaults::LensDefaults;

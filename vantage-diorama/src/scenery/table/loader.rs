@@ -437,9 +437,9 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                     dio = dio_inner.master.read().unwrap().name(),
                     written = report.written,
                     new = (report.cache_rows_after - report.cache_rows_before) as usize,
-                    updated = report
-                        .written
-                        .saturating_sub((report.cache_rows_after - report.cache_rows_before) as usize),
+                    updated = report.written.saturating_sub(
+                        (report.cache_rows_after - report.cache_rows_before) as usize
+                    ),
                     cached_rows = report.cache_rows_after,
                     known_total = state.total.read().unwrap().unwrap_or(0),
                     cached_pct = match state.total.read().unwrap().unwrap_or(0) {
@@ -592,7 +592,10 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                 // Single-pass paged mode only: a two-pass view's list pass
                 // enumerated the whole set — its size is knowledge, not an
                 // inference to extend.
-                if !state.two_pass && effective_len > 0 && horizon_reached && !state.total_ever_stated()
+                if !state.two_pass
+                    && effective_len > 0
+                    && horizon_reached
+                    && !state.total_ever_stated()
                 {
                     let extended = effective_range.end + effective_len;
                     tracing::debug!(

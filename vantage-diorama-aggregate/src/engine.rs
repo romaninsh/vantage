@@ -15,7 +15,7 @@ use tokio::task::JoinHandle;
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_diorama::{DebugTap, Dio, DioEvent};
 
-use crate::aggregation::{Aggregation, AggregateOutput};
+use crate::aggregation::{AggregateOutput, Aggregation};
 
 /// Where a recomputed output goes. Implemented by the two surfaces.
 #[async_trait]
@@ -93,9 +93,17 @@ async fn run<A, R, P>(
 
     // Seed: whatever the source already holds. A warm cache means the layer
     // has a value before any fetch completes.
-    if recompute(&name, &tap, "initial", &source, &aggregation, &publisher, &mut last)
-        .await
-        .is_break()
+    if recompute(
+        &name,
+        &tap,
+        "initial",
+        &source,
+        &aggregation,
+        &publisher,
+        &mut last,
+    )
+    .await
+    .is_break()
     {
         return;
     }
@@ -172,11 +180,7 @@ enum Wake {
 /// build only where it is: on the wake path, gated behind `tap.enabled()`.
 fn event_trigger(event: &DioEvent) -> String {
     let debug = format!("{event:?}");
-    debug
-        .split([' ', '('])
-        .next()
-        .unwrap_or(&debug)
-        .to_string()
+    debug.split([' ', '(']).next().unwrap_or(&debug).to_string()
 }
 
 /// Block until the source's rows may have changed.

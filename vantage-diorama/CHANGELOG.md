@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.11.0 — 2026-07-30
+
+**The official per-datasource debug stream.**
+
+`LensBuilder::debug_datasource(name)` turns on a curated, greppable log
+stream for one datasource at a time, under the single `vantage_diorama::debug`
+target at `info` — every line carries `ds=<name>`, every per-dio line also
+`dio=<master table name>`. Off is the default and off means nothing is
+emitted and nothing is paid for: every call site checks the tap before doing
+any work a line needs, not just before formatting it.
+
+- **Load lifecycle.** `"load dispatch"` / `"load return"` / `"load failed"`,
+  correlated by a per-dio `req=N`, report the requested and effective ranges,
+  what was already cached, and the sort/search in play. `"cache hit —
+  viewport served locally"` marks a viewport a fetch never touched.
+- **Cache evidence.** `"cache write"` reports new vs. updated rows and the
+  running cached percentage of the known total; `"cache seed"` reports
+  whether a scenery opened warm or cold. `"total"` reports the grand total
+  and where it came from — stated by the source, inferred from a short page,
+  extended past an inferred horizon, or clamped at a hole a source promised
+  but never delivered.
+- **`"state"`** reports every `LoadState` transition (`Loading` / `Partial` /
+  `Complete`) with the reason that drove it.
+- **`"columns"`** is the wide-data detector: what a chunk actually carried
+  against what was demanded, with a sample of the received field names and
+  the payload's encoded size.
+- **Census.** `"census: <kind> <verb>"` fires on every table-scenery,
+  record-scenery, and servo open/close, with the live counts of each on that
+  Dio and a process snapshot (uptime, CPU time, peak RSS).
+- **Two-pass.** `"list page dispatch"` / `"list page return"` cover the list
+  pass; `"detail pass"` reports what a detail sweep queued against what was
+  already complete.
+- **Exit summary.** `stats::debug_summary_lines()` / `emit_debug_summary()`
+  render the session's fetch ledger, live consumer counts, and process stats
+  as a final block — unconditional, independent of whether the tap was ever
+  turned on.
+
 ## 0.10.0 — 2026-07-28
 
 **A scenery reads its own shape, not its lens's offers**

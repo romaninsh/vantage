@@ -241,7 +241,8 @@ impl DioInner {
     /// Next value in this Dio's request sequence — stamped as `req=N` to
     /// correlate a dispatch line with its return line in the debug stream.
     pub(crate) fn next_req(&self) -> u64 {
-        self.req_seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        self.req_seq
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Prune dead entries from the table-scenery dedup registry and return
@@ -264,7 +265,9 @@ impl DioInner {
             return;
         }
         let table_sceneries = self.live_table_scenery_count();
-        let record_sceneries = self.record_census.load(std::sync::atomic::Ordering::Relaxed);
+        let record_sceneries = self
+            .record_census
+            .load(std::sync::atomic::Ordering::Relaxed);
         let servos = self.servo_census.load(std::sync::atomic::Ordering::Relaxed);
         let p = crate::debug::process_stats();
         crate::debug::tapline!(

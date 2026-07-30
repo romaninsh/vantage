@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.11 — 2026-07-30
+
+- Track vantage-diorama 0.11. No behavior changes here.
+
 ## 0.6.10 — 2026-07-28
 
 - Track vantage-diorama 0.10. The requirement stayed at `0.9` when diorama

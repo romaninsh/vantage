@@ -4,8 +4,8 @@ use std::fmt::Write as _;
 use std::sync::{Arc, Mutex};
 
 use tracing::field::{Field, Visit};
-use tracing_subscriber::layer::{Context, SubscriberExt};
 use tracing_subscriber::Layer;
+use tracing_subscriber::layer::{Context, SubscriberExt};
 
 use ciborium::Value as CborValue;
 use vantage_diorama::Lens;
@@ -128,7 +128,10 @@ async fn census_lines_fire_on_scenery_open_and_drop() {
     assert_eq!(opens.len(), 1);
     assert!(opens[0].contains("dio=\"books\""), "line: {}", opens[0]);
     assert!(opens[0].contains("table_sceneries=1"), "line: {}", opens[0]);
-    assert!(opens[0].contains("uptime_ms="), "census carries process stats");
+    assert!(
+        opens[0].contains("uptime_ms="),
+        "census carries process stats"
+    );
 
     drop(scenery);
     // Guard teardown is synchronous; the census drop line is emitted from Drop.
@@ -281,10 +284,7 @@ async fn column_line_exposes_undemanded_wide_fields() {
                     r.insert("id".to_string(), CborValue::Text("row0".to_string()));
                     r.insert("name".to_string(), CborValue::Text("Row Zero".to_string()));
                     for n in 1..=50 {
-                        r.insert(
-                            format!("extra_{n:04}"),
-                            CborValue::Text("x".repeat(1024)),
-                        );
+                        r.insert(format!("extra_{n:04}"), CborValue::Text("x".repeat(1024)));
                     }
                     sink.set_total(1);
                     sink.push(idx, "row0".to_string(), r).await?;
@@ -351,10 +351,7 @@ async fn column_line_dedups_across_multiple_wide_rows() {
                     r.insert("id".to_string(), CborValue::Text(format!("row{idx}")));
                     r.insert("name".to_string(), CborValue::Text(format!("Row {idx}")));
                     for n in 1..=50 {
-                        r.insert(
-                            format!("extra_{n:04}"),
-                            CborValue::Text("x".repeat(1024)),
-                        );
+                        r.insert(format!("extra_{n:04}"), CborValue::Text("x".repeat(1024)));
                     }
                     sink.push(idx, format!("row{idx}"), r).await?;
                 }
