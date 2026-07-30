@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.20 — 2026-07-30
+
+- `MockShell` serves windows and counts without copying the store. The obvious
+  implementations — list everything, slice; list everything, take a length —
+  copied every record per request, which on a 200k-row mock turned each "fast"
+  page into a near-second stall and drowned out the shaped faker's latency
+  knobs. Filtering and ordering now work over references; only the returned
+  window is cloned.
+- `MockShell::get_record` / `record_ids` — store-side snapshots for effects and
+  tests inspecting what they are about to mutate, bypassing conditions and the
+  `fail_reads` guard.
+
 ## 0.6.19 — 2026-07-28
 
 - Doc fix: an intra-doc link on `Vista::aggregate` spelled out a target the

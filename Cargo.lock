@@ -5654,7 +5654,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5916,7 +5916,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.19"
+version = "0.6.20"
 dependencies = [
  "async-stream",
  "async-trait",
