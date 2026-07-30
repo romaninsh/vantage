@@ -8,7 +8,7 @@ use tracing_subscriber::Layer;
 use tracing_subscriber::layer::{Context, SubscriberExt};
 
 use ciborium::Value as CborValue;
-use vantage_diorama::Lens;
+use vantage_diorama::{Lens, LoadState};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
 
@@ -542,4 +542,82 @@ async fn cache_writes_report_new_updated_and_percentage() {
     assert!(writes[0].contains("known_total=100"), "{}", writes[0]);
     // 30 of 100 rows → 30%.
     assert!(writes[0].contains("cached_pct=30"), "{}", writes[0]);
+}
+
+/// The off-path silence regression: a lens built with no `.debug_datasource`
+/// call must produce zero `vantage_diorama::debug` events across the same
+/// load lifecycle `load_lifecycle_is_correlated_and_cache_hits_are_logged`
+/// exercises — dispatch, return, the `Loading -> Complete` transition, and a
+/// second viewport pass that hits cache. There is no log line to wait on when
+/// the tap is off (that is the point), so this drives the same viewports and
+/// waits on the scenery's own `LoadState` reaching `Complete` — row
+/// materialization the caller can observe without the debug stream.
+#[tokio::test]
+async fn a_non_debug_lens_emits_nothing_on_the_load_path() {
+    let (_guard, log) = capture();
+
+    let backend: Backend = Arc::new(Mutex::new(
+        (0..100)
+            .map(|i| {
+                let mut r = Record::new();
+                r.insert("v".to_string(), CborValue::Text(format!("row{i}")));
+                (format!("id{i}"), r)
+            })
+            .collect(),
+    ));
+
+    let lens = {
+        let backend = backend.clone();
+        Arc::new(
+            Lens::new()
+                .cache_in_memory()
+                .viewport_debounce(std::time::Duration::from_millis(1))
+                .runtime(tokio::runtime::Handle::current())
+                .on_load_chunk(move |_dio, range, _query, sink| {
+                    let backend = backend.clone();
+                    async move {
+                        let rows = backend.lock().unwrap().clone();
+                        sink.set_total(rows.len());
+                        for idx in range {
+                            if let Some((id, r)) = rows.get(idx) {
+                                sink.push(idx, id.clone(), r.clone()).await?;
+                            }
+                        }
+                        Ok(())
+                    }
+                })
+                .build()
+                .unwrap(),
+        )
+    };
+
+    let dio = lens
+        .make_dio(chunk_master(&[("v", "String")]))
+        .await
+        .unwrap();
+    assert!(!dio.debug_tap().enabled());
+    let scenery = dio.table_scenery().open().await.unwrap();
+
+    // The whole set in one viewport, exactly as the debug-on lifecycle test
+    // drives it — settles the scenery at `Complete` once the load lands.
+    scenery.set_viewport(0..100);
+    wait_until("first load reaches Complete", || {
+        scenery.load_state() == LoadState::Complete
+    })
+    .await;
+
+    // Second pass over a viewport already fully covered by the cache — a
+    // cache hit, same as the debug-on test. A hit changes no observable
+    // scenery state (already `Complete`), so there is nothing to poll for;
+    // sleeping past the 1ms viewport debounce is enough to let it settle
+    // before the final assertion.
+    scenery.set_viewport(0..30);
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert_eq!(scenery.load_state(), LoadState::Complete);
+
+    assert!(
+        log.lock().unwrap().is_empty(),
+        "debug-off lens must emit nothing: {:?}",
+        log.lock().unwrap()
+    );
 }

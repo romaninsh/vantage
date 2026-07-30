@@ -108,18 +108,14 @@ impl ChunkSink {
         Ok(())
     }
 
-    /// Commit everything pushed so far, in one write.
+    /// Commit everything pushed so far, in one write, and report a
+    /// [`FlushReport`] of how many rows were written and — tap permitting —
+    /// the cache's row count before and after, the numbers behind the
+    /// "cache write" debug line.
     ///
     /// Called by the loader once `on_load_chunk` returns — and it must run
     /// before anything reads the cache back (the post-load re-sort rebuilds the
     /// visible map from it), or the load appears to have fetched nothing.
-    pub(crate) async fn flush(&self) -> Result<()> {
-        self.flush_counted().await.map(|_| ())
-    }
-
-    /// [`flush`](Self::flush), plus a [`FlushReport`] of how many rows were
-    /// written and — tap permitting — the cache's row count before and after,
-    /// the numbers behind the "cache write" debug line.
     ///
     /// The before/after counts are skipped (and reported as `0`) unless
     /// `self.debug` is set: they exist only for that debug line, so with the
@@ -192,7 +188,7 @@ fn wide_data_signals<'a>(
     (columns.into_iter().collect(), payload_bytes)
 }
 
-/// The result of [`ChunkSink::flush_counted`] — how many rows a chunk write
+/// The result of `ChunkSink::flush_counted` — how many rows a chunk write
 /// committed, and (tap permitting) the cache's row count before and after,
 /// plus the wide-data signal: the field-name union across the batch and its
 /// total encoded size. Source for the "cache write" debug line's

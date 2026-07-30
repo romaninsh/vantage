@@ -436,6 +436,10 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                     tap,
                     dio = dio_inner.master.read().unwrap().name(),
                     written = report.written,
+                    // A concurrent flush from another in-flight load between the
+                    // before/after `count()` calls could in principle make this
+                    // go negative and underflow; accepted here since it's a
+                    // debug-only line, not a value anything downstream trusts.
                     new = (report.cache_rows_after - report.cache_rows_before) as usize,
                     updated = report.written.saturating_sub(
                         (report.cache_rows_after - report.cache_rows_before) as usize
@@ -498,7 +502,7 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                 const SAMPLE: usize = 8;
                 let received_sample = if received_count > SAMPLE {
                     format!(
-                        "{}+{} more",
+                        "{} +{} more",
                         received[..SAMPLE].join(","),
                         received_count - SAMPLE
                     )

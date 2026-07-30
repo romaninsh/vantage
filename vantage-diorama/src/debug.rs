@@ -49,9 +49,8 @@
 //! pass before anything has changed.
 //!
 //! `req=N` is a per-dio, monotonically increasing counter
-//! ([`DioInner::next_req`](crate::dio::DioInner::next_req)) that ties a
-//! dispatch line to its matching return/failed line — only allocated when
-//! the tap is enabled.
+//! (`DioInner::next_req`) that ties a dispatch line to its matching
+//! return/failed line — only allocated when the tap is enabled.
 
 use std::sync::Arc;
 use std::sync::LazyLock;
@@ -93,7 +92,6 @@ impl DebugTap {
 ///
 /// `tapline!(tap, field = value, ..., "message")` — the target and the
 /// `ds` field are supplied here so call sites can't drift.
-#[allow(unused_macros)]
 macro_rules! tapline {
     ($tap:expr, $($rest:tt)*) => {
         if $tap.enabled() {
@@ -101,7 +99,6 @@ macro_rules! tapline {
         }
     };
 }
-#[allow(unused_imports)]
 pub(crate) use tapline;
 
 /// Wall/CPU/memory snapshot for census lines and the exit summary.

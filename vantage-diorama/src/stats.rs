@@ -242,8 +242,13 @@ pub fn emit_debug_summary() {
 mod tests {
     use super::*;
 
+    // These two scenarios share the process-global `LEDGER` and each needs
+    // to `reset_fetch_stats()` before recording its own fixture. Run as
+    // separate `#[test]` fns, cargo's default parallel test threads could
+    // interleave the resets and wipe one scenario's records mid-assert —
+    // so both live in one test, run strictly in sequence.
     #[test]
-    fn repeats_and_waste_are_counted_per_range() {
+    fn repeats_and_waste_are_counted_per_range_then_summary_renders_lines() {
         reset_fetch_stats();
         record_fetch("events", &(0..100), 35, 0, 3000);
         record_fetch("events", &(35..42), 7, 7, 2000);
@@ -268,10 +273,7 @@ mod tests {
             stats[1].worst_range, None,
             "fetched once, nothing to report"
         );
-    }
 
-    #[test]
-    fn summary_renders_ledger_live_and_process_lines() {
         reset_fetch_stats();
         record_fetch("book", &(0..20), 20, 0, 12);
         record_fetch("book", &(0..20), 20, 20, 9);
