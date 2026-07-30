@@ -164,18 +164,21 @@ impl ChunkSink {
 /// Field-name union (insertion order, deduped) and total ciborium-encoded
 /// size across a batch of buffered records — the raw material for the
 /// "columns" debug line's `received_count`/`received_sample`/`payload_bytes`.
-/// Dedup is by linear scan, which is fine: it's bounded by the record's own
-/// column count, not by row count.
+/// Dedup goes through an `IndexSet` (O(1) membership, insertion order
+/// preserved on iteration) rather than a `Vec` scanned with `contains`: a
+/// full page of wide rows is exactly rows × columns, and a linear scan per
+/// key would make that quadratic in the columns — the one case this line
+/// exists to make visible.
 fn wide_data_signals<'a>(
     records: impl Iterator<Item = &'a Record<CborValue>>,
 ) -> (Vec<String>, usize) {
-    let mut columns: Vec<String> = Vec::new();
+    let mut columns: indexmap::IndexSet<String> = indexmap::IndexSet::new();
     let mut payload_bytes = 0usize;
     for record in records {
         for key in record.keys() {
-            if !columns.iter().any(|c| c == key) {
-                columns.push(key.clone());
-            }
+            // `insert` is a no-op (and doesn't reorder) when the key is
+            // already present, so no separate `contains` check is needed.
+            columns.insert(key.clone());
         }
         let map: Vec<(CborValue, CborValue)> = record
             .iter()
@@ -186,7 +189,7 @@ fn wide_data_signals<'a>(
             payload_bytes += buf.len();
         }
     }
-    (columns, payload_bytes)
+    (columns.into_iter().collect(), payload_bytes)
 }
 
 /// The result of [`ChunkSink::flush_counted`] — how many rows a chunk write
