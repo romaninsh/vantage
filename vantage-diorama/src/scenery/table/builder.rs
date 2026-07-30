@@ -274,11 +274,13 @@ impl TableSceneryBuilder {
             load_dirty: std::sync::atomic::AtomicBool::new(false),
             load_push_count: AtomicUsize::new(0),
             load_total_reported: std::sync::atomic::AtomicBool::new(false),
+            total_ever_stated: std::sync::atomic::AtomicBool::new(false),
             paged: pages_lazily(&dio, &master_capabilities),
             settled: std::sync::atomic::AtomicBool::new(false),
             master_capabilities,
             two_pass,
             ui_filters: RwLock::new(Vec::new()),
+            search: RwLock::new(None),
             titles_only,
             demand,
             index: RwLock::new(index),
@@ -307,6 +309,11 @@ impl TableSceneryBuilder {
                 "total_provider — grand total fetched, blocking the open",
             );
             *state.total.write().unwrap() = Some(total);
+            // A provider-stated total is a fact, like one stated in a fetch
+            // response — the unknown-total horizon rule must never override it.
+            state
+                .total_ever_stated
+                .store(true, std::sync::atomic::Ordering::SeqCst);
         }
 
         // 2. Seed the sparse map.
@@ -371,40 +378,62 @@ impl TableSceneryBuilder {
                 }
             }
         } else if state.paged && dio.lens.callbacks.on_start.is_none() {
-            // Pure paged lens (lazy chunk loading, no eager `on_start` warm): the
-            // row ORDER is the master's, fetched a page at a time — NOT the cache's
-            // id-keyed iteration order. Seeding densely from the cache here would
-            // both show the wrong order and make the viewport loader treat every
-            // row as already-cached and skip the authoritative fetch, so a warm
-            // cache (the redb file surviving a restart) would pin the grid to a
-            // stale, mis-ordered set until a forced refresh. Leave the map empty;
-            // the first viewport load fills it in the master's order.
-            // `total_provider` (above) already sized the scrollbar, so the grid
-            // shows its loading state, not a blank count.
+            // Pure paged lens (lazy chunk loading, no eager `on_start` warm).
             //
-            // A hybrid lens that DOES warm via `on_start` (cache seeded in the
-            // master's list order) still reseeds below, so its cache-aware
-            // "skip already-loaded ranges" optimisation is preserved.
+            // A WARM cache is shown at once rather than thrown away: navigating
+            // back to a grid whose rows are still cached must not flash a
+            // loading skeleton over data we already hold. `reseed_from_cache`
+            // orders the cached rows by the view's active sort, so a sorted
+            // grid opens in the right order; the `refresh_on_open` force-fetch
+            // below then replaces the visible window with the authoritative
+            // server rows *silently* — the view is already settled, so the swap
+            // carries no loading feedback. If the client sort can't reproduce
+            // the server's order exactly, the first screen reshuffles once when
+            // the fetch lands; the alternative is a skeleton over cached rows,
+            // which is worse. A non-contiguous cache compacts here, but the
+            // forced refetch corrects the first screen and scrolling corrects
+            // the rest.
             //
-            // This is the single most expensive decision an open makes, and it
-            // is invisible without saying so: a warm cache sitting unused looks
-            // exactly like a cold one from the outside.
-            // Both read before the macro: the count is awaited, and a lock
-            // taken inside the argument list would be held across that await.
+            // A COLD cache leaves the map empty so the grid shows its loading
+            // state; the on-open fetch is authoritative and fills the master's
+            // order. This is the "cache is not present" case the loading
+            // skeleton exists for.
+            //
+            // Both reads happen before the macro: the count is awaited, and a
+            // lock taken inside the argument list would be held across it.
             let table = dio.master.read().unwrap().name().to_string();
             let cached_rows = dio.cache.count().await.unwrap_or(0);
-            tracing::debug!(
-                target: "vantage_diorama::cache",
-                table = %table,
-                cached_rows,
-                "cache NOT seeded — paged lens; rows come from the master in its \
-                 own order, so the on-open fetch is authoritative",
-            );
+            if cached_rows > 0 {
+                state.reseed_from_cache().await?;
+                restore_meta_total(&state, &dio).await;
+                state.mark_settled("open: paged view seeded from warm cache");
+                tracing::debug!(
+                    target: "vantage_diorama::cache",
+                    table = %table,
+                    cached_rows,
+                    "warm cache seeded the paged view; refresh-on-open replaces it silently",
+                );
+            } else {
+                tracing::debug!(
+                    target: "vantage_diorama::cache",
+                    table = %table,
+                    cached_rows,
+                    "cache empty — paged view opens loading; the on-open fetch is authoritative",
+                );
+            }
             state.bump_generation();
         } else {
             // Eager single-pass (or `on_start`-warmed hybrid): the cache IS the
             // row set; seed (and order) from it directly.
             state.reseed_from_cache().await?;
+            // A PAGED view under a hybrid lens (the shared backend lens
+            // carries both offers) sizes itself from the remembered total, so
+            // a warm reopen has its final geometry from the first frame — the
+            // alternative is a visible jump when the first counted response
+            // lands. Eager views derive their count from the rows themselves.
+            if state.paged {
+                restore_meta_total(&state, &dio).await;
+            }
             tracing::debug!(
                 target: "vantage_diorama::cache",
                 table = %dio.master.read().unwrap().name(),
@@ -496,6 +525,34 @@ impl TableSceneryBuilder {
         // this key, `register_table_scenery` returns the winner and our
         // `scenery` drops here — its guard aborts the redundant tasks.
         Ok(dio.register_table_scenery(key, scenery))
+    }
+}
+
+/// Restore the grand total remembered by the last session's stated fetch
+/// (see `CacheTable::meta_total`), so a warm reopen advertises its final row
+/// count before any fetch runs. Latched as stated — it WAS stated, last time
+/// — so the unknown-total horizon rule stays out of the way; the on-open
+/// refetch re-states (and re-persists) the current truth.
+async fn restore_meta_total(state: &Arc<TableSceneryState>, dio: &Arc<DioInner>) {
+    match dio.cache.meta_total().await {
+        Ok(Some(total)) => {
+            state
+                .total_ever_stated
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            state.set_total(Some(total as usize));
+            tracing::debug!(
+                target: "vantage_diorama::cache",
+                table = %dio.master.read().unwrap().name(),
+                total,
+                "restored the remembered grand total",
+            );
+        }
+        Ok(None) => {}
+        Err(e) => tracing::debug!(
+            target: "vantage_diorama::cache",
+            error = %e,
+            "reading the remembered total failed — geometry arrives with the first fetch",
+        ),
     }
 }
 

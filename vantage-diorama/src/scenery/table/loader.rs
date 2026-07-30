@@ -196,11 +196,37 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
         visible.clone().filter(|i| rows.contains_key(i)).count()
     };
 
+    // Unknown-total horizon probe. When the source has never stated a total,
+    // the advertised end is only our inference — and a viewport pressed
+    // against it must ASK past it, even when every visible row is cached.
+    // Without this, a warm cache walls the set at its seeded size forever:
+    // the visible range is fully cached, no fetch fires, and the fetch is
+    // the only thing that can extend the horizon.
+    // What the view believes the set's end is: the inferred total, or — on a
+    // cache-seeded reopen, where no total survived — the seeded row count.
+    let advertised_end =
+        total.unwrap_or_else(|| state.rows.read().unwrap().keys().max().map_or(0, |i| i + 1));
+    let horizon_probe = state.paged
+        && !state.two_pass
+        && !force_load
+        && !state.total_ever_stated()
+        && advertised_end > 0
+        && visible.end >= advertised_end;
+
     // Decide what to actually fetch. `force_load` callers
     // (`request_load_more`) have already pre-computed a range; respect
     // it. For viewport-driven loads, shift toward the uncached side.
     let effective_range = if force_load {
         visible.clone()
+    } else if horizon_probe {
+        // Unclamped (`total: None`): the fetch may run past the inferred end.
+        // Fully-cached viewport → probe one page starting AT the end; rows
+        // coming back mean the set grew (or was always bigger), nothing back
+        // means the inference was right and the hole clamp keeps it.
+        match compute_fetch_range(&state, &visible, None) {
+            Some(r) => r,
+            None => advertised_end..advertised_end + state.page_size,
+        }
     } else {
         match compute_fetch_range(&state, &visible, total) {
             Some(r) => r,
@@ -334,8 +360,11 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
     // `write_chunk_row` sets it when a row's content actually changes.
     state.reset_load_dirty();
     let total_before = *state.total.read().unwrap();
-    let sort = state.sort.read().unwrap().clone();
-    let mut result = cb(&dio, effective_range.clone(), sort, sink).await;
+    let query = crate::lens::ChunkQuery {
+        sort: state.sort.read().unwrap().clone(),
+        search: state.search.read().unwrap().clone(),
+    };
+    let mut result = cb(&dio, effective_range.clone(), query, sink).await;
     // Commit the page in one write, before anything reads the cache back. A
     // failed commit fails the load: the rows are bound in the visible map but
     // absent from the cache, and the next re-sort would rebuild the map without
@@ -381,17 +410,61 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
             // self-correcting from a fetch already made — including for a list
             // opened before its rows existed, counted once at 0.
             let mut total_changed = if state.take_load_total_reported() {
+                let stated = *state.total.read().unwrap();
                 tracing::debug!(
                     target: "vantage_diorama::source",
                     table = %dio_inner.master.read().unwrap().name(),
-                    total = ?*state.total.read().unwrap(),
+                    total = ?stated,
                     "total stated by the fetch itself — no count request needed",
                 );
-                *state.total.read().unwrap() != total_before
+                let changed = stated != total_before;
+                // Remember a stated, un-narrowed total in the cache meta, so
+                // the NEXT open of this view can size its geometry before any
+                // fetch — the difference between a warm reopen appearing
+                // whole and its row count visibly jumping when the first
+                // counted response lands. A total under an active search
+                // describes the narrowed set and must not be remembered.
+                if changed && state.search.read().unwrap().is_none() {
+                    if let Some(total) = stated {
+                        if let Err(e) = dio_inner.cache.set_meta_total(total as u64).await {
+                            tracing::debug!(
+                                target: "vantage_diorama::cache",
+                                error = %e,
+                                "persisting the stated total failed — the next open loses its head start",
+                            );
+                        }
+                    }
+                }
+                changed
             } else if pushed < effective_len {
                 state.set_total(Some(effective_range.start + pushed))
             } else {
-                false
+                // A FULL page from a source that has never stated a total. If
+                // it reached the advertised end, that end was only ever our
+                // own inference — a horizon, not a wall. Extend it by one
+                // page so the view can keep scrolling and asking (the
+                // grows-as-you-scroll mode); the set's real end arrives as a
+                // short page (exact) or an empty fetch (the hole clamp
+                // below). Without this, a total-less windowed source pinned
+                // its row count at the first page and no scroll could ever
+                // request more.
+                let horizon_reached = total_before.is_none_or(|t| effective_range.end >= t);
+                // Single-pass paged mode only: a two-pass view's list pass
+                // enumerated the whole set — its size is knowledge, not an
+                // inference to extend.
+                if !state.two_pass && effective_len > 0 && horizon_reached && !state.total_ever_stated()
+                {
+                    let extended = effective_range.end + effective_len;
+                    tracing::debug!(
+                        target: "vantage_diorama::source",
+                        table = %dio_inner.master.read().unwrap().name(),
+                        extended,
+                        "full page reached the inferred horizon — extending it",
+                    );
+                    state.set_total(Some(extended))
+                } else {
+                    false
+                }
             };
             // A client-side sort can't push down to a paged, non-orderable
             // master, so this load (a viewport fetch, a scroll, or a refresh's

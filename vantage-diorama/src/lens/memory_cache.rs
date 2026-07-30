@@ -64,6 +64,8 @@ impl CacheBackend for MemoryCache {
 #[derive(Default)]
 pub struct MemoryCacheTable {
     rows: Mutex<IndexMap<String, (Record<CborValue>, CacheStatus)>>,
+    /// See [`CacheTable::meta_total`].
+    meta_total: Mutex<Option<u64>>,
 }
 
 impl MemoryCacheTable {
@@ -129,6 +131,17 @@ impl CacheTable for MemoryCacheTable {
     async fn count(&self) -> Result<i64> {
         Self::yield_point().await;
         Ok(self.lock().len() as i64)
+    }
+
+    async fn meta_total(&self) -> Result<Option<u64>> {
+        Self::yield_point().await;
+        Ok(*self.meta_total.lock().expect("meta_total mutex poisoned"))
+    }
+
+    async fn set_meta_total(&self, total: u64) -> Result<()> {
+        Self::yield_point().await;
+        *self.meta_total.lock().expect("meta_total mutex poisoned") = Some(total);
+        Ok(())
     }
 
     async fn insert_value_with_status(

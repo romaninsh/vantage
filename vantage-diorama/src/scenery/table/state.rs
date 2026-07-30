@@ -12,7 +12,9 @@ use crate::dio::{DioInner, Generation};
 use crate::lens::SceneryChunkTarget;
 use crate::scenery::enriched_record::{EnrichedRecord, RowStatus};
 
-use super::helpers::{cmp_sort, matches_conditions, matches_op_conditions, record_get_path};
+use super::helpers::{
+    cmp_sort, matches_conditions, matches_op_conditions, matches_search, record_get_path,
+};
 use super::{SortDir, ViewportRequest};
 
 /// Internal state shared by the public scenery handle, the reactor
@@ -82,6 +84,14 @@ pub(crate) struct TableSceneryState {
     /// the grid off at its first screen.
     pub(crate) load_total_reported: std::sync::atomic::AtomicBool,
 
+    /// Whether ANY fetch has ever stated a grand total (as opposed to totals
+    /// this side inferred from short pages). Latched, never cleared: a source
+    /// either reports totals or it doesn't. While it never has, a full page
+    /// reaching the advertised end means "horizon", not "end" — the loader
+    /// extends the addressable set so scrolling can keep asking (the
+    /// grows-as-you-scroll mode for window-paged, total-less sources).
+    pub(crate) total_ever_stated: std::sync::atomic::AtomicBool,
+
     /// Whether this view has finished its first load.
     ///
     /// "No rows" and "no rows *yet*" are the same picture and opposite
@@ -122,6 +132,12 @@ pub(crate) struct TableSceneryState {
     /// ANDed with `conditions` in the local refine chain, kept separate
     /// so chips can never clobber query narrowing.
     pub(crate) ui_filters: RwLock<Vec<(String, CborValue)>>,
+
+    /// Active quicksearch text (`None` when not searching). Paged sceneries
+    /// carry it into every chunk fetch (`ChunkQuery`); eager ones apply it as
+    /// a local predicate in `reseed_from_cache` — honest there, because the
+    /// cache is (or becomes) the complete set.
+    pub(crate) search: RwLock<Option<String>>,
     /// Dropdown / autocomplete projection: serve the cheap list columns and
     /// **skip the detail pass** even on a two-pass table. The list pass still
     /// runs (rows carry id + title columns); per-row hydration never fires.
@@ -228,6 +244,11 @@ impl TableSceneryState {
         self.load_total_reported.swap(false, Ordering::SeqCst)
     }
 
+    /// Whether any fetch has ever stated a total — see the field docs.
+    pub(crate) fn total_ever_stated(&self) -> bool {
+        self.total_ever_stated.load(Ordering::SeqCst)
+    }
+
     /// Read and clear the chunk-load dirty flag. `true` means the load changed
     /// at least one row's content (so a generation bump is warranted).
     pub(crate) fn take_load_dirty(&self) -> bool {
@@ -280,11 +301,13 @@ impl TableSceneryState {
         let conditions = self.conditions.read().unwrap().clone();
         let op_conditions = self.op_conditions.read().unwrap().clone();
         let sort = self.sort.read().unwrap().clone();
+        let search = self.search.read().unwrap().clone();
 
         let mut filtered: Vec<(String, Record<CborValue>)> = all
             .into_iter()
             .filter(|(_, rec)| matches_conditions(rec, &conditions))
             .filter(|(_, rec)| matches_op_conditions(rec, &op_conditions))
+            .filter(|(_, rec)| matches_search(rec, search.as_deref()))
             .collect();
 
         if let Some((col, dir)) = sort {
@@ -339,7 +362,21 @@ impl TableSceneryState {
         };
         match cb(&dio).await {
             Ok(total) => {
+                // Stated, not inferred — latch it so the unknown-total
+                // horizon rule stays out of the way (see `total_ever_stated`).
+                self.total_ever_stated.store(true, Ordering::SeqCst);
                 self.set_total(Some(total));
+                // Remember it for the next open's head start (skipped under
+                // an active search — that total describes the narrowed set).
+                if self.search.read().unwrap().is_none() {
+                    if let Err(e) = dio_inner.cache.set_meta_total(total as u64).await {
+                        tracing::debug!(
+                            target: "vantage_diorama::cache",
+                            error = %e,
+                            "persisting the provider total failed",
+                        );
+                    }
+                }
             }
             Err(e) => tracing::error!(error = %e, "refresh_total failed"),
         }
@@ -479,6 +516,7 @@ impl SceneryChunkTarget for TableSceneryState {
     /// request on open, which is the one network call `open()` used to await.
     fn set_chunk_total(&self, total: usize) -> bool {
         self.load_total_reported.store(true, Ordering::SeqCst);
+        self.total_ever_stated.store(true, Ordering::SeqCst);
         self.set_total(Some(total))
     }
 

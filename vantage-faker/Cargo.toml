@@ -1,6 +1,6 @@
 [package]
 name = "vantage-faker"
-version = "0.6.10"
+version = "0.6.11"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -32,7 +32,14 @@ tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
 # Third-party realistic value generation (names, emails, addresses, …).
 fake = "5"
 
+# `effect: rhai` — scripted mutation loops. Same rhai as vantage-vista's
+# scripting feature, kept optional so the default build stays light.
+rhai = { version = "1.25", optional = true }
+
 tracing = "0.1"
+
+[features]
+rhai = ["dep:rhai"]
 
 [dev-dependencies]
 vantage-core = { version = "0.6", path = "../vantage-core" }
@@ -42,7 +49,8 @@ vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
 vantage-vista-factory = { version = "0.6", path = "../vantage-vista-factory" }
 # Styled table output for the `fifo_cli` example.
 vantage-cli-util = { version = "0.6", path = "../vantage-cli-util" }
-tokio = { version = "1", features = ["full"] }
+# `test-util` for the paused-clock latency/offline/cursor-expiry tests.
+tokio = { version = "1", features = ["full", "test-util"] }
 tempfile = "3"
 cucumber = { version = "0.21", default-features = false, features = ["macros"] }
 

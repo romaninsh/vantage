@@ -98,6 +98,23 @@ pub trait CacheTable: Send + Sync + 'static {
 
     async fn count(&self) -> Result<i64>;
 
+    /// The master set's grand total as last STATED by a fetch (a counted
+    /// window response or a `total_provider`) — persisted so a reopened
+    /// paged view can size itself to its final geometry before any fetch
+    /// runs, instead of growing in a visible step when the first counted
+    /// response lands. `None` = never learned. Defaults keep meta-less
+    /// backends valid: they simply reopen without a remembered total.
+    async fn meta_total(&self) -> Result<Option<u64>> {
+        Ok(None)
+    }
+
+    /// Persist the stated grand total — see [`Self::meta_total`]. Callers
+    /// must not write totals of a *narrowed* fetch (an active quicksearch):
+    /// the meta describes the table the next open will show.
+    async fn set_meta_total(&self, _total: u64) -> Result<()> {
+        Ok(())
+    }
+
     /// Read a record together with its persisted [`CacheStatus`]. The
     /// default treats any stored record as `Complete`; persisting backends
     /// override this.

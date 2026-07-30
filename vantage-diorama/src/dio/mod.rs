@@ -658,10 +658,10 @@ impl Dio {
         &self,
         offset: usize,
         limit: usize,
-        sort: Option<(String, crate::SortDir)>,
+        query: impl Into<crate::ChunkQuery>,
     ) -> Result<Vec<(String, Record<CborValue>)>> {
         Ok(self
-            .fetch_window_ordered_counted(offset, limit, sort)
+            .fetch_window_ordered_counted(offset, limit, query)
             .await?
             .0)
     }
@@ -677,20 +677,41 @@ impl Dio {
         &self,
         offset: usize,
         limit: usize,
-        sort: Option<(String, crate::SortDir)>,
+        query: impl Into<crate::ChunkQuery>,
     ) -> Result<(Vec<(String, Record<CborValue>)>, Option<i64>)> {
+        let query: crate::ChunkQuery = query.into();
         let master = self.master();
-        if let Some((col, dir)) = sort
-            && master.capabilities().can_order
+        let caps = master.capabilities();
+
+        // What the master can actually be asked for. A search it can't push
+        // down is DROPPED here, loudly — evaluating it over one window would
+        // silently search a slice, and the scenery's `search_supported` gate
+        // exists so consumers never offer what would land in this branch.
+        let push_sort = query.sort.clone().filter(|_| caps.can_order);
+        let push_search = query.search.clone().filter(|_| caps.can_search);
+        if query.search.is_some() && push_search.is_none() {
+            tracing::warn!(
+                target: "vantage_diorama::search",
+                table = %master.name(),
+                "chunk query carries a search the master cannot push down — ignored",
+            );
+        }
+
+        if (push_sort.is_some() || push_search.is_some())
             && let Some(shell) = master.source.clone_shell()
         {
-            let mut ordered = Vista::new(master.name(), shell);
-            let vdir = match dir {
-                crate::SortDir::Asc => vantage_vista::SortDirection::Ascending,
-                crate::SortDir::Desc => vantage_vista::SortDirection::Descending,
-            };
-            ordered.add_order(&col, vdir)?;
-            return ordered.fetch_window_counted(offset, limit).await;
+            let mut narrowed = Vista::new(master.name(), shell);
+            if let Some((col, dir)) = push_sort {
+                let vdir = match dir {
+                    crate::SortDir::Asc => vantage_vista::SortDirection::Ascending,
+                    crate::SortDir::Desc => vantage_vista::SortDirection::Descending,
+                };
+                narrowed.add_order(&col, vdir)?;
+            }
+            if let Some(text) = push_search {
+                narrowed.add_search(text)?;
+            }
+            return narrowed.fetch_window_counted(offset, limit).await;
         }
         master.fetch_window_counted(offset, limit).await
     }

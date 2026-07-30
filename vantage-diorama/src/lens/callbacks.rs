@@ -40,21 +40,38 @@ pub type DioTotalProviderFuture<'a> = Pin<Box<dyn Future<Output = Result<usize>>
 pub type DioTotalProviderCallback =
     Box<dyn for<'a> Fn(&'a Dio) -> DioTotalProviderFuture<'a> + Send + Sync + 'static>;
 
+/// How the requesting scenery wants a chunk shaped: its active order and its
+/// active quicksearch. Carried by value into every chunk fetch, because two
+/// sceneries over one Dio (a grid and a picker) load concurrently and must
+/// never see each other's narrowing.
+///
+/// `From<Option<(String, SortDir)>>` keeps sort-only construction terse for
+/// callers that predate search.
+#[derive(Debug, Clone, Default)]
+pub struct ChunkQuery {
+    /// The scenery's active order (`None` if unsorted).
+    pub sort: Option<(String, SortDir)>,
+    /// The scenery's active quicksearch text (`None` when not searching).
+    pub search: Option<String>,
+}
+
+impl From<Option<(String, SortDir)>> for ChunkQuery {
+    fn from(sort: Option<(String, SortDir)>) -> Self {
+        Self { sort, search: None }
+    }
+}
+
 /// Callback that fetches a contiguous range of rows from the master
 /// and pushes them into the Scenery via [`ChunkSink::push`]. Returns
 /// `Ok(())` once it is done pushing for this invocation.
 ///
-/// The `sort` is the requesting scenery's active order (`None` if unsorted).
+/// The [`ChunkQuery`] is the requesting scenery's active order + search.
 /// Callbacks should fetch through [`Dio::fetch_window_ordered`], which pushes
-/// the sort to a `can_order` master and otherwise returns the native-order
-/// window (the scenery then re-sorts over the cache).
+/// what the master supports (`can_order`, `can_search`) to a narrowed clone
+/// and otherwise returns the native window (the scenery then refines over
+/// the cache where it honestly can).
 pub type DioLoadChunkCallback = Box<
-    dyn for<'a> Fn(
-            &'a Dio,
-            Range<usize>,
-            Option<(String, SortDir)>,
-            ChunkSink,
-        ) -> DioCallbackFuture<'a>
+    dyn for<'a> Fn(&'a Dio, Range<usize>, ChunkQuery, ChunkSink) -> DioCallbackFuture<'a>
         + Send
         + Sync
         + 'static,
@@ -146,13 +163,10 @@ where
 /// Wrap a user closure into a [`DioLoadChunkCallback`].
 pub fn boxed_load_chunk_callback<F, Fut>(f: F) -> DioLoadChunkCallback
 where
-    F: for<'a> Fn(&'a Dio, Range<usize>, Option<(String, SortDir)>, ChunkSink) -> Fut
-        + Send
-        + Sync
-        + 'static,
+    F: for<'a> Fn(&'a Dio, Range<usize>, ChunkQuery, ChunkSink) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = Result<()>> + Send + 'static,
 {
-    Box::new(move |dio, range, sort, sink| Box::pin(f(dio, range, sort, sink)))
+    Box::new(move |dio, range, query, sink| Box::pin(f(dio, range, query, sink)))
 }
 
 /// Wrap a user closure into a [`DioListPageCallback`].

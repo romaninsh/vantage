@@ -472,6 +472,66 @@ impl CacheTable for RedbCacheTable {
         .map_err(|e| error!("blocking task panicked", detail = e.to_string()))?
     }
 
+    /// Meta lives in a SIBLING table (`{name}\u{1}meta`) so it can never
+    /// collide with a row id in the record table.
+    async fn meta_total(&self) -> Result<Option<u64>> {
+        let db = self.db.clone();
+        let name = format!("{}\u{1}meta", self.name);
+        tokio::task::spawn_blocking(move || -> Result<Option<u64>> {
+            let txn = db
+                .begin_read()
+                .map_err(|e| error!("redb begin_read failed", detail = e.to_string()))?;
+            let table =
+                match txn.open_table(TableDefinition::<&'static str, &'static [u8]>::new(&name)) {
+                    Ok(t) => t,
+                    Err(redb::TableError::TableDoesNotExist(_)) => return Ok(None),
+                    Err(e) => {
+                        return Err(error!(
+                            "redb open_table failed",
+                            table = name,
+                            detail = e.to_string()
+                        ));
+                    }
+                };
+            let Some(raw) = table
+                .get("total")
+                .map_err(|e| error!("redb get failed", detail = e.to_string()))?
+            else {
+                return Ok(None);
+            };
+            let bytes: [u8; 8] = raw
+                .value()
+                .try_into()
+                .map_err(|_| error!("redb meta total: malformed value"))?;
+            Ok(Some(u64::from_le_bytes(bytes)))
+        })
+        .await
+        .map_err(|e| error!("blocking task panicked", detail = e.to_string()))?
+    }
+
+    async fn set_meta_total(&self, total: u64) -> Result<()> {
+        let db = self.db.clone();
+        let name = format!("{}\u{1}meta", self.name);
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            let txn = db
+                .begin_write()
+                .map_err(|e| error!("redb begin_write failed", detail = e.to_string()))?;
+            {
+                let mut table = txn
+                    .open_table(TableDefinition::<&'static str, &'static [u8]>::new(&name))
+                    .map_err(|e| error!("redb open_table failed", detail = e.to_string()))?;
+                table
+                    .insert("total", total.to_le_bytes().as_slice())
+                    .map_err(|e| error!("redb insert failed", detail = e.to_string()))?;
+            }
+            txn.commit()
+                .map_err(|e| error!("redb commit failed", detail = e.to_string()))?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| error!("blocking task panicked", detail = e.to_string()))?
+    }
+
     async fn insert_value_with_status(
         &self,
         id: &str,

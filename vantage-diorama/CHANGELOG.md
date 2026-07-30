@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.10.1 — 2026-07-30
+
+- **Search rides the chunk pipeline.** `ChunkQuery` carries the scenery's
+  search text into `on_load_chunk`; `set_search` pushes down to a master that
+  `can_search` and falls back to an eager local predicate otherwise. A paged
+  view keeps its rows in place while the narrowed window loads
+  (stale-while-revalidate) instead of collapsing to zero on every keystroke.
+- **Unknown-total windowed sources grow on scroll.** A viewport pressed
+  against the inferred end probes past it even when fully cached (the horizon
+  probe), so a source that never states a total no longer walls the set at
+  its first page — with a grid-step-scroll regression test.
+- **Warm reopens get their final geometry before any fetch.** A stated grand
+  total is remembered in the cache meta and restored at seed; paged views
+  seed from a warm cache and settle at once, while a cold cache keeps the
+  loading state.
+
 ## 0.10.0 — 2026-07-28
 
 **A scenery reads its own shape, not its lens's offers**
