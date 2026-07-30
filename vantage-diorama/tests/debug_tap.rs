@@ -256,3 +256,67 @@ async fn load_lifecycle_is_correlated_and_cache_hits_are_logged() {
         "no re-fetch"
     );
 }
+
+/// A chunk load's cache write reports how many of the written rows were new
+/// vs. already-cached updates, and the resulting percent-cached against the
+/// known total.
+#[tokio::test]
+async fn cache_writes_report_new_updated_and_percentage() {
+    let (_guard, log) = capture();
+
+    let backend: Backend = Arc::new(Mutex::new(
+        (0..100)
+            .map(|i| {
+                let mut r = Record::new();
+                r.insert("v".to_string(), CborValue::Text(format!("row{i}")));
+                (format!("id{i}"), r)
+            })
+            .collect(),
+    ));
+
+    let lens = {
+        let backend = backend.clone();
+        Arc::new(
+            Lens::new()
+                .cache_in_memory()
+                .debug_datasource("faker-ds")
+                .viewport_debounce(std::time::Duration::from_millis(1))
+                .runtime(tokio::runtime::Handle::current())
+                .on_load_chunk(move |_dio, range, _query, sink| {
+                    let backend = backend.clone();
+                    async move {
+                        let rows = backend.lock().unwrap().clone();
+                        sink.set_total(rows.len());
+                        for idx in range {
+                            if let Some((id, r)) = rows.get(idx) {
+                                sink.push(idx, id.clone(), r.clone()).await?;
+                            }
+                        }
+                        Ok(())
+                    }
+                })
+                .build()
+                .unwrap(),
+        )
+    };
+
+    let dio = lens
+        .make_dio(chunk_master(&[("v", "String")]))
+        .await
+        .unwrap();
+    let scenery = dio.table_scenery().open().await.unwrap();
+
+    scenery.set_viewport(0..30);
+    wait_until("first load return", || {
+        lines_containing(&log, "load return").len() == 1
+    })
+    .await;
+
+    let writes = lines_containing(&log, "cache write");
+    assert_eq!(writes.len(), 1, "{writes:?}");
+    assert!(writes[0].contains("new=30"), "{}", writes[0]);
+    assert!(writes[0].contains("updated=0"), "{}", writes[0]);
+    assert!(writes[0].contains("known_total=100"), "{}", writes[0]);
+    // 30 of 100 rows → 30%.
+    assert!(writes[0].contains("cached_pct=30"), "{}", writes[0]);
+}

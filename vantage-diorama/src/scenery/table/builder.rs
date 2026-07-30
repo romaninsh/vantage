@@ -416,12 +416,26 @@ impl TableSceneryBuilder {
                     cached_rows,
                     "warm cache seeded the paged view; refresh-on-open replaces it silently",
                 );
+                crate::debug::tapline!(
+                    state.debug_tap,
+                    dio = table.as_str(),
+                    mode = "warm",
+                    rows = cached_rows,
+                    "cache seed",
+                );
             } else {
                 tracing::debug!(
                     target: "vantage_diorama::cache",
                     table = %table,
                     cached_rows,
                     "cache empty — paged view opens loading; the on-open fetch is authoritative",
+                );
+                crate::debug::tapline!(
+                    state.debug_tap,
+                    dio = table.as_str(),
+                    mode = "cold",
+                    rows = cached_rows,
+                    "cache seed",
                 );
             }
             state.bump_generation();
@@ -437,11 +451,19 @@ impl TableSceneryBuilder {
             if state.paged {
                 restore_meta_total(&state, &dio).await;
             }
+            let seeded_rows = state.rows.read().unwrap().len();
             tracing::debug!(
                 target: "vantage_diorama::cache",
                 table = %dio.master.read().unwrap().name(),
-                seeded_rows = state.rows.read().unwrap().len(),
+                seeded_rows,
                 "cache seeded the visible map",
+            );
+            crate::debug::tapline!(
+                state.debug_tap,
+                dio = dio.master.read().unwrap().name(),
+                mode = if seeded_rows > 0 { "warm" } else { "cold" },
+                rows = seeded_rows,
+                "cache seed",
             );
             // The cache IS the row set for this shape, so a seed that found
             // rows IS the answer. A seed that found none is not: a cold cache

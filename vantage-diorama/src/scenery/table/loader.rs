@@ -330,6 +330,7 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
         cache: dio_inner.cache.clone(),
         pending: dio_inner.pending_flashes.clone(),
         buffer: Default::default(),
+        debug: tap.enabled(),
     };
     // The sink is moved into the callback; keep a clone so the buffered rows
     // can be committed once it returns.
@@ -399,15 +400,55 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
     // failed commit fails the load: the rows are bound in the visible map but
     // absent from the cache, and the next re-sort would rebuild the map without
     // them — better to report the load failed than to silently lose the page.
-    if result.is_ok() {
-        result = writer.flush().await;
-    }
+    // `flush_counted` also carries the before/after cache row counts the
+    // "cache write" debug line reports — free of extra cost when the tap is
+    // off, since the sink itself skips the counting in that case.
+    let flush_report = if result.is_ok() {
+        match writer.flush_counted().await {
+            Ok(report) => Some(report),
+            Err(e) => {
+                result = Err(e);
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     *state.load_in_flight.lock().unwrap() = None;
 
     let cached_after = state.rows.read().unwrap().len();
     match result {
         Ok(()) => {
+            // The counterpart of "load return": what the flush just committed,
+            // split into rows that were genuinely new vs. rows that already had
+            // a cached value and got overwritten, plus how much of the known
+            // total is now cached. `flush_report` is always `Some` here — flush
+            // only fails when `result` does, which routes to the `Err` arm.
+            // Nothing to report when the page came back empty: `flush_counted`
+            // short-circuits before counting, so `cache_rows_after` would read
+            // `0` — not the cache's real size, just "not measured" — and a
+            // "cache write" line for zero rows written is not a write at all.
+            if let Some(report) = flush_report
+                && report.written > 0
+            {
+                crate::debug::tapline!(
+                    tap,
+                    dio = dio_inner.master.read().unwrap().name(),
+                    written = report.written,
+                    new = (report.cache_rows_after - report.cache_rows_before) as usize,
+                    updated = report
+                        .written
+                        .saturating_sub((report.cache_rows_after - report.cache_rows_before) as usize),
+                    cached_rows = report.cache_rows_after,
+                    known_total = state.total.read().unwrap().unwrap_or(0),
+                    cached_pct = match state.total.read().unwrap().unwrap_or(0) {
+                        0 => 0,
+                        total => 100 * report.cache_rows_after as usize / total,
+                    },
+                    "cache write",
+                );
+            }
             // The window came back — whatever it contained, this view now has
             // an answer rather than a not-yet.
             state.mark_settled("chunk load succeeded");

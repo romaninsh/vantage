@@ -45,6 +45,14 @@ pub struct ChunkSink {
     /// is also what lets a whole datasource share one store without each
     /// table's load queueing behind another's.
     pub(crate) buffer: BufferedRows,
+    /// The owning Dio's debug tap state, captured at construction.
+    ///
+    /// `flush_counted` reads this to decide whether the extra before/after
+    /// `count()` calls it does purely to report the "cache write" debug line
+    /// are worth paying for. With the tap off, nothing reads that report, so
+    /// the counts would be pure overhead — the one thing the debug stream is
+    /// not allowed to cost a datasource that never opted in.
+    pub(crate) debug: bool,
 }
 
 impl std::fmt::Debug for ChunkSink {
@@ -106,17 +114,54 @@ impl ChunkSink {
     /// before anything reads the cache back (the post-load re-sort rebuilds the
     /// visible map from it), or the load appears to have fetched nothing.
     pub(crate) async fn flush(&self) -> Result<()> {
+        self.flush_counted().await.map(|_| ())
+    }
+
+    /// [`flush`](Self::flush), plus a [`FlushReport`] of how many rows were
+    /// written and — tap permitting — the cache's row count before and after,
+    /// the numbers behind the "cache write" debug line.
+    ///
+    /// The before/after counts are skipped (and reported as `0`) unless
+    /// `self.debug` is set: they exist only for that debug line, so with the
+    /// tap off they'd be pure overhead nothing observes.
+    pub(crate) async fn flush_counted(&self) -> Result<FlushReport> {
         let rows: indexmap::IndexMap<String, Record<CborValue>> = {
             let Ok(mut buffer) = self.buffer.lock() else {
-                return Ok(());
+                return Ok(FlushReport::default());
             };
             std::mem::take(&mut *buffer).into_iter().collect()
         };
         if rows.is_empty() {
-            return Ok(());
+            return Ok(FlushReport::default());
         }
-        self.cache.insert_values(rows).await
+        let written = rows.len();
+        if !self.debug {
+            self.cache.insert_values(rows).await?;
+            return Ok(FlushReport {
+                written,
+                ..Default::default()
+            });
+        }
+        let cache_rows_before = self.cache.count().await?;
+        self.cache.insert_values(rows).await?;
+        let cache_rows_after = self.cache.count().await?;
+        Ok(FlushReport {
+            written,
+            cache_rows_before,
+            cache_rows_after,
+        })
     }
+}
+
+/// The result of [`ChunkSink::flush_counted`] — how many rows a chunk write
+/// committed, and (tap permitting) the cache's row count before and after.
+/// Source for the "cache write" debug line's `written`/`new`/`updated`/
+/// `cached_rows` fields.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FlushReport {
+    pub written: usize,
+    pub cache_rows_before: i64,
+    pub cache_rows_after: i64,
 }
 
 /// One row's worth of payload — exposed publicly for callers that
