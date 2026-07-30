@@ -287,7 +287,10 @@ async fn a_seed_replays_the_same_backend() {
     };
     let a = shaped(25, shape()).vista.list_values().await.unwrap();
     let b = shaped(25, shape()).vista.list_values().await.unwrap();
-    assert_eq!(a, b, "same seed, same rows — a scenario replays identically");
+    assert_eq!(
+        a, b,
+        "same seed, same rows — a scenario replays identically"
+    );
 }
 
 #[tokio::test]
