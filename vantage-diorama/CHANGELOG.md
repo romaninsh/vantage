@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.12.0 — 2026-07-30
+
+**The debug stream reads like a log, not a struct dump.**
+
+Every line is now `<datasource>  <tag>  <clause>` — a scannable left edge and one
+clause of plain English, with units a reader thinks in (`3.0s`, `24KB`,
+`200,000`, `0.1%`). The `tag` is the grep anchor and comes from a closed set;
+see the `debug` module docs for the vocabulary. Field-per-value output is gone.
+
+- **New lines.** A Dio announces its own creation and whether its cache table
+  starts empty. A scenery states what its source can and cannot do, and which
+  loading shape follows, once at open. A viewport reports the range a consumer
+  declared and how many scroll events the debounce absorbed into it. Sort and
+  search say whether the work was pushed to the source or done over held rows.
+- `stats::debug_summary_lines` renders in the same shape and human units, and
+  `emit_debug_summary` is now a no-op unless some datasource opted in — so an
+  embedder can call it unconditionally on the way out.
+- Request ids start at 1.
+
+**A paged view no longer keeps stale row positions across a sort change.**
+Rebuilding the index→row map from the cache placed an arbitrary subset of the
+*previous* order at rows 0..N of the new one — correct rows in wrong places,
+mixed with correctly-placed rows wherever a later fetch landed. A paged,
+single-pass view whose master orders server-side now drops its positions (the
+cached records stay) and refills the visible window. Views holding the complete
+set still sort locally, which is both right and instant.
+
 ## 0.11.0 — 2026-07-30
 
 **The official per-datasource debug stream.**

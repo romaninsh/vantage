@@ -290,7 +290,55 @@ impl TableSceneryBuilder {
             debug_tap: dio.tap().clone(),
             dio_name: dio.master.read().unwrap().name().to_string(),
             last_debug_state: Mutex::new(None),
+            payload_named: std::sync::atomic::AtomicBool::new(false),
+            last_served: Mutex::new(None),
         });
+
+        // What the source can do decides everything that follows — which work
+        // is pushed down, and which the layers above have to do themselves.
+        // Said once, at open, so the rest of the session reads against it.
+        {
+            let caps = &state.master_capabilities;
+            let can: Vec<&str> = [
+                caps.can_count.then_some("count"),
+                caps.can_fetch_window.then_some("window"),
+                caps.can_fetch_page.then_some("page"),
+                caps.can_fetch_next.then_some("cursor"),
+                caps.can_order.then_some("order"),
+                caps.can_search.then_some("search"),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            let cannot: Vec<&str> = [
+                (!caps.can_count).then_some("count"),
+                (!caps.can_order).then_some("order"),
+                (!caps.can_search).then_some("search"),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            crate::debug::tapline!(
+                state.debug_tap,
+                "source",
+                "{}{} · {}",
+                if can.is_empty() {
+                    "can do nothing but list".to_string()
+                } else {
+                    format!("can {}", can.join(", "))
+                },
+                if cannot.is_empty() {
+                    String::new()
+                } else {
+                    format!(" · cannot {}", cannot.join(", "))
+                },
+                if state.paged {
+                    format!("pages lazily, {} rows at a time", state.page_size)
+                } else {
+                    "copied whole into the cache".to_string()
+                },
+            );
+        }
 
         // 1. total_provider runs once per open, result cached.
         //
@@ -418,10 +466,9 @@ impl TableSceneryBuilder {
                 );
                 crate::debug::tapline!(
                     state.debug_tap,
-                    dio = table.as_str(),
-                    mode = "warm",
-                    rows = cached_rows,
-                    "cache seed",
+                    "scenery",
+                    "opened warm — {} rows already on disk",
+                    crate::debug::num(cached_rows.max(0) as usize),
                 );
             } else {
                 tracing::debug!(
@@ -432,10 +479,8 @@ impl TableSceneryBuilder {
                 );
                 crate::debug::tapline!(
                     state.debug_tap,
-                    dio = table.as_str(),
-                    mode = "cold",
-                    rows = cached_rows,
-                    "cache seed",
+                    "scenery",
+                    "opened cold — nothing cached on disk yet",
                 );
             }
             state.bump_generation();
@@ -460,10 +505,10 @@ impl TableSceneryBuilder {
             );
             crate::debug::tapline!(
                 state.debug_tap,
-                dio = dio.master.read().unwrap().name(),
-                mode = if seeded_rows > 0 { "warm" } else { "cold" },
-                rows = seeded_rows,
-                "cache seed",
+                "scenery",
+                "opened {} — {} rows seeded from cache",
+                if seeded_rows > 0 { "warm" } else { "cold" },
+                crate::debug::num(seeded_rows),
             );
             // The cache IS the row set for this shape, so a seed that found
             // rows IS the answer. A seed that found none is not: a cold cache

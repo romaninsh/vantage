@@ -71,6 +71,32 @@ impl Lens {
         });
         let dio = Dio { inner };
 
+        // The stream's first line. Everything after this belongs to a Dio, so
+        // say when one comes into being, what it is a copy of, and whether it
+        // starts from anything — a reader who meets `scenery` first has no
+        // idea what it opened onto.
+        {
+            let tap = dio.inner.tap().clone();
+            if tap.enabled() {
+                let rows = dio.inner.cache.count().await.unwrap_or(0).max(0) as usize;
+                crate::debug::tapline!(
+                    tap,
+                    "dio",
+                    "created over \"{}\" — cache table \"{}\", {}",
+                    dio.inner.master.read().unwrap().name(),
+                    dio.inner.cache_table_name,
+                    if rows == 0 {
+                        "nothing held yet".to_string()
+                    } else {
+                        format!(
+                            "{} rows already held from a previous session",
+                            crate::debug::num(rows)
+                        )
+                    },
+                );
+            }
+        }
+
         spawn_write_worker(&dio, write_rx).await;
         spawn_refresh_task(&dio).await;
 

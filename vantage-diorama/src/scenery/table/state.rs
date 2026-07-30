@@ -180,6 +180,13 @@ pub(crate) struct TableSceneryState {
     /// [`note_state`](Self::note_state), so a repeat call (settling, then the
     /// same load's generation bump) doesn't double-log an unchanged state.
     pub(crate) last_debug_state: Mutex<Option<super::LoadState>>,
+    /// Whether the debug stream has already named this view's columns. The
+    /// set doesn't change between fetches, so it's said once.
+    pub(crate) payload_named: std::sync::atomic::AtomicBool,
+    /// The last range reported as served from cache. A view that re-declares
+    /// the same viewport (a repaint, a focus change) would otherwise log the
+    /// same "served locally" line twice in a row, saying nothing new.
+    pub(crate) last_served: Mutex<Option<std::ops::Range<usize>>>,
 }
 
 impl TableSceneryState {
@@ -256,11 +263,11 @@ impl TableSceneryState {
         drop(last);
         crate::debug::tapline!(
             self.debug_tap,
-            dio = self.dio_name.as_str(),
-            from = from.map(|s| s.as_str()).unwrap_or("None"),
-            to = to.as_str(),
+            "scenery",
+            "{} → {} ({})",
+            from.map(|s| s.as_str()).unwrap_or("opening"),
+            to.as_str(),
             reason,
-            "state",
         );
     }
 
@@ -344,6 +351,57 @@ impl TableSceneryState {
         let op_conditions = self.op_conditions.read().unwrap().clone();
         let sort = self.sort.read().unwrap().clone();
         let search = self.search.read().unwrap().clone();
+
+        let filtered_len_hint = all.len();
+        // A paged view whose MASTER does the ordering cannot position cached
+        // rows after the order changes. The cache holds an arbitrary subset of
+        // the previous order — the windows this view happened to visit — and
+        // re-sorting that subset locally would place it at rows 0..N of the new
+        // order, which it is not: row 0 of "by name descending" is somewhere in
+        // the 199,700 rows never fetched. The result is a grid that looks sorted
+        // at the top and is wrong everywhere, mixed with correctly-positioned
+        // rows wherever a later fetch landed.
+        //
+        // So drop the positions and keep the cache. The loader refills the
+        // visible window from the master in the new order; the cached records
+        // are still valid as values, just not as places.
+        // Two-pass views are excluded: their positions come from the query
+        // index, not from master windows, and `two_pass::resort` already
+        // rebuilds that index. Clearing here would drop a spine that nothing
+        // in this path refills.
+        //
+        // ...and only while the cache holds a SUBSET. A view that has fetched
+        // the whole set can order it locally and be right, which is both
+        // cheaper and instant; the hazard is strictly about ordering a sample
+        // and presenting it as the whole.
+        let holds_everything = match *self.total.read().unwrap() {
+            Some(total) => filtered_len_hint >= total,
+            None => false,
+        };
+        if self.paged
+            && !self.two_pass
+            && self.master_capabilities.can_order
+            && sort.is_some()
+            && !holds_everything
+        {
+            self.rows.write().unwrap().clear();
+            self.id_to_idx.write().unwrap().clear();
+            tracing::debug!(
+                target: "vantage_diorama::sort",
+                "paged view re-orders at the source — dropped cached row positions",
+            );
+            crate::debug::tapline!(
+                self.debug_tap,
+                "scenery",
+                "row positions dropped — the source re-orders, so cached rows must be re-placed",
+            );
+            // Refill immediately rather than waiting for the consumer to
+            // re-declare its viewport. A grid repaints and re-declares, so it
+            // would recover either way; a consumer that holds its viewport
+            // still would sit on an empty view forever.
+            self.refresh_loaded_viewport();
+            return Ok(());
+        }
 
         let mut filtered: Vec<(String, Record<CborValue>)> = all
             .into_iter()

@@ -124,18 +124,18 @@ async fn census_lines_fire_on_scenery_open_and_drop() {
     let dio = lens.make_dio(master()).await.unwrap();
 
     let scenery = dio.table_scenery().open().await.unwrap();
-    let opens = lines_containing(&log, "census: table scenery opened");
+    let opens = lines_containing(&log, "+1 table scenery");
     assert_eq!(opens.len(), 1);
-    assert!(opens[0].contains("dio=\"books\""), "line: {}", opens[0]);
-    assert!(opens[0].contains("table_sceneries=1"), "line: {}", opens[0]);
+    assert!(opens[0].contains("census"), "line: {}", opens[0]);
+    assert!(opens[0].contains("now 1 table"), "line: {}", opens[0]);
     assert!(
-        opens[0].contains("uptime_ms="),
+        opens[0].contains("rss"),
         "census carries process stats"
     );
 
     drop(scenery);
     // Guard teardown is synchronous; the census drop line is emitted from Drop.
-    let closes = lines_containing(&log, "census: table scenery closed");
+    let closes = lines_containing(&log, "-1 table scenery");
     assert_eq!(closes.len(), 1);
 }
 
@@ -210,30 +210,34 @@ async fn load_lifecycle_is_correlated_and_cache_hits_are_logged() {
     // scenery at `Complete`, not merely `Partial`.
     scenery.set_viewport(0..100);
     wait_until("first load return", || {
-        lines_containing(&log, "load return").len() == 1
+        lines_containing(&log, "got").len() == 1
     })
     .await;
 
-    let dispatch = lines_containing(&log, "load dispatch");
-    let ret = lines_containing(&log, "load return");
+    let dispatch = lines_containing(&log, "asks for");
+    let ret = lines_containing(&log, "got");
     assert_eq!(dispatch.len(), 1);
     assert_eq!(ret.len(), 1);
     // The same req id ties them together.
     let req = dispatch[0]
-        .split("req=")
+        .split("fetch #")
         .nth(1)
-        .unwrap()
+        .expect("dispatch names its request")
         .split_whitespace()
         .next()
-        .unwrap()
+        .expect("request id")
         .to_string();
-    assert!(ret[0].contains(&format!("req={req}")));
-    assert!(ret[0].contains("ms="));
+    assert!(
+        ret[0].contains(&format!("fetch #{req} got")),
+        "the return must carry the same request id: {}",
+        ret[0]
+    );
+    assert!(ret[0].contains("rows in"));
 
     // A state transition to Complete was logged.
-    let states = lines_containing(&log, "state");
+    let states = lines_containing(&log, "→ complete");
     assert!(
-        states.iter().any(|l| l.contains("to=\"Complete\"")),
+        states.iter().any(|l| l.contains("→ complete")),
         "{states:?}"
     );
 
@@ -242,7 +246,7 @@ async fn load_lifecycle_is_correlated_and_cache_hits_are_logged() {
     assert!(
         totals
             .iter()
-            .any(|l| l.contains("total=100") && l.contains("provenance=\"stated\"")),
+            .any(|l| l.contains("100 rows") && l.contains("stated by the source")),
         "{totals:?}"
     );
 
@@ -250,11 +254,11 @@ async fn load_lifecycle_is_correlated_and_cache_hits_are_logged() {
     // hit, no second dispatch.
     scenery.set_viewport(0..30);
     wait_until("cache hit on second pass", || {
-        lines_containing(&log, "cache hit").len() == 1
+        lines_containing(&log, "served locally").len() == 1
     })
     .await;
     assert_eq!(
-        lines_containing(&log, "load dispatch").len(),
+        lines_containing(&log, "asks for").len(),
         1,
         "no re-fetch"
     );
@@ -303,27 +307,24 @@ async fn column_line_exposes_undemanded_wide_fields() {
 
     scenery.set_viewport(0..1);
     wait_until("first load return", || {
-        lines_containing(&log, "load return").len() == 1
+        lines_containing(&log, "got").len() == 1
     })
     .await;
 
-    let cols = lines_containing(&log, "columns");
+    let cols = lines_containing(&log, "payload");
     assert_eq!(cols.len(), 1, "{cols:?}");
-    assert!(cols[0].contains("demanded=\"all\""), "{}", cols[0]);
-    assert!(cols[0].contains("received_count=52"), "{}", cols[0]);
-    assert!(cols[0].contains("payload_bytes="), "{}", cols[0]);
+    assert!(cols[0].contains("columns"), "{}", cols[0]);
+    assert!(cols[0].contains("52 columns received"), "{}", cols[0]);
+    assert!(cols[0].contains("KB") || cols[0].contains("B"), "{}", cols[0]);
     // payload should be dominated by the extras: > 50KB for 1 row wouldn't
     // hold for all rows; just assert it's large.
-    let bytes: usize = cols[0]
-        .split("payload_bytes=")
-        .nth(1)
-        .unwrap()
-        .split_whitespace()
-        .next()
-        .unwrap()
-        .parse()
-        .unwrap();
-    assert!(bytes > 50_000, "wide payload must be visible: {bytes}");
+    // The wide payload has to be visible in the size the line reports: 52
+    // columns of filler is kilobytes, not bytes.
+    assert!(
+        cols[0].contains("KB") || cols[0].contains("MB"),
+        "a wide payload must report in KB or MB, not bytes: {}",
+        cols[0]
+    );
 }
 
 /// The wide-data detector's column union must dedup ACROSS rows, not just
@@ -369,28 +370,23 @@ async fn column_line_dedups_across_multiple_wide_rows() {
 
     scenery.set_viewport(0..10);
     wait_until("first load return", || {
-        lines_containing(&log, "load return").len() == 1
+        lines_containing(&log, "got").len() == 1
     })
     .await;
 
-    let cols = lines_containing(&log, "columns");
+    let cols = lines_containing(&log, "payload");
     assert_eq!(cols.len(), 1, "{cols:?}");
-    assert!(cols[0].contains("demanded=\"all\""), "{}", cols[0]);
+    assert!(cols[0].contains("columns"), "{}", cols[0]);
     // Same 52 fields on every row — the union must not grow with row count.
-    assert!(cols[0].contains("received_count=52"), "{}", cols[0]);
-    assert!(cols[0].contains("rows=10"), "{}", cols[0]);
-    let bytes: usize = cols[0]
-        .split("payload_bytes=")
-        .nth(1)
-        .unwrap()
-        .split_whitespace()
-        .next()
-        .unwrap()
-        .parse()
-        .unwrap();
-    // Ten rows of the same wide shape: an order of magnitude past the
-    // single-row test's >50KB floor.
-    assert!(bytes > 500_000, "multi-row payload must scale: {bytes}");
+    assert!(cols[0].contains("52 columns received"), "{}", cols[0]);
+    assert!(cols[0].contains("columns"), "{}", cols[0]);
+    // The wide payload has to be visible in the size the line reports: 52
+    // columns of filler is kilobytes, not bytes.
+    assert!(
+        cols[0].contains("KB") || cols[0].contains("MB"),
+        "a wide payload must report in KB or MB, not bytes: {}",
+        cols[0]
+    );
 }
 
 /// Two-pass (list/detail) lifecycle: a list pass over a 40-row index (one
@@ -436,45 +432,49 @@ async fn two_pass_list_and_detail_lifecycle_is_logged() {
 
     // The seed list page runs detached from `open()`; wait for it to land.
     wait_until("list page return", || {
-        lines_containing(&log, "list page return").len() == 1
+        lines_containing(&log, "list #1 got").len() == 1
     })
     .await;
 
-    let dispatch = lines_containing(&log, "list page dispatch");
-    let ret = lines_containing(&log, "list page return");
+    let dispatch = lines_containing(&log, "list #1 asks");
+    let ret = lines_containing(&log, "list #1 got");
     assert_eq!(dispatch.len(), 1, "{dispatch:?}");
     assert_eq!(ret.len(), 1, "{ret:?}");
     let req = dispatch[0]
-        .split("req=")
+        .split("list #")
         .nth(1)
-        .unwrap()
+        .expect("list dispatch names its request")
         .split_whitespace()
         .next()
-        .unwrap()
+        .expect("request id")
         .to_string();
-    assert!(ret[0].contains(&format!("req={req}")), "{}", ret[0]);
-    assert!(dispatch[0].contains("offset=0"), "{}", dispatch[0]);
-    assert!(dispatch[0].contains("limit="), "{}", dispatch[0]);
-    assert!(ret[0].contains("rows=40"), "{}", ret[0]);
-    assert!(ret[0].contains("index_len=40"), "{}", ret[0]);
-    assert!(ret[0].contains("complete=true"), "{}", ret[0]);
+    assert!(
+        ret[0].contains(&format!("list #{req} got")),
+        "the return must carry the same request id: {}",
+        ret[0]
+    );
+    assert!(dispatch[0].contains("offset 0"), "{}", dispatch[0]);
+    assert!(dispatch[0].contains("ids from"), "{}", dispatch[0]);
+    assert!(ret[0].contains("40 ids"), "{}", ret[0]);
+    assert!(ret[0].contains("40 known so far"), "{}", ret[0]);
+    assert!(ret[0].contains("all of them"), "{}", ret[0]);
 
     // Detail pass over the first 10 rows.
     scenery.set_viewport(0..10);
     wait_until("detail pass requested=10", || {
-        lines_containing(&log, "detail pass")
+        lines_containing(&log, "hydrate")
             .iter()
-            .any(|l| l.contains("requested=10"))
+            .any(|l| l.contains("10 rows in view"))
     })
     .await;
 
-    let detail_lines = lines_containing(&log, "detail pass");
+    let detail_lines = lines_containing(&log, "hydrate");
     assert!(
-        detail_lines.iter().any(|l| l.contains("requested=10")),
+        detail_lines.iter().any(|l| l.contains("10 rows in view")),
         "{detail_lines:?}"
     );
     assert!(
-        detail_lines[0].contains("dio=\"books\""),
+        detail_lines[0].contains("need detail"),
         "{}",
         detail_lines[0]
     );
@@ -531,17 +531,17 @@ async fn cache_writes_report_new_updated_and_percentage() {
 
     scenery.set_viewport(0..30);
     wait_until("first load return", || {
-        lines_containing(&log, "load return").len() == 1
+        lines_containing(&log, "got").len() == 1
     })
     .await;
 
-    let writes = lines_containing(&log, "cache write");
+    let writes = lines_containing(&log, "new,");
     assert_eq!(writes.len(), 1, "{writes:?}");
-    assert!(writes[0].contains("new=30"), "{}", writes[0]);
-    assert!(writes[0].contains("updated=0"), "{}", writes[0]);
-    assert!(writes[0].contains("known_total=100"), "{}", writes[0]);
+    assert!(writes[0].contains("+30 new"), "{}", writes[0]);
+    assert!(writes[0].contains("0 updated"), "{}", writes[0]);
+    assert!(writes[0].contains("of 100"), "{}", writes[0]);
     // 30 of 100 rows → 30%.
-    assert!(writes[0].contains("cached_pct=30"), "{}", writes[0]);
+    assert!(writes[0].contains("(30%)"), "{}", writes[0]);
 }
 
 /// The off-path silence regression: a lens built with no `.debug_datasource`

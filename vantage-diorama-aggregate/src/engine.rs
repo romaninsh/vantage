@@ -296,16 +296,18 @@ where
         let ms = start.map(|s| s.elapsed().as_millis()).unwrap_or(0);
         let rows_in = rows.len();
         let rows_out = output.debug_row_count();
+        // Same shape as the diorama stream's own lines: source, tag, clause.
         tracing::info!(
             target: "vantage_diorama::debug",
-            ds = %tap.ds(),
-            aggregate = name,
-            trigger,
+            "{:<10} {:<8} \"{}\" recomputed from {} rows → {} in {}ms ({}, {})",
+            tap.ds(),
+            "derive",
+            name,
             rows_in,
             rows_out,
             ms,
-            unchanged,
-            "aggregate recompute",
+            trigger,
+            if unchanged { "unchanged" } else { "published" },
         );
     }
 
