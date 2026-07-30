@@ -570,6 +570,88 @@ Diorama errors fall into three categories:
 No callback failure ever poisons the Dio. The user's strategy decides whether
 a failed refresh marks data stale or hides it; Diorama just reports.
 
+## Debug stream
+
+Every `Lens` carries a `DebugTap` — a cheap-to-clone, cheap-to-check switch
+threaded through `Dio`, every `Scenery`, and every task either spawns. It is
+off by default. `LensBuilder::debug_datasource(name)` turns it on for every
+`Dio` that Lens produces; `name` is stamped as `ds=<name>` on every line the
+tap emits. Off means nothing is emitted and nothing is paid for: every call
+site checks `tap.enabled()` before doing any work a line needs — building a
+query descriptor, counting a column set, snapshotting process stats — not
+just before formatting the line itself.
+
+### The tap and the target
+
+Enabled lines emit at `info` under the single target `vantage_diorama::debug`
+— visible in a default log with no `RUST_LOG` required. Every line carries
+`ds=<datasource>`; every line about a specific Dio also carries
+`dio=<master table name>`, so a multi-table session's stream can be grepped
+per table. A monotonic per-Dio counter (`req=N`) ties a dispatch line to its
+matching return or failed line — the correlator for a load whose response
+lands after other lines have interleaved.
+
+### The frozen message strings
+
+These strings and their field sets are a contract: a downstream BDD harness
+greps them. Changing one is a breaking change to that harness, not just a
+log-message rewording.
+
+| Message | Fields | Fires when |
+|---|---|---|
+| `"load dispatch"` | `req, dio, visible, effective, rows_to_fetch, already_cached, sort, search, force_load` | a viewport fetch is about to run |
+| `"load return"` | `req, dio, received, ms, cached_after` | that fetch returned `Ok` |
+| `"load failed"` | `req, dio, ms, error` | that fetch returned `Err` |
+| `"cache hit — viewport served locally"` | `dio, range, rows` | a viewport is fully cached; no fetch fires |
+| `"total"` | `dio, total, provenance` | the grand total changed; `provenance` ∈ `stated` \| `short-page` \| `horizon-extended` \| `hole-clamped` |
+| `"state"` | `dio, from, to, reason` | a `LoadState` transition (`Loading` / `Partial` / `Complete`) |
+| `"cache write"` | `dio, written, new, updated, cached_rows, known_total, cached_pct` | a load committed rows to the cache; only emitted when `written > 0` |
+| `"cache seed"` | `dio, mode, rows` | a scenery seeded its rows from the cache at open; `mode` ∈ `warm` \| `cold` |
+| `"columns"` | `dio, demanded, received_count, received_sample, undemanded_count, payload_bytes, rows` | the wide-data detector — what a chunk actually carried against what was demanded |
+| `"census: <kind> <verb>"` | `dio, table_sceneries, record_sceneries, servos, uptime_ms, cpu_ms, peak_rss_mb` | a consumer opened or closed; `kind` ∈ `table scenery` \| `record scenery` \| `servo`, `verb` ∈ `opened` \| `closed` |
+| `"list page dispatch"` | `req, dio, offset, limit, conditions, sort` | a two-pass list page is about to be fetched |
+| `"list page return"` | `req, rows, ms, index_len, complete` | that list page returned |
+| `"detail pass"` | `dio, requested, pending, already_complete` | a two-pass detail (augment) sweep queued its pending ids |
+| `"aggregate recompute"` | `aggregate, trigger, rows_in, rows_out, ms, unchanged` | a `vantage-diorama-aggregate` layer recomputed |
+
+`aggregate recompute`'s `trigger` is `initial`, `debounce-trailing`, `nudge`,
+`lagged`, or a `DioEvent` variant name (`RecordChanged`, `DatasetChanged`,
+…) Debug-formatted and trimmed to its variant name. A `derive()`'s first
+load emits two `initial` lines: an eager compute that seeds the derived
+Vista's schema before the engine loop even exists (`unchanged = false`),
+immediately followed by the engine's own seed pass reading that same output
+back (`unchanged = true`). Both are genuine recomputations — the second is
+what proves the engine's own loop agrees with the eager pass before anything
+has changed, not a duplicated log call.
+
+### Census
+
+`emit_census(kind, verb)` on `DioInner` fires on every table-scenery,
+record-scenery, and servo open/close (when the tap is enabled) with a
+`"census: <kind> <verb>"` message, the live counts of each consumer kind on
+that Dio, and a process snapshot (`uptime_ms`, `cpu_ms`, `peak_rss_mb`) via
+`process_stats()`. This is the resource-accounting evidence: how many
+consumers a Dio is carrying and what the process is paying, sampled at every
+boundary a consumer's lifetime crosses.
+
+### Exit summary
+
+`stats::debug_summary_lines()` renders the session's cache evidence as plain
+strings, in order:
+
+1. Header: `"— diorama session summary —"`.
+2. One ledger line per table that had a fetch, busiest first: fetch count,
+   repeat count, rows received, redundant rows, total and max fetch time.
+3. A `"live:"` line: dios, table sceneries, record sceneries, servos still
+   open.
+4. A `"process:"` line: uptime, CPU time, peak RSS.
+
+`stats::emit_debug_summary()` logs each line at `info` under
+`vantage_diorama::debug`, unconditionally — it does not check the tap,
+since the caller (typically a shutdown hook) decides when a summary is
+warranted regardless of whether per-line tracing was ever turned on for
+this session.
+
 ## File layout
 
 ```

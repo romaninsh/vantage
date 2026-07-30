@@ -1,15 +1,57 @@
 //! The official per-datasource debug stream.
 //!
 //! A [`DebugTap`] is carried by every [`Lens`](crate::Lens) and reached from
-//! every task the lens spawns. When enabled (one datasource opted in via
-//! `debug: true`), curated events emit at `info` level under the single
-//! target `vantage_diorama::debug` — visible in a default log with no
-//! `RUST_LOG` required. When off, nothing is emitted and nothing is paid.
+//! every task the lens spawns. Enabled per datasource via
+//! [`LensBuilder::debug_datasource`](crate::lens::LensBuilder::debug_datasource),
+//! it emits at `info` level under the single target `vantage_diorama::debug`
+//! — visible in a default log with no `RUST_LOG` required. Every line carries
+//! `ds=<datasource>`; every per-dio line also carries `dio=<master table
+//! name>`. Off — the default — nothing is emitted and nothing is paid: every
+//! call site checks [`DebugTap::enabled`] before doing any work the line
+//! itself needs, not just before formatting it.
 //!
 //! This stream is the mechanism for demonstrating the cache's efficiency
 //! and its resilience to backend faults: every master round trip, every
 //! cache mutation, every consumer open/close (the *census*), every status
 //! transition — attributable, correlated (`req=N`), and greppable.
+//!
+//! # Frozen message strings
+//!
+//! These strings are a contract: downstream test harnesses grep them.
+//! Changing one is a breaking change to whatever greps it, on par with
+//! changing a public function's signature.
+//!
+//! | Message | Fields | Where |
+//! |---|---|---|
+//! | `"load dispatch"` | `req, dio, visible, effective, rows_to_fetch, already_cached, sort, search, force_load` | a viewport fetch is about to run |
+//! | `"load return"` | `req, dio, received, ms, cached_after` | that fetch came back `Ok` |
+//! | `"load failed"` | `req, dio, ms, error` | that fetch came back `Err` |
+//! | `"cache hit — viewport served locally"` | `dio, range, rows` | a viewport is fully cached; no fetch fires |
+//! | `"total"` | `dio, total, provenance` | the grand total changed; `provenance` ∈ `stated` / `short-page` / `horizon-extended` / `hole-clamped` |
+//! | `"state"` | `dio, from, to, reason` | a [`LoadState`](crate::scenery::LoadState) transition |
+//! | `"cache write"` | `dio, written, new, updated, cached_rows, known_total, cached_pct` | a load committed rows to the cache; only emitted when `written > 0` |
+//! | `"cache seed"` | `dio, mode, rows` | a scenery seeded its rows from the cache at open; `mode` ∈ `warm` / `cold` |
+//! | `"columns"` | `dio, demanded, received_count, received_sample, undemanded_count, payload_bytes, rows` | the wide-data detector — what a chunk actually carried against what was asked for |
+//! | `"census: {kind} {verb}"` | `dio, table_sceneries, record_sceneries, servos, uptime_ms, cpu_ms, peak_rss_mb` | a consumer opened or closed; `kind` ∈ `table scenery` / `record scenery` / `servo`, `verb` ∈ `opened` / `closed` |
+//! | `"list page dispatch"` | `req, dio, offset, limit, conditions, sort` | a two-pass list page is about to be fetched |
+//! | `"list page return"` | `req, rows, ms, index_len, complete` | that list page came back |
+//! | `"detail pass"` | `dio, requested, pending, already_complete` | a two-pass detail (augment) sweep queued its pending ids |
+//! | `"aggregate recompute"` | `aggregate, trigger, rows_in, rows_out, ms, unchanged` | a `vantage-diorama-aggregate` layer recomputed; `trigger` ∈ `initial` / `debounce-trailing` / `nudge` / `lagged` / a `DioEvent` variant name |
+//! | `"— diorama session summary —"` | (header, no fields) | first line of [`stats::debug_summary_lines`](crate::stats::debug_summary_lines) / [`stats::emit_debug_summary`](crate::stats::emit_debug_summary) |
+//!
+//! A `derive()`'s first load emits two `"aggregate recompute"` lines with
+//! `trigger = "initial"`: an eager compute that seeds the derived Vista's
+//! schema (`unchanged = false`, since there is no prior output to compare
+//! against), immediately followed by the engine's own seed pass over the
+//! same rows (`unchanged = true`, since it reads the value the eager pass
+//! just published). Both are real recomputations, not a duplicate log call —
+//! the second is what proves the engine's own loop agrees with the eager
+//! pass before anything has changed.
+//!
+//! `req=N` is a per-dio, monotonically increasing counter
+//! ([`DioInner::next_req`](crate::dio::DioInner::next_req)) that ties a
+//! dispatch line to its matching return/failed line — only allocated when
+//! the tap is enabled.
 
 use std::sync::Arc;
 use std::sync::LazyLock;
@@ -128,7 +170,10 @@ mod tests {
         let s = process_stats();
         #[cfg(unix)]
         {
-            assert!(s.peak_rss_bytes > 0, "peak RSS should be measurable on unix");
+            assert!(
+                s.peak_rss_bytes > 0,
+                "peak RSS should be measurable on unix"
+            );
             assert!(s.cpu_ms > 0, "cpu time should be nonzero after busy loop");
         }
         let _ = s.uptime_ms; // monotonic, may be 0 in a fast test — presence is enough
